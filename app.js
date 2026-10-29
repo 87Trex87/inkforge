@@ -30,7 +30,16 @@ const DB = (() => {
 const MIGRATIONS = [
   // v1: meta + settings
   `CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);
-   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);`
+   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);`,
+  // v2: clients. photo_ref is a filename in the OPFS media folder, never bytes.
+  `CREATE TABLE clients (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     first_name TEXT NOT NULL DEFAULT '', last_name TEXT NOT NULL DEFAULT '',
+     phone TEXT, email TEXT, instagram TEXT, dob TEXT, pronouns TEXT,
+     medical TEXT, notes TEXT, tags TEXT, photo_ref TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE INDEX idx_clients_name ON clients (last_name COLLATE NOCASE, first_name COLLATE NOCASE);`
 ];
 const SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -52,6 +61,45 @@ const Settings = {
   async load() { for (const r of await DB.all('SELECT key, value FROM settings')) this.cache[r.key] = r.value; },
   get(k, d = '') { return this.cache[k] ?? d; },
   async set(k, v) { this.cache[k] = v; await DB.run('INSERT OR REPLACE INTO settings VALUES (?, ?)', [k, v]); }
+};
+
+/* Media files (photos etc.) live in OPFS /media as content-hash names; DB stores only the name. */
+const Media = {
+  urls: new Map(),
+  async dir() { return (await navigator.storage.getDirectory()).getDirectoryHandle('media', { create: true }); },
+  async save(blob, ext) {
+    const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))]
+      .slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('');
+    const name = `${hash}.${ext}`;
+    const fh = await (await this.dir()).getFileHandle(name, { create: true });
+    const w = await fh.createWritable(); await w.write(blob); await w.close();
+    return name;
+  },
+  async url(name) {
+    if (!name) return '';
+    if (this.urls.has(name)) return this.urls.get(name);
+    try {
+      const f = await (await (await this.dir()).getFileHandle(name)).getFile();
+      const u = URL.createObjectURL(f); this.urls.set(name, u); return u;
+    } catch { return ''; }
+  },
+  // Removes a file only if no row still references it.
+  async release(name) {
+    if (!name) return;
+    const used = await DB.one('SELECT 1 AS x FROM clients WHERE photo_ref = ? LIMIT 1', [name]);
+    if (used) return;
+    try { await (await this.dir()).removeEntry(name); } catch {}
+    const u = this.urls.get(name); if (u) { URL.revokeObjectURL(u); this.urls.delete(name); }
+  },
+  // Downscale an image file to a JPEG so phone camera shots stay small.
+  async shrink(file, max = 640, q = 0.85) {
+    const bmp = await createImageBitmap(file);
+    const s = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    return new Promise(r => c.toBlob(r, 'image/jpeg', q));
+  }
 };
 
 /* ---------- Helpers ---------- */
@@ -125,7 +173,140 @@ const VIEWS = {
       </div>`;
     }
   },
-  clients: { title: () => 'Clients', render: () => `<div class="card"><h2>Phonebook ${help('Client details, history, photos and forms. Built in section 2.')}</h2><p class="muted" style="margin:0">Coming next.</p></div>` },
+  clients: {
+    title: () => 'Clients',
+    render: () => `
+      <div class="search-bar">
+        <input class="in" id="c-search" type="search" placeholder="Search name, phone, tag…" autocomplete="off" value="${esc(VIEWS.clients.q || '')}">
+        <button class="btn primary icon-btn" id="c-add" data-tip="Add client" aria-label="Add client">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div id="c-list"></div>`,
+    mount() {
+      const s = $('#c-search');
+      s.addEventListener('input', () => { VIEWS.clients.q = s.value; renderClientList(); });
+      $('#c-add').onclick = () => location.hash = 'client-edit/new';
+      renderClientList();
+    }
+  },
+  client: {
+    title: () => 'Client',
+    render: () => '<div id="c-detail"></div>',
+    async mount(id) {
+      const c = await DB.one('SELECT * FROM clients WHERE id = ?', [+id]);
+      const el = $('#c-detail');
+      if (!c) { el.innerHTML = '<div class="card muted">Client not found.</div>'; return; }
+      $('#view-title').textContent = 'Client';
+      const photo = await Media.url(c.photo_ref);
+      const tel = (c.phone || '').replace(/[^\d+]/g, '');
+      const ig = (c.instagram || '').replace(/^@/, '');
+      const act = (href, icon, label, on) => on
+        ? `<a class="act" href="${href}" ${href.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>${icon}<span>${label}</span></a>`
+        : `<span class="act off">${icon}<span>${label}</span></span>`;
+      const age = c.dob ? Math.floor((Date.now() - new Date(c.dob)) / 31557600000) : null;
+      const field = (label, val) => val ? `<div class="stat"><span class="muted">${label}</span><span class="val">${esc(val)}</span></div>` : '';
+      el.innerHTML = `
+        <div class="card c-head">
+          ${avatar(c, photo, 'lg')}
+          <div class="c-name">${esc(fullName(c))}</div>
+          ${c.pronouns ? `<div class="muted">${esc(c.pronouns)}</div>` : ''}
+          ${tagChips(c.tags)}
+          <div class="acts">
+            ${act('tel:' + tel, '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>', 'Call', tel)}
+            ${act('sms:' + tel, '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-12 7l-5 1 1-4a8 8 0 1 1 16-4z"/></svg>', 'Text', tel)}
+            ${act('https://wa.me/' + tel.replace('+', ''), '<svg viewBox="0 0 24 24"><path d="M3 21l2-5a9 9 0 1 1 3 3z"/><path d="M9 9c0 3 3 6 6 6l1-2-2-1-1 1c-1 0-3-2-3-3l1-1-1-2z"/></svg>', 'WhatsApp', tel)}
+            ${act('mailto:' + (c.email || ''), '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>', 'Email', c.email)}
+            ${act('https://instagram.com/' + encodeURIComponent(ig), '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".8"/></svg>', 'Insta', ig)}
+          </div>
+        </div>
+        <div class="card"><h2>Details</h2>
+          ${field('Phone', c.phone)}${field('Email', c.email)}${field('Instagram', ig && '@' + ig)}
+          ${field('Birthday', c.dob && new Date(c.dob + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) + (age != null ? ` (${age})` : ''))}
+          ${field('Client since', new Date(c.created_at + 'Z').toLocaleDateString())}
+        </div>
+        ${c.medical ? `<div class="card alert"><h2>Medical / allergies ${help('Check before every session.')}</h2><p class="pre">${esc(c.medical)}</p></div>` : ''}
+        ${c.notes ? `<div class="card"><h2>Notes</h2><p class="pre">${esc(c.notes)}</p></div>` : ''}
+        <div class="card"><h2>History ${help('Bookings, forms and photos for this client will appear here as those sections are built.')}</h2>
+          <p class="muted" style="margin:0">Nothing yet.</p></div>
+        <div class="row" style="margin-bottom:20px">
+          <button class="btn" onclick="location.hash='client-edit/${c.id}'">Edit</button>
+          <button class="btn danger" id="c-del">Delete</button>
+        </div>`;
+      $('#c-del').onclick = async () => {
+        if (!confirm(`Delete ${fullName(c)}?\n\nThis permanently removes the client and their photo.`)) return;
+        await DB.run('DELETE FROM clients WHERE id = ?', [c.id]);
+        await Media.release(c.photo_ref);
+        toast('Client deleted.'); location.hash = 'clients';
+      };
+    }
+  },
+  'client-edit': {
+    title: (id) => id === 'new' ? 'New client' : 'Edit client',
+    render: () => '<form id="c-form" class="card" autocomplete="off"></form>',
+    async mount(id) {
+      const c = id === 'new' ? {} : await DB.one('SELECT * FROM clients WHERE id = ?', [+id]);
+      if (!c) { location.hash = 'clients'; return; }
+      const f = $('#c-form');
+      let photoRef = c.photo_ref || null, newPhoto = null;
+      const inp = (name, label, type = 'text', extra = '') =>
+        `<label class="field"><span>${label}</span><input class="in" name="${name}" type="${type}" value="${esc(c[name])}" ${extra}></label>`;
+      f.innerHTML = `
+        <div class="photo-pick">
+          <label class="avatar-pick" data-tip="Add or change photo">
+            <span id="f-ava">${avatar(c, await Media.url(photoRef), 'lg')}</span>
+            <input type="file" accept="image/*" id="f-photo" hidden>
+            <span class="cam"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+          </label>
+          ${photoRef ? '<button type="button" class="btn small" id="f-photo-rm">Remove photo</button>' : ''}
+        </div>
+        <div class="two">${inp('first_name', 'First name', 'text', 'required autocapitalize="words"')}${inp('last_name', 'Last name', 'text', 'autocapitalize="words"')}</div>
+        <div class="two">${inp('phone', 'Phone', 'tel', 'inputmode="tel"')}${inp('email', 'Email', 'email', 'inputmode="email"')}</div>
+        <div class="two">${inp('instagram', 'Instagram', 'text', 'placeholder="@handle" autocapitalize="off"')}${inp('pronouns', 'Pronouns', 'text', 'placeholder="optional"')}</div>
+        <div class="two">${inp('dob', 'Birthday', 'date')}${inp('tags', 'Tags', 'text', 'placeholder="regular, blackwork"')}</div>
+        <label class="field"><span>Medical / allergies ${help('Latex, blood thinners, skin conditions, etc. Shown highlighted on the client page.')}</span>
+          <textarea class="in" name="medical" rows="2">${esc(c.medical)}</textarea></label>
+        <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(c.notes)}</textarea></label>
+        <div class="form-foot row">
+          <button type="button" class="btn" id="f-cancel">Cancel</button>
+          <button type="submit" class="btn primary" style="flex:1">Save</button>
+        </div>`;
+      Dirty.set(false);
+      f.addEventListener('input', () => Dirty.set(true));
+      $('#f-photo').addEventListener('change', async (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        try {
+          newPhoto = await Media.shrink(file);
+          $('#f-ava').innerHTML = avatar(c, URL.createObjectURL(newPhoto), 'lg');
+          Dirty.set(true);
+        } catch { toast('Could not read that image.'); }
+      });
+      const rm = $('#f-photo-rm');
+      if (rm) rm.onclick = () => { photoRef = null; newPhoto = null; $('#f-ava').innerHTML = avatar(c, '', 'lg'); rm.remove(); Dirty.set(true); };
+      $('#f-cancel').onclick = () => history.back();
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const d = Object.fromEntries(new FormData(f));
+        for (const k in d) d[k] = d[k].trim();
+        if (!d.first_name) return toast('First name is required.');
+        d.instagram = d.instagram.replace(/^@/, '');
+        d.tags = d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ');
+        if (newPhoto) photoRef = await Media.save(newPhoto, 'jpg');
+        const cols = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags'];
+        const vals = cols.map(k => d[k] || null); vals[0] = d.first_name; vals[1] = d.last_name || '';
+        let cid = c.id;
+        if (cid) {
+          await DB.run(`UPDATE clients SET ${cols.map(k => k + ' = ?').join(', ')}, photo_ref = ?, updated_at = datetime('now') WHERE id = ?`, [...vals, photoRef, cid]);
+          if (c.photo_ref && c.photo_ref !== photoRef) await Media.release(c.photo_ref);
+        } else {
+          await DB.run(`INSERT INTO clients (${cols.join(', ')}, photo_ref) VALUES (${cols.map(() => '?').join(', ')}, ?)`, [...vals, photoRef]);
+          cid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+        }
+        Dirty.set(false);
+        toast('Saved.');
+        location.replace('#client/' + cid);
+      });
+    }
+  },
   book: { title: () => 'Book', render: () => `<div class="card"><h2>Calendar ${help('Appointments with reference photos. Built in section 3.')}</h2><p class="muted" style="margin:0">Coming soon.</p></div>` },
   studio: {
     title: () => 'Studio',
@@ -196,8 +377,41 @@ async function renderStorage() {
   };
 }
 
+/* Backup file: "INKFORGE1" + u32 manifest length + JSON manifest + db bytes + media bytes.
+   Plain SQLite files (older backups) are still accepted on restore. */
+const BACKUP_MAGIC = 'INKFORGE1';
+async function buildBackup() {
+  const db = await DB.exportBytes();
+  const media = [];
+  for await (const [name, h] of (await Media.dir()).entries()) {
+    if (h.kind === 'file') media.push({ name, bytes: new Uint8Array(await (await h.getFile()).arrayBuffer()) });
+  }
+  const manifest = new TextEncoder().encode(JSON.stringify({ v: 1, db: db.length, media: media.map(m => ({ name: m.name, len: m.bytes.length })) }));
+  const head = new Uint8Array(BACKUP_MAGIC.length + 4);
+  head.set(new TextEncoder().encode(BACKUP_MAGIC));
+  new DataView(head.buffer).setUint32(BACKUP_MAGIC.length, manifest.length);
+  return new Blob([head, manifest, db, ...media.map(m => m.bytes)]);
+}
+async function restoreBackup(bytes) {
+  const magic = new TextDecoder().decode(bytes.slice(0, 15));
+  if (magic === 'SQLite format 3') return DB.importBytes(bytes);
+  if (!magic.startsWith(BACKUP_MAGIC)) throw new Error('That file is not an InkForge backup.');
+  const mlen = new DataView(bytes.buffer, bytes.byteOffset).getUint32(BACKUP_MAGIC.length);
+  let off = BACKUP_MAGIC.length + 4;
+  const man = JSON.parse(new TextDecoder().decode(bytes.subarray(off, off + mlen))); off += mlen;
+  const db = bytes.slice(off, off + man.db); off += man.db;
+  const dir = await Media.dir();
+  for (const m of man.media) {
+    const w = await (await dir.getFileHandle(m.name, { create: true })).createWritable();
+    await w.write(bytes.subarray(off, off + m.len)); await w.close(); off += m.len;
+  }
+  for (const u of Media.urls.values()) URL.revokeObjectURL(u);
+  Media.urls.clear();
+  return DB.importBytes(db);
+}
+
 async function exportBackup() {
-  const bytes = await DB.exportBytes();
+  const bytes = await buildBackup();
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   const name = `InkForge-${stamp}.inkforge`;
   const file = new File([bytes], name, { type: 'application/octet-stream' });
@@ -219,28 +433,78 @@ $('#import-file').addEventListener('change', async (e) => {
   if (!f) return;
   const bytes = new Uint8Array(await f.arrayBuffer());
   const magic = new TextDecoder().decode(bytes.slice(0, 15));
-  if (magic !== 'SQLite format 3') return toast('That file is not an InkForge backup.');
+  if (magic !== 'SQLite format 3' && !magic.startsWith(BACKUP_MAGIC)) return toast('That file is not an InkForge backup.');
   if (!confirm(`Restore "${f.name}"?\n\nEverything currently on this device will be replaced. This cannot be undone.`)) return;
   try {
-    await DB.importBytes(bytes);
+    await restoreBackup(bytes);
     await migrate(); Settings.cache = {}; await Settings.load();
     toast('Backup restored.'); render();
   } catch (err) { toast('Restore failed: ' + err.message, 5000); }
 });
 
+/* ---------- Clients helpers ---------- */
+const fullName = (c) => [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unnamed';
+function avatar(c, url, size = '') {
+  const ini = ((c.first_name || '?').charAt(0) + (c.last_name || '').charAt(0)).toUpperCase();
+  return url ? `<img class="ava ${size}" src="${url}" alt="">` : `<span class="ava ${size}">${esc(ini)}</span>`;
+}
+const tagChips = (tags) => tags ? `<div class="chips">${tags.split(',').map(t => `<span class="chip">${esc(t.trim())}</span>`).join('')}</div>` : '';
+
+async function renderClientList() {
+  const el = $('#c-list'); if (!el) return;
+  const q = (VIEWS.clients.q || '').trim();
+  const like = '%' + q.replace(/[%_]/g, '') + '%';
+  const digits = q.replace(/\D/g, '');
+  const rows = await DB.all(
+    `SELECT id, first_name, last_name, phone, tags, medical, photo_ref FROM clients
+     WHERE ?1 = '' OR (first_name || ' ' || last_name) LIKE ?2 OR email LIKE ?2 OR instagram LIKE ?2 OR tags LIKE ?2
+       OR (?3 <> '' AND replace(replace(replace(phone,' ',''),'-',''),'+','') LIKE '%' || ?3 || '%')
+     ORDER BY first_name COLLATE NOCASE, last_name COLLATE NOCASE`, [q, like, digits]);
+  if ($('#c-list') !== el) return;
+  if (!rows.length) {
+    el.innerHTML = q ? '<div class="empty muted">No matches.</div>'
+      : `<div class="empty"><div class="empty-ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/></svg></div>
+         <div style="font:24px var(--display)">No clients yet</div><div class="muted">Tap + to add your first.</div></div>`;
+    return;
+  }
+  const urls = await Promise.all(rows.map(r => Media.url(r.photo_ref)));
+  let html = '', letter = '';
+  rows.forEach((c, i) => {
+    const L = (c.first_name || '#').charAt(0).toUpperCase();
+    if (L !== letter) { if (letter) html += '</div>'; letter = L; html += `<div class="letter">${esc(L)}</div><div class="card list">`; }
+    html += `<a class="c-row" href="#client/${c.id}">${avatar(c, urls[i])}
+      <span class="c-main"><span class="c-n">${esc(fullName(c))}</span><span class="muted c-sub">${esc(c.phone || c.tags || '')}</span></span>
+      ${c.medical ? '<span class="dot" data-tip="Has medical notes"></span>' : ''}
+      <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
+  });
+  el.innerHTML = html + '</div>' + `<div class="muted count">${rows.length} client${rows.length === 1 ? '' : 's'}</div>`;
+}
+
+/* Unsaved-form guard: navigating away from a dirty form asks first. */
+const Dirty = {
+  on: false,
+  set(v) { this.on = v; },
+  ok() { return !this.on || confirm('Discard unsaved changes?'); }
+};
+addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
+
 /* ---------- Router ---------- */
-const NAV_PARENT = { settings: 'more' };
+const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients' };
+let currentHash = location.hash;
 function render() {
-  const key = location.hash.slice(1) || 'home';
+  if (location.hash !== currentHash && !Dirty.ok()) { history.replaceState(null, '', currentHash || '#'); return; }
+  Dirty.set(false);
+  currentHash = location.hash;
+  const [key, arg] = (location.hash.slice(1) || 'home').split('/');
   const v = VIEWS[key] || VIEWS.home;
-  $('#view-title').textContent = v.title();
+  $('#view-title').textContent = v.title(arg);
   const view = $('#view');
-  view.innerHTML = v.render();
+  view.innerHTML = v.render(arg);
   view.style.animation = 'none'; view.offsetHeight; view.style.animation = '';
   const active = NAV_PARENT[key] || key;
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === active));
   $('#main').scrollTop = 0;
-  v.mount?.();
+  v.mount?.(arg);
 }
 $('#nav').addEventListener('click', e => {
   const b = e.target.closest('.nav-btn'); if (b) location.hash = b.dataset.view;
