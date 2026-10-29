@@ -39,7 +39,24 @@ const MIGRATIONS = [
      medical TEXT, notes TEXT, tags TEXT, photo_ref TEXT,
      created_at TEXT NOT NULL DEFAULT (datetime('now')),
      updated_at TEXT NOT NULL DEFAULT (datetime('now')));
-   CREATE INDEX idx_clients_name ON clients (last_name COLLATE NOCASE, first_name COLLATE NOCASE);`
+   CREATE INDEX idx_clients_name ON clients (last_name COLLATE NOCASE, first_name COLLATE NOCASE);`,
+  // v3: bookings. start_at is local time 'YYYY-MM-DDTHH:MM'. gcal_* reserved for Google sync.
+  `CREATE TABLE bookings (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     start_at TEXT NOT NULL, duration_min INTEGER NOT NULL DEFAULT 120,
+     description TEXT, placement TEXT, size TEXT,
+     quote REAL, deposit REAL, deposit_paid INTEGER NOT NULL DEFAULT 0,
+     notes TEXT, gcal_id TEXT, gcal_updated TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE INDEX idx_bookings_start ON bookings (start_at);
+   CREATE INDEX idx_bookings_client ON bookings (client_id);
+   CREATE TABLE booking_photos (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+     photo_ref TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);
+   CREATE INDEX idx_bphotos_booking ON booking_photos (booking_id);`
 ];
 const SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -86,7 +103,8 @@ const Media = {
   // Removes a file only if no row still references it.
   async release(name) {
     if (!name) return;
-    const used = await DB.one('SELECT 1 AS x FROM clients WHERE photo_ref = ? LIMIT 1', [name]);
+    const used = await DB.one(`SELECT 1 AS x FROM clients WHERE photo_ref = ?1
+      UNION ALL SELECT 1 FROM booking_photos WHERE photo_ref = ?1 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
     const u = this.urls.get(name); if (u) { URL.revokeObjectURL(u); this.urls.delete(name); }
@@ -165,12 +183,20 @@ const VIEWS = {
         <div class="big">${greet}${name ? ', ' + esc(name) : ''}</div>
         ${name ? '' : `<p class="muted">Set your name and studio in <a href="#more" style="color:var(--teal)">More &rsaquo; Settings</a>.</p>`}
       </div>
-      <div class="card"><h2>Today ${help('Your appointments for today will appear here once Booking is built.')}</h2>
-        <p class="muted" style="margin:0">No sessions booked.</p></div>
+      <div class="card"><h2>Today ${help('Today\'s sessions. Tap one to open it.')}</h2>
+        <div id="home-today" class="muted">…</div></div>
       <div class="grid">
         ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', true)}
         ${tile('quote', 'Quick quote', 'Price a piece in seconds', true)}
       </div>`;
+    },
+    async mount() {
+      const t = new Date(); t.setHours(0, 0, 0, 0);
+      const rows = await bookingsBetween(t, addDays(t, 1));
+      const el = $('#home-today'); if (!el) return;
+      if (rows.length) { el.className = 'card list flush'; el.innerHTML = rows.map(agendaRow).join(''); }
+      else el.innerHTML = `No sessions booked. <a href="#" id="h-add" style="color:var(--teal)">Book one</a>`;
+      const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00')); };
     }
   },
   clients: {
@@ -226,14 +252,28 @@ const VIEWS = {
         </div>
         ${c.medical ? `<div class="card alert"><h2>Medical / allergies ${help('Check before every session.')}</h2><p class="pre">${esc(c.medical)}</p></div>` : ''}
         ${c.notes ? `<div class="card"><h2>Notes</h2><p class="pre">${esc(c.notes)}</p></div>` : ''}
-        <div class="card"><h2>History ${help('Bookings, forms and photos for this client will appear here as those sections are built.')}</h2>
-          <p class="muted" style="margin:0">Nothing yet.</p></div>
+        <div class="card"><h2>Bookings ${help('All sessions for this client, newest first.')}
+            <button class="btn small" id="c-book" style="margin-left:auto">+ Book</button></h2>
+          <div id="c-hist" class="muted">…</div></div>
         <div class="row" style="margin-bottom:20px">
           <button class="btn" onclick="location.hash='client-edit/${c.id}'">Edit</button>
           <button class="btn danger" id="c-del">Delete</button>
         </div>`;
+      $('#c-book').onclick = () => newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00'), c.id);
+      const hist = await DB.all(`SELECT b.*, c.first_name, c.last_name, NULL AS medical FROM bookings b JOIN clients c ON c.id = b.client_id
+        WHERE b.client_id = ? ORDER BY b.start_at DESC`, [c.id]);
+      const he = $('#c-hist');
+      if (he) {
+        if (!hist.length) he.textContent = 'No bookings yet.';
+        else {
+          const total = hist.reduce((s, b) => s + (b.quote || 0), 0);
+          he.className = 'card list flush';
+          he.innerHTML = hist.map(b => agendaRow(b).replace(/<b>[^<]*<\/b><small/, `<b>${new Date(b.start_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' })}</b><small`)).join('')
+            + `<div class="muted count">${hist.length} session${hist.length === 1 ? '' : 's'}${total ? ' · ' + money(total) + ' quoted' : ''}</div>`;
+        }
+      }
       $('#c-del').onclick = async () => {
-        if (!confirm(`Delete ${fullName(c)}?\n\nThis permanently removes the client and their photo.`)) return;
+        if (!confirm(`Delete ${fullName(c)}?\n\nThis permanently removes the client and their photo. Their bookings stay on the calendar without a client.`)) return;
         await DB.run('DELETE FROM clients WHERE id = ?', [c.id]);
         await Media.release(c.photo_ref);
         toast('Client deleted.'); location.hash = 'clients';
@@ -307,7 +347,168 @@ const VIEWS = {
       });
     }
   },
-  book: { title: () => 'Book', render: () => `<div class="card"><h2>Calendar ${help('Appointments with reference photos. Built in section 3.')}</h2><p class="muted" style="margin:0">Coming soon.</p></div>` },
+  book: {
+    title: () => 'Book',
+    render: () => `
+      <div class="cal-bar">
+        <div class="seg" id="cal-mode">
+          ${['day', 'week', 'month'].map(m => `<button data-m="${m}" class="${Cal.mode === m ? 'on' : ''}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}
+        </div>
+        <div class="row" style="gap:6px">
+          <button class="btn icon-btn" id="cal-prev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <button class="btn small" id="cal-today" style="min-height:46px">Today</button>
+          <button class="btn icon-btn" id="cal-next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="btn primary icon-btn" id="cal-add" data-tip="New booking" aria-label="New booking"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+      </div>
+      <div class="cal-label" id="cal-label"></div>
+      <div id="cal"></div>`,
+    mount() {
+      $('#cal-mode').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; Cal.mode = b.dataset.m; Settings.set('cal_mode', Cal.mode); render(); };
+      $('#cal-prev').onclick = () => Cal.shift(-1);
+      $('#cal-next').onclick = () => Cal.shift(1);
+      $('#cal-today').onclick = () => { Cal.date = new Date(); renderCal(); };
+      $('#cal-add').onclick = () => newBooking(ymd(Cal.date) + 'T' + Settings.get('day_start', '10:00'));
+      renderCal();
+    }
+  },
+  'booking-edit': {
+    title: (id) => id === 'new' ? 'New booking' : 'Booking',
+    render: () => '<form id="b-form" class="card" autocomplete="off"></form>',
+    async mount(id) {
+      const b = id === 'new'
+        ? { start_at: Cal.prefill || ymd(new Date()) + 'T10:00', duration_min: 120, client_id: Cal.prefillClient || null }
+        : await DB.one('SELECT * FROM bookings WHERE id = ?', [+id]);
+      Cal.prefill = Cal.prefillClient = null;
+      if (!b) { location.hash = 'book'; return; }
+      const photos = b.id ? await DB.all('SELECT id, photo_ref FROM booking_photos WHERE booking_id = ? ORDER BY sort, id', [b.id]) : [];
+      const keep = photos.map(p => p.photo_ref);       // existing refs still attached
+      const added = [];                                 // new Blobs not yet saved
+      let clientId = b.client_id;
+      const client = clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [clientId]) : null;
+      const cur = Settings.get('currency');
+      const durOpts = []; for (let m = 30; m <= 600; m += 30) durOpts.push(m);
+      const f = $('#b-form');
+      f.innerHTML = `
+        <label class="field"><span>Client ${help('Search existing clients, or type a new name and pick "Add" to create one.')}</span>
+          <div class="picker">
+            <input class="in" id="b-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
+            <div class="pick-list" id="b-client-list" hidden></div>
+          </div></label>
+        <div class="two">
+          <label class="field"><span>Date</span><input class="in" type="date" name="date" value="${b.start_at.slice(0, 10)}" required></label>
+          <div class="two tight">
+            <label class="field"><span>Start</span><input class="in" type="time" name="time" step="900" value="${b.start_at.slice(11, 16)}" required></label>
+            <label class="field"><span>Length</span><select class="in" name="duration_min">${durOpts.map(m => `<option value="${m}" ${m === b.duration_min ? 'selected' : ''}>${fmtDur(m)}</option>`).join('')}</select></label>
+          </div>
+        </div>
+        <label class="field"><span>Tattoo description</span><textarea class="in" name="description" rows="2" placeholder="e.g. Fine-line peony with stem">${esc(b.description)}</textarea></label>
+        <div class="two">
+          <label class="field"><span>Placement</span><input class="in" name="placement" value="${esc(b.placement)}" placeholder="Left forearm"></label>
+          <label class="field"><span>Size</span><input class="in" name="size" value="${esc(b.size)}" placeholder="15 x 10 cm"></label>
+        </div>
+        <div class="two">
+          <label class="field"><span>Quote${cur ? ` (${esc(cur)})` : ''}</span><input class="in" name="quote" type="number" inputmode="decimal" min="0" step="any" value="${b.quote ?? ''}"></label>
+          <label class="field"><span>Deposit${cur ? ` (${esc(cur)})` : ''}</span>
+            <div class="row" style="flex-wrap:nowrap"><input class="in" name="deposit" type="number" inputmode="decimal" min="0" step="any" value="${b.deposit ?? ''}">
+            <label class="toggle" data-tip="Deposit received"><input type="checkbox" name="deposit_paid" ${b.deposit_paid ? 'checked' : ''}><span>Paid</span></label></div></label>
+        </div>
+        <div class="field"><span class="lbl">Reference photos ${help('Client references or your sketch. Stored on the device, included in backups.')}</span>
+          <div class="thumbs" id="b-thumbs"></div></div>
+        <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(b.notes)}</textarea></label>
+        <div class="form-foot row">
+          ${b.id ? '<button type="button" class="btn danger icon-btn" id="b-del" data-tip="Delete booking" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
+          <button type="button" class="btn" id="b-cancel">Cancel</button>
+          <button type="submit" class="btn primary" style="flex:1">Save</button>
+        </div>`;
+
+      // Client picker
+      const ci = $('#b-client'), cl = $('#b-client-list');
+      const pickClient = async () => {
+        const q = ci.value.trim();
+        const rows = await DB.all(`SELECT id, first_name, last_name, phone, photo_ref FROM clients
+          WHERE (first_name || ' ' || last_name) LIKE ? ORDER BY first_name COLLATE NOCASE LIMIT 8`, ['%' + q + '%']);
+        const urls = await Promise.all(rows.map(r => Media.url(r.photo_ref)));
+        cl.innerHTML = rows.map((r, i) => `<button type="button" class="c-row" data-id="${r.id}">${avatar(r, urls[i])}
+            <span class="c-main"><span class="c-n">${esc(fullName(r))}</span><span class="muted c-sub">${esc(r.phone || '')}</span></span></button>`).join('')
+          + (q ? `<button type="button" class="c-row add" data-new="1"><span class="ava">+</span><span class="c-main"><span class="c-n">Add "${esc(q)}"</span><span class="muted c-sub">New client</span></span></button>` : '');
+        cl.hidden = !cl.innerHTML;
+      };
+      ci.addEventListener('focus', pickClient);
+      ci.addEventListener('input', () => { clientId = null; pickClient(); });
+      ci.addEventListener('blur', () => setTimeout(() => cl.hidden = true, 150));
+      cl.addEventListener('mousedown', e => e.preventDefault());
+      cl.addEventListener('click', async (e) => {
+        const r = e.target.closest('.c-row'); if (!r) return;
+        if (r.dataset.new) {
+          const [first, ...rest] = ci.value.trim().split(/\s+/);
+          await DB.run('INSERT INTO clients (first_name, last_name) VALUES (?, ?)', [first, rest.join(' ')]);
+          clientId = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+          toast('Client added. Fill in their details later.');
+        } else {
+          clientId = +r.dataset.id;
+          ci.value = r.querySelector('.c-n').textContent;
+        }
+        cl.hidden = true; ci.blur(); Dirty.set(true);
+      });
+
+      // Reference photos
+      const drawThumbs = async () => {
+        const urls = await Promise.all(keep.map(r => Media.url(r)));
+        $('#b-thumbs').innerHTML =
+          keep.map((r, i) => `<div class="thumb"><img src="${urls[i]}" alt=""><button type="button" data-k="${i}" aria-label="Remove">&times;</button></div>`).join('') +
+          added.map((a, i) => `<div class="thumb"><img src="${a.url}" alt=""><button type="button" data-a="${i}" aria-label="Remove">&times;</button></div>`).join('') +
+          `<label class="thumb add" data-tip="Add photos"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><input type="file" accept="image/*" multiple hidden id="b-photo"></label>`;
+        $('#b-photo').addEventListener('change', async (e) => {
+          for (const file of e.target.files) {
+            try { const blob = await Media.shrink(file, 1600, 0.82); added.push({ blob, url: URL.createObjectURL(blob) }); }
+            catch { toast('Could not read an image.'); }
+          }
+          Dirty.set(true); drawThumbs();
+        });
+      };
+      $('#b-thumbs').addEventListener('click', (e) => {
+        const x = e.target.closest('button'); if (!x) return;
+        if (x.dataset.k != null) keep.splice(+x.dataset.k, 1); else added.splice(+x.dataset.a, 1);
+        Dirty.set(true); drawThumbs();
+      });
+      $('#b-thumbs').addEventListener('click', (e) => {
+        const img = e.target.closest('.thumb img'); if (img) viewImage(img.src);
+      });
+      await drawThumbs();
+
+      Dirty.set(false);
+      f.addEventListener('input', (e) => { if (e.target !== ci) Dirty.set(true); });
+      $('#b-cancel').onclick = () => history.back();
+      const del = $('#b-del');
+      if (del) del.onclick = async () => {
+        if (!confirm('Delete this booking and its reference photos?')) return;
+        await DB.run('DELETE FROM bookings WHERE id = ?', [b.id]);
+        for (const p of photos) await Media.release(p.photo_ref);
+        Dirty.set(false); toast('Booking deleted.'); history.back();
+      };
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const d = Object.fromEntries(new FormData(f));
+        if (ci.value.trim() && !clientId) return toast('Pick a client from the list, or choose "Add".');
+        const num = (v) => v === '' || v == null ? null : +v;
+        const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
+          d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null];
+        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes';
+        const refs = [...keep];
+        for (const a of added) refs.push(await Media.save(a.blob, 'jpg'));
+        let bid = b.id;
+        if (bid) await DB.run(`UPDATE bookings SET ${cols.split(', ').map(c => c + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, bid]);
+        else { await DB.run(`INSERT INTO bookings (${cols}) VALUES (${vals.map(() => '?').join(', ')})`, vals); bid = (await DB.one('SELECT last_insert_rowid() AS id')).id; }
+        await DB.tx([{ sql: 'DELETE FROM booking_photos WHERE booking_id = ?', params: [bid] },
+          ...refs.map((r, i) => ({ sql: 'INSERT INTO booking_photos (booking_id, photo_ref, sort) VALUES (?, ?, ?)', params: [bid, r, i] }))]);
+        for (const p of photos) if (!refs.includes(p.photo_ref)) await Media.release(p.photo_ref);
+        Cal.date = new Date(d.date + 'T00:00');
+        Dirty.set(false); toast('Booking saved.');
+        location.replace('#book');
+      });
+    }
+  },
   studio: {
     title: () => 'Studio',
     render: () => `<div class="grid">
@@ -331,6 +532,10 @@ const VIEWS = {
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
         <label class="field"><span>Artist name</span><input class="in" id="s-name" value="${esc(Settings.get('artist_name'))}" autocomplete="name"></label>
         <label class="field"><span>Studio</span><input class="in" id="s-studio" value="${esc(Settings.get('studio_name'))}"></label>
+        <div class="two">
+          <label class="field"><span>Currency symbol ${help('Shown before quotes and deposits, e.g. R, $, £, €.')}</span><input class="in" id="s-cur" value="${esc(Settings.get('currency'))}" maxlength="4"></label>
+          <label class="field"><span>Usual start time ${help('Default time for new bookings.')}</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
+        </div>
       </div>
       <div class="card"><h2>Storage ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</h2>
         <div id="storage-info" class="muted">Checking…</div>
@@ -347,6 +552,8 @@ const VIEWS = {
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-name').addEventListener('change', save('artist_name'));
       $('#s-studio').addEventListener('change', save('studio_name'));
+      $('#s-cur').addEventListener('change', save('currency'));
+      $('#s-start').addEventListener('change', save('day_start'));
       $('#b-export').onclick = exportBackup;
       $('#b-import').onclick = () => $('#import-file').click();
       const lb = Settings.get('last_backup');
@@ -442,6 +649,141 @@ $('#import-file').addEventListener('change', async (e) => {
   } catch (err) { toast('Restore failed: ' + err.message, 5000); }
 });
 
+/* ---------- Calendar ---------- */
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const fmtDur = (m) => (m >= 60 ? Math.floor(m / 60) + 'h' : '') + (m % 60 ? (m % 60) + 'm' : '');
+const fmtTime = (s) => new Date(s).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+const money = (v) => v == null ? '' : (Settings.get('currency') || '') + (+v).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const HOUR_PX = 60, DAY_FROM = 7, DAY_TO = 23;
+
+const Cal = {
+  mode: null, date: new Date(), prefill: null, prefillClient: null,
+  weekStart(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return addDays(x, -((x.getDay() + 6) % 7)); }, // Monday
+  shift(dir) {
+    const d = new Date(this.date);
+    if (this.mode === 'month') { d.setDate(1); d.setMonth(d.getMonth() + dir); }
+    else d.setDate(d.getDate() + (this.mode === 'week' ? 7 : 1) * dir);
+    this.date = d; renderCal();
+  }
+};
+function newBooking(startAt, clientId) { Cal.prefill = startAt; Cal.prefillClient = clientId || null; location.hash = 'booking-edit/new'; }
+
+async function bookingsBetween(from, to) {
+  return DB.all(`SELECT b.*, c.first_name, c.last_name, c.medical,
+      (SELECT photo_ref FROM booking_photos p WHERE p.booking_id = b.id ORDER BY sort, id LIMIT 1) AS cover
+    FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
+    WHERE b.start_at >= ? AND b.start_at < ? ORDER BY b.start_at`, [ymd(from), ymd(to)]);
+}
+const bName = (b) => b.first_name != null ? fullName(b) : 'No client';
+
+async function renderCal() {
+  const el = $('#cal'); if (!el) return;
+  const d = Cal.date, mode = Cal.mode;
+  const label = $('#cal-label');
+  if (mode === 'month') {
+    label.textContent = d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const first = new Date(d.getFullYear(), d.getMonth(), 1);
+    const start = Cal.weekStart(first), end = addDays(start, 42);
+    const rows = await bookingsBetween(start, end);
+    const byDay = {};
+    rows.forEach(b => (byDay[b.start_at.slice(0, 10)] ||= []).push(b));
+    const today = ymd(new Date()), sel = ymd(d);
+    let html = '<div class="month"><div class="wk">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span>${x}</span>`).join('') + '</div><div class="mgrid">';
+    for (let i = 0; i < 42; i++) {
+      const day = addDays(start, i), k = ymd(day), list = byDay[k] || [];
+      html += `<button class="mday ${day.getMonth() !== d.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k === sel ? 'sel' : ''}" data-d="${k}">
+        <span class="n">${day.getDate()}</span>
+        <span class="pips">${list.slice(0, 3).map(() => '<i></i>').join('')}${list.length > 3 ? '<b>+</b>' : ''}</span></button>`;
+    }
+    html += '</div></div>';
+    const dayList = byDay[sel] || [];
+    html += `<div class="day-head">${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>`
+      + (dayList.length ? '<div class="card list">' + dayList.map(agendaRow).join('') + '</div>'
+        : `<div class="empty muted" style="padding:20px">Free day. <a href="#" id="m-add" style="color:var(--teal)">Book it</a></div>`);
+    if ($('#cal') !== el) return;
+    el.innerHTML = html;
+    el.querySelector('.mgrid').onclick = (e) => {
+      const b = e.target.closest('.mday'); if (!b) return;
+      if (b.dataset.d === sel) return newBooking(sel + 'T' + Settings.get('day_start', '10:00'));
+      Cal.date = new Date(b.dataset.d + 'T00:00'); renderCal();
+    };
+    const ma = $('#m-add'); if (ma) ma.onclick = (e) => { e.preventDefault(); newBooking(sel + 'T' + Settings.get('day_start', '10:00')); };
+    return;
+  }
+  // Day / week timeline
+  const days = mode === 'week' ? [...Array(7)].map((_, i) => addDays(Cal.weekStart(d), i)) : [new Date(d.getFullYear(), d.getMonth(), d.getDate())];
+  label.textContent = mode === 'week'
+    ? `${days[0].toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${days[6].toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
+    : d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  const rows = await bookingsBetween(days[0], addDays(days[days.length - 1], 1));
+  const today = ymd(new Date());
+  let html = `<div class="tl ${mode}"><div class="tl-head"><span></span>${days.map(x => `<button class="tl-day ${ymd(x) === today ? 'today' : ''}" data-d="${ymd(x)}">
+      <small>${x.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>${x.getDate()}</b></button>`).join('')}</div>
+    <div class="tl-body" id="tl-body"><div class="tl-hours">`;
+  for (let h = DAY_FROM; h < DAY_TO; h++) html += `<span style="height:${HOUR_PX}px">${pad(h)}:00</span>`;
+  html += '</div>';
+  for (const day of days) {
+    const k = ymd(day);
+    const list = rows.filter(b => b.start_at.startsWith(k));
+    // Overlap lanes: greedy assignment
+    const lanes = [];
+    list.forEach(b => {
+      const s = minutesOf(b.start_at), e = s + b.duration_min;
+      let li = lanes.findIndex(end => end <= s); if (li < 0) { li = lanes.length; lanes.push(0); }
+      lanes[li] = e; b._lane = li;
+    });
+    html += `<div class="tl-col" data-d="${k}" style="height:${(DAY_TO - DAY_FROM) * HOUR_PX}px">`;
+    if (k === today) {
+      const now = new Date(), m = now.getHours() * 60 + now.getMinutes();
+      if (m >= DAY_FROM * 60 && m < DAY_TO * 60) html += `<div class="now" style="top:${(m - DAY_FROM * 60) / 60 * HOUR_PX}px"></div>`;
+    }
+    list.forEach(b => {
+      const top = (minutesOf(b.start_at) - DAY_FROM * 60) / 60 * HOUR_PX, h = Math.max(22, b.duration_min / 60 * HOUR_PX - 2);
+      const w = 100 / lanes.length;
+      html += `<a class="ev ${b.deposit_paid ? 'paid' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)">
+        <b>${esc(mode === 'week' ? (b.first_name || '—') : bName(b))}</b>
+        ${mode === 'day' ? `<span>${fmtTime(b.start_at)} · ${fmtDur(b.duration_min)}${b.placement ? ' · ' + esc(b.placement) : ''}</span>
+        ${b.description ? `<span class="muted">${esc(b.description)}</span>` : ''}` : ''}</a>`;
+    });
+    html += '</div>';
+  }
+  html += '</div></div>';
+  if ($('#cal') !== el) return;
+  el.innerHTML = html;
+  const body = $('#tl-body');
+  body.scrollTop = (Math.max(DAY_FROM, (rows[0] ? +rows[0].start_at.slice(11, 13) : 9) - 1) - DAY_FROM) * HOUR_PX;
+  el.querySelector('.tl-head').onclick = (e) => {
+    const b = e.target.closest('.tl-day'); if (!b || mode === 'day') return;
+    Cal.date = new Date(b.dataset.d + 'T00:00'); Cal.mode = 'day'; render();
+  };
+  body.addEventListener('click', (e) => {
+    const col = e.target.closest('.tl-col'); if (!col || e.target.closest('.ev')) return;
+    const y = e.clientY - col.getBoundingClientRect().top;
+    const m = DAY_FROM * 60 + Math.floor(y / HOUR_PX * 2) * 30;
+    newBooking(`${col.dataset.d}T${pad(Math.floor(m / 60))}:${pad(m % 60)}`);
+  });
+}
+const minutesOf = (s) => +s.slice(11, 13) * 60 + +s.slice(14, 16);
+
+function agendaRow(b) {
+  const end = new Date(new Date(b.start_at).getTime() + b.duration_min * 60000);
+  return `<a class="c-row" href="#booking-edit/${b.id}">
+    <span class="time-col"><b>${fmtTime(b.start_at)}</b><small class="muted">${fmtTime(end)}</small></span>
+    <span class="c-main"><span class="c-n">${esc(bName(b))}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
+      <span class="muted c-sub">${esc([b.placement, b.description].filter(Boolean).join(' · ') || fmtDur(b.duration_min))}</span></span>
+    ${b.quote != null ? `<span class="price ${b.deposit_paid ? 'paid' : ''}" data-tip="${b.deposit_paid ? 'Deposit paid' : 'Deposit not paid'}">${money(b.quote)}</span>` : ''}
+    <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
+}
+
+function viewImage(src) {
+  const o = document.createElement('div');
+  o.id = 'img-viewer'; o.innerHTML = `<img src="${src}" alt="">`;
+  o.onclick = () => o.remove();
+  document.body.appendChild(o);
+}
+
 /* ---------- Clients helpers ---------- */
 const fullName = (c) => [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unnamed';
 function avatar(c, url, size = '') {
@@ -489,7 +831,7 @@ const Dirty = {
 addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
 /* ---------- Router ---------- */
-const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients' };
+const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book' };
 let currentHash = location.hash;
 function render() {
   if (location.hash !== currentHash && !Dirty.ok()) { history.replaceState(null, '', currentHash || '#'); return; }
@@ -520,6 +862,7 @@ addEventListener('hashchange', render);
   try {
     await migrate();
     await Settings.load();
+    Cal.mode = Settings.get('cal_mode', innerWidth >= 900 ? 'week' : 'day');
     const info = await DB.info();
     badge.textContent = info.mode === 'opfs' ? 'Saved on device' : 'Not saving';
     badge.className = 'badge ' + (info.mode === 'opfs' ? 'ok' : 'warn');
