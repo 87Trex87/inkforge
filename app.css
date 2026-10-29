@@ -15,6 +15,7 @@
   --ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
@@ -198,6 +199,15 @@ textarea.in { padding: 12px 14px; resize: vertical; min-height: 0; display: bloc
 .in::-webkit-calendar-picker-indicator { filter: invert(.7); }
 .in { color-scheme: dark; }
 .tl.week .ev { padding: 3px 4px; } .tl.week .ev b { font-size: 11px; }
+.ev.busy { z-index: 0; cursor: not-allowed; }
+.gsync.syncing svg { animation: spin 1s linear infinite; color: var(--teal); }
+.gsync.ok { color: var(--teal); }
+.gsync.error { color: var(--red); border-color: var(--red); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.guide { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 12px; }
+.guide summary { cursor: pointer; color: var(--teal); font-weight: 600; }
+.guide ol { padding-left: 20px; margin: 10px 0; } .guide li { margin-bottom: 8px; }
+.guide code { background: var(--bg3); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }
 .ev.busy { background: repeating-linear-gradient(45deg, rgba(154,163,163,.12) 0 6px, rgba(154,163,163,.06) 6px 12px); border-left-color: var(--ink2); color: var(--ink2); }
 
 .time-col { display: flex; flex-direction: column; width: 64px; flex: none; font-size: 13px; }

@@ -56,7 +56,12 @@ const MIGRATIONS = [
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      booking_id INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
      photo_ref TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);
-   CREATE INDEX idx_bphotos_booking ON booking_photos (booking_id);`
+   CREATE INDEX idx_bphotos_booking ON booking_photos (booking_id);`,
+  // v4: Google Calendar sync. gcal_synced_at = local updated_at value last pushed/pulled.
+  `ALTER TABLE bookings ADD COLUMN gcal_synced_at TEXT;
+   CREATE TABLE gcal_deletes (gcal_id TEXT PRIMARY KEY);
+   CREATE TABLE gcal_busy (start_at TEXT NOT NULL, end_at TEXT NOT NULL);
+   CREATE INDEX idx_gcal_busy ON gcal_busy (start_at);`
 ];
 const SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -274,7 +279,9 @@ const VIEWS = {
       }
       $('#c-del').onclick = async () => {
         if (!confirm(`Delete ${fullName(c)}?\n\nThis permanently removes the client and their photo. Their bookings stay on the calendar without a client.`)) return;
+        await DB.run('UPDATE bookings SET gcal_synced_at = NULL WHERE client_id = ?', [c.id]);
         await DB.run('DELETE FROM clients WHERE id = ?', [c.id]);
+        Gcal.soon();
         await Media.release(c.photo_ref);
         toast('Client deleted.'); location.hash = 'clients';
       };
@@ -337,6 +344,8 @@ const VIEWS = {
         if (cid) {
           await DB.run(`UPDATE clients SET ${cols.map(k => k + ' = ?').join(', ')}, photo_ref = ?, updated_at = datetime('now') WHERE id = ?`, [...vals, photoRef, cid]);
           if (c.photo_ref && c.photo_ref !== photoRef) await Media.release(c.photo_ref);
+          await DB.run('UPDATE bookings SET gcal_synced_at = NULL WHERE client_id = ?', [cid]);  // name/phone live in Google notes
+          Gcal.soon();
         } else {
           await DB.run(`INSERT INTO clients (${cols.join(', ')}, photo_ref) VALUES (${cols.map(() => '?').join(', ')}, ?)`, [...vals, photoRef]);
           cid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
@@ -358,6 +367,7 @@ const VIEWS = {
           <button class="btn icon-btn" id="cal-prev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
           <button class="btn small" id="cal-today" style="min-height:46px">Today</button>
           <button class="btn icon-btn" id="cal-next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+          ${Gcal.enabled() ? `<button class="btn icon-btn gsync ${Gcal.state}" id="gcal-btn" aria-label="Sync Google Calendar"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg></button>` : ''}
           <button class="btn primary icon-btn" id="cal-add" data-tip="New booking" aria-label="New booking"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
         </div>
       </div>
@@ -368,6 +378,11 @@ const VIEWS = {
       $('#cal-prev').onclick = () => Cal.shift(-1);
       $('#cal-next').onclick = () => Cal.shift(1);
       $('#cal-today').onclick = () => { Cal.date = new Date(); renderCal(); };
+      const gb = $('#gcal-btn');
+      if (gb) {
+        Gcal.setState(Gcal.state);
+        gb.onclick = () => Gcal.sync({ interactive: true }).then(() => { toast('Synced.'); renderCal(); }).catch(e => toast('Google sync: ' + e.message, 6000));
+      }
       $('#cal-add').onclick = () => newBooking(ymd(Cal.date) + 'T' + Settings.get('day_start', '10:00'));
       renderCal();
     }
@@ -483,9 +498,11 @@ const VIEWS = {
       const del = $('#b-del');
       if (del) del.onclick = async () => {
         if (!confirm('Delete this booking and its reference photos?')) return;
-        await DB.run('DELETE FROM bookings WHERE id = ?', [b.id]);
+        await DB.tx([
+          ...(b.gcal_id ? [{ sql: 'INSERT OR IGNORE INTO gcal_deletes VALUES (?)', params: [b.gcal_id] }] : []),
+          { sql: 'DELETE FROM bookings WHERE id = ?', params: [b.id] }]);
         for (const p of photos) await Media.release(p.photo_ref);
-        Dirty.set(false); toast('Booking deleted.'); history.back();
+        Dirty.set(false); toast('Booking deleted.'); Gcal.soon(); history.back();
       };
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -504,7 +521,7 @@ const VIEWS = {
           ...refs.map((r, i) => ({ sql: 'INSERT INTO booking_photos (booking_id, photo_ref, sort) VALUES (?, ?, ?)', params: [bid, r, i] }))]);
         for (const p of photos) if (!refs.includes(p.photo_ref)) await Media.release(p.photo_ref);
         Cal.date = new Date(d.date + 'T00:00');
-        Dirty.set(false); toast('Booking saved.');
+        Dirty.set(false); toast('Booking saved.'); Gcal.soon();
         location.replace('#book');
       });
     }
@@ -537,6 +554,28 @@ const VIEWS = {
           <label class="field"><span>Usual start time ${help('Default time for new bookings.')}</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
         </div>
       </div>
+      <div class="card"><h2>Google Calendar ${help('Bookings sync both ways with an "InkForge" calendar in your Google account. Only time, title and the labelled note lines are used; everything else in Google is ignored.')}</h2>
+        <div id="gcal-status" style="margin-bottom:12px"></div>
+        <label class="field"><span>OAuth client ID ${help('Created once in Google Cloud. See the setup guide below.')}</span>
+          <input class="in" id="s-gid" value="${esc(Settings.get('gcal_client_id'))}" placeholder="…apps.googleusercontent.com" autocapitalize="off" spellcheck="false"></label>
+        <label class="toggle" style="display:inline-flex;margin-bottom:12px" data-tip="Your personal Google events appear as grey blocks, with no details.">
+          <input type="checkbox" id="s-gbusy" ${Settings.get('gcal_busy', '1') === '1' ? 'checked' : ''}><span>Show personal events as busy</span></label>
+        <div class="row">
+          <button class="btn primary" id="g-connect">Connect</button>
+          <button class="btn primary" id="g-sync" hidden>Sync now</button>
+          <button class="btn danger" id="g-off" hidden>Disconnect</button>
+        </div>
+        <details class="guide"><summary>Setup guide (one time, about 5 minutes)</summary>
+          <ol>
+            <li>Open <b>console.cloud.google.com</b> and create a project called <b>InkForge</b>.</li>
+            <li><b>APIs &amp; Services › Library</b>: search <b>Google Calendar API</b> and press Enable.</li>
+            <li><b>Google Auth Platform</b> (OAuth consent screen): app name InkForge, your email, audience <b>External</b>. Under <b>Audience › Test users</b>, add your own Gmail address.</li>
+            <li><b>Clients › Create client</b>: type <b>Web application</b>. Under <b>Authorized JavaScript origins</b> add <code>${esc(location.origin)}</code> (add your https address later too).</li>
+            <li>Copy the <b>Client ID</b>, paste it above, then press Connect.</li>
+          </ol>
+          <p class="muted">Google only lets InkForge manage calendars it creates, plus see when you're busy. It cannot read or change your other events.</p>
+        </details>
+      </div>
       <div class="card"><h2>Storage ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</h2>
         <div id="storage-info" class="muted">Checking…</div>
       </div>
@@ -554,6 +593,26 @@ const VIEWS = {
       $('#s-studio').addEventListener('change', save('studio_name'));
       $('#s-cur').addEventListener('change', save('currency'));
       $('#s-start').addEventListener('change', save('day_start'));
+      $('#s-gid').addEventListener('change', save('gcal_client_id'));
+      $('#s-gbusy').addEventListener('change', async (e) => { await Settings.set('gcal_busy', e.target.checked ? '1' : '0'); Gcal.soon(); });
+      const gsync = async () => {
+        try { await Gcal.sync({ interactive: true }); toast('Synced with Google Calendar.'); }
+        catch (e) { toast('Google sync: ' + e.message, 6000); }
+        renderGcalStatus();
+      };
+      $('#g-connect').onclick = async () => {
+        const id = $('#s-gid').value.trim();
+        if (!/\.apps\.googleusercontent\.com$/.test(id)) return toast('Paste the Client ID first (ends in .apps.googleusercontent.com).', 5000);
+        await Settings.set('gcal_client_id', id); await Settings.set('gcal_on', '1');
+        await gsync();
+        if (!Gcal.hasToken()) { await Settings.set('gcal_on', '0'); renderGcalStatus(); }
+      };
+      $('#g-sync').onclick = gsync;
+      $('#g-off').onclick = async () => {
+        if (!confirm('Disconnect Google Calendar?\n\nBookings stay in InkForge and in Google; they just stop syncing.')) return;
+        await Gcal.disconnect(); renderGcalStatus();
+      };
+      renderGcalStatus();
       $('#b-export').onclick = exportBackup;
       $('#b-import').onclick = () => $('#import-file').click();
       const lb = Settings.get('last_backup');
@@ -718,6 +777,8 @@ async function renderCal() {
     ? `${days[0].toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} – ${days[6].toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`
     : d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   const rows = await bookingsBetween(days[0], addDays(days[days.length - 1], 1));
+  const busy = Settings.get('gcal_busy', '1') === '1'
+    ? await DB.all('SELECT start_at, end_at FROM gcal_busy WHERE start_at < ? AND end_at > ?', [ymd(addDays(days[days.length - 1], 1)), ymd(days[0])]) : [];
   const today = ymd(new Date());
   let html = `<div class="tl ${mode}"><div class="tl-head"><span></span>${days.map(x => `<button class="tl-day ${ymd(x) === today ? 'today' : ''}" data-d="${ymd(x)}">
       <small>${x.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>${x.getDate()}</b></button>`).join('')}</div>
@@ -735,6 +796,15 @@ async function renderCal() {
       lanes[li] = e; b._lane = li;
     });
     html += `<div class="tl-col" data-d="${k}" style="height:${(DAY_TO - DAY_FROM) * HOUR_PX}px">`;
+    // Personal Google events: grey, details hidden, clipped to this day and the visible hours
+    const dayStart = k + 'T00:00', dayEnd = ymd(addDays(day, 1)) + 'T00:00';
+    for (const x of busy) {
+      if (x.start_at >= dayEnd || x.end_at <= dayStart) continue;
+      const s = Math.max(DAY_FROM * 60, x.start_at < dayStart ? 0 : minutesOf(x.start_at));
+      const e = Math.min(DAY_TO * 60, x.end_at >= dayEnd ? 1440 : minutesOf(x.end_at));
+      if (e <= s) continue;
+      html += `<div class="ev busy" style="top:${(s - DAY_FROM * 60) / 60 * HOUR_PX}px;height:${(e - s) / 60 * HOUR_PX - 2}px;left:0;width:calc(100% - 3px)" data-tip="Busy in your Google Calendar"><b>Busy</b></div>`;
+    }
     if (k === today) {
       const now = new Date(), m = now.getHours() * 60 + now.getMinutes();
       if (m >= DAY_FROM * 60 && m < DAY_TO * 60) html += `<div class="now" style="top:${(m - DAY_FROM * 60) / 60 * HOUR_PX}px"></div>`;
@@ -782,6 +852,256 @@ function viewImage(src) {
   o.id = 'img-viewer'; o.innerHTML = `<img src="${src}" alt="">`;
   o.onclick = () => o.remove();
   document.body.appendChild(o);
+}
+
+/* ---------- Google Calendar sync ----------
+   InkForge owns a dedicated "InkForge" calendar in the user's Google account.
+   Each booking = one event: title, start/end, and labelled note lines. Every other
+   Google event property (location, guests, attachments, colours...) is ignored.
+   Personal (primary) calendar is read only as free/busy times. */
+const NOTE_FOOTER = '— Synced from InkForge';
+const NOTE_LABELS = ['Client', 'Phone', 'Tattoo', 'Placement', 'Size', 'Quote', 'Deposit', 'Notes'];
+
+function buildNotes(b, c) {
+  const L = [];
+  if (c) L.push('Client: ' + fullName(c));
+  if (c?.phone) L.push('Phone: ' + c.phone);
+  if (b.description) L.push('Tattoo: ' + b.description);
+  if (b.placement) L.push('Placement: ' + b.placement);
+  if (b.size) L.push('Size: ' + b.size);
+  if (b.quote != null) L.push('Quote: ' + money(b.quote));
+  if (b.deposit != null) L.push('Deposit: ' + money(b.deposit) + (b.deposit_paid ? ' (paid)' : ' (unpaid)'));
+  if (b.notes) L.push('Notes: ' + b.notes);
+  L.push(NOTE_FOOTER);
+  return L.join('\n');
+}
+
+// Reads labelled lines back. Only labels present in the text are returned; unlabelled lines go to notes.
+function parseNotes(text) {
+  text = String(text || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n').replace(/<[^>]+>/g, '');
+  const ta = document.createElement('textarea'); ta.innerHTML = text; text = ta.value;
+  const out = {}, extra = [];
+  let inNotes = false;
+  const re = new RegExp(`^\\s*(${NOTE_LABELS.join('|')})\\s*:\\s*(.*)$`, 'i');
+  const num = (s) => { const n = parseFloat(String(s).replace(/[^\d.,-]/g, '').replace(/,/g, '')); return isNaN(n) ? null : n; };
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim().startsWith(NOTE_FOOTER.slice(0, 1)) && line.includes('InkForge')) break;
+    const m = line.match(re);
+    if (m && !(inNotes && !NOTE_LABELS.slice(0, -1).some(l => l.toLowerCase() === m[1].toLowerCase()))) {
+      const k = m[1].toLowerCase(), v = m[2].trim();
+      inNotes = false;
+      if (k === 'client') out.client = v;
+      else if (k === 'tattoo') out.description = v || null;
+      else if (k === 'placement') out.placement = v || null;
+      else if (k === 'size') out.size = v || null;
+      else if (k === 'quote') out.quote = num(v);
+      else if (k === 'deposit') { out.deposit = num(v); out.deposit_paid = /\bpaid\b/i.test(v) && !/unpaid/i.test(v) ? 1 : 0; }
+      else if (k === 'notes') { inNotes = true; if (v) extra.push(v); }
+    } else if (line.trim()) extra.push(line.replace(/\s+$/, ''));
+  }
+  if (extra.length || 'client' in out || 'description' in out) out.notes = extra.join('\n') || null;
+  return out;
+}
+
+const localStamp = (iso) => { const d = new Date(iso); return `${ymd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const sqlTime = (s) => new Date(s.replace(' ', 'T') + 'Z');
+
+const Gcal = {
+  SCOPES: ['https://www.googleapis.com/auth/calendar.app.created', 'https://www.googleapis.com/auth/calendar.freebusy'],
+  token: null, exp: 0, running: false, state: 'off', msg: '', _t: null,
+  enabled() { return Settings.get('gcal_on') === '1' && !!Settings.get('gcal_client_id'); },
+  hasToken() { return !!this.token && Date.now() < this.exp - 60000; },
+
+  async loadGis() {
+    if (window.google?.accounts?.oauth2) return;
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = res; s.onerror = () => rej(new Error('Could not load Google sign-in. Check your connection.'));
+      document.head.appendChild(s);
+    });
+  },
+  async auth() {
+    await this.loadGis();
+    await new Promise((res, rej) => {
+      google.accounts.oauth2.initTokenClient({
+        client_id: Settings.get('gcal_client_id'), scope: this.SCOPES.join(' '),
+        callback: (r) => {
+          if (r.error) return rej(new Error(r.error_description || r.error));
+          if (!google.accounts.oauth2.hasGrantedAllScopes(r, ...this.SCOPES)) return rej(new Error('Please tick both calendar permissions when Google asks.'));
+          this.token = r.access_token; this.exp = Date.now() + r.expires_in * 1000; res();
+        },
+        error_callback: (e) => rej(new Error(e.type === 'popup_closed' ? 'Google sign-in was closed.' : (e.message || 'Google sign-in failed.')))
+      }).requestAccessToken({ prompt: '' });
+    });
+  },
+  async api(path, opts = {}) {
+    const r = await fetch('https://www.googleapis.com/calendar/v3' + path, {
+      method: opts.method || 'GET',
+      headers: { Authorization: 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+    if (r.status === 204) return null;
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error(j.error?.message || 'Google error ' + r.status); e.status = r.status; throw e; }
+    return j;
+  },
+  setState(state, msg = '') {
+    this.state = state; this.msg = msg;
+    const b = $('#gcal-btn');
+    if (b) {
+      b.className = 'btn icon-btn gsync ' + state;
+      b.dataset.tip = state === 'syncing' ? 'Syncing with Google…' : state === 'error' ? 'Sync problem: ' + msg + ' Tap to retry.'
+        : this.hasToken() ? 'Synced with Google. Tap to sync now.' : 'Tap to sign in to Google and sync.';
+    }
+    const s = $('#gcal-status'); if (s) renderGcalStatus();
+  },
+
+  async calId() {
+    let id = Settings.get('gcal_cal_id');
+    if (id) {
+      try { await this.api('/calendars/' + encodeURIComponent(id)); return id; }
+      catch (e) { if (e.status !== 404 && e.status !== 403) throw e; }
+    }
+    const c = await this.api('/calendars', { method: 'POST', body: {
+      summary: 'InkForge', description: 'Tattoo bookings synced from InkForge.',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } });
+    await Settings.set('gcal_cal_id', c.id);
+    await Settings.set('gcal_sync_token', '');
+    await DB.run('UPDATE bookings SET gcal_id = NULL, gcal_updated = NULL, gcal_synced_at = NULL');
+    await DB.run('DELETE FROM gcal_deletes');
+    return c.id;
+  },
+
+  toEvent(b, c) {
+    const start = new Date(b.start_at), end = new Date(start.getTime() + b.duration_min * 60000);
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return {
+      summary: [c ? fullName(c) : (b.description || 'Booking'), b.placement].filter(Boolean).join(' · '),
+      description: buildNotes(b, c),
+      start: { dateTime: start.toISOString(), timeZone: tz },
+      end: { dateTime: end.toISOString(), timeZone: tz },
+      extendedProperties: { private: { inkforgeId: String(b.id) } }
+    };
+  },
+
+  async push(C, b) {
+    const c = b.client_id ? await DB.one('SELECT * FROM clients WHERE id = ?', [b.client_id]) : null;
+    const body = this.toEvent(b, c);
+    let ev = null;
+    if (b.gcal_id) {
+      try { ev = await this.api(`${C}/events/${encodeURIComponent(b.gcal_id)}`, { method: 'PATCH', body }); }
+      catch (e) { if (e.status !== 404 && e.status !== 410) throw e; }
+    }
+    if (!ev || ev.status === 'cancelled') ev = await this.api(`${C}/events`, { method: 'POST', body });
+    await DB.run('UPDATE bookings SET gcal_id = ?, gcal_updated = ?, gcal_synced_at = ? WHERE id = ?', [ev.id, ev.updated, b.updated_at, b.id]);
+  },
+
+  async applyEvent(ev) {
+    const local = await DB.one('SELECT * FROM bookings WHERE gcal_id = ?', [ev.id]);
+    if (ev.status === 'cancelled') {
+      if (local) {
+        const refs = (await DB.all('SELECT photo_ref FROM booking_photos WHERE booking_id = ?', [local.id])).map(r => r.photo_ref);
+        await DB.run('DELETE FROM bookings WHERE id = ?', [local.id]);
+        for (const r of refs) await Media.release(r);
+      }
+      return;
+    }
+    if (!ev.start?.dateTime || ev.recurrence || ev.recurringEventId) return;   // all-day / repeating: ignored
+    if (local && local.gcal_updated === ev.updated) return;                    // echo of our own write
+    const start = localStamp(ev.start.dateTime);
+    const dur = Math.max(15, Math.round((new Date(ev.end.dateTime) - new Date(ev.start.dateTime)) / 60000));
+    const f = parseNotes(ev.description);
+    const fields = ['description', 'placement', 'size', 'quote', 'deposit', 'deposit_paid', 'notes'].filter(k => k in f);
+    if (local) {
+      const dirty = local.updated_at !== local.gcal_synced_at;
+      if (dirty && sqlTime(local.updated_at) > new Date(ev.updated)) return;   // local edit is newer; push wins
+      await DB.run(`UPDATE bookings SET start_at = ?, duration_min = ?, ${fields.map(k => k + ' = ?, ').join('')}
+        gcal_updated = ?, updated_at = datetime('now'), gcal_synced_at = datetime('now') WHERE id = ?`,
+        [start, dur, ...fields.map(k => f[k]), ev.updated, local.id]);
+    } else {
+      // Created directly in the InkForge Google calendar: import it, then let push tidy the notes.
+      let clientId = null;
+      if (f.client) clientId = (await DB.one(`SELECT id FROM clients WHERE lower(trim(first_name || ' ' || last_name)) = lower(trim(?)) LIMIT 1`, [f.client]))?.id ?? null;
+      if (!('description' in f) && ev.summary) f.description = ev.summary;
+      await DB.run(`INSERT INTO bookings (client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, gcal_id, gcal_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [clientId, start, dur, f.description ?? null, f.placement ?? null, f.size ?? null, f.quote ?? null, f.deposit ?? null, f.deposit_paid ?? 0, f.notes ?? null, ev.id, ev.updated]);
+    }
+  },
+
+  async pull(C) {
+    let token = Settings.get('gcal_sync_token'), page = '', next = '';
+    const items = [];
+    for (;;) {
+      const q = new URLSearchParams({ maxResults: '250', showDeleted: 'true' });
+      if (token) q.set('syncToken', token);
+      if (page) q.set('pageToken', page);
+      let r;
+      try { r = await this.api(`${C}/events?${q}`); }
+      catch (e) {
+        if (e.status === 410 && token) { token = ''; page = ''; items.length = 0; continue; }  // token expired: full resync
+        throw e;
+      }
+      items.push(...(r.items || []));
+      page = r.nextPageToken || '';
+      if (!page) { next = r.nextSyncToken || ''; break; }
+    }
+    for (const ev of items) await this.applyEvent(ev);
+    if (next) await Settings.set('gcal_sync_token', next);
+  },
+
+  async pullBusy() {
+    if (Settings.get('gcal_busy', '1') !== '1') { await DB.run('DELETE FROM gcal_busy'); return; }
+    const from = addDays(new Date(), -14), to = addDays(new Date(), 75);
+    const r = await this.api('/freeBusy', { method: 'POST', body: { timeMin: from.toISOString(), timeMax: to.toISOString(), items: [{ id: 'primary' }] } });
+    const list = r.calendars?.primary?.busy || [];
+    await DB.tx([{ sql: 'DELETE FROM gcal_busy' },
+      ...list.map(x => ({ sql: 'INSERT INTO gcal_busy VALUES (?, ?)', params: [localStamp(x.start), localStamp(x.end)] }))]);
+  },
+
+  async sync({ interactive = false } = {}) {
+    if (this.running || !this.enabled()) return;
+    if (!this.hasToken()) { if (!interactive) return; await this.auth(); }
+    this.running = true; this.setState('syncing');
+    try {
+      const cal = await this.calId(), C = '/calendars/' + encodeURIComponent(cal);
+      for (const { gcal_id } of await DB.all('SELECT gcal_id FROM gcal_deletes')) {
+        try { await this.api(`${C}/events/${encodeURIComponent(gcal_id)}`, { method: 'DELETE' }); }
+        catch (e) { if (![404, 410].includes(e.status)) throw e; }
+        await DB.run('DELETE FROM gcal_deletes WHERE gcal_id = ?', [gcal_id]);
+      }
+      await this.pull(C);
+      const dirty = await DB.all('SELECT * FROM bookings WHERE gcal_id IS NULL OR gcal_synced_at IS NULL OR updated_at <> gcal_synced_at');
+      for (const b of dirty) await this.push(C, b);
+      await this.pullBusy();
+      await Settings.set('gcal_last', new Date().toISOString());
+      this.setState('ok');
+    } catch (e) {
+      if (e.status === 401) this.token = null;
+      this.setState('error', e.message);
+      throw e;
+    } finally { this.running = false; }
+  },
+  // Background sync after local edits, only while signed in.
+  soon() {
+    clearTimeout(this._t);
+    if (this.enabled() && this.hasToken()) this._t = setTimeout(() => this.sync().then(() => renderCal()).catch(e => toast('Google sync: ' + e.message, 5000)), 1200);
+  },
+  async disconnect() {
+    if (this.token) { try { await this.loadGis(); google.accounts.oauth2.revoke(this.token, () => {}); } catch {} }
+    this.token = null; await Settings.set('gcal_on', '0'); this.setState('off');
+  }
+};
+
+function renderGcalStatus() {
+  const el = $('#gcal-status'); if (!el) return;
+  const last = Settings.get('gcal_last');
+  const on = Gcal.enabled();
+  el.innerHTML = `
+    <div class="stat"><span>Status</span><span>${!on ? 'Off' : Gcal.state === 'syncing' ? 'Syncing…' : Gcal.state === 'error' ? `<span style="color:var(--red)">${esc(Gcal.msg)}</span>` : Gcal.hasToken() ? '<span style="color:var(--teal)">Connected</span>' : 'Signed out (tap Sync)'}</span></div>
+    ${on && last ? `<div class="stat"><span>Last sync</span><span>${new Date(last).toLocaleString()}</span></div>` : ''}`;
+  $('#g-connect').hidden = on; $('#g-sync').hidden = !on; $('#g-off').hidden = !on;
 }
 
 /* ---------- Clients helpers ---------- */
