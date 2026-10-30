@@ -77,7 +77,25 @@ const MIGRATIONS = [
      kind TEXT NOT NULL, title TEXT NOT NULL, client_name TEXT,
      blocks TEXT NOT NULL, answers TEXT NOT NULL DEFAULT '{}',
      signature_ref TEXT, signed_at TEXT NOT NULL DEFAULT (datetime('now')));
-   CREATE INDEX idx_signed_client ON signed_forms (client_id);`
+   CREATE INDEX idx_signed_client ON signed_forms (client_id);`,
+  // v6: portfolio. Each photo has a full-size ref and a small grid thumbnail ref.
+  `CREATE TABLE portfolio_items (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     kind TEXT NOT NULL CHECK (kind IN ('tattoo', 'art', 'flash')),
+     title TEXT, description TEXT, placement TEXT, tags TEXT,
+     client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL,
+     made_on TEXT, price REAL, claimed INTEGER NOT NULL DEFAULT 0,
+     favourite INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE INDEX idx_pf_kind ON portfolio_items (kind, made_on);
+   CREATE INDEX idx_pf_client ON portfolio_items (client_id);
+   CREATE TABLE portfolio_photos (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     item_id INTEGER NOT NULL REFERENCES portfolio_items(id) ON DELETE CASCADE,
+     photo_ref TEXT NOT NULL, thumb_ref TEXT NOT NULL, label TEXT, sort INTEGER NOT NULL DEFAULT 0);
+   CREATE INDEX idx_pf_photos ON portfolio_photos (item_id);`
 ];
 
 /* Starter templates, inserted once when the forms tables are empty. Fully editable. */
@@ -159,7 +177,8 @@ const Media = {
     if (!name) return;
     const used = await DB.one(`SELECT 1 AS x FROM clients WHERE photo_ref = ?1
       UNION ALL SELECT 1 FROM booking_photos WHERE photo_ref = ?1
-      UNION ALL SELECT 1 FROM signed_forms WHERE signature_ref = ?1 LIMIT 1`, [name]);
+      UNION ALL SELECT 1 FROM signed_forms WHERE signature_ref = ?1
+      UNION ALL SELECT 1 FROM portfolio_photos WHERE photo_ref = ?1 OR thumb_ref = ?1 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
     const u = this.urls.get(name); if (u) { URL.revokeObjectURL(u); this.urls.delete(name); }
@@ -310,6 +329,9 @@ const VIEWS = {
         <div class="card"><h2>Bookings ${help('All sessions for this client, newest first.')}
             <button class="btn small" id="c-book" style="margin-left:auto">+ Book</button></h2>
           <div id="c-hist" class="muted">…</div></div>
+        <div class="card"><h2>Tattoos ${help('Portfolio pieces done on this client.')}
+            <button class="btn small" id="c-pf" style="margin-left:auto">+ Add</button></h2>
+          <div id="c-pfs" class="muted">…</div></div>
         <div class="card"><h2>Forms ${help('Signed consent forms and aftercare sent to this client.')}
             <span class="row" style="margin-left:auto;gap:6px" id="c-fbtns"></span></h2>
           <div id="c-forms" class="muted">…</div></div>
@@ -329,6 +351,14 @@ const VIEWS = {
           he.innerHTML = hist.map(b => agendaRow(b).replace(/<b>[^<]*<\/b><small/, `<b>${new Date(b.start_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' })}</b><small`)).join('')
             + `<div class="muted count">${hist.length} session${hist.length === 1 ? '' : 's'}${total ? ' · ' + money(total) + ' quoted' : ''}</div>`;
         }
+      }
+      $('#c-pf').onclick = () => { PF.ctx = { kind: 'tattoo', clientId: c.id }; location.hash = 'pf-edit/new'; };
+      const pfs = await DB.all(`SELECT p.id, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS thumb
+        FROM portfolio_items p WHERE p.client_id = ? ORDER BY coalesce(p.made_on, p.created_at) DESC`, [c.id]);
+      const pe = $('#c-pfs');
+      if (pe) {
+        const urls = await Promise.all(pfs.map(p => Media.url(p.thumb)));
+        pe.innerHTML = pfs.length ? `<div class="pf-strip">${pfs.map((p, i) => `<a class="pf-tile" href="#pf/${p.id}">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</a>`).join('')}</div>` : 'None yet.';
       }
       const tpls = await DB.all('SELECT id, kind FROM form_templates ORDER BY id');
       const firstOf = (k) => tpls.find(t => t.kind === k)?.id;
@@ -503,6 +533,7 @@ const VIEWS = {
         <div class="field"><span class="lbl">Reference photos ${help('Client references or your sketch. Stored on the device, included in backups.')}</span>
           <div class="thumbs" id="b-thumbs"></div></div>
         <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(b.notes)}</textarea></label>
+        ${b.id ? `<button type="button" class="btn small" id="b-pf" style="margin-bottom:8px" data-tip="Add the finished tattoo to your portfolio, prefilled from this booking">+ Add finished tattoo to portfolio</button>` : ''}
         <div class="form-foot row">
           ${b.id ? '<button type="button" class="btn danger icon-btn" id="b-del" data-tip="Delete booking" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
           <button type="button" class="btn" id="b-cancel">Cancel</button>
@@ -567,6 +598,11 @@ const VIEWS = {
       Dirty.set(false);
       f.addEventListener('input', (e) => { if (e.target !== ci) Dirty.set(true); });
       $('#b-cancel').onclick = () => history.back();
+      const bpf = $('#b-pf');
+      if (bpf) bpf.onclick = () => {
+        PF.ctx = { kind: 'tattoo', clientId, bookingId: b.id, title: b.description, description: '', placement: b.placement, date: b.start_at.slice(0, 10) };
+        location.hash = 'pf-edit/new';
+      };
       const del = $('#b-del');
       if (del) del.onclick = async () => {
         if (!confirm('Delete this booking and its reference photos?')) return;
@@ -601,7 +637,7 @@ const VIEWS = {
   studio: {
     title: () => 'Studio',
     render: () => `<div class="grid">
-      ${tile('portfolio', 'Portfolio', 'Tattoos, art and flash', true)}
+      ${tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio')}
       ${tile('stencil', 'Stencil maker', 'Photo to stencil', true)}
       ${tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')}
       ${tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', true)}</div>`
@@ -613,6 +649,194 @@ const VIEWS = {
       ${tile('quote', 'Quote calculator', 'Pricing rules', true)}
       ${tile('stock', 'Inventory', 'Stock and stock takes', true)}
       ${tile('rules', 'Rule book', 'Your studio rules', true)}</div>`
+  },
+  portfolio: {
+    title: () => 'Portfolio',
+    render: () => `
+      <div class="search-bar">
+        <input class="in" id="pf-q" type="search" placeholder="Search title, tag, placement…" value="${esc(PF.q)}" autocomplete="off">
+        <button class="btn primary icon-btn" id="pf-add" data-tip="Add to portfolio" aria-label="Add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="seg pf-seg" id="pf-filter">
+        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★']].map(([k, l]) =>
+          `<button data-f="${k}" class="${PF.filter === k ? 'on' : ''}" ${k === 'fav' ? 'data-tip="Favourites" aria-label="Favourites"' : ''}>${l}</button>`).join('')}
+      </div>
+      <div id="pf-grid"></div>`,
+    mount() {
+      $('#pf-q').addEventListener('input', (e) => { PF.q = e.target.value; renderPfGrid(); });
+      $('#pf-filter').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; PF.filter = b.dataset.f;
+        document.querySelectorAll('#pf-filter button').forEach(x => x.classList.toggle('on', x === b)); renderPfGrid(); };
+      $('#pf-add').onclick = () => { PF.ctx = { kind: ['tattoo', 'art', 'flash'].includes(PF.filter) ? PF.filter : 'tattoo' }; location.hash = 'pf-edit/new'; };
+      renderPfGrid();
+    }
+  },
+  pf: {
+    title: () => 'Portfolio',
+    render: () => '<div id="pf-view"></div>',
+    async mount(id) {
+      const it = await DB.one(`SELECT p.*, c.first_name, c.last_name FROM portfolio_items p LEFT JOIN clients c ON c.id = p.client_id WHERE p.id = ?`, [+id]);
+      const el = $('#pf-view');
+      if (!it) { el.innerHTML = '<div class="card muted">Not found.</div>'; return; }
+      const photos = await DB.all('SELECT * FROM portfolio_photos WHERE item_id = ? ORDER BY sort, id', [it.id]);
+      const urls = await Promise.all(photos.map(p => Media.url(p.photo_ref)));
+      $('#view-title').textContent = PF_KIND[it.kind];
+      const field = (l, v) => v ? `<div class="stat"><span class="muted">${l}</span><span class="val">${v}</span></div>` : '';
+      el.innerHTML = `
+        <div class="carousel" id="pf-car">${photos.map((p, i) => `<div class="slide"><img src="${urls[i]}" alt="" data-i="${i}">
+          ${p.label ? `<span class="slide-label">${esc(p.label)}</span>` : ''}</div>`).join('') || '<div class="slide empty-slide muted">No photos</div>'}</div>
+        ${photos.length > 1 ? `<div class="dots" id="pf-dots">${photos.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
+        <div class="card">
+          <div class="row" style="justify-content:space-between;flex-wrap:nowrap">
+            <h2 style="margin:0">${esc(it.title || PF_KIND[it.kind])}</h2>
+            <button class="fav ${it.favourite ? 'on' : ''}" id="pf-fav" data-tip="Favourite" aria-label="Favourite">★</button>
+          </div>
+          ${it.kind === 'flash' ? `<div class="row" style="margin:8px 0 4px">
+            ${it.price != null ? `<span class="price paid">${money(it.price)}</span>` : ''}
+            <label class="toggle" data-tip="Mark this flash as taken"><input type="checkbox" id="pf-claimed" ${it.claimed ? 'checked' : ''}><span>Claimed</span></label></div>` : ''}
+          ${it.description ? `<p class="pre">${esc(it.description)}</p>` : ''}
+          ${field('Placement', esc(it.placement || ''))}
+          ${field('Client', it.client_id ? `<a href="#client/${it.client_id}" style="color:var(--teal)">${esc(fullName(it))}</a>` : '')}
+          ${field('Date', it.made_on ? new Date(it.made_on + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '')}
+          ${it.tags ? `<div style="margin-top:10px">${tagChips(it.tags).replace('justify-content:center', '')}</div>` : ''}
+        </div>
+        <div class="row" style="margin-bottom:24px">
+          <button class="btn danger icon-btn" id="pf-del" data-tip="Delete" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+          <button class="btn" id="pf-share" ${photos.length ? '' : 'disabled'}>Share</button>
+          <button class="btn primary" style="flex:1" onclick="location.hash='pf-edit/${it.id}'">Edit</button>
+        </div>`;
+      const car = $('#pf-car'), dots = $('#pf-dots');
+      const cur = () => Math.round(car.scrollLeft / car.clientWidth);
+      if (dots) car.addEventListener('scroll', () => dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i === cur())), { passive: true });
+      car.onclick = (e) => { const img = e.target.closest('img'); if (img) viewImage(img.src); };
+      $('#pf-fav').onclick = async (e) => {
+        it.favourite = it.favourite ? 0 : 1;
+        await DB.run('UPDATE portfolio_items SET favourite = ? WHERE id = ?', [it.favourite, it.id]);
+        e.currentTarget.classList.toggle('on', !!it.favourite);
+      };
+      const cl = $('#pf-claimed');
+      if (cl) cl.onchange = () => DB.run(`UPDATE portfolio_items SET claimed = ?, updated_at = datetime('now') WHERE id = ?`, [cl.checked ? 1 : 0, it.id]);
+      $('#pf-share').onclick = async () => {
+        const p = photos[cur()] || photos[0];
+        const f = await (await (await Media.dir()).getFileHandle(p.photo_ref)).getFile();
+        const file = new File([f], (it.title || 'inkforge').replace(/[^\w-]+/g, '_') + '.jpg', { type: 'image/jpeg' });
+        try {
+          if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: it.title || '' });
+          else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); }
+        } catch (e) { if (e.name !== 'AbortError') toast('Could not share: ' + e.message); }
+      };
+      $('#pf-del').onclick = async () => {
+        if (!confirm(`Delete "${it.title || PF_KIND[it.kind]}" and its ${photos.length} photo${photos.length === 1 ? '' : 's'}?`)) return;
+        await DB.run('DELETE FROM portfolio_items WHERE id = ?', [it.id]);
+        for (const p of photos) { await Media.release(p.photo_ref); await Media.release(p.thumb_ref); }
+        toast('Deleted.'); history.back();
+      };
+    }
+  },
+  'pf-edit': {
+    title: (id) => id === 'new' ? 'Add to portfolio' : 'Edit',
+    render: () => '<form id="pf-form" class="card" autocomplete="off"></form>',
+    async mount(id) {
+      const ctx = PF.ctx || {}; PF.ctx = null;
+      const it = id === 'new'
+        ? { kind: ctx.kind || 'tattoo', title: ctx.title || '', description: ctx.description || '', placement: ctx.placement || '', tags: '',
+            client_id: ctx.clientId || null, booking_id: ctx.bookingId || null, made_on: ctx.date || ymd(new Date()), price: null, claimed: 0 }
+        : await DB.one('SELECT * FROM portfolio_items WHERE id = ?', [+id]);
+      if (!it) { location.hash = 'portfolio'; return; }
+      const old = it.id ? await DB.all('SELECT * FROM portfolio_photos WHERE item_id = ? ORDER BY sort, id', [it.id]) : [];
+      // Working list: existing rows {photo_ref, thumb_ref, label} or new {blob, thumb, url, label}
+      const photos = await Promise.all(old.map(async p => ({ ...p, url: await Media.url(p.thumb_ref) })));
+      let clientId = it.client_id;
+      const client = clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [clientId]) : null;
+      const cur = Settings.get('currency');
+      const f = $('#pf-form');
+      f.innerHTML = `
+        <div class="seg" id="pf-kind" style="margin-bottom:14px">${Object.entries(PF_KIND).map(([k, l]) => `<button type="button" data-k="${k}" class="${it.kind === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+        <div class="field"><span class="lbl">Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil or sketch. Tap ◀ to move a photo forward.')}</span>
+          <div class="thumbs pf-thumbs" id="pf-thumbs"></div></div>
+        <label class="field"><span>Title</span><input class="in" name="title" value="${esc(it.title)}" placeholder="Peony sleeve"></label>
+        <label class="field"><span>Description</span><textarea class="in" name="description" rows="2">${esc(it.description)}</textarea></label>
+        <div class="two">
+          <label class="field"><span>Placement</span><input class="in" name="placement" value="${esc(it.placement)}"></label>
+          <label class="field"><span>Date</span><input class="in" type="date" name="made_on" value="${esc(it.made_on)}"></label>
+        </div>
+        <label class="field"><span>Tags ${help('Comma separated, e.g. blackwork, floral, fine-line. Used by search.')}</span><input class="in" name="tags" value="${esc(it.tags)}" placeholder="blackwork, floral"></label>
+        <label class="field pf-client"><span>Client (optional)</span>
+          <div class="picker"><input class="in" id="pf-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
+          <div class="pick-list" id="pf-client-list" hidden></div></div></label>
+        <div class="two pf-flash">
+          <label class="field"><span>Price${cur ? ` (${esc(cur)})` : ''}</span><input class="in" name="price" type="number" inputmode="decimal" min="0" step="any" value="${it.price ?? ''}"></label>
+          <label class="field"><span>&nbsp;</span><label class="toggle"><input type="checkbox" name="claimed" ${it.claimed ? 'checked' : ''}><span>Claimed</span></label></label>
+        </div>
+        <div class="form-foot row">
+          <button type="button" class="btn" id="pf-cancel">Cancel</button>
+          <button type="submit" class="btn primary" style="flex:1">Save</button>
+        </div>`;
+      const syncKind = () => {
+        f.querySelector('.pf-flash').hidden = it.kind !== 'flash';
+        f.querySelector('.pf-client').hidden = it.kind !== 'tattoo';
+      };
+      syncKind();
+      $('#pf-kind').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; it.kind = b.dataset.k;
+        $('#pf-kind').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); syncKind(); Dirty.set(true); };
+      const LABELS = ['', 'Fresh', 'Healed', 'Stencil', 'Sketch', 'Process'];
+      const drawThumbs = () => {
+        $('#pf-thumbs').innerHTML = photos.map((p, i) => `
+          <div class="pf-ph"><div class="thumb ${i ? '' : 'cover'}"><img src="${p.url}" alt="">
+            <button type="button" data-rm="${i}" aria-label="Remove">&times;</button>
+            ${i ? `<button type="button" class="fwd" data-fwd="${i}" aria-label="Move forward">&#9664;</button>` : ''}</div>
+            <select class="in mini-sel" data-lbl="${i}">${LABELS.map(l => `<option value="${l}" ${p.label === l || (!p.label && !l) ? 'selected' : ''}>${l || 'No label'}</option>`).join('')}</select></div>`).join('')
+          + `<div class="pf-ph"><label class="thumb add" data-tip="Add photos"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+             <input type="file" accept="image/*" multiple hidden id="pf-file"></label></div>`;
+        $('#pf-file').addEventListener('change', async (e) => {
+          const files = [...e.target.files];
+          toast(files.length > 1 ? `Processing ${files.length} photos…` : 'Processing photo…');
+          for (const file of files) {
+            try {
+              const blob = await Media.shrink(file, 2048, 0.86), thumb = await Media.shrink(file, 480, 0.78);
+              photos.push({ blob, thumb, url: URL.createObjectURL(thumb), label: '' });
+            } catch { toast('Could not read an image.'); }
+          }
+          Dirty.set(true); drawThumbs();
+        });
+      };
+      $('#pf-thumbs').addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        if (b.dataset.rm != null) photos.splice(+b.dataset.rm, 1);
+        else if (b.dataset.fwd != null) { const i = +b.dataset.fwd; photos.splice(i - 1, 0, photos.splice(i, 1)[0]); }
+        Dirty.set(true); drawThumbs();
+      });
+      $('#pf-thumbs').addEventListener('change', (e) => { if (e.target.dataset.lbl != null) { photos[+e.target.dataset.lbl].label = e.target.value; Dirty.set(true); } });
+      drawThumbs();
+      clientPicker($('#pf-client'), $('#pf-client-list'), (cid) => { clientId = cid; Dirty.set(true); });
+      $('#pf-client').addEventListener('input', (e) => { if (!e.target.value.trim()) clientId = null; });
+      $('#pf-cancel').onclick = () => history.back();
+      f.addEventListener('input', (e) => { if (e.target.id !== 'pf-client') Dirty.set(true); });
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!photos.length) return toast('Add at least one photo.');
+        const d = Object.fromEntries(new FormData(f));
+        const flash = it.kind === 'flash';
+        const vals = [it.kind, d.title.trim() || null, d.description.trim() || null, d.placement.trim() || null,
+          d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ') || null,
+          it.kind === 'tattoo' ? clientId : null, it.booking_id ?? null, d.made_on || null,
+          flash && d.price !== '' ? +d.price : null, flash && d.claimed ? 1 : 0];
+        const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed';
+        const rows = [];
+        for (const p of photos) {
+          if (p.blob) rows.push({ photo_ref: await Media.save(p.blob, 'jpg'), thumb_ref: await Media.save(p.thumb, 'jpg'), label: p.label || null });
+          else rows.push({ photo_ref: p.photo_ref, thumb_ref: p.thumb_ref, label: p.label || null });
+        }
+        let pid = it.id;
+        if (pid) await DB.run(`UPDATE portfolio_items SET ${cols.split(', ').map(c => c + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, pid]);
+        else { await DB.run(`INSERT INTO portfolio_items (${cols}) VALUES (${vals.map(() => '?').join(', ')})`, vals); pid = (await DB.one('SELECT last_insert_rowid() AS id')).id; }
+        await DB.tx([{ sql: 'DELETE FROM portfolio_photos WHERE item_id = ?', params: [pid] },
+          ...rows.map((r, i) => ({ sql: 'INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, ?)', params: [pid, r.photo_ref, r.thumb_ref, r.label, i] }))]);
+        for (const p of old) if (!rows.some(r => r.photo_ref === p.photo_ref)) { await Media.release(p.photo_ref); await Media.release(p.thumb_ref); }
+        Dirty.set(false); toast('Saved to portfolio.');
+        location.replace('#pf/' + pid);
+      });
+      Dirty.set(false);
+    }
   },
   forms: {
     title: () => 'Forms',
@@ -1385,6 +1609,39 @@ function renderGcalStatus() {
   $('#g-connect').hidden = on; $('#g-sync').hidden = !on; $('#g-off').hidden = !on;
 }
 
+/* ---------- Portfolio helpers ---------- */
+const PF = { filter: 'all', q: '', ctx: null };
+const PF_KIND = { tattoo: 'Tattoo', art: 'Art', flash: 'Flash' };
+
+async function renderPfGrid() {
+  const el = $('#pf-grid'); if (!el) return;
+  const q = PF.q.trim(), like = '%' + q + '%';
+  const where = PF.filter === 'fav' ? 'p.favourite = 1' : PF.filter === 'all' ? '1' : 'p.kind = ?';
+  const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite,
+      (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS thumb,
+      (SELECT count(*) FROM portfolio_photos x WHERE x.item_id = p.id) AS n
+    FROM portfolio_items p LEFT JOIN clients c ON c.id = p.client_id
+    WHERE ${where} AND (? = '' OR p.title LIKE ? OR p.tags LIKE ? OR p.placement LIKE ? OR p.description LIKE ?
+      OR (c.first_name || ' ' || c.last_name) LIKE ?)
+    ORDER BY coalesce(p.made_on, p.created_at) DESC, p.id DESC`,
+    [...(['tattoo', 'art', 'flash'].includes(PF.filter) ? [PF.filter] : []), q, like, like, like, like, like]);
+  if ($('#pf-grid') !== el) return;
+  if (!rows.length) {
+    el.innerHTML = q || PF.filter !== 'all' ? '<div class="empty muted">Nothing here.</div>'
+      : `<div class="empty"><div class="empty-ico">${ICON.portfolio}</div><div style="font:24px var(--display)">Show off your work</div>
+         <div class="muted">Tap + to add tattoos, art or flash.</div></div>`;
+    return;
+  }
+  const urls = await Promise.all(rows.map(r => Media.url(r.thumb)));
+  el.innerHTML = '<div class="pf-grid">' + rows.map((r, i) => `
+    <a class="pf-tile ${r.claimed ? 'claimed' : ''}" href="#pf/${r.id}" aria-label="${esc(r.title || PF_KIND[r.kind])}">
+      ${urls[i] ? `<img src="${urls[i]}" alt="" loading="lazy">` : ''}
+      ${r.kind === 'flash' ? `<span class="pf-badge">${r.claimed ? 'Claimed' : r.price != null ? esc(money(r.price)) : 'Flash'}</span>` : ''}
+      ${r.favourite ? '<span class="pf-star">★</span>' : ''}
+      ${r.n > 1 ? `<span class="pf-n">${r.n}</span>` : ''}
+    </a>`).join('') + '</div>' + `<div class="muted count">${rows.length} piece${rows.length === 1 ? '' : 's'}</div>`;
+}
+
 /* ---------- Forms helpers ---------- */
 const Forms = { ctx: null };   // { clientId, bookingId } handed to the sign view
 function openForm(templateId, clientId, bookingId) { Forms.ctx = { clientId, bookingId }; location.hash = 'form-sign/' + templateId; }
@@ -1519,6 +1776,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
+  portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
 function render() {
