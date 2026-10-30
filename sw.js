@@ -1,7 +1,7 @@
 /* Offline cache for the app shell. Bump VERSION whenever shipped files change. */
-const VERSION = 'inkforge-v6';
+const VERSION = 'inkforge-v7';
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'icon.svg', 'manifest.webmanifest',
-  'lib/sqlite3.js', 'lib/sqlite3.wasm', 'lib/db-worker.js'];
+  'lib/sqlite3.js', 'lib/sqlite3.wasm', 'lib/db-worker.js', 'lib/stencil-worker.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

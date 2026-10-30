@@ -260,7 +260,7 @@ const VIEWS = {
       <div class="card"><h2>Today ${help('Today\'s sessions. Tap one to open it.')}</h2>
         <div id="home-today" class="muted">…</div></div>
       <div class="grid">
-        ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', true)}
+        ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil')}
         ${tile('quote', 'Quick quote', 'Price a piece in seconds', true)}
       </div>`;
     },
@@ -638,7 +638,7 @@ const VIEWS = {
     title: () => 'Studio',
     render: () => `<div class="grid">
       ${tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio')}
-      ${tile('stencil', 'Stencil maker', 'Photo to stencil', true)}
+      ${tile('stencil', 'Stencil maker', 'Photo to stencil', false, 'stencil')}
       ${tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')}
       ${tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', true)}</div>`
   },
@@ -836,6 +836,60 @@ const VIEWS = {
         location.replace('#pf/' + pid);
       });
       Dirty.set(false);
+    }
+  },
+  stencil: {
+    title: () => 'Stencil',
+    render: () => ST.src ? `
+      <div class="st-stage">
+        <canvas id="st-canvas"></canvas>
+        <div class="st-tools">
+          <button class="btn icon-btn" id="st-orig" data-tip="Hold to see the original photo" aria-label="Hold for original"><svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <button class="btn icon-btn" id="st-rot" data-tip="Rotate 90°" aria-label="Rotate"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
+          <button class="btn icon-btn ${ST.p.flip ? 'on' : ''}" id="st-flip" data-tip="Mirror (for hand transfers)" aria-label="Mirror"><svg viewBox="0 0 24 24"><path d="M12 3v18M8 7l-5 5 5 5V7zM16 7l5 5-5 5V7z"/></svg></button>
+          <span class="ink-dots" id="st-ink">${ST_INKS.map(([c, n]) => `<button class="ink ${ST.p.ink === c ? 'on' : ''}" data-c="${c}" style="background:${c}" data-tip="${n} ink" aria-label="${n}"></button>`).join('')}</span>
+          <button class="btn icon-btn" id="st-new" data-tip="Start with a new photo" aria-label="New photo" style="margin-left:auto"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+        </div>
+      </div>
+      <div class="card st-controls">
+        <div class="seg" id="st-mode" style="margin-bottom:12px">
+          ${[['lines', 'Lines'], ['sketch', 'Lines + shade'], ['solid', 'Solid']].map(([k, l]) => `<button data-m="${k}" class="${ST.p.mode === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}
+        </div>
+        <div id="st-sliders"></div>
+        <div class="row st-export">
+          <label class="field" style="margin:0;flex:0 0 120px"><span>Print width ${help('Real size on paper in centimetres. Height follows the image proportions.')}</span>
+            <input class="in" id="st-cm" type="number" inputmode="decimal" min="1" max="40" step="0.5" value="${ST.cm}"></label>
+          <button class="btn" id="st-print" style="align-self:flex-end">Print</button>
+          <button class="btn primary" id="st-save" style="align-self:flex-end;flex:1">Save / share</button>
+        </div>
+      </div>` : `
+      <label class="card st-pick">
+        <div class="empty-ico">${ICON.stencil}</div>
+        <div style="font:26px var(--display)">Photo to stencil</div>
+        <div class="muted">Take or choose a photo of a design, sketch or reference.</div>
+        <span class="btn primary" style="margin-top:14px">Choose photo</span>
+        <input type="file" accept="image/*" id="st-file" hidden>
+      </label>`,
+    mount() {
+      if (!ST.src) {
+        $('#st-file').addEventListener('change', async (e) => { const f = e.target.files[0]; if (f) { await stLoad(f); render(); } });
+        return;
+      }
+      stSliders();
+      $('#st-mode').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; ST.p.mode = b.dataset.m;
+        $('#st-mode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); stSliders(); stRun(); };
+      const orig = $('#st-orig');
+      orig.addEventListener('pointerdown', (e) => { e.preventDefault(); stDraw(true); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => orig.addEventListener(t, () => stDraw(false)));
+      $('#st-rot').onclick = () => { ST.rot = (ST.rot + 90) % 360; stPrepare(); stRun(); };
+      $('#st-flip').onclick = (e) => { ST.p.flip = !ST.p.flip; e.currentTarget.classList.toggle('on', ST.p.flip); stPrepare(); stRun(); };
+      $('#st-ink').onclick = (e) => { const b = e.target.closest('.ink'); if (!b) return; ST.p.ink = b.dataset.c;
+        $('#st-ink').querySelectorAll('.ink').forEach(x => x.classList.toggle('on', x === b)); stDraw(false); stSave(); };
+      $('#st-new').onclick = () => { ST.src = null; render(); };
+      $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(40, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); });
+      $('#st-save').onclick = stExport;
+      $('#st-print').onclick = stPrint;
+      stPrepare(); stRun();
     }
   },
   forms: {
@@ -1642,6 +1696,123 @@ async function renderPfGrid() {
     </a>`).join('') + '</div>' + `<div class="muted count">${rows.length} piece${rows.length === 1 ? '' : 's'}</div>`;
 }
 
+/* ---------- Stencil helpers ---------- */
+const ST_INKS = [['#1a1a1a', 'Black'], ['#3b2d8f', 'Stencil purple'], ['#b3261e', 'Red']];
+const ST_DEFAULTS = { mode: 'lines', detail: 6, amount: 60, weight: 1, threshold: 110, clean: 1, contrast: 0, bright: 0, ink: '#3b2d8f', flip: false };
+const ST_MAX = 1200;   // working resolution (long side): 300 dpi at 10 cm, 150 dpi at 20 cm
+const ST = {
+  src: null, rot: 0, w: 0, h: 0, rgba: null, mask: null, cm: 10, seq: 0, worker: null, _t: null,
+  p: { ...ST_DEFAULTS }
+};
+
+async function stLoad(file) {
+  try { ST.src = await createImageBitmap(file); }
+  catch { toast('Could not read that image.'); return; }
+  ST.rot = 0; ST.mask = null;
+  try { Object.assign(ST.p, JSON.parse(Settings.get('st_params', '{}'))); } catch {}
+  ST.p.flip = false;
+  ST.cm = +Settings.get('st_cm', '10') || 10;
+}
+
+// Applies rotation/mirror and downsizes into the working buffer.
+function stPrepare() {
+  const s = Math.min(1, ST_MAX / Math.max(ST.src.width, ST.src.height));
+  const sw = Math.round(ST.src.width * s), sh = Math.round(ST.src.height * s);
+  const side = ST.rot % 180 !== 0;
+  ST.w = side ? sh : sw; ST.h = side ? sw : sh;
+  const c = new OffscreenCanvas(ST.w, ST.h), x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, ST.w, ST.h);
+  x.translate(ST.w / 2, ST.h / 2);
+  if (ST.p.flip) x.scale(-1, 1);
+  x.rotate(ST.rot * Math.PI / 180);
+  x.drawImage(ST.src, -sw / 2, -sh / 2, sw, sh);
+  ST.orig = c;
+  ST.rgba = x.getImageData(0, 0, ST.w, ST.h).data;
+  const cv = $('#st-canvas'); if (cv) { cv.width = ST.w; cv.height = ST.h; }
+}
+
+function stRun() {
+  clearTimeout(ST._t);
+  ST._t = setTimeout(() => {
+    if (!ST.worker) {
+      ST.worker = new Worker('lib/stencil-worker.js');
+      ST.worker.onmessage = (e) => { if (e.data.id !== ST.seq) return; ST.mask = e.data.mask; stDraw(false); $('#st-canvas')?.classList.remove('busy'); };
+    }
+    $('#st-canvas')?.classList.add('busy');
+    ST.worker.postMessage({ id: ++ST.seq, w: ST.w, h: ST.h, rgba: ST.rgba.slice(), p: ST.p });
+  }, 90);
+}
+
+function stDraw(original) {
+  const cv = $('#st-canvas'); if (!cv) return;
+  const x = cv.getContext('2d');
+  if (original || !ST.mask) { x.drawImage(ST.orig, 0, 0); return; }
+  x.putImageData(stImage(ST.mask), 0, 0);
+}
+
+function stImage(mask) {
+  const img = new ImageData(ST.w, ST.h), d = img.data;
+  const ink = ST.p.ink, r = parseInt(ink.slice(1, 3), 16), g = parseInt(ink.slice(3, 5), 16), b = parseInt(ink.slice(5, 7), 16);
+  for (let i = 0, j = 0; i < mask.length; i++, j += 4) {
+    if (mask[i]) { d[j] = r; d[j + 1] = g; d[j + 2] = b; } else { d[j] = d[j + 1] = d[j + 2] = 255; }
+    d[j + 3] = 255;
+  }
+  return img;
+}
+
+const stSave = () => { const { flip, ...keep } = ST.p; Settings.set('st_params', JSON.stringify(keep)); };
+
+function stSliders() {
+  const m = ST.p.mode;
+  const S = [
+    m !== 'solid' && ['detail', 'Detail', 1, 10, 1, 'Higher picks up finer lines. Lower gives bold, simple outlines.'],
+    m !== 'solid' && ['amount', 'Line amount', 0, 100, 1, 'How many edges become lines. Lower it if the stencil looks busy.'],
+    m !== 'solid' && ['weight', 'Line weight', 0, 3, 1, 'Thickens every line.'],
+    m !== 'lines' && ['threshold', m === 'sketch' ? 'Shading' : 'Threshold', 20, 230, 1, 'Everything darker than this becomes solid ink.'],
+    ['contrast', 'Contrast', -50, 50, 1, 'Boost a flat or faded photo before converting.'],
+    ['bright', 'Brightness', -60, 60, 1, 'Lighten or darken the photo before converting.'],
+    ['clean', 'Clean up', 0, 3, 1, 'Removes stray specks and noise.']
+  ].filter(Boolean);
+  $('#st-sliders').innerHTML = S.map(([k, l, min, max, step, tip]) => `
+    <label class="slider"><span>${l} ${help(tip)}<b id="sv-${k}">${ST.p[k]}</b></span>
+      <input type="range" min="${min}" max="${max}" step="${step}" value="${ST.p[k]}" data-k="${k}"></label>`).join('')
+    + `<button class="link" id="st-reset" style="margin-top:4px">Reset sliders</button>`;
+  $('#st-sliders').oninput = (e) => {
+    const k = e.target.dataset.k; if (!k) return;
+    ST.p[k] = +e.target.value; $('#sv-' + k).textContent = e.target.value; stRun(); stSave();
+  };
+  $('#st-reset').onclick = () => { Object.assign(ST.p, { ...ST_DEFAULTS, mode: ST.p.mode, ink: ST.p.ink, flip: ST.p.flip }); stSliders(); stRun(); stSave(); };
+}
+
+async function stBlob() {
+  const c = new OffscreenCanvas(ST.w, ST.h);
+  c.getContext('2d').putImageData(stImage(ST.mask), 0, 0);
+  return c.convertToBlob({ type: 'image/png' });
+}
+
+async function stExport() {
+  if (!ST.mask) return;
+  const file = new File([await stBlob()], `stencil-${ymd(new Date())}.png`, { type: 'image/png' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Stencil' });
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+  } catch (e) { if (e.name !== 'AbortError') toast('Could not save: ' + e.message); }
+}
+
+// Prints the stencil at its real size (width in cm) on a blank page.
+async function stPrint() {
+  if (!ST.mask) return;
+  const url = URL.createObjectURL(await stBlob());
+  let p = $('#print-area');
+  if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+  p.innerHTML = `<img src="${url}" style="width:${ST.cm}cm" alt="">`;
+  await p.querySelector('img').decode();
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; URL.revokeObjectURL(url); removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done);
+  window.print();
+}
+
 /* ---------- Forms helpers ---------- */
 const Forms = { ctx: null };   // { clientId, bookingId } handed to the sign view
 function openForm(templateId, clientId, bookingId) { Forms.ctx = { clientId, bookingId }; location.hash = 'form-sign/' + templateId; }
@@ -1776,7 +1947,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
-  portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
+  stencil: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
 function render() {
