@@ -145,8 +145,85 @@ const MIGRATIONS = [
      title TEXT NOT NULL, body TEXT, sort INTEGER NOT NULL DEFAULT 0);`
 ];
 
-/* Starter templates, inserted once when the forms tables are empty. Fully editable. */
+/* Starter templates, inserted once on a fresh database. Fully editable.
+   Block types: h heading, sub subheading, p paragraph, li bullet, check tick box (required unless opt),
+   field answer (v = prefill with placeholders, long = multi-line), choice (opts split on '/', req = must pick). */
 const DEFAULT_TEMPLATES = [
+  { kind: 'consent', title: 'Tattoo consent form', blocks: [
+    { t: 'h', text: 'Tattoo consent form' },
+    { t: 'p', text: 'Tattoo artist: {artist} · Date: {date}' },
+    { t: 'field', text: 'Full name', v: '{client}' },
+    { t: 'field', text: 'Contact number', v: '{phone}' },
+    { t: 'field', text: 'ID number' },
+    { t: 'field', text: 'Email', v: '{email}' },
+    { t: 'sub', text: 'Legal age and health' },
+    { t: 'choice', text: 'Age', opts: 'I am at least 18 years of age / I am under 18 and my legal guardian is present to provide consent', req: true },
+    { t: 'field', text: 'Guardian name (under 18 only)' },
+    { t: 'field', text: 'Guardian ID number (under 18 only)' },
+    { t: 'check', text: 'I confirm that I am not under the influence of drugs or alcohol.' },
+    { t: 'check', text: 'I am not pregnant or nursing.' },
+    { t: 'check', text: 'I do not have diabetes, epilepsy, heart conditions, hemophilia, HIV/AIDS, hepatitis A, B or C, or any other communicable disease.' },
+    { t: 'check', text: 'I am not taking any medications, including antibiotics, that may affect the tattoo process.' },
+    { t: 'check', text: 'I do not have any skin conditions that may interfere with the tattoo process.' },
+    { t: 'check', text: 'To my knowledge, I do not have any physical or mental impairment or disability that can affect my judgement regarding getting a tattoo.' },
+    { t: 'sub', text: 'Awareness and responsibility' },
+    { t: 'check', text: 'I understand that a tattoo is a permanent change to my appearance.' },
+    { t: 'check', text: 'I am aware that the tattoo procedure involves the insertion of needles into my skin and that the tattoo process might require the artist to touch various parts of my body.' },
+    { t: 'check', text: 'I willingly and voluntarily agree to this and I will not file any complaint or accusation of assault, sexual or indecent behavior.' },
+    { t: 'check', text: 'I accept all responsibility for any consequences that might arise from my decision to have this tattoo.' },
+    { t: 'check', text: 'I agree to follow the aftercare instructions provided to me and to seek professional medical advice if needed during the healing process.' },
+    { t: 'check', text: 'I release the tattoo artist and studio from all responsibility concerning the tattoo.' },
+    { t: 'sub', text: 'Use of images' },
+    { t: 'check', text: 'A photo of the completed tattoo may be taken and used at the tattoo artist\'s discretion.' },
+    { t: 'check', text: 'I give permission to the tattoo artist to photograph the tattoo for their portfolio and promotional use.' },
+    { t: 'sub', text: 'Declaration' },
+    { t: 'check', text: 'I have read and fully understood every part of this consent form.' },
+    { t: 'sub', text: 'Tattoo details' },
+    { t: 'field', text: 'Tattoo description', v: '{description}' },
+    { t: 'field', text: 'Quote', v: '{quote}' },
+    { t: 'choice', text: 'Payment', opts: 'Cash / Card / EFT / Voucher' },
+    { t: 'field', text: 'Notes', long: true }
+  ] },
+  { kind: 'aftercare', title: 'After care', blocks: [
+    { t: 'h', text: 'After care' },
+    { t: 'p', text: 'Hi {first}, here is how to look after your new tattoo.' },
+    { t: 'sub', text: 'After your tattoo session' },
+    { t: 'li', text: 'Your artist will apply a bandage or second skin. Wear time is usually 3–5 days.' },
+    { t: 'li', text: 'Wash your hands first, then remove the bandage carefully.' },
+    { t: 'li', text: 'Gently wash with lukewarm water and unscented antibacterial soap. Use your hands only.' },
+    { t: 'li', text: 'Pat dry with a clean paper towel or let it air-dry.' },
+    { t: 'sub', text: 'Moisturise lightly' },
+    { t: 'li', text: 'Apply a thin layer of ointment (e.g. Bepanthen or an unscented ointment).' },
+    { t: 'li', text: 'Don\'t overdo it: too much cream clogs the pores (no Vaseline or Zambuk).' },
+    { t: 'sub', text: 'Daily care (2–3 times a day)' },
+    { t: 'li', text: 'Clean and moisturise morning and night for at least 2 weeks.' },
+    { t: 'li', text: 'No soaking: no baths, swimming or hot tubs.' },
+    { t: 'li', text: 'Showers are fine; avoid spraying directly on the tattoo.' },
+    { t: 'sub', text: 'Keep it protected' },
+    { t: 'li', text: 'Wear loose, clean clothing (no jeans).' },
+    { t: 'li', text: 'Avoid friction, tight gear, contact with pets and dirty hands.' },
+    { t: 'sub', text: 'Normal healing signs' },
+    { t: 'li', text: 'Your tattoo isn\'t smudged: it\'s just some plasma built up under the bandage.' },
+    { t: 'li', text: 'Flaking and peeling are normal.' },
+    { t: 'li', text: 'No scratching, rubbing or picking!' },
+    { t: 'sub', text: 'Infection warning signs (seek medical help if you notice any)' },
+    { t: 'li', text: 'Swelling or redness getting worse after 3–4 days.' },
+    { t: 'li', text: 'Yellow or green pus, or a foul smell.' },
+    { t: 'li', text: 'It is hot to the touch, or you have a fever or chills.' },
+    { t: 'li', text: 'Pain that persists or keeps increasing.' },
+    { t: 'sub', text: 'Precautions' },
+    { t: 'li', text: 'No sun exposure. Once healed, always use SPF.' },
+    { t: 'li', text: 'Healing time is 2–4 weeks, depending on size, location and person.' },
+    { t: 'li', text: 'Unsure? Contact your artist. There are no dumb questions.' },
+    { t: 'sub', text: '{artist}' },
+    { t: 'p', text: 'Contact: {artist_phone}' },
+    { t: 'p', text: 'Instagram: {instagram}' },
+    { t: 'p', text: 'Facebook: {facebook}' },
+    { t: 'p', text: 'TikTok: {tiktok}' }
+  ] }
+];
+/* The first starter templates. On upgrade they are swapped for the new ones only if never edited. */
+const LEGACY_TEMPLATES = [
   { kind: 'consent', title: 'Tattoo consent', blocks: [
     { t: 'h', text: 'Tattoo consent & release' },
     { t: 'p', text: 'I, {client}, consent to be tattooed by {artist} at {studio} on {date}.' },
@@ -185,10 +262,17 @@ async function migrate() {
       { sql: `INSERT OR REPLACE INTO app_meta VALUES ('schema_version', ?)`, params: [String(v + 1)] }
     ]);
   }
+  const seedNew = DEFAULT_TEMPLATES.map(t => ({ sql: 'INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', params: [t.kind, t.title, JSON.stringify(t.blocks)] }));
   if (!(await DB.one(`SELECT 1 AS x FROM app_meta WHERE key = 'forms_seeded'`))) {
+    await DB.tx([...seedNew,
+      { sql: `INSERT INTO app_meta VALUES ('forms_seeded', '1')` },
+      { sql: `INSERT INTO app_meta VALUES ('forms_v2', '1')` }]);
+  } else if (!(await DB.one(`SELECT 1 AS x FROM app_meta WHERE key = 'forms_v2'`))) {
+    // Replace the first starter templates with the new ones, leaving any the artist edited.
     await DB.tx([
-      ...DEFAULT_TEMPLATES.map(t => ({ sql: 'INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', params: [t.kind, t.title, JSON.stringify(t.blocks)] })),
-      { sql: `INSERT INTO app_meta VALUES ('forms_seeded', '1')` }]);
+      ...LEGACY_TEMPLATES.map(t => ({ sql: 'DELETE FROM form_templates WHERE kind = ? AND title = ? AND blocks = ?', params: [t.kind, t.title, JSON.stringify(t.blocks)] })),
+      ...seedNew,
+      { sql: `INSERT INTO app_meta VALUES ('forms_v2', '1')` }]);
   }
 }
 
@@ -1282,7 +1366,14 @@ const VIEWS = {
       const blocks = JSON.parse(t.blocks);
       if (isNew && !blocks.length) blocks.push({ t: 'h', text: '' }, { t: 'p', text: '' });
       const f = $('#fe-form');
-      const TYPES = { h: 'Heading', p: 'Paragraph', check: 'Tick box', field: 'Answer field' };
+      const TYPES = { h: 'Heading', sub: 'Subheading', p: 'Paragraph', li: 'Bullet', check: 'Tick box', field: 'Answer field', choice: 'Choice' };
+      const flag = (i, k, label, on, tip) => `<label class="toggle blk-flag" data-tip="${tip}"><input type="checkbox" data-i="${i}" data-k="${k}" ${on ? 'checked' : ''}><span>${label}</span></label>`;
+      const extras = (b, i) =>
+        b.t === 'field' ? `<div class="blk-extra"><input class="in" data-i="${i}" data-k="v" value="${esc(b.v || '')}" placeholder="Prefill, e.g. {client} or {phone}">
+          ${flag(i, 'long', 'Long', b.long, 'Several lines, for notes')}</div>`
+        : b.t === 'choice' ? `<div class="blk-extra"><input class="in" data-i="${i}" data-k="opts" value="${esc(b.opts || '')}" placeholder="Options, separated by /">
+          ${flag(i, 'req', 'Required', b.req, 'The client must pick one before signing')}</div>`
+        : b.t === 'check' ? `<div class="blk-extra">${flag(i, 'opt', 'Optional', b.opt, 'Can be left unticked when signing')}</div>` : '';
       const draw = () => {
         f.innerHTML = `
           <div class="two">
@@ -1291,7 +1382,7 @@ const VIEWS = {
               <option value="consent" ${t.kind === 'consent' ? 'selected' : ''}>Consent (signed)</option>
               <option value="aftercare" ${t.kind === 'aftercare' ? 'selected' : ''}>Aftercare (sent)</option></select></label>
           </div>
-          <div class="lbl">Content ${help('Placeholders fill in automatically: {client} (full name), {first} (first name), {artist}, {studio}, {date}. Tick boxes must all be ticked before a consent form can be signed.')}</div>
+          <div class="lbl">Content ${help('Placeholders fill in automatically: {client}, {first}, {phone}, {email}, {description} and {quote} (from the booking), {artist}, {studio}, {date}, and your {artist_phone}, {instagram}, {facebook}, {tiktok} from Settings. Lines whose placeholders are empty are left out. Tick boxes must be ticked before signing unless marked Optional.')}</div>
           <div id="fe-blocks">${blocks.map((b, i) => `
             <div class="blk blk-${b.t}" data-i="${i}">
               <div class="blk-bar"><span class="chip">${TYPES[b.t]}</span>
@@ -1300,6 +1391,7 @@ const VIEWS = {
                   <button type="button" class="mini" data-act="down" aria-label="Move down" ${i < blocks.length - 1 ? '' : 'disabled'}>&darr;</button>
                   <button type="button" class="mini del" data-act="del" aria-label="Remove">&times;</button></span></div>
               <textarea class="in" rows="${b.t === 'p' ? 3 : 1}" data-i="${i}" placeholder="${TYPES[b.t]} text">${esc(b.text)}</textarea>
+              ${extras(b, i)}
             </div>`).join('')}</div>
           <div class="row add-blocks">${Object.entries(TYPES).map(([k, v]) => `<button type="button" class="btn small" data-add="${k}">+ ${v}</button>`).join('')}</div>
           <div class="form-foot row">
@@ -1319,9 +1411,13 @@ const VIEWS = {
       f.addEventListener('input', (e) => {
         Dirty.set(true);
         if (e.target.matches('textarea[data-i]')) blocks[+e.target.dataset.i].text = e.target.value;
+        else if (e.target.matches('input.in[data-k]')) blocks[+e.target.dataset.i][e.target.dataset.k] = e.target.value;
         if (e.target.id === 'fe-title') t.title = e.target.value;
       });
-      f.addEventListener('change', (e) => { if (e.target.id === 'fe-kind') { t.kind = e.target.value; Dirty.set(true); } });
+      f.addEventListener('change', (e) => {
+        if (e.target.id === 'fe-kind') { t.kind = e.target.value; Dirty.set(true); }
+        if (e.target.matches('input[type=checkbox][data-k]')) { blocks[+e.target.dataset.i][e.target.dataset.k] = e.target.checked; Dirty.set(true); }
+      });
       f.addEventListener('click', (e) => {
         const b = e.target.closest('button'); if (!b) return;
         if (b.dataset.add) { blocks.push({ t: b.dataset.add, text: '' }); Dirty.set(true); draw(); f.querySelector(`textarea[data-i="${blocks.length - 1}"]`).focus(); return; }
@@ -1336,7 +1432,13 @@ const VIEWS = {
         e.preventDefault();
         const title = $('#fe-title').value.trim();
         if (!title) return toast('Give the form a title.');
-        const clean = JSON.stringify(blocks.map(b => ({ t: b.t, text: b.text.trim() })).filter(b => b.text));
+        const clean = JSON.stringify(blocks.map(b => {
+          const o = { t: b.t, text: b.text.trim() };
+          if (b.t === 'field') { if (b.v?.trim()) o.v = b.v.trim(); if (b.long) o.long = true; }
+          if (b.t === 'choice') { o.opts = (b.opts || '').trim(); if (b.req) o.req = true; }
+          if (b.t === 'check' && b.opt) o.opt = true;
+          return o;
+        }).filter(b => b.text));
         if (isNew) await DB.run('INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', [t.kind, title, clean]);
         else await DB.run(`UPDATE form_templates SET kind = ?, title = ?, blocks = ?, updated_at = datetime('now') WHERE id = ?`, [t.kind, title, clean, t.id]);
         Dirty.set(false); toast('Form saved.'); location.replace('#forms');
@@ -1353,6 +1455,7 @@ const VIEWS = {
       $('#view-title').textContent = t.kind === 'consent' ? 'Sign' : 'Aftercare';
       const ctx = Forms.ctx || {}; Forms.ctx = null;
       let client = ctx.clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [ctx.clientId]) : null;
+      const booking = ctx.bookingId ? await DB.one('SELECT * FROM bookings WHERE id = ?', [ctx.bookingId]) : null;
       const blocks = JSON.parse(t.blocks);
       const consent = t.kind === 'consent';
       const el = $('#fs');
@@ -1367,9 +1470,13 @@ const VIEWS = {
             : '<button type="button" class="btn" id="fs-print">Print</button><button type="button" class="btn primary" style="flex:1" id="fs-share">Send</button>'}
         </div>`;
       const answers = { checks: {}, fields: {} };
+      // Prefilled fields follow the chosen client until the artist types over them.
+      const typed = new Set();
+      const prefill = (c) => blocks.forEach((b, i) => { if (b.t === 'field' && b.v && !typed.has(i)) answers.fields[i] = fillPlaceholders(b.v, c).replace(/^_+$/, ''); });
       let pad = null;
       const drawSheet = () => {
-        const c = formCtx(client);
+        const c = formCtx(client, booking);
+        prefill(c);
         $('#fs-sheet').innerHTML = renderFormBlocks(blocks, c, answers, consent)
           + (consent ? `<div class="sig-wrap"><div class="sig-label">Signature <button type="button" class="link" id="fs-clear">Clear</button></div>
               <canvas id="fs-sig"></canvas><div class="sig-line">${esc(c.client)} · ${esc(c.date)}</div></div>` : '');
@@ -1378,9 +1485,10 @@ const VIEWS = {
       drawSheet();
       $('#fs-sheet').addEventListener('change', (e) => {
         if (e.target.dataset.check != null) answers.checks[e.target.dataset.check] = e.target.checked;
+        if (e.target.dataset.choice != null) answers.fields[e.target.dataset.choice] = e.target.value;
         Dirty.set(true);
       });
-      $('#fs-sheet').addEventListener('input', (e) => { if (e.target.dataset.field != null) { answers.fields[e.target.dataset.field] = e.target.value; Dirty.set(true); } });
+      $('#fs-sheet').addEventListener('input', (e) => { if (e.target.dataset.field != null) { answers.fields[e.target.dataset.field] = e.target.value; typed.add(+e.target.dataset.field); Dirty.set(true); } });
       clientPicker($('#fs-client'), $('#fs-list'), async (cid) => {
         client = await DB.one('SELECT * FROM clients WHERE id = ?', [cid]);
         const sig = pad && !pad.empty() ? pad.data() : null;
@@ -1388,16 +1496,19 @@ const VIEWS = {
       });
       $('#fs-cancel').onclick = () => history.back();
       const record = async (sigRef) => {
-        const c = formCtx(client);
-        const frozen = blocks.map(b => ({ t: b.t, text: fillPlaceholders(b.text, c) }));
+        const c = formCtx(client, booking);
+        const frozen = blocks.map(b => blankLine(b, c) ? null : { ...b, text: fillPlaceholders(b.text, c) });
+        frozen.forEach((b, i) => { if (!b) frozen[i] = { t: 'p', text: '' }; });   // keep indexes aligned with answers
         await DB.run(`INSERT INTO signed_forms (client_id, booking_id, template_id, kind, title, client_name, blocks, answers, signature_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [client?.id ?? null, ctx.bookingId ?? null, t.id, t.kind, t.title, client ? fullName(client) : null, JSON.stringify(frozen), JSON.stringify(answers), sigRef]);
         return (await DB.one('SELECT last_insert_rowid() AS id')).id;
       };
       if (consent) $('#fs-save').onclick = async () => {
         if (!client) return toast('Choose the client first.');
-        const checks = blocks.map((b, i) => b.t === 'check' ? i : -1).filter(i => i >= 0);
-        if (checks.some(i => !answers.checks[i])) return toast('All boxes need to be ticked before signing.');
+        const checks = blocks.map((b, i) => b.t === 'check' && !b.opt ? i : -1).filter(i => i >= 0);
+        if (checks.some(i => !answers.checks[i])) return toast('All required boxes need to be ticked before signing.');
+        const missing = blocks.find((b, i) => b.t === 'choice' && b.req && !answers.fields[i]);
+        if (missing) return toast(`Choose an option for "${missing.text}".`);
         if (pad.empty()) return toast('Please sign in the box.');
         const sigRef = await Media.save(await pad.blob(), 'png');
         const sid = await record(sigRef);
@@ -1406,7 +1517,7 @@ const VIEWS = {
       else {
         $('#fs-print').onclick = () => window.print();
         $('#fs-share').onclick = async () => {
-          const text = formAsText(blocks, formCtx(client));
+          const text = formAsText(blocks, formCtx(client, booking));
           try {
             if (navigator.share) await navigator.share({ title: t.title, text });
             else { await navigator.clipboard.writeText(text); toast('Copied. Paste it into WhatsApp, SMS or email.'); }
@@ -1461,6 +1572,14 @@ const VIEWS = {
           <label class="field"><span>Usual start time ${help('Default time for new bookings.')}</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
         </div>
       </div>
+      <div class="card"><h2>Contact details ${help('Printed at the bottom of your aftercare form. Leave any blank to hide that line.')}</h2>
+        <div class="two">
+          <label class="field"><span>Contact number</span><input class="in" id="s-aphone" type="tel" value="${esc(Settings.get('artist_phone'))}"></label>
+          <label class="field"><span>Instagram</span><input class="in" id="s-ig" value="${esc(Settings.get('artist_instagram'))}" placeholder="instagram.com/…" autocapitalize="off"></label>
+          <label class="field"><span>Facebook</span><input class="in" id="s-fb" value="${esc(Settings.get('artist_facebook'))}" placeholder="facebook.com/…" autocapitalize="off"></label>
+          <label class="field"><span>TikTok</span><input class="in" id="s-tt" value="${esc(Settings.get('artist_tiktok'))}" placeholder="tiktok.com/@…" autocapitalize="off"></label>
+        </div>
+      </div>
       <div class="card"><h2>Google Calendar ${help('Bookings sync both ways with an "InkForge" calendar in your Google account. Only time, title and the labelled note lines are used; everything else in Google is ignored.')}</h2>
         <div id="gcal-status" style="margin-bottom:12px"></div>
         <label class="field"><span>OAuth client ID ${help('Created once in Google Cloud. See the setup guide below.')}</span>
@@ -1500,6 +1619,10 @@ const VIEWS = {
       $('#s-studio').addEventListener('change', save('studio_name'));
       $('#s-cur').addEventListener('change', save('currency'));
       $('#s-start').addEventListener('change', save('day_start'));
+      $('#s-aphone').addEventListener('change', save('artist_phone'));
+      $('#s-ig').addEventListener('change', save('artist_instagram'));
+      $('#s-fb').addEventListener('change', save('artist_facebook'));
+      $('#s-tt').addEventListener('change', save('artist_tiktok'));
       $('#s-gid').addEventListener('change', save('gcal_client_id'));
       $('#s-gbusy').addEventListener('change', async (e) => { await Settings.set('gcal_busy', e.target.checked ? '1' : '0'); Gcal.soon(); });
       const gsync = async () => {
@@ -2425,21 +2548,33 @@ async function stPrint() {
 /* ---------- Forms helpers ---------- */
 const Forms = { ctx: null };   // { clientId, bookingId } handed to the sign view
 function openForm(templateId, clientId, bookingId) { Forms.ctx = { clientId, bookingId }; location.hash = 'form-sign/' + templateId; }
-const formCtx = (client) => ({
+// booking (optional) supplies {description} and {quote}. Contact keys come from Settings and are '' when unset.
+const formCtx = (client, booking) => ({
   client: client ? fullName(client) : '________',
   first: client ? (client.first_name || fullName(client)) : 'there',
+  phone: client?.phone || '', email: client?.email || '',
+  description: booking?.description || '', quote: booking?.quote != null ? money(booking.quote) : '',
   artist: Settings.get('artist_name') || 'the artist',
   studio: Settings.get('studio_name') || 'the studio',
+  artist_phone: Settings.get('artist_phone'), instagram: Settings.get('artist_instagram'),
+  facebook: Settings.get('artist_facebook'), tiktok: Settings.get('artist_tiktok'),
   date: new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
 });
-const fillPlaceholders = (text, c) => text.replace(/\{(client|first|artist|studio|date)\}/g, (_, k) => c[k]);
+const fillPlaceholders = (text, c) => text.replace(/\{(\w+)\}/g, (m, k) => k in c ? c[k] : m);
+// Info lines whose placeholders are all empty (e.g. "TikTok: {tiktok}" with no handle set) are left out.
+const blankLine = (b, c) => c && /^(p|li|sub)$/.test(b.t) && /\{\w+\}/.test(b.text)
+  && [...b.text.matchAll(/\{(\w+)\}/g)].every(([, k]) => k in c && !c[k]);
+const choiceOpts = (b) => (b.opts || '').split('/').map(s => s.trim()).filter(Boolean);
 
 // interactive: tick boxes and fields are editable. readonly: show stored answers.
 function renderFormBlocks(blocks, c, answers, interactive, readonly) {
   const txt = (s) => esc(c ? fillPlaceholders(s, c) : s);
   return blocks.map((b, i) => {
+    if (blankLine(b, c)) return '';
     if (b.t === 'h') return `<h3>${txt(b.text)}</h3>`;
-    if (b.t === 'p') return `<p>${txt(b.text)}</p>`;
+    if (b.t === 'sub') return `<h4>${txt(b.text)}</h4>`;
+    if (b.t === 'p') return b.text ? `<p>${txt(b.text)}</p>` : '';
+    if (b.t === 'li') return `<div class="f-bullet">${txt(b.text)}</div>`;
     if (b.t === 'check') {
       if (!interactive && !readonly) return `<div class="f-bullet">${txt(b.text)}</div>`;
       const on = answers?.checks?.[i];
@@ -2448,15 +2583,22 @@ function renderFormBlocks(blocks, c, answers, interactive, readonly) {
     if (b.t === 'field') {
       const v = answers?.fields?.[i] || '';
       return `<label class="f-field"><span>${txt(b.text)}</span>${readonly ? `<div class="f-ans">${esc(v) || '—'}</div>`
+        : b.long ? `<textarea class="in" rows="3" data-field="${i}" ${interactive ? '' : 'disabled'}>${esc(v)}</textarea>`
         : `<input class="in" data-field="${i}" value="${esc(v)}" ${interactive ? '' : 'disabled'}>`}</label>`;
+    }
+    if (b.t === 'choice') {
+      const v = answers?.fields?.[i] || '';
+      return `<div class="f-field"><span>${txt(b.text)}</span><div class="f-opts">${choiceOpts(b).map(o =>
+        `<label class="f-opt"><input type="radio" name="fc${i}" data-choice="${i}" value="${esc(o)}" ${v === o ? 'checked' : ''} ${interactive && !readonly ? '' : 'disabled'}><span>${esc(o)}</span></label>`).join('')}</div></div>`;
     }
     return '';
   }).join('');
 }
-const formAsText = (blocks, c) => blocks.map(b => {
+const formAsText = (blocks, c) => blocks.filter(b => !blankLine(b, c)).map(b => {
   const s = fillPlaceholders(b.text, c);
-  return b.t === 'h' ? s.toUpperCase() : b.t === 'check' ? '• ' + s : b.t === 'field' ? s + ': ' : s;
-}).join('\n\n');
+  return b.t === 'h' ? s.toUpperCase() : b.t === 'sub' ? s.toUpperCase()
+    : b.t === 'check' || b.t === 'li' ? '• ' + s : b.t === 'field' ? s + ': ' : b.t === 'choice' ? s + ': ' + choiceOpts(b).join(' / ') : s;
+}).join('\n\n').replace(/\n\n• /g, '\n• ');
 
 // Finger/stylus/mouse signature on a canvas. Dark ink on the white sheet.
 function signaturePad(canvas) {
