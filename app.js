@@ -19,12 +19,42 @@ const DB = (() => {
     info: () => call('info'),
     all: async (sql, params) => (await call('exec', { sql, params })).rows,
     one: async (sql, params) => (await call('exec', { sql, params })).rows[0],
-    run: (sql, params) => call('exec', { sql, params }),
-    tx: (items) => call('tx', { items }),
+    run: (sql, params) => call('exec', { sql, params }).finally(() => Snapshot.soon()),
+    tx: (items) => call('tx', { items }).finally(() => Snapshot.soon()),
     exportBytes: async () => (await call('export')).bytes,
-    importBytes: (bytes) => call('import', { bytes }, [bytes.buffer])
+    importBytes: (bytes) => call('import', { bytes }, [bytes.buffer]).finally(() => Snapshot.soon())
   };
 })();
+
+/* Safety net: a copy of the database kept as a plain OPFS file, outside the SQLite storage pool.
+   Written a few seconds after changes and when the app goes to the background. If the app ever
+   starts on an empty database while a snapshot exists, boot restores it. An empty database is
+   never snapshotted, so a good copy can't be overwritten by a blank one. */
+const Snapshot = {
+  ready: false, _t: null,
+  async handle(create) {
+    const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('snapshots', { create: true });
+    return d.getFileHandle('latest.sqlite', { create });
+  },
+  soon() { if (!this.ready) return; clearTimeout(this._t); this._t = setTimeout(() => this.save(), 4000); },
+  async save() {
+    clearTimeout(this._t);
+    if (!this.ready) return;
+    try {
+      if (!(await hasData())) return;
+      const bytes = await DB.exportBytes();
+      const w = await (await this.handle(true)).createWritable();
+      await w.write(bytes); await w.close();
+    } catch (e) { console.warn('Snapshot failed:', e); }
+  },
+  async load() {
+    try { const f = await (await this.handle(false)).getFile(); return f.size ? new Uint8Array(await f.arrayBuffer()) : null; }
+    catch { return null; }
+  }
+};
+document.addEventListener('visibilitychange', () => { if (document.hidden) Snapshot.save(); });
+// A database "has data" once migrations have created app_meta (sqlite_sequence alone doesn't count).
+const hasData = async () => !!(await DB.one(`SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'app_meta'`));
 
 /* Append-only. Never edit a past entry; add a new one. SCHEMA_VERSION = MIGRATIONS.length. */
 const MIGRATIONS = [
@@ -95,7 +125,24 @@ const MIGRATIONS = [
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      item_id INTEGER NOT NULL REFERENCES portfolio_items(id) ON DELETE CASCADE,
      photo_ref TEXT NOT NULL, thumb_ref TEXT NOT NULL, label TEXT, sort INTEGER NOT NULL DEFAULT 0);
-   CREATE INDEX idx_pf_photos ON portfolio_photos (item_id);`
+   CREATE INDEX idx_pf_photos ON portfolio_photos (item_id);`,
+  // v7: inventory, stock takes, rule book.
+  `CREATE TABLE inventory_items (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     name TEXT NOT NULL, category TEXT, unit TEXT,
+     qty REAL NOT NULL DEFAULT 0, min_qty REAL NOT NULL DEFAULT 0,
+     supplier TEXT, cost REAL, notes TEXT,
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE TABLE stock_takes (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     taken_at TEXT NOT NULL DEFAULT (datetime('now')), notes TEXT);
+   CREATE TABLE stock_take_lines (
+     take_id INTEGER NOT NULL REFERENCES stock_takes(id) ON DELETE CASCADE,
+     item_id INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+     item_name TEXT NOT NULL, expected REAL, counted REAL NOT NULL);
+   CREATE TABLE rules (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     title TEXT NOT NULL, body TEXT, sort INTEGER NOT NULL DEFAULT 0);`
 ];
 
 /* Starter templates, inserted once when the forms tables are empty. Fully editable. */
@@ -261,7 +308,7 @@ const VIEWS = {
         <div id="home-today" class="muted">…</div></div>
       <div class="grid">
         ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil')}
-        ${tile('quote', 'Quick quote', 'Price a piece in seconds', true)}
+        ${tile('quote', 'Quick quote', 'Price a piece in seconds', false, 'quote')}
       </div>`;
     },
     async mount() {
@@ -496,7 +543,11 @@ const VIEWS = {
       const b = id === 'new'
         ? { start_at: Cal.prefill || ymd(new Date()) + 'T10:00', duration_min: 120, client_id: Cal.prefillClient || null }
         : await DB.one('SELECT * FROM bookings WHERE id = ?', [+id]);
-      Cal.prefill = Cal.prefillClient = null;
+      if (id === 'new' && Cal.prefillQuote) {
+        const q = Cal.prefillQuote;
+        Object.assign(b, { quote: q.quote, deposit: q.deposit, size: q.size || null, duration_min: Math.min(600, Math.max(30, q.duration || 120)) });
+      }
+      Cal.prefill = Cal.prefillClient = Cal.prefillQuote = null;
       if (!b) { location.hash = 'book'; return; }
       const photos = b.id ? await DB.all('SELECT id, photo_ref FROM booking_photos WHERE booking_id = ? ORDER BY sort, id', [b.id]) : [];
       const keep = photos.map(p => p.photo_ref);       // existing refs still attached
@@ -646,9 +697,9 @@ const VIEWS = {
     title: () => 'More',
     render: () => `<div class="grid">
       ${tile('settings', 'Settings & backup', 'Profile, storage, backup and restore', false, 'settings')}
-      ${tile('quote', 'Quote calculator', 'Pricing rules', true)}
-      ${tile('stock', 'Inventory', 'Stock and stock takes', true)}
-      ${tile('rules', 'Rule book', 'Your studio rules', true)}</div>`
+      ${tile('quote', 'Quote calculator', 'Price a piece from your own rates', false, 'quote')}
+      ${tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory')}
+      ${tile('rules', 'Rule book', 'Your studio rules', false, 'rules')}</div>`
   },
   portfolio: {
     title: () => 'Portfolio',
@@ -709,9 +760,10 @@ const VIEWS = {
       if (dots) car.addEventListener('scroll', () => dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i === cur())), { passive: true });
       car.onclick = (e) => { const img = e.target.closest('img'); if (img) viewImage(img.src); };
       $('#pf-fav').onclick = async (e) => {
+        const btn = e.currentTarget;   // currentTarget is null after the await
         it.favourite = it.favourite ? 0 : 1;
+        btn.classList.toggle('on', !!it.favourite);
         await DB.run('UPDATE portfolio_items SET favourite = ? WHERE id = ?', [it.favourite, it.id]);
-        e.currentTarget.classList.toggle('on', !!it.favourite);
       };
       const cl = $('#pf-claimed');
       if (cl) cl.onchange = () => DB.run(`UPDATE portfolio_items SET claimed = ?, updated_at = datetime('now') WHERE id = ?`, [cl.checked ? 1 : 0, it.id]);
@@ -836,6 +888,269 @@ const VIEWS = {
         location.replace('#pf/' + pid);
       });
       Dirty.set(false);
+    }
+  },
+  quote: {
+    title: () => 'Quote',
+    render() {
+      const cfg = quoteCfg(), i = Q.in, cur = esc(Settings.get('currency'));
+      const num = (k, l, step, unit, tip) => `<label class="field"><span>${l}${tip ? ' ' + help(tip) : ''}</span>
+        <div class="unit-in"><input class="in" type="number" inputmode="decimal" min="0" step="${step}" data-q="${k}" value="${i[k]}"><em>${unit}</em></div></label>`;
+      const rate = (k, l, unit, tip) => `<label class="field"><span>${l} ${help(tip)}</span>
+        <div class="unit-in"><input class="in" type="number" inputmode="decimal" min="0" step="any" data-c="${k}" value="${cfg[k]}"><em>${unit}</em></div></label>`;
+      return `<div id="q-root">
+      <div class="card q-total">
+        <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.08em">Estimate</div>
+        <div class="big" id="q-total">–</div>
+        <div id="q-dep" class="muted"></div>
+        <div id="q-break" class="q-break"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="q-copy">Copy / send</button>
+          <button class="btn primary" style="flex:1" id="q-book">Book with this quote</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="seg" id="q-method" style="margin-bottom:14px">
+          <button data-m="hourly" class="${i.method === 'hourly' ? 'on' : ''}" style="flex:1">By time</button>
+          <button data-m="size" class="${i.method === 'size' ? 'on' : ''}" style="flex:1">By size</button>
+        </div>
+        <div class="q-hourly" ${i.method === 'hourly' ? '' : 'hidden'}>${num('hours', 'Estimated time', '0.5', 'hours', 'Your best guess at needle time.')}</div>
+        <div class="two">${num('w', 'Width', '0.5', 'cm')}${num('h', 'Height', '0.5', 'cm')}</div>
+        <label class="field"><span>Detail ${help('Multiplies the price. Set the multipliers under Your rates.')}</span>
+          <div class="seg" id="q-cx">${[['simple', 'Simple'], ['standard', 'Standard'], ['detailed', 'Detailed']].map(([k, l]) =>
+            `<button data-x="${k}" class="${i.cx === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div></label>
+        <div class="row">
+          <label class="toggle" data-tip="Adds the colour surcharge"><input type="checkbox" data-q="colour" ${i.colour ? 'checked' : ''}><span>Colour</span></label>
+          <label class="toggle" data-tip="Ribs, hands, neck, feet, etc. Adds the placement surcharge"><input type="checkbox" data-q="hard" ${i.hard ? 'checked' : ''}><span>Tricky spot</span></label>
+          <label class="toggle" data-tip="Cover-ups and reworks. Adds the cover-up surcharge"><input type="checkbox" data-q="cover" ${i.cover ? 'checked' : ''}><span>Cover-up</span></label>
+        </div>
+      </div>
+      <details class="card guide" style="margin-top:0"><summary>Your rates</summary>
+        <div style="margin-top:12px">
+          <div class="two">${rate('rate', 'Hourly rate', cur || '/h', 'Used by "By time".')}${rate('base', 'Size: base fee', cur, 'Flat setup fee added to "By size" quotes.')}</div>
+          <div class="two">${rate('cm2', 'Size: per cm²', cur, 'Price per square centimetre for "By size".')}${rate('min', 'Shop minimum', cur, 'No quote goes below this.')}</div>
+          <div class="two">${rate('colour', 'Colour surcharge', '%', 'Extra for colour work.')}${rate('hard', 'Tricky spot surcharge', '%', 'Extra for painful or awkward placements.')}</div>
+          <div class="two">${rate('cover', 'Cover-up surcharge', '%', 'Extra for cover-ups and reworks.')}${rate('deposit', 'Deposit', '%', 'Suggested deposit as a share of the quote.')}</div>
+          <div class="two">${rate('simple', 'Simple ×', '×', 'Multiplier for simple pieces, e.g. 0.85.')}${rate('detailed', 'Detailed ×', '×', 'Multiplier for detailed pieces, e.g. 1.35.')}</div>
+          <div class="two">${rate('round', 'Round to', cur, 'Rounds the total to the nearest amount, e.g. 50.')}${rate('perhour', 'Time guess: cm² per hour', 'cm²', 'Used to suggest session length for size quotes.')}</div>
+        </div>
+      </details></div>`;
+    },
+    mount() {
+      const v = $('#q-root');
+      v.addEventListener('input', (e) => {
+        const q = e.target.dataset.q, c = e.target.dataset.c;
+        if (q) Q.in[q] = e.target.type === 'checkbox' ? e.target.checked : +e.target.value;
+        if (c) { const cfg = quoteCfg(); cfg[c] = +e.target.value; Settings.set('quote_cfg', JSON.stringify(cfg)); }
+        quoteUpdate();
+      });
+      $('#q-method').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; Q.in.method = b.dataset.m;
+        $('#q-method').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); $('.q-hourly').hidden = Q.in.method !== 'hourly'; quoteUpdate(); };
+      $('#q-cx').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); Q.in.cx = b.dataset.x;
+        $('#q-cx').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); quoteUpdate(); };
+      $('#q-book').onclick = () => {
+        const r = quoteCalc();
+        Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: Q.in.w && Q.in.h ? `${Q.in.w} x ${Q.in.h} cm` : '', duration: r.minutes };
+        newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00'));
+      };
+      $('#q-copy').onclick = async () => {
+        const r = quoteCalc();
+        const text = `Quote${Settings.get('studio_name') ? ' from ' + Settings.get('studio_name') : ''}\n`
+          + (Q.in.w && Q.in.h ? `Size: ${Q.in.w} x ${Q.in.h} cm\n` : '')
+          + `Estimate: ${money(r.total)}\nDeposit to book: ${money(r.deposit)}\n`
+          + (r.minutes ? `Approx. time: ${fmtDur(r.minutes)}\n` : '') + 'Final price may change with design changes.';
+        try {
+          if (navigator.share) await navigator.share({ text });
+          else { await navigator.clipboard.writeText(text); toast('Quote copied.'); }
+        } catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
+      };
+      quoteUpdate();
+    }
+  },
+  inventory: {
+    title: () => 'Inventory',
+    render: () => `
+      <div class="search-bar">
+        <input class="in" id="inv-q" type="search" placeholder="Search stock…" value="${esc(INV.q)}" autocomplete="off">
+        <button class="btn primary icon-btn" id="inv-add" data-tip="Add item" aria-label="Add item"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn" id="inv-take" style="flex:1" data-tip="Count everything and record the differences">Stock take</button>
+        <button class="btn" id="inv-shop" style="flex:1" data-tip="Share a list of everything at or below its minimum">Shopping list</button>
+      </div>
+      <div id="inv-list"></div>
+      <div id="inv-hist"></div>`,
+    mount() {
+      $('#inv-q').addEventListener('input', (e) => { INV.q = e.target.value; renderInventory(); });
+      $('#inv-add').onclick = () => location.hash = 'inv-edit/new';
+      $('#inv-take').onclick = () => location.hash = 'stocktake';
+      $('#inv-shop').onclick = async () => {
+        const low = await DB.all('SELECT name, qty, min_qty, unit, supplier FROM inventory_items WHERE qty <= min_qty ORDER BY supplier, name COLLATE NOCASE');
+        if (!low.length) return toast('Nothing is running low.');
+        const text = 'Shopping list\n\n' + low.map(i => `• ${i.name} (have ${fmtQty(i.qty)}${i.unit ? ' ' + i.unit : ''}, min ${fmtQty(i.min_qty)})${i.supplier ? ' – ' + i.supplier : ''}`).join('\n');
+        try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('List copied.'); } }
+        catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
+      };
+      $('#inv-list').addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-step]'); if (!b) return;
+        e.preventDefault();
+        const id = +b.dataset.id;
+        await DB.run(`UPDATE inventory_items SET qty = max(0, qty + ?), updated_at = datetime('now') WHERE id = ?`, [+b.dataset.step, id]);
+        renderInventory();
+      });
+      renderInventory();
+    }
+  },
+  'inv-edit': {
+    title: (id) => id === 'new' ? 'New item' : 'Edit item',
+    render: () => '<form id="inv-form" class="card" autocomplete="off"></form>',
+    async mount(id) {
+      const it = id === 'new' ? { qty: 0, min_qty: 0 } : await DB.one('SELECT * FROM inventory_items WHERE id = ?', [+id]);
+      if (!it) { location.hash = 'inventory'; return; }
+      const cats = (await DB.all(`SELECT DISTINCT category FROM inventory_items WHERE category IS NOT NULL ORDER BY category`)).map(r => r.category);
+      const sugg = [...new Set([...cats, 'Needles', 'Ink', 'Hygiene', 'Aftercare', 'Stencil', 'Other'])];
+      const cur = Settings.get('currency');
+      const f = $('#inv-form');
+      const inp = (n, l, t = 'text', x = '') => `<label class="field"><span>${l}</span><input class="in" name="${n}" type="${t}" value="${esc(it[n] ?? '')}" ${x}></label>`;
+      f.innerHTML = `
+        ${inp('name', 'Name', 'text', 'required placeholder="Black ink 8oz"')}
+        <div class="two">
+          <label class="field"><span>Category</span><input class="in" name="category" list="inv-cats" value="${esc(it.category ?? '')}">
+            <datalist id="inv-cats">${sugg.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+          ${inp('unit', 'Unit', 'text', 'placeholder="box, bottle, pack"')}
+        </div>
+        <div class="two">
+          ${inp('qty', 'In stock', 'number', 'inputmode="decimal" min="0" step="any"')}
+          <label class="field"><span>Minimum ${help('When stock drops to this, the item is flagged and goes on the shopping list.')}</span>
+            <input class="in" name="min_qty" type="number" inputmode="decimal" min="0" step="any" value="${it.min_qty ?? 0}"></label>
+        </div>
+        <div class="two">${inp('supplier', 'Supplier')}${inp('cost', 'Cost per unit' + (cur ? ` (${esc(cur)})` : ''), 'number', 'inputmode="decimal" min="0" step="any"')}</div>
+        <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="2">${esc(it.notes ?? '')}</textarea></label>
+        <div class="form-foot row">
+          ${it.id ? '<button type="button" class="btn danger icon-btn" id="inv-del" aria-label="Delete" data-tip="Delete item"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
+          <button type="button" class="btn" id="inv-cancel">Cancel</button>
+          <button type="submit" class="btn primary" style="flex:1">Save</button>
+        </div>`;
+      Dirty.set(false);
+      f.addEventListener('input', () => Dirty.set(true));
+      $('#inv-cancel').onclick = () => history.back();
+      const del = $('#inv-del');
+      if (del) del.onclick = async () => {
+        if (!confirm(`Delete "${it.name}" from inventory?`)) return;
+        await DB.run('DELETE FROM inventory_items WHERE id = ?', [it.id]);
+        Dirty.set(false); toast('Item deleted.'); location.replace('#inventory');
+      };
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const d = Object.fromEntries(new FormData(f));
+        const n = (v) => v === '' ? null : +v, s = (v) => v.trim() || null;
+        const vals = [d.name.trim(), s(d.category), s(d.unit), +d.qty || 0, +d.min_qty || 0, s(d.supplier), n(d.cost), s(d.notes)];
+        const cols = 'name, category, unit, qty, min_qty, supplier, cost, notes';
+        if (it.id) await DB.run(`UPDATE inventory_items SET ${cols.split(', ').map(c => c + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, it.id]);
+        else await DB.run(`INSERT INTO inventory_items (${cols}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, vals);
+        Dirty.set(false); toast('Saved.'); location.replace('#inventory');
+      });
+    }
+  },
+  stocktake: {
+    title: () => 'Stock take',
+    render: () => '<div id="stk"></div>',
+    async mount() {
+      const items = await DB.all('SELECT * FROM inventory_items ORDER BY category COLLATE NOCASE, name COLLATE NOCASE');
+      const el = $('#stk');
+      if (!items.length) { el.innerHTML = '<div class="card muted">Add some inventory items first.</div>'; return; }
+      let cat = null;
+      el.innerHTML = `<p class="muted" style="margin:0 4px 12px">Count what's on the shelf. Fields start at the expected amount; change any that differ.</p>`
+        + items.map(i => {
+          const head = i.category !== cat ? `${cat !== null ? '</div>' : ''}<div class="letter">${esc(i.category || 'Uncategorised')}</div><div class="card list">` : '';
+          cat = i.category;
+          return head + `<div class="c-row"><span class="c-main"><span class="c-n">${esc(i.name)}</span>
+            <span class="muted c-sub">Expected ${fmtQty(i.qty)}${i.unit ? ' ' + esc(i.unit) : ''}</span></span>
+            <input class="in count-in" type="number" inputmode="decimal" min="0" step="any" data-id="${i.id}" value="${fmtQty(i.qty)}"></div>`;
+        }).join('') + `</div>
+        <label class="field"><span>Notes</span><input class="in" id="stk-notes" placeholder="optional"></label>
+        <div class="form-foot row" style="background:var(--bg)">
+          <button class="btn" id="stk-cancel">Cancel</button>
+          <button class="btn primary" style="flex:1" id="stk-save">Save stock take</button>
+        </div>`;
+      Dirty.set(false);
+      el.addEventListener('input', (e) => { if (e.target.matches('.count-in')) { Dirty.set(true); e.target.classList.toggle('diff', +e.target.value !== items.find(i => i.id === +e.target.dataset.id).qty); } });
+      $('#stk-cancel').onclick = () => history.back();
+      $('#stk-save').onclick = async () => {
+        const counts = [...el.querySelectorAll('.count-in')].map(x => ({ item: items.find(i => i.id === +x.dataset.id), counted: x.value === '' ? null : +x.value }));
+        if (counts.some(c => c.counted == null)) return toast('Fill in every count (0 if none).');
+        const diffs = counts.filter(c => c.counted !== c.item.qty).length;
+        if (!confirm(`Save stock take?\n\n${diffs} item${diffs === 1 ? '' : 's'} will be updated to the counted amount.`)) return;
+        await DB.run('INSERT INTO stock_takes (notes) VALUES (?)', [$('#stk-notes').value.trim() || null]);
+        const tid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+        await DB.tx(counts.flatMap(c => [
+          { sql: 'INSERT INTO stock_take_lines (take_id, item_id, item_name, expected, counted) VALUES (?, ?, ?, ?, ?)', params: [tid, c.item.id, c.item.name, c.item.qty, c.counted] },
+          ...(c.counted !== c.item.qty ? [{ sql: `UPDATE inventory_items SET qty = ?, updated_at = datetime('now') WHERE id = ?`, params: [c.counted, c.item.id] }] : [])]));
+        Dirty.set(false); toast(`Stock take saved. ${diffs} adjusted.`); location.replace('#inventory');
+      };
+    }
+  },
+  rules: {
+    title: () => 'Rule book',
+    render: () => `
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn" id="r-share" style="flex:1" data-tip="Send the whole rule book as text, e.g. to a client or apprentice">Share</button>
+        <button class="btn primary" id="r-add" style="flex:1">+ Add rule</button>
+      </div>
+      <div id="r-list"></div>`,
+    mount() {
+      $('#r-add').onclick = () => location.hash = 'rule-edit/new';
+      $('#r-share').onclick = async () => {
+        const rs = await DB.all('SELECT title, body FROM rules ORDER BY sort, id');
+        if (!rs.length) return toast('No rules yet.');
+        const text = `${Settings.get('studio_name') || 'Studio'} rules\n\n` + rs.map((r, i) => `${i + 1}. ${r.title}${r.body ? '\n' + r.body : ''}`).join('\n\n');
+        try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('Rules copied.'); } }
+        catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
+      };
+      $('#r-list').addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-mv]'); if (!b) return;
+        e.preventDefault();
+        const rs = await DB.all('SELECT id FROM rules ORDER BY sort, id');
+        const i = rs.findIndex(r => r.id === +b.dataset.id), j = i + +b.dataset.mv;
+        if (j < 0 || j >= rs.length) return;
+        [rs[i], rs[j]] = [rs[j], rs[i]];
+        await DB.tx(rs.map((r, k) => ({ sql: 'UPDATE rules SET sort = ? WHERE id = ?', params: [k, r.id] })));
+        renderRules();
+      });
+      renderRules();
+    }
+  },
+  'rule-edit': {
+    title: (id) => id === 'new' ? 'New rule' : 'Edit rule',
+    render: () => '<form id="r-form" class="card" autocomplete="off"></form>',
+    async mount(id) {
+      const r = id === 'new' ? {} : await DB.one('SELECT * FROM rules WHERE id = ?', [+id]);
+      if (!r) { location.hash = 'rules'; return; }
+      const f = $('#r-form');
+      f.innerHTML = `
+        <label class="field"><span>Rule</span><input class="in" name="title" value="${esc(r.title ?? '')}" required placeholder="Deposits are non-refundable"></label>
+        <label class="field"><span>Details</span><textarea class="in" name="body" rows="6" placeholder="Optional explanation">${esc(r.body ?? '')}</textarea></label>
+        <div class="form-foot row">
+          ${r.id ? '<button type="button" class="btn danger icon-btn" id="r-del" aria-label="Delete" data-tip="Delete rule"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
+          <button type="button" class="btn" id="r-cancel">Cancel</button>
+          <button type="submit" class="btn primary" style="flex:1">Save</button>
+        </div>`;
+      Dirty.set(false);
+      f.addEventListener('input', () => Dirty.set(true));
+      $('#r-cancel').onclick = () => history.back();
+      const del = $('#r-del');
+      if (del) del.onclick = async () => {
+        if (!confirm(`Delete the rule "${r.title}"?`)) return;
+        await DB.run('DELETE FROM rules WHERE id = ?', [r.id]);
+        Dirty.set(false); toast('Rule deleted.'); location.replace('#rules');
+      };
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const d = Object.fromEntries(new FormData(f));
+        if (r.id) await DB.run('UPDATE rules SET title = ?, body = ? WHERE id = ?', [d.title.trim(), d.body.trim() || null, r.id]);
+        else await DB.run('INSERT INTO rules (title, body, sort) VALUES (?, ?, (SELECT coalesce(max(sort), -1) + 1 FROM rules))', [d.title.trim(), d.body.trim() || null]);
+        Dirty.set(false); toast('Saved.'); location.replace('#rules');
+      });
     }
   },
   stencil: {
@@ -1696,6 +2011,87 @@ async function renderPfGrid() {
     </a>`).join('') + '</div>' + `<div class="muted count">${rows.length} piece${rows.length === 1 ? '' : 's'}</div>`;
 }
 
+/* ---------- Quote helpers ----------
+   total = (method price) x detail multiplier x (1 + surcharges), at least the minimum, rounded. */
+const QUOTE_DEFAULTS = { rate: 1000, base: 300, cm2: 6, min: 500, colour: 20, hard: 15, cover: 30, deposit: 30,
+  simple: 0.85, detailed: 1.35, round: 50, perhour: 60 };
+const Q = { in: { method: 'hourly', hours: 2, w: 10, h: 10, cx: 'standard', colour: false, hard: false, cover: false } };
+function quoteCfg() { let c = {}; try { c = JSON.parse(Settings.get('quote_cfg', '{}')); } catch {} return { ...QUOTE_DEFAULTS, ...c }; }
+
+function quoteCalc() {
+  const c = quoteCfg(), i = Q.in, lines = [];
+  const area = (i.w || 0) * (i.h || 0);
+  let p;
+  if (i.method === 'hourly') { p = (i.hours || 0) * c.rate; lines.push([`${i.hours || 0} h × ${money(c.rate)}`, p]); }
+  else { p = c.base + area * c.cm2; lines.push([`Base fee`, c.base], [`${area} cm² × ${money(c.cm2)}`, area * c.cm2]); }
+  const mult = i.cx === 'simple' ? c.simple : i.cx === 'detailed' ? c.detailed : 1;
+  if (mult !== 1) { lines.push([`${i.cx[0].toUpperCase() + i.cx.slice(1)} × ${mult}`, p * mult - p]); p *= mult; }
+  let pct = 0;
+  if (i.colour) { pct += c.colour; lines.push([`Colour +${c.colour}%`, p * c.colour / 100]); }
+  if (i.hard) { pct += c.hard; lines.push([`Tricky spot +${c.hard}%`, p * c.hard / 100]); }
+  if (i.cover) { pct += c.cover; lines.push([`Cover-up +${c.cover}%`, p * c.cover / 100]); }
+  p *= 1 + pct / 100;
+  let minHit = false;
+  if (p < c.min) { p = c.min; minHit = true; }
+  const total = c.round > 0 ? Math.round(p / c.round) * c.round : Math.round(p);
+  const deposit = c.round > 0 ? Math.round(total * c.deposit / 100 / c.round) * c.round : Math.round(total * c.deposit / 100);
+  const minutes = i.method === 'hourly' ? Math.round((i.hours || 0) * 60 / 30) * 30
+    : c.perhour > 0 ? Math.max(30, Math.round(area / c.perhour * mult * 2) * 30) : 0;
+  return { total, deposit, minutes, lines, minHit };
+}
+
+function quoteUpdate() {
+  const r = quoteCalc();
+  $('#q-total').textContent = money(r.total);
+  $('#q-dep').textContent = `Deposit ${money(r.deposit)}${r.minutes ? ' · about ' + fmtDur(r.minutes) : ''}`;
+  $('#q-break').innerHTML = r.lines.map(([l, v]) => `<div><span>${esc(l)}</span><span>${v >= 0 ? '' : '−'}${money(Math.abs(Math.round(v)))}</span></div>`).join('')
+    + (r.minHit ? '<div class="q-min"><span>Shop minimum applied</span></div>' : '');
+}
+
+/* ---------- Inventory & rules helpers ---------- */
+const INV = { q: '' };
+const fmtQty = (n) => +(+n).toFixed(2);
+
+async function renderInventory() {
+  const el = $('#inv-list'); if (!el) return;
+  const like = '%' + INV.q.trim() + '%';
+  const rows = await DB.all(`SELECT * FROM inventory_items WHERE name LIKE ?1 OR category LIKE ?1 OR supplier LIKE ?1
+    ORDER BY (qty <= min_qty) DESC, category COLLATE NOCASE, name COLLATE NOCASE`, [like]);
+  if ($('#inv-list') !== el) return;
+  const low = rows.filter(r => r.qty <= r.min_qty);
+  if (!rows.length) {
+    el.innerHTML = INV.q ? '<div class="empty muted">No matches.</div>'
+      : `<div class="empty"><div class="empty-ico">${ICON.stock}</div><div style="font:24px var(--display)">Nothing stocked yet</div><div class="muted">Tap + to add needles, ink, gloves…</div></div>`;
+  } else {
+    const row = (i) => `<a class="c-row inv-row ${i.qty <= i.min_qty ? 'low' : ''}" href="#inv-edit/${i.id}">
+      <span class="c-main"><span class="c-n">${esc(i.name)}</span>
+        <span class="muted c-sub">${esc([i.category, i.supplier].filter(Boolean).join(' · ') || ' ')}</span></span>
+      <span class="stepper">
+        <button class="mini" data-step="-1" data-id="${i.id}" aria-label="One less">−</button>
+        <b>${fmtQty(i.qty)}<small>${esc(i.unit || '')}</small></b>
+        <button class="mini" data-step="1" data-id="${i.id}" aria-label="One more">+</button></span></a>`;
+    el.innerHTML = (low.length ? `<div class="letter" style="color:var(--red)">Running low (${low.length})</div><div class="card list">${low.map(row).join('')}</div>` : '')
+      + (rows.length > low.length ? `<div class="letter">In stock</div><div class="card list">${rows.filter(r => r.qty > r.min_qty).map(row).join('')}</div>` : '');
+  }
+  const h = await DB.all(`SELECT t.id, t.taken_at, t.notes, count(l.take_id) AS n, sum(l.counted <> l.expected) AS diff
+    FROM stock_takes t LEFT JOIN stock_take_lines l ON l.take_id = t.id GROUP BY t.id ORDER BY t.taken_at DESC LIMIT 5`);
+  const he = $('#inv-hist');
+  if (he) he.innerHTML = h.length ? `<div class="letter">Past stock takes</div><div class="card list">${h.map(t => `<div class="c-row"><span class="c-main">
+      <span class="c-n">${new Date(t.taken_at + 'Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+      <span class="muted c-sub">${t.n} counted · ${t.diff || 0} adjusted${t.notes ? ' · ' + esc(t.notes) : ''}</span></span></div>`).join('')}</div>` : '';
+}
+
+async function renderRules() {
+  const el = $('#r-list'); if (!el) return;
+  const rs = await DB.all('SELECT * FROM rules ORDER BY sort, id');
+  el.innerHTML = rs.length ? '<div class="card list">' + rs.map((r, i) => `
+    <a class="c-row rule" href="#rule-edit/${r.id}"><span class="rule-n">${i + 1}</span>
+      <span class="c-main"><span class="c-n">${esc(r.title)}</span>${r.body ? `<span class="muted rule-b">${esc(r.body)}</span>` : ''}</span>
+      <span class="row" style="gap:4px;flex-wrap:nowrap"><button class="mini" data-mv="-1" data-id="${r.id}" ${i ? '' : 'disabled'} aria-label="Move up">&uarr;</button>
+      <button class="mini" data-mv="1" data-id="${r.id}" ${i < rs.length - 1 ? '' : 'disabled'} aria-label="Move down">&darr;</button></span></a>`).join('') + '</div>'
+    : `<div class="empty"><div class="empty-ico">${ICON.rules}</div><div style="font:24px var(--display)">No rules yet</div><div class="muted">Deposits, cancellations, touch-ups, age, guests…</div></div>`;
+}
+
 /* ---------- Stencil helpers ---------- */
 const ST_INKS = [['#1a1a1a', 'Black'], ['#3b2d8f', 'Stencil purple'], ['#b3261e', 'Red']];
 const ST_DEFAULTS = { mode: 'lines', detail: 6, amount: 60, weight: 1, threshold: 110, clean: 1, contrast: 0, bright: 0, ink: '#3b2d8f', flip: false };
@@ -1947,6 +2343,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
+  quote: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
   stencil: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
@@ -1971,12 +2368,18 @@ $('#nav').addEventListener('click', e => {
 $('#view').addEventListener('click', e => {
   const t = e.target.closest('[data-go]'); if (t) location.hash = t.dataset.go;
 });
-addEventListener('hashchange', render);
+let booted = false;   // no view touches the database before boot has opened and migrated it
+addEventListener('hashchange', () => { if (booted) render(); });
 
 /* ---------- Boot ---------- */
 (async () => {
   const badge = $('#db-badge');
+  let recovered = false;
   try {
+    if (!(await hasData())) {
+      const snap = await Snapshot.load();
+      if (snap) { await DB.importBytes(snap); recovered = true; }
+    }
     await migrate();
     await Settings.load();
     Cal.mode = Settings.get('cal_mode', innerWidth >= 900 ? 'week' : 'day');
@@ -1994,6 +2397,10 @@ addEventListener('hashchange', render);
       <button class="btn primary" onclick="location.reload()">Reload</button></div>`;
     return;
   }
+  booted = true;
+  Snapshot.ready = true;
   render();
+  if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
+  else Snapshot.soon();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
 })();

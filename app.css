@@ -116,7 +116,7 @@ textarea.in { padding: 12px 14px; resize: vertical; min-height: 0; display: bloc
 .icon-btn { padding: 0; width: 46px; min-height: 46px; flex: none; }
 
 /* Clients */
-.search-bar { position: sticky; top: 64px; z-index: 4; display: flex; gap: 10px; padding: 4px 0 12px; background: var(--bg); }
+.search-bar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 60px); z-index: 4; display: flex; gap: 10px; padding: 4px 0 12px; background: var(--bg); }
 .letter { font: 20px var(--display); color: var(--teal); margin: 10px 4px 6px; }
 .card.list { padding: 4px 0; }
 .c-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: inherit; text-decoration: none; min-height: 60px; }
@@ -158,7 +158,7 @@ textarea.in { padding: 12px 14px; resize: vertical; min-height: 0; display: bloc
 
 /* Booking / calendar */
 .card.list.flush { background: none; border: 0; padding: 0; margin: 0 -16px -16px; border-top: 1px solid var(--line); border-radius: 0; }
-.cal-bar { position: sticky; top: 64px; z-index: 4; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 4px 0 8px; background: var(--bg); }
+.cal-bar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 60px); z-index: 4; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 4px 0 8px; background: var(--bg); }
 .seg { display: flex; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
 .seg button { border: 0; background: none; padding: 0 12px; min-height: 38px; border-radius: 9px; color: var(--ink2); font-weight: 600; cursor: pointer; }
 .seg button.on { background: var(--teal); color: #061211; }
@@ -267,6 +267,26 @@ select.in { appearance: none; padding-right: 30px; cursor: pointer;
 .thumb.cover { outline: 2px solid var(--teal); outline-offset: -2px; }
 .thumb .fwd { right: auto; left: 4px; font-size: 11px; }
 .mini-sel { min-height: 32px; font-size: 12px !important; padding: 0 22px 0 8px; border-radius: 8px; background-position: right 4px center; background-size: 12px; }
+
+/* Quote / inventory / rules */
+.q-total { border-color: var(--teal2); background: linear-gradient(135deg, rgba(31,181,168,.14), transparent 60%), var(--bg2); }
+.q-total .big { font: 52px/1.05 var(--display); color: var(--teal); }
+.q-break { margin-top: 10px; font-size: 13px; color: var(--ink2); border-top: 1px dashed var(--line); padding-top: 8px; }
+.q-break div { display: flex; justify-content: space-between; padding: 2px 0; }
+.q-min { color: var(--red); }
+.unit-in { position: relative; }
+.unit-in em { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-style: normal; font-size: 13px; color: var(--ink2); pointer-events: none; }
+.unit-in .in { padding-right: 56px; }
+.stepper { display: flex; align-items: center; gap: 6px; flex: none; }
+.stepper b { min-width: 44px; text-align: center; font-size: 16px; display: flex; flex-direction: column; line-height: 1.1; }
+.stepper small { font-size: 10px; color: var(--ink2); font-weight: 400; }
+.stepper .mini { width: 38px; height: 38px; font-size: 18px; }
+.inv-row.low b { color: var(--red); }
+.count-in { width: 92px; flex: none; text-align: center; }
+.count-in.diff { border-color: #f0c75e; color: #f0c75e; }
+.rule { align-items: flex-start; }
+.rule-n { font: 24px/1 var(--display); color: var(--teal); width: 28px; flex: none; padding-top: 2px; }
+.rule-b { font-size: 13px; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Stencil */
 .st-pick { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 48px 16px; cursor: pointer; border-style: dashed; border-color: var(--teal2); }
