@@ -691,7 +691,7 @@ const VIEWS = {
       ${tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio')}
       ${tile('stencil', 'Stencil maker', 'Photo to stencil', false, 'stencil')}
       ${tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')}
-      ${tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', true)}</div>`
+      ${tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel')}</div>`
   },
   more: {
     title: () => 'More',
@@ -1151,6 +1151,39 @@ const VIEWS = {
         else await DB.run('INSERT INTO rules (title, body, sort) VALUES (?, ?, (SELECT coalesce(max(sort), -1) + 1 FROM rules))', [d.title.trim(), d.body.trim() || null]);
         Dirty.set(false); toast('Saved.'); location.replace('#rules');
       });
+    }
+  },
+  reel: {
+    title: () => 'Reel',
+    render: () => `
+      <div class="reel-wrap">
+        <div class="reel-stage">
+          <canvas id="reel-cv" width="${PREVIEW_W}" height="${PREVIEW_H}"></canvas>
+          <div class="reel-ctrl">
+            <button class="btn icon-btn" id="reel-play" aria-label="Play"></button>
+            <input type="range" id="reel-scrub" min="0" step="0.01" value="0" aria-label="Scrub">
+            <span id="reel-time" class="muted"></span>
+          </div>
+        </div>
+        <div class="reel-side">
+          <div class="seg" id="reel-tabs" style="margin-bottom:12px">
+            ${[['clips', 'Clips'], ['style', 'Style'], ['music', 'Music']].map(([k, l]) => `<button data-t="${k}" class="${R.tab === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}
+          </div>
+          <div id="reel-panel"></div>
+          <button class="btn primary" id="reel-export" style="width:100%;margin:14px 0 24px">Export reel</button>
+        </div>
+      </div>`,
+    mount() {
+      reelPlayBtn(); reelRender();
+      $('#reel-play').onclick = () => R.playing ? reelPause() : reelPlay();
+      const sc = $('#reel-scrub');
+      sc.addEventListener('input', () => { R.scrubbing = true; if (R.playing) reelPause(); R.t = +sc.value; reelSyncVideos(R.t, false); reelRender(); });
+      sc.addEventListener('change', () => { R.scrubbing = false; });
+      $('#reel-tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; R.tab = b.dataset.t;
+        $('#reel-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); reelPanel(); };
+      $('#reel-export').onclick = () => reelExport();
+      reelPanel();
+      document.fonts.ready.then(() => reelRender());
     }
   },
   stencil: {
@@ -2092,6 +2125,186 @@ async function renderRules() {
     : `<div class="empty"><div class="empty-ico">${ICON.rules}</div><div style="font:24px var(--display)">No rules yet</div><div class="muted">Deposits, cancellations, touch-ups, age, guests…</div></div>`;
 }
 
+/* ---------- Reel UI (engine in reel.js) ---------- */
+// The draft stays in memory while the app is open, so leaving the Reel screen loses nothing.
+function reelChanged() { reelRender(); }
+
+async function reelPanel() {
+  const el = $('#reel-panel'); if (!el) return;
+  const s = reelStyle();
+  if (R.tab === 'clips') {
+    const c = R.clips[R.sel];
+    el.innerHTML = `
+      <div class="reel-strip" id="reel-strip">
+        ${R.clips.map((x, i) => `<button class="reel-clip ${i === R.sel ? 'on' : ''}" data-i="${i}">
+          ${x.type === 'video' ? `<video src="${x.url}#t=${x.inP + 0.1}" muted playsinline preload="metadata"></video>` : `<img src="${x.url}" alt="">`}
+          <span>${(x.type === 'video' ? x.outP - x.inP : x.dur).toFixed(1)}s</span>${x.type === 'video' ? '<i>▶</i>' : ''}</button>`).join('')}
+        <label class="reel-clip add" data-tip="Add photos or videos from this device"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+          <input type="file" accept="image/*,video/*" multiple hidden id="reel-file"></label>
+        <button class="reel-clip add" id="reel-pf" data-tip="Add from your portfolio">${ICON.portfolio}</button>
+      </div>
+      ${c ? `<div class="card reel-clip-ed">
+        ${c.type === 'video' ? `
+          <label class="slider"><span>Start ${help('Where this video clip begins.')}<b>${c.inP.toFixed(1)}s</b></span>
+            <input type="range" min="0" max="${c.srcDur.toFixed(2)}" step="0.1" value="${c.inP}" data-c="inP"></label>
+          <label class="slider"><span>End<b>${c.outP.toFixed(1)}s</b></span>
+            <input type="range" min="0" max="${c.srcDur.toFixed(2)}" step="0.1" value="${c.outP}" data-c="outP"></label>
+          <label class="toggle" style="display:inline-flex;margin-bottom:10px"><input type="checkbox" data-c="sound" ${c.mute ? '' : 'checked'}><span>Clip sound</span></label>`
+        : `<label class="slider"><span>Length<b>${c.dur.toFixed(1)}s</b></span>
+            <input type="range" min="0.5" max="8" step="0.1" value="${c.dur}" data-c="dur"></label>`}
+        <div class="lbl">Motion ${help('Slow zoom or pan keeps photos alive.')}</div>
+        <div class="seg" data-seg="motion" style="margin-bottom:10px">${[['none', 'Still'], ['in', 'Zoom in'], ['out', 'Zoom out'], ['pan', 'Pan']].map(([k, l]) =>
+          `<button data-v="${k}" class="${c.motion === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+        <div class="lbl">Framing ${help('Fill crops to the full screen. Fit shows the whole image over a blurred background.')}</div>
+        <div class="seg" data-seg="fit" style="margin-bottom:10px">${[['cover', 'Fill'], ['blur', 'Fit']].map(([k, l]) =>
+          `<button data-v="${k}" class="${c.fit === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+        <label class="field"><span>Caption</span><input class="in" data-c="caption" value="${esc(c.caption)}" placeholder="e.g. Fine-line peony, healed"></label>
+        <div class="row">
+          <button class="btn small" data-act="left" ${R.sel ? '' : 'disabled'}>◀ Move</button>
+          <button class="btn small" data-act="right" ${R.sel < R.clips.length - 1 ? '' : 'disabled'}>Move ▶</button>
+          <button class="btn small danger" data-act="del" style="margin-left:auto">Remove</button>
+        </div>
+      </div>` : `<p class="muted" style="margin:4px">${R.clips.length ? 'Tap a clip to edit it.' : 'Add photos or videos of your work to start.'}</p>`}`;
+    $('#reel-file').addEventListener('change', async (e) => {
+      const files = [...e.target.files];
+      for (const f of files) { try { await reelAddFile(f); } catch (err) { toast(`Skipped ${f.name}: ${err.message}`); } }
+      R.sel = R.clips.length - 1; reelChanged(); reelPanel();
+    });
+    $('#reel-pf').onclick = reelPortfolioPicker;
+    $('#reel-strip').addEventListener('click', (e) => {
+      const b = e.target.closest('.reel-clip[data-i]'); if (!b) return;
+      R.sel = +b.dataset.i;
+      const segs = reelSegments().segs, seg = segs.find(x => x.clip === R.clips[R.sel]);
+      if (seg) { if (R.playing) reelPause(); R.t = seg.start + 0.01; reelSyncVideos(R.t, false); reelRender(); }
+      reelPanel();
+    });
+    const ed = el.querySelector('.reel-clip-ed');
+    if (ed) {
+      ed.addEventListener('input', (e) => {
+        const k = e.target.dataset.c; if (!k) return;
+        if (k === 'caption') c.caption = e.target.value;
+        else if (k === 'sound') c.mute = !e.target.checked;
+        else {
+          c[k] = +e.target.value;
+          if (k === 'inP' && c.outP - c.inP < 0.5) c.outP = Math.min(c.srcDur, c.inP + 0.5);
+          if (k === 'outP' && c.outP - c.inP < 0.5) c.inP = Math.max(0, c.outP - 0.5);
+          e.target.closest('.slider').querySelector('b').textContent = c[k].toFixed(1) + 's';
+          const tile = el.querySelector(`.reel-clip[data-i="${R.sel}"] span`);
+          if (tile) tile.textContent = (c.type === 'video' ? c.outP - c.inP : c.dur).toFixed(1) + 's';
+          if (k === 'inP' || k === 'outP') { const seg = reelSegments().segs.find(x => x.clip === c); if (seg) { R.t = seg.start + (k === 'outP' ? seg.dur - 0.05 : 0.01); reelSyncVideos(R.t, false); } }
+        }
+        reelChanged();
+      });
+      ed.addEventListener('change', (e) => { if (e.target.dataset.c === 'inP' || e.target.dataset.c === 'outP') reelPanel(); });
+      ed.addEventListener('click', (e) => {
+        const sb = e.target.closest('[data-seg] button');
+        if (sb) { c[sb.parentElement.dataset.seg] = sb.dataset.v; sb.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === sb)); reelChanged(); return; }
+        const a = e.target.closest('[data-act]'); if (!a) return;
+        const i = R.sel;
+        if (a.dataset.act === 'del') { const [gone] = R.clips.splice(i, 1); if (gone.type === 'video') gone.el.pause(); URL.revokeObjectURL(gone.url); R.sel = Math.min(i, R.clips.length - 1); }
+        else { const j = a.dataset.act === 'left' ? i - 1 : i + 1; [R.clips[i], R.clips[j]] = [R.clips[j], R.clips[i]]; R.sel = j; }
+        R.t = Math.min(R.t, reelSegments().total); reelChanged(); reelPanel();
+      });
+    }
+  } else if (R.tab === 'style') {
+    const swatches = (k) => `<span class="ink-dots" data-sw="${k}">${REEL_COLORS.map(c => `<button class="ink ${s[k] === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span>`;
+    const seg = (k, opts) => `<div class="seg" data-st="${k}" style="margin-bottom:12px">${opts.map(([v, l]) => `<button data-v="${v}" class="${s[k] === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`;
+    el.innerHTML = `<div class="card">
+      <p class="muted" style="margin:0 0 12px">Saved and reused on every reel, so your posts look consistent.</p>
+      <div class="two">
+        <label class="field"><span>Name on intro</span><input class="in" data-s="title" value="${esc(s.title)}" placeholder="${esc(Settings.get('studio_name') || 'Studio name')}"></label>
+        <label class="field"><span>Handle</span><input class="in" data-s="handle" value="${esc(s.handle)}" placeholder="@yourhandle" autocapitalize="off"></label>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <label class="toggle"><input type="checkbox" data-s="intro" ${s.intro ? 'checked' : ''}><span>Intro card</span></label>
+        <label class="toggle"><input type="checkbox" data-s="outro" ${s.outro ? 'checked' : ''}><span>Outro card</span></label>
+        <label class="toggle" data-tip="Your handle in the corner of every clip"><input type="checkbox" data-s="watermark" ${s.watermark ? 'checked' : ''}><span>Watermark</span></label>
+      </div>
+      <label class="field"><span>Outro text</span><input class="in" data-s="outroText" value="${esc(s.outroText)}"></label>
+      <div class="lbl">Transition</div>${seg('transition', [['cut', 'Cut'], ['fade', 'Fade'], ['flash', 'Flash'], ['zoom', 'Zoom']])}
+      <div class="lbl">Captions</div>${seg('captionPos', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}
+      <div class="lbl">Font</div>${seg('font', [['display', 'Tattoo'], ['clean', 'Clean']])}
+      <div class="row" style="margin-bottom:12px"><span class="lbl" style="margin:0;width:70px">Text</span>${swatches('color')}</div>
+      <div class="row" style="margin-bottom:12px"><span class="lbl" style="margin:0;width:70px">Accent</span>${swatches('accent')}</div>
+      <div class="lbl">Export quality ${help('1080p looks sharper but makes bigger files and is heavier on older phones.')}</div>${seg('quality', [['720', '720p'], ['1080', '1080p']])}
+    </div>`;
+    el.addEventListener('input', reelStyleInput);
+    el.addEventListener('click', reelStyleClick);
+  } else {
+    const m = R.music, { total } = reelSegments();
+    el.innerHTML = `<div class="card">
+      ${m ? `<div class="row" style="flex-wrap:nowrap;margin-bottom:12px"><span class="ava">♪</span><b style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.name)}</b>
+          <button class="btn small danger" id="reel-mrm">Remove</button></div>
+        <label class="slider"><span>Start song at ${help('Skip the intro of the song so the good part plays.')}<b>${m.offset.toFixed(1)}s</b></span>
+          <input type="range" min="0" max="${Math.max(0, m.buffer.duration - Math.min(total, m.buffer.duration) - 0.1).toFixed(1)}" step="0.1" value="${m.offset}" data-m="offset"></label>
+        <label class="slider"><span>Volume<b>${Math.round(m.vol * 100)}%</b></span>
+          <input type="range" min="0" max="1" step="0.05" value="${m.vol}" data-m="vol"></label>
+        <p class="muted" style="font-size:13px">Song: ${m.buffer.duration.toFixed(0)}s · Reel: ${total.toFixed(1)}s. Fades out at the end.</p>`
+      : `<p class="muted" style="margin-top:0">Add a song or sound from this device. Use audio you have the rights to; Instagram and TikTok can also add their own music after you upload.</p>`}
+      <label class="btn ${m ? '' : 'primary'}" style="width:100%">${m ? 'Change sound' : 'Choose audio file'}<input type="file" accept="audio/*" hidden id="reel-mfile"></label>
+    </div>`;
+    $('#reel-mfile').addEventListener('change', async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      try {
+        const ctx = reelAudio();
+        const buffer = await ctx.decodeAudioData(await f.arrayBuffer());
+        R.music = { name: f.name, buffer, offset: 0, vol: 0.8 };
+        reelPanel();
+      } catch { toast('Could not read that audio file.'); }
+    });
+    const rm = $('#reel-mrm'); if (rm) rm.onclick = () => { reelPause(); R.music = null; reelPanel(); };
+    el.addEventListener('input', reelMusicInput);
+  }
+}
+function reelMusicInput(e) {
+  const k = e.target.dataset.m; if (!k || !R.music) return;
+  R.music[k] = +e.target.value;
+  e.target.closest('.slider').querySelector('b').textContent = k === 'vol' ? Math.round(R.music.vol * 100) + '%' : R.music.offset.toFixed(1) + 's';
+  if (R.playing) reelMusicStart(R.t);
+}
+// Panel listeners are named functions: #reel-panel survives tab switches, and re-adding the same
+// function reference is a no-op, so they never stack up.
+function reelStyleInput(e) {
+  const k = e.target.dataset.s; if (!k) return;
+  reelSetStyle(k, e.target.type === 'checkbox' ? e.target.checked : e.target.value);
+  reelRender();
+}
+function reelStyleClick(e) {
+  const b = e.target.closest('[data-st] button, [data-sw] .ink'); if (!b) return;
+  const box = b.closest('[data-st], [data-sw]'), k = box.dataset.st || box.dataset.sw;
+  reelSetStyle(k, b.dataset.v);
+  box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  if (k === 'quality') return;
+  reelRender();
+}
+
+async function reelPortfolioPicker() {
+  const rows = await DB.all(`SELECT x.photo_ref, x.thumb_ref, p.title FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id
+    ORDER BY coalesce(p.made_on, p.created_at) DESC, x.sort LIMIT 120`);
+  if (!rows.length) return toast('Your portfolio is empty.');
+  const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+  const o = document.createElement('div');
+  o.id = 'reel-pick';
+  o.innerHTML = `<div class="card"><h2>Pick from portfolio</h2>
+    <div class="pf-grid" style="max-height:55vh;overflow-y:auto">${rows.map((r, i) => `<button class="pf-tile" data-i="${i}"><img src="${urls[i]}" alt=""></button>`).join('')}</div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="rp-cancel">Cancel</button><button class="btn primary" id="rp-add" style="flex:1">Add</button></div></div>`;
+  document.body.appendChild(o);
+  const chosen = new Set();
+  o.querySelector('.pf-grid').onclick = (e) => { const b = e.target.closest('.pf-tile'); if (!b) return; const i = +b.dataset.i;
+    chosen.has(i) ? chosen.delete(i) : chosen.add(i); b.classList.toggle('picked', chosen.has(i)); };
+  o.querySelector('#rp-cancel').onclick = () => o.remove();
+  o.querySelector('#rp-add').onclick = async () => {
+    for (const i of chosen) {
+      try {
+        const f = await (await (await Media.dir()).getFileHandle(rows[i].photo_ref)).getFile();
+        const c = await reelAddFile(new File([f], rows[i].title || 'portfolio.jpg', { type: 'image/jpeg' }));
+        if (rows[i].title && !c.caption) c.caption = '';
+      } catch { toast('Could not load a portfolio photo.'); }
+    }
+    o.remove(); R.sel = R.clips.length - 1; reelChanged(); reelPanel();
+  };
+}
+
 /* ---------- Stencil helpers ---------- */
 const ST_INKS = [['#1a1a1a', 'Black'], ['#3b2d8f', 'Stencil purple'], ['#b3261e', 'Red']];
 const ST_DEFAULTS = { mode: 'lines', detail: 6, amount: 60, weight: 1, threshold: 110, clean: 1, contrast: 0, bright: 0, ink: '#3b2d8f', flip: false };
@@ -2344,7 +2557,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
   quote: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
-  stencil: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
+  reel: 'studio', stencil: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
 function render() {
@@ -2352,6 +2565,7 @@ function render() {
   Dirty.set(false);
   currentHash = location.hash;
   const [key, arg] = (location.hash.slice(1) || 'home').split('/');
+  if (R.playing && key !== 'reel') reelPause();
   const v = VIEWS[key] || VIEWS.home;
   $('#view-title').textContent = v.title(arg);
   const view = $('#view');
