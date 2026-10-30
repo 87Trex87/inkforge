@@ -61,7 +61,51 @@ const MIGRATIONS = [
   `ALTER TABLE bookings ADD COLUMN gcal_synced_at TEXT;
    CREATE TABLE gcal_deletes (gcal_id TEXT PRIMARY KEY);
    CREATE TABLE gcal_busy (start_at TEXT NOT NULL, end_at TEXT NOT NULL);
-   CREATE INDEX idx_gcal_busy ON gcal_busy (start_at);`
+   CREATE INDEX idx_gcal_busy ON gcal_busy (start_at);`,
+  // v5: forms. blocks = JSON array of {t: 'h'|'p'|'check'|'field', text}. Signed forms keep a
+  // frozen copy of the blocks so later template edits never change what a client signed.
+  `CREATE TABLE form_templates (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     kind TEXT NOT NULL CHECK (kind IN ('consent', 'aftercare')),
+     title TEXT NOT NULL, blocks TEXT NOT NULL DEFAULT '[]',
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE TABLE signed_forms (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL,
+     template_id INTEGER REFERENCES form_templates(id) ON DELETE SET NULL,
+     kind TEXT NOT NULL, title TEXT NOT NULL, client_name TEXT,
+     blocks TEXT NOT NULL, answers TEXT NOT NULL DEFAULT '{}',
+     signature_ref TEXT, signed_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE INDEX idx_signed_client ON signed_forms (client_id);`
+];
+
+/* Starter templates, inserted once when the forms tables are empty. Fully editable. */
+const DEFAULT_TEMPLATES = [
+  { kind: 'consent', title: 'Tattoo consent', blocks: [
+    { t: 'h', text: 'Tattoo consent & release' },
+    { t: 'p', text: 'I, {client}, consent to be tattooed by {artist} at {studio} on {date}.' },
+    { t: 'field', text: 'Emergency contact (name & number)' },
+    { t: 'check', text: 'I am 18 years or older.' },
+    { t: 'check', text: 'I am not under the influence of alcohol or drugs.' },
+    { t: 'check', text: 'I have disclosed any medical conditions, allergies (including latex), medication or pregnancy.' },
+    { t: 'check', text: 'I understand a tattoo is permanent and that results, healing and colour can vary.' },
+    { t: 'check', text: 'I have checked the design, spelling and placement and approve them.' },
+    { t: 'check', text: 'I have received aftercare instructions and accept responsibility for following them.' },
+    { t: 'check', text: 'I agree that photos of the finished tattoo may be used in the artist\'s portfolio and social media.' },
+    { t: 'p', text: 'This is a starter template. Review it against the regulations where you work before using it.' }
+  ] },
+  { kind: 'aftercare', title: 'Aftercare', blocks: [
+    { t: 'h', text: 'Looking after your new tattoo' },
+    { t: 'p', text: 'Hi {first}, thanks for coming in! Follow these steps for the best healing.' },
+    { t: 'check', text: 'Leave the wrap on for 2–4 hours (or as instructed), then wash gently with lukewarm water and unscented soap.' },
+    { t: 'check', text: 'Pat dry with a clean paper towel. Apply a thin layer of aftercare cream 2–3 times a day.' },
+    { t: 'check', text: 'No swimming, baths, saunas or sunbeds for 2–3 weeks.' },
+    { t: 'check', text: 'Don\'t pick or scratch. Peeling and itching are normal.' },
+    { t: 'check', text: 'Keep it out of direct sun while healing. Use SPF once fully healed.' },
+    { t: 'p', text: 'Any redness, heat or swelling that gets worse after a few days: contact me or see a doctor.' },
+    { t: 'p', text: '{artist} · {studio}' }
+  ] }
 ];
 const SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -75,6 +119,11 @@ async function migrate() {
       { sql: MIGRATIONS[v] },
       { sql: `INSERT OR REPLACE INTO app_meta VALUES ('schema_version', ?)`, params: [String(v + 1)] }
     ]);
+  }
+  if (!(await DB.one(`SELECT 1 AS x FROM app_meta WHERE key = 'forms_seeded'`))) {
+    await DB.tx([
+      ...DEFAULT_TEMPLATES.map(t => ({ sql: 'INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', params: [t.kind, t.title, JSON.stringify(t.blocks)] })),
+      { sql: `INSERT INTO app_meta VALUES ('forms_seeded', '1')` }]);
   }
 }
 
@@ -109,7 +158,8 @@ const Media = {
   async release(name) {
     if (!name) return;
     const used = await DB.one(`SELECT 1 AS x FROM clients WHERE photo_ref = ?1
-      UNION ALL SELECT 1 FROM booking_photos WHERE photo_ref = ?1 LIMIT 1`, [name]);
+      UNION ALL SELECT 1 FROM booking_photos WHERE photo_ref = ?1
+      UNION ALL SELECT 1 FROM signed_forms WHERE signature_ref = ?1 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
     const u = this.urls.get(name); if (u) { URL.revokeObjectURL(u); this.urls.delete(name); }
@@ -260,6 +310,9 @@ const VIEWS = {
         <div class="card"><h2>Bookings ${help('All sessions for this client, newest first.')}
             <button class="btn small" id="c-book" style="margin-left:auto">+ Book</button></h2>
           <div id="c-hist" class="muted">…</div></div>
+        <div class="card"><h2>Forms ${help('Signed consent forms and aftercare sent to this client.')}
+            <span class="row" style="margin-left:auto;gap:6px" id="c-fbtns"></span></h2>
+          <div id="c-forms" class="muted">…</div></div>
         <div class="row" style="margin-bottom:20px">
           <button class="btn" onclick="location.hash='client-edit/${c.id}'">Edit</button>
           <button class="btn danger" id="c-del">Delete</button>
@@ -275,6 +328,25 @@ const VIEWS = {
           he.className = 'card list flush';
           he.innerHTML = hist.map(b => agendaRow(b).replace(/<b>[^<]*<\/b><small/, `<b>${new Date(b.start_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' })}</b><small`)).join('')
             + `<div class="muted count">${hist.length} session${hist.length === 1 ? '' : 's'}${total ? ' · ' + money(total) + ' quoted' : ''}</div>`;
+        }
+      }
+      const tpls = await DB.all('SELECT id, kind FROM form_templates ORDER BY id');
+      const firstOf = (k) => tpls.find(t => t.kind === k)?.id;
+      const fb = $('#c-fbtns');
+      if (fb) {
+        if (firstOf('consent')) fb.innerHTML += `<button class="btn small" data-t="${firstOf('consent')}">Consent</button>`;
+        if (firstOf('aftercare')) fb.innerHTML += `<button class="btn small" data-t="${firstOf('aftercare')}">Aftercare</button>`;
+        fb.onclick = (e) => { const b = e.target.closest('[data-t]'); if (b) openForm(+b.dataset.t, c.id); };
+      }
+      const sf = await DB.all('SELECT id, kind, title, signed_at FROM signed_forms WHERE client_id = ? ORDER BY signed_at DESC', [c.id]);
+      const fe = $('#c-forms');
+      if (fe) {
+        if (!sf.length) fe.textContent = 'No forms yet.';
+        else {
+          fe.className = 'card list flush';
+          fe.innerHTML = sf.map(r => `<a class="c-row" href="#signed/${r.id}"><span class="c-main"><span class="c-n">${esc(r.title)}</span>
+            <span class="muted c-sub">${new Date(r.signed_at + 'Z').toLocaleDateString()}</span></span>
+            <span class="chip">${r.kind === 'consent' ? 'Signed' : 'Sent'}</span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('');
         }
       }
       $('#c-del').onclick = async () => {
@@ -531,7 +603,7 @@ const VIEWS = {
     render: () => `<div class="grid">
       ${tile('portfolio', 'Portfolio', 'Tattoos, art and flash', true)}
       ${tile('stencil', 'Stencil maker', 'Photo to stencil', true)}
-      ${tile('forms', 'Consent & aftercare', 'Build and sign forms', true)}
+      ${tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')}
       ${tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', true)}</div>`
   },
   more: {
@@ -541,6 +613,215 @@ const VIEWS = {
       ${tile('quote', 'Quote calculator', 'Pricing rules', true)}
       ${tile('stock', 'Inventory', 'Stock and stock takes', true)}
       ${tile('rules', 'Rule book', 'Your studio rules', true)}</div>`
+  },
+  forms: {
+    title: () => 'Forms',
+    render: () => '<div id="f-list"></div>',
+    async mount() {
+      const t = await DB.all('SELECT id, kind, title, blocks FROM form_templates ORDER BY kind, title COLLATE NOCASE');
+      const recent = await DB.all(`SELECT id, kind, title, client_name, signed_at FROM signed_forms ORDER BY signed_at DESC LIMIT 10`);
+      const sec = (kind, label, tip) => `
+        <div class="letter row" style="justify-content:space-between">${label} ${help(tip)}
+          <button class="btn small" data-new="${kind}" style="margin-left:auto">+ New</button></div>
+        <div class="card list">${t.filter(x => x.kind === kind).map(x => `
+          <div class="c-row">
+            <span class="ava">${ICON[kind === 'consent' ? 'forms' : 'rules']}</span>
+            <span class="c-main"><span class="c-n">${esc(x.title)}</span><span class="muted c-sub">${JSON.parse(x.blocks).length} blocks</span></span>
+            <button class="btn small" data-edit="${x.id}">Edit</button>
+            <button class="btn small primary" data-use="${x.id}">${kind === 'consent' ? 'Sign' : 'Send'}</button>
+          </div>`).join('') || '<div class="muted" style="padding:14px">None yet.</div>'}</div>`;
+      $('#f-list').innerHTML =
+        sec('consent', 'Consent', 'Clients read, tick and sign on your phone or tablet. A frozen copy is kept on their record.')
+        + sec('aftercare', 'Aftercare', 'Send care instructions to a client through any messaging app, or print them.')
+        + (recent.length ? `<div class="letter">Recent</div><div class="card list">${recent.map(r => `
+          <a class="c-row" href="#signed/${r.id}"><span class="c-main"><span class="c-n">${esc(r.title)}</span>
+            <span class="muted c-sub">${esc(r.client_name || 'No client')} · ${new Date(r.signed_at + 'Z').toLocaleDateString()}</span></span>
+            <span class="chip">${r.kind === 'consent' ? 'Signed' : 'Sent'}</span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('')}</div>` : '');
+      $('#f-list').onclick = (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        if (b.dataset.new) location.hash = 'form-edit/new-' + b.dataset.new;
+        if (b.dataset.edit) location.hash = 'form-edit/' + b.dataset.edit;
+        if (b.dataset.use) { Forms.ctx = {}; location.hash = 'form-sign/' + b.dataset.use; }
+      };
+    }
+  },
+  'form-edit': {
+    title: (id) => String(id).startsWith('new') ? 'New form' : 'Edit form',
+    render: () => '<form id="fe-form" class="card" autocomplete="off"></form>',
+    async mount(id) {
+      const isNew = id.startsWith('new');
+      const t = isNew ? { kind: id.split('-')[1] === 'aftercare' ? 'aftercare' : 'consent', title: '', blocks: '[]' }
+        : await DB.one('SELECT * FROM form_templates WHERE id = ?', [+id]);
+      if (!t) { location.hash = 'forms'; return; }
+      const blocks = JSON.parse(t.blocks);
+      if (isNew && !blocks.length) blocks.push({ t: 'h', text: '' }, { t: 'p', text: '' });
+      const f = $('#fe-form');
+      const TYPES = { h: 'Heading', p: 'Paragraph', check: 'Tick box', field: 'Answer field' };
+      const draw = () => {
+        f.innerHTML = `
+          <div class="two">
+            <label class="field"><span>Title</span><input class="in" id="fe-title" value="${esc(t.title)}" required></label>
+            <label class="field"><span>Type</span><select class="in" id="fe-kind">
+              <option value="consent" ${t.kind === 'consent' ? 'selected' : ''}>Consent (signed)</option>
+              <option value="aftercare" ${t.kind === 'aftercare' ? 'selected' : ''}>Aftercare (sent)</option></select></label>
+          </div>
+          <div class="lbl">Content ${help('Placeholders fill in automatically: {client} (full name), {first} (first name), {artist}, {studio}, {date}. Tick boxes must all be ticked before a consent form can be signed.')}</div>
+          <div id="fe-blocks">${blocks.map((b, i) => `
+            <div class="blk blk-${b.t}" data-i="${i}">
+              <div class="blk-bar"><span class="chip">${TYPES[b.t]}</span>
+                <span class="row" style="gap:4px;margin-left:auto">
+                  <button type="button" class="mini" data-act="up" aria-label="Move up" ${i ? '' : 'disabled'}>&uarr;</button>
+                  <button type="button" class="mini" data-act="down" aria-label="Move down" ${i < blocks.length - 1 ? '' : 'disabled'}>&darr;</button>
+                  <button type="button" class="mini del" data-act="del" aria-label="Remove">&times;</button></span></div>
+              <textarea class="in" rows="${b.t === 'p' ? 3 : 1}" data-i="${i}" placeholder="${TYPES[b.t]} text">${esc(b.text)}</textarea>
+            </div>`).join('')}</div>
+          <div class="row add-blocks">${Object.entries(TYPES).map(([k, v]) => `<button type="button" class="btn small" data-add="${k}">+ ${v}</button>`).join('')}</div>
+          <div class="form-foot row">
+            ${isNew ? '' : '<button type="button" class="btn danger icon-btn" id="fe-del" data-tip="Delete template" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>'}
+            <button type="button" class="btn" id="fe-cancel">Cancel</button>
+            <button type="submit" class="btn primary" style="flex:1">Save</button>
+          </div>`;
+        $('#fe-cancel').onclick = () => history.back();
+        const del = $('#fe-del');
+        if (del) del.onclick = async () => {
+          if (!confirm(`Delete the "${t.title}" template?\n\nForms already signed with it are kept.`)) return;
+          await DB.run('DELETE FROM form_templates WHERE id = ?', [t.id]);
+          Dirty.set(false); toast('Template deleted.'); location.replace('#forms');
+        };
+      };
+      draw();
+      f.addEventListener('input', (e) => {
+        Dirty.set(true);
+        if (e.target.matches('textarea[data-i]')) blocks[+e.target.dataset.i].text = e.target.value;
+        if (e.target.id === 'fe-title') t.title = e.target.value;
+      });
+      f.addEventListener('change', (e) => { if (e.target.id === 'fe-kind') { t.kind = e.target.value; Dirty.set(true); } });
+      f.addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return;
+        if (b.dataset.add) { blocks.push({ t: b.dataset.add, text: '' }); Dirty.set(true); draw(); f.querySelector(`textarea[data-i="${blocks.length - 1}"]`).focus(); return; }
+        const i = +b.closest('.blk')?.dataset.i;
+        if (b.dataset.act === 'del') blocks.splice(i, 1);
+        else if (b.dataset.act === 'up') blocks.splice(i - 1, 0, blocks.splice(i, 1)[0]);
+        else if (b.dataset.act === 'down') blocks.splice(i + 1, 0, blocks.splice(i, 1)[0]);
+        else return;
+        Dirty.set(true); draw();
+      });
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const title = $('#fe-title').value.trim();
+        if (!title) return toast('Give the form a title.');
+        const clean = JSON.stringify(blocks.map(b => ({ t: b.t, text: b.text.trim() })).filter(b => b.text));
+        if (isNew) await DB.run('INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', [t.kind, title, clean]);
+        else await DB.run(`UPDATE form_templates SET kind = ?, title = ?, blocks = ?, updated_at = datetime('now') WHERE id = ?`, [t.kind, title, clean, t.id]);
+        Dirty.set(false); toast('Form saved.'); location.replace('#forms');
+      });
+      Dirty.set(false);
+    }
+  },
+  'form-sign': {
+    title: () => 'Form',
+    render: () => '<div id="fs"></div>',
+    async mount(id) {
+      const t = await DB.one('SELECT * FROM form_templates WHERE id = ?', [+id]);
+      if (!t) { location.hash = 'forms'; return; }
+      $('#view-title').textContent = t.kind === 'consent' ? 'Sign' : 'Aftercare';
+      const ctx = Forms.ctx || {}; Forms.ctx = null;
+      let client = ctx.clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [ctx.clientId]) : null;
+      const blocks = JSON.parse(t.blocks);
+      const consent = t.kind === 'consent';
+      const el = $('#fs');
+      el.innerHTML = `
+        <div class="card"><label class="field" style="margin:0"><span>Client</span>
+          <div class="picker"><input class="in" id="fs-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
+          <div class="pick-list" id="fs-list" hidden></div></div></label></div>
+        <div class="sheet" id="fs-sheet"></div>
+        <div class="form-foot row" style="background:var(--bg)">
+          <button type="button" class="btn" id="fs-cancel">Cancel</button>
+          ${consent ? '<button type="button" class="btn primary" style="flex:1" id="fs-save">Sign & save</button>'
+            : '<button type="button" class="btn" id="fs-print">Print</button><button type="button" class="btn primary" style="flex:1" id="fs-share">Send</button>'}
+        </div>`;
+      const answers = { checks: {}, fields: {} };
+      let pad = null;
+      const drawSheet = () => {
+        const c = formCtx(client);
+        $('#fs-sheet').innerHTML = renderFormBlocks(blocks, c, answers, consent)
+          + (consent ? `<div class="sig-wrap"><div class="sig-label">Signature <button type="button" class="link" id="fs-clear">Clear</button></div>
+              <canvas id="fs-sig"></canvas><div class="sig-line">${esc(c.client)} · ${esc(c.date)}</div></div>` : '');
+        if (consent) { pad = signaturePad($('#fs-sig')); $('#fs-clear').onclick = () => pad.clear(); }
+      };
+      drawSheet();
+      $('#fs-sheet').addEventListener('change', (e) => {
+        if (e.target.dataset.check != null) answers.checks[e.target.dataset.check] = e.target.checked;
+        Dirty.set(true);
+      });
+      $('#fs-sheet').addEventListener('input', (e) => { if (e.target.dataset.field != null) { answers.fields[e.target.dataset.field] = e.target.value; Dirty.set(true); } });
+      clientPicker($('#fs-client'), $('#fs-list'), async (cid) => {
+        client = await DB.one('SELECT * FROM clients WHERE id = ?', [cid]);
+        const sig = pad && !pad.empty() ? pad.data() : null;
+        drawSheet(); if (sig) pad.restore(sig);
+      });
+      $('#fs-cancel').onclick = () => history.back();
+      const record = async (sigRef) => {
+        const c = formCtx(client);
+        const frozen = blocks.map(b => ({ t: b.t, text: fillPlaceholders(b.text, c) }));
+        await DB.run(`INSERT INTO signed_forms (client_id, booking_id, template_id, kind, title, client_name, blocks, answers, signature_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [client?.id ?? null, ctx.bookingId ?? null, t.id, t.kind, t.title, client ? fullName(client) : null, JSON.stringify(frozen), JSON.stringify(answers), sigRef]);
+        return (await DB.one('SELECT last_insert_rowid() AS id')).id;
+      };
+      if (consent) $('#fs-save').onclick = async () => {
+        if (!client) return toast('Choose the client first.');
+        const checks = blocks.map((b, i) => b.t === 'check' ? i : -1).filter(i => i >= 0);
+        if (checks.some(i => !answers.checks[i])) return toast('All boxes need to be ticked before signing.');
+        if (pad.empty()) return toast('Please sign in the box.');
+        const sigRef = await Media.save(await pad.blob(), 'png');
+        const sid = await record(sigRef);
+        Dirty.set(false); toast('Consent signed and saved.'); location.replace('#signed/' + sid);
+      };
+      else {
+        $('#fs-print').onclick = () => window.print();
+        $('#fs-share').onclick = async () => {
+          const text = formAsText(blocks, formCtx(client));
+          try {
+            if (navigator.share) await navigator.share({ title: t.title, text });
+            else { await navigator.clipboard.writeText(text); toast('Copied. Paste it into WhatsApp, SMS or email.'); }
+          } catch (e) { if (e.name === 'AbortError') return; toast('Could not share: ' + e.message); return; }
+          if (client) { await record(null); toast('Logged on ' + fullName(client) + '\'s record.'); }
+          Dirty.set(false);
+        };
+      }
+      Dirty.set(false);
+    }
+  },
+  signed: {
+    title: () => 'Form',
+    render: () => '<div id="sf"></div>',
+    async mount(id) {
+      const s = await DB.one('SELECT * FROM signed_forms WHERE id = ?', [+id]);
+      const el = $('#sf');
+      if (!s) { el.innerHTML = '<div class="card muted">Form not found.</div>'; return; }
+      const answers = JSON.parse(s.answers);
+      const sig = await Media.url(s.signature_ref);
+      const when = new Date(s.signed_at + 'Z');
+      el.innerHTML = `
+        <div class="sheet">
+          ${renderFormBlocks(JSON.parse(s.blocks), null, answers, false, true)}
+          ${s.kind === 'consent' ? `<div class="sig-wrap"><div class="sig-label">Signature</div>
+            ${sig ? `<img class="sig-img" src="${sig}" alt="Signature">` : '<div class="muted">Signature file missing.</div>'}
+            <div class="sig-line">${esc(s.client_name || '')} · ${when.toLocaleString()}</div></div>`
+          : `<p class="sig-line">Sent to ${esc(s.client_name || '')} · ${when.toLocaleString()}</p>`}
+        </div>
+        <div class="row no-print" style="margin:14px 0 24px">
+          ${s.client_id ? `<a class="btn" href="#client/${s.client_id}">Client</a>` : ''}
+          <button class="btn danger icon-btn" id="sf-del" data-tip="Delete this record" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+          <button class="btn primary" style="flex:1" onclick="window.print()" data-tip="Choose 'Save as PDF' in the print dialog to keep or email a copy.">Print / PDF</button>
+        </div>`;
+      $('#sf-del').onclick = async () => {
+        if (!confirm(`Delete this ${s.kind === 'consent' ? 'signed consent form' : 'aftercare record'}?\n\nThis cannot be undone.`)) return;
+        await DB.run('DELETE FROM signed_forms WHERE id = ?', [s.id]);
+        await Media.release(s.signature_ref);
+        toast('Deleted.'); history.back();
+      };
+    }
   },
   settings: {
     title: () => 'Settings',
@@ -1104,6 +1385,92 @@ function renderGcalStatus() {
   $('#g-connect').hidden = on; $('#g-sync').hidden = !on; $('#g-off').hidden = !on;
 }
 
+/* ---------- Forms helpers ---------- */
+const Forms = { ctx: null };   // { clientId, bookingId } handed to the sign view
+function openForm(templateId, clientId, bookingId) { Forms.ctx = { clientId, bookingId }; location.hash = 'form-sign/' + templateId; }
+const formCtx = (client) => ({
+  client: client ? fullName(client) : '________',
+  first: client ? (client.first_name || fullName(client)) : 'there',
+  artist: Settings.get('artist_name') || 'the artist',
+  studio: Settings.get('studio_name') || 'the studio',
+  date: new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+});
+const fillPlaceholders = (text, c) => text.replace(/\{(client|first|artist|studio|date)\}/g, (_, k) => c[k]);
+
+// interactive: tick boxes and fields are editable. readonly: show stored answers.
+function renderFormBlocks(blocks, c, answers, interactive, readonly) {
+  const txt = (s) => esc(c ? fillPlaceholders(s, c) : s);
+  return blocks.map((b, i) => {
+    if (b.t === 'h') return `<h3>${txt(b.text)}</h3>`;
+    if (b.t === 'p') return `<p>${txt(b.text)}</p>`;
+    if (b.t === 'check') {
+      if (!interactive && !readonly) return `<div class="f-bullet">${txt(b.text)}</div>`;
+      const on = answers?.checks?.[i];
+      return `<label class="f-check"><input type="checkbox" data-check="${i}" ${on ? 'checked' : ''} ${readonly ? 'disabled' : ''}><span>${txt(b.text)}</span></label>`;
+    }
+    if (b.t === 'field') {
+      const v = answers?.fields?.[i] || '';
+      return `<label class="f-field"><span>${txt(b.text)}</span>${readonly ? `<div class="f-ans">${esc(v) || '—'}</div>`
+        : `<input class="in" data-field="${i}" value="${esc(v)}" ${interactive ? '' : 'disabled'}>`}</label>`;
+    }
+    return '';
+  }).join('');
+}
+const formAsText = (blocks, c) => blocks.map(b => {
+  const s = fillPlaceholders(b.text, c);
+  return b.t === 'h' ? s.toUpperCase() : b.t === 'check' ? '• ' + s : b.t === 'field' ? s + ': ' : s;
+}).join('\n\n');
+
+// Finger/stylus/mouse signature on a canvas. Dark ink on the white sheet.
+function signaturePad(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const fit = () => { const r = canvas.getBoundingClientRect(); canvas.width = r.width * dpr; canvas.height = r.height * dpr; };
+  fit();
+  const ctx = canvas.getContext('2d');
+  const setup = () => { ctx.scale(dpr, dpr); ctx.lineCap = ctx.lineJoin = 'round'; ctx.strokeStyle = '#111'; ctx.lineWidth = 2.4; };
+  setup();
+  let drawing = false, last = null, inked = false;
+  const pt = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  canvas.addEventListener('pointerdown', (e) => { drawing = true; last = pt(e); canvas.setPointerCapture(e.pointerId); e.preventDefault(); });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    const p = pt(e);
+    ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    last = p; inked = true;
+  });
+  const end = () => { if (drawing && inked) Dirty.set(true); drawing = false; };
+  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+  return {
+    empty: () => !inked,
+    clear() { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); setup(); inked = false; },
+    data: () => canvas.toDataURL(),
+    restore(url) { const img = new Image(); img.onload = () => { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(img, 0, 0); setup(); inked = true; }; img.src = url; },
+    blob: () => new Promise(r => canvas.toBlob(r, 'image/png'))
+  };
+}
+
+// Search-as-you-type client chooser. onPick(id) gets the chosen client id.
+function clientPicker(input, list, onPick) {
+  const show = async () => {
+    const rows = await DB.all(`SELECT id, first_name, last_name, phone, photo_ref FROM clients
+      WHERE (first_name || ' ' || last_name) LIKE ? ORDER BY first_name COLLATE NOCASE LIMIT 8`, ['%' + input.value.trim() + '%']);
+    const urls = await Promise.all(rows.map(r => Media.url(r.photo_ref)));
+    list.innerHTML = rows.map((r, i) => `<button type="button" class="c-row" data-id="${r.id}">${avatar(r, urls[i])}
+      <span class="c-main"><span class="c-n">${esc(fullName(r))}</span><span class="muted c-sub">${esc(r.phone || '')}</span></span></button>`).join('')
+      || '<div class="muted" style="padding:12px">No match. Add the client in Clients first.</div>';
+    list.hidden = false;
+  };
+  input.addEventListener('focus', show);
+  input.addEventListener('input', show);
+  input.addEventListener('blur', () => setTimeout(() => list.hidden = true, 150));
+  list.addEventListener('mousedown', e => e.preventDefault());
+  list.addEventListener('click', (e) => {
+    const r = e.target.closest('.c-row'); if (!r) return;
+    input.value = r.querySelector('.c-n').textContent; list.hidden = true; input.blur();
+    onPick(+r.dataset.id);
+  });
+}
+
 /* ---------- Clients helpers ---------- */
 const fullName = (c) => [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unnamed';
 function avatar(c, url, size = '') {
@@ -1151,7 +1518,8 @@ const Dirty = {
 addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
 /* ---------- Router ---------- */
-const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book' };
+const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
+  forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
 function render() {
   if (location.hash !== currentHash && !Dirty.ok()) { history.replaceState(null, '', currentHash || '#'); return; }
@@ -1192,6 +1560,10 @@ addEventListener('hashchange', render);
   } catch (err) {
     badge.textContent = 'DB error'; badge.className = 'badge warn'; badge.dataset.tip = err.message;
     console.error(err);
+    // Block the UI rather than let anything be typed into a database that is not open.
+    $('#view').innerHTML = `<div class="card alert"><h2>Can't open your data</h2><p>${esc(err.message)}</p>
+      <button class="btn primary" onclick="location.reload()">Reload</button></div>`;
+    return;
   }
   render();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
