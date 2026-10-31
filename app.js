@@ -1560,7 +1560,7 @@ const VIEWS = {
         <div class="card"><label class="field" style="margin:0"><span>Client</span>
           <div class="picker"><input class="in" id="fs-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
           <div class="pick-list" id="fs-list" hidden></div></div></label></div>
-        <div class="sheet" id="fs-sheet"></div>
+        <div class="sheet sheet-${t.kind}" id="fs-sheet"></div>
         <div class="form-foot row" style="background:var(--bg)">
           <button type="button" class="btn" id="fs-cancel">Cancel</button>
           ${consent ? '<button type="button" class="btn primary" style="flex:1" id="fs-save">Sign & save</button>'
@@ -1638,7 +1638,7 @@ const VIEWS = {
       const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
       const when = new Date(s.signed_at + 'Z');
       el.innerHTML = `
-        <div class="sheet">
+        <div class="sheet sheet-${s.kind}">
           ${logoUrl ? `<img class="sheet-logo" src="${logoUrl}" alt="">` : ''}
           ${renderFormBlocks(JSON.parse(s.blocks), null, answers, false, true)}
           ${s.kind === 'consent' ? `<div class="sig-wrap"><div class="sig-label">Signature</div>
@@ -3666,6 +3666,21 @@ const formAsText = (blocks, c) => blocks.filter(b => !blankLine(b, c)).map(b => 
   return b.t === 'h' ? s.toUpperCase() : b.t === 'sub' ? s.toUpperCase()
     : b.t === 'check' || b.t === 'li' ? '• ' + s : b.t === 'field' ? s + ': ' : b.t === 'choice' ? s + ': ' + choiceOpts(b).join(' / ') : s;
 }).join('\n\n').replace(/\n\n• /g, '\n• ');
+
+/* One-page forms: before any print (the app's buttons or the browser's own), switch the form to
+   its compact print layout at A4 width, measure it, and scale it down if it would still spill
+   onto a second page. Undone after printing. */
+const A4_PX = 277 * 96 / 25.4;   // printable height: 297 mm minus 10 mm margins top and bottom
+function fitFormForPrint() {
+  const sheet = $('.sheet'); if (!sheet || document.body.classList.contains('printing')) return;
+  document.body.classList.add('pfit');
+  sheet.style.zoom = '';
+  const h = sheet.scrollHeight;
+  const room = A4_PX * 0.97;   // a little slack for rounding in the print engine
+  if (h > room) sheet.style.zoom = String(Math.floor(room / h * 1000) / 1000);
+}
+addEventListener('beforeprint', fitFormForPrint);
+addEventListener('afterprint', () => { document.body.classList.remove('pfit'); const s = $('.sheet'); if (s) s.style.zoom = ''; });
 
 // Finger/stylus/mouse signature on a canvas. Dark ink on the white sheet.
 function signaturePad(canvas) {

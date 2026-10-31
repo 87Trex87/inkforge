@@ -501,7 +501,41 @@ input[type=range] { touch-action: pan-y; }
   #nav, #topbar, .no-print, .form-foot, #toast, #tip, .card:has(#fs-client) { display: none !important; }
   #app, #main { display: block; height: auto; overflow: visible; padding: 0; }
   .sheet { background: #fff; border-radius: 0; padding: 0; }
+  @page { size: A4; margin: 10mm; }
 }
+/* Compact one-page form layout. Applied (body.pfit) just before printing, so the page can be
+   measured and scaled to fit before the print dialog lays it out; see fitFormForPrint(). */
+body.pfit .sheet { width: 190mm; max-width: none; margin: 0; font-size: 9.5pt; line-height: 1.3; background: #fff; padding: 0; border-radius: 0; }
+body.pfit .sheet h3 { font-size: 20pt; margin: 0 0 4px; }
+body.pfit .sheet h4 { margin: 7px 0 2px; font-size: 8pt; }
+body.pfit .sheet p { margin: 0 0 4px; }
+body.pfit .sheet-logo { max-height: 48px; max-width: 110px; margin: 0 0 4px 10px; }
+body.pfit .f-check { padding: 2px 0; gap: 7px; border-top: 0; }
+body.pfit .f-check input { width: 11px; height: 11px; margin-top: 2px; }
+body.pfit .f-bullet { padding: 1px 0 1px 12px; border-top: 0; }
+body.pfit .f-bullet::before { top: 6px; width: 5px; height: 5px; }
+/* Short answer fields sit two to a row as "Label: ____" lines */
+body.pfit .f-field { display: inline-flex; align-items: baseline; gap: 6px; width: calc(50% - 6px); margin-right: 6px; padding: 3px 0; border-top: 0; vertical-align: top; }
+body.pfit .f-field > span { display: inline; margin: 0; white-space: nowrap; flex: none; }
+body.pfit .f-field > span::after { content: ':'; }
+body.pfit .f-field .in, body.pfit .f-field .f-ans { flex: 1; min-width: 0; border: 0; border-bottom: 1px solid #888; border-radius: 0; padding: 0 2px; height: auto; min-height: 0; background: none; font: inherit; }
+body.pfit .f-field:has(textarea), body.pfit .f-field:has(.f-opts) { display: flex; width: 100%; }
+body.pfit .f-field textarea { height: 3.2em; resize: none; }
+body.pfit .f-opts { gap: 10px; }
+body.pfit .f-opts .f-opt { padding: 0; border: 0; background: none; gap: 4px; }
+body.pfit .f-opt input { width: 11px; height: 11px; }
+body.pfit .sig-wrap { margin-top: 8px; padding-top: 4px; border-top-width: 1px; }
+body.pfit #fs-sig, body.pfit .sig-img { height: 80px; margin: 4px 0; border-radius: 4px; }
+body.pfit .sig-label, body.pfit .sig-line { font-size: 8pt; }
+/* Aftercare is a list of short bullets: two columns under a full-width title */
+body.pfit .sheet-consent { font-size: 10pt; }
+body.pfit .sheet-aftercare { column-count: 2; column-gap: 8mm; font-size: 12pt; line-height: 1.4; }
+body.pfit .sheet-aftercare h4 { font-size: 9.5pt; margin-top: 10px; }
+body.pfit .sheet-aftercare .f-bullet { padding: 2px 0 2px 14px; }
+body.pfit .sheet-aftercare .f-bullet::before { top: 9px; }
+body.pfit .sheet-aftercare h3, body.pfit .sheet-aftercare > p:first-of-type, body.pfit .sheet-aftercare .sheet-logo { column-span: all; }
+body.pfit .sheet-aftercare h4 { break-after: avoid; }
+body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 
 /* "?" help dot -> tooltip (hover on PC, tap on touch) */
 .help { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); background: none;
