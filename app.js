@@ -22,7 +22,8 @@ const DB = (() => {
     run: (sql, params) => call('exec', { sql, params }).finally(() => Snapshot.soon()),
     tx: (items) => call('tx', { items }).finally(() => Snapshot.soon()),
     exportBytes: async () => (await call('export')).bytes,
-    importBytes: (bytes) => call('import', { bytes }, [bytes.buffer]).finally(() => Snapshot.soon())
+    importBytes: (bytes) => call('import', { bytes }, [bytes.buffer]).finally(() => Snapshot.soon()),
+    peek: async (bytes) => (await call('peek', { bytes }, [bytes.buffer])).tables
   };
 })();
 
@@ -56,7 +57,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) Snaps
 // A database "has data" once migrations have created app_meta (sqlite_sequence alone doesn't count).
 const hasData = async () => !!(await DB.one(`SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'app_meta'`));
 
-/* Append-only. Never edit a past entry; add a new one. SCHEMA_VERSION = MIGRATIONS.length. */
+/* Append-only. Never edit a past entry; add a new one. SCHEMA_VERSION = MIGRATIONS.length.
+   Adding a table? Also add it to MERGE_TABLES (backup merge). Full backups include every table
+   and media file automatically; merge needs to know which section a table belongs to. */
 const MIGRATIONS = [
   // v1: meta + settings
   `CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);
@@ -1661,12 +1664,14 @@ const VIEWS = {
       <div class="card"><h2>Storage ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</h2>
         <div id="storage-info" class="muted">Checking…</div>
       </div>
-      <div class="card"><h2>Backup ${help('Save a full copy of your database to a file, e.g. to cloud storage. Restore replaces everything on this device with the backup.')}</h2>
+      <div class="card"><h2>Backup ${help('A backup holds everything: clients, bookings, forms, portfolio, stock, rules, reel templates, settings and all photos. Save one regularly, e.g. to cloud storage.')}</h2>
         <div id="last-backup" class="muted" style="margin-bottom:12px"></div>
         <div class="row">
           <button class="btn primary" id="b-export">Save backup</button>
-          <button class="btn danger" id="b-import">Restore…</button>
+          <button class="btn" id="b-merge" data-tip="Add another backup's data to yours, e.g. from another artist or device. Pick which sections; duplicates are skipped.">Merge from backup…</button>
+          <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
         </div>
+        <input type="file" id="merge-file" accept=".inkforge,.sqlite,.db" hidden>
       </div>`;
     },
     async mount() {
@@ -1727,6 +1732,8 @@ const VIEWS = {
       renderGcalStatus();
       $('#b-export').onclick = exportBackup;
       $('#b-import').onclick = () => $('#import-file').click();
+      $('#b-merge').onclick = () => $('#merge-file').click();
+      $('#merge-file').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) openMerge(f); });
       const lb = Settings.get('last_backup');
       $('#last-backup').textContent = lb ? 'Last backup: ' + new Date(lb).toLocaleString() : 'No backup yet.';
       await renderStorage();
@@ -1786,6 +1793,196 @@ async function restoreBackup(bytes) {
   for (const u of Media.urls.values()) URL.revokeObjectURL(u);
   Media.urls.clear();
   return DB.importBytes(db);
+}
+
+/* ---------- Merge from a backup ----------
+   Adds another backup's data to this device instead of replacing it. Every table belongs to one
+   section the artist can tick; rows are compared by content (never by name), so anything already
+   here is skipped. Ids are remapped, and a linked row from an unticked section (e.g. the client of
+   a booking) is brought along only when needed. Media files keep their content-hash names. */
+const MERGE_SECTIONS = [
+  ['clients', 'Clients', 'Phonebook entries and their photos'],
+  ['bookings', 'Bookings', 'Appointments and reference photos'],
+  ['forms', 'Forms', 'Form templates and signed forms'],
+  ['portfolio', 'Portfolio', 'Tattoos, art and flash with photos'],
+  ['inventory', 'Inventory', 'Stock items and stock takes'],
+  ['rules', 'Rule book', 'Your studio rules'],
+  ['reel', 'Reel templates', 'Saved reel templates and their images'],
+  ['settings', 'Settings', 'Profile, quote and app settings, only where yours are still blank']
+];
+// table -> { section, fk: { column: parentTable }, refs: [media columns], skip: [columns not compared or copied] }.
+// section null = device-specific, never merged.
+const MERGE_TABLES = {
+  clients: { section: 'clients', refs: ['photo_ref'] },
+  bookings: { section: 'bookings', fk: { client_id: 'clients' }, skip: ['gcal_id', 'gcal_updated', 'gcal_synced_at'] },
+  booking_photos: { section: 'bookings', fk: { booking_id: 'bookings' }, refs: ['photo_ref'] },
+  form_templates: { section: 'forms' },
+  signed_forms: { section: 'forms', fk: { client_id: 'clients', booking_id: 'bookings', template_id: 'form_templates' }, refs: ['signature_ref'] },
+  portfolio_items: { section: 'portfolio', fk: { client_id: 'clients', booking_id: 'bookings' } },
+  portfolio_photos: { section: 'portfolio', fk: { item_id: 'portfolio_items' }, refs: ['photo_ref', 'thumb_ref'] },
+  inventory_items: { section: 'inventory' },
+  stock_takes: { section: 'inventory' },
+  stock_take_lines: { section: 'inventory', fk: { take_id: 'stock_takes', item_id: 'inventory_items' } },
+  rules: { section: 'rules' },
+  settings: { section: 'settings' },        // handled by key, see mergeSettings
+  app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
+};
+const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules'];
+// Settings never copied: this device's own sync state, accounts and bookkeeping.
+const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
+const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
+
+function parseBackup(bytes) {
+  const magic = new TextDecoder().decode(bytes.slice(0, 15));
+  if (magic === 'SQLite format 3') return { db: bytes, media: new Map() };
+  if (!magic.startsWith(BACKUP_MAGIC)) throw new Error('That file is not an InkForge backup.');
+  const mlen = new DataView(bytes.buffer, bytes.byteOffset).getUint32(BACKUP_MAGIC.length);
+  let off = BACKUP_MAGIC.length + 4;
+  const man = JSON.parse(new TextDecoder().decode(bytes.subarray(off, off + mlen))); off += mlen;
+  const db = bytes.slice(off, off + man.db); off += man.db;
+  const media = new Map();
+  for (const m of man.media) { media.set(m.name, bytes.subarray(off, off + m.len)); off += m.len; }
+  return { db, media };
+}
+
+// Comparable fingerprint of a row: every column except ids, timestamps, sort and skipped ones.
+// Clients also match on phone digits or email, so the same person with an edited note still matches.
+// `cols` = columns both databases have, so a backup from an older version still matches.
+function mergeFp(table, row, cols) {
+  const cfg = MERGE_TABLES[table], skip = new Set([...(cfg.skip || []), ...MERGE_META_COLS]);
+  const o = {};
+  for (const k of [...cols].sort()) if (!skip.has(k)) o[k] = row[k] == null ? null : String(row[k]).trim();
+  return JSON.stringify(o);
+}
+const clientKeys = (c) => [c.phone && 'p:' + String(c.phone).replace(/\D/g, '').slice(-9), c.email && 'e:' + String(c.email).trim().toLowerCase()]
+  .filter(k => k && k.length > 4);
+
+async function mergeBackup(src, media, picked) {
+  const stats = {}; MERGE_SECTIONS.forEach(([k]) => stats[k] = { added: 0, skipped: 0 });
+  const idMap = {}, local = {}, needRefs = new Set();
+  const localCols = {}, fpCols = {};
+  for (const t of MERGE_ORDER) {
+    idMap[t] = new Map();
+    localCols[t] = new Set((await DB.all(`PRAGMA table_info("${t}")`)).map(c => c.name));
+    const srcCols = src[t]?.length ? Object.keys(src[t][0]) : [...localCols[t]];
+    fpCols[t] = srcCols.filter(c => localCols[t].has(c));
+    const rows = await DB.all(`SELECT * FROM "${t}"`);
+    local[t] = new Map(rows.map(r => [mergeFp(t, r, fpCols[t]), r.id ?? true]));
+    if (t === 'clients') for (const r of rows) for (const k of clientKeys(r)) local[t].set(k, r.id);
+  }
+  const byId = {}; for (const t of MERGE_ORDER) byId[t] = new Map((src[t] || []).map(r => [r.id, r]));
+
+  // Returns this device's id for a backup row, adding the row if it isn't here yet.
+  async function bring(t, row) {
+    if (row.id != null && idMap[t].has(row.id)) return idMap[t].get(row.id);
+    const cfg = MERGE_TABLES[t], out = { ...row };
+    for (const [col, parent] of Object.entries(cfg.fk || {})) {
+      const pid = row[col];
+      out[col] = pid == null ? null : byId[parent].has(pid) ? await bring(parent, byId[parent].get(pid)) : null;
+    }
+    for (const c of cfg.skip || []) out[c] = null;
+    const fp = mergeFp(t, out, fpCols[t]);
+    let hit = local[t].get(fp);
+    if (hit == null && t === 'clients') for (const k of clientKeys(out)) if (local[t].has(k)) { hit = local[t].get(k); break; }
+    const sec = cfg.section;
+    if (hit != null) { stats[sec].skipped++; if (row.id != null) idMap[t].set(row.id, hit); return hit; }
+    const cols = Object.keys(out).filter(c => c !== 'id' && localCols[t].has(c));
+    await DB.run(`INSERT INTO "${t}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, cols.map(c => out[c]));
+    const nid = row.id != null ? (await DB.one('SELECT last_insert_rowid() AS id')).id : true;
+    for (const c of cfg.refs || []) if (out[c]) needRefs.add(out[c]);
+    local[t].set(fp, nid);
+    if (t === 'clients') for (const k of clientKeys(out)) local[t].set(k, nid);
+    if (row.id != null) idMap[t].set(row.id, nid);
+    stats[sec].added++;
+    return nid;
+  }
+  for (const t of MERGE_ORDER) if (picked.has(MERGE_TABLES[t].section)) for (const row of src[t] || []) await bring(t, row);
+
+  // Settings live as key/value rows; merge them by key.
+  const theirs = Object.fromEntries((src.settings || []).map(r => [r.key, r.value]));
+  const refsIn = (v) => (String(v || '').match(/[0-9a-f]{32}\.(?:png|jpe?g|webp)/g) || []);
+  if (picked.has('reel') && theirs.reel_templates) {
+    let list = []; try { list = JSON.parse(theirs.reel_templates); } catch {}
+    const mine = reelTemplates();
+    const sig = (t) => JSON.stringify([t.style, t.slots, t.clipTrans, t.outroTrans]);
+    const have = new Set(mine.map(sig)), names = new Set(mine.map(t => t.name));
+    for (const t of list) {
+      if (have.has(sig(t))) { stats.reel.skipped++; continue; }
+      let name = t.name || 'Template'; while (names.has(name)) name += ' (imported)';
+      names.add(name); have.add(sig(t));
+      mine.push({ ...t, id: Date.now().toString(36) + stats.reel.added, name });
+      refsIn(JSON.stringify(t)).forEach(r => needRefs.add(r)); stats.reel.added++;
+    }
+    await Settings.set('reel_templates', JSON.stringify(mine));
+    if (!Settings.get('reel_style') && theirs.reel_style) { await Settings.set('reel_style', theirs.reel_style); refsIn(theirs.reel_style).forEach(r => needRefs.add(r)); }
+  }
+  if (picked.has('settings')) {
+    for (const [k, v] of Object.entries(theirs)) {
+      if (MERGE_SETTING_SKIP.test(k) || v == null || v === '') continue;
+      if (Settings.get(k)) { stats.settings.skipped++; continue; }
+      await Settings.set(k, v); refsIn(v).forEach(r => needRefs.add(r)); stats.settings.added++;
+    }
+  }
+
+  // Copy only the media files that merged rows use and that aren't here already.
+  const dir = await Media.dir();
+  for (const ref of needRefs) {
+    const bytes = media.get(ref); if (!bytes) continue;
+    try { await dir.getFileHandle(ref); continue; } catch {}
+    const w = await (await dir.getFileHandle(ref, { create: true })).createWritable();
+    await w.write(bytes); await w.close();
+  }
+  return stats;
+}
+
+// Tables in a backup that the merge doesn't know about (a newer app version, or a table that was
+// added without updating MERGE_TABLES). Shown to the artist rather than silently dropped.
+const mergeUnknown = (src) => Object.keys(src).filter(t => !(t in MERGE_TABLES));
+
+function mergeCounts(src) {
+  const n = {}; MERGE_SECTIONS.forEach(([k]) => n[k] = 0);
+  for (const [t, cfg] of Object.entries(MERGE_TABLES)) if (cfg.section && t !== 'settings' && t !== 'booking_photos' && t !== 'portfolio_photos' && t !== 'stock_take_lines') n[cfg.section] += (src[t] || []).length;
+  const set = Object.fromEntries((src.settings || []).map(r => [r.key, r.value]));
+  try { n.reel = JSON.parse(set.reel_templates || '[]').length; } catch {}
+  n.settings = Object.keys(set).filter(k => !MERGE_SETTING_SKIP.test(k) && set[k]).length;
+  return n;
+}
+
+async function openMerge(file) {
+  let parsed, src;
+  try { parsed = parseBackup(new Uint8Array(await file.arrayBuffer())); src = await DB.peek(parsed.db.slice()); }
+  catch (err) { return toast('Could not read that backup: ' + err.message, 5000); }
+  const n = mergeCounts(src), unknown = mergeUnknown(src);
+  const o = document.createElement('div');
+  o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card">
+    <h2>Merge from backup</h2>
+    <p class="muted" style="margin-top:0">Adds what's in <b>${esc(file.name)}</b> to your data. Nothing of yours is changed or removed, and anything you already have is skipped.</p>
+    <div class="merge-list">${MERGE_SECTIONS.map(([k, l, d]) => `<label class="merge-row ${n[k] ? '' : 'empty'}">
+      <input type="checkbox" data-sec="${k}" ${n[k] ? 'checked' : 'disabled'}>
+      <span class="c-main"><b>${l}</b><span class="muted">${d}</span></span><span class="chip">${n[k]}</span></label>`).join('')}</div>
+    <p class="muted" style="font-size:12px">Linked items come along when needed: e.g. merging bookings also adds the clients they belong to.</p>
+    ${unknown.length ? `<p style="color:var(--red);font-size:13px">This backup also contains data this version can't merge (${esc(unknown.join(', '))}). Update InkForge, then merge again to include it.</p>` : ''}
+    <div class="row" style="margin-top:12px"><button class="btn" id="mg-cancel">Cancel</button>
+      <button class="btn primary" id="mg-go" style="flex:1">Merge</button></div></div>`;
+  document.body.appendChild(o);
+  $('#mg-cancel').onclick = () => o.remove();
+  $('#mg-go').onclick = async () => {
+    const picked = new Set([...o.querySelectorAll('[data-sec]:checked')].map(x => x.dataset.sec));
+    if (!picked.size) return toast('Tick at least one section.');
+    $('#mg-go').disabled = true; $('#mg-go').textContent = 'Merging…';
+    try {
+      const stats = await mergeBackup(src, parsed.media, picked);
+      Settings.cache = {}; await Settings.load();
+      o.querySelector('.card').innerHTML = `<h2>Merge complete</h2>
+        <div class="merge-list">${MERGE_SECTIONS.filter(([k]) => stats[k].added || stats[k].skipped).map(([k, l]) =>
+          `<div class="stat"><span>${l}</span><span>${stats[k].added} added · ${stats[k].skipped} already here</span></div>`).join('') || '<p class="muted">Nothing new to add.</p>'}</div>
+        <button class="btn primary" id="mg-done" style="width:100%;margin-top:14px">Done</button>`;
+      $('#mg-done').onclick = () => { o.remove(); render(); };
+      Gcal.soon();
+    } catch (err) { toast('Merge failed: ' + err.message, 6000); o.remove(); }
+  };
 }
 
 async function exportBackup() {
@@ -3546,6 +3743,14 @@ addEventListener('hashchange', () => { if (booted) render(); });
     }
     await migrate();
     await Settings.load();
+    // Every table must belong to a merge section (or be marked device-only) in MERGE_TABLES,
+    // otherwise "Merge from backup" would quietly leave its data behind.
+    const unmapped = (await DB.all(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`))
+      .map(r => r.name).filter(t => !(t in MERGE_TABLES));
+    if (unmapped.length) {
+      console.error('Tables missing from MERGE_TABLES:', unmapped);
+      if (location.hostname === 'localhost') toast('Developer: add ' + unmapped.join(', ') + ' to MERGE_TABLES.', 8000);
+    }
     Cal.mode = Settings.get('cal_mode', innerWidth >= 900 ? 'week' : 'day');
     const info = await DB.info();
     badge.textContent = info.mode === 'opfs' ? 'Saved on device' : 'Not saving';

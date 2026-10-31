@@ -329,6 +329,13 @@ select.in { appearance: none; padding-right: 30px; cursor: pointer;
 .tl-ghost svg { width: 20px; height: 20px; } .tl-add { font-size: 22px; }
 .reel-hint { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 #reel-cv { touch-action: none; cursor: move; }
+#merge-dlg { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.8); display: flex; padding: 16px; overflow-y: auto; }
+#merge-dlg .card { width: min(520px, 100%); margin: auto; }   /* auto margins centre it but let a tall card scroll from the top */
+.merge-list { display: flex; flex-direction: column; gap: 6px; }
+.merge-row { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.merge-row input { width: 22px; height: 22px; accent-color: var(--teal); flex: none; }
+.merge-row .c-main { display: flex; flex-direction: column; } .merge-row .muted { font-size: 12px; }
+.merge-row.empty { opacity: .45; cursor: default; }
 .tpl-list { display: flex; flex-direction: column; gap: 8px; }
 .tpl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
 .tpl.on { border-color: var(--teal); }
