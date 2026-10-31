@@ -683,3 +683,18 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .ev.short { flex-direction: row; align-items: center; gap: 8px; padding-top: 0; padding-bottom: 0; }
 .ev.short > * { flex: none; white-space: nowrap; line-height: 1.2; }
 .ev.short > span:last-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* Days off: settings chips, calendar shading, booking warning */
+.off-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.off-days button { min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink2); font-weight: 600; cursor: pointer; }
+.off-days button.on { background: #3a4447; border-color: var(--ink2); color: var(--ink); text-decoration: line-through; }
+.off-dates { display: flex; flex-wrap: wrap; gap: 6px; }
+.off-dates .chip { display: inline-flex; align-items: center; gap: 6px; }
+.off-dates .chip button { background: none; border: 0; color: var(--red); font-size: 16px; cursor: pointer; padding: 0; }
+.mday.off:not(.sel) { background: repeating-linear-gradient(45deg, rgba(154,163,163,.10) 0 5px, transparent 5px 10px); }
+.mday.off .n { opacity: .55; }
+.tl-col.off { background: repeating-linear-gradient(45deg, rgba(154,163,163,.07) 0 8px, transparent 8px 16px); }
+.tl-day.off { opacity: .55; }
+.off-tag { position: sticky; top: 4px; display: block; width: max-content; margin: 4px auto 0; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); background: var(--bg2); border: 1px solid var(--line); padding: 2px 8px; border-radius: 99px; z-index: 0; }
+.off-warn { display: flex; flex-direction: column; gap: 4px; font-size: 13px; padding: 10px 12px; margin-bottom: 12px; border-radius: 12px; border: 1px solid #b8862f; background: rgba(240,199,94,.10); color: var(--ink); }
+.off-warn b { color: #f0c75e; }

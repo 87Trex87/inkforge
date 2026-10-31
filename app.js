@@ -512,7 +512,7 @@ const VIEWS = {
       const el = $('#home-today'); if (!el) return;
       if (rows.length) { el.className = 'card list flush'; el.innerHTML = rows.map(agendaRow).join(''); }
       else el.innerHTML = `No sessions booked. <a href="#" id="h-add" style="color:var(--teal)">Book one</a>`;
-      const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00')); };
+      const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBookingNext(); };
     }
   },
   clients: {
@@ -581,7 +581,7 @@ const VIEWS = {
           <button class="btn" onclick="location.hash='client-edit/${c.id}'">Edit</button>
           <button class="btn danger" id="c-del">Delete</button>
         </div>`;
-      $('#c-book').onclick = () => newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00'), c.id);
+      $('#c-book').onclick = () => newBookingNext(c.id);
       const hist = await DB.all(`SELECT b.*, c.first_name, c.last_name, NULL AS medical FROM bookings b JOIN clients c ON c.id = b.client_id
         WHERE b.client_id = ? ORDER BY b.start_at DESC`, [c.id]);
       const he = $('#c-hist');
@@ -727,7 +727,7 @@ const VIEWS = {
         Gcal.setState(Gcal.state);
         gb.onclick = () => Gcal.sync({ interactive: true }).then(() => { toast('Synced.'); renderCal(); }).catch(e => toast('Google sync: ' + e.message, 6000));
       }
-      $('#cal-add').onclick = () => newBooking(ymd(Cal.date) + 'T' + Settings.get('day_start', '10:00'));
+      $('#cal-add').onclick = () => newBookingNext(null, Cal.date < new Date() ? new Date() : Cal.date);
       renderCal();
     }
   },
@@ -769,6 +769,7 @@ const VIEWS = {
             <label class="field"><span>Length</span><select class="in" name="duration_min">${durOpts.map(m => `<option value="${m}" ${m === b.duration_min ? 'selected' : ''}>${fmtDur(m)}</option>`).join('')}</select></label>
           </div>
         </div>
+        <div class="off-warn" id="b-offwarn" hidden></div>
         <label class="field"><span id="b-desc-l">Tattoo description</span><textarea class="in" name="description" rows="2" placeholder="e.g. Fine-line peony with stem">${esc(b.description)}</textarea></label>
         <div id="b-ink">
         <div class="two">
@@ -811,6 +812,15 @@ const VIEWS = {
         </div>`;
 
       // Type: non-tattoo kinds hide the tattoo-only fields (their values are kept, not cleared)
+      // Booking a tattoo on a day off is allowed (emergencies happen); it's just pointed out.
+      const offWarn = () => {
+        const k = f.date.value, on = !!k && BOOKING_KINDS[kind].ink && isDayOff(k);
+        $('#b-offwarn').hidden = !on;
+        if (on) $('#b-offwarn').innerHTML = `<b>${new Date(k + 'T00:00').toLocaleDateString(undefined, { weekday: 'long' })} is one of your days off.</b>
+          <span>You can still book it. Next open day: <button type="button" class="link" id="b-nextday">${esc(fmtDay(nextOpenDay(new Date(k + 'T00:00'))))}</button></span>`;
+      };
+      f.date.addEventListener('change', offWarn);
+      $('#b-offwarn').addEventListener('click', (e) => { if (e.target.id === 'b-nextday') { f.date.value = nextOpenDay(new Date(f.date.value + 'T00:00')); offWarn(); Dirty.set(true); } });
       const showDone = () => { $('#b-done').hidden = !DONE_KINDS.includes(kind); $('#b-done-in').hidden = !f.completed.checked; };
       let payMethod = b.pay_method || null;
       $('#b-pay').onclick = (e) => { const x = e.target.closest('[data-pay]'); if (!x) return;
@@ -819,7 +829,7 @@ const VIEWS = {
       f.completed.addEventListener('change', showDone);
       const showKind = () => {
         const ink = BOOKING_KINDS[kind].ink;
-        showDone();
+        showDone(); offWarn();
         $('#b-ink').hidden = !ink;
         $('#b-desc-l').textContent = kind === 'tattoo' || kind === 'touchup' ? 'Tattoo description' : kind === 'consult' ? 'Idea / what to discuss' : kind === 'followup' ? 'What to check' : 'Details';
         f.description.placeholder = ink ? 'e.g. Fine-line peony with stem' : kind === 'leave' ? 'e.g. Holiday' : '';
@@ -932,6 +942,9 @@ const VIEWS = {
       };
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
+        // Ask once: when the booking is new or moved onto a day off, not on every later save.
+        if (BOOKING_KINDS[kind].ink && isDayOff(f.date.value) && (!b.id || f.date.value !== b.start_at.slice(0, 10))
+          && !confirm(`${new Date(f.date.value + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} is your day off.\n\nBook it anyway?`)) return;
         if (!(await save())) return;
         toast('Booking saved.'); location.replace('#book');
       });
@@ -1740,6 +1753,8 @@ const VIEWS = {
           <label class="field"><span>Usual start time ${help('Default time for new bookings.')}</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
         </div>
       </div>
+      <div class="card"><h2>Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</h2>
+        <div id="off-card"></div></div>
       <div class="card"><h2>Contact details ${help('Printed at the bottom of your aftercare form. Leave any blank to hide that line.')}</h2>
         <div class="two">
           <label class="field"><span>Contact number</span><input class="in" id="s-aphone" type="tel" value="${esc(Settings.get('artist_phone'))}"></label>
@@ -1816,6 +1831,7 @@ const VIEWS = {
         const old = Settings.get('studio_logo_ref');
         await Settings.set('studio_logo_ref', ''); await Media.release(old); drawLogo();
       };
+      renderDaysOff();
       $('#s-aphone').addEventListener('change', save('artist_phone'));
       $('#s-ig').addEventListener('change', save('artist_instagram'));
       $('#s-fb').addEventListener('change', save('artist_facebook'));
@@ -1865,6 +1881,38 @@ const VIEWS = {
     }
   }
 };
+
+function renderDaysOff() {
+  const el = $('#off-card'); if (!el) return;
+  const o = daysOff();
+  el.innerHTML = `
+    <div class="lbl">Every week</div>
+    <div class="off-days">${WEEKDAYS.map(([n, l]) => `<button type="button" class="${o.weekly.includes(n) ? 'on' : ''}" data-wd="${n}" aria-pressed="${o.weekly.includes(n)}">${l}</button>`).join('')}</div>
+    <label class="field" style="margin-top:12px"><span>Repeat until ${help('Leave empty to keep these days off for good. Set a date if you plan your days off week by week or month by month.')}</span>
+      <input class="in" type="date" id="off-until" value="${o.until}"></label>
+    <div class="lbl">Other days off ${help('Single days, e.g. holidays or a day you have blocked out this month.')}</div>
+    <div class="off-dates">${o.dates.sort().map(k => `<span class="chip">${esc(fmtDay(k))}<button type="button" data-rmdate="${k}" aria-label="Remove">&times;</button></span>`).join('') || '<span class="muted" style="font-size:13px">None</span>'}</div>
+    <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input class="in" type="date" id="off-add-d"><button type="button" class="btn small" id="off-add">Add day</button></div>
+    <button type="button" class="btn small danger" id="off-reset" style="margin-top:12px" ${o.weekly.length || o.dates.length || o.until ? '' : 'disabled'}>Reset days off</button>`;
+  const put = async (n) => { await Settings.set('days_off', JSON.stringify(n)); renderDaysOff(); };
+  el.onclick = async (e) => {
+    const wd = e.target.closest('[data-wd]');
+    if (wd) {
+      const n = +wd.dataset.wd, has = o.weekly.includes(n);
+      if (!has && o.weekly.length >= 6) return toast('Keep at least one day a week open for bookings.');
+      return put({ ...o, weekly: has ? o.weekly.filter(x => x !== n) : [...o.weekly, n] });
+    }
+    const rm = e.target.closest('[data-rmdate]');
+    if (rm) return put({ ...o, dates: o.dates.filter(k => k !== rm.dataset.rmdate) });
+    if (e.target.id === 'off-add') {
+      const k = $('#off-add-d').value; if (!k) return toast('Pick a date first.');
+      if (o.dates.includes(k)) return toast('That day is already off.');
+      return put({ ...o, dates: [...o.dates, k] });
+    }
+    if (e.target.id === 'off-reset' && confirm('Clear all your days off?\n\nYou can set them again straight away.')) return put({ weekly: [], until: '', dates: [] });
+  };
+  $('#off-until').onchange = (e) => put({ ...o, until: e.target.value });
+}
 
 async function renderStorage() {
   const el = $('#storage-info'); if (!el) return;
@@ -2171,6 +2219,30 @@ const Cal = {
 };
 function newBooking(startAt, clientId) { Cal.prefill = startAt; Cal.prefillClient = clientId || null; location.hash = 'booking-edit/new'; }
 
+/* Days off. Settings key days_off = { weekly: [weekday numbers, 0 = Sunday], until: 'YYYY-MM-DD' or '',
+   dates: ['YYYY-MM-DD', ...] }. Weekly days repeat until `until` (or for good when empty); `dates`
+   are single extra days. They are shaded in the calendar, skipped when a new booking picks a day,
+   and flagged (never blocked) when a tattoo is booked on one. At least one weekday stays open. */
+const WEEKDAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
+function daysOff() {
+  let o = {}; try { o = JSON.parse(Settings.get('days_off', '{}')); } catch {}
+  return { weekly: Array.isArray(o.weekly) ? o.weekly : [], until: o.until || '', dates: Array.isArray(o.dates) ? o.dates : [] };
+}
+// True when the date (YYYY-MM-DD) is one of the artist's days off.
+function isDayOff(k, o = daysOff()) {
+  if (o.dates.includes(k)) return true;
+  if (!o.weekly.length || (o.until && k > o.until)) return false;
+  return o.weekly.includes(new Date(k + 'T00:00').getDay());
+}
+// The first day from `from` (Date) that is not a day off, as YYYY-MM-DD.
+function nextOpenDay(from = new Date()) {
+  const o = daysOff();
+  for (let i = 0; i < 400; i++) { const k = ymd(addDays(from, i)); if (!isDayOff(k, o)) return k; }
+  return ymd(from);
+}
+// New booking on the next working day (today if open), at the usual start time.
+const newBookingNext = (clientId, from) => newBooking(nextOpenDay(from) + 'T' + Settings.get('day_start', '10:00'), clientId);
+
 async function bookingsBetween(from, to) {
   return DB.all(`SELECT b.*, c.first_name, c.last_name, c.medical,
       (SELECT photo_ref FROM booking_photos p WHERE p.booking_id = b.id ORDER BY sort, id LIMIT 1) AS cover
@@ -2190,11 +2262,11 @@ async function renderCal() {
     const rows = await bookingsBetween(start, end);
     const byDay = {};
     rows.forEach(b => (byDay[b.start_at.slice(0, 10)] ||= []).push(b));
-    const today = ymd(new Date()), sel = ymd(d);
+    const today = ymd(new Date()), sel = ymd(d), off = daysOff();
     let html = '<div class="month"><div class="wk">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span>${x}</span>`).join('') + '</div><div class="mgrid">';
     for (let i = 0; i < 42; i++) {
       const day = addDays(start, i), k = ymd(day), list = byDay[k] || [];
-      html += `<button class="mday ${day.getMonth() !== d.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k === sel ? 'sel' : ''}" data-d="${k}">
+      html += `<button class="mday ${day.getMonth() !== d.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k === sel ? 'sel' : ''} ${isDayOff(k, off) ? 'off' : ''}" data-d="${k}">
         <span class="n">${day.getDate()}</span>
         <span class="pips">${list.slice(0, 3).map(() => '<i></i>').join('')}${list.length > 3 ? '<b>+</b>' : ''}</span></button>`;
     }
@@ -2202,7 +2274,7 @@ async function renderCal() {
     const dayList = byDay[sel] || [];
     html += `<div class="day-head">${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>`
       + (dayList.length ? '<div class="card list">' + dayList.map(agendaRow).join('') + '</div>'
-        : `<div class="empty muted" style="padding:20px">Free day. <a href="#" id="m-add" style="color:var(--teal)">Book it</a></div>`);
+        : `<div class="empty muted" style="padding:20px">${isDayOff(sel, off) ? 'Your day off.' : 'Free day.'} <a href="#" id="m-add" style="color:var(--teal)">Book it</a></div>`);
     if ($('#cal') !== el) return;
     el.innerHTML = html;
     el.querySelector('.mgrid').onclick = (e) => {
@@ -2221,8 +2293,8 @@ async function renderCal() {
   const rows = await bookingsBetween(days[0], addDays(days[days.length - 1], 1));
   const busy = Settings.get('gcal_busy', '1') === '1'
     ? await DB.all('SELECT start_at, end_at FROM gcal_busy WHERE start_at < ? AND end_at > ?', [ymd(addDays(days[days.length - 1], 1)), ymd(days[0])]) : [];
-  const today = ymd(new Date());
-  let html = `<div class="tl ${mode}"><div class="tl-head"><span></span>${days.map(x => `<button class="tl-day ${ymd(x) === today ? 'today' : ''}" data-d="${ymd(x)}">
+  const today = ymd(new Date()), off = daysOff();
+  let html = `<div class="tl ${mode}"><div class="tl-head"><span></span>${days.map(x => `<button class="tl-day ${ymd(x) === today ? 'today' : ''} ${isDayOff(ymd(x), off) ? 'off' : ''}" data-d="${ymd(x)}">
       <small>${x.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>${x.getDate()}</b></button>`).join('')}</div>
     <div class="tl-body" id="tl-body"><div class="tl-hours">`;
   for (let h = DAY_FROM; h < DAY_TO; h++) html += `<span style="height:${HOUR_PX}px">${pad(h)}:00</span>`;
@@ -2237,7 +2309,7 @@ async function renderCal() {
       let li = lanes.findIndex(end => end <= s); if (li < 0) { li = lanes.length; lanes.push(0); }
       lanes[li] = e; b._lane = li;
     });
-    html += `<div class="tl-col" data-d="${k}" style="height:${(DAY_TO - DAY_FROM) * HOUR_PX}px">`;
+    html += `<div class="tl-col ${isDayOff(k, off) ? 'off' : ''}" data-d="${k}" style="height:${(DAY_TO - DAY_FROM) * HOUR_PX}px">${isDayOff(k, off) ? '<span class="off-tag">Day off</span>' : ''}`;
     // Personal Google events: grey, details hidden, clipped to this day and the visible hours
     const dayStart = k + 'T00:00', dayEnd = ymd(addDays(day, 1)) + 'T00:00';
     for (const x of busy) {
@@ -2855,7 +2927,7 @@ function qzBind(el) {
       const r = qCalc();
       Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
         placement: qzPlacement(), description: qzSummary() };
-      return newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00'));
+      return newBookingNext();
     }
     if (t.closest('#qz-share')) return qzShare();
     if (t.closest('#qz-print')) return qzPrint();
