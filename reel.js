@@ -5,7 +5,7 @@
    Drafts live in memory only: imported videos are never copied into storage. Export records the
    canvas + Web Audio mix in real time with MediaRecorder (MP4 where the browser supports it). */
 
-const REEL_VERSION = 4;   // app.js checks this matches, to catch a stale cached copy
+const REEL_VERSION = 5;   // app.js checks this matches, to catch a stale cached copy
 // Card backgrounds: { ref, op, zoom, rot, flip } with ref = media file name (kept in the media folder).
 const REEL_CARD_BG = { ref: '', op: 0.55, zoom: 1, rot: 0, flip: false };
 const REEL_STYLE_DEFAULTS = {
@@ -14,8 +14,20 @@ const REEL_STYLE_DEFAULTS = {
   transDir: 'left', transDur: 0.32,                 // wipe/slide come in from this side; seconds per transition
   captionPos: 'bottom', capSize: 'm', quality: '720',
   wmMode: 'text', wmPos: 'br', wmOp: 0.75,          // watermark: off | text (handle) | logo
-  cardLogo: true, introBg: REEL_CARD_BG, outroBg: REEL_CARD_BG
+  cardLogo: true, introBg: REEL_CARD_BG, outroBg: REEL_CARD_BG,
+  introDur: 1.6, outroDur: 2.4,
+  introPos: null, outroPos: null                     // card text group moved on the preview: { x, y, s }
 };
+// Opposite / alternative versions of a transition, stored in its `dir`. Wipe and slide use sides.
+const REEL_TR_VARIANTS = {
+  zoom: [['in', 'Zoom in'], ['out', 'Zoom out']],
+  fade: [['black', 'To black'], ['white', 'To white']],
+  flash: [['white', 'White'], ['accent', 'Accent colour']],
+  wipe: [['left', '← Left'], ['right', 'Right →'], ['top', '↑ Top'], ['bottom', '↓ Bottom']],
+  slide: [['left', '← Left'], ['right', 'Right →'], ['top', '↑ Top'], ['bottom', '↓ Bottom']]
+};
+// A transition's variant, falling back to the type's first one when dir belongs to another type.
+const trVariant = (tr) => { const v = REEL_TR_VARIANTS[tr.type]; return v ? (v.some(([k]) => k === tr.dir) ? tr.dir : v[0][0]) : ''; };
 // Per-clip looks. ctx.filter strings; browsers without canvas filters just show the original.
 const REEL_FILTERS = [
   ['none', 'Original', 'none'],
@@ -30,7 +42,6 @@ const REEL_FILTERS = [
 const REEL_FILTER_CSS = Object.fromEntries(REEL_FILTERS.map(([k, , f]) => [k, f]));
 const REEL_CAP_PX = { s: 60, m: 78, l: 100 };
 const REEL_COLORS = ['#e9e3d6', '#ffffff', '#1fb5a8', '#f0c75e', '#d2453b'];
-const INTRO_DUR = 1.6, OUTRO_DUR = 2.4;
 const PREVIEW_W = 540, PREVIEW_H = 960;
 
 const R = {
@@ -70,9 +81,9 @@ function reelSegments() {
   const s = reelStyle(), segs = [];
   let t = 0;
   const push = (seg) => { seg.start = t; t += seg.dur; segs.push(seg); };
-  if (s.intro) push({ kind: 'intro', key: 'intro', dur: INTRO_DUR });
+  if (s.intro) push({ kind: 'intro', key: 'intro', dur: +s.introDur || 1.6 });
   for (const c of R.clips) push({ kind: 'clip', key: c.id, clip: c, dur: clipDur(c) });
-  if (s.outro) push({ kind: 'outro', key: 'outro', dur: OUTRO_DUR });
+  if (s.outro) push({ kind: 'outro', key: 'outro', dur: +s.outroDur || 2.4 });
   return { segs, total: t };
 }
 // Transition INTO a segment: its own override in R.trans (keyed by seg.key), else the style default.
@@ -210,6 +221,9 @@ function drawCard(ctx, s, W, H, p, kind) {
   ctx.translate(0, (1 - ease) * 40 * k);
   const logo = s.cardLogo ? reelImg(Settings.get('studio_logo_ref')) : null;
   if (logo) drawLogo(ctx, logo, W / 2, H * 0.25, W * 0.5, H * 0.16);
+  // The text group (title, accent rule, handle) can be moved and scaled on the preview.
+  const L = cardLayout(s, kind, W, H);
+  ctx.translate(L.cx, L.cy); ctx.scale(L.sc, L.sc); ctx.translate(-W / 2, -L.baseY);
   // accent rule
   ctx.fillStyle = s.accent;
   ctx.fillRect(W / 2 - 90 * k * ease, H * 0.5 + 120 * k, 180 * k * ease, 6 * k);
@@ -224,6 +238,51 @@ function drawCard(ctx, s, W, H, p, kind) {
     textBlock(ctx, s, [s.handle || studio], W / 2, H * 0.5 + 200 * k, 56 * k, s.accent);
   }
   ctx.restore();
+}
+
+/* ---------- Movable layers: caption, stickers, card text ----------
+   Positions are normalised: x, y = centre as a fraction of width/height; s = scale (1 = default size).
+   Layout functions return the on-canvas box { cx, cy, w, h } used for drawing and for hit-testing. */
+function cardLayout(s, kind, W, H) {
+  const k = W / 1080, pos = s[kind + 'Pos'];
+  // Natural group: title centred near baseY, handle below; box spans both.
+  // Natural extent (unscaled): from the top of the first title line to the handle line, or to the
+  // accent rule when the intro has no handle. baseY is the middle of that, the group's anchor.
+  const intro = kind === 'intro', px = (intro ? 130 : 150) * k;
+  const top = (intro ? H * 0.44 : H * 0.42) - px * 0.6;
+  const bottom = intro && !s.handle ? H * 0.5 + 126 * k : H * 0.5 + 200 * k + 32 * k;
+  const baseY = (top + bottom) / 2, sc = pos?.s || 1;
+  return { cx: (pos?.x ?? 0.5) * W, cy: (pos?.y ?? baseY / H) * H, sc, baseY, w: W * 0.84 * sc, h: (bottom - top) * sc };
+}
+function capLayout(ctx, s, c, W, H) {
+  const k = W / 1080, sc = c.cap?.s || 1, px = (REEL_CAP_PX[s.capSize] || 78) * k * sc;
+  ctx.font = reelFont(s, px);
+  const lines = wrap(ctx, c.caption, W * 0.84);
+  const w = Math.max(...lines.map(l => ctx.measureText(l).width)), h = lines.length * px * 1.12;
+  // Default spot from Style › Text, kept clear of social app buttons (top ~12%, bottom ~22%).
+  const def = s.captionPos === 'top' ? H * 0.15 + (lines.length - 1) * px * 0.56
+    : s.captionPos === 'middle' ? H * 0.5 : H * 0.74 - (lines.length - 1) * px * 0.56;
+  return { cx: (c.cap?.x ?? 0.5) * W, cy: c.cap ? c.cap.y * H : def, w, h, px, lines };
+}
+function stickerLayout(st, W, H) {
+  const iw = st.img.naturalWidth || 1, ih = st.img.naturalHeight || 1;
+  const w = W * 0.35 * st.s, h = w * ih / iw;
+  return { cx: st.x * W, cy: st.y * H, w, h };
+}
+// Everything movable on the frame at R.t, topmost last. Used by the preview's drag handling.
+function reelLayers(ctx, W, H) {
+  const s = reelStyle(), { segs, total } = reelSegments();
+  if (!segs.length) return { seg: null, list: [] };
+  const seg = reelSegAt(segs, Math.min(R.t, total - 1e-3)), list = [];
+  if (seg.kind === 'clip') {
+    const c = seg.clip;
+    (c.stickers || []).forEach((st, i) => { if (st.img.complete) list.push({ id: 'stk' + i, kind: 'stk', i, clip: c, box: stickerLayout(st, W, H) }); });
+    if (c.caption) list.push({ id: 'cap', kind: 'cap', clip: c, box: capLayout(ctx, s, c, W, H) });
+  } else {
+    const L = cardLayout(s, seg.kind, W, H);
+    list.push({ id: 'card', kind: 'card', card: seg.kind, box: { cx: L.cx, cy: L.cy, w: L.w, h: L.h } });
+  }
+  return { seg, list };
 }
 
 function drawWatermark(ctx, s, W, H) {
@@ -254,15 +313,16 @@ function drawSeg(ctx, s, W, H, seg, local) {
   if (seg.kind !== 'clip') return drawCard(ctx, s, W, H, p, seg.kind);
   const c = seg.clip;
   drawMedia(ctx, c, W, H, p);
+  for (const st of c.stickers || []) {
+    if (!st.img.complete || !st.img.naturalWidth) continue;
+    const b = stickerLayout(st, W, H);
+    ctx.drawImage(st.img, b.cx - b.w / 2, b.cy - b.h / 2, b.w, b.h);
+  }
   if (c.caption) {
-    const k = W / 1080, px = (REEL_CAP_PX[s.capSize] || 78) * k;
-    ctx.font = reelFont(s, px);
-    const lines = wrap(ctx, c.caption, W * 0.84);
-    // Keep clear of social app buttons: top ~12%, bottom ~22%
-    const y = s.captionPos === 'top' ? H * 0.15 : s.captionPos === 'middle' ? H * 0.5 - (lines.length - 1) * px * 0.56 : H * 0.74 - (lines.length - 1) * px * 1.12;
-    const cin = Math.min(1, local / 0.35);
+    const k = W / 1080, L = capLayout(ctx, s, c, W, H);
+    const cin = R.dragging ? 1 : Math.min(1, local / 0.35);   // no fade-in while it is being moved
     ctx.save(); ctx.globalAlpha = cin;
-    textBlock(ctx, s, lines, W / 2, y + (1 - cin) * 20 * k, px, s.color);
+    textBlock(ctx, s, L.lines, L.cx, L.cy - (L.lines.length - 1) * L.px * 0.56 + (1 - cin) * 20 * k, L.px, s.color);
     ctx.restore();
   }
   drawWatermark(ctx, s, W, H);
@@ -283,7 +343,7 @@ function reelDraw(ctx, W, H, t) {
   // from the chosen side. (dx, dy) points from where the new clip starts towards the centre.
   if (tOut && (tOut.type === 'wipe' || tOut.type === 'slide') && left < T(next, tOut)) {
     const q = 1 - Math.pow(left / T(next, tOut), 2);
-    const d = tOut.dir, dx = d === 'left' ? 1 : d === 'right' ? -1 : 0, dy = d === 'top' ? 1 : d === 'bottom' ? -1 : 0;
+    const d = trVariant(tOut), dx = d === 'left' ? 1 : d === 'right' ? -1 : 0, dy = d === 'top' ? 1 : d === 'bottom' ? -1 : 0;
     if (tOut.type === 'slide') {
       ctx.save(); ctx.translate(dx * W * q, dy * H * q); drawSeg(ctx, s, W, H, seg, local); ctx.restore();
       ctx.save(); ctx.translate(-dx * W * (1 - q), -dy * H * (1 - q)); drawSeg(ctx, s, W, H, next, 0); ctx.restore();
@@ -301,15 +361,44 @@ function reelDraw(ctx, W, H, t) {
   }
   // Dip-style transitions ramp in after the boundary before this segment and out before the next.
   // Each side uses its own boundary's type, so a fade-in can follow a flash-out.
-  const amt = { fade: 0, flash: 0, zoom: 0 };
-  if (tIn && REEL_DIPS.includes(tIn.type) && local < T(prev, tIn)) amt[tIn.type] = 1 - local / T(prev, tIn);
-  if (tOut && REEL_DIPS.includes(tOut.type) && left < T(next, tOut)) amt[tOut.type] = Math.max(amt[tOut.type], 1 - left / T(next, tOut));
+  const amt = { fade: 0, flash: 0, zoom: 0 }, vr = {};
+  const dip = (tr, a) => { if (a > amt[tr.type]) { amt[tr.type] = a; vr[tr.type] = trVariant(tr); } };
+  if (tIn && REEL_DIPS.includes(tIn.type) && local < T(prev, tIn)) dip(tIn, 1 - local / T(prev, tIn));
+  if (tOut && REEL_DIPS.includes(tOut.type) && left < T(next, tOut)) dip(tOut, 1 - left / T(next, tOut));
   ctx.save();
-  if (amt.zoom) { const z = 1 + amt.zoom * 0.18; ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); }
+  if (amt.zoom) {
+    // In: punch towards the viewer. Out: the frame shrinks away into black.
+    const z = vr.zoom === 'out' ? 1 - amt.zoom * 0.22 : 1 + amt.zoom * 0.18;
+    ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+  }
   drawSeg(ctx, s, W, H, seg, local);
   ctx.restore();
-  if (amt.fade) { ctx.fillStyle = `rgba(0,0,0,${amt.fade})`; ctx.fillRect(0, 0, W, H); }
-  if (amt.flash) { ctx.fillStyle = `rgba(255,255,255,${amt.flash * 0.85})`; ctx.fillRect(0, 0, W, H); }
+  if (amt.fade) { ctx.fillStyle = vr.fade === 'white' ? `rgba(255,255,255,${amt.fade})` : `rgba(0,0,0,${amt.fade})`; ctx.fillRect(0, 0, W, H); }
+  if (amt.flash) {
+    ctx.save(); ctx.globalAlpha = amt.flash * 0.85;
+    ctx.fillStyle = vr.flash === 'accent' ? s.accent : '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore();
+  }
+}
+
+// Editing aids on the preview only (never recorded): selection box, resize handle, snap guides.
+function reelDrawOverlay(ctx, W, H) {
+  if (R.recording || !R.layer) return;
+  const { list } = reelLayers(ctx, W, H), o = list.find(x => x.id === R.layer);
+  if (!o) return;
+  const b = o.box, k = W / 540;
+  ctx.save();
+  ctx.strokeStyle = '#1fb5a8'; ctx.lineWidth = 2 * k; ctx.setLineDash([6 * k, 4 * k]);
+  ctx.strokeRect(b.cx - b.w / 2 - 6 * k, b.cy - b.h / 2 - 6 * k, b.w + 12 * k, b.h + 12 * k);
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#1fb5a8'; ctx.strokeStyle = '#fff';
+  ctx.beginPath(); ctx.arc(b.cx + b.w / 2 + 6 * k, b.cy + b.h / 2 + 6 * k, 11 * k, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#f0c75e'; ctx.lineWidth = 1.5 * k;
+  for (const g of R.guides || []) {
+    ctx.beginPath();
+    if (g.x != null) { ctx.moveTo(g.x, 0); ctx.lineTo(g.x, H); } else { ctx.moveTo(0, g.y); ctx.lineTo(W, g.y); }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /* ---------- Video sync ---------- */
@@ -378,6 +467,7 @@ function reelCanvas() { return document.getElementById('reel-cv'); }
 function reelRender() {
   const cv = reelCanvas(); if (!cv) return;
   reelDraw(cv.getContext('2d'), cv.width, cv.height, R.t);
+  if (!R.playing) reelDrawOverlay(cv.getContext('2d'), cv.width, cv.height);
   const { total } = reelSegments();
   const sc = document.getElementById('reel-scrub'), tm = document.getElementById('reel-time');
   if (sc && !R.scrubbing) { sc.max = total || 0; sc.value = R.t; }

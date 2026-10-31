@@ -1298,6 +1298,7 @@ const VIEWS = {
         $('#reel-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); reelPanel(); };
       $('#reel-export').onclick = () => reelExport();
       if (!['edit', 'style', 'music'].includes(R.tab)) R.tab = 'edit';
+      reelCanvasBind($('#reel-cv'));
       reelTimeline(); reelPanel();
       document.fonts.ready.then(() => reelRender());
     }
@@ -2325,7 +2326,7 @@ function reelChanged() { reelTimeline(); reelRender(); }
 
 // The timeline under the preview is the main way around: tap a clip, card or transition and the
 // Edit tab shows that item's settings. Style holds the shared look; Music the soundtrack.
-const REEL_CLIP_TOOLS = [['trim', 'Trim'], ['look', 'Look'], ['frame', 'Frame'], ['text', 'Text'], ['arrange', 'Arrange']];
+const REEL_CLIP_TOOLS = [['trim', 'Trim'], ['look', 'Look'], ['frame', 'Frame'], ['text', 'Text'], ['stickers', 'Stickers'], ['arrange', 'Arrange']];
 const REEL_STYLE_TABS = [['text', 'Text'], ['brand', 'Brand'], ['trans', 'Transitions'], ['export', 'Export']];
 const REEL_TRANSITIONS = [['cut', 'Cut', 'Straight cut'], ['fade', 'Fade', 'Dip to black'], ['flash', 'Flash', 'White flash, good on the beat'],
   ['zoom', 'Zoom', 'Punch-in between clips'], ['wipe', 'Wipe', 'Before / after reveal, e.g. stencil to finished'], ['slide', 'Slide', 'Next clip pushes in from the side']];
@@ -2390,6 +2391,94 @@ function reelTlHead() {
   h.style.left = x + 'px';
   if (R.playing) { const tl = $('#reel-tl'); if (x < tl.scrollLeft + 20 || x > tl.scrollLeft + tl.clientWidth - 40) tl.scrollLeft = x - 60; }
 }
+/* ---------- Drag, resize and snap layers on the preview ----------
+   One finger on a layer moves it; on its corner dot (or two fingers) resizes it, keeping its
+   proportions. While moving, its centre and edges snap to the frame centre and to other layers. */
+function reelCanvasBind(cv) {
+  const ctx = cv.getContext('2d'), pts = new Map();
+  let drag = null;   // { o, mode: 'move'|'scale', sx, sy, box, pos, d0 }
+  const toCv = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height, k: cv.width / r.width }; };
+  // Read and write a layer's normalised position { x, y, s }.
+  const getPos = (o) => o.kind === 'cap' ? o.clip.cap || { x: o.box.cx / cv.width, y: o.box.cy / cv.height, s: 1 }
+    : o.kind === 'stk' ? o.clip.stickers[o.i] : reelStyle()[o.card + 'Pos'] || { x: o.box.cx / cv.width, y: o.box.cy / cv.height, s: 1 };
+  const setPos = (o, p) => {
+    if (o.kind === 'cap') o.clip.cap = { x: p.x, y: p.y, s: p.s };
+    else if (o.kind === 'stk') Object.assign(o.clip.stickers[o.i], { x: p.x, y: p.y, s: p.s });
+    else {   // card text lives in the saved style: update the cache now, write to the database on release
+      const st = reelStyle(); st[o.card + 'Pos'] = { x: p.x, y: p.y, s: p.s };
+      Settings.cache.reel_style = JSON.stringify(st);
+    }
+  };
+  // Opens the panel that belongs to a layer, so its controls are right there.
+  const openFor = (o, seg) => {
+    if (o.kind === 'card') { if (R.pick?.kind !== o.card) reelPick(o.card, o.card); return; }
+    const want = o.kind === 'cap' ? 'text' : 'stickers';
+    if (R.pick?.kind !== 'clip' || R.pick.key !== seg.key || R.tool !== want) { R.tool = want; reelPick('clip', seg.key); }
+    else reelPanel();
+  };
+  cv.addEventListener('pointerdown', (e) => {
+    if (R.recording) return;
+    try { cv.setPointerCapture(e.pointerId); } catch {}
+    const p = toCv(e); pts.set(e.pointerId, p);
+    if (R.playing) reelPause();
+    const { seg, list } = reelLayers(ctx, cv.width, cv.height);
+    if (pts.size === 2 && drag) {   // second finger: pinch the current layer
+      const [a, b] = [...pts.values()];
+      drag = { ...drag, mode: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y), pos: { ...getPos(drag.o) } };
+      return;
+    }
+    const sel = list.find(x => x.id === R.layer);
+    const hk = 22 * p.k;
+    if (sel && Math.hypot(p.x - (sel.box.cx + sel.box.w / 2 + 6 * p.k), p.y - (sel.box.cy + sel.box.h / 2 + 6 * p.k)) < hk) {
+      drag = { o: sel, mode: 'scale', pos: { ...getPos(sel) }, d0: Math.hypot(p.x - sel.box.cx, p.y - sel.box.cy) };
+      return;
+    }
+    const hit = [...list].reverse().find(o => Math.abs(p.x - o.box.cx) <= o.box.w / 2 + 8 * p.k && Math.abs(p.y - o.box.cy) <= o.box.h / 2 + 8 * p.k);
+    if (!hit) { drag = null; if (R.layer) { R.layer = null; reelRender(); } return; }
+    R.layer = hit.id; R.dragging = true;
+    drag = { o: hit, mode: 'move', sx: p.x, sy: p.y, box: { ...hit.box }, pos: { ...getPos(hit) }, others: list.filter(o => o.id !== hit.id) };
+    openFor(hit, seg);
+    reelRender();
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!drag || !pts.has(e.pointerId)) return;
+    const p = toCv(e); pts.set(e.pointerId, p);
+    const W = cv.width, H = cv.height, o = drag.o;
+    if (drag.mode === 'pinch' && pts.size > 1) {
+      const [a, b] = [...pts.values()];
+      setPos(o, { ...drag.pos, s: Math.max(0.3, Math.min(4, drag.pos.s * Math.hypot(a.x - b.x, a.y - b.y) / drag.d0)) });
+    } else if (drag.mode === 'scale') {
+      const c = { x: drag.pos.x * W, y: drag.pos.y * H };
+      setPos(o, { ...drag.pos, s: Math.max(0.3, Math.min(4, drag.pos.s * Math.hypot(p.x - c.x, p.y - c.y) / drag.d0)) });
+    } else if (drag.mode === 'move') {
+      let cx = drag.box.cx + p.x - drag.sx, cy = drag.box.cy + p.y - drag.sy;
+      const hw = drag.box.w / 2, hh = drag.box.h / 2, th = 10 * p.k, guides = [];
+      // Candidate lines: frame centre, plus every other layer's centre and edges.
+      const xs = [W / 2], ys = [H / 2];
+      for (const q of drag.others) { xs.push(q.box.cx, q.box.cx - q.box.w / 2, q.box.cx + q.box.w / 2); ys.push(q.box.cy, q.box.cy - q.box.h / 2, q.box.cy + q.box.h / 2); }
+      const snap = (v, half, lines) => {
+        for (const L of lines) for (const off of [0, -half, half]) if (Math.abs(v + off - L) < th) return [L - off, L];
+        return [v, null];
+      };
+      let gx, gy;
+      [cx, gx] = snap(cx, hw, xs); [cy, gy] = snap(cy, hh, ys);
+      if (gx != null) guides.push({ x: gx }); if (gy != null) guides.push({ y: gy });
+      R.guides = guides;
+      setPos(o, { ...drag.pos, x: cx / W, y: cy / H });
+    }
+    reelRender();
+    if (R.tool === 'text' && o.kind === 'cap') { const b = document.querySelector('[data-cs]'); if (b) { const s = getPos(o).s; b.value = s; b.closest('.slider').querySelector('b').textContent = Math.round(s * 100) + '%'; } }
+  });
+  const end = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size) { if (drag?.mode === 'pinch') drag = null; return; }
+    if (drag?.o.kind === 'card') Settings.set('reel_style', Settings.cache.reel_style);
+    if (drag?.o.kind === 'card' || drag?.o.kind === 'cap') reelPanel();   // enables the reset buttons
+    drag = null; R.dragging = false; R.guides = []; reelRender();
+  };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+}
+
 // Select a timeline item: jump the preview to it and open its settings in the Edit tab.
 function reelPick(kind, key) {
   R.pick = { kind, key };
@@ -2511,7 +2600,17 @@ function reelClipTool(c) {
       <div class="row"><button class="btn small" data-act="rot">↻ Rotate</button><button class="btn small ${c.flip ? 'on' : ''}" data-act="flip">⇋ Mirror</button></div>`;
   if (R.tool === 'text') return `
       <label class="field"><span>Caption</span><input class="in" data-c="caption" value="${esc(c.caption)}" placeholder="e.g. Fine-line peony, healed"></label>
-      <p class="muted" style="font-size:12px;margin:0">Caption size, position and colour are shared by all clips: Style › Text.</p>`;
+      ${c.caption ? `${reelSlider('data-cs', 's', 'Size', 0.4, 2.5, 0.05, c.cap?.s || 1, Math.round((c.cap?.s || 1) * 100) + '%')}
+        <div class="row"><button class="btn small" data-act="capreset" ${c.cap ? '' : 'disabled'}>Reset position and size</button></div>` : ''}
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Drag the caption on the preview to move it; drag its corner dot to resize. It snaps to the centre and to stickers.</p>`;
+  if (R.tool === 'stickers') {
+    const list = c.stickers || [];
+    return `
+      <div class="stk-list">${list.map((st, i) => `<span class="stk ${R.layer === 'stk' + i ? 'on' : ''}" data-stk="${i}"><img src="${st.url}" alt="">
+        <b data-stkdel="${i}" role="button" aria-label="Remove sticker">&times;</b></span>`).join('')}
+        <label class="stk add" data-tip="Add a PNG (transparent background works best)">+<input type="file" accept="image/png,image/webp,image/*" multiple hidden data-stkfile></label></div>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Stickers sit on this clip only. Drag on the preview to move; drag the corner dot (or pinch) to resize.</p>`;
+  }
   const here = reelSegments().segs.find(x => x.clip === c);
   const canSplit = video && here && R.t > here.start + 0.3 && R.t < here.start + here.dur - 0.3;
   return `<div class="row">
@@ -2535,6 +2634,12 @@ function reelFilterThumbs(c) {
 function reelClipBind(ed, c) {
   const el = $('#reel-panel');
   ed.addEventListener('input', (e) => {
+    if (e.target.dataset.cs) {
+      const L = capLayout($('#reel-cv').getContext('2d'), reelStyle(), c, PREVIEW_W, PREVIEW_H);
+      c.cap = { x: L.cx / PREVIEW_W, y: L.cy / PREVIEW_H, ...c.cap, s: +e.target.value };
+      e.target.closest('.slider').querySelector('b').textContent = Math.round(c.cap.s * 100) + '%';
+      R.layer = 'cap'; return reelRender();
+    }
     const k = e.target.dataset.c; if (!k) return;
     if (k === 'caption') c.caption = e.target.value;
     else if (k === 'sound') c.mute = !e.target.checked;
@@ -2549,8 +2654,27 @@ function reelClipBind(ed, c) {
     }
     reelChanged();
   });
-  ed.addEventListener('change', (e) => { if (e.target.dataset.c === 'inP' || e.target.dataset.c === 'outP') reelPanel(); });
+  ed.addEventListener('change', async (e) => {
+    if (e.target.dataset.c === 'inP' || e.target.dataset.c === 'outP') reelPanel();
+    if (e.target.dataset.c === 'caption' && R.tool === 'text') reelPanel();   // show size controls once there is text
+    if (e.target.hasAttribute('data-stkfile')) {
+      // Stickers stay in memory with the draft, like the clips themselves.
+      c.stickers ||= [];
+      for (const f of e.target.files) {
+        const url = URL.createObjectURL(f), img = new Image(); img.src = url;
+        try { await img.decode(); } catch { toast(`Could not read ${f.name}.`); continue; }
+        c.stickers.push({ url, img, x: 0.5, y: 0.4, s: 1 });
+      }
+      R.layer = 'stk' + (c.stickers.length - 1); reelRender(); reelPanel();
+    }
+  });
   ed.addEventListener('click', (e) => {
+    const sd = e.target.closest('[data-stkdel]');
+    if (sd) { const [gone] = c.stickers.splice(+sd.dataset.stkdel, 1);
+      if (!R.clips.some(x => x.stickers?.some(o => o.url === gone.url))) URL.revokeObjectURL(gone.url);
+      R.layer = null; reelRender(); return reelPanel(); }
+    const sk = e.target.closest('[data-stk]');
+    if (sk) { R.layer = 'stk' + sk.dataset.stk; reelRender(); return reelPanel(); }
     const sb = e.target.closest('[data-seg] button');
     if (sb) {
       const k = sb.parentElement.dataset.seg;
@@ -2565,14 +2689,17 @@ function reelClipBind(ed, c) {
     const i = R.sel, act = a.dataset.act;
     if (act === 'rot') { c.rot = ((c.rot || 0) + 90) % 360; reelChanged(); return; }
     if (act === 'flip') { c.flip = !c.flip; a.classList.toggle('on', c.flip); reelChanged(); return; }
+    if (act === 'capreset') { delete c.cap; R.layer = 'cap'; reelRender(); return reelPanel(); }
     if (act === 'del') return reelRemoveClip(i);
     let pick = c;
+    // Copies get their own caption position and sticker list, so moving one never moves the other.
+    const copy = (extra) => ({ ...c, id: ++R.seq, cap: c.cap && { ...c.cap }, stickers: (c.stickers || []).map(o => ({ ...o })), ...extra });
     if (act === 'dup') {
-      pick = { ...c, id: ++R.seq }; R.clips.splice(i + 1, 0, pick);
+      pick = copy(); R.clips.splice(i + 1, 0, pick);
     } else if (act === 'split') {
       const seg = reelSegments().segs.find(x => x.clip === c);
       const cut = c.inP + (R.t - seg.start) * (c.speed || 1);
-      pick = { ...c, id: ++R.seq, inP: cut }; R.clips.splice(i + 1, 0, pick); c.outP = cut;
+      pick = copy({ inP: cut }); R.clips.splice(i + 1, 0, pick); c.outP = cut;
       toast('Clip split.');
     } else { const j = act === 'left' ? i - 1 : i + 1; [R.clips[i], R.clips[j]] = [R.clips[j], R.clips[i]]; }
     R.t = Math.min(R.t, reelSegments().total);
@@ -2602,8 +2729,11 @@ async function reelCardPanel(s, kind) {
       <button class="btn small danger" data-cardoff="${kind}" data-tip="Take this card out of the reel. Add it back with + ${intro ? 'Intro' : 'Outro'} on the timeline.">Remove card</button></div>
     ${intro ? `<label class="field"><span>Name on intro</span><input class="in" data-s="title" value="${esc(s.title)}" placeholder="${esc(Settings.get('studio_name') || 'Studio name')}"></label>`
       : `<label class="field"><span>Outro text</span><input class="in" data-s="outroText" value="${esc(s.outroText)}"></label>`}
+    ${reelSlider('data-s', kind + 'Dur', 'Duration', 0.8, 6, 0.1, s[kind + 'Dur'], (+s[kind + 'Dur']).toFixed(1) + 's')}
     <label class="toggle" style="display:inline-flex;margin-bottom:12px" data-tip="Your studio logo above the text on both cards"><input type="checkbox" data-s="cardLogo" ${s.cardLogo ? 'checked' : ''}><span>Show logo</span></label>
     ${hasLogo ? '' : '<p class="muted" style="font-size:12px;margin:-4px 0 12px">Add your studio logo in More › Settings to use it here.</p>'}
+    <div class="row" style="margin-bottom:12px"><button class="btn small" data-cardpos="${kind}" ${s[kind + 'Pos'] ? '' : 'disabled'}>Reset text position and size</button></div>
+    <p class="muted" style="font-size:12px;margin:-4px 0 12px">Drag the card text on the preview to move it; drag its corner dot to resize.</p>
     <div class="lbl">Background image ${help('A photo of your studio or a tattoo behind the card text. Lower the opacity so the text stays readable.')}</div>
     <div class="row" style="margin-bottom:12px;flex-wrap:nowrap">
       <span class="bg-thumb">${bgUrl ? `<img src="${bgUrl}" alt="">` : ''}</span>
@@ -2628,9 +2758,9 @@ function reelTransPanel(s, seg) {
     <div class="reel-clip-head"><b>${name(prev)} → ${name(seg)}</b><span class="chip">${own ? 'Custom' : 'Default'}</span></div>
     <div class="tr-grid" style="margin-bottom:12px">${REEL_TRANSITIONS.map(([k, l, d]) =>
       `<button data-tt="${k}" class="tr ${tr.type === k ? 'on' : ''}"><b>${REEL_TR_ICON[k]} ${l}</b><span>${d}</span></button>`).join('')}</div>
-    ${tr.type === 'wipe' || tr.type === 'slide' ? `<div class="lbl">Comes in from</div>
-      <div class="seg dir4" style="margin-bottom:12px">${[['left', '← Left'], ['right', 'Right →'], ['top', '↑ Top'], ['bottom', '↓ Bottom']].map(([v, l]) =>
-        `<button data-td="${v}" class="${tr.dir === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>` : ''}
+    ${REEL_TR_VARIANTS[tr.type] ? `<div class="lbl">${tr.type === 'wipe' || tr.type === 'slide' ? 'Comes in from' : 'Version'}</div>
+      <div class="seg ${REEL_TR_VARIANTS[tr.type].length > 2 ? 'dir4' : ''}" style="margin-bottom:12px">${REEL_TR_VARIANTS[tr.type].map(([v, l]) =>
+        `<button data-td="${v}" class="${trVariant(tr) === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>` : ''}
     ${tr.type !== 'cut' ? reelSlider('data-tdur', '1', 'Duration', 0.1, 1.2, 0.05, tr.dur, tr.dur.toFixed(2) + 's') : ''}
     <div class="row" style="margin-top:4px">
       <button class="btn small" data-tall data-tip="Make this the transition between every clip">Use for all</button>
@@ -2662,8 +2792,9 @@ async function reelStyleSection(s) {
     return `<p class="muted" style="font-size:13px;margin:0 0 12px">The default for every transition. To change just one, tap its dot on the timeline.</p>
       <div class="tr-grid" data-st="transition" style="margin-bottom:12px">${REEL_TRANSITIONS.map(([k, l, d]) =>
       `<button data-v="${k}" class="tr ${s.transition === k ? 'on' : ''}"><b>${REEL_TR_ICON[k]} ${l}</b><span>${d}</span></button>`).join('')}</div>
-      ${s.transition === 'wipe' || s.transition === 'slide' ? `<div class="lbl">Comes in from</div>
-        ${seg('transDir', [['left', '← Left'], ['right', 'Right →'], ['top', '↑ Top'], ['bottom', '↓ Bottom']])}` : ''}
+      ${REEL_TR_VARIANTS[s.transition] ? `<div class="lbl">${s.transition === 'wipe' || s.transition === 'slide' ? 'Comes in from' : 'Version'}</div>
+        <div class="seg ${REEL_TR_VARIANTS[s.transition].length > 2 ? 'dir4' : ''}" data-st="transDir" style="margin-bottom:12px">${REEL_TR_VARIANTS[s.transition].map(([v, l]) =>
+          `<button data-v="${v}" class="${trVariant({ type: s.transition, dir: s.transDir }) === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>` : ''}
       ${s.transition !== 'cut' ? reelSlider('data-s', 'transDur', `Duration ${help('How long each transition takes. Short feels snappy, long feels smooth.')}`, 0.1, 1.2, 0.05, s.transDur, (+s.transDur).toFixed(2) + 's') : ''}
       ${custom ? `<button class="btn small" data-tclear style="margin-top:6px">Reset ${custom} custom transition${custom > 1 ? 's' : ''} to this</button>` : ''}`;
   }
@@ -2695,7 +2826,9 @@ function reelStyleInput(e) {
   const k = t.dataset.s; if (!k) return;
   const v = t.type === 'checkbox' ? t.checked : t.type === 'range' ? +t.value : t.value;
   reelSetStyle(k, v);
-  if (t.type === 'range') t.closest('.slider').querySelector('b').textContent = k === 'transDur' ? v.toFixed(2) + 's' : Math.round(v * 100) + '%';
+  if (t.type === 'range') t.closest('.slider').querySelector('b').textContent =
+    k === 'transDur' ? v.toFixed(2) + 's' : /Dur$/.test(k) ? v.toFixed(1) + 's' : Math.round(v * 100) + '%';
+  if (/^(intro|outro)Dur$/.test(k)) return reelChanged();
   if (R.pick && (R.pick.kind === 'intro' || R.pick.kind === 'outro')) reelShowCard(R.pick.kind);
   else reelChanged();
 }
@@ -2719,6 +2852,8 @@ async function reelStyleClick(e) {
     if (t.closest('[data-tpeek]')) return reelPeekTransition(key);
   }
   if (t.closest('[data-tclear]')) { R.trans = {}; reelChanged(); return reelPanel(); }
+  const cp = t.closest('[data-cardpos]');
+  if (cp) { reelSetStyle(cp.dataset.cardpos + 'Pos', null); reelPanel(); return reelShowCard(cp.dataset.cardpos); }
   const off = t.closest('[data-cardoff]');
   if (off) { reelSetStyle(off.dataset.cardoff, false); R.pick = null; reelChanged(); return reelPanel(); }
   const act = t.closest('[data-bgact]');
@@ -3160,7 +3295,7 @@ addEventListener('hashchange', () => { if (booted) render(); });
 (async () => {
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
-  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 4) {
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 5) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
     if (!tried) { await Promise.all(['reel.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }
