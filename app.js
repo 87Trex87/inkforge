@@ -2502,6 +2502,7 @@ const PAIN_NAMES = ['Least', 'Low', 'Medium', 'High', 'Most'];
 const QUOTE_V2 = {
   anchors: [[1, 650], [4, 2500], [9, 4500]],
   sessionMax: 9, round: 50, deposit: 30, fill: 70, range: 15,
+  vatOn: false, vatRate: 15,                               // VAT is added on top when switched on
   speed: [0.25, 0.45, 0.6, 0.9, 1.25],                     // minutes per cm2, detail levels 1-5
   colour: { black: 1, bg: 1.15, colour: 1.3 },
   pain: [1, 1.05, 1.12, 1.2, 1.3],                         // pain levels 1-5
@@ -2545,7 +2546,7 @@ function qCfg() {
 const qSave = (cfg) => Settings.set('quote_v2', JSON.stringify(cfg));
 
 // The wizard's answers, kept while the app is open.
-const QZ = { client: '', step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null };
+const QZ = { client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null };
 const QZ_STEPS = ['Placement', 'Size', 'Colour', 'Detail', 'Style', 'Text', 'Quote'];
 
 // Price for one session of h hours on the rate curve.
@@ -2582,10 +2583,16 @@ function qCalc(q = QZ) {
   const hours = q.hours ?? est;
   const sessions = Math.max(1, Math.ceil(hours / c.sessionMax - 1e-9));
   const per = hours / sessions;
-  const total = qRound(c, qCurve(c, per) * sessions);
-  const lo = qRound(c, qCurve(c, hours * (1 - c.range / 100) / sessions) * sessions);
-  const hi = qRound(c, qCurve(c, hours * (1 + c.range / 100) / sessions) * sessions);
-  return { c, pain, est, hours, sessions, per, total, lo, hi, deposit: qRound(c, total * c.deposit / 100), lines, minutes: Math.round(hours * 60) };
+  // Tattoo price, then the discount off it, then VAT on what is left.
+  const fin = (base) => {
+    const disc = Math.min(base, Math.max(0, q.discType === 'amt' ? +q.discVal || 0 : base * (+q.discVal || 0) / 100));
+    const net = base - disc, vat = c.vatOn ? Math.round(net * c.vatRate / 100) : 0;
+    return { base, disc: Math.round(disc), net: Math.round(net), vat, total: Math.round(net + vat) };
+  };
+  const pr = fin(qRound(c, qCurve(c, per) * sessions));
+  const lo = fin(qRound(c, qCurve(c, hours * (1 - c.range / 100) / sessions) * sessions)).total;
+  const hi = fin(qRound(c, qCurve(c, hours * (1 + c.range / 100) / sessions) * sessions)).total;
+  return { c, pain, est, hours, sessions, per, ...pr, lo, hi, deposit: qRound(c, pr.total * c.deposit / 100), lines, minutes: Math.round(hours * 60) };
 }
 const fmtH = (h) => { const m = Math.round(h * 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`; };
 
@@ -2632,7 +2639,7 @@ function qzDraw() {
   if (s === 0) {
     const groups = [...new Set(c.placements.map(p => p[1]))];
     body = `<h2>Where is the tattoo?</h2>
-      <button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button>
+      <div class="qz-pin"><button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button></div>
       <div class="seg" id="qz-side" style="margin:10px 0">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right']].map(([k, l]) =>
         `<button data-side="${k}" class="${QZ.side === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
       ${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="qz-chips">${c.placements.filter(p => p[1] === g).map(([n, , pn]) =>
@@ -2643,7 +2650,7 @@ function qzDraw() {
     const sc = 120 / Math.max(QZ.w, QZ.h, 20);
     body = `<h2>How big?</h2><p class="muted" style="margin-top:0">The box the design fits in. Calibrate sets how much of that box is actually inked.</p>
       <div class="qz-chips" style="margin-bottom:12px">${presets.map(([n, w, h]) => `<button class="chip qz-chip ${QZ.w === w && QZ.h === h ? 'on' : ''}" data-preset="${w}x${h}">${n}</button>`).join('')}</div>
-      <div class="qz-size"><div class="qz-box" style="width:${QZ.w * sc}px;height:${QZ.h * sc}px"><span>${QZ.w} × ${QZ.h} cm</span></div></div>
+      <div class="qz-pin"><div class="qz-size"><div class="qz-box" style="width:${QZ.w * sc}px;height:${QZ.h * sc}px"><span>${QZ.w} × ${QZ.h} cm</span></div></div></div>
       ${reelSlider('data-qz', 'w', 'Width', 1, 70, 0.5, QZ.w, QZ.w + ' cm')}
       ${reelSlider('data-qz', 'h', 'Height', 1, 70, 0.5, QZ.h, QZ.h + ' cm')}`;
   } else if (s === 2) {
@@ -2651,8 +2658,8 @@ function qzDraw() {
       <span class="qz-sw sw-${k}"></span><b>${l}</b><span class="muted">${d}</span></button>`).join('')}</div>`;
   } else if (s === 3) {
     body = `<h2>How detailed?</h2>
-      <div class="qz-detail">${detailSvg(QZ.detail, QZ.colour || 'black')}</div>
-      <div class="qz-dname"><b>${DETAIL_LEVELS[QZ.detail - 1][0]}</b><span class="muted">${DETAIL_LEVELS[QZ.detail - 1][1]}</span></div>
+      <div class="qz-pin"><div class="qz-detail">${detailSvg(QZ.detail, QZ.colour || 'black')}</div>
+      <div class="qz-dname"><b>${DETAIL_LEVELS[QZ.detail - 1][0]}</b><span class="muted">${DETAIL_LEVELS[QZ.detail - 1][1]}</span></div></div>
       <input type="range" min="1" max="5" step="1" value="${QZ.detail}" data-qz="detail" class="qz-range" aria-label="Detail level">
       <div class="qz-thumbs">${DETAIL_LEVELS.map((d, i) => `<button data-detail="${i + 1}" class="${QZ.detail === i + 1 ? 'on' : ''}" aria-label="${d[0]}">${detailSvg(i + 1, QZ.colour || 'black')}</button>`).join('')}</div>`;
   } else if (s === 4) {
@@ -2669,28 +2676,35 @@ function qzDraw() {
       <p class="muted" style="font-size:12px">Double-check the spelling with the client.</p>` : ''}`;
   } else {
     const r = qCalc();
-    body = `<div class="qz-result">
-        <div class="muted qz-k">Estimate</div>
-        <div class="qz-price">${money(r.total)}</div>
-        <div class="muted">Range ${money(r.lo)} – ${money(r.hi)}</div>
-        <div class="qz-facts"><span><b>${fmtH(r.hours)}</b>tattoo time</span><span><b>${r.sessions}</b>session${r.sessions > 1 ? 's' : ''}</span><span><b>${money(r.deposit)}</b>deposit</span></div>
-      </div>
-      ${reelSlider('data-qz', 'hours', `Adjust time ${help('Your call overrides the estimate. The price follows your rate curve.')}`, 0.5, Math.max(20, Math.ceil(r.est * 2)), 0.25, r.hours, fmtH(r.hours) + (QZ.hours != null ? ' (yours)' : ''))}
-      ${QZ.hours != null ? '<button class="link" id="qz-reset" style="margin:-4px 0 10px">Use the estimate again</button>' : ''}
-      ${r.sessions > 1 ? `<p class="muted" style="font-size:13px">${r.sessions} sessions of about ${fmtH(r.per)}, each priced on your rates. Breaks are not included.</p>` : ''}
-      <details class="qz-why"><summary>How it was worked out</summary>
+    body = `<div class="qz-result" id="qz-price">${qzPriceHTML(r)}</div>
+      <details class="qz-sec" open><summary>Adjust</summary>
+        ${reelSlider('data-qz', 'hours', `Time ${help('Your call overrides the estimate. The price follows your rate curve.')}`, 0.5, Math.max(20, Math.ceil(r.est * 2)), 0.25, r.hours, fmtH(r.hours) + (QZ.hours != null ? ' (yours)' : ''))}
+        ${QZ.hours != null ? '<button class="link" id="qz-reset" style="margin:-4px 0 10px">Use the estimate again</button>' : ''}
+        <div class="lbl">Discount</div>
+        <div class="qz-disc">
+          <div class="seg" id="qz-dt">${[['pct', '%'], ['amt', cur || 'Amount']].map(([k, l]) => `<button data-dt="${k}" class="${QZ.discType === k ? 'on' : ''}">${esc(l)}</button>`).join('')}</div>
+          <input class="in" type="number" inputmode="decimal" min="0" step="any" data-qzd value="${QZ.discVal || ''}" placeholder="0">
+        </div>
+        ${QZ.discType === 'pct' ? `<div class="qz-chips" style="margin-top:8px">${[5, 10, 15, 20].map(v => `<button class="chip qz-chip ${+QZ.discVal === v ? 'on' : ''}" data-dq="${v}">${v}%</button>`).join('')}</div>` : ''}
+        <label class="toggle" style="display:inline-flex;margin-top:6px" data-tip="Adds VAT on top of the price after any discount. Set the rate in Calibrate.">
+          <input type="checkbox" id="qz-vat" ${r.c.vatOn ? 'checked' : ''}><span>Add VAT (${r.c.vatRate}%)</span></label>
+      </details>
+      <details class="qz-sec qz-why"><summary>How it was worked out</summary>
         ${r.lines.map(([l, m]) => `<div class="stat"><span>${esc(l)}</span><span>${m >= 0 ? '+' : '−'}${Math.round(Math.abs(m))} min</span></div>`).join('')}
         <div class="stat"><span><b>Estimated time</b></span><span><b>${fmtH(r.est)}</b></span></div>
+        ${r.sessions > 1 ? `<p class="muted" style="font-size:12px;margin:6px 0 0">${r.sessions} sessions of about ${fmtH(r.per)}, each priced on your rates. Breaks are not included.</p>` : ''}
       </details>
-      <label class="field" style="margin-top:14px"><span>Client name (for the quote sheet, optional)</span>
-        <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off"></label>
-      <div class="row">
-        <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print</button>
-        <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, for clients who prefer an image">Save image</button>
-        <button class="btn" id="qz-share">Send text</button>
+      <div class="qz-out">
+        <label class="field"><span>Client name <span class="muted">(optional, shown on the quote sheet)</span></span>
+          <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off"></label>
+        <div class="qz-acts">
+          <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print</button>
+          <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, for clients who prefer an image">Save image</button>
+          <button class="btn" id="qz-share">Send text</button>
+        </div>
+        <button class="btn primary" id="qz-book" style="width:100%;margin-top:8px">Book with this quote</button>
       </div>
-      <button class="btn primary" id="qz-book" style="width:100%;margin-top:8px">Book with this quote</button>
-      <div class="row" style="margin-top:8px"><button class="btn small" id="qz-new">Start over</button>
+      <div class="row" style="margin-top:12px"><button class="btn small" id="qz-new">Start over</button>
         <a class="btn small" href="#quote-cal" style="margin-left:auto">Calibrate</a></div>`;
   }
   const r = s >= 1 && s < 6 && QZ.place ? qCalc() : null;
@@ -2706,7 +2720,20 @@ function qzDraw() {
   qzBind(el);
 }
 
-function qzGo(n) { QZ.step = Math.max(0, Math.min(6, n)); QZ.seen = Math.max(QZ.seen, QZ.step); qzDraw(); scrollTo(0, 0); }
+function qzPriceHTML(r) {
+  const adj = r.disc || r.vat;
+  return `<div class="muted qz-k">${adj ? 'Total' : 'Estimate'}</div>
+    <div class="qz-price">${money(r.total)}</div>
+    <div class="muted">Range ${money(r.lo)} – ${money(r.hi)}</div>
+    ${adj ? `<div class="qz-lines">
+      <div><span>Tattoo</span><span>${money(r.base)}</span></div>
+      ${r.disc ? `<div><span>Discount${QZ.discType === 'pct' ? ` ${+QZ.discVal}%` : ''}</span><span>−${money(r.disc)}</span></div>` : ''}
+      ${r.vat ? `<div><span>VAT ${r.c.vatRate}%</span><span>+${money(r.vat)}</span></div>` : ''}</div>` : ''}
+    <div class="qz-facts"><span><b>${fmtH(r.hours)}</b>tattoo time</span><span><b>${r.sessions}</b>session${r.sessions > 1 ? 's' : ''}</span><span><b>${money(r.deposit)}</b>deposit</span></div>`;
+}
+
+// #main is the scrolling area (the window itself does not scroll), so each step starts at its top.
+function qzGo(n) { QZ.step = Math.max(0, Math.min(6, n)); QZ.seen = Math.max(QZ.seen, QZ.step); qzDraw(); $('#main').scrollTo(0, 0); }
 
 function qzBind(el) {
   const next = $('#qz-next'), back = $('#qz-back'), skip = $('#qz-skip');
@@ -2725,7 +2752,9 @@ function qzBind(el) {
     if (d('font') != null) { QZ.font = QZ.font === d('font') ? '' : d('font'); QZ.hours = null; return qzDraw(); }
     if (t.closest('#qz-chart')) return viewImage('img/pain-chart.png');
     if (t.closest('#qz-reset')) { QZ.hours = null; return qzDraw(); }
-    if (t.closest('#qz-new')) { Object.assign(QZ, { client: '', step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
+    if (d('dt')) { QZ.discType = d('dt'); QZ.discVal = 0; return qzDraw(); }
+    if (d('dq')) { QZ.discVal = +QZ.discVal === +d('dq') ? 0 : +d('dq'); return qzDraw(); }
+    if (t.closest('#qz-new')) { Object.assign(QZ, { client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
     if (t.closest('#qz-book')) {
       const r = qCalc();
       Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
@@ -2739,6 +2768,7 @@ function qzBind(el) {
   // Sliders: update the value label at once, redraw the preview parts when the finger lifts.
   el.oninput = (e) => {
     const k = e.target.dataset.qz, tk = e.target.dataset.qzt;
+    if (e.target.hasAttribute('data-qzd')) { QZ.discVal = +e.target.value || 0; $('#qz-price').innerHTML = qzPriceHTML(qCalc()); return; }
     if (tk) { QZ[tk] = e.target.value; if (tk === 'text') QZ.hours = null; return; }
     if (!k) return;
     QZ[k] = +e.target.value; if (k !== 'hours') QZ.hours = null;
@@ -2752,8 +2782,12 @@ function qzBind(el) {
       el.querySelectorAll('.qz-thumbs button').forEach((x, i) => x.classList.toggle('on', i + 1 === QZ.detail));
     }
     const live = $('.qz-live b'); if (live) live.textContent = money(qCalc().total);
+    const pc = $('#qz-price'); if (pc && k === 'hours') pc.innerHTML = qzPriceHTML(qCalc());
   };
-  el.onchange = (e) => { if (e.target.dataset.qz === 'hours' || e.target.dataset.qzt === 'text') qzDraw(); };
+  el.onchange = async (e) => {
+    if (e.target.id === 'qz-vat') { const c = qCfg(); c.vatOn = e.target.checked; await qSave(c); return qzDraw(); }
+    if (e.target.dataset.qz === 'hours' || e.target.dataset.qzt === 'text' || e.target.hasAttribute('data-qzd')) qzDraw();
+  };
 }
 
 const qzPlacement = () => QZ.place ? `${QZ.side === 'L' ? 'Left ' : QZ.side === 'R' ? 'Right ' : ''}${QZ.place.toLowerCase()}`.replace(/^./, m => m.toUpperCase()) : '';
@@ -2831,8 +2865,14 @@ async function qzSheet() {
     text(v, M + col * i + col / 2, y + 110, font(40, 600), ink, 'center');
   });
   x.fillStyle = '#cfe7e3'; x.fillRect(M + 40, y + 140, W - 2 * M - 80, 2);
-  text('ESTIMATE', M + 40, y + 215, font(26, 700), soft);
-  text(money(r.total), W - M - 40, y + 232, font(96, 400, true), teal, 'right');
+  // With a discount or VAT, list how the total is made up on the left; the total stays large on the right.
+  const adj = [['Tattoo', money(r.base)], r.disc && [`Discount${QZ.discType === 'pct' ? ' ' + (+QZ.discVal) + '%' : ''}`, '-' + money(r.disc)],
+    r.vat && [`VAT ${c.vatRate}%`, '+' + money(r.vat)]].filter(Boolean);
+  if (adj.length > 1) {
+    adj.forEach(([k, v], i) => { text(k, M + 40, y + 186 + i * 32, font(22, 500), soft); text(v, M + 360, y + 186 + i * 32, font(22, 600), ink, 'right'); });
+    text('TOTAL', W - M - 40, y + 172, font(18, 700), soft, 'right');
+  } else text('ESTIMATE', M + 40, y + 215, font(26, 700), soft);
+  text(money(r.total), W - M - 40, y + (adj.length > 1 ? 252 : 238), font(adj.length > 1 ? 84 : 96, 400, true), teal, 'right');
   y += boxH + 56;
 
   // The basics of the calculation, then the terms
@@ -2845,7 +2885,8 @@ async function qzSheet() {
   y += 24;
   text('PLEASE NOTE', M, y, font(22, 700), teal); y += 44;
   for (const s of ['Breaks are not included in the time or the quote.', 'The final price may change if the design, size or placement changes.',
-    `The deposit secures your booking and comes off the final price.`, 'This quote is valid for 30 days.'])
+    `The deposit secures your booking and comes off the final price.`, 'This quote is valid for 30 days.',
+    c.vatOn ? `Prices include VAT at ${c.vatRate}%.` : ''].filter(Boolean))
     for (const ln of wrapLines('•  ' + s, font(26), W - 2 * M)) { text(ln, M, y, font(26), ink); y += 38; }
 
   // Footer sits under the notes, or at the foot of the page when there is room.
@@ -2882,7 +2923,9 @@ async function qzShare() {
   const r = qCalc(), studio = Settings.get('studio_name') || Settings.get('artist_name');
   const text = `Tattoo quote${studio ? ' from ' + studio : ''}\n`
     + `${qzPlacement()} · ${QZ.w} x ${QZ.h} cm\n${qzSummary()}\n\n`
-    + `Estimate: ${money(r.total)} (about ${fmtH(r.hours)}${r.sessions > 1 ? ` over ${r.sessions} sessions` : ''})\n`
+    + (r.disc ? `Tattoo: ${money(r.base)}\nDiscount: -${money(r.disc)}\n` : '')
+    + (r.vat ? `VAT ${r.c.vatRate}%: ${money(r.vat)}\n` : '')
+    + `${r.disc || r.vat ? 'Total' : 'Estimate'}: ${money(r.total)} (about ${fmtH(r.hours)}${r.sessions > 1 ? ` over ${r.sessions} sessions` : ''})\n`
     + `Deposit to book: ${money(r.deposit)}\n\nFinal price may change with design changes.`;
   try {
     if (navigator.share) await navigator.share({ text });
@@ -2908,7 +2951,9 @@ function qcDraw() {
         <label class="field"><span>Round to</span><div class="unit-in">${num('round', c.round, '10')}<em>${esc(cur)}</em></div></label>
         <label class="field"><span>Deposit</span><div class="unit-in">${num('deposit', c.deposit, '5')}<em>%</em></div></label>
         <label class="field"><span>Range shown ${help('The ± range under the estimate.')}</span><div class="unit-in">${num('range', c.range, '5')}<em>%</em></div></label>
-      </div></div>
+      </div>
+      <div class="qc-vat"><label class="toggle"><input type="checkbox" id="qc-vat" ${c.vatOn ? 'checked' : ''}><span>Add VAT to quotes</span></label>
+        <div class="unit-in" style="width:120px">${num('vatRate', c.vatRate, '0.5')}<em>%</em></div></div></div>
     <div class="card"><h2>Speed ${help('How many minutes one square centimetre takes at each detail level. Fill is how much of the size box is actually inked.')}</h2>
       <label class="field"><span>Design fill of the size box</span><div class="unit-in">${num('fill', c.fill, '5')}<em>%</em></div></label>
       ${DETAIL_LEVELS.map(([n], i) => `<div class="qc-row"><span class="qc-ic">${detailSvg(i + 1, 'bg')}</span><span>${n}</span>
@@ -2919,12 +2964,22 @@ function qcDraw() {
     <div class="card"><h2>Pain and difficulty ${help('Each placement has a pain level; each level adds time. Change a placement\'s level below.')}</h2>
       ${PAIN_NAMES.map((n, i) => `<div class="qc-row"><b class="qc-dot" style="background:${PAIN_COLOURS[i]}"></b><span>${n}</span>
         <div class="unit-in">${num(`pain.${i}`, c.pain[i], '0.05')}<em>× time</em></div></div>`).join('')}
-      <details class="guide"><summary>Placements (${c.placements.length})</summary>
-        ${c.placements.map(([n, g, p], i) => `<div class="qc-row"><b class="qc-dot" style="background:${PAIN_COLOURS[p - 1]}"></b><span>${esc(n)} <span class="muted" style="font-size:12px">${esc(g)}</span></span>
-          <select class="in qc-n" data-p="placements.${i}.2">${PAIN_NAMES.map((pn, j) => `<option value="${j + 1}" ${p === j + 1 ? 'selected' : ''}>${pn}</option>`).join('')}</select></div>`).join('')}
+      <details class="guide" ${R.qcOpen === 'pl' ? 'open' : ''} data-open="pl"><summary>Placements (${c.placements.length})</summary>
+        ${c.placements.map(([n, g, p], i) => `<div class="qc-row qc-del"><b class="qc-dot" style="background:${PAIN_COLOURS[p - 1]}"></b><span>${esc(n)} <span class="muted" style="font-size:12px">${esc(g)}</span></span>
+          <select class="in qc-n" data-p="placements.${i}.2">${PAIN_NAMES.map((pn, j) => `<option value="${j + 1}" ${p === j + 1 ? 'selected' : ''}>${pn}</option>`).join('')}</select>
+          <button class="mini del" data-del="placements.${i}" aria-label="Remove ${esc(n)}">&times;</button></div>`).join('')}
+        <div class="qc-add">
+          <input class="in" id="qc-pl-name" placeholder="New placement, e.g. Behind the ear">
+          <select class="in" id="qc-pl-group">${[...new Set(c.placements.map(p => p[1]))].map(g => `<option>${esc(g)}</option>`).join('')}</select>
+          <select class="in" id="qc-pl-pain">${PAIN_NAMES.map((pn, j) => `<option value="${j + 1}" ${j === 2 ? 'selected' : ''}>${pn} pain</option>`).join('')}</select>
+          <button class="btn small primary" id="qc-pl-add">Add</button></div>
       </details></div>
     <div class="card"><h2>Styles ${help('Adds or removes time for a style. 1 = no change, 1.3 = 30% longer.')}</h2>
-      ${c.styles.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`styles.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</div>
+      ${c.styles.map(([n, f], i) => `<div class="qc-row qc-del"><span>${esc(n)}</span><div class="unit-in">${num(`styles.${i}.1`, f, '0.05')}<em>×</em></div>
+        <button class="mini del" data-del="styles.${i}" aria-label="Remove ${esc(n)}">&times;</button></div>`).join('')}
+      <div class="qc-add"><input class="in" id="qc-st-name" placeholder="New style, e.g. Ornamental">
+        <div class="unit-in"><input class="in" id="qc-st-f" type="number" step="0.05" value="1"><em>×</em></div>
+        <button class="btn small primary" id="qc-st-add">Add</button></div></div>
     <div class="card"><h2>Lettering</h2>
       <label class="field"><span>Minutes per letter ${help('At 2 cm letter height. Bigger letters scale up.')}</span><div class="unit-in">${num('textMin', c.textMin, '0.5')}<em>min</em></div></label>
       ${c.fonts.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`fonts.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</div>
@@ -2937,9 +2992,29 @@ function qcDraw() {
     qSave(cfg);
     if (p.startsWith('anchors') || p === 'round') { const c2 = qCfg(); el.querySelectorAll('.qc-sample b').forEach((b, i) => b.textContent = money(qRound(c2, qCurve(c2, [1, 2, 3, 4, 6, 9][i])))); }
   };
-  el.onchange = (e) => { if (e.target.tagName === 'SELECT') qcDraw(); };
+  el.onchange = async (e) => {
+    if (e.target.id === 'qc-vat') { const cfg = qCfg(); cfg.vatOn = e.target.checked; return qSave(cfg); }
+    if (e.target.dataset.p && e.target.tagName === 'SELECT') qcDraw();
+  };
+  el.addEventListener('toggle', (e) => { if (e.target.dataset.open) R.qcOpen = e.target.open ? e.target.dataset.open : null; }, true);
   el.onclick = async (e) => {
     const cfg = qCfg();
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      const [list, i] = del.dataset.del.split('.'), name = cfg[list][+i][0];
+      if (!confirm(`Remove "${name}"?`)) return;
+      cfg[list].splice(+i, 1); await qSave(cfg); return qcDraw();
+    }
+    if (e.target.closest('#qc-pl-add')) {
+      const n = $('#qc-pl-name').value.trim(); if (!n) return toast('Type a name for the placement.');
+      if (cfg.placements.some(p => p[0].toLowerCase() === n.toLowerCase())) return toast('That placement is already listed.');
+      cfg.placements.push([n, $('#qc-pl-group').value, +$('#qc-pl-pain').value]); await qSave(cfg); toast(`Added ${n}.`); return qcDraw();
+    }
+    if (e.target.closest('#qc-st-add')) {
+      const n = $('#qc-st-name').value.trim(); if (!n) return toast('Type a name for the style.');
+      if (cfg.styles.some(x => x[0].toLowerCase() === n.toLowerCase())) return toast('That style is already listed.');
+      cfg.styles.push([n, +$('#qc-st-f').value || 1]); await qSave(cfg); toast(`Added ${n}.`); return qcDraw();
+    }
     if (e.target.closest('#qc-add')) { const last = cfg.anchors[cfg.anchors.length - 1] || [1, 500]; cfg.anchors.push([last[0] + 2, last[1] + 1000]); await qSave(cfg); return qcDraw(); }
     const rm = e.target.closest('[data-rm]');
     if (rm) { cfg.anchors.splice(+rm.dataset.rm, 1); await qSave(cfg); return qcDraw(); }

@@ -283,7 +283,28 @@ a.btn { color: var(--ink); text-decoration: none; }
 a.btn.primary { color: #061211; }
 /* Quote wizard */
 #qz { max-width: 640px; }
-.qz-steps { display: flex; gap: 4px; margin-bottom: 12px; overflow-x: auto; scrollbar-width: none; }
+/* Step tabs stay pinned under the top bar; each step's picture (chart, size box, detail) pins under them. */
+.qz-steps { display: flex; gap: 4px; margin: 0 -16px 10px; padding: 6px 16px 8px; overflow-x: auto; scrollbar-width: none;
+  position: sticky; top: calc(env(safe-area-inset-top, 0px) + 60px); z-index: 6; background: linear-gradient(var(--bg) 85%, transparent); }
+.qz-pin { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 122px); z-index: 4; background: var(--bg2); margin: 0 -16px; padding: 0 16px 8px;
+  box-shadow: 0 10px 14px -10px rgba(0,0,0,.8); }
+.qz-card-main h2 { font-size: 26px; }
+.qz-sec { border-top: 1px solid var(--line); padding: 12px 0 4px; }
+.qz-sec > summary { cursor: pointer; font-weight: 700; color: var(--teal); list-style: none; display: flex; justify-content: space-between; margin-bottom: 8px; }
+.qz-sec > summary::after { content: '+'; color: var(--ink2); } .qz-sec[open] > summary::after { content: '−'; }
+.qz-sec > summary::-webkit-details-marker { display: none; }
+.qz-disc { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: center; }
+.qz-disc .seg button { padding: 0 14px; }
+.qz-lines { margin: 12px auto 0; max-width: 260px; font-size: 13px; color: var(--ink2); }
+.qz-lines div { display: flex; justify-content: space-between; padding: 2px 0; }
+.qz-out { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 6px; }
+.qz-acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.qc-vat { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.qc-row.qc-del { grid-template-columns: auto 1fr 130px 32px; }
+.qc-row.qc-del:not(:has(.qc-dot)) { grid-template-columns: 1fr 130px 32px; }
+.qc-add { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.qc-add > input:first-child { grid-column: 1 / -1; }
+.qc-add .btn { align-self: stretch; }
 .qz-steps button { flex: 1 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: 0; color: var(--ink2);
   font: 600 10px var(--ui); text-transform: uppercase; letter-spacing: .04em; padding: 2px 4px; cursor: pointer; opacity: .45; }
 .qz-steps button.seen { opacity: 1; }
@@ -292,6 +313,7 @@ a.btn.primary { color: #061211; }
 .qz-card-main h2 { margin-top: 0; }
 .qz-chart { display: block; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: #000; cursor: zoom-in; }
 .qz-chart img { display: block; width: 100%; max-height: 260px; object-fit: contain; }
+@media (max-width: 899px) { .qz-chart img { max-height: 190px; } .qz-detail svg { width: min(170px, 46vw); } .qz-size { height: 120px; } }
 .qz-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .qz-chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--ink); font-size: 13px; padding: 6px 12px; }
 .qz-chip b { width: 10px; height: 10px; border-radius: 50%; flex: none; }
@@ -320,8 +342,8 @@ a.btn.primary { color: #061211; }
 .qz-live { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; margin: 0 0 8px; border-radius: 12px;
   background: linear-gradient(135deg, rgba(31,181,168,.16), transparent 70%), var(--bg2); border: 1px solid var(--teal2); font-size: 14px; }
 .qz-live b { color: var(--teal); font-size: 16px; }
-.qz-foot { position: sticky; bottom: calc(env(safe-area-inset-bottom, 0px) + 72px); background: var(--bg); padding: 8px 0; z-index: 3; }
-@media (min-width: 900px) { .qz-foot { bottom: 0; } }
+/* #main (the scroller) already ends above the bottom tabs, so the bar sits flush at its bottom. */
+.qz-foot { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--bg) 18%); padding: 14px 0 10px; z-index: 5; }
 .qz-result { text-align: center; padding: 6px 0 12px; }
 .qz-k { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
 .qz-price { font: 56px/1.05 var(--display); color: var(--teal); }
