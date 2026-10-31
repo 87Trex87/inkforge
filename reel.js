@@ -5,6 +5,7 @@
    Drafts live in memory only: imported videos are never copied into storage. Export records the
    canvas + Web Audio mix in real time with MediaRecorder (MP4 where the browser supports it). */
 
+const REEL_VERSION = 2;   // app.js checks this matches, to catch a stale cached copy
 // Card backgrounds: { ref, op, zoom, rot, flip } with ref = media file name (kept in the media folder).
 const REEL_CARD_BG = { ref: '', op: 0.55, zoom: 1, rot: 0, flip: false };
 const REEL_STYLE_DEFAULTS = {

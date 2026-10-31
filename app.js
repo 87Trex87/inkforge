@@ -3013,6 +3013,13 @@ addEventListener('hashchange', () => { if (booted) render(); });
 
 /* ---------- Boot ---------- */
 (async () => {
+  // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
+  // refetch both past the browser cache and reload once (the flag stops a reload loop).
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 2) {
+    let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
+    if (!tried) { await Promise.all(['reel.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
+  }
+  try { sessionStorage.removeItem('if-reload'); } catch {}
   const badge = $('#db-badge');
   let recovered = false;
   try {
