@@ -2344,8 +2344,9 @@ let reelPeekT = 0;
 function reelPeekTransition() {
   const { segs } = reelSegments();
   if (segs.length < 2) return toast('Add a clip to see the transition.');
-  reelShow(segs[1].start - 0.6); reelPlay();
-  clearTimeout(reelPeekT); reelPeekT = setTimeout(() => { if (R.playing) reelPause(); }, 1300);
+  const d = +reelStyle().transDur || 0.32;
+  reelShow(segs[1].start - d - 0.4); reelPlay();
+  clearTimeout(reelPeekT); reelPeekT = setTimeout(() => { if (R.playing) reelPause(); }, (d + 1) * 1000);
 }
 
 async function reelPanel() {
@@ -2357,13 +2358,17 @@ async function reelPanel() {
       <div class="reel-strip" id="reel-strip">
         ${R.clips.map((x, i) => `<button class="reel-clip ${i === R.sel ? 'on' : ''}" data-i="${i}">
           ${x.type === 'video' ? `<video src="${x.url}#t=${x.inP + 0.1}" muted playsinline preload="metadata"></video>` : `<img src="${x.url}" alt="">`}
-          <span>${clipDur(x).toFixed(1)}s</span>${x.type === 'video' ? '<i>▶</i>' : ''}</button>`).join('')}
+          <span>${clipDur(x).toFixed(1)}s</span>${x.type === 'video' ? '<i>▶</i>' : ''}
+          ${i === R.sel ? '<b class="rc-x" role="button" aria-label="Remove clip" data-tip="Remove this clip">&times;</b>' : ''}</button>`).join('')}
         <label class="reel-clip add" data-tip="Add photos or videos from this device"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
           <input type="file" accept="image/*,video/*" multiple hidden id="reel-file"></label>
         <button class="reel-clip add" id="reel-pf" data-tip="Add from your portfolio">${ICON.portfolio}</button>
       </div>
       ${c ? `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-        <div class="card reel-clip-ed">${reelClipTool(c)}</div>`
+        <div class="card reel-clip-ed">
+          <div class="reel-clip-head"><span class="muted">${c.type === 'video' ? 'Video' : 'Photo'} ${R.sel + 1} of ${R.clips.length}</span>
+            <button class="btn small danger" data-act="del">Remove clip</button></div>
+          ${reelClipTool(c)}</div>`
       : `<p class="muted" style="margin:4px">${R.clips.length ? 'Tap a clip to edit it.' : 'Add photos or videos of your work to start.'}</p>`}`;
     $('#reel-file').addEventListener('change', async (e) => {
       const files = [...e.target.files];
@@ -2372,6 +2377,7 @@ async function reelPanel() {
     });
     $('#reel-pf').onclick = reelPortfolioPicker;
     $('#reel-strip').addEventListener('click', (e) => {
+      if (e.target.closest('.rc-x')) { reelRemoveClip(R.sel); return; }
       const b = e.target.closest('.reel-clip[data-i]'); if (!b) return;
       R.sel = +b.dataset.i;
       const seg = reelSegments().segs.find(x => x.clip === R.clips[R.sel]);
@@ -2430,8 +2436,8 @@ function reelClipTool(c) {
   if (R.tool === 'frame') return `
       <div class="lbl">Motion ${help('Slow zoom or pan keeps photos alive.')}</div>
       ${reelSeg('motion', c.motion, [['none', 'Still'], ['in', 'Zoom in'], ['out', 'Zoom out'], ['pan', 'Pan']])}
-      <div class="lbl">Framing ${help('Fill crops to the full screen. Fit shows the whole image over a blurred background.')}</div>
-      ${reelSeg('fit', c.fit, [['cover', 'Fill'], ['blur', 'Fit']])}
+      <div class="lbl">Framing ${help('Fill crops to the full screen. Fit shows the whole image, over a soft blurred copy of itself or a plain black background.')}</div>
+      ${reelSeg('fit', c.fit, [['cover', 'Fill'], ['blur', 'Fit + blur'], ['plain', 'Fit + black']])}
       <div class="row"><button class="btn small" data-act="rot">↻ Rotate</button><button class="btn small ${c.flip ? 'on' : ''}" data-act="flip">⇋ Mirror</button></div>`;
   if (R.tool === 'text') return `
       <label class="field"><span>Caption</span><input class="in" data-c="caption" value="${esc(c.caption)}" placeholder="e.g. Fine-line peony, healed"></label>
@@ -2489,12 +2495,8 @@ function reelClipBind(ed, c) {
     const i = R.sel, act = a.dataset.act;
     if (act === 'rot') { c.rot = ((c.rot || 0) + 90) % 360; reelChanged(); return; }
     if (act === 'flip') { c.flip = !c.flip; a.classList.toggle('on', c.flip); reelChanged(); return; }
-    if (act === 'del') {
-      const [gone] = R.clips.splice(i, 1);
-      // Split/duplicated clips share the media; only release it when no clip uses it any more.
-      if (!R.clips.some(x => x.url === gone.url)) { if (gone.type === 'video') gone.el.pause(); URL.revokeObjectURL(gone.url); }
-      R.sel = Math.min(i, R.clips.length - 1);
-    } else if (act === 'dup') {
+    if (act === 'del') return reelRemoveClip(i);
+    if (act === 'dup') {
       R.clips.splice(i + 1, 0, { ...c, id: ++R.seq }); R.sel = i + 1;
     } else if (act === 'split') {
       const seg = reelSegments().segs.find(x => x.clip === c);
@@ -2504,6 +2506,15 @@ function reelClipBind(ed, c) {
     } else { const j = act === 'left' ? i - 1 : i + 1; [R.clips[i], R.clips[j]] = [R.clips[j], R.clips[i]]; R.sel = j; }
     R.t = Math.min(R.t, reelSegments().total); reelChanged(); reelPanel();
   });
+}
+
+// Removes a clip from the draft only; the original photo or video on the device is untouched.
+function reelRemoveClip(i) {
+  const [gone] = R.clips.splice(i, 1); if (!gone) return;
+  // Split/duplicated clips share the media; only release it when no clip uses it any more.
+  if (!R.clips.some(x => x.url === gone.url)) { if (gone.type === 'video') gone.el.pause(); URL.revokeObjectURL(gone.url); }
+  R.sel = Math.min(i, R.clips.length - 1);
+  R.t = Math.min(R.t, reelSegments().total); reelChanged(); reelPanel();
 }
 
 async function reelStyleSection(s) {
@@ -2546,9 +2557,12 @@ async function reelStyleSection(s) {
       ${s.wmMode === 'logo' && !hasLogo ? noLogo : ''}
       <div class="lbl">Corner</div>${seg('wmPos', [['tl', '↖ Top left'], ['tr', 'Top right ↗'], ['bl', '↙ Bottom left'], ['br', 'Bottom right ↘']])}
       ${reelSlider('data-s', 'wmOp', 'Opacity', 0.2, 1, 0.05, s.wmOp, Math.round(s.wmOp * 100) + '%')}`;
-  if (R.stab === 'trans') return `<div class="tr-grid" data-st="transition">${REEL_TRANSITIONS.map(([k, l, d]) =>
+  if (R.stab === 'trans') return `<div class="tr-grid" data-st="transition" style="margin-bottom:12px">${REEL_TRANSITIONS.map(([k, l, d]) =>
       `<button data-v="${k}" class="tr ${s.transition === k ? 'on' : ''}"><b>${l}</b><span>${d}</span></button>`).join('')}</div>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Tap one to preview it between your first two clips.</p>`;
+      ${s.transition === 'wipe' || s.transition === 'slide' ? `<div class="lbl">Comes in from</div>
+        ${seg('transDir', [['left', '← Left'], ['right', 'Right →'], ['top', '↑ Top'], ['bottom', '↓ Bottom']])}` : ''}
+      ${s.transition !== 'cut' ? reelSlider('data-s', 'transDur', `Duration ${help('How long each transition takes. Short feels snappy, long feels smooth.')}`, 0.1, 1.2, 0.05, s.transDur, (+s.transDur).toFixed(2) + 's') : ''}
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Changes play a quick preview between your first two clips.</p>`;
   return `<div class="lbl">Export quality ${help('1080p looks sharper but makes bigger files and is heavier on older phones.')}</div>${seg('quality', [['720', '720p'], ['1080', '1080p']])}`;
 }
 
@@ -2571,7 +2585,7 @@ function reelStyleInput(e) {
   const k = t.dataset.s; if (!k) return;
   const v = t.type === 'checkbox' ? t.checked : t.type === 'range' ? +t.value : t.value;
   reelSetStyle(k, v);
-  if (t.type === 'range') t.closest('.slider').querySelector('b').textContent = Math.round(v * 100) + '%';
+  if (t.type === 'range') t.closest('.slider').querySelector('b').textContent = k === 'transDur' ? v.toFixed(2) + 's' : Math.round(v * 100) + '%';
   if (R.stab === 'cards' && R.tab === 'style' && (k === 'title' || k === 'outroText' || k === 'cardLogo' || k === R.card)) reelShowCard(R.card);
   else reelRender();
 }
@@ -2594,11 +2608,13 @@ async function reelStyleClick(e) {
   reelSetStyle(k, b.dataset.v);
   box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
   if (k === 'quality') return;
-  if (k === 'transition') return reelPeekTransition();
+  if (k === 'transition') { await reelPanel(); return reelPeekTransition(); }
+  if (k === 'transDir') return reelPeekTransition();
   if (k === 'wmMode') reelPanel();
   reelRender();
 }
 async function reelStyleChange(e) {
+  if (e.target.dataset.s === 'transDur') return reelPeekTransition();   // preview once the finger lifts
   const key = e.target.dataset.bgfile; if (!key) return;
   const f = e.target.files[0]; if (!f) return;
   try {
@@ -3015,7 +3031,7 @@ addEventListener('hashchange', () => { if (booted) render(); });
 (async () => {
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
-  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 2) {
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 3) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
     if (!tried) { await Promise.all(['reel.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }

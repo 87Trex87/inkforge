@@ -5,12 +5,13 @@
    Drafts live in memory only: imported videos are never copied into storage. Export records the
    canvas + Web Audio mix in real time with MediaRecorder (MP4 where the browser supports it). */
 
-const REEL_VERSION = 2;   // app.js checks this matches, to catch a stale cached copy
+const REEL_VERSION = 3;   // app.js checks this matches, to catch a stale cached copy
 // Card backgrounds: { ref, op, zoom, rot, flip } with ref = media file name (kept in the media folder).
 const REEL_CARD_BG = { ref: '', op: 0.55, zoom: 1, rot: 0, flip: false };
 const REEL_STYLE_DEFAULTS = {
   title: '', handle: '', intro: true, outro: true, outroText: 'Book now',
   font: 'display', color: '#e9e3d6', accent: '#1fb5a8', transition: 'fade',
+  transDir: 'left', transDur: 0.32,                 // wipe/slide come in from this side; seconds per transition
   captionPos: 'bottom', capSize: 'm', quality: '720',
   wmMode: 'text', wmPos: 'br', wmOp: 0.75,          // watermark: off | text (handle) | logo
   cardLogo: true, introBg: REEL_CARD_BG, outroBg: REEL_CARD_BG
@@ -29,7 +30,7 @@ const REEL_FILTERS = [
 const REEL_FILTER_CSS = Object.fromEntries(REEL_FILTERS.map(([k, , f]) => [k, f]));
 const REEL_CAP_PX = { s: 60, m: 78, l: 100 };
 const REEL_COLORS = ['#e9e3d6', '#ffffff', '#1fb5a8', '#f0c75e', '#d2453b'];
-const INTRO_DUR = 1.6, OUTRO_DUR = 2.4, TRANS = 0.32;
+const INTRO_DUR = 1.6, OUTRO_DUR = 2.4;
 const PREVIEW_W = 540, PREVIEW_H = 960;
 
 const R = {
@@ -80,17 +81,37 @@ function reelSegAt(segs, t) {
 /* ---------- Drawing ---------- */
 const reelFont = (s, px, weight = 700) => s.font === 'display' ? `${px}px 'Pirata One', serif` : `${weight} ${px}px Inter, system-ui, sans-serif`;
 
-// Cheap, Safari-safe blur: draw tiny, then stretch.
-let _blurCv;
+// Soft background blur. Drawn at 180x320 (cheap every frame), blurred there, then scaled up smoothly.
+// Where canvas filters are missing (older Safari), halving the image a few times and scaling it
+// back up gives a similar soft result without the blocky look of one big stretch.
+let _blurA, _blurB;
+const BLUR_W = 180, BLUR_H = 320;
+const canFilter = (() => { try { const x = document.createElement('canvas').getContext('2d'); x.filter = 'blur(2px)'; return x.filter === 'blur(2px)'; } catch { return false; } })();
 function blurredCover(ctx, el, sw, sh, W, H) {
-  _blurCv ||= document.createElement('canvas');
-  _blurCv.width = 27; _blurCv.height = 48;
-  const b = _blurCv.getContext('2d');
-  const sc = Math.max(27 / sw, 48 / sh);
-  b.drawImage(el, (27 - sw * sc) / 2, (48 - sh * sc) / 2, sw * sc, sh * sc);
+  _blurA ||= document.createElement('canvas'); _blurB ||= document.createElement('canvas');
+  const sc = Math.max(BLUR_W / sw, BLUR_H / sh) * 1.15;   // slight overscan hides soft edges
+  _blurA.width = BLUR_W; _blurA.height = BLUR_H;
+  const a = _blurA.getContext('2d');
+  a.imageSmoothingEnabled = true; a.imageSmoothingQuality = 'high';
+  if (canFilter) {
+    a.filter = 'blur(9px)';
+    a.drawImage(el, (BLUR_W - sw * sc) / 2, (BLUR_H - sh * sc) / 2, sw * sc, sh * sc);
+  } else {
+    a.drawImage(el, (BLUR_W - sw * sc) / 2, (BLUR_H - sh * sc) / 2, sw * sc, sh * sc);
+    const b = _blurB.getContext('2d');
+    for (const f of [4, 8]) {   // down to 1/4 and 1/8, then back up, each step smoothed
+      _blurB.width = BLUR_W / f; _blurB.height = BLUR_H / f;
+      b.imageSmoothingEnabled = true; b.imageSmoothingQuality = 'high';
+      b.drawImage(_blurA, 0, 0, _blurB.width, _blurB.height);
+      a.clearRect(0, 0, BLUR_W, BLUR_H); a.drawImage(_blurB, 0, 0, BLUR_W, BLUR_H);
+    }
+  }
+  ctx.save();
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(_blurCv, 0, 0, W, H);
-  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(_blurA, 0, 0, W, H);
+  ctx.filter = 'none';
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.fillRect(0, 0, W, H);
+  ctx.restore();
 }
 
 // Draws a clip into W x H. Rotation (0/90/180/270) and mirror are applied around the centre;
@@ -109,8 +130,9 @@ function drawMedia(ctx, c, W, H, p) {
   if (c.flip) ctx.scale(-1, 1);
   ctx.translate(-BW / 2, -BH / 2);
   ctx.filter = REEL_FILTER_CSS[c.filter] || 'none';
-  if (c.fit === 'blur') {
-    blurredCover(ctx, el, sw, sh, BW, BH);
+  if (c.fit === 'blur' || c.fit === 'plain') {
+    if (c.fit === 'blur') blurredCover(ctx, el, sw, sh, BW, BH);   // takes the clip's look too, so B&W stays B&W
+    else { ctx.fillStyle = c.bg || '#000'; ctx.fillRect(0, 0, BW, BH); }
     const sc = Math.min(BW / sw, BH / sh) * (0.94 + (z - 1) * 0.5);
     const dw = sw * sc, dh = sh * sc;
     ctx.drawImage(el, (BW - dw) / 2 + ox * BW * 0.02, (BH - dh) / 2, dw, dh);
@@ -244,25 +266,34 @@ function reelDraw(ctx, W, H, t) {
   if (!segs.length) return;
   const seg = reelSegAt(segs, Math.min(t, total - 1e-3));
   const local = Math.max(0, t - seg.start);
-  const i = segs.indexOf(seg), next = segs[i + 1], left = seg.dur - local;
-  // Wipe and slide show the next segment coming in over the last moments of this one.
-  if ((s.transition === 'wipe' || s.transition === 'slide') && next && left < TRANS) {
-    const q = 1 - Math.pow(left / TRANS, 2);
+  const i = segs.indexOf(seg), prev = segs[i - 1], next = segs[i + 1], left = seg.dur - local;
+  // Never longer than half of either neighbouring segment, so short clips still show.
+  const T = (o) => Math.max(0.05, Math.min(+s.transDur || 0.32, seg.dur / 2, o.dur / 2));
+  // Wipe and slide show the next segment coming in over the last moments of this one,
+  // from the chosen side. (dx, dy) points from where the new clip starts towards the centre.
+  if ((s.transition === 'wipe' || s.transition === 'slide') && next && left < T(next)) {
+    const q = 1 - Math.pow(left / T(next), 2);
+    const d = s.transDir, dx = d === 'left' ? 1 : d === 'right' ? -1 : 0, dy = d === 'top' ? 1 : d === 'bottom' ? -1 : 0;
     if (s.transition === 'slide') {
-      ctx.save(); ctx.translate(-W * q, 0); drawSeg(ctx, s, W, H, seg, local); ctx.restore();
-      ctx.save(); ctx.translate(W * (1 - q), 0); drawSeg(ctx, s, W, H, next, 0); ctx.restore();
+      ctx.save(); ctx.translate(dx * W * q, dy * H * q); drawSeg(ctx, s, W, H, seg, local); ctx.restore();
+      ctx.save(); ctx.translate(-dx * W * (1 - q), -dy * H * (1 - q)); drawSeg(ctx, s, W, H, next, 0); ctx.restore();
     } else {
       drawSeg(ctx, s, W, H, seg, local);
-      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W * q, H); ctx.clip(); drawSeg(ctx, s, W, H, next, 0); ctx.restore();
-      ctx.fillStyle = s.accent; ctx.fillRect(W * q - 3 * W / 1080, 0, 6 * W / 1080, H);
+      const k = W / 1080;
+      // Revealed area grows from the chosen edge; a thin accent line rides the edge.
+      const r = dx > 0 ? [0, 0, W * q, H] : dx < 0 ? [W * (1 - q), 0, W * q, H] : dy > 0 ? [0, 0, W, H * q] : [0, H * (1 - q), W, H * q];
+      ctx.save(); ctx.beginPath(); ctx.rect(...r); ctx.clip(); drawSeg(ctx, s, W, H, next, 0); ctx.restore();
+      ctx.fillStyle = s.accent;
+      if (dx) ctx.fillRect((dx > 0 ? W * q : W * (1 - q)) - 3 * k, 0, 6 * k, H);
+      else ctx.fillRect(0, (dy > 0 ? H * q : H * (1 - q)) - 3 * k, W, 6 * k);
     }
     return;
   }
   // Dip-style transitions: strength near boundaries (not at the very start/end of the reel)
   let a = 0;
   if (s.transition === 'fade' || s.transition === 'flash' || s.transition === 'zoom') {
-    if (i > 0 && local < TRANS) a = 1 - local / TRANS;
-    if (next && left < TRANS) a = Math.max(a, 1 - left / TRANS);
+    if (prev && local < T(prev)) a = 1 - local / T(prev);
+    if (next && left < T(next)) a = Math.max(a, 1 - left / T(next));
   }
   ctx.save();
   if (s.transition === 'zoom' && a) { const z = 1 + a * 0.18; ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); }

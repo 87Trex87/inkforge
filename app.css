@@ -331,7 +331,12 @@ select.in { appearance: none; padding-right: 30px; cursor: pointer;
 .tr { text-align: left; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); padding: 10px 12px; cursor: pointer; color: var(--ink); }
 .tr b { display: block; font-size: 14px; } .tr span { font-size: 12px; color: var(--ink2); }
 .tr.on { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); }
-.seg[data-st="wmPos"] { flex-wrap: wrap; } .seg[data-st="wmPos"] button { flex: 1 0 45% !important; font-size: 13px; }
+.seg:is([data-st="wmPos"], [data-st="transDir"]) { flex-wrap: wrap; }
+.seg:is([data-st="wmPos"], [data-st="transDir"]) button { flex: 1 0 45% !important; font-size: 13px; }
+.rc-x { position: absolute; right: 2px; top: 2px; width: 22px; height: 22px; border-radius: 50%; background: var(--red); color: #fff;
+  display: grid; place-items: center; font-size: 16px; line-height: 1; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.reel-clip.on i { display: none; }
+.reel-clip-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; }
 .bg-thumb { width: 40px; height: 64px; flex: none; border-radius: 8px; border: 1px dashed var(--line); overflow: hidden; background: var(--bg3); }
 .bg-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .logo-box { width: 96px; height: 56px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px dashed var(--line);
