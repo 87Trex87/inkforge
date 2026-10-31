@@ -2883,6 +2883,7 @@ function qzDraw() {
         </div>
         <label class="toggle" style="display:inline-flex;margin-top:8px" data-tip="Adds a page with your open days (${AV.months} month${AV.months > 1 ? 's' : ''} ahead)">
           <input type="checkbox" id="qz-av" ${QZ.withAvail ? 'checked' : ''}><span>Include open appointments</span></label>
+        ${QZ.withAvail ? '<div class="qz-avp" id="qz-avp"></div>' : ''}
         <button class="btn primary" id="qz-book" style="width:100%;margin-top:8px">Book with this quote</button>
       </div>
       <div class="row" style="margin-top:12px"><button class="btn small" id="qz-new">Start over</button>
@@ -2899,6 +2900,7 @@ function qzDraw() {
       : ''}
     ${s === 0 ? '<a class="btn small" href="#quote-cal" style="margin-top:10px">Calibrate rates, pain and speeds</a>' : ''}`;
   qzBind(el);
+  if (QZ.withAvail && s === 6) qzAvPanel();
 }
 
 function qzPriceHTML(r) {
@@ -2934,8 +2936,12 @@ function qzBind(el) {
     if (t.closest('#qz-chart')) return viewImage('img/pain-chart.png');
     if (t.closest('#qz-reset')) { QZ.hours = null; return qzDraw(); }
     if (d('dt')) { QZ.discType = d('dt'); QZ.discVal = 0; return qzDraw(); }
+    const avk = t.closest('[data-avk] button');
+    if (avk) { qzAvOpts(); const k = avk.parentElement.dataset.avk; QZ.av[k] = k === 'months' ? +avk.dataset.v : avk.dataset.v; return qzAvPanel(); }
+    if (d('avd')) { qzAvOpts(); const k = d('avd'), h = QZ.av.hidden; h.includes(k) ? h.splice(h.indexOf(k), 1) : h.push(k); return qzAvPanel(); }
+    if (t.closest('#qz-avclear')) { QZ.av.hidden = []; return qzAvPanel(); }
     if (d('dq')) { QZ.discVal = +QZ.discVal === +d('dq') ? 0 : +d('dq'); return qzDraw(); }
-    if (t.closest('#qz-new')) { Object.assign(QZ, { client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
+    if (t.closest('#qz-new')) { Object.assign(QZ, { av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
     if (t.closest('#qz-book')) {
       const r = qCalc();
       Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
@@ -2950,6 +2956,7 @@ function qzBind(el) {
   el.oninput = (e) => {
     const k = e.target.dataset.qz, tk = e.target.dataset.qzt;
     if (e.target.hasAttribute('data-qzd')) { QZ.discVal = +e.target.value || 0; $('#qz-price').innerHTML = qzPriceHTML(qCalc()); return; }
+    if (e.target.dataset.avn) { e.target.closest('.slider').querySelector('b').textContent = fmtH(+e.target.value); return; }
     if (tk) { QZ[tk] = e.target.value; if (tk === 'text') QZ.hours = null; return; }
     if (!k) return;
     QZ[k] = +e.target.value; if (k !== 'hours') QZ.hours = null;
@@ -2966,7 +2973,9 @@ function qzBind(el) {
     const pc = $('#qz-price'); if (pc && k === 'hours') pc.innerHTML = qzPriceHTML(qCalc());
   };
   el.onchange = async (e) => {
-    if (e.target.id === 'qz-av') { QZ.withAvail = e.target.checked; return; }
+    if (e.target.id === 'qz-av') { QZ.withAvail = e.target.checked; return qzDraw(); }
+    if (e.target.id === 'qz-avfull') { qzAvOpts(); QZ.av.fullOnly = e.target.checked; return qzAvPanel(); }
+    if (e.target.dataset.avn) { qzAvOpts(); QZ.av.need = Math.round(+e.target.value * 60); return qzAvPanel(); }
     if (e.target.id === 'qz-vat') { const c = qCfg(); c.vatOn = e.target.checked; await qSave(c); return qzDraw(); }
     if (e.target.dataset.qz === 'hours' || e.target.dataset.qzt === 'text' || e.target.hasAttribute('data-qzd')) qzDraw();
   };
@@ -3081,14 +3090,51 @@ async function qzSheet() {
 
 async function qzPrint() {
   const { cv } = await qzSheet();
-  return printCanvas(cv, ...(QZ.withAvail ? [(await availSheet()).cv] : []));
+  return printCanvas(cv, ...(QZ.withAvail ? [(await qzAvailSheet()).cv] : []));
+}
+
+/* Open appointments tuned to this quote: how far ahead, from when, whether only full days count,
+   how long the session needs (starts at this quote's session length), and days hidden for this
+   client. Kept on QZ.av for as long as the quote is open. */
+function qzAvOpts() {
+  const r = qCalc(), [ws, we] = workHours().map(toMin);
+  QZ.av ||= { months: AV.months, from: AV.from, fullOnly: false, hidden: [], need: null };
+  const needDefault = Math.min(we - ws, Math.ceil(r.per * 60 / 30) * 30);
+  return { ...QZ.av, need: QZ.av.need ?? needDefault, needDefault, workMin: we - ws };
+}
+const qzAvailSheet = () => { const o = qzAvOpts(); return availSheet(o.months, o.from, o); };
+
+async function qzAvPanel() {
+  const el = $('#qz-avp'); if (!el) return;
+  const o = qzAvOpts(), [start, end] = availRange(o.months, o.from), map = await availability(start, end, o);
+  const months = [];
+  for (let m = 0; m < o.months; m++) months.push(new Date(start.getFullYear(), start.getMonth() + m, 1));
+  const count = (st) => Object.values(map).filter(v => v === st).length;
+  el.innerHTML = `
+    <div class="seg" data-avk="months" style="margin-bottom:8px">${[1, 2, 3].map(n => `<button data-v="${n}" class="${o.months === n ? 'on' : ''}" style="flex:1">${n} month${n > 1 ? 's' : ''}</button>`).join('')}</div>
+    <div class="seg" data-avk="from" style="margin-bottom:10px">${[['now', 'This month'], ['next', 'Next month']].map(([k, l]) => `<button data-v="${k}" class="${o.from === k ? 'on' : ''}" style="flex:1">From ${l.toLowerCase()}</button>`).join('')}</div>
+    ${reelSlider('data-avn', 'need', `Session needs ${help('Only days with at least this much free time inside your working hours are shown. Starts at this quote\'s session length.')}`, 0.5, o.workMin / 60, 0.5, o.need / 60, fmtH(o.need / 60))}
+    <label class="toggle" style="display:inline-flex;margin-bottom:10px"><input type="checkbox" id="qz-avfull" ${o.fullOnly ? 'checked' : ''}><span>Only fully open days</span></label>
+    <div class="lbl">Tap a day to hide it for this client ${o.hidden.length ? `<button class="link" id="qz-avclear" style="margin-left:8px">Show all again (${o.hidden.length})</button>` : ''}</div>
+    <div class="qz-avmonths">${months.map(first => {
+      const lead = (first.getDay() + 6) % 7, days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+      let cells = '';
+      for (let i = 0; i < lead; i++) cells += '<span></span>';
+      for (let d = 1; d <= days; d++) {
+        const k = ymd(new Date(first.getFullYear(), first.getMonth(), d)), st = map[k], hid = o.hidden.includes(k);
+        cells += st === 'off' ? `<span class="avd off">${d}</span>`
+          : `<button class="avd ${hid ? 'hid' : st}" data-avd="${k}" ${hid ? 'title="Hidden for this client"' : ''}>${d}</button>`;
+      }
+      return `<div class="avm"><b>${first.toLocaleDateString(undefined, { month: 'long' })}</b><div class="avgrid">${'MTWTFSS'.split('').map(l => `<i>${l}</i>`).join('')}${cells}</div></div>`;
+    }).join('')}</div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0"><b>${count('open')}</b> open · <b>${count('part')}</b> with some time · hidden days and your Holds show as booked.</p>`;
 }
 
 async function qzSaveImage() {
   const { cv, ref } = await qzSheet();
   const tag = QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : '';
   const pages = [[cv, `Quote-${ref}${tag}.png`]];
-  if (QZ.withAvail) pages.push([(await availSheet()).cv, `Open-appointments-${ref}${tag}.png`]);
+  if (QZ.withAvail) pages.push([(await qzAvailSheet()).cv, `Open-appointments-${ref}${tag}.png`]);
   const files = await Promise.all(pages.map(async ([c, n]) => new File([await new Promise(res => c.toBlob(res, 'image/png'))], n, { type: 'image/png' })));
   try {
     if (navigator.canShare?.({ files })) await navigator.share({ files, title: 'Tattoo quote' });
@@ -3458,7 +3504,10 @@ const toMin = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number);
 const workHours = () => [Settings.get('day_start', '10:00'), Settings.get('day_end', '17:00')];
 const maxPerDay = () => Math.max(1, +Settings.get('max_per_day', '1') || 1);
 
-async function availability(start, end) {
+// opts (all optional, per client): need = minutes the session needs (a "some time left" day must
+// have at least this much free), fullOnly = only fully open days, hidden = dates to leave off.
+async function availability(start, end, opts = {}) {
+  const need = Math.max(30, opts.need || 120), hidden = new Set(opts.hidden || []);
   const [ws, we] = workHours().map(toMin), work = Math.max(60, we - ws);
   const rows = await DB.all(`SELECT start_at, duration_min, kind FROM bookings WHERE start_at >= ? AND start_at < ?`, [ymd(start), ymd(end)]);
   const busy = Settings.get('gcal_busy', '1') === '1' ? await DB.all('SELECT start_at, end_at FROM gcal_busy WHERE start_at < ? AND end_at > ?', [ymd(end), ymd(start)]) : [];
@@ -3466,6 +3515,7 @@ async function availability(start, end) {
   for (let d = new Date(start); d < end; d = addDays(d, 1)) {
     const k = ymd(d);
     if (k < today || isDayOff(k, off)) { out[k] = 'off'; continue; }
+    if (hidden.has(k)) { out[k] = 'taken'; continue; }
     const day = rows.filter(r => r.start_at.startsWith(k));
     if (day.some(r => r.kind === 'hold' || r.kind === 'leave')) { out[k] = 'taken'; continue; }
     // Only tattoo sessions use up the day's tattoo count; consultations just take time.
@@ -3475,7 +3525,7 @@ async function availability(start, end) {
     for (const x of busy) { if (x.start_at >= ymd(addDays(d, 1)) || x.end_at <= k) continue;
       spans.push([x.start_at < k ? 0 : minutesOf(x.start_at), x.end_at >= ymd(addDays(d, 1)) ? 1440 : minutesOf(x.end_at)]); }
     let used = 0; for (const [s, e] of spans) used += Math.max(0, Math.min(e, we) - Math.max(s, ws));
-    out[k] = used <= 0 ? 'open' : work - used >= 120 ? 'part' : 'taken';
+    out[k] = used <= 0 && work >= need ? 'open' : !opts.fullOnly && work - used >= need ? 'part' : 'taken';
   }
   return out;
 }
@@ -3485,11 +3535,11 @@ function availRange(months = AV.months, from = AV.from) {
 }
 
 // The sheet: header, up to three month grids stacked, legend and notes, always one A4 page.
-async function availSheet(months = AV.months, from = AV.from) {
+async function availSheet(months = AV.months, from = AV.from, opts = {}) {
   const { W, H, M, teal, ink, soft } = DOC;
   const { cv, x, font, text, wrap, header } = await docCanvas();
   await header();
-  const [start, end] = availRange(months, from), map = await availability(start, end);
+  const [start, end] = availRange(months, from), map = await availability(start, end, opts);
   const mfmt = (d, o) => d.toLocaleDateString(undefined, o);
   text('Open appointments', M, 360, font(88, 400, true));
   const last = addDays(end, -1);
@@ -3531,7 +3581,8 @@ async function availSheet(months = AV.months, from = AV.from) {
   text('PLEASE NOTE', M, y, font(22, 700), teal); y += 42;
   const phone = Settings.get('artist_phone');
   for (const s of ['Openings are live: they change as bookings come in, so a date is only yours once your deposit is paid.',
-    'Large or full-day pieces need an open (green) day.', phone ? `To book, get in touch: ${phone}.` : 'Get in touch to book your date.'])
+    opts.need ? `Days shown have room for your session of about ${fmtH(opts.need / 60)}.` : 'Large or full-day pieces need an open (green) day.',
+    phone ? `To book, get in touch: ${phone}.` : 'Get in touch to book your date.'])
     for (const ln of wrap('•  ' + s, font(24), W - 2 * M)) { text(ln, M, y, font(24)); y += 36; }
   x.fillStyle = teal; x.fillRect(M, H - 110, W - 2 * M, 3);
   text(`Made ${fmtDay(ymd(new Date()))}`, W - M, H - 66, font(20), soft, 'right');

@@ -701,3 +701,16 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 
 .k-hold { --k: #8a8f94; }
 .ev.k-hold { border-left-color: var(--k); background: repeating-linear-gradient(-45deg, rgba(138,143,148,.22) 0 6px, rgba(138,143,148,.10) 6px 12px); }
+
+/* Quote: open-appointment options for this client */
+.qz-avp { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
+.qz-avmonths { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.avm b { display: block; font: 18px var(--display); margin-bottom: 4px; }
+.avgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.avgrid i { font-style: normal; font-size: 10px; color: var(--ink2); text-align: center; }
+.avd { aspect-ratio: 1; border-radius: 7px; border: 0; font: 600 12px var(--ui); display: grid; place-items: center; padding: 0; cursor: pointer; color: #fff; }
+.avd.open { background: var(--teal); color: #061211; } .avd.part { background: #e0a33a; color: #1a1a1a; }
+.avd.taken { background: #3a4447; color: var(--ink2); }
+.avd.hid { background: none; color: var(--ink2); border: 1px dashed var(--ink2); text-decoration: line-through; }
+.avd.off { background: none; color: #555; cursor: default; }
+.avm { max-width: 300px; }
