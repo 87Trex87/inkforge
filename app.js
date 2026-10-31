@@ -1434,6 +1434,7 @@ const VIEWS = {
             <span class="ava">${ICON[kind === 'consent' ? 'forms' : 'rules']}</span>
             <span class="c-main"><span class="c-n">${esc(x.title)}</span><span class="muted c-sub">${JSON.parse(x.blocks).length} blocks</span></span>
             <button class="btn small" data-edit="${x.id}">Edit</button>
+            ${kind === 'consent' ? `<button class="btn small" data-blank="${x.id}" data-tip="Print an empty copy to fill in by hand">Print blank</button>` : ''}
             <button class="btn small primary" data-use="${x.id}">${kind === 'consent' ? 'Sign' : 'Send'}</button>
           </div>`).join('') || '<div class="muted" style="padding:14px">None yet.</div>'}</div>`;
       $('#f-list').innerHTML =
@@ -1448,6 +1449,7 @@ const VIEWS = {
         if (b.dataset.new) location.hash = 'form-edit/new-' + b.dataset.new;
         if (b.dataset.edit) location.hash = 'form-edit/' + b.dataset.edit;
         if (b.dataset.use) { Forms.ctx = {}; location.hash = 'form-sign/' + b.dataset.use; }
+        if (b.dataset.blank) printBlankForm(+b.dataset.blank);
       };
     }
   },
@@ -3579,6 +3581,24 @@ async function stExport() {
 }
 
 // Prints the stencil at its real size (width in cm) on a blank page.
+// An empty paper copy of a form: blank lines for answers, empty boxes, a space to sign by hand.
+async function printBlankForm(id) {
+  const t = await DB.one('SELECT * FROM form_templates WHERE id = ?', [id]); if (!t) return;
+  const c = { ...formCtx(null), client: '____________________', first: '', date: '____ / ____ / ________' };
+  const logo = await Media.url(Settings.get('studio_logo_ref'));
+  let p = $('#print-area');
+  if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+  p.innerHTML = `<div class="sheet sheet-${t.kind}">${logo ? `<img class="sheet-logo" src="${logo}" alt="">` : ''}
+    ${renderFormBlocks(JSON.parse(t.blocks), c, {}, true)}
+    ${t.kind === 'consent' ? `<div class="sig-wrap"><div class="sig-label">Signature</div><div class="sig-blank"></div>
+      <div class="sig-line">Name: ______________________________ &nbsp; Date: ____ / ____ / ________</div></div>` : ''}</div>`;
+  if (logo) await p.querySelector('.sheet-logo').decode().catch(() => {});
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done);
+  window.print();
+}
+
 async function stPrint() {
   if (!ST.mask) return;
   const url = URL.createObjectURL(await stBlob());
@@ -3672,10 +3692,14 @@ const formAsText = (blocks, c) => blocks.filter(b => !blankLine(b, c)).map(b => 
    onto a second page. Undone after printing. */
 const A4_PX = 277 * 96 / 25.4;   // printable height: 297 mm minus 10 mm margins top and bottom
 function fitFormForPrint() {
-  const sheet = $('.sheet'); if (!sheet || document.body.classList.contains('printing')) return;
+  // A blank form prints from #print-area; otherwise the form on screen. (Stencils use #print-area without a sheet.)
+  const sheet = document.body.classList.contains('printing') ? $('#print-area .sheet') : $('.sheet'); if (!sheet) return;
   document.body.classList.add('pfit');
   sheet.style.zoom = '';
+  // #print-area is only shown by the print stylesheet, so show it briefly to measure it.
+  const pa = sheet.closest('#print-area'); if (pa) pa.style.display = 'block';
   const h = sheet.scrollHeight;
+  if (pa) pa.style.display = '';
   const room = A4_PX * 0.97;   // a little slack for rounding in the print engine
   if (h > room) sheet.style.zoom = String(Math.floor(room / h * 1000) / 1000);
 }

@@ -527,6 +527,7 @@ body.pfit .f-opt input { width: 11px; height: 11px; }
 body.pfit .sig-wrap { margin-top: 8px; padding-top: 4px; border-top-width: 1px; }
 body.pfit #fs-sig, body.pfit .sig-img { height: 80px; margin: 4px 0; border-radius: 4px; }
 body.pfit .sig-label, body.pfit .sig-line { font-size: 8pt; }
+.sig-blank { height: 80px; border: 1px solid #999; border-radius: 4px; margin: 4px 0 6px; }
 /* Aftercare is a list of short bullets: two columns under a full-width title */
 body.pfit .sheet-consent { font-size: 10pt; }
 body.pfit .sheet-aftercare { column-count: 2; column-gap: 8mm; font-size: 12pt; line-height: 1.4; }
