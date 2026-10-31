@@ -2545,7 +2545,7 @@ function qCfg() {
 const qSave = (cfg) => Settings.set('quote_v2', JSON.stringify(cfg));
 
 // The wizard's answers, kept while the app is open.
-const QZ = { step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null };
+const QZ = { client: '', step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null };
 const QZ_STEPS = ['Placement', 'Size', 'Colour', 'Detail', 'Style', 'Text', 'Quote'];
 
 // Price for one session of h hours on the rate curve.
@@ -2626,7 +2626,7 @@ function qzDraw() {
   const el = $('#qz'); if (!el) return;
   const c = qCfg(), s = QZ.step, cur = Settings.get('currency');
   const done = (i) => [QZ.place, true, QZ.colour, true, true, true, true][i];
-  const steps = `<div class="qz-steps">${QZ_STEPS.map((n, i) => `<button data-go="${i}" class="${i === s ? 'on' : ''} ${i <= QZ.seen ? 'seen' : ''}" ${i <= QZ.seen ? '' : 'disabled'}>
+  const steps = `<div class="qz-steps">${QZ_STEPS.map((n, i) => `<button data-step="${i}" class="${i === s ? 'on' : ''} ${i <= QZ.seen ? 'seen' : ''}" ${i <= QZ.seen ? '' : 'disabled'}>
       <i>${i < s && done(i) ? '✓' : i + 1}</i><span>${n}</span></button>`).join('')}</div>`;
   let body = '';
   if (s === 0) {
@@ -2682,10 +2682,14 @@ function qzDraw() {
         ${r.lines.map(([l, m]) => `<div class="stat"><span>${esc(l)}</span><span>${m >= 0 ? '+' : '−'}${Math.round(Math.abs(m))} min</span></div>`).join('')}
         <div class="stat"><span><b>Estimated time</b></span><span><b>${fmtH(r.est)}</b></span></div>
       </details>
-      <div class="row" style="margin-top:14px">
-        <button class="btn" id="qz-share">Send quote</button>
-        <button class="btn primary" id="qz-book" style="flex:1">Book with this quote</button>
+      <label class="field" style="margin-top:14px"><span>Client name (for the quote sheet, optional)</span>
+        <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off"></label>
+      <div class="row">
+        <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print</button>
+        <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, for clients who prefer an image">Save image</button>
+        <button class="btn" id="qz-share">Send text</button>
       </div>
+      <button class="btn primary" id="qz-book" style="width:100%;margin-top:8px">Book with this quote</button>
       <div class="row" style="margin-top:8px"><button class="btn small" id="qz-new">Start over</button>
         <a class="btn small" href="#quote-cal" style="margin-left:auto">Calibrate</a></div>`;
   }
@@ -2711,7 +2715,7 @@ function qzBind(el) {
   if (skip) skip.onclick = () => { if (QZ.step === 4) QZ.style = ''; if (QZ.step === 5) Object.assign(QZ, { text: '', font: '', fontName: '' }); qzGo(QZ.step + 1); };
   el.onclick = (e) => {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
-    if (d('go') != null && !t.closest('[data-go]').disabled) return qzGo(+d('go'));
+    if (d('step') != null && !t.closest('[data-step]').disabled) return qzGo(+d('step'));
     if (d('place') != null) { QZ.place = d('place'); return qzDraw(); }
     if (d('side')) { QZ.side = d('side'); return qzDraw(); }
     if (d('preset')) { const [w, h] = d('preset').split('x').map(Number); Object.assign(QZ, { w, h, hours: null }); return qzDraw(); }
@@ -2721,7 +2725,7 @@ function qzBind(el) {
     if (d('font') != null) { QZ.font = QZ.font === d('font') ? '' : d('font'); QZ.hours = null; return qzDraw(); }
     if (t.closest('#qz-chart')) return viewImage('img/pain-chart.png');
     if (t.closest('#qz-reset')) { QZ.hours = null; return qzDraw(); }
-    if (t.closest('#qz-new')) { Object.assign(QZ, { step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
+    if (t.closest('#qz-new')) { Object.assign(QZ, { client: '', step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
     if (t.closest('#qz-book')) {
       const r = qCalc();
       Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
@@ -2729,6 +2733,8 @@ function qzBind(el) {
       return newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00'));
     }
     if (t.closest('#qz-share')) return qzShare();
+    if (t.closest('#qz-print')) return qzPrint();
+    if (t.closest('#qz-img')) return qzSaveImage();
   };
   // Sliders: update the value label at once, redraw the preview parts when the finger lifts.
   el.oninput = (e) => {
@@ -2753,6 +2759,124 @@ function qzBind(el) {
 const qzPlacement = () => QZ.place ? `${QZ.side === 'L' ? 'Left ' : QZ.side === 'R' ? 'Right ' : ''}${QZ.place.toLowerCase()}`.replace(/^./, m => m.toUpperCase()) : '';
 const qzSummary = () => [QZ.style, COLOUR_MODES.find(m => m[0] === QZ.colour)?.[1].toLowerCase(), DETAIL_LEVELS[QZ.detail - 1][0].toLowerCase(),
   QZ.text && `text "${QZ.text}"${QZ.fontName ? ' in ' + QZ.fontName : ''}`].filter(Boolean).join(', ');
+
+/* Client quote sheet: an invoice-style A4 page (1240 x 1754, 150 dpi) drawn on a canvas, so Print and
+   Save image are exactly the same. Shows what was asked for, the time and the price, not the maths. */
+async function qzSheet() {
+  const r = qCalc(), c = r.c, W = 1240, H = 1754, M = 90;
+  await Promise.all([document.fonts.load("64px 'Pirata One'"), document.fonts.load('600 28px Inter'), document.fonts.load('400 28px Inter')]).catch(() => {});
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  const teal = '#14857c', ink = '#1a1a1a', soft = '#6b6b6b', line = '#e3ddd0';
+  const font = (px, w = 400, disp = false) => disp ? `${px}px 'Pirata One', serif` : `${w} ${px}px Inter, system-ui, sans-serif`;
+  const text = (s, tx, ty, f, col = ink, align = 'left') => { x.font = f; x.fillStyle = col; x.textAlign = align; x.textBaseline = 'alphabetic'; x.fillText(s, tx, ty); };
+  const wrapLines = (s, f, maxW) => { x.font = f; const out = []; let cur = '';
+    for (const w of String(s).split(/\s+/)) { const t = cur ? cur + ' ' + w : w; if (x.measureText(t).width > maxW && cur) { out.push(cur); cur = w; } else cur = t; }
+    if (cur) out.push(cur); return out; };
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+
+  // Header: logo and studio left, contact details right
+  const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Tattoo studio';
+  const artist = Settings.get('artist_name');
+  let hx = M;
+  const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
+  if (logoUrl) {
+    const img = new Image(); img.src = logoUrl; await img.decode().catch(() => {});
+    if (img.naturalWidth) { const sc = Math.min(220 / img.naturalWidth, 140 / img.naturalHeight); x.drawImage(img, M, 70, img.naturalWidth * sc, img.naturalHeight * sc); hx = M + img.naturalWidth * sc + 30; }
+  }
+  text(studio, hx, 140, font(60, 400, true));
+  if (artist && artist !== studio) text(artist, hx, 185, font(26, 500), soft);
+  const contact = [Settings.get('artist_phone'), Settings.get('artist_instagram'), Settings.get('artist_facebook'), Settings.get('artist_tiktok')].filter(Boolean);
+  contact.slice(0, 4).forEach((s, i) => text(s.replace(/^https?:\/\/(www\.)?/, ''), W - M, 100 + i * 34, font(22), soft, 'right'));
+  x.fillStyle = teal; x.fillRect(M, 240, W - 2 * M, 6);
+
+  // Title and reference block
+  text('Tattoo quote', M, 360, font(96, 400, true));
+  const now = new Date(), valid = new Date(now.getTime() + 30 * 864e5);
+  const ref = 'Q' + now.toISOString().slice(2, 10).replace(/-/g, '') + '-' + String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+  const dfmt = (d) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  [['Quote no.', ref], ['Date', dfmt(now)], ['Valid until', dfmt(valid)], ['Client', QZ.client || '—']].forEach(([k, v], i) => {
+    text(k, W - M - 440, 300 + i * 38, font(22, 600), soft); text(v, W - M, 300 + i * 38, font(24, 500), ink, 'right');
+  });
+
+  // Details table
+  let y = 450;
+  text('YOUR TATTOO', M, y, font(22, 700), teal); y += 18;
+  const pl = c.placements.find(p => p[0] === QZ.place);
+  const rows = [
+    ['Placement', qzPlacement() + (pl ? `  (${PAIN_NAMES[pl[2] - 1].toLowerCase()} pain area)` : '')],
+    ['Size', `${QZ.w} × ${QZ.h} cm`],
+    ['Colour', COLOUR_MODES.find(m => m[0] === QZ.colour)?.[1] || '—'],
+    ['Detail', `${DETAIL_LEVELS[QZ.detail - 1][0]}: ${DETAIL_LEVELS[QZ.detail - 1][1].replace(/\.$/, '')}`],
+    ['Style', QZ.style || '—']
+  ];
+  if (QZ.text) rows.push(['Lettering', `"${QZ.text}"${QZ.font ? ', ' + QZ.font : ''}${QZ.fontName ? ' (' + QZ.fontName + ')' : ''}, ${QZ.letter} cm letters`]);
+  for (const [i, [k, v]] of rows.entries()) {
+    const lines = wrapLines(v, font(28), W - 2 * M - 300), h = 22 + lines.length * 38;
+    if (i % 2 === 0) { x.fillStyle = '#f7f4ee'; x.fillRect(M, y, W - 2 * M, h); }
+    text(k, M + 24, y + 42, font(26, 600), soft);
+    lines.forEach((ln, j) => text(ln, M + 300, y + 42 + j * 38, font(28)));
+    y += h;
+  }
+  x.fillStyle = line; x.fillRect(M, y, W - 2 * M, 2);
+
+  // Summary: time, sessions, price, deposit
+  y += 44;
+  const boxH = 270;
+  x.fillStyle = '#eef8f6'; x.strokeStyle = teal; x.lineWidth = 3;
+  x.beginPath(); x.roundRect(M, y, W - 2 * M, boxH, 24); x.fill(); x.stroke();
+  const col = (W - 2 * M) / 3;
+  [['Tattoo time', fmtH(r.hours)], ['Sessions', String(r.sessions)], ['Deposit to book', money(r.deposit)]].forEach(([k, v], i) => {
+    text(k.toUpperCase(), M + col * i + col / 2, y + 60, font(20, 700), soft, 'center');
+    text(v, M + col * i + col / 2, y + 110, font(40, 600), ink, 'center');
+  });
+  x.fillStyle = '#cfe7e3'; x.fillRect(M + 40, y + 140, W - 2 * M - 80, 2);
+  text('ESTIMATE', M + 40, y + 215, font(26, 700), soft);
+  text(money(r.total), W - M - 40, y + 232, font(96, 400, true), teal, 'right');
+  y += boxH + 56;
+
+  // The basics of the calculation, then the terms
+  const rates = [...c.anchors].sort((a, b) => a[0] - b[0]).map(([h, p]) => `${h} h ${money(p)}`).join('  ·  ');
+  const how = [`Priced on tattooing time at our rates: ${rates}.`,
+    r.sessions > 1 ? `Split into ${r.sessions} sessions of about ${fmtH(r.per)} each, each priced at these rates.` : '',
+    `Expected range ${money(r.lo)} – ${money(r.hi)}, depending on how the session goes.`].filter(Boolean);
+  text('HOW THIS IS PRICED', M, y, font(22, 700), teal); y += 44;
+  for (const s of how) for (const ln of wrapLines(s, font(26), W - 2 * M)) { text(ln, M, y, font(26), ink); y += 38; }
+  y += 24;
+  text('PLEASE NOTE', M, y, font(22, 700), teal); y += 44;
+  for (const s of ['Breaks are not included in the time or the quote.', 'The final price may change if the design, size or placement changes.',
+    `The deposit secures your booking and comes off the final price.`, 'This quote is valid for 30 days.'])
+    for (const ln of wrapLines('•  ' + s, font(26), W - 2 * M)) { text(ln, M, y, font(26), ink); y += 38; }
+
+  // Footer sits under the notes, or at the foot of the page when there is room.
+  const fy = Math.min(H - 60, Math.max(y + 60, H - 130));
+  x.fillStyle = teal; x.fillRect(M, fy - 50, W - 2 * M, 3);
+  text(`Thank you${QZ.client ? ', ' + QZ.client.split(' ')[0] : ''}!`, M, fy, font(44, 400, true));
+  text(ref, W - M, fy - 4, font(20), soft, 'right');
+  return { cv, ref };
+}
+
+async function qzPrint() {
+  const { cv } = await qzSheet();
+  let p = $('#print-area');
+  if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+  p.innerHTML = `<img src="${cv.toDataURL('image/png')}" class="quote-print" alt="Quote">`;
+  await p.querySelector('img').decode().catch(() => {});
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done);
+  window.print();
+}
+
+async function qzSaveImage() {
+  const { cv, ref } = await qzSheet();
+  const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+  const file = new File([blob], `Quote-${ref}${QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : ''}.png`, { type: 'image/png' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Tattoo quote' });
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Quote image saved.'); }
+  } catch (e) { if (e.name !== 'AbortError') toast('Could not save: ' + e.message); }
+}
 
 async function qzShare() {
   const r = qCalc(), studio = Settings.get('studio_name') || Settings.get('artist_name');
