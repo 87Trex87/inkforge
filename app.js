@@ -743,13 +743,16 @@ const VIEWS = {
       if (id === 'new' && Cal.prefillQuote) {
         const q = Cal.prefillQuote;
         Object.assign(b, { quote: q.quote, deposit: q.deposit, size: q.size || null, duration_min: Math.min(600, Math.max(30, q.duration || 120)),
-          placement: q.placement || null, description: q.description || null });
+          placement: q.placement || null, description: q.description || null, notes: q.notes || null });
       }
+      const fromQuote = id === 'new' ? Cal.prefillQuote : null;
       Cal.prefill = Cal.prefillClient = Cal.prefillQuote = null;
       if (!b) { location.hash = 'book'; return; }
       const photos = b.id ? await DB.all('SELECT id, photo_ref FROM booking_photos WHERE booking_id = ? ORDER BY sort, id', [b.id]) : [];
       const keep = photos.map(p => p.photo_ref);       // existing refs still attached
       const added = [];                                 // new Blobs not yet saved
+      // A design attached to the quote arrives as an unsaved reference photo (remove or replace it as usual).
+      if (fromQuote?.design) added.push({ blob: fromQuote.design, url: URL.createObjectURL(fromQuote.design) });
       let clientId = b.client_id;
       const client = clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [clientId]) : null;
       const cur = Settings.get('currency');
@@ -2874,6 +2877,16 @@ function qzDraw() {
         ${r.sessions > 1 ? `<p class="muted" style="font-size:12px;margin:6px 0 0">${r.sessions} sessions of about ${fmtH(r.per)}, each priced on your rates. Breaks are not included.</p>` : ''}
       </details>
       <div class="qz-out">
+        <label class="toggle" style="display:inline-flex;margin-bottom:10px" data-tip="Attach a sketch, concept or reference with notes. It prints as its own page and goes into the booking.">
+          <input type="checkbox" id="qz-dz" ${QZ.withDesign ? 'checked' : ''}><span>Add design or concept</span></label>
+        ${QZ.withDesign ? `<div class="qz-dz">
+          <label class="qz-dzimg">${QZ.design ? `<img src="${QZ.design.url}" alt="Design">` : '<span>+<small>Add picture</small></span>'}
+            <input type="file" accept="image/*" hidden id="qz-dzfile"></label>
+          <div class="qz-dzside">
+            ${QZ.design ? '<div class="row" style="gap:6px;margin-bottom:8px"><label class="btn small">Replace<input type="file" accept="image/*" hidden id="qz-dzfile2"></label><button class="btn small danger" id="qz-dzrm">Remove</button></div>' : ''}
+            <label class="field" style="margin:0"><span>Notes for the client</span>
+              <textarea class="in" rows="4" data-qzt="designNote" placeholder="e.g. Rough concept; linework will be refined, roses can be swapped for peonies">${esc(QZ.designNote || '')}</textarea></label>
+          </div></div>` : ''}
         <label class="field"><span>Client name <span class="muted">(optional, shown on the quote sheet)</span></span>
           <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off"></label>
         <div class="qz-acts">
@@ -2935,17 +2948,20 @@ function qzBind(el) {
     if (d('font') != null) { QZ.font = QZ.font === d('font') ? '' : d('font'); QZ.hours = null; return qzDraw(); }
     if (t.closest('#qz-chart')) return viewImage('img/pain-chart.png');
     if (t.closest('#qz-reset')) { QZ.hours = null; return qzDraw(); }
+    if (t.closest('#qz-dzrm')) { URL.revokeObjectURL(QZ.design.url); QZ.design = null; return qzDraw(); }
     if (d('dt')) { QZ.discType = d('dt'); QZ.discVal = 0; return qzDraw(); }
     const avk = t.closest('[data-avk] button');
     if (avk) { qzAvOpts(); const k = avk.parentElement.dataset.avk; QZ.av[k] = k === 'months' ? +avk.dataset.v : avk.dataset.v; return qzAvPanel(); }
     if (d('avd')) { qzAvOpts(); const k = d('avd'), h = QZ.av.hidden; h.includes(k) ? h.splice(h.indexOf(k), 1) : h.push(k); return qzAvPanel(); }
     if (t.closest('#qz-avclear')) { QZ.av.hidden = []; return qzAvPanel(); }
     if (d('dq')) { QZ.discVal = +QZ.discVal === +d('dq') ? 0 : +d('dq'); return qzDraw(); }
-    if (t.closest('#qz-new')) { Object.assign(QZ, { av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
+    if (t.closest('#qz-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url);
+      Object.assign(QZ, { design: null, designNote: '', withDesign: false, av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
     if (t.closest('#qz-book')) {
       const r = qCalc();
       Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
-        placement: qzPlacement(), description: qzSummary() };
+        placement: qzPlacement(), description: qzSummary(),
+        design: QZ.design ? QZ.design.blob : null, notes: QZ.design && QZ.designNote ? 'Design notes: ' + QZ.designNote : null };
       return newBookingNext();
     }
     if (t.closest('#qz-share')) return qzShare();
@@ -2974,6 +2990,20 @@ function qzBind(el) {
   };
   el.onchange = async (e) => {
     if (e.target.id === 'qz-av') { QZ.withAvail = e.target.checked; return qzDraw(); }
+    if (e.target.id === 'qz-dz') { QZ.withDesign = e.target.checked; return qzDraw(); }
+    if (e.target.id === 'qz-dzfile' || e.target.id === 'qz-dzfile2') {
+      const f = e.target.files[0]; if (!f) return;
+      try {
+        // Kept in memory with the quote, at most 1600 px, on white so transparent sketches stay readable.
+        const bmp = await createImageBitmap(f), sc = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+        const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
+        const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+        if (QZ.design) URL.revokeObjectURL(QZ.design.url);
+        QZ.design = { blob, url: URL.createObjectURL(blob) };
+      } catch { toast('Could not read that image.'); }
+      return qzDraw();
+    }
     if (e.target.id === 'qz-avfull') { qzAvOpts(); QZ.av.fullOnly = e.target.checked; return qzAvPanel(); }
     if (e.target.dataset.avn) { qzAvOpts(); QZ.av.need = Math.round(+e.target.value * 60); return qzAvPanel(); }
     if (e.target.id === 'qz-vat') { const c = qCfg(); c.vatOn = e.target.checked; await qSave(c); return qzDraw(); }
@@ -3090,7 +3120,37 @@ async function qzSheet() {
 
 async function qzPrint() {
   const { cv } = await qzSheet();
-  return printCanvas(cv, ...(QZ.withAvail ? [(await qzAvailSheet()).cv] : []));
+  const extra = [];
+  if (qzHasDesign()) extra.push(await designPage());
+  if (QZ.withAvail) extra.push((await qzAvailSheet()).cv);
+  return printCanvas(cv, ...extra);
+}
+const qzHasDesign = () => QZ.withDesign && (QZ.design || (QZ.designNote || '').trim());
+
+// The design or concept on its own A4 page: the picture as large as fits, the notes under it.
+async function designPage() {
+  const { W, H, M, teal, ink, soft } = DOC;
+  const { cv, x, font, text, wrap, header } = await docCanvas();
+  await header();
+  text('Design concept', M, 360, font(88, 400, true));
+  text([QZ.client, qzPlacement(), `${QZ.w} × ${QZ.h} cm`].filter(Boolean).join(' · '), M, 410, font(26, 500), soft);
+  const notes = (QZ.designNote || '').trim() ? wrap(QZ.designNote.trim(), font(28), W - 2 * M).slice(0, 10) : [];
+  const notesH = notes.length ? 80 + notes.length * 42 : 0;
+  const top = 460, bottom = H - 170 - notesH;
+  if (QZ.design) {
+    const img = new Image(); img.src = QZ.design.url; await img.decode().catch(() => {});
+    if (img.naturalWidth) {
+      const sc = Math.min((W - 2 * M) / img.naturalWidth, (bottom - top) / img.naturalHeight), w = img.naturalWidth * sc, h = img.naturalHeight * sc;
+      const ix = (W - w) / 2;
+      x.fillStyle = '#f7f4ee'; x.fillRect(M, top, W - 2 * M, h + 0); x.drawImage(img, ix, top, w, h);
+      x.strokeStyle = '#e3ddd0'; x.lineWidth = 2; x.strokeRect(ix, top, w, h);
+    }
+  }
+  let y = bottom + 60;
+  if (notes.length) { text('NOTES', M, y, font(22, 700), teal); y += 46; for (const ln of notes) { text(ln, M, y, font(28), ink); y += 42; } }
+  x.fillStyle = teal; x.fillRect(M, H - 110, W - 2 * M, 3);
+  text('Concept only: the final design is drawn for your placement before the session.', M, H - 66, font(22), soft);
+  return cv;
 }
 
 /* Open appointments tuned to this quote: how far ahead, from when, whether only full days count,
@@ -3134,13 +3194,14 @@ async function qzSaveImage() {
   const { cv, ref } = await qzSheet();
   const tag = QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : '';
   const pages = [[cv, `Quote-${ref}${tag}.png`]];
+  if (qzHasDesign()) pages.push([await designPage(), `Design-${ref}${tag}.png`]);
   if (QZ.withAvail) pages.push([(await qzAvailSheet()).cv, `Open-appointments-${ref}${tag}.png`]);
   const files = await Promise.all(pages.map(async ([c, n]) => new File([await new Promise(res => c.toBlob(res, 'image/png'))], n, { type: 'image/png' })));
   try {
     if (navigator.canShare?.({ files })) await navigator.share({ files, title: 'Tattoo quote' });
     else {
       for (const file of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
-      toast(files.length > 1 ? 'Quote and open appointments saved.' : 'Quote image saved.');
+      toast(files.length > 1 ? `Quote saved (${files.length} pages).` : 'Quote image saved.');
     }
   } catch (e) { if (e.name !== 'AbortError') toast('Could not save: ' + e.message); }
 }

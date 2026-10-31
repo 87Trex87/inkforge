@@ -714,3 +714,10 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .avd.hid { background: none; color: var(--ink2); border: 1px dashed var(--ink2); text-decoration: line-through; }
 .avd.off { background: none; color: #555; cursor: default; }
 .avm { max-width: 300px; }
+
+/* Quote: design or concept attachment */
+.qz-dz { display: grid; grid-template-columns: 120px 1fr; gap: 12px; margin-bottom: 12px; align-items: start; }
+.qz-dzimg { width: 120px; aspect-ratio: 3 / 4; border-radius: 12px; border: 1px dashed var(--teal2); background: var(--bg); display: grid; place-items: center; overflow: hidden; cursor: pointer; color: var(--teal); }
+.qz-dzimg img { width: 100%; height: 100%; object-fit: cover; }
+.qz-dzimg span { display: flex; flex-direction: column; align-items: center; font-size: 28px; line-height: 1; } .qz-dzimg small { font-size: 11px; margin-top: 6px; }
+@media (max-width: 420px) { .qz-dz { grid-template-columns: 96px 1fr; } .qz-dzimg { width: 96px; } }
