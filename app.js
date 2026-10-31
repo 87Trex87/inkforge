@@ -336,6 +336,14 @@ const Media = {
   }
 };
 
+// Redraw an image as PNG (keeps transparency), capped at `max` px on the long side.
+async function pngBlob(file, max) {
+  const bmp = await createImageBitmap(file), sc = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise(r => c.toBlob(r, 'image/png'));
+}
+
 /* ---------- Helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1284,7 +1292,7 @@ const VIEWS = {
         </div>
         <div class="reel-side">
           <div class="seg" id="reel-tabs" style="margin-bottom:12px">
-            ${[['edit', 'Edit'], ['style', 'Style'], ['music', 'Music']].map(([k, l]) => `<button data-t="${k}" class="${R.tab === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}
+            ${[['edit', 'Edit'], ['style', 'Style'], ['music', 'Music'], ['tpl', 'Templates']].map(([k, l]) => `<button data-t="${k}" class="${R.tab === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}
           </div>
           <div id="reel-panel"></div>
           <button class="btn primary" id="reel-export" style="width:100%;margin:14px 0 24px">Export reel</button>
@@ -1301,7 +1309,7 @@ const VIEWS = {
       $('#reel-tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; R.tab = b.dataset.t;
         $('#reel-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); reelPanel(); };
       $('#reel-export').onclick = () => reelExport();
-      if (!['edit', 'style', 'music'].includes(R.tab)) R.tab = 'edit';
+      if (!['edit', 'style', 'music', 'tpl'].includes(R.tab)) R.tab = 'edit';
       reelCanvasBind($('#reel-cv'));
       reelTimeline(); reelPanel();
       document.fonts.ready.then(() => reelRender());
@@ -2419,8 +2427,9 @@ function reelTimeline() {
     </div>`;
   el.dataset.total = total;
   $('#reel-file').addEventListener('change', async (e) => {
-    const files = [...e.target.files];
+    const files = [...e.target.files], before = R.clips.length;
     for (const f of files) { try { await reelAddFile(f); } catch (err) { toast(`Skipped ${f.name}: ${err.message}`); } }
+    if (R.tplId) reelTplRecipe(before);   // new clips take the template's settings for their position
     const c = R.clips[R.clips.length - 1];
     if (c) reelPick('clip', c.id); else reelChanged();
   });
@@ -2578,6 +2587,7 @@ async function reelPanel() {
   el.addEventListener('input', reelStyleInput);
   el.addEventListener('click', reelStyleClick);
   el.addEventListener('change', reelStyleChange);
+  el.addEventListener('click', reelTplClick);
   if (!R.quickDrag) reelQuick();
   if (R.tab === 'edit') {
     const p = R.pick;
@@ -2603,6 +2613,8 @@ async function reelPanel() {
         ? '<b>Tap the timeline to edit.</b><span class="muted">A clip opens its trim, look and text tools. A card opens its text and background. The small dots between them are transitions: each one can be different.</span>'
         : '<b>Add photos or videos to start.</b><span class="muted">Use the + at the end of the timeline above, or pick from your portfolio.</span>'}</div>`;
     }
+  } else if (R.tab === 'tpl') {
+    el.innerHTML = reelTplPanel();
   } else if (R.tab === 'style') {
     el.innerHTML = `<div class="reel-tools" id="reel-stabs">${REEL_STYLE_TABS.map(([k, l]) => `<button data-stab="${k}" class="${R.stab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="card">${await reelStyleSection(s)}</div>
@@ -2779,7 +2791,7 @@ function reelRemoveClip(i) {
 async function reelCardPanel(s, kind) {
   const intro = kind === 'intro', bgKey = intro ? 'introBg' : 'outroBg', bg = s[bgKey];
   const bgUrl = bg.ref ? await Media.url(bg.ref) : '';
-  const hasLogo = !!Settings.get('studio_logo_ref');
+  const hasLogo = !!reelLogoRef(s);
   return `
     <div class="reel-clip-head"><b>${intro ? 'Intro' : 'Outro'} card</b>
       <button class="btn small danger" data-cardoff="${kind}" data-tip="Take this card out of the reel. Add it back with + ${intro ? 'Intro' : 'Outro'} on the timeline.">Remove card</button></div>
@@ -2828,7 +2840,7 @@ function reelTransPanel(s, seg) {
 async function reelStyleSection(s) {
   const swatches = (k) => `<span class="ink-dots" data-sw="${k}">${REEL_COLORS.map(c => `<button class="ink ${s[k] === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span>`;
   const seg = (k, opts) => `<div class="seg" data-st="${k}" style="margin-bottom:12px">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`;
-  const hasLogo = !!Settings.get('studio_logo_ref');
+  const hasLogo = !!reelLogoRef(s);
   const noLogo = '<p class="muted" style="font-size:12px;margin:-4px 0 12px">Add your studio logo in More › Settings to use it here.</p>';
   if (R.stab === 'text') return `
       <div class="lbl">Font</div>${seg('font', [['display', 'Tattoo'], ['clean', 'Clean']])}
@@ -2836,13 +2848,22 @@ async function reelStyleSection(s) {
       <div class="lbl">Caption size</div>${seg('capSize', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']])}
       <div class="row" style="margin-bottom:12px"><span class="lbl" style="margin:0;width:70px">Text</span>${swatches('color')}</div>
       <div class="row"><span class="lbl" style="margin:0;width:70px">Accent</span>${swatches('accent')}</div>`;
-  if (R.stab === 'brand') return `
+  if (R.stab === 'brand') {
+    const lu = s.logoRef ? await Media.url(s.logoRef) : '';
+    return `
       <label class="field"><span>Handle</span><input class="in" data-s="handle" value="${esc(s.handle)}" placeholder="@yourhandle" autocapitalize="off"></label>
+      <div class="lbl">Logo ${help('Uses your studio logo from Settings, unless you pick a different one for this style, e.g. for another artist\'s template.')}</div>
+      <div class="row" style="margin-bottom:12px;flex-wrap:nowrap">
+        <span class="logo-box">${lu ? `<img src="${lu}" alt="">` : '<span class="muted">Studio</span>'}</span>
+        <label class="btn small">${s.logoRef ? 'Change' : 'Use a different logo'}<input type="file" accept="image/png,image/*" hidden data-logofile></label>
+        ${s.logoRef ? '<button class="btn small" data-logoclear>Use studio logo</button>' : ''}
+      </div>
       <div class="lbl">Watermark ${help('Shown in a corner of every clip so reposts still point back to you.')}</div>
       ${seg('wmMode', [['off', 'Off'], ['text', 'Handle'], ['logo', 'Logo']])}
       ${s.wmMode === 'logo' && !hasLogo ? noLogo : ''}
       <div class="lbl">Corner</div>${seg('wmPos', [['tl', '↖ Top left'], ['tr', 'Top right ↗'], ['bl', '↙ Bottom left'], ['br', 'Bottom right ↘']])}
       ${reelSlider('data-s', 'wmOp', 'Opacity', 0.2, 1, 0.05, s.wmOp, Math.round(s.wmOp * 100) + '%')}`;
+  }
   if (R.stab === 'trans') {
     const custom = Object.keys(R.trans).length;
     return `<p class="muted" style="font-size:13px;margin:0 0 12px">The default for every transition. To change just one, tap its dot on the timeline.</p>
@@ -2908,6 +2929,9 @@ async function reelStyleClick(e) {
     if (t.closest('[data-tpeek]')) return reelPeekTransition(key);
   }
   if (t.closest('[data-tclear]')) { R.trans = {}; reelChanged(); return reelPanel(); }
+  if (t.closest('[data-logoclear]')) {
+    const old = reelStyle().logoRef; reelSetStyle('logoRef', ''); await Media.release(old); reelRender(); return reelPanel();
+  }
   const cp = t.closest('[data-cardpos]');
   if (cp) { reelSetStyle(cp.dataset.cardpos + 'Pos', null); reelPanel(); return reelShowCard(cp.dataset.cardpos); }
   const off = t.closest('[data-cardoff]');
@@ -2931,8 +2955,19 @@ async function reelStyleClick(e) {
   reelRender();
 }
 async function reelStyleChange(e) {
+  if (e.target.hasAttribute('data-tpl-import')) { const f = e.target.files[0]; e.target.value = ''; return f && reelTplImport(f); }
   if (e.target.dataset.s === 'transDur') return reelPeekTransition();   // preview once the finger lifts
   if (e.target.dataset.tdur && R.pick?.kind === 'trans') return reelPeekTransition(R.pick.key);
+  if (e.target.hasAttribute('data-logofile')) {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const ref = await Media.save(await pngBlob(f, 1000), 'png'), old = reelStyle().logoRef;
+      reelSetStyle('logoRef', ref);
+      if (old && old !== ref) await Media.release(old);
+      reelRender(); reelPanel();
+    } catch { toast('Could not read that image.'); }
+    return;
+  }
   const key = e.target.dataset.bgfile; if (!key) return;
   const f = e.target.files[0]; if (!f) return;
   try {
@@ -2942,6 +2977,150 @@ async function reelStyleChange(e) {
     if (old && old !== ref) await Media.release(old);
     reelPanel(); reelShowCard(key === 'introBg' ? 'intro' : 'outro');
   } catch { toast('Could not read that image.'); }
+}
+
+/* ---------- Reel templates ----------
+   A template = the whole style (cards, backgrounds, logo, text, watermark, default transition)
+   plus a "recipe" taken from the draft: per-clip settings and per-join transitions by position.
+   New photos/videos added after applying one take the recipe for their position; beyond the
+   recipe's length the last entry repeats. Stored as JSON in settings (key reel_templates);
+   images stay in the media folder and are kept alive because their names appear in that JSON. */
+const REEL_SLOT_KEYS = ['dur', 'motion', 'fit', 'filter', 'speed', 'rot', 'flip', 'mute'];
+function reelTemplates() { try { return JSON.parse(Settings.get('reel_templates', '[]')); } catch { return []; } }
+const reelSaveTemplates = (list) => Settings.set('reel_templates', JSON.stringify(list));
+
+function reelTplCapture(name, id) {
+  const segs = reelSegments().segs;
+  return {
+    id: id || Date.now().toString(36), name, style: reelStyle(),
+    slots: R.clips.map(c => Object.fromEntries(REEL_SLOT_KEYS.filter(k => c[k] !== undefined && !(k === 'dur' && c.type === 'video')).map(k => [k, c[k]]))),
+    // Joins into clip i (i = 0 is from the intro) and into the outro, so the outro keeps its own.
+    clipTrans: segs.filter(g => g.kind === 'clip').map(g => R.trans[g.key] || null),
+    outroTrans: R.trans.outro || null
+  };
+}
+const pickN = (arr, i) => arr.length ? arr[Math.min(i, arr.length - 1)] : null;
+// Apply the active template's recipe to clips from index `from` onwards (new ones by default).
+function reelTplRecipe(from) {
+  const t = reelTemplates().find(x => x.id === R.tplId); if (!t) return;
+  R.clips.forEach((c, i) => {
+    if (i < from) return;
+    const slot = pickN(t.slots, i) || {};
+    for (const [k, v] of Object.entries(slot)) if (!(k === 'dur' && c.type === 'video') && !(k === 'mute' && c.type !== 'video')) c[k] = v;
+    const tr = pickN(t.clipTrans, i); if (tr) R.trans[c.id] = { ...tr }; else delete R.trans[c.id];
+  });
+  if (t.outroTrans) R.trans.outro = { ...t.outroTrans }; else delete R.trans.outro;
+}
+function reelTplApply(t) {
+  Settings.set('reel_style', JSON.stringify(t.style));
+  R.tplId = t.id; R.trans = {};
+  reelTplRecipe(0);
+  reelChanged(); reelPanel();
+  toast(`"${t.name}" applied.`);
+}
+
+function reelTplPanel() {
+  const list = reelTemplates(), cur = list.find(x => x.id === R.tplId);
+  return `<div class="card">
+    <p class="muted" style="font-size:13px;margin:0 0 12px">Save the current look as a template: intro and outro cards, backgrounds, logo, text, watermark and transitions, plus each clip's length, look and motion. Apply it later and new photos and videos pick up the same settings.</p>
+    <div class="tpl-list">${list.map(t => `<div class="tpl ${t.id === R.tplId ? 'on' : ''}">
+        <span class="tpl-n"><b>${esc(t.name)}</b><span class="muted">${t.slots.length} clip setting${t.slots.length === 1 ? '' : 's'}${t.id === R.tplId ? ' · in use' : ''}</span></span>
+        <button class="btn small primary" data-tpl-apply="${t.id}">Apply</button>
+        <button class="btn small icon-btn ${R.tplMenu === t.id ? 'on' : ''}" data-tpl-menu="${t.id}" aria-label="More">⋯</button>
+        ${R.tplMenu === t.id ? `<div class="row tpl-acts">
+          <button class="btn small" data-tpl-rename="${t.id}">Rename</button>
+          <button class="btn small" data-tpl-dup="${t.id}">Duplicate</button>
+          <button class="btn small danger" data-tpl-del="${t.id}" style="margin-left:auto">Delete</button></div>` : ''}
+      </div>`).join('') || '<p class="muted" style="margin:0 0 8px">No templates yet.</p>'}</div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn small primary" data-tpl-new>+ Save current as template</button>
+      ${cur ? `<button class="btn small" data-tpl-update="${cur.id}" data-tip="Overwrite it with the current look and clip settings">Update "${esc(cur.name)}"</button>` : ''}
+    </div>
+    <div class="row" style="margin-top:12px;border-top:1px dashed var(--line);padding-top:12px">
+      <button class="btn small" data-tpl-export ${list.length ? '' : 'disabled'} data-tip="One file with every template and its images, for another phone or tablet">Export templates</button>
+      <label class="btn small">Import templates<input type="file" accept=".json,application/json" hidden data-tpl-import></label>
+    </div></div>`;
+}
+
+async function reelTplClick(e) {
+  if (R.tab !== 'tpl') return;
+  const t = e.target, list = reelTemplates();
+  const id = (a) => t.closest(`[${a}]`)?.getAttribute(a);
+  if (id('data-tpl-apply')) return reelTplApply(list.find(x => x.id === id('data-tpl-apply')));
+  if (t.closest('[data-tpl-new]')) {
+    const name = prompt('Template name (e.g. an artist or a type of post):', `Template ${list.length + 1}`);
+    if (!name?.trim()) return;
+    const tpl = reelTplCapture(name.trim());
+    await reelSaveTemplates([...list, tpl]); R.tplId = tpl.id; toast('Template saved.'); return reelPanel();
+  }
+  if (id('data-tpl-update')) {
+    const i = list.findIndex(x => x.id === id('data-tpl-update'));
+    if (!confirm(`Overwrite "${list[i].name}" with the current settings?`)) return;
+    list[i] = reelTplCapture(list[i].name, list[i].id); await reelSaveTemplates(list); toast('Template updated.'); return reelPanel();
+  }
+  if (id('data-tpl-menu')) { R.tplMenu = R.tplMenu === id('data-tpl-menu') ? null : id('data-tpl-menu'); return reelPanel(); }
+  const tp = list.find(x => x.id === (id('data-tpl-rename') || id('data-tpl-dup') || id('data-tpl-del')));
+  if (tp && id('data-tpl-rename')) {
+    const n = prompt('New name:', tp.name); if (!n?.trim()) return;
+    tp.name = n.trim(); await reelSaveTemplates(list); return reelPanel();
+  }
+  if (tp && id('data-tpl-dup')) {
+    await reelSaveTemplates([...list, { ...structuredClone(tp), id: Date.now().toString(36), name: tp.name + ' copy' }]);
+    R.tplMenu = null; return reelPanel();
+  }
+  if (tp && id('data-tpl-del')) {
+    if (!confirm(`Delete the template "${tp.name}"?\n\nThis cannot be undone.`)) return;
+    const rest = list.filter(x => x !== tp);
+    await reelSaveTemplates(rest); if (R.tplId === tp.id) R.tplId = null; R.tplMenu = null;
+    for (const ref of reelTplRefs([tp])) await Media.release(ref);   // release() keeps any still in use
+    toast('Template deleted.'); return reelPanel();
+  }
+  if (t.closest('[data-tpl-export]')) return reelTplExport(list);
+}
+
+// Images a set of templates uses: card backgrounds and per-template logos.
+const reelTplRefs = (list) => [...new Set(list.flatMap(t => [t.style.introBg?.ref, t.style.outroBg?.ref, t.style.logoRef]).filter(Boolean))];
+
+async function reelTplExport(list) {
+  const media = {};
+  for (const ref of reelTplRefs(list)) {
+    try {
+      const f = await (await (await Media.dir()).getFileHandle(ref)).getFile();
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      media[ref] = btoa(bin);
+    } catch {}
+  }
+  const name = `InkForge-reel-templates-${ymd(new Date())}.json`;
+  const file = new File([JSON.stringify({ inkforgeReelTemplates: 1, templates: list, media })], name, { type: 'application/json' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Reel templates' });
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+    toast(`Exported ${list.length} template${list.length === 1 ? '' : 's'}.`);
+  } catch (err) { if (err.name !== 'AbortError') toast('Could not export: ' + err.message); }
+}
+
+async function reelTplImport(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { return toast('That file is not a templates file.'); }
+  if (data?.inkforgeReelTemplates !== 1 || !Array.isArray(data.templates)) return toast('That file is not an InkForge templates file.');
+  // Images are saved under content-hash names, so the same names come back and refs stay valid.
+  for (const [ref, b64] of Object.entries(data.media || {})) {
+    try {
+      const bin = atob(b64), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      await Media.save(new Blob([bytes]), ref.split('.').pop());
+    } catch {}
+  }
+  const list = reelTemplates(), names = new Set(list.map(t => t.name));
+  let n = 0;
+  for (const t of data.templates) {
+    if (!t?.style || !Array.isArray(t.slots)) continue;
+    let name = t.name || 'Template'; while (names.has(name)) name += ' (imported)';
+    names.add(name); n++;
+    list.push({ ...t, id: Date.now().toString(36) + n, name });
+  }
+  await reelSaveTemplates(list); toast(`Imported ${n} template${n === 1 ? '' : 's'}.`); reelPanel();
 }
 
 async function reelPortfolioPicker() {
@@ -2960,6 +3139,7 @@ async function reelPortfolioPicker() {
     chosen.has(i) ? chosen.delete(i) : chosen.add(i); b.classList.toggle('picked', chosen.has(i)); };
   o.querySelector('#rp-cancel').onclick = () => o.remove();
   o.querySelector('#rp-add').onclick = async () => {
+    const before = R.clips.length;
     for (const i of chosen) {
       try {
         const f = await (await (await Media.dir()).getFileHandle(rows[i].photo_ref)).getFile();
@@ -2968,6 +3148,7 @@ async function reelPortfolioPicker() {
       } catch { toast('Could not load a portfolio photo.'); }
     }
     o.remove();
+    if (R.tplId) reelTplRecipe(before);
     const last = R.clips[R.clips.length - 1];
     if (last) reelPick('clip', last.id); else { reelChanged(); reelPanel(); }
   };
@@ -3351,7 +3532,7 @@ addEventListener('hashchange', () => { if (booted) render(); });
 (async () => {
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
-  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 5) {
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 6) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
     if (!tried) { await Promise.all(['reel.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }

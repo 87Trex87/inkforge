@@ -5,7 +5,7 @@
    Drafts live in memory only: imported videos are never copied into storage. Export records the
    canvas + Web Audio mix in real time with MediaRecorder (MP4 where the browser supports it). */
 
-const REEL_VERSION = 5;   // app.js checks this matches, to catch a stale cached copy
+const REEL_VERSION = 6;   // app.js checks this matches, to catch a stale cached copy
 // Card backgrounds: { ref, op, zoom, rot, flip } with ref = media file name (kept in the media folder).
 const REEL_CARD_BG = { ref: '', op: 0.55, zoom: 1, rot: 0, flip: false };
 const REEL_STYLE_DEFAULTS = {
@@ -16,8 +16,10 @@ const REEL_STYLE_DEFAULTS = {
   wmMode: 'text', wmPos: 'br', wmOp: 0.75,          // watermark: off | text (handle) | logo
   cardLogo: true, introBg: REEL_CARD_BG, outroBg: REEL_CARD_BG,
   introDur: 1.6, outroDur: 2.4,
-  introPos: null, outroPos: null                     // card text group moved on the preview: { x, y, s }
+  introPos: null, outroPos: null,                    // card text group moved on the preview: { x, y, s }
+  logoRef: ''                                        // a logo for this style only (e.g. another artist); '' = studio logo
 };
+const reelLogoRef = (s) => s.logoRef || Settings.get('studio_logo_ref');
 // Opposite / alternative versions of a transition, stored in its `dir`. Wipe and slide use sides.
 const REEL_TR_VARIANTS = {
   zoom: [['in', 'Zoom in'], ['out', 'Zoom out']],
@@ -219,7 +221,7 @@ function drawCard(ctx, s, W, H, p, kind) {
   ctx.save();
   ctx.globalAlpha = ease;
   ctx.translate(0, (1 - ease) * 40 * k);
-  const logo = s.cardLogo ? reelImg(Settings.get('studio_logo_ref')) : null;
+  const logo = s.cardLogo ? reelImg(reelLogoRef(s)) : null;
   if (logo) drawLogo(ctx, logo, W / 2, H * 0.25, W * 0.5, H * 0.16);
   // The text group (title, accent rule, handle) can be moved and scaled on the preview.
   const L = cardLayout(s, kind, W, H);
@@ -291,7 +293,7 @@ function drawWatermark(ctx, s, W, H) {
   const right = s.wmPos[1] === 'r', top = s.wmPos[0] === 't';
   ctx.save();
   ctx.globalAlpha = s.wmOp;
-  const logo = s.wmMode === 'logo' ? reelImg(Settings.get('studio_logo_ref')) : null;
+  const logo = s.wmMode === 'logo' ? reelImg(reelLogoRef(s)) : null;
   if (logo) {
     const bw = 200 * k, bh = 120 * k;
     const sc = Math.min(bw / logo.naturalWidth, bh / logo.naturalHeight), w = logo.naturalWidth * sc, h = logo.naturalHeight * sc;

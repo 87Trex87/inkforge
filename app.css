@@ -329,6 +329,13 @@ select.in { appearance: none; padding-right: 30px; cursor: pointer;
 .tl-ghost svg { width: 20px; height: 20px; } .tl-add { font-size: 22px; }
 .reel-hint { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 #reel-cv { touch-action: none; cursor: move; }
+.tpl-list { display: flex; flex-direction: column; gap: 8px; }
+.tpl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
+.tpl.on { border-color: var(--teal); }
+.tpl-n { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tpl-n b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tpl-n .muted { font-size: 12px; }
+.tpl-acts { flex-basis: 100%; gap: 6px; }
+#reel-tabs button { padding: 0 6px; font-size: 14px; }
 .stk-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .stk { position: relative; width: 64px; height: 64px; border-radius: 10px; border: 2px solid var(--line); cursor: pointer; display: grid; place-items: center;
   background: repeating-conic-gradient(#2a2f31 0 25%, #1c2123 0 50%) 50% / 12px 12px; }
