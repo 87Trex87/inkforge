@@ -21,7 +21,9 @@ const DB = (() => {
     one: async (sql, params) => (await call('exec', { sql, params })).rows[0],
     run: (sql, params) => call('exec', { sql, params }).finally(() => Snapshot.soon()),
     tx: (items) => call('tx', { items }).finally(() => Snapshot.soon()),
-    exportBytes: async () => (await call('export')).bytes,
+    open: (path) => call('open', { path }),
+    drop: (path) => call('drop', { path }),
+    exportBytes: async (path) => (await call('export', { path })).bytes,
     importBytes: (bytes) => call('import', { bytes }, [bytes.buffer]).finally(() => Snapshot.soon()),
     peek: async (bytes) => (await call('peek', { bytes }, [bytes.buffer])).tables
   };
@@ -35,7 +37,7 @@ const Snapshot = {
   ready: false, _t: null,
   async handle(create) {
     const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('snapshots', { create: true });
-    return d.getFileHandle('latest.sqlite', { create });
+    return d.getFileHandle(WS.snapName(WS.cur), { create });
   },
   soon() { if (!this.ready) return; clearTimeout(this._t); this._t = setTimeout(() => this.save(), 4000); },
   async save() {
@@ -54,6 +56,50 @@ const Snapshot = {
   }
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) Snapshot.save(); });
+
+/* ---------- Workspaces ----------
+   Each workspace (e.g. one per artist) is its own database file, media folder and snapshot.
+   The list lives in OPFS as workspaces.json (not localStorage). The original single database
+   is the workspace "main", keeping its old file names, so existing data needs no migration. */
+const WS = {
+  list: [], last: null, auto: false, cur: null,
+  dbPath: (w) => w.id === 'main' ? '/inkforge.db' : `/ws-${w.id}.db`,
+  mediaName: (w) => w.id === 'main' ? 'media' : `media-${w.id}`,
+  snapName: (w) => w.id === 'main' ? 'latest.sqlite' : `ws-${w.id}.sqlite`,
+  async file(create) { return (await navigator.storage.getDirectory()).getFileHandle('workspaces.json', { create }); },
+  async load() {
+    try { Object.assign(this, JSON.parse(await (await (await this.file(false)).getFile()).text())); } catch {}
+    if (!this.list.length) this.list = [{ id: 'main', name: 'My workspace', created: new Date().toISOString(), opened: null }];
+  },
+  async save() {
+    const w = await (await this.file(true)).createWritable();
+    await w.write(JSON.stringify({ list: this.list, last: this.last, auto: this.auto })); await w.close();
+  },
+  get: (id) => WS.list.find(w => w.id === id),
+  async create(name) {
+    const w = { id: Date.now().toString(36), name, created: new Date().toISOString(), opened: null };
+    this.list.push(w); await this.save(); return w;
+  },
+  // Opening switches the database, media folder and snapshot to this workspace.
+  async open(w) {
+    this.cur = w;
+    await DB.open(this.dbPath(w));
+    w.opened = new Date().toISOString(); this.last = w.id; await this.save();
+  },
+  async remove(w) {
+    await DB.drop(this.dbPath(w));
+    const root = await navigator.storage.getDirectory();
+    try { await root.removeEntry(this.mediaName(w), { recursive: true }); } catch {}
+    try { await (await root.getDirectoryHandle('snapshots')).removeEntry(this.snapName(w)); } catch {}
+    this.list = this.list.filter(x => x !== w); if (this.last === w.id) this.last = null;
+    await this.save();
+  },
+  // Switching reloads the page so no state from the previous workspace can leak into the next.
+  switchTo(id) {
+    try { sessionStorage.setItem('ws-open', id || ''); sessionStorage.setItem('ws-start', id ? '' : '1'); } catch {}
+    location.hash = 'home'; location.reload();
+  }
+};
 // A database "has data" once migrations have created app_meta (sqlite_sequence alone doesn't count).
 const hasData = async () => !!(await DB.one(`SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'app_meta'`));
 
@@ -299,7 +345,7 @@ const Settings = {
 /* Media files (photos etc.) live in OPFS /media as content-hash names; DB stores only the name. */
 const Media = {
   urls: new Map(),
-  async dir() { return (await navigator.storage.getDirectory()).getDirectoryHandle('media', { create: true }); },
+  async dir(w = WS.cur) { return (await navigator.storage.getDirectory()).getDirectoryHandle(WS.mediaName(w), { create: true }); },
   async save(blob, ext) {
     const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))]
       .slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -1667,8 +1713,9 @@ const VIEWS = {
       <div class="card"><h2>Backup ${help('A backup holds everything: clients, bookings, forms, portfolio, stock, rules, reel templates, settings and all photos. Save one regularly, e.g. to cloud storage.')}</h2>
         <div id="last-backup" class="muted" style="margin-bottom:12px"></div>
         <div class="row">
-          <button class="btn primary" id="b-export">Save backup</button>
-          <button class="btn" id="b-merge" data-tip="Add another backup's data to yours, e.g. from another artist or device. Pick which sections; duplicates are skipped.">Merge from backup…</button>
+          <button class="btn primary" id="b-export" data-tip="Save this workspace as a file: a backup, or to open it on another device">Save workspace file</button>
+          <button class="btn" id="b-merge" data-tip="Add another backup's data to yours, e.g. from another artist or device. Pick which sections; duplicates are skipped.">Merge from file…</button>
+          ${WS.list.length > 1 ? '<button class="btn" id="b-mergews" data-tip="Copy sections from another workspace on this device into this one, e.g. to update every artist from a test workspace">Merge from workspace…</button>' : ''}
           <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
         </div>
         <input type="file" id="merge-file" accept=".inkforge,.sqlite,.db" hidden>
@@ -1733,6 +1780,21 @@ const VIEWS = {
       $('#b-export').onclick = exportBackup;
       $('#b-import').onclick = () => $('#import-file').click();
       $('#b-merge').onclick = () => $('#merge-file').click();
+      const mws = $('#b-mergews');
+      if (mws) mws.onclick = () => {
+        const others = WS.list.filter(x => x !== WS.cur);
+        const o = document.createElement('div'); o.id = 'merge-dlg';
+        o.innerHTML = `<div class="card"><h2>Merge from workspace</h2>
+          <p class="muted" style="margin-top:0">Pick the workspace to copy from. Next you choose which sections.</p>
+          <div class="merge-list">${others.map(x => `<button class="merge-row" data-from="${x.id}"><span class="c-main"><b>${esc(x.name)}</b></span></button>`).join('')}</div>
+          <button class="btn" id="mw-cancel" style="width:100%;margin-top:12px">Cancel</button></div>`;
+        document.body.appendChild(o);
+        o.onclick = (e) => {
+          if (e.target.closest('#mw-cancel')) return o.remove();
+          const b = e.target.closest('[data-from]'); if (!b) return;
+          o.remove(); openMerge(WS.get(b.dataset.from));
+        };
+      };
       $('#merge-file').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) openMerge(f); });
       const lb = Settings.get('last_backup');
       $('#last-backup').textContent = lb ? 'Last backup: ' + new Date(lb).toLocaleString() : 'No backup yet.';
@@ -1765,13 +1827,14 @@ async function renderStorage() {
 /* Backup file: "INKFORGE1" + u32 manifest length + JSON manifest + db bytes + media bytes.
    Plain SQLite files (older backups) are still accepted on restore. */
 const BACKUP_MAGIC = 'INKFORGE1';
-async function buildBackup() {
-  const db = await DB.exportBytes();
+// The open workspace by default; any other workspace's file can be built without opening it.
+async function buildBackup(w = WS.cur) {
+  const db = await DB.exportBytes(w === WS.cur ? undefined : WS.dbPath(w));
   const media = [];
-  for await (const [name, h] of (await Media.dir()).entries()) {
+  for await (const [name, h] of (await Media.dir(w)).entries()) {
     if (h.kind === 'file') media.push({ name, bytes: new Uint8Array(await (await h.getFile()).arrayBuffer()) });
   }
-  const manifest = new TextEncoder().encode(JSON.stringify({ v: 1, db: db.length, media: media.map(m => ({ name: m.name, len: m.bytes.length })) }));
+  const manifest = new TextEncoder().encode(JSON.stringify({ v: 1, name: w?.name, db: db.length, media: media.map(m => ({ name: m.name, len: m.bytes.length })) }));
   const head = new Uint8Array(BACKUP_MAGIC.length + 4);
   head.set(new TextEncoder().encode(BACKUP_MAGIC));
   new DataView(head.buffer).setUint32(BACKUP_MAGIC.length, manifest.length);
@@ -1843,7 +1906,7 @@ function parseBackup(bytes) {
   const db = bytes.slice(off, off + man.db); off += man.db;
   const media = new Map();
   for (const m of man.media) { media.set(m.name, bytes.subarray(off, off + m.len)); off += m.len; }
-  return { db, media };
+  return { db, media, name: man.name };
 }
 
 // Comparable fingerprint of a row: every column except ids, timestamps, sort and skipped ones.
@@ -1949,16 +2012,20 @@ function mergeCounts(src) {
   return n;
 }
 
-async function openMerge(file) {
+// `from` is a backup File, or another workspace on this device (merged straight from its storage).
+async function openMerge(from) {
   let parsed, src;
-  try { parsed = parseBackup(new Uint8Array(await file.arrayBuffer())); src = await DB.peek(parsed.db.slice()); }
+  try {
+    const bytes = from.id ? new Uint8Array(await (await buildBackup(from)).arrayBuffer()) : new Uint8Array(await from.arrayBuffer());
+    parsed = parseBackup(bytes); src = await DB.peek(parsed.db.slice());
+  }
   catch (err) { return toast('Could not read that backup: ' + err.message, 5000); }
   const n = mergeCounts(src), unknown = mergeUnknown(src);
   const o = document.createElement('div');
   o.id = 'merge-dlg';
   o.innerHTML = `<div class="card">
     <h2>Merge from backup</h2>
-    <p class="muted" style="margin-top:0">Adds what's in <b>${esc(file.name)}</b> to your data. Nothing of yours is changed or removed, and anything you already have is skipped.</p>
+    <p class="muted" style="margin-top:0">Adds what's in <b>${esc(from.name)}</b> to this workspace. Nothing of yours is changed or removed, and anything you already have is skipped.</p>
     <div class="merge-list">${MERGE_SECTIONS.map(([k, l, d]) => `<label class="merge-row ${n[k] ? '' : 'empty'}">
       <input type="checkbox" data-sec="${k}" ${n[k] ? 'checked' : 'disabled'}>
       <span class="c-main"><b>${l}</b><span class="muted">${d}</span></span><span class="chip">${n[k]}</span></label>`).join('')}</div>
@@ -1985,10 +2052,10 @@ async function openMerge(file) {
   };
 }
 
-async function exportBackup() {
-  const bytes = await buildBackup();
+async function exportBackup(w = WS.cur) {
+  const bytes = await buildBackup(w);
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
-  const name = `InkForge-${stamp}.inkforge`;
+  const name = `${(w?.name || 'InkForge').replace(/[^\w-]+/g, '_')}-${stamp}.inkforge`;
   const file = new File([bytes], name, { type: 'application/octet-stream' });
   // Phones: share sheet (save to Files / Drive). Desktop: download.
   if (navigator.canShare?.({ files: [file] })) {
@@ -1998,9 +2065,11 @@ async function exportBackup() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
-  await Settings.set('last_backup', new Date().toISOString());
-  if (location.hash === '#settings') render();
-  toast('Backup saved.');
+  if (w === WS.cur && booted) {
+    await Settings.set('last_backup', new Date().toISOString());
+    if (location.hash === '#settings') render();
+  }
+  toast(`"${w.name}" saved to a file.`);
 }
 
 $('#import-file').addEventListener('change', async (e) => {
@@ -3734,10 +3803,86 @@ addEventListener('hashchange', () => { if (booted) render(); });
     if (!tried) { await Promise.all(['reel.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }
   try { sessionStorage.removeItem('if-reload'); } catch {}
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
+  try { await WS.load(); } catch (err) { console.error(err); }
+  let openId = '', forceStart = false;
+  try { openId = sessionStorage.getItem('ws-open') || ''; forceStart = sessionStorage.getItem('ws-start') === '1';
+    sessionStorage.removeItem('ws-open'); sessionStorage.removeItem('ws-start'); } catch {}
+  const w = WS.get(openId) || (!forceStart && WS.auto && WS.get(WS.last));
+  if (w) startWorkspace(w); else showStart();
+})();
+
+/* Start screen: like a desktop app's welcome window. New, open a workspace file, or pick a recent one. */
+function showStart() {
+  const ago = (iso) => { if (!iso) return 'Never opened'; const d = (Date.now() - new Date(iso)) / 864e5;
+    return d < 1 ? 'Opened today' : d < 2 ? 'Opened yesterday' : `Opened ${new Date(iso).toLocaleDateString()}`; };
+  const draw = () => {
+    const list = [...WS.list].sort((a, b) => (b.opened || '').localeCompare(a.opened || ''));
+    o.innerHTML = `<div class="start-in">
+      <div class="start-brand"><img src="icon.svg" alt=""><h1>InkForge</h1><span class="badge ea">Early Access</span></div>
+      <div class="start-acts">
+        <button class="start-big" id="st-new"><b>+ New workspace</b><span>Start fresh, e.g. for another artist</span></button>
+        <label class="start-big"><b>Open file…</b><span>A workspace or backup file (.inkforge)</span><input type="file" accept=".inkforge,.sqlite,.db" hidden id="st-file"></label>
+      </div>
+      <div class="letter">Recent</div>
+      <div class="card list">${list.map(w => `<div class="c-row ws-row">
+          <button class="c-main ws-open" data-ws="${w.id}"><span class="c-n">${esc(w.name)}</span><span class="muted c-sub">${ago(w.opened)}</span></button>
+          <button class="btn small icon-btn ${menu === w.id ? 'on' : ''}" data-wsmenu="${w.id}" aria-label="More">⋯</button>
+          ${menu === w.id ? `<div class="row tpl-acts">
+            <button class="btn small" data-wsren="${w.id}">Rename</button>
+            <button class="btn small" data-wssave="${w.id}" data-tip="Save this workspace as a file to share or keep safe">Save file</button>
+            <button class="btn small danger" data-wsdel="${w.id}" style="margin-left:auto">Delete</button></div>` : ''}
+        </div>`).join('')}</div>
+      <label class="toggle" style="display:inline-flex;margin-top:12px" data-tip="Skip this screen and go straight to the last workspace. Switch any time by tapping the workspace name at the top.">
+        <input type="checkbox" id="st-auto" ${WS.auto ? 'checked' : ''}><span>Open my last workspace automatically</span></label>
+      <p class="muted" style="font-size:12px;margin-top:16px">Workspaces are stored on this device. Save a workspace file to move it to another device or keep a copy safe: keeping that file safe is up to you.</p>
+    </div>`;
+  };
+  let menu = null;
+  const o = document.createElement('div'); o.id = 'start';
+  document.body.appendChild(o); draw();
+  o.addEventListener('click', async (e) => {
+    const t = e.target, id = (a) => t.closest(`[${a}]`)?.getAttribute(a);
+    if (id('data-ws')) { o.remove(); return startWorkspace(WS.get(id('data-ws'))); }
+    if (id('data-wsmenu')) { menu = menu === id('data-wsmenu') ? null : id('data-wsmenu'); return draw(); }
+    const w = WS.get(id('data-wsren') || id('data-wssave') || id('data-wsdel'));
+    if (w && id('data-wsren')) { const n = prompt('Workspace name:', w.name); if (n?.trim()) { w.name = n.trim(); await WS.save(); draw(); } return; }
+    if (w && id('data-wssave')) { try { await exportBackup(w); } catch (err) { toast('Could not save: ' + err.message, 5000); } return; }
+    if (w && id('data-wsdel')) {
+      if (!confirm(`Delete the workspace "${w.name}" and everything in it from this device?\n\nSave its file first if you might need it. This cannot be undone.`)) return;
+      try { await WS.remove(w); toast('Workspace deleted.'); } catch (err) { toast(err.message, 5000); }
+      if (!WS.list.length) await WS.create('My workspace');
+      menu = null; return draw();
+    }
+    if (t.closest('#st-new')) {
+      const n = prompt('Name for the new workspace (e.g. the artist\'s name):', '');
+      if (!n?.trim()) return;
+      const nw = await WS.create(n.trim()); o.remove(); return startWorkspace(nw);
+    }
+  });
+  o.addEventListener('change', async (e) => {
+    if (e.target.id === 'st-auto') { WS.auto = e.target.checked; return WS.save(); }
+    if (e.target.id !== 'st-file') return;
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    let name;
+    try { name = parseBackup(bytes.slice()).name; } catch (err) { return toast(err.message, 5000); }
+    name = name || f.name.replace(/(-\d{4}-\d\d-\d\d-\d\d-\d\d)?\.\w+$/, '').replace(/_/g, ' ');
+    if (WS.list.some(w => w.name === name)) name += ' (opened)';
+    const nw = await WS.create(name); o.remove();
+    startWorkspace(nw, bytes);
+  });
+}
+
+// Opens a workspace and runs the normal start-up (snapshot recovery, migrations, settings).
+// `fileBytes`: a workspace/backup file to load into it first (from "Open file…").
+async function startWorkspace(w, fileBytes) {
   const badge = $('#db-badge');
   let recovered = false;
   try {
-    if (!(await hasData())) {
+    await WS.open(w);
+    if (fileBytes) await restoreBackup(fileBytes);
+    else if (!(await hasData())) {
       const snap = await Snapshot.load();
       if (snap) { await DB.importBytes(snap); recovered = true; }
     }
@@ -3753,11 +3898,13 @@ addEventListener('hashchange', () => { if (booted) render(); });
     }
     Cal.mode = Settings.get('cal_mode', innerWidth >= 900 ? 'week' : 'day');
     const info = await DB.info();
-    badge.textContent = info.mode === 'opfs' ? 'Saved on device' : 'Not saving';
-    badge.className = 'badge ' + (info.mode === 'opfs' ? 'ok' : 'warn');
+    // The badge names the open workspace; tapping it goes back to the start screen to switch.
+    badge.textContent = w.name;
+    badge.className = 'badge ws-badge ' + (info.mode === 'opfs' ? 'ok' : 'warn');
     badge.dataset.tip = info.mode === 'opfs'
-      ? 'Your data is in an on-device SQLite database.'
+      ? `Workspace "${w.name}", saved on this device. Tap to switch workspace.`
       : 'This browser blocked on-device storage, so changes are lost on reload. Use https or localhost.';
+    badge.onclick = () => { if (Dirty.ok()) { Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(null)); } };
   } catch (err) {
     badge.textContent = 'DB error'; badge.className = 'badge warn'; badge.dataset.tip = err.message;
     console.error(err);
@@ -3770,6 +3917,6 @@ addEventListener('hashchange', () => { if (booted) render(); });
   Snapshot.ready = true;
   render();
   if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
+  else if (fileBytes) { toast(`Opened "${w.name}".`); Snapshot.soon(); }
   else Snapshot.soon();
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
-})();
+}
