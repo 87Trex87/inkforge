@@ -193,13 +193,28 @@ const MIGRATIONS = [
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      title TEXT NOT NULL, body TEXT, sort INTEGER NOT NULL DEFAULT 0);`,
   // v8: booking type (see BOOKING_KINDS). Existing bookings are tattoo sessions.
-  `ALTER TABLE bookings ADD COLUMN kind TEXT NOT NULL DEFAULT 'tattoo';`
+  `ALTER TABLE bookings ADD COLUMN kind TEXT NOT NULL DEFAULT 'tattoo';`,
+  // v9: finishing a tattoo. completed + what was paid and how long it took (feeds Stats), the
+  // follow-up booking it spawned (followup_of on the follow-up), and the promotion on its receipt.
+  `ALTER TABLE bookings ADD COLUMN completed INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE bookings ADD COLUMN completed_at TEXT;
+   ALTER TABLE bookings ADD COLUMN paid REAL;
+   ALTER TABLE bookings ADD COLUMN time_min INTEGER;
+   ALTER TABLE bookings ADD COLUMN pay_method TEXT;
+   ALTER TABLE bookings ADD COLUMN followup_of INTEGER REFERENCES bookings(id) ON DELETE SET NULL;
+   ALTER TABLE bookings ADD COLUMN promo_kind TEXT;
+   ALTER TABLE bookings ADD COLUMN promo_value REAL;
+   ALTER TABLE bookings ADD COLUMN promo_until TEXT;
+   CREATE INDEX idx_bookings_done ON bookings (completed, start_at);`
 ];
 /* Booking types. ink: shows the tattoo fields (placement, size, quote, deposit, references). */
 const BOOKING_KINDS = {
   tattoo: { label: 'Tattoo', ink: true }, consult: { label: 'Consultation', ink: true }, touchup: { label: 'Touch-up', ink: true },
-  meeting: { label: 'Meeting' }, leave: { label: 'Leave' }, other: { label: 'Other' }
+  followup: { label: 'Follow-up' }, meeting: { label: 'Meeting' }, leave: { label: 'Leave' }, other: { label: 'Other' }
 };
+// Kinds that can be marked completed (and so count in Stats, get a receipt and a follow-up).
+const DONE_KINDS = ['tattoo', 'touchup'];
+const PAY_METHODS = ['Cash', 'Card', 'EFT', 'Voucher'];
 const kindOf = (b) => BOOKING_KINDS[b.kind] ? b.kind : 'tattoo';
 const kindLabel = (b) => BOOKING_KINDS[kindOf(b)].label;
 const kindChip = (b) => kindOf(b) === 'tattoo' ? '' : `<span class="kchip k-${kindOf(b)}">${kindLabel(b)}</span>`;
@@ -770,6 +785,24 @@ const VIEWS = {
           <div class="thumbs" id="b-thumbs"></div></div>
         </div>
         <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(b.notes)}</textarea></label>
+        <div class="b-done" id="b-done">
+          <label class="toggle b-done-t"><input type="checkbox" name="completed" ${b.completed ? 'checked' : ''}><span>Tattoo completed</span></label>
+          <div id="b-done-in">
+            <div class="two">
+              <label class="field"><span>Final price paid${cur ? ` (${esc(cur)})` : ''} ${help('What the client paid in total, deposit included. Used in Stats and on the receipt.')}</span>
+                <input class="in" name="paid" type="number" inputmode="decimal" min="0" step="any" value="${b.paid ?? b.quote ?? ''}"></label>
+              <label class="field"><span>Time tattooed ${help('Needle time only, breaks not included. Used in Stats.')}</span>
+                <div class="unit-in"><input class="in" name="time_h" type="number" inputmode="decimal" min="0" step="0.25" value="${b.time_min != null ? +(b.time_min / 60).toFixed(2) : +(b.duration_min / 60).toFixed(2)}"><em>hours</em></div></label>
+            </div>
+            <div class="field"><span class="lbl">Paid by</span><div class="seg" id="b-pay">${PAY_METHODS.map(m => `<button type="button" data-pay="${m}" class="${b.pay_method === m ? 'on' : ''}" style="flex:1">${m}</button>`).join('')}</div></div>
+            <div class="b-done-acts">
+              <div class="b-fu"><button type="button" class="btn" id="b-followup" data-tip="Book a check-up to see how it healed and whether a touch-up is needed">Book follow-up</button>
+                <span>in</span><input class="in" id="b-fu-w" type="number" min="1" max="52" value="${Settings.get('followup_weeks', '6')}"><span>weeks</span></div>
+              <button type="button" class="btn" id="b-receipt" data-tip="A thank-you receipt with what they paid, and an optional discount on their next tattoo">Thank-you receipt</button>
+            </div>
+            <div id="b-fu-info" class="muted" style="font-size:13px;margin-top:8px"></div>
+          </div>
+        </div>
         ${b.id && kind === 'tattoo' ? `<button type="button" class="btn small" id="b-pf" style="margin-bottom:8px" data-tip="Add the finished tattoo to your portfolio, prefilled from this booking">+ Add finished tattoo to portfolio</button>` : ''}
         <div class="form-foot row">
           ${b.id ? '<button type="button" class="btn danger icon-btn" id="b-del" data-tip="Delete booking" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
@@ -778,10 +811,17 @@ const VIEWS = {
         </div>`;
 
       // Type: non-tattoo kinds hide the tattoo-only fields (their values are kept, not cleared)
+      const showDone = () => { $('#b-done').hidden = !DONE_KINDS.includes(kind); $('#b-done-in').hidden = !f.completed.checked; };
+      let payMethod = b.pay_method || null;
+      $('#b-pay').onclick = (e) => { const x = e.target.closest('[data-pay]'); if (!x) return;
+        payMethod = payMethod === x.dataset.pay ? null : x.dataset.pay;
+        $('#b-pay').querySelectorAll('button').forEach(y => y.classList.toggle('on', y.dataset.pay === payMethod)); Dirty.set(true); };
+      f.completed.addEventListener('change', showDone);
       const showKind = () => {
         const ink = BOOKING_KINDS[kind].ink;
+        showDone();
         $('#b-ink').hidden = !ink;
-        $('#b-desc-l').textContent = kind === 'tattoo' || kind === 'touchup' ? 'Tattoo description' : kind === 'consult' ? 'Idea / what to discuss' : 'Details';
+        $('#b-desc-l').textContent = kind === 'tattoo' || kind === 'touchup' ? 'Tattoo description' : kind === 'consult' ? 'Idea / what to discuss' : kind === 'followup' ? 'What to check' : 'Details';
         f.description.placeholder = ink ? 'e.g. Fine-line peony with stem' : kind === 'leave' ? 'e.g. Holiday' : '';
       };
       showKind();
@@ -863,14 +903,17 @@ const VIEWS = {
         for (const p of photos) await Media.release(p.photo_ref);
         Dirty.set(false); toast('Booking deleted.'); Gcal.soon(); history.back();
       };
-      f.addEventListener('submit', async (e) => {
-        e.preventDefault();
+      // Saves the form and returns the booking id (null if something needs fixing first).
+      const save = async () => {
         const d = Object.fromEntries(new FormData(f));
-        if (ci.value.trim() && !clientId) return toast('Pick a client from the list, or choose "Add".');
+        if (ci.value.trim() && !clientId) { toast('Pick a client from the list, or choose "Add".'); return null; }
         const num = (v) => v === '' || v == null ? null : +v;
+        const done = DONE_KINDS.includes(kind) && !!d.completed;
         const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
-          d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind];
-        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind';
+          d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind,
+          done ? 1 : 0, done ? (b.completed_at || new Date().toISOString()) : null,
+          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null];
+        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method';
         const refs = [...keep];
         for (const a of added) refs.push(await Media.save(a.blob, 'jpg'));
         let bid = b.id;
@@ -880,9 +923,35 @@ const VIEWS = {
           ...refs.map((r, i) => ({ sql: 'INSERT INTO booking_photos (booking_id, photo_ref, sort) VALUES (?, ?, ?)', params: [bid, r, i] }))]);
         for (const p of photos) if (!refs.includes(p.photo_ref)) await Media.release(p.photo_ref);
         Cal.date = new Date(d.date + 'T00:00');
-        Dirty.set(false); toast('Booking saved.'); Gcal.soon();
-        location.replace('#book');
+        Dirty.set(false); Gcal.soon();
+        if (!b.id) { b.id = bid; }
+        Object.assign(b, { completed: done ? 1 : 0, paid: done ? num(d.paid) : null, time_min: vals[14], pay_method: done ? payMethod : null, client_id: clientId,
+          description: vals[3], placement: vals[4], size: vals[5], start_at: vals[1] });
+        keep.splice(0, keep.length, ...refs); added.length = 0; photos.splice(0, photos.length, ...refs.map(r => ({ photo_ref: r })));
+        return bid;
+      };
+      f.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!(await save())) return;
+        toast('Booking saved.'); location.replace('#book');
       });
+
+      // Follow-up: a short check-up booking N weeks after the session, linked back to it.
+      const fuInfo = async () => {
+        const fu = b.id ? await DB.one(`SELECT id, start_at FROM bookings WHERE followup_of = ? ORDER BY start_at LIMIT 1`, [b.id]) : null;
+        $('#b-fu-info').innerHTML = fu ? `Follow-up booked for <a href="#booking-edit/${fu.id}">${esc(fmtDay(fu.start_at))}</a>.` : '';
+      };
+      fuInfo();
+      $('#b-followup').onclick = async () => {
+        const bid = await save(); if (!bid) return;
+        const weeks = Math.max(1, +$('#b-fu-w').value || 6);
+        await Settings.set('followup_weeks', String(weeks));
+        const when = ymd(addDays(new Date(b.start_at.slice(0, 10) + 'T00:00'), weeks * 7)) + 'T' + Settings.get('day_start', '10:00');
+        await DB.run(`INSERT INTO bookings (client_id, start_at, duration_min, kind, description, placement, followup_of) VALUES (?, ?, 30, 'followup', ?, ?, ?)`,
+          [b.client_id, when, `Check healing${b.description ? ': ' + b.description : ''}. Touch-up needed?`, b.placement, bid]);
+        Gcal.soon(); toast(`Follow-up booked for ${fmtDay(when)}.`); fuInfo();
+      };
+      $('#b-receipt').onclick = async () => { const bid = await save(); if (bid) openReceipt(bid); };
     }
   },
   studio: {
@@ -898,6 +967,7 @@ const VIEWS = {
     render: () => `<div class="grid">
       ${tile('settings', 'Settings & backup', 'Profile, storage, backup and restore', false, 'settings')}
       ${tile('quote', 'Quote calculator', 'Price a piece from your own rates', false, 'quote')}
+      ${tile('quote', 'Stats', 'Tattoos, hours and earnings over time', false, 'stats')}
       ${tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory')}
       ${tile('rules', 'Rule book', 'Your studio rules', false, 'rules')}</div>`
   },
@@ -1094,6 +1164,27 @@ const VIEWS = {
     title: () => 'Quote',
     render: () => '<div id="qz"></div>',
     mount() { qzDraw(); }
+  },
+  stats: {
+    title: () => 'Stats',
+    render: () => `
+      <div class="seg st-period" id="st-period">${[['month', 'Month'], ['3m', '3 months'], ['year', 'Year'], ['all', 'All'], ['custom', 'Custom']].map(([k, l]) =>
+        `<button data-p="${k}" class="${STATS.period === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="row st-head">
+        ${STATS.period === 'custom' ? `<input class="in" type="date" id="st-from" value="${STATS.from}"><span class="muted">to</span><input class="in" type="date" id="st-to" value="${STATS.to}">`
+          : '<span class="muted" id="st-range"></span>'}
+        <span class="row no-print" style="margin-left:auto;gap:6px"><button class="btn small" id="st-csv" data-tip="Spreadsheet of the tattoos in this period; opens in Excel">Export Excel</button>
+          <button class="btn small" id="st-print" data-tip="Choose Save as PDF in the print dialog for a PDF">Print / PDF</button></span>
+      </div>
+      <div class="st-wrap"><div id="st-body"></div><div id="st-side"></div></div>`,
+    mount() {
+      $('#st-period').onclick = (e) => { const b = e.target.closest('[data-p]'); if (!b) return; STATS.period = b.dataset.p; render(); };
+      const f = $('#st-from'), t = $('#st-to');
+      if (f) { f.onchange = () => { STATS.from = f.value; renderStats(); }; t.onchange = () => { STATS.to = t.value; renderStats(); }; }
+      $('#st-csv').onclick = statsCsv;
+      $('#st-print').onclick = () => window.print();
+      renderStats();
+    }
   },
   'quote-cal': {
     title: () => 'Calibrate quotes',
@@ -1849,7 +1940,7 @@ const MERGE_SECTIONS = [
 // section null = device-specific, never merged.
 const MERGE_TABLES = {
   clients: { section: 'clients', refs: ['photo_ref'] },
-  bookings: { section: 'bookings', fk: { client_id: 'clients' }, skip: ['gcal_id', 'gcal_updated', 'gcal_synced_at'] },
+  bookings: { section: 'bookings', fk: { client_id: 'clients', followup_of: 'bookings' }, skip: ['gcal_id', 'gcal_updated', 'gcal_synced_at'] },
   booking_photos: { section: 'bookings', fk: { booking_id: 'bookings' }, refs: ['photo_ref'] },
   form_templates: { section: 'forms' },
   signed_forms: { section: 'forms', fk: { client_id: 'clients', booking_id: 'bookings', template_id: 'form_templates' }, refs: ['signature_ref'] },
@@ -2062,6 +2153,7 @@ $('#import-file').addEventListener('change', async (e) => {
 const pad = (n) => String(n).padStart(2, '0');
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const fmtDay = (s) => new Date(String(s).slice(0, 10) + 'T00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const fmtDur = (m) => (m >= 60 ? Math.floor(m / 60) + 'h' : '') + (m % 60 ? (m % 60) + 'm' : '');
 const fmtTime = (s) => new Date(s).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 const money = (v) => v == null ? '' : (Settings.get('currency') || '') + (+v).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -2191,7 +2283,7 @@ function agendaRow(b) {
   const end = new Date(new Date(b.start_at).getTime() + b.duration_min * 60000);
   return `<a class="c-row" href="#booking-edit/${b.id}">
     <span class="time-col"><b>${fmtTime(b.start_at)}</b><small class="muted">${fmtTime(end)}</small></span>
-    <span class="c-main"><span class="c-n">${esc(bName(b))}${b.first_name != null ? kindChip(b) : ''}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
+    <span class="c-main"><span class="c-n">${b.completed ? '<span class="done-tick" data-tip="Completed">✓</span>' : ''}${esc(bName(b))}${b.first_name != null ? kindChip(b) : ''}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
       <span class="muted c-sub">${esc([b.placement, b.description].filter(Boolean).join(' · ') || fmtDur(b.duration_min))}</span></span>
     ${b.quote != null ? `<span class="price ${b.deposit_paid ? 'paid' : ''}" data-tip="${b.deposit_paid ? 'Deposit paid' : 'Deposit not paid'}">${money(b.quote)}</span>` : ''}
     <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
@@ -3020,6 +3112,216 @@ function qcDraw() {
     if (rm) { cfg.anchors.splice(+rm.dataset.rm, 1); await qSave(cfg); return qcDraw(); }
     if (e.target.closest('#qc-reset') && confirm('Reset every quote setting to the defaults?')) { await Settings.set('quote_v2', ''); qcDraw(); toast('Defaults restored.'); }
   };
+}
+
+/* ---------- Thank-you receipt ----------
+   For a completed tattoo: what they paid, plus an optional promotion on their next tattoo
+   (% or amount off, valid for N months). Drawn on a canvas so print and image are identical.
+   The promotion is saved on the booking so Stats can list promotions still open. */
+async function openReceipt(bid) {
+  const b = await DB.one(`SELECT b.*, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.id = ?`, [bid]);
+  if (!b) return;
+  const cur = Settings.get('currency');
+  const st = { kind: b.promo_kind || '', value: b.promo_value ?? (b.promo_kind === 'amt' ? 100 : 10), months: +Settings.get('promo_months', '3') || 3 };
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const draw = () => {
+    o.innerHTML = `<div class="card"><h2>Thank-you receipt</h2>
+      <div class="stat"><span>Client</span><span>${esc(bName(b))}</span></div>
+      <div class="stat"><span>Paid</span><span><b>${b.paid != null ? money(b.paid) : '—'}</b>${b.pay_method ? ' · ' + esc(b.pay_method) : ''}</span></div>
+      ${b.paid == null ? '<p class="muted" style="font-size:12px">Add the final price paid on the booking to show it here.</p>' : ''}
+      <div class="lbl" style="margin-top:12px">Next-tattoo promotion</div>
+      <div class="seg" id="rc-kind" style="margin-bottom:10px">${[['', 'None'], ['pct', '% off'], ['amt', `${cur || 'Amount'} off`]].map(([k, l]) =>
+        `<button data-k="${k}" class="${st.kind === k ? 'on' : ''}" style="flex:1">${esc(l)}</button>`).join('')}</div>
+      ${st.kind ? `<div class="two">
+        <label class="field"><span>${st.kind === 'pct' ? 'Percent off' : 'Amount off'}</span><div class="unit-in"><input class="in" id="rc-val" type="number" min="0" step="any" value="${st.value}"><em>${st.kind === 'pct' ? '%' : esc(cur)}</em></div></label>
+        <label class="field"><span>Valid for</span><div class="unit-in"><input class="in" id="rc-mo" type="number" min="1" max="24" value="${st.months}"><em>months</em></div></label>
+      </div>` : ''}
+      <div class="qz-acts" style="margin-top:6px">
+        <button class="btn" id="rc-print">Print</button><button class="btn" id="rc-img">Save image</button><button class="btn" id="rc-send">Send</button></div>
+      <button class="btn" id="rc-close" style="width:100%;margin-top:8px">Close</button></div>`;
+  };
+  document.body.appendChild(o); draw();
+  const promo = () => st.kind ? { kind: st.kind, value: +st.value || 0, until: ymd(addDays(new Date(), Math.round(st.months * 30.44))) } : null;
+  const remember = async () => {
+    const p = promo();
+    await DB.run('UPDATE bookings SET promo_kind = ?, promo_value = ?, promo_until = ? WHERE id = ?', [p?.kind || null, p?.value ?? null, p?.until || null, bid]);
+    if (st.kind) await Settings.set('promo_months', String(st.months));
+  };
+  o.addEventListener('input', (e) => { if (e.target.id === 'rc-val') st.value = +e.target.value; if (e.target.id === 'rc-mo') st.months = +e.target.value || 3; });
+  o.addEventListener('click', async (e) => {
+    const k = e.target.closest('[data-k]');
+    if (k) { st.kind = k.dataset.k; if (st.kind === 'amt' && st.value <= 50 && !b.promo_value) st.value = 100; if (st.kind === 'pct' && st.value > 50 && !b.promo_value) st.value = 10; return draw(); }
+    if (e.target.closest('#rc-close')) return o.remove();
+    const act = e.target.closest('#rc-print, #rc-img, #rc-send')?.id; if (!act) return;
+    await remember();
+    const { cv, ref } = await receiptSheet(b, promo());
+    if (act === 'rc-print') return printCanvas(cv);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    const file = new File([blob], `Receipt-${ref}${b.first_name ? '-' + b.first_name.replace(/[^\w-]+/g, '_') : ''}.png`, { type: 'image/png' });
+    try {
+      if (act === 'rc-send' && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Thank you', text: receiptText(b, promo()) });
+      else if (act === 'rc-send' && navigator.share) await navigator.share({ text: receiptText(b, promo()) });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Receipt saved.'); }
+    } catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); }
+  });
+}
+const promoLabel = (p) => p ? (p.kind === 'pct' ? `${+p.value}% off` : `${money(p.value)} off`) + ' your next tattoo' : '';
+function receiptText(b, p) {
+  const studio = Settings.get('studio_name') || Settings.get('artist_name');
+  return `Thank you${b.first_name ? ', ' + b.first_name : ''}!${studio ? ' From ' + studio : ''}\n`
+    + `${b.description || 'Tattoo'}${b.placement ? ' · ' + b.placement : ''}\nPaid: ${b.paid != null ? money(b.paid) : '—'}\n`
+    + (p ? `\nAs a thank you: ${promoLabel(p)}. Valid until ${fmtDay(p.until)}.\n` : '')
+    + '\nFollow your aftercare and reach out if anything looks off.';
+}
+
+// Prints a canvas page (quote sheets, receipts) through #print-area.
+async function printCanvas(cv) {
+  let p = $('#print-area');
+  if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+  p.innerHTML = `<img src="${cv.toDataURL('image/png')}" class="quote-print" alt="">`;
+  await p.querySelector('img').decode().catch(() => {});
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done);
+  window.print();
+}
+
+async function receiptSheet(b, promo) {
+  const W = 1240, H = 1754, M = 90;
+  await Promise.all([document.fonts.load("64px 'Pirata One'"), document.fonts.load('600 28px Inter')]).catch(() => {});
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  const teal = '#14857c', ink = '#1a1a1a', soft = '#6b6b6b';
+  const font = (px, w = 400, disp = false) => disp ? `${px}px 'Pirata One', serif` : `${w} ${px}px Inter, system-ui, sans-serif`;
+  const text = (s, tx, ty, f, col = ink, align = 'left') => { x.font = f; x.fillStyle = col; x.textAlign = align; x.fillText(s, tx, ty); };
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Tattoo studio';
+  let hx = M;
+  const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
+  if (logoUrl) { const img = new Image(); img.src = logoUrl; await img.decode().catch(() => {});
+    if (img.naturalWidth) { const sc = Math.min(220 / img.naturalWidth, 140 / img.naturalHeight); x.drawImage(img, M, 70, img.naturalWidth * sc, img.naturalHeight * sc); hx = M + img.naturalWidth * sc + 30; } }
+  text(studio, hx, 140, font(60, 400, true));
+  [Settings.get('artist_phone'), Settings.get('artist_instagram'), Settings.get('artist_facebook'), Settings.get('artist_tiktok')].filter(Boolean)
+    .forEach((s, i) => text(s.replace(/^https?:\/\/(www\.)?/, ''), W - M, 100 + i * 34, font(22), soft, 'right'));
+  x.fillStyle = teal; x.fillRect(M, 240, W - 2 * M, 6);
+
+  const ref = 'R' + b.start_at.slice(2, 10).replace(/-/g, '') + '-' + b.id;
+  text(`Thank you${b.first_name ? ', ' + b.first_name : ''}!`, M, 370, font(96, 400, true));
+  text('Receipt', M, 425, font(28, 600), soft);
+  [['Receipt no.', ref], ['Session', fmtDay(b.start_at)], ['Client', bName(b)]].forEach(([k, v], i) => {
+    text(k, W - M - 440, 330 + i * 38, font(22, 600), soft); text(v, W - M, 330 + i * 38, font(24, 500), ink, 'right');
+  });
+  let y = 520;
+  const rows = [['Tattoo', b.description || '—'], ['Placement', b.placement || '—'], ['Size', b.size || '—'],
+    ['Time tattooed', b.time_min != null ? fmtH(b.time_min / 60) : '—'], ['Paid by', b.pay_method || '—']];
+  rows.forEach(([k, v], i) => {
+    if (i % 2 === 0) { x.fillStyle = '#f7f4ee'; x.fillRect(M, y, W - 2 * M, 60); }
+    text(k, M + 24, y + 40, font(26, 600), soft); text(String(v).slice(0, 60), M + 300, y + 40, font(28)); y += 60;
+  });
+  y += 50;
+  x.fillStyle = '#eef8f6'; x.strokeStyle = teal; x.lineWidth = 3;
+  x.beginPath(); x.roundRect(M, y, W - 2 * M, 170, 24); x.fill(); x.stroke();
+  text('AMOUNT PAID', M + 40, y + 100, font(26, 700), soft);
+  text(b.paid != null ? money(b.paid) : '—', W - M - 40, y + 118, font(96, 400, true), teal, 'right');
+  y += 170 + 60;
+
+  if (promo) {
+    // A cut-out coupon: dashed border, the offer large, the expiry under it.
+    x.save(); x.setLineDash([16, 12]); x.strokeStyle = ink; x.lineWidth = 3;
+    x.beginPath(); x.roundRect(M + 60, y, W - 2 * M - 120, 290, 28); x.stroke(); x.restore();
+    text('✂', M + 40, y + 20, font(34), soft);
+    text('A THANK YOU FOR NEXT TIME', W / 2, y + 66, font(24, 700), teal, 'center');
+    text(promo.kind === 'pct' ? `${+promo.value}% off` : `${money(promo.value)} off`, W / 2, y + 166, font(104, 400, true), ink, 'center');
+    text('your next tattoo', W / 2, y + 212, font(30, 500), ink, 'center');
+    text(`Valid until ${fmtDay(promo.until)} · receipt ${ref}`, W / 2, y + 258, font(22), soft, 'center');
+    y += 290 + 60;
+  }
+  text('LOOKING AFTER IT', M, y, font(22, 700), teal); y += 44;
+  for (const s of ['Follow your aftercare instructions for the next 2 to 4 weeks.', 'Keep it out of the sun while it heals; use SPF once healed.',
+    'Anything unusual, or a spot that needs a touch-up? Get in touch.'])
+    { text('•  ' + s, M, y, font(26)); y += 40; }
+  const fy = Math.min(H - 60, Math.max(y + 60, H - 130));
+  x.fillStyle = teal; x.fillRect(M, fy - 50, W - 2 * M, 3);
+  text('See you next time!', M, fy, font(44, 400, true));
+  text(ref, W - M, fy - 4, font(20), soft, 'right');
+  return { cv, ref };
+}
+
+/* ---------- Stats ----------
+   Built from completed tattoo bookings (tattoo and touch-up) in the chosen period. */
+const STATS = { period: 'year', from: '', to: '' };
+function statsRange() {
+  const t = new Date(), y = t.getFullYear(), m = t.getMonth();
+  if (STATS.period === 'month') return [ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0))];
+  if (STATS.period === '3m') return [ymd(new Date(y, m - 2, 1)), ymd(new Date(y, m + 1, 0))];
+  if (STATS.period === 'year') return [`${y}-01-01`, `${y}-12-31`];
+  if (STATS.period === 'custom') return [STATS.from || '0000-01-01', STATS.to || '9999-12-31'];
+  return ['0000-01-01', '9999-12-31'];
+}
+async function statsRows() {
+  const [a, z] = statsRange();
+  return DB.all(`SELECT b.*, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
+    WHERE b.completed = 1 AND substr(b.start_at, 1, 10) BETWEEN ? AND ? ORDER BY b.start_at`, [a, z]);
+}
+async function renderStats() {
+  const el = $('#st-body'); if (!el) return;
+  const rows = await statsRows(), [a, z] = statsRange();
+  const n = rows.length, mins = rows.reduce((s, r) => s + (r.time_min || 0), 0), paid = rows.reduce((s, r) => s + (r.paid || 0), 0);
+  const hours = mins / 60, clients = new Set(rows.map(r => r.client_id).filter(Boolean));
+  // Returning = had a completed tattoo before this period started.
+  const before = new Set((await DB.all(`SELECT DISTINCT client_id FROM bookings WHERE completed = 1 AND substr(start_at, 1, 10) < ? AND client_id IS NOT NULL`, [a])).map(r => r.client_id));
+  const returning = [...clients].filter(c => before.has(c)).length;
+  const today = ymd(new Date());
+  const fus = await DB.all(`SELECT b.id, b.start_at, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
+    WHERE b.kind = 'followup' AND substr(b.start_at, 1, 10) >= ? ORDER BY b.start_at LIMIT 5`, [today]);
+  const promos = await DB.all(`SELECT b.id, b.promo_kind, b.promo_value, b.promo_until, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
+    WHERE b.promo_kind IS NOT NULL AND b.promo_until >= ? ORDER BY b.promo_until`, [today]);
+  // Per month, for the chart
+  const months = {}; for (const r of rows) { const k = r.start_at.slice(0, 7); (months[k] ||= { paid: 0, mins: 0, n: 0 }); months[k].paid += r.paid || 0; months[k].mins += r.time_min || 0; months[k].n++; }
+  const keys = Object.keys(months).sort().slice(-12), maxP = Math.max(1, ...keys.map(k => months[k].paid));
+  const count = (f) => { const m = {}; for (const r of rows) { const k = f(r); if (k) m[k] = (m[k] || 0) + 1; } return Object.entries(m).sort((p, q) => q[1] - p[1]).slice(0, 5); };
+  const days = count(r => new Date(r.start_at.slice(0, 10) + 'T00:00').toLocaleDateString(undefined, { weekday: 'long' }));
+  const places = count(r => (r.placement || '').replace(/^(left|right)\s+/i, '').trim().replace(/^./, c => c.toUpperCase()));
+  const kpi = (v, l, tip) => `<div class="kpi" ${tip ? `data-tip="${esc(tip)}"` : ''}><b>${v}</b><span>${l}</span></div>`;
+  el.innerHTML = !n ? `<div class="card empty"><div class="empty-ico">${ICON.quote}</div><div style="font:24px var(--display)">No completed tattoos ${STATS.period === 'all' ? 'yet' : 'in this period'}</div>
+      <div class="muted">Open a tattoo booking, switch on <b>Tattoo completed</b> and add what was paid and how long it took.</div></div>` : `
+    <div class="kpis">
+      ${kpi(n, 'tattoos')}${kpi(fmtH(hours), 'tattooed')}${kpi(money(paid), 'earned')}
+      ${kpi(money(n ? Math.round(paid / n) : 0), 'average tattoo')}${kpi(hours ? money(Math.round(paid / hours)) : '—', 'per hour', 'Earned divided by hours tattooed')}
+      ${kpi(n ? fmtH(hours / n) : '—', 'average session')}${kpi(clients.size, 'clients')}${kpi(`${clients.size - returning} / ${returning}`, 'new / returning', 'Returning clients had a completed tattoo before this period')}
+    </div>
+    ${keys.length > 1 ? `<div class="card"><h2>Earnings by month</h2>
+      <div class="bars">${keys.map(k => `<div class="bar" data-tip="${esc(money(months[k].paid))} · ${fmtH(months[k].mins / 60)} · ${months[k].n} tattoo${months[k].n > 1 ? 's' : ''}">
+        <i style="height:${Math.max(3, months[k].paid / maxP * 100)}%"></i><span>${new Date(k + '-01T00:00').toLocaleDateString(undefined, { month: 'short' })}</span></div>`).join('')}</div></div>` : ''}
+    <div class="grid st-two">
+      <div class="card"><h2>Busiest days</h2>${days.map(([k, v]) => `<div class="stat"><span>${esc(k)}</span><span>${v}</span></div>`).join('') || '<p class="muted">—</p>'}</div>
+      <div class="card"><h2>Top placements</h2>${places.map(([k, v]) => `<div class="stat"><span>${esc(k)}</span><span>${v}</span></div>`).join('') || '<p class="muted">—</p>'}</div>
+    </div>
+    <div class="card"><h2>Tattoos (${n})</h2><div class="st-table"><table>
+      <thead><tr><th>Date</th><th>Client</th><th>Tattoo</th><th>Time</th><th>Paid</th></tr></thead>
+      <tbody>${rows.slice().reverse().map(r => `<tr data-bk="${r.id}"><td>${esc(r.start_at.slice(0, 10))}</td><td>${esc(bName(r))}</td>
+        <td>${esc([r.description, r.placement].filter(Boolean).join(' · ') || '—')}</td><td>${r.time_min != null ? fmtH(r.time_min / 60) : '—'}</td><td>${r.paid != null ? money(r.paid) : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#st-side').innerHTML = `
+    <div class="card"><h2>Follow-ups coming up</h2>${fus.map(f => `<a class="stat" href="#booking-edit/${f.id}"><span>${esc(bName(f))}</span><span>${esc(fmtDay(f.start_at))}</span></a>`).join('') || '<p class="muted" style="margin:0">None booked.</p>'}</div>
+    <div class="card"><h2>Open promotions</h2>${promos.map(p => `<a class="stat" href="#booking-edit/${p.id}"><span>${esc(bName(p))}: ${p.promo_kind === 'pct' ? +p.promo_value + '%' : money(p.promo_value)} off</span><span>until ${esc(p.promo_until)}</span></a>`).join('') || '<p class="muted" style="margin:0">None open.</p>'}</div>`;
+  el.querySelectorAll('[data-bk]').forEach(tr => tr.onclick = () => { location.hash = 'booking-edit/' + tr.dataset.bk; });
+  const rg = $('#st-range'); if (rg) rg.textContent = STATS.period === 'all' ? 'All time' : `${a} to ${z}`;
+}
+async function statsCsv() {
+  const rows = await statsRows();
+  if (!rows.length) return toast('Nothing to export in this period.');
+  const q = (v) => v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const head = ['Date', 'Start', 'Client', 'Type', 'Tattoo', 'Placement', 'Size', 'Quote', 'Paid', 'Paid by', 'Hours tattooed', 'Deposit', 'Promotion', 'Promotion until'];
+  const lines = rows.map(r => [r.start_at.slice(0, 10), r.start_at.slice(11, 16), bName(r), kindLabel(r), r.description, r.placement, r.size, r.quote, r.paid, r.pay_method,
+    r.time_min != null ? +(r.time_min / 60).toFixed(2) : '', r.deposit, r.promo_kind ? (r.promo_kind === 'pct' ? r.promo_value + '%' : r.promo_value) : '', r.promo_until].map(q).join(','));
+  // BOM so Excel reads the file as UTF-8.
+  const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv' });
+  const [a, z] = statsRange(), name = `InkForge-tattoos-${STATS.period === 'all' ? 'all' : a + '_to_' + z}.csv`;
+  const file = new File([blob], name, { type: 'text/csv' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Tattoo stats' });
+    else { const el = document.createElement('a'); el.href = URL.createObjectURL(file); el.download = name; el.click(); setTimeout(() => URL.revokeObjectURL(el.href), 5000); toast('Spreadsheet saved.'); }
+  } catch (e) { if (e.name !== 'AbortError') toast('Could not export: ' + e.message); }
 }
 
 /* ---------- Inventory & rules helpers ---------- */
@@ -4270,7 +4572,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
-  quote: 'more', 'quote-cal': 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
+  quote: 'more', 'quote-cal': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
   reel: 'studio', stencil: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
