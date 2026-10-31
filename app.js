@@ -1303,7 +1303,8 @@ const VIEWS = {
     title: () => 'Stencil',
     render: () => ST.src ? `
       <div class="st-stage">
-        <canvas id="st-canvas"></canvas>
+        <div class="st-view" id="st-view"><canvas id="st-canvas"></canvas>
+          <button class="btn small st-fit" id="st-fit" hidden data-tip="Back to the whole image (or double-tap)">Fit</button></div>
         <div class="st-tools">
           <button class="btn icon-btn" id="st-orig" data-tip="Hold to see the original photo" aria-label="Hold for original"><svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
           <button class="btn icon-btn" id="st-rot" data-tip="Rotate 90°" aria-label="Rotate"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
@@ -1342,7 +1343,8 @@ const VIEWS = {
       const orig = $('#st-orig');
       orig.addEventListener('pointerdown', (e) => { e.preventDefault(); stDraw(true); });
       ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => orig.addEventListener(t, () => stDraw(false)));
-      $('#st-rot').onclick = () => { ST.rot = (ST.rot + 90) % 360; stPrepare(); stRun(); };
+      $('#st-rot').onclick = () => { ST.rot = (ST.rot + 90) % 360; stPrepare(); stRun(); ST.zoom?.reset(); };
+      ST.zoom = stZoom($('#st-view'), $('#st-canvas'), $('#st-fit'));
       $('#st-flip').onclick = (e) => { ST.p.flip = !ST.p.flip; e.currentTarget.classList.toggle('on', ST.p.flip); stPrepare(); stRun(); };
       $('#st-ink').onclick = (e) => { const b = e.target.closest('.ink'); if (!b) return; ST.p.ink = b.dataset.c;
         $('#st-ink').querySelectorAll('.ink').forEach(x => x.classList.toggle('on', x === b)); stDraw(false); stSave(); };
@@ -2504,6 +2506,61 @@ function stRun() {
     $('#st-canvas')?.classList.add('busy');
     ST.worker.postMessage({ id: ++ST.seq, w: ST.w, h: ST.h, rgba: ST.rgba.slice(), p: ST.p });
   }, 90);
+}
+
+// Pinch / wheel to zoom (1x to 8x), drag to pan while zoomed, double-tap or Fit to reset.
+// Only the on-screen view is transformed; the stencil itself and its export are untouched.
+function stZoom(view, cv, fitBtn) {
+  let s = 1, tx = 0, ty = 0, lastTap = 0;
+  const pts = new Map();
+  let g = null;   // gesture start: { s, tx, ty, d, cx, cy }
+  const apply = () => {
+    // Keep the image covering the view: pan is limited to how far the zoomed image overhangs.
+    const mx = cv.offsetWidth * (s - 1) / 2, my = cv.offsetHeight * (s - 1) / 2;
+    tx = Math.max(-mx, Math.min(mx, tx)); ty = Math.max(-my, Math.min(my, ty));
+    cv.style.transform = s === 1 ? '' : `translate(${tx}px, ${ty}px) scale(${s})`;
+    fitBtn.hidden = s === 1;
+  };
+  // Zoom by factor k around a point (px, py) given relative to the canvas centre.
+  const zoomAt = (ns, px, py) => {
+    ns = Math.max(1, Math.min(8, ns));
+    tx = px - (px - tx) * ns / s; ty = py - (py - ty) * ns / s; s = ns; apply();
+  };
+  const centre = (x, y) => { const r = view.getBoundingClientRect(); return [x - r.left - r.width / 2, y - r.top - r.height / 2]; };
+  const snapshot = () => {
+    const p = [...pts.values()];
+    const cx = p.reduce((a, q) => a + q.x, 0) / p.length, cy = p.reduce((a, q) => a + q.y, 0) / p.length;
+    g = { s, tx, ty, cx, cy, d: p.length > 1 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0 };
+  };
+  view.addEventListener('pointerdown', (e) => {
+    if (e.target === fitBtn) return;
+    if (e.pointerType !== 'mouse' && pts.size === 0) {
+      const now = Date.now();
+      if (now - lastTap < 300) { reset(); lastTap = 0; return; }
+      lastTap = now;
+    }
+    try { view.setPointerCapture(e.pointerId); } catch {}
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); snapshot();
+  });
+  view.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const p = [...pts.values()];
+    const cx = p.reduce((a, q) => a + q.x, 0) / p.length, cy = p.reduce((a, q) => a + q.y, 0) / p.length;
+    if (p.length > 1 && g.d) {
+      const ns = Math.max(1, Math.min(8, g.s * Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) / g.d));
+      const [ox, oy] = centre(g.cx, g.cy);
+      s = ns; tx = ox - (ox - g.tx) * ns / g.s + (cx - g.cx); ty = oy - (oy - g.ty) * ns / g.s + (cy - g.cy);
+    } else if (s > 1) { tx = g.tx + cx - g.cx; ty = g.ty + cy - g.cy; }
+    apply();
+  });
+  const up = (e) => { pts.delete(e.pointerId); if (pts.size) snapshot(); };
+  view.addEventListener('pointerup', up); view.addEventListener('pointercancel', up);
+  view.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(s * Math.exp(-e.deltaY * 0.0015), ...centre(e.clientX, e.clientY)); }, { passive: false });
+  view.addEventListener('dblclick', () => reset());
+  const reset = () => { s = 1; tx = ty = 0; apply(); };
+  fitBtn.onclick = reset;
+  return { reset };
 }
 
 function stDraw(original) {
