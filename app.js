@@ -725,7 +725,8 @@ const VIEWS = {
         : await DB.one('SELECT * FROM bookings WHERE id = ?', [+id]);
       if (id === 'new' && Cal.prefillQuote) {
         const q = Cal.prefillQuote;
-        Object.assign(b, { quote: q.quote, deposit: q.deposit, size: q.size || null, duration_min: Math.min(600, Math.max(30, q.duration || 120)) });
+        Object.assign(b, { quote: q.quote, deposit: q.deposit, size: q.size || null, duration_min: Math.min(600, Math.max(30, q.duration || 120)),
+          placement: q.placement || null, description: q.description || null });
       }
       Cal.prefill = Cal.prefillClient = Cal.prefillQuote = null;
       if (!b) { location.hash = 'book'; return; }
@@ -1091,80 +1092,13 @@ const VIEWS = {
   },
   quote: {
     title: () => 'Quote',
-    render() {
-      const cfg = quoteCfg(), i = Q.in, cur = esc(Settings.get('currency'));
-      const num = (k, l, step, unit, tip) => `<label class="field"><span>${l}${tip ? ' ' + help(tip) : ''}</span>
-        <div class="unit-in"><input class="in" type="number" inputmode="decimal" min="0" step="${step}" data-q="${k}" value="${i[k]}"><em>${unit}</em></div></label>`;
-      const rate = (k, l, unit, tip) => `<label class="field"><span>${l} ${help(tip)}</span>
-        <div class="unit-in"><input class="in" type="number" inputmode="decimal" min="0" step="any" data-c="${k}" value="${cfg[k]}"><em>${unit}</em></div></label>`;
-      return `<div id="q-root">
-      <div class="card q-total">
-        <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.08em">Estimate</div>
-        <div class="big" id="q-total">–</div>
-        <div id="q-dep" class="muted"></div>
-        <div id="q-break" class="q-break"></div>
-        <div class="row" style="margin-top:12px">
-          <button class="btn" id="q-copy">Copy / send</button>
-          <button class="btn primary" style="flex:1" id="q-book">Book with this quote</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="seg" id="q-method" style="margin-bottom:14px">
-          <button data-m="hourly" class="${i.method === 'hourly' ? 'on' : ''}" style="flex:1">By time</button>
-          <button data-m="size" class="${i.method === 'size' ? 'on' : ''}" style="flex:1">By size</button>
-        </div>
-        <div class="q-hourly" ${i.method === 'hourly' ? '' : 'hidden'}>${num('hours', 'Estimated time', '0.5', 'hours', 'Your best guess at needle time.')}</div>
-        <div class="two">${num('w', 'Width', '0.5', 'cm')}${num('h', 'Height', '0.5', 'cm')}</div>
-        <label class="field"><span>Detail ${help('Multiplies the price. Set the multipliers under Your rates.')}</span>
-          <div class="seg" id="q-cx">${[['simple', 'Simple'], ['standard', 'Standard'], ['detailed', 'Detailed']].map(([k, l]) =>
-            `<button data-x="${k}" class="${i.cx === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div></label>
-        <div class="row">
-          <label class="toggle" data-tip="Adds the colour surcharge"><input type="checkbox" data-q="colour" ${i.colour ? 'checked' : ''}><span>Colour</span></label>
-          <label class="toggle" data-tip="Ribs, hands, neck, feet, etc. Adds the placement surcharge"><input type="checkbox" data-q="hard" ${i.hard ? 'checked' : ''}><span>Tricky spot</span></label>
-          <label class="toggle" data-tip="Cover-ups and reworks. Adds the cover-up surcharge"><input type="checkbox" data-q="cover" ${i.cover ? 'checked' : ''}><span>Cover-up</span></label>
-        </div>
-      </div>
-      <details class="card guide" style="margin-top:0"><summary>Your rates</summary>
-        <div style="margin-top:12px">
-          <div class="two">${rate('rate', 'Hourly rate', cur || '/h', 'Used by "By time".')}${rate('base', 'Size: base fee', cur, 'Flat setup fee added to "By size" quotes.')}</div>
-          <div class="two">${rate('cm2', 'Size: per cm²', cur, 'Price per square centimetre for "By size".')}${rate('min', 'Shop minimum', cur, 'No quote goes below this.')}</div>
-          <div class="two">${rate('colour', 'Colour surcharge', '%', 'Extra for colour work.')}${rate('hard', 'Tricky spot surcharge', '%', 'Extra for painful or awkward placements.')}</div>
-          <div class="two">${rate('cover', 'Cover-up surcharge', '%', 'Extra for cover-ups and reworks.')}${rate('deposit', 'Deposit', '%', 'Suggested deposit as a share of the quote.')}</div>
-          <div class="two">${rate('simple', 'Simple ×', '×', 'Multiplier for simple pieces, e.g. 0.85.')}${rate('detailed', 'Detailed ×', '×', 'Multiplier for detailed pieces, e.g. 1.35.')}</div>
-          <div class="two">${rate('round', 'Round to', cur, 'Rounds the total to the nearest amount, e.g. 50.')}${rate('perhour', 'Time guess: cm² per hour', 'cm²', 'Used to suggest session length for size quotes.')}</div>
-        </div>
-      </details></div>`;
-    },
-    mount() {
-      const v = $('#q-root');
-      v.addEventListener('input', (e) => {
-        const q = e.target.dataset.q, c = e.target.dataset.c;
-        if (q) Q.in[q] = e.target.type === 'checkbox' ? e.target.checked : +e.target.value;
-        if (c) { const cfg = quoteCfg(); cfg[c] = +e.target.value; Settings.set('quote_cfg', JSON.stringify(cfg)); }
-        quoteUpdate();
-      });
-      $('#q-method').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; Q.in.method = b.dataset.m;
-        $('#q-method').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); $('.q-hourly').hidden = Q.in.method !== 'hourly'; quoteUpdate(); };
-      $('#q-cx').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); Q.in.cx = b.dataset.x;
-        $('#q-cx').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); quoteUpdate(); };
-      $('#q-book').onclick = () => {
-        const r = quoteCalc();
-        Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: Q.in.w && Q.in.h ? `${Q.in.w} x ${Q.in.h} cm` : '', duration: r.minutes };
-        newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00'));
-      };
-      $('#q-copy').onclick = async () => {
-        const r = quoteCalc();
-        const text = `Quote${Settings.get('studio_name') ? ' from ' + Settings.get('studio_name') : ''}\n`
-          + (Q.in.w && Q.in.h ? `Size: ${Q.in.w} x ${Q.in.h} cm\n` : '')
-          + `Estimate: ${money(r.total)}\nDeposit to book: ${money(r.deposit)}\n`
-          + (r.minutes ? `Approx. time: ${fmtDur(r.minutes)}\n` : '') + 'Final price may change with design changes.';
-        try {
-          if (navigator.share) await navigator.share({ text });
-          else { await navigator.clipboard.writeText(text); toast('Quote copied.'); }
-        } catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
-      };
-      quoteUpdate();
-    }
+    render: () => '<div id="qz"></div>',
+    mount() { qzDraw(); }
+  },
+  'quote-cal': {
+    title: () => 'Calibrate quotes',
+    render: () => '<div id="qc"></div>',
+    mount() { qcDraw(); }
   },
   inventory: {
     title: () => 'Inventory',
@@ -2555,41 +2489,338 @@ async function renderPfGrid() {
     </a>`).join('') + '</div>' + `<div class="muted count">${rows.length} piece${rows.length === 1 ? '' : 's'}</div>`;
 }
 
-/* ---------- Quote helpers ----------
-   total = (method price) x detail multiplier x (1 + surcharges), at least the minimum, rounded. */
-const QUOTE_DEFAULTS = { rate: 1000, base: 300, cm2: 6, min: 500, colour: 20, hard: 15, cover: 30, deposit: 30,
-  simple: 0.85, detailed: 1.35, round: 50, perhour: 60 };
-const Q = { in: { method: 'hourly', hours: 2, w: 10, h: 10, cx: 'standard', colour: false, hard: false, cover: false } };
-function quoteCfg() { let c = {}; try { c = JSON.parse(Settings.get('quote_cfg', '{}')); } catch {} return { ...QUOTE_DEFAULTS, ...c }; }
+/* ---------- Quote calculator ----------
+   Estimate the tattooing time, then price that time on the artist's own rate curve.
+     minutes = size area x fill x minutes-per-cm2 (detail) x colour x pain (placement) x style
+             + lettering minutes
+     price   = rate curve(hours per session) x sessions        (breaks are never counted)
+   The rate curve is a few anchor points (e.g. 1 h = R650, 4 h = R2500, 9 h = R4500) joined by
+   straight lines; under the first point is the minimum. Long pieces are split into sessions of at
+   most `sessionMax` hours. Every number lives in Calibrate (settings key quote_v2). */
+const PAIN_COLOURS = ['#b9b9b9', '#e6d27a', '#f0b860', '#ef9a6a', '#e0605a'];
+const PAIN_NAMES = ['Least', 'Low', 'Medium', 'High', 'Most'];
+const QUOTE_V2 = {
+  anchors: [[1, 650], [4, 2500], [9, 4500]],
+  sessionMax: 9, round: 50, deposit: 30, fill: 70, range: 15,
+  speed: [0.25, 0.45, 0.6, 0.9, 1.25],                     // minutes per cm2, detail levels 1-5
+  colour: { black: 1, bg: 1.15, colour: 1.3 },
+  pain: [1, 1.05, 1.12, 1.2, 1.3],                         // pain levels 1-5
+  textMin: 3,                                              // minutes per letter at 2 cm letter height
+  placements: [
+    ['Head', 'Head & neck', 4], ['Face', 'Head & neck', 5], ['Neck', 'Head & neck', 4],
+    ['Shoulder', 'Arms & hands', 2], ['Upper arm', 'Arms & hands', 1], ['Inner bicep', 'Arms & hands', 3],
+    ['Elbow', 'Arms & hands', 5], ['Back of elbow', 'Arms & hands', 4], ['Forearm', 'Arms & hands', 2],
+    ['Wrist', 'Arms & hands', 4], ['Hand', 'Arms & hands', 4], ['Fingers', 'Arms & hands', 5], ['Armpit', 'Arms & hands', 5],
+    ['Collarbone', 'Front', 4], ['Chest', 'Front', 3], ['Breast', 'Front', 3], ['Sternum', 'Front', 5],
+    ['Ribs', 'Front', 5], ['Stomach', 'Front', 4], ['Hip', 'Front', 4], ['Genitals', 'Front', 5],
+    ['Upper back', 'Back', 2], ['Spine', 'Back', 5], ['Lower back', 'Back', 3], ['Bottom', 'Back', 2],
+    ['Outer thigh', 'Legs & feet', 1], ['Thigh', 'Legs & feet', 2], ['Inner thigh', 'Legs & feet', 4],
+    ['Back of thigh', 'Legs & feet', 2], ['Knee', 'Legs & feet', 5], ['Back of knee', 'Legs & feet', 5],
+    ['Shin', 'Legs & feet', 4], ['Calf', 'Legs & feet', 2], ['Outer calf', 'Legs & feet', 1],
+    ['Inner calf', 'Legs & feet', 3], ['Ankle', 'Legs & feet', 4], ['Foot', 'Legs & feet', 5]
+  ],
+  styles: [
+    ['Realism', 1.3], ['Surrealism', 1.3], ['Portrait', 1.4], ['Sketch / Illustrative', 1], ['Abstract', 1],
+    ['Anime and Manga', 1.1], ['Comic / Cartoon', 1], ['Cyberpunk / Futuristic', 1.15], ['Watercolor', 1.15],
+    ['Trash Polka', 1.1], ['Biomechanical', 1.3], ['New School', 1.1], ['Old School', 0.95], ['Japanese', 1.15],
+    ['Blackwork', 1], ['Geometric', 1.1], ['Fine Line', 0.9], ['Script / Text', 0.9], ['Polynesian / Tribal', 1],
+    ['Dotwork / Pointillism', 1.25]
+  ],
+  fonts: [['Calligraphy', 1.2], ['Handwritten', 1], ['Gothic / Old English', 1.25], ['Foreign script', 1.2],
+    ['Techno', 1], ['Typewriter', 1], ['Serif / Sans serif', 0.9], ['Brush / Stencil', 1.05], ['Western', 1.1], ['Fancy', 1.2]]
+};
+const DETAIL_LEVELS = [
+  ['Linework', 'Clean outlines only, no shading.'],
+  ['Simple shading', 'Outlines with light, soft shading.'],
+  ['Bold blackwork', 'Solid black fills and strong contrast.'],
+  ['Detailed', 'Smooth realism-style shading, texture and highlights.'],
+  ['Full scene', 'Detailed subject plus a background or extra elements.']
+];
+const COLOUR_MODES = [['black', 'Black', 'Black ink only'], ['bg', 'Black & grey', 'Black with grey wash shading'], ['colour', 'Colour', 'Full colour']];
 
-function quoteCalc() {
-  const c = quoteCfg(), i = Q.in, lines = [];
-  const area = (i.w || 0) * (i.h || 0);
-  let p;
-  if (i.method === 'hourly') { p = (i.hours || 0) * c.rate; lines.push([`${i.hours || 0} h × ${money(c.rate)}`, p]); }
-  else { p = c.base + area * c.cm2; lines.push([`Base fee`, c.base], [`${area} cm² × ${money(c.cm2)}`, area * c.cm2]); }
-  const mult = i.cx === 'simple' ? c.simple : i.cx === 'detailed' ? c.detailed : 1;
-  if (mult !== 1) { lines.push([`${i.cx[0].toUpperCase() + i.cx.slice(1)} × ${mult}`, p * mult - p]); p *= mult; }
-  let pct = 0;
-  if (i.colour) { pct += c.colour; lines.push([`Colour +${c.colour}%`, p * c.colour / 100]); }
-  if (i.hard) { pct += c.hard; lines.push([`Tricky spot +${c.hard}%`, p * c.hard / 100]); }
-  if (i.cover) { pct += c.cover; lines.push([`Cover-up +${c.cover}%`, p * c.cover / 100]); }
-  p *= 1 + pct / 100;
-  let minHit = false;
-  if (p < c.min) { p = c.min; minHit = true; }
-  const total = c.round > 0 ? Math.round(p / c.round) * c.round : Math.round(p);
-  const deposit = c.round > 0 ? Math.round(total * c.deposit / 100 / c.round) * c.round : Math.round(total * c.deposit / 100);
-  const minutes = i.method === 'hourly' ? Math.round((i.hours || 0) * 60 / 30) * 30
-    : c.perhour > 0 ? Math.max(30, Math.round(area / c.perhour * mult * 2) * 30) : 0;
-  return { total, deposit, minutes, lines, minHit };
+function qCfg() {
+  let c = {}; try { c = JSON.parse(Settings.get('quote_v2', '{}')); } catch {}
+  return { ...QUOTE_V2, ...c, colour: { ...QUOTE_V2.colour, ...c.colour } };
+}
+const qSave = (cfg) => Settings.set('quote_v2', JSON.stringify(cfg));
+
+// The wizard's answers, kept while the app is open.
+const QZ = { step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null };
+const QZ_STEPS = ['Placement', 'Size', 'Colour', 'Detail', 'Style', 'Text', 'Quote'];
+
+// Price for one session of h hours on the rate curve.
+function qCurve(c, h) {
+  const a = [...c.anchors].filter(x => x[0] > 0).sort((x, y) => x[0] - y[0]);
+  if (!a.length) return 0;
+  if (h <= a[0][0]) return a[0][1];
+  for (let i = 1; i < a.length; i++) if (h <= a[i][0]) {
+    const [h0, p0] = a[i - 1], [h1, p1] = a[i];
+    return p0 + (p1 - p0) * (h - h0) / (h1 - h0);
+  }
+  const [hl, pl] = a[a.length - 1], [hp, pp] = a.length > 1 ? a[a.length - 2] : [0, 0];
+  return pl + (pl - pp) / ((hl - hp) || 1) * (h - hl);
+}
+const qRound = (c, v) => c.round > 0 ? Math.round(v / c.round) * c.round : Math.round(v);
+
+function qCalc(q = QZ) {
+  const c = qCfg(), lines = [];
+  const pl = c.placements.find(p => p[0] === q.place), pain = pl ? pl[2] : 3;
+  const st = c.styles.find(s => s[0] === q.style), font = c.fonts.find(f => f[0] === q.font);
+  const area = q.w * q.h, inked = area * c.fill / 100;
+  let mins = inked * c.speed[q.detail - 1];
+  lines.push([`${q.w} × ${q.h} cm, ${c.fill}% filled, ${DETAIL_LEVELS[q.detail - 1][0].toLowerCase()}`, mins]);
+  const f = (label, k) => { if (k !== 1) { lines.push([`${label} ×${k}`, mins * (k - 1)]); mins *= k; } };
+  if (q.colour) f(COLOUR_MODES.find(m => m[0] === q.colour)[1], c.colour[q.colour]);
+  if (pl) f(`${q.place} (${PAIN_NAMES[pain - 1].toLowerCase()} pain)`, c.pain[pain - 1]);
+  if (st) f(q.style, st[1]);
+  const letters = q.text.replace(/\s/g, '').length;
+  if (letters) {
+    const t = letters * c.textMin * (q.letter / 2) * (font ? font[1] : 1);
+    lines.push([`Lettering: ${letters} letters${q.font ? ', ' + q.font.toLowerCase() : ''}`, t]); mins += t;
+  }
+  const est = Math.max(0.5, Math.round(mins / 60 * 4) / 4);       // to the nearest quarter hour
+  const hours = q.hours ?? est;
+  const sessions = Math.max(1, Math.ceil(hours / c.sessionMax - 1e-9));
+  const per = hours / sessions;
+  const total = qRound(c, qCurve(c, per) * sessions);
+  const lo = qRound(c, qCurve(c, hours * (1 - c.range / 100) / sessions) * sessions);
+  const hi = qRound(c, qCurve(c, hours * (1 + c.range / 100) / sessions) * sessions);
+  return { c, pain, est, hours, sessions, per, total, lo, hi, deposit: qRound(c, total * c.deposit / 100), lines, minutes: Math.round(hours * 60) };
+}
+const fmtH = (h) => { const m = Math.round(h * 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`; };
+
+/* Detail previews: one rose drawn five ways, in the chosen ink. Placeholders until real drawings exist. */
+function detailSvg(level, colour) {
+  const col = colour === 'colour', grey = colour !== 'black';
+  const ink = '#141414', petal = col ? '#c0392b' : grey ? '#6b6b6b' : '#141414', petalL = col ? '#ef8a80' : grey ? '#c9c9c9' : '#141414';
+  const leaf = col ? '#2e7d32' : grey ? '#5a5a5a' : '#141414', leafL = col ? '#9ccc65' : grey ? '#bdbdbd' : '#141414';
+  const id = 'r' + level + colour;
+  const bud = 'M60 26 C80 26 88 44 84 58 C80 74 66 80 60 80 C52 80 38 74 36 58 C32 44 40 26 60 26Z';
+  const inner = 'M60 38 q13 2 11 15 q-2 11 -13 10 q-9 -1 -8 -10 q1 -7 8 -6 M48 52 q2 14 12 16 q12 -2 14 -16 M42 62 q8 14 18 14 q12 0 18 -14';
+  const stem = 'M60 80 q-5 16 1 34', leaves = 'M61 96 q16 -11 27 -4 q-12 13 -27 4Z M59 105 q-16 -11 -27 -4 q12 13 27 4Z';
+  const defs = `<defs><radialGradient id="${id}p" cx=".4" cy=".35" r=".75"><stop offset="0" stop-color="${petalL}"/><stop offset="1" stop-color="${petal}"/></radialGradient>
+    <linearGradient id="${id}l" x1="0" x2="1"><stop offset="0" stop-color="${leafL}"/><stop offset="1" stop-color="${leaf}"/></linearGradient>
+    <linearGradient id="${id}s" x1="0" x2="1"><stop offset=".5" stop-color="${petalL}" stop-opacity=".9"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>`;
+  let art = '';
+  if (level === 1) art = `<g fill="none" stroke="${ink}" stroke-width="1.6" stroke-linecap="round"><path d="${bud}"/><path d="${inner}"/><path d="${stem}"/><path d="${leaves}"/></g>`;
+  if (level === 2) art = `<path d="${bud}" fill="url(#${id}s)"/><path d="${leaves}" fill="${leafL}" opacity=".6"/>
+    <g fill="none" stroke="${ink}" stroke-width="1.6" stroke-linecap="round"><path d="${bud}"/><path d="${inner}"/><path d="${stem}"/><path d="${leaves}"/></g>`;
+  if (level === 3) art = `<path d="${bud}" fill="${ink}"/><path d="${leaves}" fill="${ink}"/><path d="${stem}" stroke="${ink}" stroke-width="4" fill="none"/>
+    <path d="${inner}" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>`;
+  if (level >= 4) art = `<path d="${bud}" fill="url(#${id}p)"/><path d="${leaves}" fill="url(#${id}l)"/>
+    <path d="${stem}" stroke="${leaf}" stroke-width="3" fill="none"/>
+    <path d="${inner}" stroke="${ink}" stroke-width="1.1" fill="none" stroke-linecap="round" opacity=".8"/>
+    <g stroke="${ink}" stroke-width=".6" opacity=".35">${Array.from({ length: 9 }, (_, i) => `<path d="M${40 + i * 3} ${60 + i} l6 -6"/>`).join('')}</g>
+    <path d="M52 36 q6 -4 12 -2" stroke="#fff" stroke-width="2" fill="none" opacity=".8" stroke-linecap="round"/>
+    <path d="M70 98 q6 -3 10 -3" stroke="#fff" stroke-width="1.2" fill="none" opacity=".7"/>`;
+  const bg = level === 5 ? `<circle cx="60" cy="56" r="46" fill="none" stroke="${ink}" stroke-width="1.2"/>
+    <g stroke="${col ? '#e0a33a' : ink}" stroke-width="1" opacity=".55">${Array.from({ length: 16 }, (_, i) => { const a = i * Math.PI / 8;
+      return `<path d="M${60 + Math.cos(a) * 49} ${56 + Math.sin(a) * 49} L${60 + Math.cos(a) * 57} ${56 + Math.sin(a) * 57}"/>`; }).join('')}</g>
+    <circle cx="60" cy="56" r="46" fill="${col ? '#fdf1d6' : '#ececec'}" opacity=".6"/>
+    <g fill="${ink}" opacity=".5">${[[24, 30], [96, 28], [20, 80], [100, 84], [30, 104], [92, 108]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.4"/>`).join('')}</g>` : '';
+  return `<svg viewBox="0 0 120 120" aria-hidden="true">${defs}${bg}${art}</svg>`;
 }
 
-function quoteUpdate() {
-  const r = quoteCalc();
-  $('#q-total').textContent = money(r.total);
-  $('#q-dep').textContent = `Deposit ${money(r.deposit)}${r.minutes ? ' · about ' + fmtDur(r.minutes) : ''}`;
-  $('#q-break').innerHTML = r.lines.map(([l, v]) => `<div><span>${esc(l)}</span><span>${v >= 0 ? '' : '−'}${money(Math.abs(Math.round(v)))}</span></div>`).join('')
-    + (r.minHit ? '<div class="q-min"><span>Shop minimum applied</span></div>' : '');
+/* Wizard: one question per step, Back / Next, with a live estimate once there is enough to go on. */
+function qzDraw() {
+  const el = $('#qz'); if (!el) return;
+  const c = qCfg(), s = QZ.step, cur = Settings.get('currency');
+  const done = (i) => [QZ.place, true, QZ.colour, true, true, true, true][i];
+  const steps = `<div class="qz-steps">${QZ_STEPS.map((n, i) => `<button data-go="${i}" class="${i === s ? 'on' : ''} ${i <= QZ.seen ? 'seen' : ''}" ${i <= QZ.seen ? '' : 'disabled'}>
+      <i>${i < s && done(i) ? '✓' : i + 1}</i><span>${n}</span></button>`).join('')}</div>`;
+  let body = '';
+  if (s === 0) {
+    const groups = [...new Set(c.placements.map(p => p[1]))];
+    body = `<h2>Where is the tattoo?</h2>
+      <button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button>
+      <div class="seg" id="qz-side" style="margin:10px 0">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right']].map(([k, l]) =>
+        `<button data-side="${k}" class="${QZ.side === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+      ${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="qz-chips">${c.placements.filter(p => p[1] === g).map(([n, , pn]) =>
+        `<button data-place="${esc(n)}" class="chip qz-chip ${QZ.place === n ? 'on' : ''}"><b style="background:${PAIN_COLOURS[pn - 1]}" title="${PAIN_NAMES[pn - 1]} pain"></b>${esc(n)}</button>`).join('')}</div>`).join('')}
+      <div class="qz-legend">${PAIN_COLOURS.map((col, i) => `<span><b style="background:${col}"></b>${PAIN_NAMES[i]}</span>`).join('')}</div>`;
+  } else if (s === 1) {
+    const presets = [['Small', 5, 5], ['Palm', 10, 10], ['Forearm', 12, 22], ['Half sleeve', 25, 35], ['Back piece', 40, 55], ['Full sleeve', 30, 65]];
+    const sc = 120 / Math.max(QZ.w, QZ.h, 20);
+    body = `<h2>How big?</h2><p class="muted" style="margin-top:0">The box the design fits in. Calibrate sets how much of that box is actually inked.</p>
+      <div class="qz-chips" style="margin-bottom:12px">${presets.map(([n, w, h]) => `<button class="chip qz-chip ${QZ.w === w && QZ.h === h ? 'on' : ''}" data-preset="${w}x${h}">${n}</button>`).join('')}</div>
+      <div class="qz-size"><div class="qz-box" style="width:${QZ.w * sc}px;height:${QZ.h * sc}px"><span>${QZ.w} × ${QZ.h} cm</span></div></div>
+      ${reelSlider('data-qz', 'w', 'Width', 1, 70, 0.5, QZ.w, QZ.w + ' cm')}
+      ${reelSlider('data-qz', 'h', 'Height', 1, 70, 0.5, QZ.h, QZ.h + ' cm')}`;
+  } else if (s === 2) {
+    body = `<h2>Colour</h2><div class="qz-cards">${COLOUR_MODES.map(([k, l, d]) => `<button class="qz-card ${QZ.colour === k ? 'on' : ''}" data-colour="${k}">
+      <span class="qz-sw sw-${k}"></span><b>${l}</b><span class="muted">${d}</span></button>`).join('')}</div>`;
+  } else if (s === 3) {
+    body = `<h2>How detailed?</h2>
+      <div class="qz-detail">${detailSvg(QZ.detail, QZ.colour || 'black')}</div>
+      <div class="qz-dname"><b>${DETAIL_LEVELS[QZ.detail - 1][0]}</b><span class="muted">${DETAIL_LEVELS[QZ.detail - 1][1]}</span></div>
+      <input type="range" min="1" max="5" step="1" value="${QZ.detail}" data-qz="detail" class="qz-range" aria-label="Detail level">
+      <div class="qz-thumbs">${DETAIL_LEVELS.map((d, i) => `<button data-detail="${i + 1}" class="${QZ.detail === i + 1 ? 'on' : ''}" aria-label="${d[0]}">${detailSvg(i + 1, QZ.colour || 'black')}</button>`).join('')}</div>`;
+  } else if (s === 4) {
+    body = `<h2>Style</h2><p class="muted" style="margin-top:0">Not sure? Pick the closest, or skip.</p>
+      <div class="qz-chips">${c.styles.map(([n]) => `<button class="chip qz-chip ${QZ.style === n ? 'on' : ''}" data-style="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
+  } else if (s === 5) {
+    body = `<h2>Any lettering?</h2><p class="muted" style="margin-top:0">Optional. Skip if there's no text.</p>
+      <label class="field"><span>Text</span><input class="in" data-qzt="text" value="${esc(QZ.text)}" placeholder="e.g. Family first"></label>
+      ${QZ.text ? `<div class="lbl">Font style</div><div class="qz-chips">${c.fonts.map(([n]) => `<button class="chip qz-chip ${QZ.font === n ? 'on' : ''}" data-font="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+      <label class="field" style="margin-top:12px"><span>Font name ${help('Browse fonts on dafont.com, then type the name or paste the link here.')}</span>
+        <input class="in" data-qzt="fontName" value="${esc(QZ.fontName)}" placeholder="Font name or link"></label>
+      <a class="btn small" href="https://www.dafont.com/" target="_blank" rel="noopener" style="margin-bottom:12px">Browse fonts on dafont.com ↗</a>
+      ${reelSlider('data-qz', 'letter', 'Letter height', 0.5, 10, 0.5, QZ.letter, QZ.letter + ' cm')}
+      <p class="muted" style="font-size:12px">Double-check the spelling with the client.</p>` : ''}`;
+  } else {
+    const r = qCalc();
+    body = `<div class="qz-result">
+        <div class="muted qz-k">Estimate</div>
+        <div class="qz-price">${money(r.total)}</div>
+        <div class="muted">Range ${money(r.lo)} – ${money(r.hi)}</div>
+        <div class="qz-facts"><span><b>${fmtH(r.hours)}</b>tattoo time</span><span><b>${r.sessions}</b>session${r.sessions > 1 ? 's' : ''}</span><span><b>${money(r.deposit)}</b>deposit</span></div>
+      </div>
+      ${reelSlider('data-qz', 'hours', `Adjust time ${help('Your call overrides the estimate. The price follows your rate curve.')}`, 0.5, Math.max(20, Math.ceil(r.est * 2)), 0.25, r.hours, fmtH(r.hours) + (QZ.hours != null ? ' (yours)' : ''))}
+      ${QZ.hours != null ? '<button class="link" id="qz-reset" style="margin:-4px 0 10px">Use the estimate again</button>' : ''}
+      ${r.sessions > 1 ? `<p class="muted" style="font-size:13px">${r.sessions} sessions of about ${fmtH(r.per)}, each priced on your rates. Breaks are not included.</p>` : ''}
+      <details class="qz-why"><summary>How it was worked out</summary>
+        ${r.lines.map(([l, m]) => `<div class="stat"><span>${esc(l)}</span><span>${m >= 0 ? '+' : '−'}${Math.round(Math.abs(m))} min</span></div>`).join('')}
+        <div class="stat"><span><b>Estimated time</b></span><span><b>${fmtH(r.est)}</b></span></div>
+      </details>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="qz-share">Send quote</button>
+        <button class="btn primary" id="qz-book" style="flex:1">Book with this quote</button>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="btn small" id="qz-new">Start over</button>
+        <a class="btn small" href="#quote-cal" style="margin-left:auto">Calibrate</a></div>`;
+  }
+  const r = s >= 1 && s < 6 && QZ.place ? qCalc() : null;
+  el.innerHTML = `${steps}<div class="card qz-card-main">${body}</div>
+    ${s < 6 ? `<div class="form-foot qz-foot">
+      ${r ? `<div class="qz-live"><span>≈ <b>${money(r.total)}</b> · ${fmtH(r.hours)}</span><span class="muted">so far</span></div>` : ''}
+      <div class="row">
+      <button class="btn" id="qz-back" ${s ? '' : 'disabled'}>Back</button>
+      ${s === 4 || s === 5 ? `<button class="btn" id="qz-skip">Skip</button>` : ''}
+      <button class="btn primary" id="qz-next" style="flex:1" ${(s === 0 && !QZ.place) || (s === 2 && !QZ.colour) ? 'disabled' : ''}>${s === 5 ? 'See quote' : 'Next'}</button></div></div>`
+      : ''}
+    ${s === 0 ? '<a class="btn small" href="#quote-cal" style="margin-top:10px">Calibrate rates, pain and speeds</a>' : ''}`;
+  qzBind(el);
+}
+
+function qzGo(n) { QZ.step = Math.max(0, Math.min(6, n)); QZ.seen = Math.max(QZ.seen, QZ.step); qzDraw(); scrollTo(0, 0); }
+
+function qzBind(el) {
+  const next = $('#qz-next'), back = $('#qz-back'), skip = $('#qz-skip');
+  if (next) next.onclick = () => qzGo(QZ.step + 1);
+  if (back) back.onclick = () => qzGo(QZ.step - 1);
+  if (skip) skip.onclick = () => { if (QZ.step === 4) QZ.style = ''; if (QZ.step === 5) Object.assign(QZ, { text: '', font: '', fontName: '' }); qzGo(QZ.step + 1); };
+  el.onclick = (e) => {
+    const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    if (d('go') != null && !t.closest('[data-go]').disabled) return qzGo(+d('go'));
+    if (d('place') != null) { QZ.place = d('place'); return qzDraw(); }
+    if (d('side')) { QZ.side = d('side'); return qzDraw(); }
+    if (d('preset')) { const [w, h] = d('preset').split('x').map(Number); Object.assign(QZ, { w, h, hours: null }); return qzDraw(); }
+    if (d('colour')) { QZ.colour = d('colour'); QZ.hours = null; return qzDraw(); }
+    if (d('detail')) { QZ.detail = +d('detail'); QZ.hours = null; return qzDraw(); }
+    if (d('style') != null) { QZ.style = QZ.style === d('style') ? '' : d('style'); QZ.hours = null; return qzDraw(); }
+    if (d('font') != null) { QZ.font = QZ.font === d('font') ? '' : d('font'); QZ.hours = null; return qzDraw(); }
+    if (t.closest('#qz-chart')) return viewImage('img/pain-chart.png');
+    if (t.closest('#qz-reset')) { QZ.hours = null; return qzDraw(); }
+    if (t.closest('#qz-new')) { Object.assign(QZ, { step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
+    if (t.closest('#qz-book')) {
+      const r = qCalc();
+      Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
+        placement: qzPlacement(), description: qzSummary() };
+      return newBooking(ymd(new Date()) + 'T' + Settings.get('day_start', '10:00'));
+    }
+    if (t.closest('#qz-share')) return qzShare();
+  };
+  // Sliders: update the value label at once, redraw the preview parts when the finger lifts.
+  el.oninput = (e) => {
+    const k = e.target.dataset.qz, tk = e.target.dataset.qzt;
+    if (tk) { QZ[tk] = e.target.value; if (tk === 'text') QZ.hours = null; return; }
+    if (!k) return;
+    QZ[k] = +e.target.value; if (k !== 'hours') QZ.hours = null;
+    const b = e.target.closest('.slider')?.querySelector('b');
+    if (b) b.textContent = k === 'hours' ? fmtH(QZ.hours) + ' (yours)' : QZ[k] + ' cm';
+    if (k === 'w' || k === 'h') { const sc = 120 / Math.max(QZ.w, QZ.h, 20), box = $('.qz-box');
+      box.style.width = QZ.w * sc + 'px'; box.style.height = QZ.h * sc + 'px'; box.firstElementChild.textContent = `${QZ.w} × ${QZ.h} cm`; }
+    if (k === 'detail') {
+      $('.qz-detail').innerHTML = detailSvg(QZ.detail, QZ.colour || 'black');
+      $('.qz-dname').innerHTML = `<b>${DETAIL_LEVELS[QZ.detail - 1][0]}</b><span class="muted">${DETAIL_LEVELS[QZ.detail - 1][1]}</span>`;
+      el.querySelectorAll('.qz-thumbs button').forEach((x, i) => x.classList.toggle('on', i + 1 === QZ.detail));
+    }
+    const live = $('.qz-live b'); if (live) live.textContent = money(qCalc().total);
+  };
+  el.onchange = (e) => { if (e.target.dataset.qz === 'hours' || e.target.dataset.qzt === 'text') qzDraw(); };
+}
+
+const qzPlacement = () => QZ.place ? `${QZ.side === 'L' ? 'Left ' : QZ.side === 'R' ? 'Right ' : ''}${QZ.place.toLowerCase()}`.replace(/^./, m => m.toUpperCase()) : '';
+const qzSummary = () => [QZ.style, COLOUR_MODES.find(m => m[0] === QZ.colour)?.[1].toLowerCase(), DETAIL_LEVELS[QZ.detail - 1][0].toLowerCase(),
+  QZ.text && `text "${QZ.text}"${QZ.fontName ? ' in ' + QZ.fontName : ''}`].filter(Boolean).join(', ');
+
+async function qzShare() {
+  const r = qCalc(), studio = Settings.get('studio_name') || Settings.get('artist_name');
+  const text = `Tattoo quote${studio ? ' from ' + studio : ''}\n`
+    + `${qzPlacement()} · ${QZ.w} x ${QZ.h} cm\n${qzSummary()}\n\n`
+    + `Estimate: ${money(r.total)} (about ${fmtH(r.hours)}${r.sessions > 1 ? ` over ${r.sessions} sessions` : ''})\n`
+    + `Deposit to book: ${money(r.deposit)}\n\nFinal price may change with design changes.`;
+  try {
+    if (navigator.share) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); toast('Quote copied.'); }
+  } catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
+}
+
+/* Calibrate: every number the calculator uses, grouped, with a live sample so changes make sense. */
+function qcDraw() {
+  const el = $('#qc'); if (!el) return;
+  const c = qCfg(), cur = Settings.get('currency') || '';
+  const num = (path, v, step = 'any', w = '') => `<input class="in qc-n" type="number" inputmode="decimal" step="${step}" value="${v}" data-p="${path}" ${w}>`;
+  const sample = (h) => money(qRound(c, qCurve(c, h)));
+  el.innerHTML = `
+    <div class="card"><h2>Your rates ${help('Price for tattooing time, breaks not included. Between points the price runs in a straight line; under the first point is your minimum.')}</h2>
+      <div class="qc-grid qc-anchors"><span class="lbl">Hours</span><span class="lbl">Price${cur ? ' (' + esc(cur) + ')' : ''}</span><span></span>
+        ${c.anchors.map(([h, p], i) => `${num(`anchors.${i}.0`, h, '0.25')}${num(`anchors.${i}.1`, p, '10')}
+          <button class="mini del" data-rm="${i}" aria-label="Remove" ${c.anchors.length > 1 ? '' : 'disabled'}>&times;</button>`).join('')}</div>
+      <button class="btn small" id="qc-add" style="margin-top:8px">+ Add a point</button>
+      <div class="qc-sample">${[1, 2, 3, 4, 6, 9].map(h => `<span><b>${sample(h)}</b>${h} h</span>`).join('')}</div>
+      <div class="two" style="margin-top:12px">
+        <label class="field"><span>Longest session ${help('Pieces longer than this are split into sessions, each priced on the rates above.')}</span><div class="unit-in">${num('sessionMax', c.sessionMax, '0.5')}<em>h</em></div></label>
+        <label class="field"><span>Round to</span><div class="unit-in">${num('round', c.round, '10')}<em>${esc(cur)}</em></div></label>
+        <label class="field"><span>Deposit</span><div class="unit-in">${num('deposit', c.deposit, '5')}<em>%</em></div></label>
+        <label class="field"><span>Range shown ${help('The ± range under the estimate.')}</span><div class="unit-in">${num('range', c.range, '5')}<em>%</em></div></label>
+      </div></div>
+    <div class="card"><h2>Speed ${help('How many minutes one square centimetre takes at each detail level. Fill is how much of the size box is actually inked.')}</h2>
+      <label class="field"><span>Design fill of the size box</span><div class="unit-in">${num('fill', c.fill, '5')}<em>%</em></div></label>
+      ${DETAIL_LEVELS.map(([n], i) => `<div class="qc-row"><span class="qc-ic">${detailSvg(i + 1, 'bg')}</span><span>${n}</span>
+        <div class="unit-in">${num(`speed.${i}`, c.speed[i], '0.05')}<em>min/cm²</em></div></div>`).join('')}
+      <p class="muted" style="font-size:12px">A 10 × 10 cm ${DETAIL_LEVELS[2][0].toLowerCase()} piece ≈ ${fmtH(100 * c.fill / 100 * c.speed[2] / 60)}.</p></div>
+    <div class="card"><h2>Colour</h2>${COLOUR_MODES.map(([k, l]) => `<div class="qc-row"><span class="qz-sw sw-${k}"></span><span>${l}</span>
+        <div class="unit-in">${num(`colour.${k}`, c.colour[k], '0.05')}<em>× time</em></div></div>`).join('')}</div>
+    <div class="card"><h2>Pain and difficulty ${help('Each placement has a pain level; each level adds time. Change a placement\'s level below.')}</h2>
+      ${PAIN_NAMES.map((n, i) => `<div class="qc-row"><b class="qc-dot" style="background:${PAIN_COLOURS[i]}"></b><span>${n}</span>
+        <div class="unit-in">${num(`pain.${i}`, c.pain[i], '0.05')}<em>× time</em></div></div>`).join('')}
+      <details class="guide"><summary>Placements (${c.placements.length})</summary>
+        ${c.placements.map(([n, g, p], i) => `<div class="qc-row"><b class="qc-dot" style="background:${PAIN_COLOURS[p - 1]}"></b><span>${esc(n)} <span class="muted" style="font-size:12px">${esc(g)}</span></span>
+          <select class="in qc-n" data-p="placements.${i}.2">${PAIN_NAMES.map((pn, j) => `<option value="${j + 1}" ${p === j + 1 ? 'selected' : ''}>${pn}</option>`).join('')}</select></div>`).join('')}
+      </details></div>
+    <div class="card"><h2>Styles ${help('Adds or removes time for a style. 1 = no change, 1.3 = 30% longer.')}</h2>
+      ${c.styles.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`styles.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</div>
+    <div class="card"><h2>Lettering</h2>
+      <label class="field"><span>Minutes per letter ${help('At 2 cm letter height. Bigger letters scale up.')}</span><div class="unit-in">${num('textMin', c.textMin, '0.5')}<em>min</em></div></label>
+      ${c.fonts.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`fonts.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</div>
+    <button class="btn danger" id="qc-reset" style="margin:4px 0 24px">Reset all to defaults</button>`;
+  el.oninput = (e) => {
+    const p = e.target.dataset.p; if (!p) return;
+    const cfg = qCfg(), keys = p.split('.'), v = +e.target.value;
+    let o = cfg; for (const k of keys.slice(0, -1)) o = o[k];
+    o[keys[keys.length - 1]] = v;
+    qSave(cfg);
+    if (p.startsWith('anchors') || p === 'round') { const c2 = qCfg(); el.querySelectorAll('.qc-sample b').forEach((b, i) => b.textContent = money(qRound(c2, qCurve(c2, [1, 2, 3, 4, 6, 9][i])))); }
+  };
+  el.onchange = (e) => { if (e.target.tagName === 'SELECT') qcDraw(); };
+  el.onclick = async (e) => {
+    const cfg = qCfg();
+    if (e.target.closest('#qc-add')) { const last = cfg.anchors[cfg.anchors.length - 1] || [1, 500]; cfg.anchors.push([last[0] + 2, last[1] + 1000]); await qSave(cfg); return qcDraw(); }
+    const rm = e.target.closest('[data-rm]');
+    if (rm) { cfg.anchors.splice(+rm.dataset.rm, 1); await qSave(cfg); return qcDraw(); }
+    if (e.target.closest('#qc-reset') && confirm('Reset every quote setting to the defaults?')) { await Settings.set('quote_v2', ''); qcDraw(); toast('Defaults restored.'); }
+  };
 }
 
 /* ---------- Inventory & rules helpers ---------- */
@@ -3840,7 +4071,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
-  quote: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
+  quote: 'more', 'quote-cal': 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
   reel: 'studio', stencil: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
