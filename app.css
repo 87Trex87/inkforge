@@ -678,3 +678,8 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 /* Receipt dialog: aftercare toggle with its form picker */
 .rc-after { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 .rc-after .in { flex: 1; min-width: 160px; }
+
+/* Short calendar blocks: name, time and details side by side on one line, cut off with an ellipsis. */
+.ev.short { flex-direction: row; align-items: center; gap: 8px; padding-top: 0; padding-bottom: 0; }
+.ev.short > * { flex: none; white-space: nowrap; line-height: 1.2; }
+.ev.short > span:last-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

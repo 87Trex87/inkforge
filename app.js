@@ -2254,7 +2254,10 @@ async function renderCal() {
     list.forEach(b => {
       const top = (minutesOf(b.start_at) - DAY_FROM * 60) / 60 * HOUR_PX, h = Math.max(22, b.duration_min / 60 * HOUR_PX - 2);
       const w = 100 / lanes.length;
-      html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)">
+      // Too short for stacked lines (e.g. a 30-minute follow-up): put everything on one line instead.
+      const short = h < 48;
+      html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''} ${short ? 'short' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)"
+        title="${esc([bName(b), kindLabel(b), fmtTime(b.start_at) + ' · ' + fmtDur(b.duration_min), b.placement, b.description].filter(Boolean).join(' · '))}">
         <b>${esc(mode === 'week' ? (b.first_name || (kindOf(b) !== 'tattoo' ? kindLabel(b) : '—')) : bName(b))}</b>
         ${mode === 'day' ? `<span>${kindOf(b) !== 'tattoo' && b.first_name != null ? kindLabel(b) + ' · ' : ''}${fmtTime(b.start_at)} · ${fmtDur(b.duration_min)}${b.placement ? ' · ' + esc(b.placement) : ''}</span>
         ${b.description ? `<span class="muted">${esc(b.description)}</span>` : ''}` : ''}</a>`;
