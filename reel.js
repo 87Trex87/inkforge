@@ -5,7 +5,7 @@
    Drafts live in memory only: imported videos are never copied into storage. Export records the
    canvas + Web Audio mix in real time with MediaRecorder (MP4 where the browser supports it). */
 
-const REEL_VERSION = 3;   // app.js checks this matches, to catch a stale cached copy
+const REEL_VERSION = 4;   // app.js checks this matches, to catch a stale cached copy
 // Card backgrounds: { ref, op, zoom, rot, flip } with ref = media file name (kept in the media folder).
 const REEL_CARD_BG = { ref: '', op: 0.55, zoom: 1, rot: 0, flip: false };
 const REEL_STYLE_DEFAULTS = {
@@ -34,7 +34,9 @@ const INTRO_DUR = 1.6, OUTRO_DUR = 2.4;
 const PREVIEW_W = 540, PREVIEW_H = 960;
 
 const R = {
-  clips: [], sel: -1, tab: 'clips', seq: 0,
+  clips: [], sel: -1, tab: 'edit', seq: 0,
+  pick: null,             // timeline selection: { kind: 'clip'|'intro'|'outro'|'trans', key }
+  trans: {},              // per-boundary overrides { type, dir, dur }, keyed by the incoming segment's key
   music: null,            // { name, buffer, offset, vol }
   playing: false, t: 0, t0: 0, raf: 0,
   actx: null, master: null, musicNode: null, recDest: null,
@@ -68,10 +70,16 @@ function reelSegments() {
   const s = reelStyle(), segs = [];
   let t = 0;
   const push = (seg) => { seg.start = t; t += seg.dur; segs.push(seg); };
-  if (s.intro) push({ kind: 'intro', dur: INTRO_DUR });
-  for (const c of R.clips) push({ kind: 'clip', clip: c, dur: clipDur(c) });
-  if (s.outro) push({ kind: 'outro', dur: OUTRO_DUR });
+  if (s.intro) push({ kind: 'intro', key: 'intro', dur: INTRO_DUR });
+  for (const c of R.clips) push({ kind: 'clip', key: c.id, clip: c, dur: clipDur(c) });
+  if (s.outro) push({ kind: 'outro', key: 'outro', dur: OUTRO_DUR });
   return { segs, total: t };
+}
+// Transition INTO a segment: its own override in R.trans (keyed by seg.key), else the style default.
+const REEL_DIPS = ['fade', 'flash', 'zoom'];
+function reelTrans(s, seg) {
+  const o = R.trans[seg.key] || {};
+  return { type: o.type ?? s.transition, dir: o.dir ?? s.transDir, dur: +(o.dur ?? s.transDur) || 0.32 };
 }
 function reelSegAt(segs, t) {
   for (const s of segs) if (t < s.start + s.dur) return s;
@@ -267,14 +275,16 @@ function reelDraw(ctx, W, H, t) {
   const seg = reelSegAt(segs, Math.min(t, total - 1e-3));
   const local = Math.max(0, t - seg.start);
   const i = segs.indexOf(seg), prev = segs[i - 1], next = segs[i + 1], left = seg.dur - local;
+  // Each boundary has its own transition: tIn (prev -> seg) and tOut (seg -> next).
+  const tIn = prev && reelTrans(s, seg), tOut = next && reelTrans(s, next);
   // Never longer than half of either neighbouring segment, so short clips still show.
-  const T = (o) => Math.max(0.05, Math.min(+s.transDur || 0.32, seg.dur / 2, o.dur / 2));
+  const T = (o, tr) => Math.max(0.05, Math.min(tr.dur, seg.dur / 2, o.dur / 2));
   // Wipe and slide show the next segment coming in over the last moments of this one,
   // from the chosen side. (dx, dy) points from where the new clip starts towards the centre.
-  if ((s.transition === 'wipe' || s.transition === 'slide') && next && left < T(next)) {
-    const q = 1 - Math.pow(left / T(next), 2);
-    const d = s.transDir, dx = d === 'left' ? 1 : d === 'right' ? -1 : 0, dy = d === 'top' ? 1 : d === 'bottom' ? -1 : 0;
-    if (s.transition === 'slide') {
+  if (tOut && (tOut.type === 'wipe' || tOut.type === 'slide') && left < T(next, tOut)) {
+    const q = 1 - Math.pow(left / T(next, tOut), 2);
+    const d = tOut.dir, dx = d === 'left' ? 1 : d === 'right' ? -1 : 0, dy = d === 'top' ? 1 : d === 'bottom' ? -1 : 0;
+    if (tOut.type === 'slide') {
       ctx.save(); ctx.translate(dx * W * q, dy * H * q); drawSeg(ctx, s, W, H, seg, local); ctx.restore();
       ctx.save(); ctx.translate(-dx * W * (1 - q), -dy * H * (1 - q)); drawSeg(ctx, s, W, H, next, 0); ctx.restore();
     } else {
@@ -289,18 +299,17 @@ function reelDraw(ctx, W, H, t) {
     }
     return;
   }
-  // Dip-style transitions: strength near boundaries (not at the very start/end of the reel)
-  let a = 0;
-  if (s.transition === 'fade' || s.transition === 'flash' || s.transition === 'zoom') {
-    if (prev && local < T(prev)) a = 1 - local / T(prev);
-    if (next && left < T(next)) a = Math.max(a, 1 - left / T(next));
-  }
+  // Dip-style transitions ramp in after the boundary before this segment and out before the next.
+  // Each side uses its own boundary's type, so a fade-in can follow a flash-out.
+  const amt = { fade: 0, flash: 0, zoom: 0 };
+  if (tIn && REEL_DIPS.includes(tIn.type) && local < T(prev, tIn)) amt[tIn.type] = 1 - local / T(prev, tIn);
+  if (tOut && REEL_DIPS.includes(tOut.type) && left < T(next, tOut)) amt[tOut.type] = Math.max(amt[tOut.type], 1 - left / T(next, tOut));
   ctx.save();
-  if (s.transition === 'zoom' && a) { const z = 1 + a * 0.18; ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); }
+  if (amt.zoom) { const z = 1 + amt.zoom * 0.18; ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); }
   drawSeg(ctx, s, W, H, seg, local);
   ctx.restore();
-  if (a && s.transition === 'fade') { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0, 0, W, H); }
-  if (a && s.transition === 'flash') { ctx.fillStyle = `rgba(255,255,255,${a * 0.85})`; ctx.fillRect(0, 0, W, H); }
+  if (amt.fade) { ctx.fillStyle = `rgba(0,0,0,${amt.fade})`; ctx.fillRect(0, 0, W, H); }
+  if (amt.flash) { ctx.fillStyle = `rgba(255,255,255,${amt.flash * 0.85})`; ctx.fillRect(0, 0, W, H); }
 }
 
 /* ---------- Video sync ---------- */
@@ -373,6 +382,7 @@ function reelRender() {
   const sc = document.getElementById('reel-scrub'), tm = document.getElementById('reel-time');
   if (sc && !R.scrubbing) { sc.max = total || 0; sc.value = R.t; }
   if (tm) tm.textContent = `${R.t.toFixed(1)} / ${total.toFixed(1)}s`;
+  if (typeof reelTlHead === 'function') reelTlHead();
 }
 function reelPlay() {
   const { total } = reelSegments();
@@ -412,9 +422,14 @@ async function reelAddFile(file) {
     Object.assign(c, { type: 'video', el: v, w: v.videoWidth, h: v.videoHeight, srcDur: v.duration, inP: 0, outP: Math.min(v.duration, 5), motion: 'none' });
     v.addEventListener('seeked', () => { if (!R.playing) reelRender(); });
     reelHookClipAudio(c);
+    // Small still for the timeline (the first frame, tiled along the clip's length).
+    try {
+      const tc = document.createElement('canvas'); tc.height = 96; tc.width = Math.round(96 * c.w / c.h) || 54;
+      tc.getContext('2d').drawImage(v, 0, 0, tc.width, tc.height); c.thumb = tc.toDataURL('image/jpeg', 0.7);
+    } catch {}
   } else {
     const img = new Image(); img.src = url; await img.decode();
-    Object.assign(c, { type: 'image', el: img, w: img.naturalWidth, h: img.naturalHeight, dur: 2.5 });
+    Object.assign(c, { type: 'image', el: img, w: img.naturalWidth, h: img.naturalHeight, dur: 2.5, thumb: url });
   }
   R.clips.push(c);
   return c;
