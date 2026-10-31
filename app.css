@@ -379,8 +379,18 @@ button.pf-tile { border: 0; padding: 0; cursor: pointer; }
 @media (min-width: 900px) {
   .reel-wrap { display: grid; grid-template-columns: auto 380px; gap: 16px; align-items: start; }
   #view:has(.reel-wrap) { max-width: 1200px; }
-  #reel-cv { height: min(72vh, 860px); }
+  /* Fit the whole editor in a landscape window: the preview takes what is left after the top bar,
+     controls, timeline and quick slider; the side panel scrolls on its own. */
+  #reel-cv { height: max(300px, calc(100vh - 330px)); }
+  .reel-stage { margin-bottom: 0; }
+  .reel-side { position: sticky; top: 64px; max-height: calc(100vh - 80px); overflow-y: auto; padding-right: 4px; }
+  .reel-side #reel-export { position: sticky; bottom: 0; margin-bottom: 4px !important; }
 }
+.reel-quick { display: flex; gap: 12px; margin-top: 4px; }
+.q-sl { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink2); min-width: 0; }
+.q-sl span { text-transform: uppercase; letter-spacing: .05em; flex: none; }
+.q-sl input { flex: 1; min-width: 0; accent-color: var(--teal); height: 26px; }
+.q-sl b { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 38px; text-align: right; }
 
 /* Stencil */
 .st-pick { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 48px 16px; cursor: pointer; border-style: dashed; border-color: var(--teal2); }

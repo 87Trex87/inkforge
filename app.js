@@ -1274,11 +1274,13 @@ const VIEWS = {
         <div class="reel-stage">
           <canvas id="reel-cv" width="${PREVIEW_W}" height="${PREVIEW_H}"></canvas>
           <div class="reel-ctrl">
+            <button class="btn icon-btn" id="reel-restart" aria-label="Play from the start" data-tip="Play from the start"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5l-10 7 10 7z"/></svg></button>
             <button class="btn icon-btn" id="reel-play" aria-label="Play"></button>
             <input type="range" id="reel-scrub" min="0" step="0.01" value="0" aria-label="Scrub">
             <span id="reel-time" class="muted"></span>
           </div>
           <div class="reel-tl" id="reel-tl"></div>
+          <div class="reel-quick" id="reel-quick" hidden></div>
         </div>
         <div class="reel-side">
           <div class="seg" id="reel-tabs" style="margin-bottom:12px">
@@ -1291,6 +1293,8 @@ const VIEWS = {
     mount() {
       reelPlayBtn(); reelRender();
       $('#reel-play').onclick = () => R.playing ? reelPause() : reelPlay();
+      $('#reel-restart').onclick = () => { reelShow(0); reelPlay(); };
+      reelQuickBind($('#reel-quick'));
       const sc = $('#reel-scrub');
       sc.addEventListener('input', () => { R.scrubbing = true; if (R.playing) reelPause(); R.t = +sc.value; reelSyncVideos(R.t, false); reelRender(); });
       sc.addEventListener('change', () => { R.scrubbing = false; });
@@ -2322,7 +2326,58 @@ async function renderRules() {
 
 /* ---------- Reel UI (engine in reel.js) ---------- */
 // The draft stays in memory while the app is open, so leaving the Reel screen loses nothing.
-function reelChanged() { reelTimeline(); reelRender(); }
+function reelChanged() { reelTimeline(); reelRender(); if (!R.quickDrag) reelQuick(); }
+
+/* ---------- Quick slider under the timeline ----------
+   The main timing control of whatever is selected, right by the timeline: a photo's length, a
+   video's start and end, a card's duration or a transition's duration. Same values as the panel. */
+function reelQuickSpec() {
+  const p = R.pick, s = reelStyle();
+  if (!p) return [];
+  if (p.kind === 'clip') {
+    const c = R.clips.find(x => x.id === p.key); if (!c) return [];
+    return c.type === 'video'
+      ? [['inP', 'Start', 0, c.srcDur, 0.1, c.inP], ['outP', 'End', 0, c.srcDur, 0.1, c.outP]]
+      : [['dur', 'Length', 0.5, 8, 0.1, c.dur]];
+  }
+  if ((p.kind === 'intro' || p.kind === 'outro') && s[p.kind]) return [[p.kind + 'Dur', 'Duration', 0.8, 6, 0.1, +s[p.kind + 'Dur']]];
+  if (p.kind === 'trans') {
+    const tr = reelTrans(s, { key: p.key });
+    return tr.type === 'cut' ? [] : [['tdur', 'Transition', 0.1, 1.2, 0.05, tr.dur]];
+  }
+  return [];
+}
+function reelQuick() {
+  const el = $('#reel-quick'); if (!el) return;
+  const spec = reelQuickSpec();
+  el.hidden = !spec.length;
+  el.innerHTML = spec.map(([k, l, min, max, step, v]) => `<label class="q-sl"><span>${l}</span>
+    <input type="range" min="${min}" max="${(+max).toFixed(2)}" step="${step}" value="${v}" data-q="${k}"><b>${(+v).toFixed(k === 'tdur' ? 2 : 1)}s</b></label>`).join('');
+}
+function reelQuickBind(el) {
+  el.addEventListener('input', (e) => {
+    const k = e.target.dataset.q; if (!k) return;
+    const v = +e.target.value, p = R.pick; R.quickDrag = true;
+    if (p.kind === 'clip') {
+      const c = R.clips.find(x => x.id === p.key); if (!c) return;
+      c[k] = v;
+      if (k === 'inP' && c.outP - c.inP < 0.5) c.outP = Math.min(c.srcDur, c.inP + 0.5);
+      if (k === 'outP' && c.outP - c.inP < 0.5) c.inP = Math.max(0, c.outP - 0.5);
+      const g = reelSegments().segs.find(x => x.key === c.id);
+      if (g) reelShow(k === 'outP' ? g.start + g.dur - 0.05 : k === 'inP' ? g.start + 0.01 : g.start + Math.min(g.dur * 0.45, 0.6));
+    } else if (k === 'tdur') {
+      R.trans[p.key] = { ...reelTrans(reelStyle(), { key: p.key }), ...R.trans[p.key], dur: v };
+    } else reelSetStyle(k, v);
+    e.target.nextElementSibling.textContent = v.toFixed(k === 'tdur' ? 2 : 1) + 's';
+    reelChanged();
+  });
+  // On release: refresh the panel so its own sliders show the new value; preview transitions.
+  el.addEventListener('change', (e) => {
+    R.quickDrag = false; reelPanel();
+    if (e.target.dataset.q === 'tdur') reelPeekTransition(R.pick.key);
+    else if (R.pick.kind === 'intro' || R.pick.kind === 'outro') reelShowCard(R.pick.kind);
+  });
+}
 
 // The timeline under the preview is the main way around: tap a clip, card or transition and the
 // Edit tab shows that item's settings. Style holds the shared look; Music the soundtrack.
@@ -2523,6 +2578,7 @@ async function reelPanel() {
   el.addEventListener('input', reelStyleInput);
   el.addEventListener('click', reelStyleClick);
   el.addEventListener('change', reelStyleChange);
+  if (!R.quickDrag) reelQuick();
   if (R.tab === 'edit') {
     const p = R.pick;
     const c = p?.kind === 'clip' ? R.clips.find(x => x.id === p.key) : null;
@@ -2542,7 +2598,7 @@ async function reelPanel() {
     } else if (seg) {
       el.innerHTML = `<div class="card">${reelTransPanel(s, seg)}</div>`;
     } else {
-      R.pick = null;
+      R.pick = null; reelQuick();
       el.innerHTML = `<div class="card reel-hint">${R.clips.length
         ? '<b>Tap the timeline to edit.</b><span class="muted">A clip opens its trim, look and text tools. A card opens its text and background. The small dots between them are transitions: each one can be different.</span>'
         : '<b>Add photos or videos to start.</b><span class="muted">Use the + at the end of the timeline above, or pick from your portfolio.</span>'}</div>`;
