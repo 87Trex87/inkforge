@@ -209,6 +209,13 @@ textarea.in { padding: 12px 14px; resize: vertical; min-height: 0; display: bloc
 .guide ol { padding-left: 20px; margin: 10px 0; } .guide li { margin-bottom: 8px; }
 .guide code { background: var(--bg3); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }
 .ev.busy { background: repeating-linear-gradient(45deg, rgba(154,163,163,.12) 0 6px, rgba(154,163,163,.06) 6px 12px); border-left-color: var(--ink2); color: var(--ink2); }
+/* Booking types: one colour each, used on calendar blocks and chips */
+.k-consult { --k: #d9a441; } .k-touchup { --k: #5fa8e8; } .k-meeting { --k: #b07fe0; } .k-leave { --k: #9aa3a3; } .k-other { --k: #e08a6b; }
+.ev:is(.k-consult, .k-touchup, .k-meeting, .k-leave, .k-other) { border-left-color: var(--k); background: color-mix(in srgb, var(--k) 20%, transparent); }
+.ev.k-leave { background: repeating-linear-gradient(45deg, rgba(154,163,163,.18) 0 6px, rgba(154,163,163,.08) 6px 12px); }
+.kchip { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 99px; color: var(--k); border: 1px solid var(--k); vertical-align: 2px; }
+.seg.kinds { flex-wrap: wrap; }
+.seg.kinds button { flex: 1 0 30%; white-space: nowrap; font-size: 13px; padding-inline: 6px; }
 
 .time-col { display: flex; flex-direction: column; width: 64px; flex: none; font-size: 13px; }
 .price { font-weight: 700; font-size: 13px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--line); color: var(--ink2); }
@@ -328,6 +335,14 @@ button.pf-tile { border: 0; padding: 0; cursor: pointer; }
 .slider > span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); text-transform: uppercase; letter-spacing: .06em; }
 .slider b { margin-left: auto; color: var(--ink); font-weight: 600; }
 .slider input { width: 100%; accent-color: var(--teal); height: 28px; }
+/* Vertical finger drags on a slider scroll the page instead of moving it (see the touch guard in app.js) */
+input[type=range] { touch-action: pan-y; }
+/* Phones: the stencil preview stays pinned under the top bar while the sliders scroll beneath it */
+@media (max-width: 899px) {
+  .st-stage { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 60px); z-index: 5; box-shadow: 0 10px 18px -8px rgba(0,0,0,.7); }
+  #st-canvas { max-height: 34vh; }
+  .st-tools { margin-top: 8px; }
+}
 .st-export { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 14px; align-items: stretch; }
 @media (min-width: 900px) {
   #view:has(.st-stage) { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; max-width: 1200px; }

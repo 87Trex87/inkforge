@@ -142,8 +142,18 @@ const MIGRATIONS = [
      item_name TEXT NOT NULL, expected REAL, counted REAL NOT NULL);
    CREATE TABLE rules (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
-     title TEXT NOT NULL, body TEXT, sort INTEGER NOT NULL DEFAULT 0);`
+     title TEXT NOT NULL, body TEXT, sort INTEGER NOT NULL DEFAULT 0);`,
+  // v8: booking type (see BOOKING_KINDS). Existing bookings are tattoo sessions.
+  `ALTER TABLE bookings ADD COLUMN kind TEXT NOT NULL DEFAULT 'tattoo';`
 ];
+/* Booking types. ink: shows the tattoo fields (placement, size, quote, deposit, references). */
+const BOOKING_KINDS = {
+  tattoo: { label: 'Tattoo', ink: true }, consult: { label: 'Consultation', ink: true }, touchup: { label: 'Touch-up', ink: true },
+  meeting: { label: 'Meeting' }, leave: { label: 'Leave' }, other: { label: 'Other' }
+};
+const kindOf = (b) => BOOKING_KINDS[b.kind] ? b.kind : 'tattoo';
+const kindLabel = (b) => BOOKING_KINDS[kindOf(b)].label;
+const kindChip = (b) => kindOf(b) === 'tattoo' ? '' : `<span class="kchip k-${kindOf(b)}">${kindLabel(b)}</span>`;
 
 /* Starter templates, inserted once on a fresh database. Fully editable.
    Block types: h heading, sub subheading, p paragraph, li bullet, check tick box (required unless opt),
@@ -641,8 +651,11 @@ const VIEWS = {
       const cur = Settings.get('currency');
       const durOpts = []; for (let m = 30; m <= 600; m += 30) durOpts.push(m);
       const f = $('#b-form');
+      let kind = kindOf(b);
       f.innerHTML = `
-        <label class="field"><span>Client ${help('Search existing clients, or type a new name and pick "Add" to create one.')}</span>
+        <div class="field"><span class="lbl">Type</span>
+          <div class="seg kinds" id="b-kind">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button type="button" data-k="${k}" class="${k === kind ? 'on' : ''}">${v.label}</button>`).join('')}</div></div>
+        <label class="field"><span>Client ${help('Search existing clients, or type a new name and pick "Add" to create one. Optional for meetings and leave.')}</span>
           <div class="picker">
             <input class="in" id="b-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
             <div class="pick-list" id="b-client-list" hidden></div>
@@ -654,7 +667,8 @@ const VIEWS = {
             <label class="field"><span>Length</span><select class="in" name="duration_min">${durOpts.map(m => `<option value="${m}" ${m === b.duration_min ? 'selected' : ''}>${fmtDur(m)}</option>`).join('')}</select></label>
           </div>
         </div>
-        <label class="field"><span>Tattoo description</span><textarea class="in" name="description" rows="2" placeholder="e.g. Fine-line peony with stem">${esc(b.description)}</textarea></label>
+        <label class="field"><span id="b-desc-l">Tattoo description</span><textarea class="in" name="description" rows="2" placeholder="e.g. Fine-line peony with stem">${esc(b.description)}</textarea></label>
+        <div id="b-ink">
         <div class="two">
           <label class="field"><span>Placement</span><input class="in" name="placement" value="${esc(b.placement)}" placeholder="Left forearm"></label>
           <label class="field"><span>Size</span><input class="in" name="size" value="${esc(b.size)}" placeholder="15 x 10 cm"></label>
@@ -667,13 +681,28 @@ const VIEWS = {
         </div>
         <div class="field"><span class="lbl">Reference photos ${help('Client references or your sketch. Stored on the device, included in backups.')}</span>
           <div class="thumbs" id="b-thumbs"></div></div>
+        </div>
         <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(b.notes)}</textarea></label>
-        ${b.id ? `<button type="button" class="btn small" id="b-pf" style="margin-bottom:8px" data-tip="Add the finished tattoo to your portfolio, prefilled from this booking">+ Add finished tattoo to portfolio</button>` : ''}
+        ${b.id && kind === 'tattoo' ? `<button type="button" class="btn small" id="b-pf" style="margin-bottom:8px" data-tip="Add the finished tattoo to your portfolio, prefilled from this booking">+ Add finished tattoo to portfolio</button>` : ''}
         <div class="form-foot row">
           ${b.id ? '<button type="button" class="btn danger icon-btn" id="b-del" data-tip="Delete booking" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
           <button type="button" class="btn" id="b-cancel">Cancel</button>
           <button type="submit" class="btn primary" style="flex:1">Save</button>
         </div>`;
+
+      // Type: non-tattoo kinds hide the tattoo-only fields (their values are kept, not cleared)
+      const showKind = () => {
+        const ink = BOOKING_KINDS[kind].ink;
+        $('#b-ink').hidden = !ink;
+        $('#b-desc-l').textContent = kind === 'tattoo' || kind === 'touchup' ? 'Tattoo description' : kind === 'consult' ? 'Idea / what to discuss' : 'Details';
+        f.description.placeholder = ink ? 'e.g. Fine-line peony with stem' : kind === 'leave' ? 'e.g. Holiday' : '';
+      };
+      showKind();
+      $('#b-kind').onclick = (e) => {
+        const x = e.target.closest('button'); if (!x) return;
+        kind = x.dataset.k; $('#b-kind').querySelectorAll('button').forEach(y => y.classList.toggle('on', y === x));
+        showKind(); Dirty.set(true);
+      };
 
       // Client picker
       const ci = $('#b-client'), cl = $('#b-client-list');
@@ -753,8 +782,8 @@ const VIEWS = {
         if (ci.value.trim() && !clientId) return toast('Pick a client from the list, or choose "Add".');
         const num = (v) => v === '' || v == null ? null : +v;
         const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
-          d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null];
-        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes';
+          d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind];
+        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind';
         const refs = [...keep];
         for (const a of added) refs.push(await Media.save(a.blob, 'jpg'));
         let bid = b.id;
@@ -1765,7 +1794,7 @@ async function bookingsBetween(from, to) {
     FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
     WHERE b.start_at >= ? AND b.start_at < ? ORDER BY b.start_at`, [ymd(from), ymd(to)]);
 }
-const bName = (b) => b.first_name != null ? fullName(b) : 'No client';
+const bName = (b) => b.first_name != null ? fullName(b) : kindOf(b) !== 'tattoo' ? kindLabel(b) : 'No client';
 
 async function renderCal() {
   const el = $('#cal'); if (!el) return;
@@ -1842,9 +1871,9 @@ async function renderCal() {
     list.forEach(b => {
       const top = (minutesOf(b.start_at) - DAY_FROM * 60) / 60 * HOUR_PX, h = Math.max(22, b.duration_min / 60 * HOUR_PX - 2);
       const w = 100 / lanes.length;
-      html += `<a class="ev ${b.deposit_paid ? 'paid' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)">
-        <b>${esc(mode === 'week' ? (b.first_name || '—') : bName(b))}</b>
-        ${mode === 'day' ? `<span>${fmtTime(b.start_at)} · ${fmtDur(b.duration_min)}${b.placement ? ' · ' + esc(b.placement) : ''}</span>
+      html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)">
+        <b>${esc(mode === 'week' ? (b.first_name || (kindOf(b) !== 'tattoo' ? kindLabel(b) : '—')) : bName(b))}</b>
+        ${mode === 'day' ? `<span>${kindOf(b) !== 'tattoo' && b.first_name != null ? kindLabel(b) + ' · ' : ''}${fmtTime(b.start_at)} · ${fmtDur(b.duration_min)}${b.placement ? ' · ' + esc(b.placement) : ''}</span>
         ${b.description ? `<span class="muted">${esc(b.description)}</span>` : ''}` : ''}</a>`;
     });
     html += '</div>';
@@ -1871,7 +1900,7 @@ function agendaRow(b) {
   const end = new Date(new Date(b.start_at).getTime() + b.duration_min * 60000);
   return `<a class="c-row" href="#booking-edit/${b.id}">
     <span class="time-col"><b>${fmtTime(b.start_at)}</b><small class="muted">${fmtTime(end)}</small></span>
-    <span class="c-main"><span class="c-n">${esc(bName(b))}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
+    <span class="c-main"><span class="c-n">${esc(bName(b))}${b.first_name != null ? kindChip(b) : ''}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
       <span class="muted c-sub">${esc([b.placement, b.description].filter(Boolean).join(' · ') || fmtDur(b.duration_min))}</span></span>
     ${b.quote != null ? `<span class="price ${b.deposit_paid ? 'paid' : ''}" data-tip="${b.deposit_paid ? 'Deposit paid' : 'Deposit not paid'}">${money(b.quote)}</span>` : ''}
     <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
@@ -1890,13 +1919,14 @@ function viewImage(src) {
    Google event property (location, guests, attachments, colours...) is ignored.
    Personal (primary) calendar is read only as free/busy times. */
 const NOTE_FOOTER = '— Synced from InkForge';
-const NOTE_LABELS = ['Client', 'Phone', 'Tattoo', 'Placement', 'Size', 'Quote', 'Deposit', 'Notes'];
+const NOTE_LABELS = ['Type', 'Client', 'Phone', 'Tattoo', 'Details', 'Placement', 'Size', 'Quote', 'Deposit', 'Notes'];
 
 function buildNotes(b, c) {
   const L = [];
+  if (kindOf(b) !== 'tattoo') L.push('Type: ' + kindLabel(b));
   if (c) L.push('Client: ' + fullName(c));
   if (c?.phone) L.push('Phone: ' + c.phone);
-  if (b.description) L.push('Tattoo: ' + b.description);
+  if (b.description) L.push((BOOKING_KINDS[kindOf(b)].ink ? 'Tattoo: ' : 'Details: ') + b.description);
   if (b.placement) L.push('Placement: ' + b.placement);
   if (b.size) L.push('Size: ' + b.size);
   if (b.quote != null) L.push('Quote: ' + money(b.quote));
@@ -1920,8 +1950,9 @@ function parseNotes(text) {
     if (m && !(inNotes && !NOTE_LABELS.slice(0, -1).some(l => l.toLowerCase() === m[1].toLowerCase()))) {
       const k = m[1].toLowerCase(), v = m[2].trim();
       inNotes = false;
-      if (k === 'client') out.client = v;
-      else if (k === 'tattoo') out.description = v || null;
+      if (k === 'type') out.kind = Object.keys(BOOKING_KINDS).find(x => BOOKING_KINDS[x].label.toLowerCase() === v.toLowerCase()) || 'tattoo';
+      else if (k === 'client') out.client = v;
+      else if (k === 'tattoo' || k === 'details') out.description = v || null;
       else if (k === 'placement') out.placement = v || null;
       else if (k === 'size') out.size = v || null;
       else if (k === 'quote') out.quote = num(v);
@@ -2007,7 +2038,7 @@ const Gcal = {
     const start = new Date(b.start_at), end = new Date(start.getTime() + b.duration_min * 60000);
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return {
-      summary: [c ? fullName(c) : (b.description || 'Booking'), b.placement].filter(Boolean).join(' · '),
+      summary: [kindOf(b) !== 'tattoo' && kindLabel(b), c ? fullName(c) : (b.description || (kindOf(b) === 'tattoo' ? 'Booking' : '')), b.placement].filter(Boolean).join(' · '),
       description: buildNotes(b, c),
       start: { dateTime: start.toISOString(), timeZone: tz },
       end: { dateTime: end.toISOString(), timeZone: tz },
@@ -2042,7 +2073,7 @@ const Gcal = {
     const start = localStamp(ev.start.dateTime);
     const dur = Math.max(15, Math.round((new Date(ev.end.dateTime) - new Date(ev.start.dateTime)) / 60000));
     const f = parseNotes(ev.description);
-    const fields = ['description', 'placement', 'size', 'quote', 'deposit', 'deposit_paid', 'notes'].filter(k => k in f);
+    const fields = ['kind', 'description', 'placement', 'size', 'quote', 'deposit', 'deposit_paid', 'notes'].filter(k => k in f);
     if (local) {
       const dirty = local.updated_at !== local.gcal_synced_at;
       if (dirty && sqlTime(local.updated_at) > new Date(ev.updated)) return;   // local edit is newer; push wins
@@ -2054,9 +2085,9 @@ const Gcal = {
       let clientId = null;
       if (f.client) clientId = (await DB.one(`SELECT id FROM clients WHERE lower(trim(first_name || ' ' || last_name)) = lower(trim(?)) LIMIT 1`, [f.client]))?.id ?? null;
       if (!('description' in f) && ev.summary) f.description = ev.summary;
-      await DB.run(`INSERT INTO bookings (client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, gcal_id, gcal_updated)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [clientId, start, dur, f.description ?? null, f.placement ?? null, f.size ?? null, f.quote ?? null, f.deposit ?? null, f.deposit_paid ?? 0, f.notes ?? null, ev.id, ev.updated]);
+      await DB.run(`INSERT INTO bookings (kind, client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, gcal_id, gcal_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [f.kind || 'tattoo', clientId, start, dur, f.description ?? null, f.placement ?? null, f.size ?? null, f.quote ?? null, f.deposit ?? null, f.deposit_paid ?? 0, f.notes ?? null, ev.id, ev.updated]);
     }
   },
 
@@ -2544,6 +2575,26 @@ async function stPrint() {
   addEventListener('afterprint', done);
   window.print();
 }
+
+/* ---------- Slider touch guard ----------
+   Sliders use touch-action: pan-y, so a vertical finger drag scrolls the page and the browser cancels
+   the slider's pointer. A tap or sideways drag still sets the value. If the slider already jumped
+   to where the finger landed before the scroll was recognised, put the old value back. */
+(() => {
+  let el = null, start = '';
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' || !e.target.matches?.('input[type=range]')) return;
+    el = e.target; start = el.value;
+  }, true);
+  document.addEventListener('pointercancel', () => {
+    if (el && el.value !== start) {
+      el.value = start;
+      el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    el = null;
+  }, true);
+  document.addEventListener('pointerup', () => { el = null; }, true);
+})();
 
 /* ---------- Forms helpers ---------- */
 const Forms = { ctx: null };   // { clientId, bookingId } handed to the sign view
