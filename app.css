@@ -301,6 +301,12 @@ select.in { appearance: none; padding-right: 30px; cursor: pointer;
 .reel-stage { background: var(--bg2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; margin-bottom: 14px; }
 #reel-cv { display: block; height: min(54vh, 640px); aspect-ratio: 9 / 16; max-width: 100%; margin: 0 auto; border-radius: 10px; background: #000; }
 .reel-ctrl { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+/* Phones: preview stays pinned while the tools scroll underneath, so every change is visible */
+@media (max-width: 899px) {
+  .reel-stage { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 60px); z-index: 5; padding: 8px; box-shadow: 0 10px 18px -8px rgba(0,0,0,.7); }
+  #reel-cv { height: 36vh; }
+  .reel-ctrl { margin-top: 6px; }
+}
 .reel-ctrl input { flex: 1; accent-color: var(--teal); }
 .reel-ctrl span { font-size: 12px; min-width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
 .reel-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 12px; }
@@ -312,6 +318,25 @@ select.in { appearance: none; padding-right: 30px; cursor: pointer;
 .reel-clip i { position: absolute; right: 4px; top: 3px; font-size: 9px; color: #fff; font-style: normal; }
 .reel-clip.add { border-style: dashed; border-color: var(--teal2); }
 .reel-clip.add svg { width: 22px; height: 22px; }
+/* Tool tabs: one row, scrolls sideways on narrow phones */
+.reel-tools { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 10px; padding-bottom: 2px; scrollbar-width: none; }
+.reel-tools button { flex: 1 0 auto; min-height: 36px; padding: 0 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg2); color: var(--ink2); font-weight: 600; cursor: pointer; }
+.reel-tools button.on { background: var(--teal); border-color: var(--teal); color: #061211; }
+.fx-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.fx { border: 2px solid transparent; border-radius: 10px; background: none; padding: 0; cursor: pointer; color: var(--ink2); font-size: 11px; font-weight: 600; }
+.fx canvas { display: block; width: 100%; aspect-ratio: 9 / 16; border-radius: 8px; background: #000; }
+.fx span { display: block; padding: 4px 0 2px; }
+.fx.on { border-color: var(--teal); color: var(--teal); }
+.tr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tr { text-align: left; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); padding: 10px 12px; cursor: pointer; color: var(--ink); }
+.tr b { display: block; font-size: 14px; } .tr span { font-size: 12px; color: var(--ink2); }
+.tr.on { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); }
+.seg[data-st="wmPos"] { flex-wrap: wrap; } .seg[data-st="wmPos"] button { flex: 1 0 45% !important; font-size: 13px; }
+.bg-thumb { width: 40px; height: 64px; flex: none; border-radius: 8px; border: 1px dashed var(--line); overflow: hidden; background: var(--bg3); }
+.bg-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.logo-box { width: 96px; height: 56px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px dashed var(--line);
+  background: repeating-conic-gradient(#2a2f31 0 25%, #1c2123 0 50%) 50% / 14px 14px; font-size: 12px; }
+.logo-box img { max-width: 90%; max-height: 90%; }
 #reel-rec, #reel-pick { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.8); display: grid; place-items: center; padding: 16px; }
 #reel-rec .card, #reel-pick .card { width: min(480px, 100%); margin: 0; }
 .pf-tile.picked { outline: 3px solid var(--teal); outline-offset: -3px; }
@@ -386,6 +411,7 @@ input[type=range] { touch-action: pan-y; }
 .f-field span { display: block; font-weight: 600; margin-bottom: 6px; }
 .sheet .in { background: #fff; color: #111; border-color: #cfc5b1; color-scheme: light; }
 .f-ans { border-bottom: 1px solid #999; padding: 4px 0; }
+.sheet-logo { float: right; max-width: 120px; max-height: 70px; margin: 0 0 8px 12px; }
 .sheet h4 { margin: 18px 0 4px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #14857c; }
 .sheet h4 + .f-check, .sheet h4 + .f-bullet, .sheet h4 + .f-field { border-top: 0; }
 .f-opts { display: flex; flex-wrap: wrap; gap: 8px; }

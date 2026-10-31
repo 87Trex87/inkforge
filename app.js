@@ -319,7 +319,8 @@ const Media = {
     const used = await DB.one(`SELECT 1 AS x FROM clients WHERE photo_ref = ?1
       UNION ALL SELECT 1 FROM booking_photos WHERE photo_ref = ?1
       UNION ALL SELECT 1 FROM signed_forms WHERE signature_ref = ?1
-      UNION ALL SELECT 1 FROM portfolio_photos WHERE photo_ref = ?1 OR thumb_ref = ?1 LIMIT 1`, [name]);
+      UNION ALL SELECT 1 FROM portfolio_photos WHERE photo_ref = ?1 OR thumb_ref = ?1
+      UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
     const u = this.urls.get(name); if (u) { URL.revokeObjectURL(u); this.urls.delete(name); }
@@ -1487,6 +1488,7 @@ const VIEWS = {
       const ctx = Forms.ctx || {}; Forms.ctx = null;
       let client = ctx.clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [ctx.clientId]) : null;
       const booking = ctx.bookingId ? await DB.one('SELECT * FROM bookings WHERE id = ?', [ctx.bookingId]) : null;
+      const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
       const blocks = JSON.parse(t.blocks);
       const consent = t.kind === 'consent';
       const el = $('#fs');
@@ -1508,7 +1510,7 @@ const VIEWS = {
       const drawSheet = () => {
         const c = formCtx(client, booking);
         prefill(c);
-        $('#fs-sheet').innerHTML = renderFormBlocks(blocks, c, answers, consent)
+        $('#fs-sheet').innerHTML = (logoUrl ? `<img class="sheet-logo" src="${logoUrl}" alt="">` : '') + renderFormBlocks(blocks, c, answers, consent)
           + (consent ? `<div class="sig-wrap"><div class="sig-label">Signature <button type="button" class="link" id="fs-clear">Clear</button></div>
               <canvas id="fs-sig"></canvas><div class="sig-line">${esc(c.client)} · ${esc(c.date)}</div></div>` : '');
         if (consent) { pad = signaturePad($('#fs-sig')); $('#fs-clear').onclick = () => pad.clear(); }
@@ -1569,9 +1571,11 @@ const VIEWS = {
       if (!s) { el.innerHTML = '<div class="card muted">Form not found.</div>'; return; }
       const answers = JSON.parse(s.answers);
       const sig = await Media.url(s.signature_ref);
+      const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
       const when = new Date(s.signed_at + 'Z');
       el.innerHTML = `
         <div class="sheet">
+          ${logoUrl ? `<img class="sheet-logo" src="${logoUrl}" alt="">` : ''}
           ${renderFormBlocks(JSON.parse(s.blocks), null, answers, false, true)}
           ${s.kind === 'consent' ? `<div class="sig-wrap"><div class="sig-label">Signature</div>
             ${sig ? `<img class="sig-img" src="${sig}" alt="Signature">` : '<div class="muted">Signature file missing.</div>'}
@@ -1598,6 +1602,12 @@ const VIEWS = {
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
         <label class="field"><span>Artist name</span><input class="in" id="s-name" value="${esc(Settings.get('artist_name'))}" autocomplete="name"></label>
         <label class="field"><span>Studio</span><input class="in" id="s-studio" value="${esc(Settings.get('studio_name'))}"></label>
+        <div class="field"><span class="lbl">Studio logo ${help('A PNG with a transparent background works best. Used on reel cards, as a reel watermark and at the top of forms.')}</span>
+          <div class="row" style="flex-wrap:nowrap">
+            <span class="logo-box" id="s-logo-box"></span>
+            <label class="btn small"><span id="s-logo-l">Choose PNG</span><input type="file" accept="image/png,image/*" hidden id="s-logo"></label>
+            <button class="btn small danger" id="s-logo-rm" hidden>Remove</button>
+          </div></div>
         <div class="two">
           <label class="field"><span>Currency symbol ${help('Shown before quotes and deposits, e.g. R, $, £, €.')}</span><input class="in" id="s-cur" value="${esc(Settings.get('currency'))}" maxlength="4"></label>
           <label class="field"><span>Usual start time ${help('Default time for new bookings.')}</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
@@ -1650,6 +1660,32 @@ const VIEWS = {
       $('#s-studio').addEventListener('change', save('studio_name'));
       $('#s-cur').addEventListener('change', save('currency'));
       $('#s-start').addEventListener('change', save('day_start'));
+      const drawLogo = async () => {
+        const ref = Settings.get('studio_logo_ref'), u = await Media.url(ref);
+        $('#s-logo-box').innerHTML = u ? `<img src="${u}" alt="Studio logo">` : '<span class="muted">None</span>';
+        $('#s-logo-l').textContent = u ? 'Change' : 'Choose PNG'; $('#s-logo-rm').hidden = !u;
+      };
+      drawLogo();
+      $('#s-logo').addEventListener('change', async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        try {
+          // Keep transparency: redraw as PNG, capped at 1000 px so it stays small.
+          const bmp = await createImageBitmap(f), sc = Math.min(1, 1000 / Math.max(bmp.width, bmp.height));
+          const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+          c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+          const ref = await Media.save(await new Promise(r => c.toBlob(r, 'image/png')), 'png');
+          const old = Settings.get('studio_logo_ref');
+          await Settings.set('studio_logo_ref', ref);
+          if (old && old !== ref) await Media.release(old);
+          drawLogo(); toast('Logo saved.');
+        } catch { toast('Could not read that image.'); }
+        e.target.value = '';
+      });
+      $('#s-logo-rm').onclick = async () => {
+        if (!confirm('Remove the studio logo?')) return;
+        const old = Settings.get('studio_logo_ref');
+        await Settings.set('studio_logo_ref', ''); await Media.release(old); drawLogo();
+      };
       $('#s-aphone').addEventListener('change', save('artist_phone'));
       $('#s-ig').addEventListener('change', save('artist_instagram'));
       $('#s-fb').addEventListener('change', save('artist_facebook'));
@@ -2285,6 +2321,33 @@ async function renderRules() {
 // The draft stays in memory while the app is open, so leaving the Reel screen loses nothing.
 function reelChanged() { reelRender(); }
 
+// Clip tools and style sections, CapCut-style: one row of tool tabs, one small panel at a time.
+const REEL_CLIP_TOOLS = [['trim', 'Trim'], ['look', 'Look'], ['frame', 'Frame'], ['text', 'Text'], ['arrange', 'Arrange']];
+const REEL_STYLE_TABS = [['cards', 'Cards'], ['text', 'Text'], ['brand', 'Brand'], ['trans', 'Transition'], ['export', 'Export']];
+const REEL_TRANSITIONS = [['cut', 'Cut', 'Straight cut'], ['fade', 'Fade', 'Dip to black'], ['flash', 'Flash', 'White flash, good on the beat'],
+  ['zoom', 'Zoom', 'Punch-in between clips'], ['wipe', 'Wipe', 'Before / after reveal, e.g. stencil to finished'], ['slide', 'Slide', 'Next clip pushes in from the side']];
+R.tool ||= 'trim'; R.stab ||= 'cards'; R.card ||= 'intro';
+
+const reelSeg = (key, cur, opts, attr = 'data-v') => `<div class="seg" data-seg="${key}" style="margin-bottom:12px">${opts.map(([v, l]) =>
+  `<button ${attr}="${v}" class="${String(cur) === String(v) ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`;
+const reelSlider = (attr, key, label, min, max, step, val, shown) =>
+  `<label class="slider"><span>${label}<b>${shown}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${val}" ${attr}="${key}"></label>`;
+
+// Jump the paused preview to a moment, e.g. the card being edited, so changes show at once.
+function reelShow(t) { if (R.playing) reelPause(); R.t = Math.max(0, t); reelSyncVideos(R.t, false); reelRender(); }
+function reelShowCard(kind) {
+  const seg = reelSegments().segs.find(x => x.kind === kind);
+  if (seg) reelShow(seg.start + Math.min(seg.dur - 0.05, 0.8));
+}
+// Play a short stretch around the first boundary so a transition can be judged.
+let reelPeekT = 0;
+function reelPeekTransition() {
+  const { segs } = reelSegments();
+  if (segs.length < 2) return toast('Add a clip to see the transition.');
+  reelShow(segs[1].start - 0.6); reelPlay();
+  clearTimeout(reelPeekT); reelPeekT = setTimeout(() => { if (R.playing) reelPause(); }, 1300);
+}
+
 async function reelPanel() {
   const el = $('#reel-panel'); if (!el) return;
   const s = reelStyle();
@@ -2294,33 +2357,14 @@ async function reelPanel() {
       <div class="reel-strip" id="reel-strip">
         ${R.clips.map((x, i) => `<button class="reel-clip ${i === R.sel ? 'on' : ''}" data-i="${i}">
           ${x.type === 'video' ? `<video src="${x.url}#t=${x.inP + 0.1}" muted playsinline preload="metadata"></video>` : `<img src="${x.url}" alt="">`}
-          <span>${(x.type === 'video' ? x.outP - x.inP : x.dur).toFixed(1)}s</span>${x.type === 'video' ? '<i>▶</i>' : ''}</button>`).join('')}
+          <span>${clipDur(x).toFixed(1)}s</span>${x.type === 'video' ? '<i>▶</i>' : ''}</button>`).join('')}
         <label class="reel-clip add" data-tip="Add photos or videos from this device"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
           <input type="file" accept="image/*,video/*" multiple hidden id="reel-file"></label>
         <button class="reel-clip add" id="reel-pf" data-tip="Add from your portfolio">${ICON.portfolio}</button>
       </div>
-      ${c ? `<div class="card reel-clip-ed">
-        ${c.type === 'video' ? `
-          <label class="slider"><span>Start ${help('Where this video clip begins.')}<b>${c.inP.toFixed(1)}s</b></span>
-            <input type="range" min="0" max="${c.srcDur.toFixed(2)}" step="0.1" value="${c.inP}" data-c="inP"></label>
-          <label class="slider"><span>End<b>${c.outP.toFixed(1)}s</b></span>
-            <input type="range" min="0" max="${c.srcDur.toFixed(2)}" step="0.1" value="${c.outP}" data-c="outP"></label>
-          <label class="toggle" style="display:inline-flex;margin-bottom:10px"><input type="checkbox" data-c="sound" ${c.mute ? '' : 'checked'}><span>Clip sound</span></label>`
-        : `<label class="slider"><span>Length<b>${c.dur.toFixed(1)}s</b></span>
-            <input type="range" min="0.5" max="8" step="0.1" value="${c.dur}" data-c="dur"></label>`}
-        <div class="lbl">Motion ${help('Slow zoom or pan keeps photos alive.')}</div>
-        <div class="seg" data-seg="motion" style="margin-bottom:10px">${[['none', 'Still'], ['in', 'Zoom in'], ['out', 'Zoom out'], ['pan', 'Pan']].map(([k, l]) =>
-          `<button data-v="${k}" class="${c.motion === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
-        <div class="lbl">Framing ${help('Fill crops to the full screen. Fit shows the whole image over a blurred background.')}</div>
-        <div class="seg" data-seg="fit" style="margin-bottom:10px">${[['cover', 'Fill'], ['blur', 'Fit']].map(([k, l]) =>
-          `<button data-v="${k}" class="${c.fit === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
-        <label class="field"><span>Caption</span><input class="in" data-c="caption" value="${esc(c.caption)}" placeholder="e.g. Fine-line peony, healed"></label>
-        <div class="row">
-          <button class="btn small" data-act="left" ${R.sel ? '' : 'disabled'}>◀ Move</button>
-          <button class="btn small" data-act="right" ${R.sel < R.clips.length - 1 ? '' : 'disabled'}>Move ▶</button>
-          <button class="btn small danger" data-act="del" style="margin-left:auto">Remove</button>
-        </div>
-      </div>` : `<p class="muted" style="margin:4px">${R.clips.length ? 'Tap a clip to edit it.' : 'Add photos or videos of your work to start.'}</p>`}`;
+      ${c ? `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <div class="card reel-clip-ed">${reelClipTool(c)}</div>`
+      : `<p class="muted" style="margin:4px">${R.clips.length ? 'Tap a clip to edit it.' : 'Add photos or videos of your work to start.'}</p>`}`;
     $('#reel-file').addEventListener('change', async (e) => {
       const files = [...e.target.files];
       for (const f of files) { try { await reelAddFile(f); } catch (err) { toast(`Skipped ${f.name}: ${err.message}`); } }
@@ -2330,62 +2374,21 @@ async function reelPanel() {
     $('#reel-strip').addEventListener('click', (e) => {
       const b = e.target.closest('.reel-clip[data-i]'); if (!b) return;
       R.sel = +b.dataset.i;
-      const segs = reelSegments().segs, seg = segs.find(x => x.clip === R.clips[R.sel]);
-      if (seg) { if (R.playing) reelPause(); R.t = seg.start + 0.01; reelSyncVideos(R.t, false); reelRender(); }
+      const seg = reelSegments().segs.find(x => x.clip === R.clips[R.sel]);
+      if (seg) reelShow(seg.start + 0.01);
       reelPanel();
     });
+    const tools = $('#reel-tools');
+    if (tools) tools.onclick = (e) => { const b = e.target.closest('[data-tool]'); if (!b) return; R.tool = b.dataset.tool; reelPanel(); };
     const ed = el.querySelector('.reel-clip-ed');
-    if (ed) {
-      ed.addEventListener('input', (e) => {
-        const k = e.target.dataset.c; if (!k) return;
-        if (k === 'caption') c.caption = e.target.value;
-        else if (k === 'sound') c.mute = !e.target.checked;
-        else {
-          c[k] = +e.target.value;
-          if (k === 'inP' && c.outP - c.inP < 0.5) c.outP = Math.min(c.srcDur, c.inP + 0.5);
-          if (k === 'outP' && c.outP - c.inP < 0.5) c.inP = Math.max(0, c.outP - 0.5);
-          e.target.closest('.slider').querySelector('b').textContent = c[k].toFixed(1) + 's';
-          const tile = el.querySelector(`.reel-clip[data-i="${R.sel}"] span`);
-          if (tile) tile.textContent = (c.type === 'video' ? c.outP - c.inP : c.dur).toFixed(1) + 's';
-          if (k === 'inP' || k === 'outP') { const seg = reelSegments().segs.find(x => x.clip === c); if (seg) { R.t = seg.start + (k === 'outP' ? seg.dur - 0.05 : 0.01); reelSyncVideos(R.t, false); } }
-        }
-        reelChanged();
-      });
-      ed.addEventListener('change', (e) => { if (e.target.dataset.c === 'inP' || e.target.dataset.c === 'outP') reelPanel(); });
-      ed.addEventListener('click', (e) => {
-        const sb = e.target.closest('[data-seg] button');
-        if (sb) { c[sb.parentElement.dataset.seg] = sb.dataset.v; sb.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === sb)); reelChanged(); return; }
-        const a = e.target.closest('[data-act]'); if (!a) return;
-        const i = R.sel;
-        if (a.dataset.act === 'del') { const [gone] = R.clips.splice(i, 1); if (gone.type === 'video') gone.el.pause(); URL.revokeObjectURL(gone.url); R.sel = Math.min(i, R.clips.length - 1); }
-        else { const j = a.dataset.act === 'left' ? i - 1 : i + 1; [R.clips[i], R.clips[j]] = [R.clips[j], R.clips[i]]; R.sel = j; }
-        R.t = Math.min(R.t, reelSegments().total); reelChanged(); reelPanel();
-      });
-    }
+    if (ed) { reelClipBind(ed, c); if (R.tool === 'look') reelFilterThumbs(c); }
   } else if (R.tab === 'style') {
-    const swatches = (k) => `<span class="ink-dots" data-sw="${k}">${REEL_COLORS.map(c => `<button class="ink ${s[k] === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span>`;
-    const seg = (k, opts) => `<div class="seg" data-st="${k}" style="margin-bottom:12px">${opts.map(([v, l]) => `<button data-v="${v}" class="${s[k] === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`;
-    el.innerHTML = `<div class="card">
-      <p class="muted" style="margin:0 0 12px">Saved and reused on every reel, so your posts look consistent.</p>
-      <div class="two">
-        <label class="field"><span>Name on intro</span><input class="in" data-s="title" value="${esc(s.title)}" placeholder="${esc(Settings.get('studio_name') || 'Studio name')}"></label>
-        <label class="field"><span>Handle</span><input class="in" data-s="handle" value="${esc(s.handle)}" placeholder="@yourhandle" autocapitalize="off"></label>
-      </div>
-      <div class="row" style="margin-bottom:12px">
-        <label class="toggle"><input type="checkbox" data-s="intro" ${s.intro ? 'checked' : ''}><span>Intro card</span></label>
-        <label class="toggle"><input type="checkbox" data-s="outro" ${s.outro ? 'checked' : ''}><span>Outro card</span></label>
-        <label class="toggle" data-tip="Your handle in the corner of every clip"><input type="checkbox" data-s="watermark" ${s.watermark ? 'checked' : ''}><span>Watermark</span></label>
-      </div>
-      <label class="field"><span>Outro text</span><input class="in" data-s="outroText" value="${esc(s.outroText)}"></label>
-      <div class="lbl">Transition</div>${seg('transition', [['cut', 'Cut'], ['fade', 'Fade'], ['flash', 'Flash'], ['zoom', 'Zoom']])}
-      <div class="lbl">Captions</div>${seg('captionPos', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}
-      <div class="lbl">Font</div>${seg('font', [['display', 'Tattoo'], ['clean', 'Clean']])}
-      <div class="row" style="margin-bottom:12px"><span class="lbl" style="margin:0;width:70px">Text</span>${swatches('color')}</div>
-      <div class="row" style="margin-bottom:12px"><span class="lbl" style="margin:0;width:70px">Accent</span>${swatches('accent')}</div>
-      <div class="lbl">Export quality ${help('1080p looks sharper but makes bigger files and is heavier on older phones.')}</div>${seg('quality', [['720', '720p'], ['1080', '1080p']])}
-    </div>`;
+    el.innerHTML = `<div class="reel-tools" id="reel-stabs">${REEL_STYLE_TABS.map(([k, l]) => `<button data-stab="${k}" class="${R.stab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="card">${await reelStyleSection(s)}</div>
+      <p class="muted" style="font-size:12px;margin:6px 4px 0">Style is saved and reused on every reel, so your posts look consistent.</p>`;
     el.addEventListener('input', reelStyleInput);
     el.addEventListener('click', reelStyleClick);
+    el.addEventListener('change', reelStyleChange);
   } else {
     const m = R.music, { total } = reelSegments();
     el.innerHTML = `<div class="card">
@@ -2412,6 +2415,143 @@ async function reelPanel() {
     el.addEventListener('input', reelMusicInput);
   }
 }
+
+function reelClipTool(c) {
+  const video = c.type === 'video';
+  if (R.tool === 'trim') return video ? `
+      ${reelSlider('data-c', 'inP', `Start ${help('Where this video clip begins.')}`, 0, c.srcDur.toFixed(2), 0.1, c.inP, c.inP.toFixed(1) + 's')}
+      ${reelSlider('data-c', 'outP', 'End', 0, c.srcDur.toFixed(2), 0.1, c.outP, c.outP.toFixed(1) + 's')}
+      <div class="lbl">Speed ${help('Slow motion for detail shots, faster for time-lapses of the session.')}</div>
+      ${reelSeg('speed', c.speed || 1, [[0.5, '0.5×'], [1, '1×'], [1.5, '1.5×'], [2, '2×'], [4, '4×']])}
+      <label class="toggle" style="display:inline-flex"><input type="checkbox" data-c="sound" ${c.mute ? '' : 'checked'}><span>Clip sound</span></label>`
+    : reelSlider('data-c', 'dur', 'Length', 0.5, 8, 0.1, c.dur, c.dur.toFixed(1) + 's');
+  if (R.tool === 'look') return `<div class="fx-grid">${REEL_FILTERS.map(([k, l]) =>
+      `<button class="fx ${(c.filter || 'none') === k ? 'on' : ''}" data-fx="${k}"><canvas width="54" height="96"></canvas><span>${l}</span></button>`).join('')}</div>`;
+  if (R.tool === 'frame') return `
+      <div class="lbl">Motion ${help('Slow zoom or pan keeps photos alive.')}</div>
+      ${reelSeg('motion', c.motion, [['none', 'Still'], ['in', 'Zoom in'], ['out', 'Zoom out'], ['pan', 'Pan']])}
+      <div class="lbl">Framing ${help('Fill crops to the full screen. Fit shows the whole image over a blurred background.')}</div>
+      ${reelSeg('fit', c.fit, [['cover', 'Fill'], ['blur', 'Fit']])}
+      <div class="row"><button class="btn small" data-act="rot">↻ Rotate</button><button class="btn small ${c.flip ? 'on' : ''}" data-act="flip">⇋ Mirror</button></div>`;
+  if (R.tool === 'text') return `
+      <label class="field"><span>Caption</span><input class="in" data-c="caption" value="${esc(c.caption)}" placeholder="e.g. Fine-line peony, healed"></label>
+      <p class="muted" style="font-size:12px;margin:0">Caption size, position and colour are shared by all clips: Style › Text.</p>`;
+  const here = reelSegments().segs.find(x => x.clip === c);
+  const canSplit = video && here && R.t > here.start + 0.3 && R.t < here.start + here.dur - 0.3;
+  return `<div class="row">
+      <button class="btn small" data-act="left" ${R.sel ? '' : 'disabled'}>◀ Move</button>
+      <button class="btn small" data-act="right" ${R.sel < R.clips.length - 1 ? '' : 'disabled'}>Move ▶</button>
+      <button class="btn small" data-act="dup" data-tip="Copy this clip with all its settings">Duplicate</button>
+      ${video ? `<button class="btn small" data-act="split" ${canSplit ? '' : 'disabled'} data-tip="Cut the clip in two where the playhead is">Split</button>` : ''}
+      <button class="btn small danger" data-act="del" style="margin-left:auto">Remove</button></div>
+    ${video && !canSplit ? '<p class="muted" style="font-size:12px;margin:8px 0 0">To split, move the playhead inside this clip first.</p>' : ''}`;
+}
+
+// Filter previews: the clip's current frame drawn small with each look.
+function reelFilterThumbs(c) {
+  document.querySelectorAll('.fx').forEach(b => {
+    const cv = b.querySelector('canvas'), x = cv.getContext('2d');
+    x.fillStyle = '#000'; x.fillRect(0, 0, 54, 96);
+    drawMedia(x, { ...c, filter: b.dataset.fx, motion: 'none' }, 54, 96, 0);
+  });
+}
+
+function reelClipBind(ed, c) {
+  const el = $('#reel-panel');
+  ed.addEventListener('input', (e) => {
+    const k = e.target.dataset.c; if (!k) return;
+    if (k === 'caption') c.caption = e.target.value;
+    else if (k === 'sound') c.mute = !e.target.checked;
+    else {
+      c[k] = +e.target.value;
+      if (k === 'inP' && c.outP - c.inP < 0.5) c.outP = Math.min(c.srcDur, c.inP + 0.5);
+      if (k === 'outP' && c.outP - c.inP < 0.5) c.inP = Math.max(0, c.outP - 0.5);
+      e.target.closest('.slider').querySelector('b').textContent = c[k].toFixed(1) + 's';
+      const tile = el.querySelector(`.reel-clip[data-i="${R.sel}"] span`);
+      if (tile) tile.textContent = clipDur(c).toFixed(1) + 's';
+      if (k === 'inP' || k === 'outP') { const seg = reelSegments().segs.find(x => x.clip === c); if (seg) reelShow(seg.start + (k === 'outP' ? seg.dur - 0.05 : 0.01)); }
+    }
+    reelChanged();
+  });
+  ed.addEventListener('change', (e) => { if (e.target.dataset.c === 'inP' || e.target.dataset.c === 'outP') reelPanel(); });
+  ed.addEventListener('click', (e) => {
+    const sb = e.target.closest('[data-seg] button');
+    if (sb) {
+      const k = sb.parentElement.dataset.seg;
+      c[k] = k === 'speed' ? +sb.dataset.v : sb.dataset.v;
+      sb.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === sb));
+      if (k === 'speed') { const tile = el.querySelector(`.reel-clip[data-i="${R.sel}"] span`); if (tile) tile.textContent = clipDur(c).toFixed(1) + 's'; }
+      reelChanged(); return;
+    }
+    const fx = e.target.closest('[data-fx]');
+    if (fx) { c.filter = fx.dataset.fx; ed.querySelectorAll('.fx').forEach(x => x.classList.toggle('on', x === fx)); reelChanged(); return; }
+    const a = e.target.closest('[data-act]'); if (!a || a.disabled) return;
+    const i = R.sel, act = a.dataset.act;
+    if (act === 'rot') { c.rot = ((c.rot || 0) + 90) % 360; reelChanged(); return; }
+    if (act === 'flip') { c.flip = !c.flip; a.classList.toggle('on', c.flip); reelChanged(); return; }
+    if (act === 'del') {
+      const [gone] = R.clips.splice(i, 1);
+      // Split/duplicated clips share the media; only release it when no clip uses it any more.
+      if (!R.clips.some(x => x.url === gone.url)) { if (gone.type === 'video') gone.el.pause(); URL.revokeObjectURL(gone.url); }
+      R.sel = Math.min(i, R.clips.length - 1);
+    } else if (act === 'dup') {
+      R.clips.splice(i + 1, 0, { ...c, id: ++R.seq }); R.sel = i + 1;
+    } else if (act === 'split') {
+      const seg = reelSegments().segs.find(x => x.clip === c);
+      const cut = c.inP + (R.t - seg.start) * (c.speed || 1);
+      R.clips.splice(i + 1, 0, { ...c, id: ++R.seq, inP: cut }); c.outP = cut;
+      R.sel = i + 1; toast('Clip split.');
+    } else { const j = act === 'left' ? i - 1 : i + 1; [R.clips[i], R.clips[j]] = [R.clips[j], R.clips[i]]; R.sel = j; }
+    R.t = Math.min(R.t, reelSegments().total); reelChanged(); reelPanel();
+  });
+}
+
+async function reelStyleSection(s) {
+  const swatches = (k) => `<span class="ink-dots" data-sw="${k}">${REEL_COLORS.map(c => `<button class="ink ${s[k] === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span>`;
+  const seg = (k, opts) => `<div class="seg" data-st="${k}" style="margin-bottom:12px">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`;
+  const hasLogo = !!Settings.get('studio_logo_ref');
+  const noLogo = '<p class="muted" style="font-size:12px;margin:-4px 0 12px">Add your studio logo in More › Settings to use it here.</p>';
+  if (R.stab === 'cards') {
+    const intro = R.card === 'intro', bgKey = intro ? 'introBg' : 'outroBg', bg = s[bgKey];
+    const bgUrl = bg.ref ? await Media.url(bg.ref) : '';
+    return `
+      <div class="seg" data-card style="margin-bottom:12px">${[['intro', 'Intro'], ['outro', 'Outro']].map(([k, l]) => `<button data-card="${k}" class="${R.card === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+      <label class="toggle" style="display:inline-flex;margin-bottom:12px"><input type="checkbox" data-s="${R.card}" ${s[R.card] ? 'checked' : ''}><span>Show ${R.card} card</span></label>
+      ${intro ? `<label class="field"><span>Name on intro</span><input class="in" data-s="title" value="${esc(s.title)}" placeholder="${esc(Settings.get('studio_name') || 'Studio name')}"></label>`
+        : `<label class="field"><span>Outro text</span><input class="in" data-s="outroText" value="${esc(s.outroText)}"></label>`}
+      <label class="toggle" style="display:inline-flex;margin-bottom:12px" data-tip="Your studio logo above the text on both cards"><input type="checkbox" data-s="cardLogo" ${s.cardLogo ? 'checked' : ''}><span>Show logo</span></label>
+      ${hasLogo ? '' : noLogo}
+      <div class="lbl">Background image ${help('A photo of your studio or a tattoo behind the card text. Lower the opacity so the text stays readable.')}</div>
+      <div class="row" style="margin-bottom:12px;flex-wrap:nowrap">
+        <span class="bg-thumb">${bgUrl ? `<img src="${bgUrl}" alt="">` : ''}</span>
+        <label class="btn small">${bg.ref ? 'Change' : 'Choose image'}<input type="file" accept="image/*" hidden data-bgfile="${bgKey}"></label>
+        ${bg.ref ? `<button class="btn small danger" data-bgact="remove" data-bg="${bgKey}">Remove</button>` : ''}
+      </div>
+      ${bg.ref ? `
+        ${reelSlider('data-bgk', 'op', 'Opacity', 0.05, 1, 0.05, bg.op, Math.round(bg.op * 100) + '%').replace('data-bgk', `data-bg="${bgKey}" data-bgk`)}
+        ${reelSlider('data-bgk', 'zoom', 'Zoom', 1, 3, 0.05, bg.zoom, bg.zoom.toFixed(2) + '×').replace('data-bgk', `data-bg="${bgKey}" data-bgk`)}
+        <div class="row"><button class="btn small" data-bgact="rot" data-bg="${bgKey}">↻ Rotate</button>
+          <button class="btn small ${bg.flip ? 'on' : ''}" data-bgact="flip" data-bg="${bgKey}">⇋ Mirror</button></div>` : ''}`;
+  }
+  if (R.stab === 'text') return `
+      <div class="lbl">Font</div>${seg('font', [['display', 'Tattoo'], ['clean', 'Clean']])}
+      <div class="lbl">Caption position</div>${seg('captionPos', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}
+      <div class="lbl">Caption size</div>${seg('capSize', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']])}
+      <div class="row" style="margin-bottom:12px"><span class="lbl" style="margin:0;width:70px">Text</span>${swatches('color')}</div>
+      <div class="row"><span class="lbl" style="margin:0;width:70px">Accent</span>${swatches('accent')}</div>`;
+  if (R.stab === 'brand') return `
+      <label class="field"><span>Handle</span><input class="in" data-s="handle" value="${esc(s.handle)}" placeholder="@yourhandle" autocapitalize="off"></label>
+      <div class="lbl">Watermark ${help('Shown in a corner of every clip so reposts still point back to you.')}</div>
+      ${seg('wmMode', [['off', 'Off'], ['text', 'Handle'], ['logo', 'Logo']])}
+      ${s.wmMode === 'logo' && !hasLogo ? noLogo : ''}
+      <div class="lbl">Corner</div>${seg('wmPos', [['tl', '↖ Top left'], ['tr', 'Top right ↗'], ['bl', '↙ Bottom left'], ['br', 'Bottom right ↘']])}
+      ${reelSlider('data-s', 'wmOp', 'Opacity', 0.2, 1, 0.05, s.wmOp, Math.round(s.wmOp * 100) + '%')}`;
+  if (R.stab === 'trans') return `<div class="tr-grid" data-st="transition">${REEL_TRANSITIONS.map(([k, l, d]) =>
+      `<button data-v="${k}" class="tr ${s.transition === k ? 'on' : ''}"><b>${l}</b><span>${d}</span></button>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Tap one to preview it between your first two clips.</p>`;
+  return `<div class="lbl">Export quality ${help('1080p looks sharper but makes bigger files and is heavier on older phones.')}</div>${seg('quality', [['720', '720p'], ['1080', '1080p']])}`;
+}
+
 function reelMusicInput(e) {
   const k = e.target.dataset.m; if (!k || !R.music) return;
   R.music[k] = +e.target.value;
@@ -2419,19 +2559,55 @@ function reelMusicInput(e) {
   if (R.playing) reelMusicStart(R.t);
 }
 // Panel listeners are named functions: #reel-panel survives tab switches, and re-adding the same
-// function reference is a no-op, so they never stack up.
+// function reference is a no-op, so they never stack up. Each only reacts to its own data- attributes.
 function reelStyleInput(e) {
-  const k = e.target.dataset.s; if (!k) return;
-  reelSetStyle(k, e.target.type === 'checkbox' ? e.target.checked : e.target.value);
-  reelRender();
+  const t = e.target;
+  if (t.dataset.bgk) {
+    const s = reelStyle(), bg = { ...s[t.dataset.bg], [t.dataset.bgk]: +t.value };
+    reelSetStyle(t.dataset.bg, bg);
+    t.closest('.slider').querySelector('b').textContent = t.dataset.bgk === 'op' ? Math.round(bg.op * 100) + '%' : bg.zoom.toFixed(2) + '×';
+    return reelShowCard(t.dataset.bg === 'introBg' ? 'intro' : 'outro');
+  }
+  const k = t.dataset.s; if (!k) return;
+  const v = t.type === 'checkbox' ? t.checked : t.type === 'range' ? +t.value : t.value;
+  reelSetStyle(k, v);
+  if (t.type === 'range') t.closest('.slider').querySelector('b').textContent = Math.round(v * 100) + '%';
+  if (R.stab === 'cards' && R.tab === 'style' && (k === 'title' || k === 'outroText' || k === 'cardLogo' || k === R.card)) reelShowCard(R.card);
+  else reelRender();
 }
-function reelStyleClick(e) {
+async function reelStyleClick(e) {
+  if (R.tab !== 'style') return;
+  const tab = e.target.closest('[data-stab]');
+  if (tab) { R.stab = tab.dataset.stab; reelPanel(); if (R.stab === 'cards') reelShowCard(R.card); return; }
+  const card = e.target.closest('button[data-card]');
+  if (card) { R.card = card.dataset.card; reelPanel(); reelShowCard(R.card); return; }
+  const act = e.target.closest('[data-bgact]');
+  if (act) {
+    const key = act.dataset.bg, s = reelStyle(), bg = { ...s[key] };
+    if (act.dataset.bgact === 'remove') { const old = bg.ref; reelSetStyle(key, { ...REEL_CARD_BG }); await Media.release(old); }
+    else if (act.dataset.bgact === 'rot') reelSetStyle(key, { ...bg, rot: ((bg.rot || 0) + 90) % 360 });
+    else reelSetStyle(key, { ...bg, flip: !bg.flip });
+    reelPanel(); reelShowCard(key === 'introBg' ? 'intro' : 'outro'); return;
+  }
   const b = e.target.closest('[data-st] button, [data-sw] .ink'); if (!b) return;
   const box = b.closest('[data-st], [data-sw]'), k = box.dataset.st || box.dataset.sw;
   reelSetStyle(k, b.dataset.v);
   box.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
   if (k === 'quality') return;
+  if (k === 'transition') return reelPeekTransition();
+  if (k === 'wmMode') reelPanel();
   reelRender();
+}
+async function reelStyleChange(e) {
+  const key = e.target.dataset.bgfile; if (!key) return;
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const ref = await Media.save(await Media.shrink(f, 1600, 0.85), 'jpg');
+    const old = reelStyle()[key].ref;
+    reelSetStyle(key, { ...REEL_CARD_BG, ref });
+    if (old && old !== ref) await Media.release(old);
+    reelPanel(); reelShowCard(key === 'introBg' ? 'intro' : 'outro');
+  } catch { toast('Could not read that image.'); }
 }
 
 async function reelPortfolioPicker() {
