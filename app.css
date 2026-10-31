@@ -571,7 +571,9 @@ input[type=range] { touch-action: pan-y; }
 }
 #print-area { display: none; }
 @media print {
-  body.printing #app, body.printing #toast, body.printing #tip { display: none !important; }
+  /* Printing a document: only #print-area, never dialogs or overlays that happen to be open. */
+  body.printing > *:not(#print-area) { display: none !important; }
+  .quote-print + .quote-print { break-before: page; }
   body.printing #print-area { display: block; }
   @page { margin: 1cm; }
 }
@@ -672,3 +674,7 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
   max-width: calc(100% - 32px);
 }
 @media (min-width: 900px) { #toast { bottom: 24px; } }
+
+/* Receipt dialog: aftercare toggle with its form picker */
+.rc-after { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.rc-after .in { flex: 1; min-width: 160px; }

@@ -2595,6 +2595,7 @@ const QUOTE_V2 = {
   anchors: [[1, 650], [4, 2500], [9, 4500]],
   sessionMax: 9, round: 50, deposit: 30, fill: 70, range: 15,
   vatOn: false, vatRate: 15,                               // VAT is added on top when switched on
+  touchupFee: 250, touchupNote: true,                      // touch-up price (0 = free), mentioned on quotes and receipts
   speed: [0.25, 0.45, 0.6, 0.9, 1.25],                     // minutes per cm2, detail levels 1-5
   colour: { black: 1, bg: 1.15, colour: 1.3 },
   pain: [1, 1.05, 1.12, 1.2, 1.3],                         // pain levels 1-5
@@ -2978,7 +2979,7 @@ async function qzSheet() {
   text('PLEASE NOTE', M, y, font(22, 700), teal); y += 44;
   for (const s of ['Breaks are not included in the time or the quote.', 'The final price may change if the design, size or placement changes.',
     `The deposit secures your booking and comes off the final price.`, 'This quote is valid for 30 days.',
-    c.vatOn ? `Prices include VAT at ${c.vatRate}%.` : ''].filter(Boolean))
+    c.vatOn ? `Prices include VAT at ${c.vatRate}%.` : '', touchupLine()].filter(Boolean))
     for (const ln of wrapLines('•  ' + s, font(26), W - 2 * M)) { text(ln, M, y, font(26), ink); y += 38; }
 
   // Footer sits under the notes, or at the foot of the page when there is room.
@@ -2991,14 +2992,7 @@ async function qzSheet() {
 
 async function qzPrint() {
   const { cv } = await qzSheet();
-  let p = $('#print-area');
-  if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
-  p.innerHTML = `<img src="${cv.toDataURL('image/png')}" class="quote-print" alt="Quote">`;
-  await p.querySelector('img').decode().catch(() => {});
-  document.body.classList.add('printing');
-  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
-  addEventListener('afterprint', done);
-  window.print();
+  return printCanvas(cv);
 }
 
 async function qzSaveImage() {
@@ -3045,7 +3039,9 @@ function qcDraw() {
         <label class="field"><span>Range shown ${help('The ± range under the estimate.')}</span><div class="unit-in">${num('range', c.range, '5')}<em>%</em></div></label>
       </div>
       <div class="qc-vat"><label class="toggle"><input type="checkbox" id="qc-vat" ${c.vatOn ? 'checked' : ''}><span>Add VAT to quotes</span></label>
-        <div class="unit-in" style="width:120px">${num('vatRate', c.vatRate, '0.5')}<em>%</em></div></div></div>
+        <div class="unit-in" style="width:120px">${num('vatRate', c.vatRate, '0.5')}<em>%</em></div></div>
+      <div class="qc-vat"><label class="toggle" data-tip="Adds a line about your touch-up price to quote sheets and receipts"><input type="checkbox" id="qc-tu" ${c.touchupNote ? 'checked' : ''}><span>Touch-up fee on documents ${help('Set 0 if your touch-ups are free; documents then say so.')}</span></label>
+        <div class="unit-in" style="width:120px">${num('touchupFee', c.touchupFee, '10')}<em>${esc(cur)}</em></div></div></div>
     <div class="card"><h2>Speed ${help('How many minutes one square centimetre takes at each detail level. Fill is how much of the size box is actually inked.')}</h2>
       <label class="field"><span>Design fill of the size box</span><div class="unit-in">${num('fill', c.fill, '5')}<em>%</em></div></label>
       ${DETAIL_LEVELS.map(([n], i) => `<div class="qc-row"><span class="qc-ic">${detailSvg(i + 1, 'bg')}</span><span>${n}</span>
@@ -3086,6 +3082,7 @@ function qcDraw() {
   };
   el.onchange = async (e) => {
     if (e.target.id === 'qc-vat') { const cfg = qCfg(); cfg.vatOn = e.target.checked; return qSave(cfg); }
+    if (e.target.id === 'qc-tu') { const cfg = qCfg(); cfg.touchupNote = e.target.checked; return qSave(cfg); }
     if (e.target.dataset.p && e.target.tagName === 'SELECT') qcDraw();
   };
   el.addEventListener('toggle', (e) => { if (e.target.dataset.open) R.qcOpen = e.target.open ? e.target.dataset.open : null; }, true);
@@ -3116,28 +3113,48 @@ function qcDraw() {
 
 /* ---------- Thank-you receipt ----------
    For a completed tattoo: what they paid, plus an optional promotion on their next tattoo
-   (% or amount off, valid for N months). Drawn on a canvas so print and image are identical.
-   The promotion is saved on the booking so Stats can list promotions still open. */
+   (% or amount off, valid for N months) and optionally an aftercare sheet as a second page.
+   Pages are drawn on canvases, so print/PDF and images are identical. The promotion is saved on
+   the booking so Stats can list promotions still open; the show/hide choices are remembered. */
+const RECEIPT_PARTS = [['description', 'Tattoo'], ['placement', 'Placement'], ['size', 'Size'], ['time', 'Time tattooed'],
+  ['method', 'Paid by'], ['tips', 'Care tips'], ['touchup', 'Touch-up fee']];
+function receiptOpts() {
+  let o = {}; try { o = JSON.parse(Settings.get('receipt_opts', '{}')); } catch {}
+  return { show: { description: true, placement: true, size: true, time: true, method: true, tips: true, touchup: true, ...o.show },
+    aftercare: !!o.aftercare, aftercareId: o.aftercareId || null };
+}
+// Touch-up fee line for documents, from Calibrate (0 = free). '' when the artist hides it.
+const touchupLine = () => { const c = qCfg(); if (!c.touchupNote) return '';
+  return +c.touchupFee > 0 ? `Touch-ups after healing are ${money(+c.touchupFee)}.` : 'Touch-ups after healing are free.'; };
+
 async function openReceipt(bid) {
   const b = await DB.one(`SELECT b.*, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.id = ?`, [bid]);
   if (!b) return;
-  const cur = Settings.get('currency');
-  const st = { kind: b.promo_kind || '', value: b.promo_value ?? (b.promo_kind === 'amt' ? 100 : 10), months: +Settings.get('promo_months', '3') || 3 };
+  const cur = Settings.get('currency'), opts = receiptOpts();
+  const afters = await DB.all(`SELECT id, title FROM form_templates WHERE kind = 'aftercare' ORDER BY title COLLATE NOCASE`);
+  if (!afters.some(a => a.id === opts.aftercareId)) opts.aftercareId = afters[0]?.id ?? null;
+  const st = { kind: b.promo_kind || '', value: b.promo_value ?? 10, months: +Settings.get('promo_months', '3') || 3 };
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const draw = () => {
-    o.innerHTML = `<div class="card"><h2>Thank-you receipt</h2>
-      <div class="stat"><span>Client</span><span>${esc(bName(b))}</span></div>
-      <div class="stat"><span>Paid</span><span><b>${b.paid != null ? money(b.paid) : '—'}</b>${b.pay_method ? ' · ' + esc(b.pay_method) : ''}</span></div>
+    o.innerHTML = `<div class="card rc-card"><h2>Thank-you receipt</h2>
+      <div class="stat"><span>${esc(bName(b))}</span><span><b>${b.paid != null ? money(b.paid) : '—'}</b>${b.pay_method ? ' · ' + esc(b.pay_method) : ''}</span></div>
       ${b.paid == null ? '<p class="muted" style="font-size:12px">Add the final price paid on the booking to show it here.</p>' : ''}
-      <div class="lbl" style="margin-top:12px">Next-tattoo promotion</div>
+      <div class="lbl" style="margin-top:14px">Show on the receipt</div>
+      <div class="qz-chips">${RECEIPT_PARTS.map(([k, l]) => `<button class="chip qz-chip ${opts.show[k] ? 'on' : ''}" data-part="${k}">${opts.show[k] ? '✓ ' : ''}${l}</button>`).join('')}</div>
+      <div class="lbl" style="margin-top:6px">Next-tattoo promotion</div>
       <div class="seg" id="rc-kind" style="margin-bottom:10px">${[['', 'None'], ['pct', '% off'], ['amt', `${cur || 'Amount'} off`]].map(([k, l]) =>
         `<button data-k="${k}" class="${st.kind === k ? 'on' : ''}" style="flex:1">${esc(l)}</button>`).join('')}</div>
       ${st.kind ? `<div class="two">
         <label class="field"><span>${st.kind === 'pct' ? 'Percent off' : 'Amount off'}</span><div class="unit-in"><input class="in" id="rc-val" type="number" min="0" step="any" value="${st.value}"><em>${st.kind === 'pct' ? '%' : esc(cur)}</em></div></label>
         <label class="field"><span>Valid for</span><div class="unit-in"><input class="in" id="rc-mo" type="number" min="1" max="24" value="${st.months}"><em>months</em></div></label>
       </div>` : ''}
-      <div class="qz-acts" style="margin-top:6px">
-        <button class="btn" id="rc-print">Print</button><button class="btn" id="rc-img">Save image</button><button class="btn" id="rc-send">Send</button></div>
+      <div class="rc-after">
+        <label class="toggle" ${afters.length ? '' : 'data-tip="Create an aftercare form under Studio › Forms first"'}><input type="checkbox" id="rc-ac" ${opts.aftercare && afters.length ? 'checked' : ''} ${afters.length ? '' : 'disabled'}><span>Include aftercare</span></label>
+        ${afters.length > 1 ? `<select class="in" id="rc-acid" ${opts.aftercare ? '' : 'disabled'}>${afters.map(a => `<option value="${a.id}" ${a.id === opts.aftercareId ? 'selected' : ''}>${esc(a.title)}</option>`).join('')}</select>` : ''}
+      </div>
+      <p class="muted" style="font-size:12px;margin:4px 0 10px">${opts.aftercare ? 'Print / PDF puts both on one document; images and Send give two pages.' : ''}</p>
+      <div class="qz-acts">
+        <button class="btn" id="rc-print">Print / PDF</button><button class="btn" id="rc-img">Save image</button><button class="btn primary" id="rc-send">Send</button></div>
       <button class="btn" id="rc-close" style="width:100%;margin-top:8px">Close</button></div>`;
   };
   document.body.appendChild(o); draw();
@@ -3146,85 +3163,123 @@ async function openReceipt(bid) {
     const p = promo();
     await DB.run('UPDATE bookings SET promo_kind = ?, promo_value = ?, promo_until = ? WHERE id = ?', [p?.kind || null, p?.value ?? null, p?.until || null, bid]);
     if (st.kind) await Settings.set('promo_months', String(st.months));
+    await Settings.set('receipt_opts', JSON.stringify(opts));
   };
   o.addEventListener('input', (e) => { if (e.target.id === 'rc-val') st.value = +e.target.value; if (e.target.id === 'rc-mo') st.months = +e.target.value || 3; });
+  o.addEventListener('change', (e) => {
+    if (e.target.id === 'rc-ac') { opts.aftercare = e.target.checked; draw(); }
+    if (e.target.id === 'rc-acid') opts.aftercareId = +e.target.value;
+  });
   o.addEventListener('click', async (e) => {
+    const part = e.target.closest('[data-part]');
+    if (part) { opts.show[part.dataset.part] = !opts.show[part.dataset.part]; return draw(); }
     const k = e.target.closest('[data-k]');
-    if (k) { st.kind = k.dataset.k; if (st.kind === 'amt' && st.value <= 50 && !b.promo_value) st.value = 100; if (st.kind === 'pct' && st.value > 50 && !b.promo_value) st.value = 10; return draw(); }
+    if (k) { st.kind = k.dataset.k; if (st.kind === 'amt' && st.value <= 50) st.value = 100; if (st.kind === 'pct' && st.value > 50) st.value = 10; return draw(); }
     if (e.target.closest('#rc-close')) return o.remove();
     const act = e.target.closest('#rc-print, #rc-img, #rc-send')?.id; if (!act) return;
     await remember();
-    const { cv, ref } = await receiptSheet(b, promo());
-    if (act === 'rc-print') return printCanvas(cv);
-    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
-    const file = new File([blob], `Receipt-${ref}${b.first_name ? '-' + b.first_name.replace(/[^\w-]+/g, '_') : ''}.png`, { type: 'image/png' });
+    const pages = await receiptPages(b, promo(), opts);
+    if (act === 'rc-print') return printCanvas(...pages.map(p => p.cv));
+    const files = await Promise.all(pages.map(async (p) => new File([await new Promise(r => p.cv.toBlob(r, 'image/png'))], p.name, { type: 'image/png' })));
     try {
-      if (act === 'rc-send' && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Thank you', text: receiptText(b, promo()) });
+      if (act === 'rc-send' && navigator.canShare?.({ files })) await navigator.share({ files, title: 'Thank you', text: receiptText(b, promo()) });
       else if (act === 'rc-send' && navigator.share) await navigator.share({ text: receiptText(b, promo()) });
-      else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Receipt saved.'); }
+      else {
+        for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+        toast(files.length > 1 ? 'Receipt and aftercare saved.' : 'Receipt saved.');
+      }
     } catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); }
   });
 }
+
+// Receipt page, plus the chosen aftercare form as a second page when asked for.
+async function receiptPages(b, promo, opts) {
+  const tag = b.first_name ? '-' + b.first_name.replace(/[^\w-]+/g, '_') : '';
+  const r = await receiptSheet(b, promo, opts.show);
+  const pages = [{ cv: r.cv, name: `Receipt-${r.ref}${tag}.png` }];
+  if (opts.aftercare && opts.aftercareId) {
+    const t = await DB.one('SELECT * FROM form_templates WHERE id = ?', [opts.aftercareId]);
+    if (t) {
+      const client = b.client_id ? await DB.one('SELECT * FROM clients WHERE id = ?', [b.client_id]) : null;
+      pages.push({ cv: await formPage(t, formCtx(client, b)), name: `Aftercare-${r.ref}${tag}.png` });
+    }
+  }
+  return pages;
+}
+
 const promoLabel = (p) => p ? (p.kind === 'pct' ? `${+p.value}% off` : `${money(p.value)} off`) + ' your next tattoo' : '';
 function receiptText(b, p) {
   const studio = Settings.get('studio_name') || Settings.get('artist_name');
   return `Thank you${b.first_name ? ', ' + b.first_name : ''}!${studio ? ' From ' + studio : ''}\n`
     + `${b.description || 'Tattoo'}${b.placement ? ' · ' + b.placement : ''}\nPaid: ${b.paid != null ? money(b.paid) : '—'}\n`
     + (p ? `\nAs a thank you: ${promoLabel(p)}. Valid until ${fmtDay(p.until)}.\n` : '')
+    + (touchupLine() ? '\n' + touchupLine() : '')
     + '\nFollow your aftercare and reach out if anything looks off.';
 }
 
-// Prints a canvas page (quote sheets, receipts) through #print-area.
-async function printCanvas(cv) {
+// Prints canvas pages (quote sheets, receipts, aftercare) through #print-area, one A4 page each.
+async function printCanvas(...cvs) {
   let p = $('#print-area');
   if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
-  p.innerHTML = `<img src="${cv.toDataURL('image/png')}" class="quote-print" alt="">`;
-  await p.querySelector('img').decode().catch(() => {});
+  p.innerHTML = cvs.map(cv => `<img src="${cv.toDataURL('image/png')}" class="quote-print" alt="">`).join('');
+  await Promise.all([...p.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
   document.body.classList.add('printing');
   const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
   addEventListener('afterprint', done);
   window.print();
 }
 
-async function receiptSheet(b, promo) {
-  const W = 1240, H = 1754, M = 90;
-  await Promise.all([document.fonts.load("64px 'Pirata One'"), document.fonts.load('600 28px Inter')]).catch(() => {});
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+/* Shared page drawing for A4 documents (1240 x 1754 = 150 dpi). */
+const DOC = { W: 1240, H: 1754, M: 90, teal: '#14857c', ink: '#1a1a1a', soft: '#6b6b6b' };
+async function docCanvas() {
+  await Promise.all([document.fonts.load("64px 'Pirata One'"), document.fonts.load('600 28px Inter'), document.fonts.load('400 28px Inter')]).catch(() => {});
+  const cv = document.createElement('canvas'); cv.width = DOC.W; cv.height = DOC.H;
   const x = cv.getContext('2d');
-  const teal = '#14857c', ink = '#1a1a1a', soft = '#6b6b6b';
+  x.fillStyle = '#fff'; x.fillRect(0, 0, DOC.W, DOC.H);
   const font = (px, w = 400, disp = false) => disp ? `${px}px 'Pirata One', serif` : `${w} ${px}px Inter, system-ui, sans-serif`;
-  const text = (s, tx, ty, f, col = ink, align = 'left') => { x.font = f; x.fillStyle = col; x.textAlign = align; x.fillText(s, tx, ty); };
-  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
-  const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Tattoo studio';
-  let hx = M;
-  const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
-  if (logoUrl) { const img = new Image(); img.src = logoUrl; await img.decode().catch(() => {});
-    if (img.naturalWidth) { const sc = Math.min(220 / img.naturalWidth, 140 / img.naturalHeight); x.drawImage(img, M, 70, img.naturalWidth * sc, img.naturalHeight * sc); hx = M + img.naturalWidth * sc + 30; } }
-  text(studio, hx, 140, font(60, 400, true));
-  [Settings.get('artist_phone'), Settings.get('artist_instagram'), Settings.get('artist_facebook'), Settings.get('artist_tiktok')].filter(Boolean)
-    .forEach((s, i) => text(s.replace(/^https?:\/\/(www\.)?/, ''), W - M, 100 + i * 34, font(22), soft, 'right'));
-  x.fillStyle = teal; x.fillRect(M, 240, W - 2 * M, 6);
+  const text = (s, tx, ty, f, col = DOC.ink, align = 'left') => { x.font = f; x.fillStyle = col; x.textAlign = align; x.textBaseline = 'alphabetic'; x.fillText(s, tx, ty); };
+  const wrap = (s, f, maxW) => { x.font = f; const out = []; let line = '';
+    for (const w of String(s).split(/\s+/)) { const t = line ? line + ' ' + w : w; if (x.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }
+    if (line) out.push(line); return out; };
+  // Header: logo and studio left, contact details right, accent rule under it.
+  const header = async () => {
+    const { M, W } = DOC, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Tattoo studio';
+    let hx = M;
+    const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
+    if (logoUrl) { const img = new Image(); img.src = logoUrl; await img.decode().catch(() => {});
+      if (img.naturalWidth) { const sc = Math.min(220 / img.naturalWidth, 140 / img.naturalHeight); x.drawImage(img, M, 70, img.naturalWidth * sc, img.naturalHeight * sc); hx = M + img.naturalWidth * sc + 30; } }
+    text(studio, hx, 140, font(60, 400, true));
+    [Settings.get('artist_phone'), Settings.get('artist_instagram'), Settings.get('artist_facebook'), Settings.get('artist_tiktok')].filter(Boolean)
+      .forEach((s, i) => text(s.replace(/^https?:\/\/(www\.)?/, ''), W - M, 100 + i * 34, font(22), DOC.soft, 'right'));
+    x.fillStyle = DOC.teal; x.fillRect(M, 240, W - 2 * M, 6);
+  };
+  return { cv, x, font, text, wrap, header };
+}
 
+async function receiptSheet(b, promo, show) {
+  const { W, H, M, teal, ink, soft } = DOC;
+  const { cv, x, font, text, wrap, header } = await docCanvas();
+  await header();
   const ref = 'R' + b.start_at.slice(2, 10).replace(/-/g, '') + '-' + b.id;
   text(`Thank you${b.first_name ? ', ' + b.first_name : ''}!`, M, 370, font(96, 400, true));
   text('Receipt', M, 425, font(28, 600), soft);
   [['Receipt no.', ref], ['Session', fmtDay(b.start_at)], ['Client', bName(b)]].forEach(([k, v], i) => {
     text(k, W - M - 440, 330 + i * 38, font(22, 600), soft); text(v, W - M, 330 + i * 38, font(24, 500), ink, 'right');
   });
-  let y = 520;
-  const rows = [['Tattoo', b.description || '—'], ['Placement', b.placement || '—'], ['Size', b.size || '—'],
-    ['Time tattooed', b.time_min != null ? fmtH(b.time_min / 60) : '—'], ['Paid by', b.pay_method || '—']];
+  let y = 500;
+  const rows = [show.description && ['Tattoo', b.description], show.placement && ['Placement', b.placement], show.size && ['Size', b.size],
+    show.time && ['Time tattooed', b.time_min != null ? fmtH(b.time_min / 60) : null], show.method && ['Paid by', b.pay_method]].filter(r => r && r[1]);
   rows.forEach(([k, v], i) => {
-    if (i % 2 === 0) { x.fillStyle = '#f7f4ee'; x.fillRect(M, y, W - 2 * M, 60); }
-    text(k, M + 24, y + 40, font(26, 600), soft); text(String(v).slice(0, 60), M + 300, y + 40, font(28)); y += 60;
+    const lines = wrap(v, font(28), W - 2 * M - 300), h = 22 + lines.length * 38;
+    if (i % 2 === 0) { x.fillStyle = '#f7f4ee'; x.fillRect(M, y, W - 2 * M, h); }
+    text(k, M + 24, y + 42, font(26, 600), soft); lines.forEach((ln, j) => text(ln, M + 300, y + 42 + j * 38, font(28))); y += h;
   });
-  y += 50;
+  y += rows.length ? 50 : 10;
   x.fillStyle = '#eef8f6'; x.strokeStyle = teal; x.lineWidth = 3;
   x.beginPath(); x.roundRect(M, y, W - 2 * M, 170, 24); x.fill(); x.stroke();
   text('AMOUNT PAID', M + 40, y + 100, font(26, 700), soft);
   text(b.paid != null ? money(b.paid) : '—', W - M - 40, y + 118, font(96, 400, true), teal, 'right');
   y += 170 + 60;
-
   if (promo) {
     // A cut-out coupon: dashed border, the offer large, the expiry under it.
     x.save(); x.setLineDash([16, 12]); x.strokeStyle = ink; x.lineWidth = 3;
@@ -3236,15 +3291,63 @@ async function receiptSheet(b, promo) {
     text(`Valid until ${fmtDay(promo.until)} · receipt ${ref}`, W / 2, y + 258, font(22), soft, 'center');
     y += 290 + 60;
   }
-  text('LOOKING AFTER IT', M, y, font(22, 700), teal); y += 44;
-  for (const s of ['Follow your aftercare instructions for the next 2 to 4 weeks.', 'Keep it out of the sun while it heals; use SPF once healed.',
-    'Anything unusual, or a spot that needs a touch-up? Get in touch.'])
-    { text('•  ' + s, M, y, font(26)); y += 40; }
+  const notes = [...(show.tips ? ['Follow your aftercare instructions for the next 2 to 4 weeks.', 'Keep it out of the sun while it heals; use SPF once healed.',
+    'Anything unusual, or a spot that needs a touch-up? Get in touch.'] : []), show.touchup && touchupLine()].filter(Boolean);
+  if (notes.length) {
+    text(show.tips ? 'LOOKING AFTER IT' : 'GOOD TO KNOW', M, y, font(22, 700), teal); y += 44;
+    for (const s of notes) for (const ln of wrap('•  ' + s, font(26), W - 2 * M)) { text(ln, M, y, font(26)); y += 40; }
+  }
   const fy = Math.min(H - 60, Math.max(y + 60, H - 130));
   x.fillStyle = teal; x.fillRect(M, fy - 50, W - 2 * M, 3);
   text('See you next time!', M, fy, font(44, 400, true));
   text(ref, W - M, fy - 4, font(20), soft, 'right');
   return { cv, ref };
+}
+
+/* A form (e.g. aftercare) as an A4 page, matching the receipt. Lays the blocks out in one column,
+   or two columns with smaller text when that's what it takes to fit on one page. */
+async function formPage(t, c) {
+  const { W, H, M, teal, ink, soft } = DOC;
+  const { cv, x, font, text, wrap, header } = await docCanvas();
+  await header();
+  const blocks = JSON.parse(t.blocks).filter(b => !blankLine(b, c));
+  const top = 290, bottom = H - 90;
+  const items = (cols, px) => {
+    const colW = (W - 2 * M - (cols - 1) * 50) / cols, lh = Math.round(px * 1.42), out = [];
+    for (const b of blocks) {
+      const s = fillPlaceholders(b.text, c);
+      if (b.t === 'h') out.push({ kind: 'h', lines: wrap(s, font(Math.round(px * 2.6), 400, true), W - 2 * M), lh: Math.round(px * 2.9), span: true });
+      else if (b.t === 'sub') out.push({ kind: 'sub', lines: wrap(s.toUpperCase(), font(Math.round(px * 0.82), 700), colW), lh: Math.round(px * 1.2), gap: Math.round(px * 0.9) });
+      else if (b.t === 'li' || b.t === 'check') out.push({ kind: 'li', lines: wrap(s, font(px), colW - 30), lh });
+      else if (b.t === 'p') out.push({ kind: 'p', lines: wrap(s, font(px), colW), lh, gap: Math.round(px * 0.4) });
+    }
+    return { out, colW };
+  };
+  // Pick the first layout that fits: 1 column, then 2 columns at decreasing sizes.
+  let plan;
+  for (const [cols, px] of [[1, 28], [1, 25], [2, 25], [2, 22], [2, 19], [2, 16]]) {
+    const { out, colW } = items(cols, px);
+    const h0 = out.filter(i => i.span).reduce((s, i) => s + i.lines.length * i.lh + 20, 0);
+    const flow = out.filter(i => !i.span).reduce((s, i) => s + (i.gap || 0) + i.lines.length * i.lh, 0);
+    plan = { cols, px, out, colW, h0 };
+    if (h0 + flow / cols * 1.08 <= bottom - top) break;
+  }
+  let y = top, col = 0;
+  for (const it of plan.out.filter(i => i.span)) { for (const ln of it.lines) { y += it.lh; text(ln, M, y, font(Math.round(plan.px * 2.6), 400, true)); } y += 20; }
+  const flowTop = y, colX = (n) => M + n * (plan.colW + 50);
+  for (const it of plan.out.filter(i => !i.span)) {
+    const need = (it.gap || 0) + it.lines.length * it.lh + (it.kind === 'sub' ? plan.px * 2.5 : 0);   // keep a heading with its first line
+    if (y + need > bottom && col < plan.cols - 1) { col++; y = flowTop; }
+    y += it.gap || 0;
+    it.lines.forEach((ln, j) => {
+      y += it.lh;
+      if (it.kind === 'sub') text(ln, colX(col), y, font(Math.round(plan.px * 0.82), 700), teal);
+      else if (it.kind === 'li') { if (j === 0) { x.fillStyle = teal; x.beginPath(); x.arc(colX(col) + 8, y - plan.px * 0.35, plan.px * 0.18, 0, 7); x.fill(); } text(ln, colX(col) + 30, y, font(plan.px), ink); }
+      else text(ln, colX(col), y, font(plan.px), ink);
+    });
+  }
+  text(t.title, W - M, H - 50, font(20), soft, 'right');
+  return cv;
 }
 
 /* ---------- Stats ----------
