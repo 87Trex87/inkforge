@@ -210,7 +210,7 @@ const MIGRATIONS = [
 /* Booking types. ink: shows the tattoo fields (placement, size, quote, deposit, references). */
 const BOOKING_KINDS = {
   tattoo: { label: 'Tattoo', ink: true }, consult: { label: 'Consultation', ink: true }, touchup: { label: 'Touch-up', ink: true },
-  followup: { label: 'Follow-up' }, meeting: { label: 'Meeting' }, leave: { label: 'Leave' }, other: { label: 'Other' }
+  followup: { label: 'Follow-up' }, hold: { label: 'Hold' }, meeting: { label: 'Meeting' }, leave: { label: 'Leave' }, other: { label: 'Other' }
 };
 // Kinds that can be marked completed (and so count in Stats, get a receipt and a follow-up).
 const DONE_KINDS = ['tattoo', 'touchup'];
@@ -712,6 +712,7 @@ const VIEWS = {
           <button class="btn small" id="cal-today" style="min-height:46px">Today</button>
           <button class="btn icon-btn" id="cal-next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
           ${Gcal.enabled() ? `<button class="btn icon-btn gsync ${Gcal.state}" id="gcal-btn" aria-label="Sync Google Calendar"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg></button>` : ''}
+          <button class="btn icon-btn" id="cal-share" data-tip="Share your open appointments" aria-label="Share open appointments"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg></button>
           <button class="btn primary icon-btn" id="cal-add" data-tip="New booking" aria-label="New booking"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
         </div>
       </div>
@@ -728,6 +729,7 @@ const VIEWS = {
         gb.onclick = () => Gcal.sync({ interactive: true }).then(() => { toast('Synced.'); renderCal(); }).catch(e => toast('Google sync: ' + e.message, 6000));
       }
       $('#cal-add').onclick = () => newBookingNext(null, Cal.date < new Date() ? new Date() : Cal.date);
+      $('#cal-share').onclick = openAvailability;
       renderCal();
     }
   },
@@ -831,7 +833,7 @@ const VIEWS = {
         const ink = BOOKING_KINDS[kind].ink;
         showDone(); offWarn();
         $('#b-ink').hidden = !ink;
-        $('#b-desc-l').textContent = kind === 'tattoo' || kind === 'touchup' ? 'Tattoo description' : kind === 'consult' ? 'Idea / what to discuss' : kind === 'followup' ? 'What to check' : 'Details';
+        $('#b-desc-l').textContent = kind === 'tattoo' || kind === 'touchup' ? 'Tattoo description' : kind === 'consult' ? 'Idea / what to discuss' : kind === 'followup' ? 'What to check' : kind === 'hold' ? 'Held for (private)' : 'Details';
         f.description.placeholder = ink ? 'e.g. Fine-line peony with stem' : kind === 'leave' ? 'e.g. Holiday' : '';
       };
       showKind();
@@ -1750,8 +1752,15 @@ const VIEWS = {
           </div></div>
         <div class="two">
           <label class="field"><span>Currency symbol ${help('Shown before quotes and deposits, e.g. R, $, £, €.')}</span><input class="in" id="s-cur" value="${esc(Settings.get('currency'))}" maxlength="4"></label>
-          <label class="field"><span>Usual start time ${help('Default time for new bookings.')}</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
         </div>
+      </div>
+      <div class="card"><h2>Working hours ${help('Your normal day. Used for new bookings and for the open appointments you share. Longer sessions can still run past the end time.')}</h2>
+        <div class="two">
+          <label class="field"><span>Start</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
+          <label class="field"><span>Finish</span><input class="in" id="s-end" type="time" value="${esc(Settings.get('day_end', '17:00'))}"></label>
+        </div>
+        <label class="field"><span>Most tattoos per day ${help('Once a day has this many tattoo bookings, it shows as booked on your open appointments.')}</span>
+          <input class="in" id="s-maxday" type="number" min="1" max="10" value="${esc(Settings.get('max_per_day', '1'))}"></label>
       </div>
       <div class="card"><h2>Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</h2>
         <div id="off-card"></div></div>
@@ -1805,6 +1814,8 @@ const VIEWS = {
       $('#s-studio').addEventListener('change', save('studio_name'));
       $('#s-cur').addEventListener('change', save('currency'));
       $('#s-start').addEventListener('change', save('day_start'));
+      $('#s-end').addEventListener('change', save('day_end'));
+      $('#s-maxday').addEventListener('change', (e) => Settings.set('max_per_day', String(Math.max(1, +e.target.value || 1))));
       const drawLogo = async () => {
         const ref = Settings.get('studio_logo_ref'), u = await Media.url(ref);
         $('#s-logo-box').innerHTML = u ? `<img src="${u}" alt="Studio logo">` : '<span class="muted">None</span>';
@@ -2870,6 +2881,8 @@ function qzDraw() {
           <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, for clients who prefer an image">Save image</button>
           <button class="btn" id="qz-share">Send text</button>
         </div>
+        <label class="toggle" style="display:inline-flex;margin-top:8px" data-tip="Adds a page with your open days (${AV.months} month${AV.months > 1 ? 's' : ''} ahead)">
+          <input type="checkbox" id="qz-av" ${QZ.withAvail ? 'checked' : ''}><span>Include open appointments</span></label>
         <button class="btn primary" id="qz-book" style="width:100%;margin-top:8px">Book with this quote</button>
       </div>
       <div class="row" style="margin-top:12px"><button class="btn small" id="qz-new">Start over</button>
@@ -2953,6 +2966,7 @@ function qzBind(el) {
     const pc = $('#qz-price'); if (pc && k === 'hours') pc.innerHTML = qzPriceHTML(qCalc());
   };
   el.onchange = async (e) => {
+    if (e.target.id === 'qz-av') { QZ.withAvail = e.target.checked; return; }
     if (e.target.id === 'qz-vat') { const c = qCfg(); c.vatOn = e.target.checked; await qSave(c); return qzDraw(); }
     if (e.target.dataset.qz === 'hours' || e.target.dataset.qzt === 'text' || e.target.hasAttribute('data-qzd')) qzDraw();
   };
@@ -3067,16 +3081,21 @@ async function qzSheet() {
 
 async function qzPrint() {
   const { cv } = await qzSheet();
-  return printCanvas(cv);
+  return printCanvas(cv, ...(QZ.withAvail ? [(await availSheet()).cv] : []));
 }
 
 async function qzSaveImage() {
   const { cv, ref } = await qzSheet();
-  const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
-  const file = new File([blob], `Quote-${ref}${QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : ''}.png`, { type: 'image/png' });
+  const tag = QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : '';
+  const pages = [[cv, `Quote-${ref}${tag}.png`]];
+  if (QZ.withAvail) pages.push([(await availSheet()).cv, `Open-appointments-${ref}${tag}.png`]);
+  const files = await Promise.all(pages.map(async ([c, n]) => new File([await new Promise(res => c.toBlob(res, 'image/png'))], n, { type: 'image/png' })));
   try {
-    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Tattoo quote' });
-    else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Quote image saved.'); }
+    if (navigator.canShare?.({ files })) await navigator.share({ files, title: 'Tattoo quote' });
+    else {
+      for (const file of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+      toast(files.length > 1 ? 'Quote and open appointments saved.' : 'Quote image saved.');
+    }
   } catch (e) { if (e.name !== 'AbortError') toast('Could not save: ' + e.message); }
 }
 
@@ -3423,6 +3442,144 @@ async function formPage(t, c) {
   }
   text(t.title, W - M, H - 50, font(20), soft, 'right');
   return cv;
+}
+
+/* ---------- Open appointments ----------
+   A one-page calendar of open days (1 to 3 months) to send to clients, on its own or with a quote.
+   Each day is worked out from the artist's own calendar:
+     off    = one of the artist's days off (or in the past): left blank
+     taken  = a Hold or Leave booking that day, or already at the day's maximum tattoos,
+              or less than 2 hours left inside working hours
+     part   = some bookings already, still room for a smaller piece
+     open   = nothing booked inside working hours: room for a large, full-day piece
+   Google "busy" blocks count as booked time. */
+const AV = { months: 3, from: 'now' };
+const toMin = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
+const workHours = () => [Settings.get('day_start', '10:00'), Settings.get('day_end', '17:00')];
+const maxPerDay = () => Math.max(1, +Settings.get('max_per_day', '1') || 1);
+
+async function availability(start, end) {
+  const [ws, we] = workHours().map(toMin), work = Math.max(60, we - ws);
+  const rows = await DB.all(`SELECT start_at, duration_min, kind FROM bookings WHERE start_at >= ? AND start_at < ?`, [ymd(start), ymd(end)]);
+  const busy = Settings.get('gcal_busy', '1') === '1' ? await DB.all('SELECT start_at, end_at FROM gcal_busy WHERE start_at < ? AND end_at > ?', [ymd(end), ymd(start)]) : [];
+  const off = daysOff(), today = ymd(new Date()), out = {};
+  for (let d = new Date(start); d < end; d = addDays(d, 1)) {
+    const k = ymd(d);
+    if (k < today || isDayOff(k, off)) { out[k] = 'off'; continue; }
+    const day = rows.filter(r => r.start_at.startsWith(k));
+    if (day.some(r => r.kind === 'hold' || r.kind === 'leave')) { out[k] = 'taken'; continue; }
+    // Only tattoo sessions use up the day's tattoo count; consultations just take time.
+    if (day.filter(r => DONE_KINDS.includes(r.kind)).length >= maxPerDay()) { out[k] = 'taken'; continue; }
+    // Booked minutes inside working hours, from bookings and Google busy time.
+    const spans = day.map(r => { const s = minutesOf(r.start_at); return [s, s + r.duration_min]; });
+    for (const x of busy) { if (x.start_at >= ymd(addDays(d, 1)) || x.end_at <= k) continue;
+      spans.push([x.start_at < k ? 0 : minutesOf(x.start_at), x.end_at >= ymd(addDays(d, 1)) ? 1440 : minutesOf(x.end_at)]); }
+    let used = 0; for (const [s, e] of spans) used += Math.max(0, Math.min(e, we) - Math.max(s, ws));
+    out[k] = used <= 0 ? 'open' : work - used >= 120 ? 'part' : 'taken';
+  }
+  return out;
+}
+function availRange(months = AV.months, from = AV.from) {
+  const t = new Date(), start = from === 'next' ? new Date(t.getFullYear(), t.getMonth() + 1, 1) : new Date(t.getFullYear(), t.getMonth(), 1);
+  return [start, new Date(start.getFullYear(), start.getMonth() + months, 1)];
+}
+
+// The sheet: header, up to three month grids stacked, legend and notes, always one A4 page.
+async function availSheet(months = AV.months, from = AV.from) {
+  const { W, H, M, teal, ink, soft } = DOC;
+  const { cv, x, font, text, wrap, header } = await docCanvas();
+  await header();
+  const [start, end] = availRange(months, from), map = await availability(start, end);
+  const mfmt = (d, o) => d.toLocaleDateString(undefined, o);
+  text('Open appointments', M, 360, font(88, 400, true));
+  const last = addDays(end, -1);
+  text(`${mfmt(start, { month: 'long' })}${months > 1 ? ' – ' + mfmt(last, { month: 'long' }) : ''} ${last.getFullYear()}`, M, 410, font(28, 600), soft);
+  const [ws, we] = workHours();
+  text(`Usually ${ws} – ${we}`, W - M, 410, font(24, 500), soft, 'right');
+
+  const COL = { open: teal, part: '#e0a33a', taken: '#c9c4ba' };
+  const legendY = 462;
+  [['open', 'Open: room for a big piece'], ['part', 'Some time left'], ['taken', 'Booked']].forEach(([k, l], i) => {
+    const lx = M + [0, 430, 740][i];
+    x.fillStyle = COL[k]; x.beginPath(); x.roundRect(lx, legendY - 22, 30, 30, 8); x.fill();
+    text(l, lx + 42, legendY, font(22, 500), ink);
+  });
+
+  // Space for the months, shared equally, so three still fit on one page.
+  const top = 510, notesH = 230, avail = H - 120 - notesH - top, gap = 26;
+  const mh = (avail - gap * (months - 1)) / months, cw = (W - 2 * M) / 7;
+  for (let m = 0; m < months; m++) {
+    const first = new Date(start.getFullYear(), start.getMonth() + m, 1);
+    const y0 = top + m * (mh + gap);
+    const lead = (first.getDay() + 6) % 7, days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    const rows = Math.ceil((lead + days) / 7), titleH = 44, headH = 30, ch = Math.min(90, (mh - titleH - headH) / rows);
+    text(mfmt(first, { month: 'long', year: 'numeric' }), M, y0 + 34, font(34, 400, true), ink);
+    const counts = { open: 0, part: 0 };
+    ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach((l, i) => text(l, M + i * cw + cw / 2, y0 + titleH + 22, font(18, 700), soft, 'center'));
+    for (let dnum = 1; dnum <= days; dnum++) {
+      const i = lead + dnum - 1, cx = M + (i % 7) * cw, cy = y0 + titleH + headH + Math.floor(i / 7) * ch;
+      const st = map[ymd(new Date(first.getFullYear(), first.getMonth(), dnum))];
+      if (st === 'open' || st === 'part') counts[st]++;
+      if (st !== 'off') { x.fillStyle = COL[st]; x.globalAlpha = st === 'taken' ? 0.45 : 1; x.beginPath(); x.roundRect(cx + 4, cy + 4, cw - 8, ch - 8, 10); x.fill(); x.globalAlpha = 1; }
+      text(String(dnum), cx + cw / 2, cy + ch / 2 + 9, font(Math.min(26, ch * 0.4), st === 'open' || st === 'part' ? 700 : 400),
+        st === 'open' || st === 'part' ? '#fff' : st === 'taken' ? soft : '#bdb8ae', 'center');
+    }
+    text(`${counts.open + counts.part} open day${counts.open + counts.part === 1 ? '' : 's'}`, W - M, y0 + 34, font(20, 600), soft, 'right');
+  }
+
+  let y = H - 120 - notesH + 40;
+  text('PLEASE NOTE', M, y, font(22, 700), teal); y += 42;
+  const phone = Settings.get('artist_phone');
+  for (const s of ['Openings are live: they change as bookings come in, so a date is only yours once your deposit is paid.',
+    'Large or full-day pieces need an open (green) day.', phone ? `To book, get in touch: ${phone}.` : 'Get in touch to book your date.'])
+    for (const ln of wrap('•  ' + s, font(24), W - 2 * M)) { text(ln, M, y, font(24)); y += 36; }
+  x.fillStyle = teal; x.fillRect(M, H - 110, W - 2 * M, 3);
+  text(`Made ${fmtDay(ymd(new Date()))}`, W - M, H - 66, font(20), soft, 'right');
+  return { cv, map, start, end };
+}
+
+// The same openings as plain text, for messages.
+function availText(map, start, end) {
+  const byMonth = {};
+  for (const [k, st] of Object.entries(map)) if (st === 'open' || st === 'part') {
+    const d = new Date(k + 'T00:00'), m = d.toLocaleDateString(undefined, { month: 'long' });
+    (byMonth[m] ||= []).push(`${d.toLocaleDateString(undefined, { weekday: 'short' })} ${d.getDate()}${st === 'part' ? '*' : ''}`);
+  }
+  const lines = Object.entries(byMonth).map(([m, ds]) => `${m}: ${ds.join(', ')}`);
+  return `Open appointments\n${lines.join('\n') || 'No open days in this period.'}\n${lines.some(l => l.includes('*')) ? '* some time left, not for a full-day piece\n' : ''}`
+    + 'Openings change as bookings come in; a date is only yours once your deposit is paid.';
+}
+
+async function openAvailability() {
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const draw = async () => {
+    const [s, e] = availRange(), map = await availability(s, e);
+    const open = Object.values(map).filter(v => v === 'open').length, part = Object.values(map).filter(v => v === 'part').length;
+    o.innerHTML = `<div class="card"><h2>Share open appointments</h2>
+      <p class="muted" style="margin-top:0;font-size:13px">A one-page calendar of your open days, worked out from your bookings, days off, working hours (${workHours().join('–')}) and up to ${maxPerDay()} tattoo${maxPerDay() > 1 ? 's' : ''} a day. To keep a day off this sheet, add a <b>Hold</b> booking on it.</p>
+      <div class="lbl">How far ahead</div>
+      <div class="seg" id="av-m" style="margin-bottom:10px">${[1, 2, 3].map(n => `<button data-m="${n}" class="${AV.months === n ? 'on' : ''}" style="flex:1">${n} month${n > 1 ? 's' : ''}</button>`).join('')}</div>
+      <div class="seg" id="av-f" style="margin-bottom:12px">${[['now', 'From this month'], ['next', 'From next month']].map(([k, l]) => `<button data-f="${k}" class="${AV.from === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+      <div class="stat"><span>Open days</span><span><b>${open}</b> full · <b>${part}</b> part</span></div>
+      <div class="qz-acts" style="margin-top:12px"><button class="btn" id="av-print">Print / PDF</button><button class="btn" id="av-img">Save image</button><button class="btn primary" id="av-send">Send</button></div>
+      <button class="btn" id="av-close" style="width:100%;margin-top:8px">Close</button></div>`;
+  };
+  document.body.appendChild(o); await draw();
+  o.addEventListener('click', async (e) => {
+    const m = e.target.closest('[data-m]'), f = e.target.closest('[data-f]');
+    if (m) { AV.months = +m.dataset.m; return draw(); }
+    if (f) { AV.from = f.dataset.f; return draw(); }
+    if (e.target.closest('#av-close')) return o.remove();
+    const act = e.target.closest('#av-print, #av-img, #av-send')?.id; if (!act) return;
+    const { cv, map, start, end } = await availSheet();
+    if (act === 'av-print') return printCanvas(cv);
+    const file = new File([await new Promise(r => cv.toBlob(r, 'image/png'))], `Open-appointments-${ymd(start).slice(0, 7)}.png`, { type: 'image/png' });
+    try {
+      if (act === 'av-send' && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Open appointments', text: availText(map, start, end) });
+      else if (act === 'av-send' && navigator.share) await navigator.share({ text: availText(map, start, end) });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved.'); }
+    } catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); }
+  });
 }
 
 /* ---------- Stats ----------
