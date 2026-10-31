@@ -281,6 +281,26 @@ const DEFAULT_TEMPLATES = [
     { t: 'p', text: 'TikTok: {tiktok}' }
   ] }
 ];
+/* Apprentice consent: the standard consent form plus a section where the client accepts that the
+   artist is still learning, and an apprentice-specific touch-up agreement. Seeded as a third starter. */
+const APPRENTICE_TEMPLATE = (() => {
+  const base = DEFAULT_TEMPLATES[0].blocks.map(b => ({ ...b }));
+  base[0] = { t: 'h', text: 'Apprentice tattoo consent form' };
+  base[1] = { t: 'p', text: 'Apprentice artist: {artist} · Date: {date}' };
+  const at = base.findIndex(b => b.t === 'sub' && b.text === 'Declaration');
+  base.splice(at, 0,
+    { t: 'sub', text: 'Apprentice artist' },
+    { t: 'field', text: 'Supervising artist' },
+    { t: 'check', text: 'I understand that my tattoo artist is an apprentice who is still learning, and that a qualified artist may supervise the session.' },
+    { t: 'check', text: 'I understand that the session may take longer than it would with an experienced artist.' },
+    { t: 'check', text: 'I accept that the result may not be perfect and that touch-ups may be needed once the tattoo has healed.' },
+    { t: 'check', text: 'I agree that the supervising artist may guide, step in or correct the work during the session if needed.' },
+    { t: 'check', text: 'I chose to be tattooed by an apprentice knowingly, and any reduced price reflects this.', opt: true },
+    { t: 'check', text: 'I give permission for photos of my tattoo to be shared with the supervising artist for feedback and learning.', opt: true },
+    { t: 'field', text: 'Touch-up agreement (e.g. one free touch-up within 3 months)', long: true });
+  return { kind: 'consent', title: 'Apprentice consent form', blocks: base };
+})();
+DEFAULT_TEMPLATES.splice(1, 0, APPRENTICE_TEMPLATE);
 /* The first starter templates. On upgrade they are swapped for the new ones only if never edited. */
 const LEGACY_TEMPLATES = [
   { kind: 'consent', title: 'Tattoo consent', blocks: [
@@ -325,13 +345,21 @@ async function migrate() {
   if (!(await DB.one(`SELECT 1 AS x FROM app_meta WHERE key = 'forms_seeded'`))) {
     await DB.tx([...seedNew,
       { sql: `INSERT INTO app_meta VALUES ('forms_seeded', '1')` },
-      { sql: `INSERT INTO app_meta VALUES ('forms_v2', '1')` }]);
+      { sql: `INSERT INTO app_meta VALUES ('forms_v2', '1')` },
+      { sql: `INSERT INTO app_meta VALUES ('forms_v3', '1')` }]);
   } else if (!(await DB.one(`SELECT 1 AS x FROM app_meta WHERE key = 'forms_v2'`))) {
     // Replace the first starter templates with the new ones, leaving any the artist edited.
     await DB.tx([
       ...LEGACY_TEMPLATES.map(t => ({ sql: 'DELETE FROM form_templates WHERE kind = ? AND title = ? AND blocks = ?', params: [t.kind, t.title, JSON.stringify(t.blocks)] })),
       ...seedNew,
-      { sql: `INSERT INTO app_meta VALUES ('forms_v2', '1')` }]);
+      { sql: `INSERT INTO app_meta VALUES ('forms_v2', '1')` },
+      { sql: `INSERT INTO app_meta VALUES ('forms_v3', '1')` }]);
+  } else if (!(await DB.one(`SELECT 1 AS x FROM app_meta WHERE key = 'forms_v3'`))) {
+    // v3 starter: the apprentice consent form, added alongside whatever the artist already has.
+    const t = APPRENTICE_TEMPLATE;
+    await DB.tx([
+      { sql: 'INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', params: [t.kind, t.title, JSON.stringify(t.blocks)] },
+      { sql: `INSERT INTO app_meta VALUES ('forms_v3', '1')` }]);
   }
 }
 
@@ -1430,12 +1458,13 @@ const VIEWS = {
         <div class="letter row" style="justify-content:space-between">${label} ${help(tip)}
           <button class="btn small" data-new="${kind}" style="margin-left:auto">+ New</button></div>
         <div class="card list">${t.filter(x => x.kind === kind).map(x => `
-          <div class="c-row">
+          <div class="c-row f-tpl">
             <span class="ava">${ICON[kind === 'consent' ? 'forms' : 'rules']}</span>
             <span class="c-main"><span class="c-n">${esc(x.title)}</span><span class="muted c-sub">${JSON.parse(x.blocks).length} blocks</span></span>
+            <span class="f-acts"><button class="btn small icon-btn" data-dup="${x.id}" data-tip="Duplicate: start a new form from this one" aria-label="Duplicate"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
             <button class="btn small" data-edit="${x.id}">Edit</button>
             ${kind === 'consent' ? `<button class="btn small" data-blank="${x.id}" data-tip="Print an empty copy to fill in by hand">Print blank</button>` : ''}
-            <button class="btn small primary" data-use="${x.id}">${kind === 'consent' ? 'Sign' : 'Send'}</button>
+            <button class="btn small primary" data-use="${x.id}">${kind === 'consent' ? 'Sign' : 'Send'}</button></span>
           </div>`).join('') || '<div class="muted" style="padding:14px">None yet.</div>'}</div>`;
       $('#f-list').innerHTML =
         sec('consent', 'Consent', 'Clients read, tick and sign on your phone or tablet. A frozen copy is kept on their record.')
@@ -1450,6 +1479,13 @@ const VIEWS = {
         if (b.dataset.edit) location.hash = 'form-edit/' + b.dataset.edit;
         if (b.dataset.use) { Forms.ctx = {}; location.hash = 'form-sign/' + b.dataset.use; }
         if (b.dataset.blank) printBlankForm(+b.dataset.blank);
+        if (b.dataset.dup) (async () => {
+          // A copy to adapt; the original stays as it is. Opens straight in the editor.
+          const src = t.find(x => x.id === +b.dataset.dup);
+          await DB.run('INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', [src.kind, src.title + ' (copy)', src.blocks]);
+          const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+          toast('Copy made. Rename and adjust it.'); location.hash = 'form-edit/' + id;
+        })();
       };
     }
   },

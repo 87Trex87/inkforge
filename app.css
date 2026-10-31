@@ -349,6 +349,10 @@ button.merge-row { background: none; color: inherit; font: inherit; text-align: 
 .merge-row input { width: 22px; height: 22px; accent-color: var(--teal); flex: none; }
 .merge-row .c-main { display: flex; flex-direction: column; } .merge-row .muted { font-size: 12px; }
 .merge-row.empty { opacity: .45; cursor: default; }
+.f-tpl { flex-wrap: wrap; }
+.f-tpl .c-main { flex: 1 1 0; min-width: 0; }
+.f-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 100%; padding-left: 52px; }
+@media (min-width: 700px) { .f-acts { flex: 0 0 auto; padding-left: 0; } }
 .tpl-list { display: flex; flex-direction: column; gap: 8px; }
 .tpl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
 .tpl.on { border-color: var(--teal); }
