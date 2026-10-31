@@ -203,8 +203,8 @@ const DEFAULT_TEMPLATES = [
     { t: 'li', text: 'Gently wash with lukewarm water and unscented antibacterial soap. Use your hands only.' },
     { t: 'li', text: 'Pat dry with a clean paper towel or let it air-dry.' },
     { t: 'sub', text: 'Moisturise lightly' },
-    { t: 'li', text: 'Apply a thin layer of ointment (e.g. Bepanthen or an unscented ointment).' },
-    { t: 'li', text: 'Don\'t overdo it: too much cream clogs the pores (no Vaseline or Zambuk).' },
+    { t: 'li', text: 'Apply a thin layer of unscented tattoo aftercare ointment.' },
+    { t: 'li', text: 'Don\'t overdo it: too much cream clogs the pores. Avoid petroleum jelly.' },
     { t: 'sub', text: 'Daily care (2–3 times a day)' },
     { t: 'li', text: 'Clean and moisturise morning and night for at least 2 weeks.' },
     { t: 'li', text: 'No soaking: no baths, swimming or hot tubs.' },
@@ -1551,7 +1551,7 @@ const VIEWS = {
           const text = formAsText(blocks, formCtx(client, booking));
           try {
             if (navigator.share) await navigator.share({ title: t.title, text });
-            else { await navigator.clipboard.writeText(text); toast('Copied. Paste it into WhatsApp, SMS or email.'); }
+            else { await navigator.clipboard.writeText(text); toast('Copied. Paste it into any message.'); }
           } catch (e) { if (e.name === 'AbortError') return; toast('Could not share: ' + e.message); return; }
           if (client) { await record(null); toast('Logged on ' + fullName(client) + '\'s record.'); }
           Dirty.set(false);
@@ -1636,7 +1636,7 @@ const VIEWS = {
       <div class="card"><h2>Storage ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</h2>
         <div id="storage-info" class="muted">Checking…</div>
       </div>
-      <div class="card"><h2>Backup ${help('Save a full copy of your database to a file, e.g. to cloud drive. Restore replaces everything on this device with the backup.')}</h2>
+      <div class="card"><h2>Backup ${help('Save a full copy of your database to a file, e.g. to cloud storage. Restore replaces everything on this device with the backup.')}</h2>
         <div id="last-backup" class="muted" style="margin-bottom:12px"></div>
         <div class="row">
           <button class="btn primary" id="b-export">Save backup</button>
@@ -2396,7 +2396,7 @@ async function reelPanel() {
         <label class="slider"><span>Volume<b>${Math.round(m.vol * 100)}%</b></span>
           <input type="range" min="0" max="1" step="0.05" value="${m.vol}" data-m="vol"></label>
         <p class="muted" style="font-size:13px">Song: ${m.buffer.duration.toFixed(0)}s · Reel: ${total.toFixed(1)}s. Fades out at the end.</p>`
-      : `<p class="muted" style="margin-top:0">Add a song or sound from this device. Use audio you have the rights to; Instagram and TikTok can also add their own music after you upload.</p>`}
+      : `<p class="muted" style="margin-top:0">Add a song or sound from this device. Use audio you have the rights to. Most social apps also let you add music after you upload.</p>`}
       <label class="btn ${m ? '' : 'primary'}" style="width:100%">${m ? 'Change sound' : 'Choose audio file'}<input type="file" accept="audio/*" hidden id="reel-mfile"></label>
     </div>`;
     $('#reel-mfile').addEventListener('change', async (e) => {
