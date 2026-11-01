@@ -81,7 +81,7 @@ function dzFold(type, sheet) {
     fold: { type, out: r(out), inn: r(inn), lo, li } };
 }
 // Keep proportions: pictures and the logo by default, shapes not; text sizes with its letters.
-const dzKeep = (l) => l.t === 'text' || (l.keep ?? l.t !== 'shape');
+const dzKeep = (l) => l.t === 'text' || (l.keep ?? (l.t !== 'shape' || l.shape === 'path'));
 
 /* ---------- Fonts ---------- */
 const DZF = {
@@ -169,6 +169,64 @@ function dzPaint(x, doc, L, tex) {
     return pt;
   }
   return null;
+}
+/* Picture to shape: traces the outline of a picture into a shape that takes any fill. See-through pictures
+   use their see-through parts as the outside; pictures without any use dark = inside (a black silhouette on
+   white). Colours and shading inside are dropped: only the outline is kept. Result: loops of points (0..1 of
+   the traced area, alternating x, y) and that area within the picture (fractions), or null if nothing found. */
+function dzTrace(im) {
+  const nw = im.naturalWidth || im.width, nh = im.naturalHeight || im.height, t = Math.min(1, 600 / Math.max(nw, nh));
+  const W = Math.max(1, Math.round(nw * t)), H = Math.max(1, Math.round(nh * t)), c = document.createElement('canvas'); c.width = W; c.height = H;
+  const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(im, 0, 0, W, H);
+  const px = cx.getImageData(0, 0, W, H).data, m = new Uint8Array(W * H);
+  let alpha = false; for (let i = 3; i < px.length; i += 4) if (px[i] < 200) { alpha = true; break; }
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4, on = alpha ? px[i + 3] >= 128 : (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) < 128;
+    if (on) { m[y * W + x] = 1; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0) return null;
+  const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H && m[y * W + x] === 1;
+  // Edges between inside and outside pixels, each going clockwise round the inside; joined into loops.
+  const out = new Map(), key = (x, y) => y * (W + 1) + x, addE = (ax, ay, bx, by) => { const k = key(ax, ay); (out.get(k) || out.set(k, []).get(k)).push(key(bx, by)); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) {
+    if (!inside(x, y - 1)) addE(x, y, x + 1, y);
+    if (!inside(x + 1, y)) addE(x + 1, y, x + 1, y + 1);
+    if (!inside(x, y + 1)) addE(x + 1, y + 1, x, y + 1);
+    if (!inside(x - 1, y)) addE(x, y + 1, x, y);
+  }
+  // Fewer points: drop those within `eps` px of the straight line between their neighbours.
+  const simplify = (pts, eps) => {
+    const n = pts.length; if (n < 8) return pts;
+    const keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1; const st = [[0, n - 1]];
+    while (st.length) { const [a, b] = st.pop(); let dm = 0, im2 = -1;
+      const [ax, ay] = pts[a], [bx, by] = pts[b], L = Math.hypot(bx - ax, by - ay);   // a closed loop starts and ends on one point
+      for (let i = a + 1; i < b; i++) { const d = L > 1e-9 ? Math.abs((bx - ax) * (ay - pts[i][1]) - (ax - pts[i][0]) * (by - ay)) / L : Math.hypot(pts[i][0] - ax, pts[i][1] - ay); if (d > dm) { dm = d; im2 = i; } }
+      if (dm > eps) { keep[im2] = 1; st.push([a, im2], [im2, b]); } }
+    return pts.filter((_, i) => keep[i]);
+  };
+  const loops = [], bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  for (const [k0] of out) {
+    let k = k0; const pts = [];
+    while (out.get(k)?.length) { const nx = out.get(k).pop(); pts.push([k % (W + 1), Math.floor(k / (W + 1))]); k = nx; if (k === k0) break; }
+    if (pts.length < 4) continue;
+    let area = 0; for (let i = 0; i < pts.length; i++) { const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length]; area += ax * by - bx * ay; }
+    if (Math.abs(area) / 2 < 6) continue;   // specks
+    pts.push(pts[0]); const sp = simplify(pts, 0.9); sp.pop();
+    loops.push(sp.flatMap(([x, y]) => [+((x - x0) / bw).toFixed(4), +((y - y0) / bh).toFixed(4)]));
+  }
+  return loops.length ? { loops, box: { x: x0 / W, y: y0 / H, w: bw / W, h: bh / H } } : null;
+}
+// A traced shape's outline, smoothed (curves through the midpoints), in the layer's own space.
+function dzPathTo(x, L) {
+  for (const lp of L.path || []) {
+    const n = lp.length / 2, P = (i) => [(lp[(i % n) * 2] - 0.5) * L.w, (lp[(i % n) * 2 + 1] - 0.5) * L.h];
+    if (n < 3) continue;
+    const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    let s0 = mid(P(n - 1), P(0)); x.moveTo(s0[0], s0[1]);
+    for (let i = 0; i < n; i++) { const p = P(i), q = mid(p, P(i + 1)); x.quadraticCurveTo(p[0], p[1], q[0], q[1]); }
+    x.closePath();
+  }
 }
 // CSS for a gradient's colour bar (left to right).
 const dzGradCss = (doc, g) => `linear-gradient(90deg, ${[...g.stops].sort((a, b) => a.p - b.p).map(st => `${dzCol(doc, st.c) || '#000'} ${Math.round(st.p * 1000) / 10}%`).join(', ')})`;
@@ -260,10 +318,11 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
         if (L.shape === 'ellipse') x.ellipse(0, 0, L.w / 2, L.h / 2, 0, 0, Math.PI * 2);
         else if (L.shape === 'star') dzStar(x, 0, 0, Math.min(L.w, L.h) / 2);
         else if (L.shape === 'line') { x.moveTo(-L.w / 2, 0); x.lineTo(L.w / 2, 0); }
+        else if (L.shape === 'path') dzPathTo(x, L);
         else x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, Math.min(L.r || 0, L.w / 2, L.h / 2));
         const pf = dzPaint(x, doc, L, tex);
         if (L.shape === 'line') { x.strokeStyle = pf || st || f || '#000'; x.lineWidth = Math.max(1, sw || L.h); x.lineCap = 'round'; x.stroke(); }
-        else { if (pf || f) { x.fillStyle = pf || f; x.fill(); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
+        else { if (pf || f) { x.fillStyle = pf || f; x.fill(L.shape === 'path' ? 'evenodd' : 'nonzero'); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
         }
         x.restore();
       };
@@ -799,7 +858,7 @@ DZ.edit = async (id) => {
     : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>';
   const layerName = (l) => l.name || (l.t === 'text' ? ((dzFill(doc, l.text).trim() || l.text).split('\n')[0].trim().slice(0, 30) || 'Text')
     : l.t === 'image' ? (l.logo ? 'Logo' : l.slot != null ? `Photo ${l.slot + 1}` : 'Picture')
-    : ({ ellipse: 'Circle', line: 'Line', star: 'Star' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
+    : ({ ellipse: 'Circle', line: 'Line', star: 'Star', path: 'Traced shape' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
   const layerIco = (l) => l.t === 'text' ? 'T' : l.t === 'image' ? (l.logo ? '◎' : '▣') : '◆';
   const drawLayers = () => {
     side.innerHTML = `<div class="dz-lbar"><button class="btn small ${picking ? 'primary' : ''}" data-mact="${picking ? 'done' : 'pick'}">${picking ? 'Done selecting' : 'Select…'}</button>
@@ -903,6 +962,8 @@ DZ.edit = async (id) => {
         <button data-act="fx" class="${l.fx ? 'on' : ''}" title="Flip left to right">⇋<span>Flip</span></button>
         <button data-act="fy" class="${l.fy ? 'on' : ''}" title="Flip upside down">⇵<span>Flip</span></button>
         <button data-act="clip" class="${clipped(l) ? 'on' : ''}" ${F().indexOf(l) ? '' : 'disabled'} title="Clip to the layer below: only shows inside it">↳<span>Clip</span></button>
+        ${l.t === 'image' ? (l.ref || l.logo ? '<button data-act="toshape" title="Trace the picture into a shape you can fill">◆<span>To shape</span></button>' : '')
+          : '<button data-act="flatten1" title="Flatten into a picture: its fill and outline become permanent">▦<span>Flatten</span></button>'}
         <button data-act="pick" title="Select more items">☐<span>Select</span></button>
         <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
@@ -991,7 +1052,7 @@ DZ.edit = async (id) => {
     if (!list.length) return toast('Nothing visible to merge.');
     if (list.some(l => l.lock)) return toast('Unlock the selected layers first.');
     const txt = list.some(l => l.t === 'text');
-    if (!confirm(`Merge ${list.length === 1 ? 'this layer' : list.length + ' layers'} into one picture?${txt ? '\n\nText becomes part of the picture and can no longer be edited.' : ''}\n\nUndo brings the layers back.`)) return;
+    if (!confirm(`${list.length === 1 ? 'Flatten this layer into a picture? Its fill and outline become part of the picture.' : `Merge ${list.length} layers into one picture?`}${txt ? '\n\nText becomes part of the picture and can no longer be edited.' : ''}\n\nUndo brings the layers back.`)) return;
     const f = await flatten(list); if (!f) return;
     const ref = await Media.save(await pngOf(f.cv), 'png'); made.add(ref);
     const gone = new Set(list.map(l => l.id)), top = Math.max(...list.map(l => doc.layers.indexOf(l)));
@@ -999,6 +1060,23 @@ DZ.edit = async (id) => {
     const out = []; doc.layers.forEach((l, i) => { if (!gone.has(l.id)) out.push(l); if (i === top) out.push(m); });
     doc.layers = out; picking = false; picks = new Set(); sel = m.id; changed(true); drawSide();
     toast('Merged into one picture.');
+  };
+  // A picture becomes a shape of its outline, sitting exactly where the picture's content was.
+  const toShape = async (l) => {
+    if (l.lock) return toast('Unlock it first.');
+    if (l.cover || (l.crop && (l.crop.w < 1 || l.crop.h < 1))) return toast('Turn off "Fill the box" and reset the crop first, so the whole picture shows.');
+    const im = await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref); if (!im) return toast('The picture could not be read.');
+    toast('Tracing…');
+    const tr = dzTrace(im); if (!tr) return toast('No shape found: the picture needs see-through parts, or a dark shape on a light background.', 6000);
+    const nw = im.naturalWidth, nh = im.naturalHeight, sc = Math.min(l.w / nw, l.h / nh);   // the picture fits inside its box
+    const w = tr.box.w * nw * sc, h = tr.box.h * nh * sc;
+    let dx = ((tr.box.x + tr.box.w / 2) - 0.5) * nw * sc, dy = ((tr.box.y + tr.box.h / 2) - 0.5) * nh * sc;
+    if (l.fx) dx = -dx; if (l.fy) dy = -dy;
+    const a = (l.rot || 0) * Math.PI / 180, cx = l.x + l.w / 2 + dx * Math.cos(a) - dy * Math.sin(a), cy = l.y + l.h / 2 + dx * Math.sin(a) + dy * Math.cos(a);
+    const sh = { id: dzId(), t: 'shape', shape: 'path', path: tr.loops, fill: '@accent', stroke: 'none', sw: 0, x: cx - w / 2, y: cy - h / 2, w, h,
+      rot: l.rot || 0, op: l.op ?? 1, fx: l.fx, fy: l.fy, name: (l.name || layerName(l)) + ' shape', ...(l.side ? { side: l.side } : {}), ...(l.clip ? { clip: true } : {}) };
+    doc.layers[doc.layers.indexOf(l)] = sh; sel = sh.id; changed(true); drawSide();
+    toast('Now a shape: give it a colour, gradient or texture. Undo brings the picture back.', 5000);
   };
   const saveRef = async (ids) => {
     const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
@@ -1315,7 +1393,8 @@ DZ.edit = async (id) => {
         l.crop = { x: 0, y: 0, w: 1, h: 1 }; l.w = FW; l.h = FH; l.x = cx - FW / 2; l.y = cy - FH / 2; changed(true); return drawSide(); }
       if (a === 'unbend') { l.arc = 0; changed(true); return drawSide(); }
       if (a === 'pick') return startPicking(l.id);
-      if (a === 'flatten') return merge([l.id]);
+      if (a === 'flatten' || a === 'flatten1') return merge([l.id]);
+      if (a === 'toshape') return toShape(l);
       if (a === 'clip') { if (F().indexOf(l) > 0) l.clip = !l.clip || undefined; }
       if (a === 'del') { doc.layers.splice(i, 1); sel = null; }
       if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id; }
