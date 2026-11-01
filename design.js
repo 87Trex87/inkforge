@@ -486,7 +486,8 @@ DZ.edit = async (id) => {
       <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
-        <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div></div>
+        <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
+        <div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
       <div class="dz-side" id="dz-side"></div>
     </div></div>`;
   const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
@@ -494,23 +495,44 @@ DZ.edit = async (id) => {
   const layer = () => doc.layers.find(l => l.id === sel);
 
   // Canvas size: fit the page into the stage; drawn at device resolution for crisp text.
-  const fit = () => {
+  /* View: zoom (z, 1 = the whole design fits) and pan (vx, vy, screen px from centred). */
+  let fitK = 1, z = 1, vx = 0, vy = 0, rs = 1, crispT = null;
+  const fit = (crisp = true) => {
     // On phones the stage hugs the design's shape, so a wide card doesn't leave empty space above and below.
     if (innerWidth < 900) { const sw = stage.clientWidth; stage.style.height = Math.round(Math.min(innerHeight * 0.58, (sw - 32) * doc.h / doc.w + 32)) + 'px'; }
     else stage.style.height = '';
     const r = stage.getBoundingClientRect(), pad = 16;
-    k = Math.min((r.width - pad * 2) / doc.w, (Math.max(260, r.height) - pad * 2) / doc.h);
-    const w = Math.round(doc.w * k), h = Math.round(doc.h * k), dpr = Math.min(2, devicePixelRatio || 1);
-    page.style.width = w + 'px'; page.style.height = h + 'px';
-    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    fitK = Math.min((r.width - pad * 2) / doc.w, (Math.max(260, r.height) - pad * 2) / doc.h); k = fitK * z;
+    const w = doc.w * k, h = doc.h * k;
+    // Keep some of the design on screen however far it's dragged.
+    const mx = Math.max(0, (r.width + w) / 2 - 80), my = Math.max(0, (r.height + h) / 2 - 80);
+    vx = Math.max(-mx, Math.min(mx, vx)); vy = Math.max(-my, Math.min(my, vy));
+    Object.assign(page.style, { width: w + 'px', height: h + 'px', left: (r.width - w) / 2 + vx + 'px', top: (r.height - h) / 2 + vy + 'px' });
+    cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
+    if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
+    const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
+    placeSel();
   };
+  // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
+  // drawing is stretched; it's redrawn sharp a moment after zooming stops.
+  const zoomTo = (nz, sx, sy) => {
+    const r = stage.getBoundingClientRect();
+    if (sx == null) { sx = r.width / 2; sy = r.height / 2; }
+    const left = (r.width - doc.w * k) / 2 + vx, top = (r.height - doc.h * k) / 2 + vy, dx = (sx - left) / k, dy = (sy - top) / k;
+    z = Math.max(0.5, Math.min(8, nz)); const nk = fitK * z;
+    vx = sx - dx * nk - (r.width - doc.w * nk) / 2; vy = sy - dy * nk - (r.height - doc.h * nk) / 2;
+    fit(false); clearTimeout(crispT); crispT = setTimeout(() => { fit(true); redraw(); }, 160);
+  };
+  const frame = () => { z = 1; vx = vy = 0; fit(); redraw(); };
   let drawing = null;
   let cropping = false;   // crop mode for the selected picture or shape
-  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, k * Math.min(2, devicePixelRatio || 1), { ghost: cropping ? sel : null }); if (job === drawing) placeSel(); };
+  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null }); if (job === drawing) placeSel(); };
   // Leaving crop mode: an uncropped item drops its crop entirely.
   const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
   const placeSel = () => {
+    if (!selBox) return;
     const l = layer();
     selBox.hidden = !l;
     if (!l) return;
@@ -693,17 +715,54 @@ DZ.edit = async (id) => {
   };
   const guides = (gx, gy) => { page.querySelector('.dz-guide.v').hidden = !gx; page.querySelector('.dz-guide.hz').hidden = !gy; };
   let drag = null;
-  stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('#dz-page') && sel) select(null); });
+  const pts = new Map(); let pinch = null, bg = null;
+  stage.addEventListener('pointerdown', (e) => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      // A second finger: stop moving the item (put it back) and pinch the view instead.
+      if (drag) { const l = layer(); if (l) Object.assign(l, drag.l0); drag = null; guides(false, false); redraw(); }
+      bg = null; const [a, b] = [...pts.values()], r = stage.getBoundingClientRect();
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top, vx, vy };
+    }
+  }, true);
+  stage.addEventListener('pointerdown', (e) => {
+    if (pinch || e.dzHit || e.target.closest('.dz-zoom')) return;
+    // Background (around the design, or an empty part of it): drag to pan, tap to deselect.
+    bg = { x: e.clientX, y: e.clientY, vx, vy, moved: false }; stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pts.size >= 2) {
+      const [a, b] = [...pts.values()], r = stage.getBoundingClientRect(), mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
+      vx = pinch.vx + mx - pinch.mx; vy = pinch.vy + my - pinch.my; z = pinch.z;   // two-finger pan from where it started
+      fit(false); zoomTo(pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, mx, my);
+      return;
+    }
+    if (bg) { const dx = e.clientX - bg.x, dy = e.clientY - bg.y; if (Math.abs(dx) + Math.abs(dy) > 5) bg.moved = true;
+      if (bg.moved) { vx = bg.vx + dx; vy = bg.vy + dy; fit(false); } }
+  });
+  const ptUp = (e) => {
+    pts.delete(e.pointerId);
+    if (pinch && pts.size < 2) { pinch = null; bg = null; return; }
+    if (bg) { if (!bg.moved && sel) select(null); bg = null; }
+  };
+  stage.addEventListener('pointerup', ptUp); stage.addEventListener('pointercancel', ptUp);
+  stage.addEventListener('wheel', (e) => { e.preventDefault(); const r = stage.getBoundingClientRect();
+    zoomTo(z * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+  stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
+    if (b.dataset.z === 'fit') return frame(); zoomTo(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4)); };
   page.addEventListener('pointerdown', (e) => {
+    if (pinch || pts.size > 1) return;
     const h = e.target.closest('[data-h]')?.dataset.h, p = toPage(e);
     let l = layer();
     if (!h) { const hl = hit(p); if (hl?.id !== sel) { select(hl?.id || null); l = hl; } }
     if (!l || l.lock) return;
+    e.dzHit = true;   // an item was picked: the stage doesn't pan
     e.preventDefault(); page.setPointerCapture(e.pointerId);
     drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, l0: { ...l, crop: l.crop ? { ...l.crop } : null } };
   });
   page.addEventListener('pointermove', (e) => {
-    if (!drag) return;
+    if (!drag || pinch) return;
     const l = layer(), p = toPage(e), o = drag.l0, a = (o.rot || 0) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
     if (cropping && o.crop) {
       // Crop: edges cut away (the whole stays where it is); dragging inside slides the whole under the window.
