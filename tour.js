@@ -87,7 +87,7 @@ const TOUR_STEPS = [
     more: 'Choose lines, lines with shading or solid, tune the detail, then print at the width you need. Too big for one sheet? Split spreads it over several pages to tape together.' },
   { id: 'designs', route: 'designs', sel: '#dz-list', title: 'Design studio',
     text: 'Vouchers, business cards, flyers and tattoo posts.',
-    more: 'Start from a template and theme; your studio name, logo and contact fill in. Add text, pictures and shapes, bend text into an arc, crop and arrange layers, then print a sheet or share a post. Save your own templates.' },
+    more: 'Start from a template and theme; your studio name, logo and contact fill in. Add text, pictures and shapes, set exact sizes in mm, bend text into an arc, crop and arrange layers, then print a sheet or share a post. Save your own templates.' },
   { id: 'bend', route: 'studio', sel: '[data-go="bend"]', title: 'Bend and split',
     text: 'Arc a band to sit flush, or split a back piece over pages.',
     more: 'The bend tool curves a design so a band meets neatly around an arm or leg, and can send it straight to the stencil maker. Split for printing cuts a large stencil into labelled pages with an overlap for taping.' },
