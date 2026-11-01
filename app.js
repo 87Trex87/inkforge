@@ -224,7 +224,9 @@ const MIGRATIONS = [
   // v11: rule book categories, e.g. client rules apart from staff rules.
   `ALTER TABLE rules ADD COLUMN category TEXT NOT NULL DEFAULT 'Client rules';`,
   // v12: inactive stock items are kept but left out of counts, stock takes, alerts and prints.
-  `ALTER TABLE inventory_items ADD COLUMN active INTEGER NOT NULL DEFAULT 1;`
+  `ALTER TABLE inventory_items ADD COLUMN active INTEGER NOT NULL DEFAULT 1;`,
+  // v13: type of work on a booking (new, cover, scar, fix), so receipts can carry the right advice.
+  `ALTER TABLE bookings ADD COLUMN job TEXT;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -777,7 +779,7 @@ const VIEWS = {
       if (id === 'new' && Cal.prefillQuote) {
         const q = Cal.prefillQuote;
         Object.assign(b, { quote: q.quote, deposit: q.deposit, size: q.size || null, duration_min: Math.min(600, Math.max(30, q.duration || 120)),
-          placement: q.placement || null, description: q.description || null, notes: q.notes || null });
+          placement: q.placement || null, description: q.description || null, notes: q.notes || null, job: q.job || 'new' });
       }
       const fromQuote = id === 'new' ? Cal.prefillQuote : null;
       Cal.prefill = Cal.prefillClient = Cal.prefillQuote = null;
@@ -811,6 +813,7 @@ const VIEWS = {
         <div class="off-warn" id="b-offwarn" hidden></div>
         <label class="field"><span id="b-desc-l">Tattoo description</span><textarea class="in" name="description" rows="2" placeholder="e.g. Fine-line peony with stem">${esc(b.description)}</textarea></label>
         <div id="b-ink">
+        <label class="field"><span>Type of work</span><select class="in" name="job">${JOB_TYPES.map(([k, n]) => `<option value="${k}" ${(b.job || 'new') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <div class="two">
           <label class="field"><span>Placement</span><input class="in" name="placement" value="${esc(b.placement)}" placeholder="Left forearm"></label>
           <label class="field"><span>Size</span><input class="in" name="size" value="${esc(b.size)}" placeholder="15 x 10 cm"></label>
@@ -961,8 +964,8 @@ const VIEWS = {
         const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
           d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind,
           done ? 1 : 0, done ? (b.completed_at || new Date().toISOString()) : null,
-          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null];
-        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method';
+          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null];
+        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job';
         const refs = [...keep];
         for (const a of added) refs.push(await Media.save(a.blob, 'jpg'));
         let bid = b.id;
@@ -2740,6 +2743,7 @@ const QUOTE_V2 = {
   colour: { black: 1, bg: 1.15, colour: 1.3 },
   pain: [1, 1.05, 1.12, 1.2, 1.3],                         // pain levels 1-5
   textMin: 3,                                              // minutes per letter at 2 cm letter height
+  job: { cover: [1, 1.15, 1.3, 1.5, 1.75], scar: [1.1, 1.3, 1.5, 1.75, 2], fix: [0.8, 0.95, 1.1, 1.3, 1.5] },  // time x, difficulty 1-5
   placements: [
     ['Head', 'Head & neck', 4], ['Face', 'Head & neck', 5], ['Neck', 'Head & neck', 4],
     ['Shoulder', 'Arms & hands', 2], ['Upper arm', 'Arms & hands', 1], ['Inner bicep', 'Arms & hands', 3],
@@ -2770,16 +2774,29 @@ const DETAIL_LEVELS = [
   ['Detailed', 'Smooth realism-style shading, texture and highlights.'],
   ['Full scene', 'Detailed subject plus a background or extra elements.']
 ];
+// Type of work: [key, name, short description, what easy / hard looks like, note for documents].
+const JOB_TYPES = [
+  ['new', 'New tattoo', 'Fresh skin', '', ''],
+  ['cover', 'Cover-up', 'Over an old tattoo', 'Easy: faded or light old work. Hard: dark, dense or large old work.',
+    'Cover-ups often need a touch-up once healed, in case the old tattoo starts to show through again.'],
+  ['scar', 'Scar cover-up', 'Over scarring', 'Easy: flat, pale and fully healed. Hard: raised, uneven or textured scarring.',
+    'Scars usually need about 2 years to heal fully before they can be tattooed. Scar tissue can take ink unevenly, so a touch-up may be needed.'],
+  ['fix', 'Fix-up', 'Rework old work', 'Easy: a solid base to build on. Hard: blowouts, shaky lines or a lot to correct.',
+    'Fix-ups depend on the condition of the existing tattoo; more time may be needed once work starts.']
+];
+const JOB_LEVELS = ['Very easy', 'Easy', 'Moderate', 'Hard', 'Very hard'];
+const jobOf = (k) => JOB_TYPES.find(j => j[0] === k) || JOB_TYPES[0];
+const jobNote = (k) => jobOf(k)[4];
 const COLOUR_MODES = [['black', 'Black', 'Black ink only'], ['bg', 'Black & grey', 'Black with grey wash shading'], ['colour', 'Colour', 'Full colour']];
 
 function qCfg() {
   let c = {}; try { c = JSON.parse(Settings.get('quote_v2', '{}')); } catch {}
-  return { ...QUOTE_V2, ...c, colour: { ...QUOTE_V2.colour, ...c.colour } };
+  return { ...QUOTE_V2, ...c, colour: { ...QUOTE_V2.colour, ...c.colour }, job: { ...QUOTE_V2.job, ...c.job } };
 }
 const qSave = (cfg) => Settings.set('quote_v2', JSON.stringify(cfg));
 
 // The wizard's answers, kept while the app is open.
-const QZ = { client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null };
+const QZ = { client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, job: 'new', jobLvl: 3, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null };
 const QZ_STEPS = ['Placement', 'Size', 'Colour', 'Detail', 'Style', 'Text', 'Quote'];
 
 // Price for one session of h hours on the rate curve.
@@ -2812,6 +2829,7 @@ function qCalc(q = QZ) {
     const t = letters * c.textMin * (q.letter / 2) * (font ? font[1] : 1);
     lines.push([`Lettering: ${letters} letters${q.font ? ', ' + q.font.toLowerCase() : ''}`, t]); mins += t;
   }
+  if (q.job && q.job !== 'new' && c.job[q.job]) f(`${jobOf(q.job)[1]} (${JOB_LEVELS[q.jobLvl - 1].toLowerCase()})`, c.job[q.job][q.jobLvl - 1]);
   const est = Math.max(0.5, Math.round(mins / 60 * 4) / 4);       // to the nearest quarter hour
   const hours = q.hours ?? est;
   const sessions = Math.max(1, Math.ceil(hours / c.sessionMax - 1e-9));
@@ -2871,7 +2889,14 @@ function qzDraw() {
   let body = '';
   if (s === 0) {
     const groups = [...new Set(c.placements.map(p => p[1]))];
-    body = `<h2>Where is the tattoo?</h2>
+    const jb = jobOf(QZ.job);
+    body = `<h2>Type of work</h2>
+      <div class="qz-jobs">${JOB_TYPES.map(([k, n, d]) => `<button data-job="${k}" class="${QZ.job === k ? 'on' : ''}"><b>${n}</b><span>${d}</span></button>`).join('')}</div>
+      ${QZ.job !== 'new' ? `<div class="qz-jl"><div class="slider"><span>Difficulty</span><b id="qz-jln">${JOB_LEVELS[QZ.jobLvl - 1]}</b></div>
+        <input type="range" min="1" max="5" step="1" value="${QZ.jobLvl}" data-qz="jobLvl" class="qz-range" aria-label="Difficulty">
+        <div class="qz-jlk muted"><span>Very easy</span><span>Very hard</span></div>
+        <p class="muted qz-jlh">${jb[3]}</p>${jb[4] ? `<p class="qz-jln2">${jb[4]}</p>` : ''}</div>` : ''}
+      <h2 style="margin-top:18px">Where is the tattoo?</h2>
       <div class="qz-place"><div class="qz-pin"><button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button></div>
       <div class="qz-picks">
       <div class="qz-legend">${PAIN_COLOURS.map((col, i) => `<span><b style="background:${col}"></b>${PAIN_NAMES[i]}</span>`).join('')}</div>
@@ -2995,6 +3020,7 @@ function qzBind(el) {
     if (d('step') != null && !t.closest('[data-step]').disabled) return qzGo(+d('step'));
     if (d('place') != null) { QZ.place = d('place'); return qzDraw(); }
     if (d('side')) { QZ.side = d('side'); return qzDraw(); }
+    if (d('job')) { QZ.job = d('job'); QZ.hours = null; return qzDraw(); }
     if (d('preset')) { const [w, h] = d('preset').split('x').map(Number); Object.assign(QZ, { w, h, hours: null }); return qzDraw(); }
     if (d('colour')) { QZ.colour = d('colour'); QZ.hours = null; return qzDraw(); }
     if (d('detail')) { QZ.detail = +d('detail'); QZ.hours = null; return qzDraw(); }
@@ -3010,11 +3036,11 @@ function qzBind(el) {
     if (t.closest('#qz-avclear')) { QZ.av.hidden = []; return qzAvPanel(); }
     if (d('dq')) { QZ.discVal = +QZ.discVal === +d('dq') ? 0 : +d('dq'); return qzDraw(); }
     if (t.closest('#qz-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url);
-      Object.assign(QZ, { design: null, designNote: '', withDesign: false, av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
+      Object.assign(QZ, { design: null, designNote: '', withDesign: false, av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, job: 'new', jobLvl: 3, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
     if (t.closest('#qz-book')) {
       const r = qCalc();
       Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
-        placement: qzPlacement(), description: qzSummary(),
+        placement: qzPlacement(), description: qzSummary(), job: QZ.job,
         design: QZ.design ? QZ.design.blob : null, notes: QZ.design && QZ.designNote ? 'Design notes: ' + QZ.designNote : null };
       return newBookingNext();
     }
@@ -3031,7 +3057,8 @@ function qzBind(el) {
     if (!k) return;
     QZ[k] = +e.target.value; if (k !== 'hours') QZ.hours = null;
     const b = e.target.closest('.slider')?.querySelector('b');
-    if (b) b.textContent = k === 'hours' ? fmtH(QZ.hours) + ' (yours)' : QZ[k] + ' cm';
+    if (k === 'jobLvl') $('#qz-jln').textContent = JOB_LEVELS[QZ.jobLvl - 1];
+    else if (b) b.textContent = k === 'hours' ? fmtH(QZ.hours) + ' (yours)' : QZ[k] + ' cm';
     if (k === 'w' || k === 'h') { const sc = 120 / Math.max(QZ.w, QZ.h, 20), box = $('.qz-box');
       box.style.width = QZ.w * sc + 'px'; box.style.height = QZ.h * sc + 'px'; box.firstElementChild.textContent = `${QZ.w} × ${QZ.h} cm`; }
     if (k === 'detail') {
@@ -3066,7 +3093,7 @@ function qzBind(el) {
 }
 
 const qzPlacement = () => QZ.place ? `${QZ.side === 'L' ? 'Left ' : QZ.side === 'R' ? 'Right ' : ''}${QZ.place.toLowerCase()}`.replace(/^./, m => m.toUpperCase()) : '';
-const qzSummary = () => [QZ.style, COLOUR_MODES.find(m => m[0] === QZ.colour)?.[1].toLowerCase(), DETAIL_LEVELS[QZ.detail - 1][0].toLowerCase(),
+const qzSummary = () => [QZ.job !== 'new' && `${jobOf(QZ.job)[1]} (${JOB_LEVELS[QZ.jobLvl - 1].toLowerCase()})`, QZ.style, COLOUR_MODES.find(m => m[0] === QZ.colour)?.[1].toLowerCase(), DETAIL_LEVELS[QZ.detail - 1][0].toLowerCase(),
   QZ.text && `text "${QZ.text}"${QZ.fontName ? ' in ' + QZ.fontName : ''}`].filter(Boolean).join(', ');
 
 /* Client quote sheet: an invoice-style A4 page (1240 x 1754, 150 dpi) drawn on a canvas, so Print and
@@ -3113,6 +3140,7 @@ async function qzSheet() {
   text('YOUR TATTOO', M, y, font(22, 700), teal); y += 18;
   const pl = c.placements.find(p => p[0] === QZ.place);
   const rows = [
+    ...(QZ.job !== 'new' ? [['Type of work', `${jobOf(QZ.job)[1]}, ${JOB_LEVELS[QZ.jobLvl - 1].toLowerCase()} difficulty`]] : []),
     ['Placement', qzPlacement() + (pl ? `  (${PAIN_NAMES[pl[2] - 1].toLowerCase()} pain area)` : '')],
     ['Size', `${QZ.w} × ${QZ.h} cm`],
     ['Colour', COLOUR_MODES.find(m => m[0] === QZ.colour)?.[1] || '—'],
@@ -3161,7 +3189,7 @@ async function qzSheet() {
   text('PLEASE NOTE', M, y, font(22, 700), teal); y += 44;
   for (const s of ['Breaks are not included in the time or the quote.', 'The final price may change if the design, size or placement changes.',
     `The deposit secures your booking and comes off the final price.`, 'This quote is valid for 30 days.',
-    c.vatOn ? `Prices include VAT at ${c.vatRate}%.` : '', touchupLine()].filter(Boolean))
+    c.vatOn ? `Prices include VAT at ${c.vatRate}%.` : '', jobNote(QZ.job), touchupLine()].filter(Boolean))
     for (const ln of wrapLines('•  ' + s, font(26), W - 2 * M)) { text(ln, M, y, font(26), ink); y += 38; }
 
   // Footer sits under the notes, or at the foot of the page when there is room.
@@ -3267,7 +3295,8 @@ async function qzShare() {
     + (r.disc ? `Tattoo: ${money(r.base)}\nDiscount: -${money(r.disc)}\n` : '')
     + (r.vat ? `VAT ${r.c.vatRate}%: ${money(r.vat)}\n` : '')
     + `${r.disc || r.vat ? 'Total' : 'Estimate'}: ${money(r.total)} (about ${fmtH(r.hours)}${r.sessions > 1 ? ` over ${r.sessions} sessions` : ''})\n`
-    + `Deposit to book: ${money(r.deposit)}\n\nFinal price may change with design changes.`;
+    + `Deposit to book: ${money(r.deposit)}\n\nFinal price may change with design changes.`
+    + (jobNote(QZ.job) ? '\n' + jobNote(QZ.job) : '');
   try {
     if (navigator.share) await navigator.share({ text });
     else { await navigator.clipboard.writeText(text); toast('Quote copied.'); }
@@ -3323,6 +3352,9 @@ function qcDraw() {
       <div class="qc-add"><input class="in" id="qc-st-name" placeholder="New style, e.g. Ornamental">
         <div class="unit-in"><input class="in" id="qc-st-f" type="number" step="0.05" value="1"><em>×</em></div>
         <button class="btn small primary" id="qc-st-add">Add</button></div></div>
+    <div class="card"><h2>Cover-ups and fix-ups ${help('Time multiplier for each difficulty. 1 = same as a new tattoo, 1.5 = 50% longer, 0.8 = quicker.')}</h2>
+      <div class="qc-row qc-jh"><span></span>${JOB_LEVELS.map(l => `<em>${l}</em>`).join('')}</div>
+      ${JOB_TYPES.slice(1).map(([k, n]) => `<div class="qc-row qc-job"><span>${n}</span>${c.job[k].map((v, i) => num(`job.${k}.${i}`, v, '0.05')).join('')}</div>`).join('')}</div>
     <div class="card"><h2>Lettering</h2>
       <label class="field"><span>Minutes per letter ${help('At 2 cm letter height. Bigger letters scale up.')}</span><div class="unit-in">${num('textMin', c.textMin, '0.5')}<em>min</em></div></label>
       ${c.fonts.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`fonts.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</div>
@@ -3468,6 +3500,7 @@ function receiptText(b, p) {
   return `Thank you${b.first_name ? ', ' + b.first_name : ''}!${studio ? ' From ' + studio : ''}\n`
     + `${b.description || 'Tattoo'}${b.placement ? ' · ' + b.placement : ''}\nPaid: ${b.paid != null ? money(b.paid) : '—'}\n`
     + (p ? `\nAs a thank you: ${promoLabel(p)}. Valid until ${fmtDay(p.until)}.\n` : '')
+    + (jobNote(b.job) ? '\n' + jobNote(b.job) : '')
     + (touchupLine() ? '\n' + touchupLine() : '')
     + '\nFollow your aftercare and reach out if anything looks off.';
 }
@@ -3522,7 +3555,7 @@ async function receiptSheet(b, promo, show) {
     text(k, W - M - 440, 330 + i * 38, font(22, 600), soft); text(v, W - M, 330 + i * 38, font(24, 500), ink, 'right');
   });
   let y = 500;
-  const rows = [show.description && ['Tattoo', b.description], show.placement && ['Placement', b.placement], show.size && ['Size', b.size],
+  const rows = [b.job && b.job !== 'new' && ['Type of work', jobOf(b.job)[1]], show.description && ['Tattoo', b.description], show.placement && ['Placement', b.placement], show.size && ['Size', b.size],
     show.time && ['Time tattooed', b.time_min != null ? fmtH(b.time_min / 60) : null], show.method && ['Paid by', b.pay_method]].filter(r => r && r[1]);
   rows.forEach(([k, v], i) => {
     const lines = wrap(v, font(28), W - 2 * M - 300), h = 22 + lines.length * 38;
@@ -3547,7 +3580,7 @@ async function receiptSheet(b, promo, show) {
     y += 290 + 60;
   }
   const notes = [...(show.tips ? ['Follow your aftercare instructions for the next 2 to 4 weeks.', 'Keep it out of the sun while it heals; use SPF once healed.',
-    'Anything unusual, or a spot that needs a touch-up? Get in touch.'] : []), show.touchup && touchupLine()].filter(Boolean);
+    'Anything unusual, or a spot that needs a touch-up? Get in touch.'] : []), jobNote(b.job), show.touchup && touchupLine()].filter(Boolean);
   if (notes.length) {
     text(show.tips ? 'LOOKING AFTER IT' : 'GOOD TO KNOW', M, y, font(22, 700), teal); y += 44;
     for (const s of notes) for (const ln of wrap('•  ' + s, font(26), W - 2 * M)) { text(ln, M, y, font(26)); y += 40; }

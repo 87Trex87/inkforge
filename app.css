@@ -793,3 +793,21 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
   .qz-dl .qz-detail svg { width: 100%; max-width: 280px; max-height: calc(100vh - 300px); }
   .qz-dl .qz-picks .qz-range { margin-top: 0; }
 }
+
+/* Quote: type of work and difficulty */
+.qz-jobs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+@media (max-width: 560px) { .qz-jobs { grid-template-columns: repeat(2, 1fr); } }
+.qz-jobs button { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); cursor: pointer; min-height: 56px; }
+.qz-jobs button span { font-size: 12px; color: var(--ink2); }
+.qz-jobs button.on { border-color: var(--teal); background: rgba(31,182,166,.14); }
+.qz-jobs button.on b { color: var(--teal); }
+.qz-jl { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.qz-jl .slider { display: flex; justify-content: space-between; font-size: 14px; }
+.qz-jl .slider b { color: var(--teal); }
+.qz-jlk { display: flex; justify-content: space-between; font-size: 11px; margin-top: -2px; }
+.qz-jlh { font-size: 12px; margin: 8px 0 0; }
+.qz-jln2 { font-size: 12px; margin: 6px 0 0; color: var(--gold, #e8b44c); }
+.qc-row.qc-job, .qc-row.qc-jh { display: grid; grid-template-columns: 1.4fr repeat(5, 1fr); gap: 6px; align-items: center; }
+.qc-jh em { font-size: 10px; font-style: normal; color: var(--ink2); text-align: center; }
+.qc-job .in { padding: 6px 4px; text-align: center; min-width: 0; }
