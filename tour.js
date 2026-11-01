@@ -86,7 +86,7 @@ const TOUR_STEPS = [
     text: 'Photo to a clean stencil, printed at real size.',
     more: 'Choose lines, lines with shading or solid, tune the detail, then print at the width you need. Too big for one sheet? Split spreads it over several pages to tape together.' },
   { id: 'designs', route: 'designs', sel: '#dz-list', title: 'Design studio',
-    text: 'Vouchers, business cards, flyers, blank pages (A6 to A2, Letter, custom) and tattoo posts.',
+    text: 'Vouchers, business cards, flyers, folded pamphlets (trifold, bifold and more), blank pages (A6 to A2, Letter, custom) and tattoo posts.',
     more: 'Start from a template and theme; your studio name, logo and contact fill in. Add text, pictures and shapes, set exact sizes in mm, bend text into an arc, crop and arrange layers. Clip a texture into a shape, hold a layer (or Ctrl-click) to select several, then merge them or save them to References. Print a sheet or share a post, and save your own templates.' },
   { id: 'bend', route: 'studio', sel: '[data-go="bend"]', title: 'Bend and split',
     text: 'Arc a band to sit flush, or split a back piece over pages.',

@@ -1283,3 +1283,10 @@ body.practice::before { content: ''; position: fixed; left: 0; right: 0; top: 0;
 .dz-csize label { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .dz-csize label span { font: 700 11px var(--ui); color: var(--ink2); }
 .dz-csize .in { min-width: 0; padding: 8px 6px; }
+
+/* Folded pamphlets: fold guides */
+#dz-folds { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.dz-fl { position: absolute; width: 0; border-left: 1.5px dashed rgba(31,182,166,.85); }
+.dz-fsep { position: absolute; left: 0; right: 0; height: 0; border-top: 3px solid rgba(31,182,166,.9); }
+.dz-pl { position: absolute; padding: 3px 6px; font: 600 10px var(--ui); color: #fff; text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; opacity: .85; }
+.dz-stag { position: absolute; left: 4px; transform: translateY(calc(-100% - 4px)); padding: 2px 7px; border-radius: 6px; background: var(--teal); color: #071413; font: 700 10px var(--ui); text-transform: uppercase; letter-spacing: .04em; }

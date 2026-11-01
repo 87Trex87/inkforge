@@ -11,6 +11,7 @@ const DESIGN_VERSION = 1;   // app.js checks this matches, to catch a stale cach
 
 const DZ_KINDS = {
   page: { label: 'Blank page', sub: 'A2 to A6, Letter, custom…', w: 2480, h: 3508, per: 0, page: 1 },
+  fold: { label: 'Folded pamphlet', sub: 'Trifold, bifold, Z-fold…', w: 3508, h: 2480, per: 0, fold: 1 },
   voucher: { label: 'Gift voucher', sub: 'DL, 210 × 99 mm', w: 2480, h: 1169, per: 2 },
   card: { label: 'Business card', sub: '85 × 55 mm', w: 1004, h: 650, per: 10 },
   flyer: { label: 'Flyer / pamphlet', sub: 'A5, 148 × 210 mm', w: 1748, h: 2480, per: 2 },
@@ -55,6 +56,31 @@ function dzPaper(wmm, hmm, label) {
   return { w: Math.round(wmm * dpi / 25.4), h: Math.round(hmm * dpi / 25.4), dpi, label, mm: [wmm, hmm] };
 }
 const dzMM = (v) => (Math.round(v * 10) / 10).toString();
+/* Folded pamphlets: one landscape sheet, both sides. The design holds the outside on top and the inside
+   below it; export splits them into two pages. Panel names follow how the sheet folds: on a trifold the
+   panel that folds in is 1.5 mm narrower so it tucks in without buckling. */
+const DZ_FOLD_TYPES = {
+  tri: { name: 'Trifold', sub: '3 panels, folds in' },
+  bi: { name: 'Bifold', sub: 'Folds in half' },
+  z: { name: 'Z-fold', sub: '3 panels, zigzag' },
+  gate: { name: 'Gatefold', sub: 'Flaps meet in the middle' },
+  quad: { name: '4-panel', sub: 'Accordion' }
+};
+const DZ_FOLD_SHEETS = ['A4', 'Letter', 'Legal', 'A3', 'Tabloid'];
+function dzFold(type, sheet) {
+  const p = DZ_PAPER.find(x => x[0] === sheet) || DZ_PAPER[2], wmm = p[2], hmm = p[1];   // laid flat, landscape
+  const dpi = [300, 250, 200, 150, 100].find(d => (wmm * d / 25.4) * (2 * hmm * d / 25.4) <= 16e6) || 72;
+  const W = Math.round(wmm * dpi / 25.4), H = Math.round(hmm * dpi / 25.4), mm = dpi / 25.4, n = type === 'bi' ? 2 : type === 'quad' || type === 'gate' ? 4 : 3;
+  let out, inn, lo, li;
+  if (type === 'tri') { const f = W / 3 - 1.5 * mm, o2 = (W - f) / 2; out = [f, f + o2]; inn = [o2, 2 * o2];
+    lo = ['Inside flap', 'Back', 'Front cover']; li = ['Inside left', 'Inside middle', 'Inside right (folds in)']; }
+  else if (type === 'bi') { out = inn = [W / 2]; lo = ['Back', 'Front cover']; li = ['Inside left', 'Inside right']; }
+  else if (type === 'gate') { out = inn = [W / 4, W * 3 / 4]; lo = ['Cover, right half', 'Back', 'Cover, left half']; li = ['Left flap', 'Inside middle', 'Right flap']; }
+  else { out = inn = [...Array(n - 1)].map((_, i) => W * (i + 1) / n); lo = [...Array(n)].map((_, i) => 'Outside ' + (i + 1)); li = [...Array(n)].map((_, i) => 'Inside ' + (i + 1)); }
+  const r = (a) => a.map(Math.round), name = DZ_FOLD_TYPES[type].name;
+  return { w: W, h: 2 * H, dpi, label: name, mm: [wmm, hmm], sheet: p[0],
+    fold: { type, side: H, out: r(out), inn: r(inn), lo, li } };
+}
 // Keep proportions: pictures and the logo by default, shapes not; text sizes with its letters.
 const dzKeep = (l) => l.t === 'text' || (l.keep ?? l.t !== 'shape');
 
@@ -375,7 +401,10 @@ function dzNew(kind, opt, theme, piece, size) {
   if (opt?.custom) { doc = JSON.parse(JSON.stringify(opt.custom.doc)); doc.layers.forEach(l => l.id = dzId()); doc.theme = theme || doc.theme; }
   else doc = { v: 1, kind, w: k.w, h: k.h, theme, bg: { c: '@bg' }, layers: opt?.make ? opt.make(k.w, k.h) : [] };
   doc.kind = kind; doc.w = k.w; doc.h = k.h;
-  if (size) { doc.w = size.w; doc.h = size.h; doc.dpi = size.dpi; doc.paper = `${size.label}, ${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm`; } else { delete doc.dpi; delete doc.paper; }
+  delete doc.dpi; delete doc.paper; delete doc.fold;
+  if (size) { doc.w = size.w; doc.h = size.h; doc.dpi = size.dpi;
+    doc.paper = size.fold ? `${size.label}, ${size.sheet} sheet (${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm)` : `${size.label}, ${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm`;
+    if (size.fold) doc.fold = size.fold; }
   doc.vals = kind === 'voucher' ? { amount: '', to: '', from: '', ...(opt?.custom ? doc.vals : {}), code, expires: ymd(exp) } : {};
   dzFillSlots(doc, piece);
   return doc;
@@ -450,9 +479,10 @@ DZ.list = async () => {
 // opts.piece: start a post from this portfolio piece (only post sizes are offered).
 async function dzPicker(opts = {}) {
   const st = { kind: null, li: 0, theme: 'ink', piece: opts.piece ? await dzPiece(opts.piece) : null,
-    ps: Settings.get('dz_paper', 'A4'), land: false, cw: 200, ch: 200, cu: 'mm' };
+    ps: Settings.get('dz_paper', 'A4'), land: false, cw: 200, ch: 200, cu: 'mm', ft: 'tri', fs: Settings.get('dz_fold_sheet', 'A4') };
   // The chosen blank page size (mm, turned for landscape) at its dpi.
   const size = () => {
+    if (DZ_KINDS[st.kind]?.fold) return dzFold(st.ft, st.fs);
     if (!DZ_KINDS[st.kind]?.page) return null;
     const f = { mm: 1, cm: 10, in: 25.4 }[st.cu], p = DZ_PAPER.find(x => x[0] === st.ps);
     let [w, h] = p ? [p[1], p[2]] : [Math.min(1200, Math.max(20, st.cw * f)), Math.min(1200, Math.max(20, st.ch * f))];
@@ -474,7 +504,13 @@ async function dzPicker(opts = {}) {
     const lays = dzLayouts(st.kind), social = DZ_KINDS[st.kind].social, pu = st.piece ? await Media.url(st.piece.thumb) : '';
     const sz = size();
     o.innerHTML = `<div class="card dz-pick"><h2>${DZ_KINDS[st.kind].label}</h2>
-      ${sz ? `<div class="lbl">Size</div><div class="dz-papers">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => {
+      ${sz?.fold ? `<div class="lbl">Fold</div><div class="dz-papers">${Object.entries(DZ_FOLD_TYPES).map(([k, v]) =>
+          `<button data-ft="${k}" class="${st.ft === k ? 'on' : ''}"><b>${v.name}</b><small>${v.sub}</small></button>`).join('')}</div>
+        <div class="lbl" style="margin-top:10px">Sheet, laid flat</div><div class="dz-papers">${DZ_FOLD_SHEETS.map(n => { const pp = DZ_PAPER.find(x => x[0] === n);
+          return `<button data-fs="${n}" class="${st.fs === n ? 'on' : ''}"><b>${n}</b><small>${dzMM(pp[2])} × ${dzMM(pp[1])}</small></button>`; }).join('')}</div>
+        <p class="muted" style="font-size:12px;margin:6px 0 12px">You design both sides: the outside on top, the inside below it, with the folds marked.
+          Panels: ${sz.fold.lo.join(', ')}. ${sz.dpi} dpi.</p>` : ''}
+      ${sz && !sz.fold ? `<div class="lbl">Size</div><div class="dz-papers">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => {
           const pp = DZ_PAPER.find(x => x[0] === n);
           return `<button data-ps="${esc(n)}" class="${st.ps === n ? 'on' : ''}"><b>${esc(n)}</b><small>${pp ? `${dzMM(pp[1])} × ${dzMM(pp[2])}` : 'your size'}</small></button>`; }).join('')}</div>
         ${st.ps === 'Custom' ? `<div class="dz-csize"><label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-cs="cw" value="${st.cw}"></label>
@@ -508,13 +544,15 @@ async function dzPicker(opts = {}) {
     if (d('li') != null) { st.li = +d('li'); o.querySelectorAll('[data-li]').forEach(b => b.classList.toggle('on', +b.dataset.li === st.li)); return; }
     if (d('theme')) { st.theme = d('theme'); return draw(); }
     if (d('ps')) { st.ps = d('ps'); return draw(); }
+    if (d('ft')) { st.ft = d('ft'); return draw(); }
+    if (d('fs')) { st.fs = d('fs'); return draw(); }
     if (d('land') != null) { st.land = d('land') === '1'; return draw(); }
     if (t.closest('[data-go]')) {
       const sz = size();
-      if (sz) await Settings.set('dz_paper', st.ps);
+      if (sz) await Settings.set(sz.fold ? 'dz_fold_sheet' : 'dz_paper', sz.fold ? st.fs : st.ps);
       const doc = dzNew(st.kind, dzLayouts(st.kind)[st.li], st.theme, st.piece, sz);
       const n = await DB.one('SELECT COUNT(*) AS n FROM designs WHERE kind = ?', [st.kind]);
-      const base = sz ? `${sz.label === 'Custom' ? 'Custom' : sz.label} page` : DZ_KINDS[st.kind].label;
+      const base = sz ? (sz.fold ? `${sz.label} pamphlet` : `${sz.label} page`) : DZ_KINDS[st.kind].label;
       const name = st.piece?.vals.title ? `${st.piece.vals.title} (${DZ_KINDS[st.kind].label.toLowerCase()})` : base + (n.n ? ' ' + (n.n + 1) : '');
       await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [name, st.kind, JSON.stringify(doc)]);
       const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
@@ -549,7 +587,7 @@ DZ.edit = async (id) => {
       <button class="btn primary" id="dz-export">Export</button>
     </div>
     <div class="dz-body">
-      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-multi"></div><div id="dz-sel" hidden>
+      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
@@ -583,10 +621,20 @@ DZ.edit = async (id) => {
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
     const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
-    placeSel();
+    drawFolds(); placeSel();
   };
   // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
   // drawing is stretched; it's redrawn sharp a moment after zooming stops.
+  // Folded pamphlets: fold lines, panel names and where the outside ends (only on screen, never exported).
+  const drawFolds = () => {
+    const f = doc.fold, box = $('#dz-folds'); if (!box) return; box.innerHTML = '';
+    if (!f) return;
+    box.innerHTML = [0, 1].map(sd => { const y = sd * f.side, fl = sd ? f.inn : f.out, nm = sd ? f.li : f.lo, ed = [0, ...fl, doc.w];
+      return fl.map(x => `<i class="dz-fl" style="left:${x * k}px;top:${y * k}px;height:${f.side * k}px"></i>`).join('')
+        + nm.map((n, i) => `<span class="dz-pl" style="left:${ed[i] * k}px;width:${(ed[i + 1] - ed[i]) * k}px;top:${y * k}px">${esc(n)}</span>`).join('')
+        + `<b class="dz-stag" style="top:${(y + f.side) * k}px">${sd ? 'Inside' : 'Outside'}</b>`; }).join('')
+      + `<i class="dz-fsep" style="top:${f.side * k}px"></i>`;
+  };
   const zoomTo = (nz, sx, sy) => {
     const r = stage.getBoundingClientRect();
     if (sx == null) { sx = r.width / 2; sy = r.height / 2; }
@@ -1324,10 +1372,12 @@ function dzExport(doc, name) {
   const file = () => (name || 'design').replace(/[^\w-]+/g, '_');
   const draw = () => {
     o.innerHTML = `<div class="card"><h2>Export</h2>
-      <p class="muted" style="font-size:13px;margin-top:0">${esc(kind.label)}, ${esc(doc.paper || kind.sub)}. Saved at ${kind.social ? 'full size' : `print quality (${doc.dpi || 300} dpi)`}.</p>
+      <p class="muted" style="font-size:13px;margin-top:0">${esc(kind.label)}, ${esc(doc.paper || kind.sub)}. Saved at ${kind.social ? 'full size' : `print quality (${doc.dpi || 300} dpi)`}.
+        ${doc.fold ? 'Saved as two pages, outside then inside. Print double-sided, flipping on the short edge.' : ''}</p>
       <div class="dz-ex">
         <button data-ex="png"><b>Save picture</b><small>PNG, for printing elsewhere or posting</small></button>
         <button data-ex="share"><b>Share</b><small>Send it in WhatsApp or another app</small></button>
+        ${kind.fold ? '<button data-ex="print"><b>Print / PDF</b><small>Two pages: outside, then inside</small></button>' : ''}
         ${kind.page ? '<button data-ex="print"><b>Print / PDF</b><small>Fits the paper in your printer; choose the same size there</small></button>' : ''}
         ${kind.per ? `<button data-ex="print"><b>Print / PDF</b><small>${st.sheet ? `${kind.per} on an A4 sheet with cut marks` : 'One per page'}</small></button>` : ''}
       </div>
@@ -1340,7 +1390,18 @@ function dzExport(doc, name) {
     if (e.target.closest('[data-x]')) return o.remove();
     if (!a) return;
     toast('Preparing…');
-    const cv = await dzCanvas(doc), blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    const cv = await dzCanvas(doc);
+    if (doc.fold) {   // the two sides as their own pages
+      const sides = [0, 1].map(i => { const c = document.createElement('canvas'); c.width = doc.w; c.height = doc.fold.side; c.getContext('2d').drawImage(cv, 0, -i * doc.fold.side); return c; });
+      if (a === 'print') { o.remove(); return printCanvas(...sides); }
+      const fs = await Promise.all(sides.map(async (c, i) => new File([await new Promise(r => c.toBlob(r, 'image/png'))], `${file()}_${i ? 'inside' : 'outside'}.png`, { type: 'image/png' })));
+      if (a === 'share') {
+        try { if (navigator.canShare?.({ files: fs })) return await navigator.share({ files: fs, title: name }); } catch (err) { if (err.name === 'AbortError') return; }
+      }
+      for (const f of fs) { const l = document.createElement('a'); l.href = URL.createObjectURL(f); l.download = f.name; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000); await new Promise(r => setTimeout(r, 250)); }
+      return toast('Saved ' + fs.map(f => f.name).join(' and '));
+    }
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
     const f = new File([blob], file() + '.png', { type: 'image/png' });
     if (a === 'png') { const l = document.createElement('a'); l.href = URL.createObjectURL(f); l.download = f.name; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000); return toast('Saved ' + f.name); }
     if (a === 'share') {
