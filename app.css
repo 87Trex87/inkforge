@@ -829,3 +829,10 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .ql-side .muted { font-size: 12px; }
 .ql-cmp { margin-bottom: 12px; font-size: 13px; }
 .ql-cmp p { margin: 4px 0 8px; color: var(--ink2); }
+
+/* Quote step tabs: same width and position on every step, even when a step widens the card */
+#qz .qz-steps { max-width: 672px; box-sizing: border-box; }
+.qz-steps button { flex: 1 1 0; min-width: 0; }
+.qz-steps button span, .qz-steps button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#main { scrollbar-gutter: stable; }
+@media (max-width: 420px) { .qz-steps button { font-size: 9px; letter-spacing: 0; text-transform: none; padding: 2px 1px; } }
