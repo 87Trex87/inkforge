@@ -362,16 +362,19 @@ async function dzThumb(id, doc) {
   if (old && old !== ref) await Media.release(old);
 }
 // Grid of portfolio pieces (or their photos) to pick from. Resolves the id / photo_ref, or null.
+// photos: true = portfolio photos, 'refs' = references, false = whole portfolio pieces.
 function dzPortfolioPick(photos) {
   return new Promise(async (res) => {
-    const rows = photos
+    const rows = photos === 'refs'
+      ? await DB.all(`SELECT photo_ref AS v, thumb_ref AS t, title FROM ref_images ORDER BY category COLLATE NOCASE, created_at DESC LIMIT 400`)
+      : photos
       ? await DB.all(`SELECT x.photo_ref AS v, x.thumb_ref AS t, p.title FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id ORDER BY coalesce(p.made_on, p.created_at) DESC, x.sort LIMIT 240`)
       : await DB.all(`SELECT p.id AS v, p.title, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS t
           FROM portfolio_items p WHERE EXISTS (SELECT 1 FROM portfolio_photos x WHERE x.item_id = p.id) ORDER BY coalesce(p.made_on, p.created_at) DESC LIMIT 240`);
-    if (!rows.length) { toast('Add tattoos with photos to your portfolio first.'); return res(null); }
+    if (!rows.length) { toast(photos === 'refs' ? 'No references yet: add some in Portfolio › References.' : 'Add tattoos with photos to your portfolio first.'); return res(null); }
     const urls = await Promise.all(rows.map(r => Media.url(r.t)));
     const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
-    o.innerHTML = `<div class="card dz-pick"><h2>${photos ? 'Choose a photo' : 'Choose a portfolio piece'}</h2>
+    o.innerHTML = `<div class="card dz-pick"><h2>${photos === 'refs' ? 'Choose a reference' : photos ? 'Choose a photo' : 'Choose a portfolio piece'}</h2>
       <div class="dz-pf">${rows.map((r, i) => `<button data-v="${esc(r.v)}" title="${esc(r.title || '')}"><img src="${urls[i]}" alt=""></button>`).join('')}</div>
       <button class="btn" data-v="" style="width:100%;margin-top:10px">Cancel</button></div>`;
     o.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v ? (photos ? b.dataset.v : +b.dataset.v) : null); };
@@ -630,6 +633,7 @@ DZ.edit = async (id) => {
         <div class="dz-add">${[['text', 'Text', 'T'], ['heading', 'Heading', 'H'], ['image', 'Picture', '▣'], ['logo', 'Logo', '◎'], ['shape', 'Shape', '◆'], ['field', 'Studio info', '@']]
           .map(([a, n, i]) => `<button data-add="${a}"><i>${i}</i><span>${n}</span></button>`).join('')}</div>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden id="dz-file">
+        ${panel === 'image' ? `<div class="dz-shapes"><button data-pic="device">From this device</button><button data-pic="pf">From portfolio</button><button data-pic="refs">From references</button></div>` : ''}
         ${panel === 'shape' ? `<div class="dz-shapes">${[['rect', 'Square'], ['round', 'Rounded'], ['ellipse', 'Circle'], ['line', 'Line'], ['star', 'Star'], ['frame', 'Frame']]
           .map(([s, n]) => `<button data-shape="${s}">${n}</button>`).join('')}</div>` : ''}
         ${panel === 'field' ? `<div class="dz-shapes">${DZ_FIELDS.map(([f, n]) => `<button data-field="${f}">${n}</button>`).join('')}</div>` : ''}
@@ -700,7 +704,7 @@ DZ.edit = async (id) => {
         ${slider('sw', 'Outline width', 0, 40, 1, l.sw || 0)}
         ${l.shape === 'rect' || !l.shape ? slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0) : ''}`
       : `${l.logo ? '<p class="muted" style="font-size:12px;margin:0 0 8px">Your studio logo from Settings.</p>'
-          : `<div class="row" style="gap:6px;margin-bottom:8px"><button class="btn small" id="dz-pfphoto">From portfolio</button>
+          : `<div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap"><button class="btn small" id="dz-pfphoto">From portfolio</button><button class="btn small" id="dz-refphoto">From references</button>
               <label class="btn small">From device<input type="file" accept="image/*" hidden id="dz-repl"></label></div>`}
         ${l.logo ? '' : `<label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Fill the whole box and crop what doesn't fit, like a photo frame. Off: the whole picture fits inside."><input type="checkbox" data-cover ${l.cover ? 'checked' : ''}><span>Fill the box (crop)</span></label>
           ${l.cover ? slider('px', 'Move photo left / right', -1, 1, 0.02, l.px || 0, v => Math.round(v * 100)) + slider('py', 'Move photo up / down', -1, 1, 0.02, l.py || 0, v => Math.round(v * 100)) : ''}
@@ -862,7 +866,7 @@ DZ.edit = async (id) => {
       if (a === 'text') return add({ t: 'text', text: 'Your text', size: Math.round(doc.h * 0.05), font: '@2', c: '@fg', al: 'center', lh: 1.2, ...center(doc.w * 0.6, doc.h * 0.06) });
       if (a === 'heading') return add({ t: 'text', text: 'Heading', size: Math.round(doc.h * 0.1), font: '@1', c: '@fg', al: 'center', lh: 1.1, ...center(doc.w * 0.7, doc.h * 0.11) });
       if (a === 'logo') { if (!Settings.get('studio_logo_ref')) toast('Add your logo in Settings › Profile; it shows here once added.', 5000); const s = Math.min(doc.w, doc.h) * 0.3; return add({ t: 'image', logo: true, ...center(s, s) }); }
-      if (a === 'image') return $('#dz-file').click();
+      if (a === 'image') { panel = panel === 'image' ? null : 'image'; return drawSide(); }
       panel = panel === a ? null : a; return drawSide();
     }
     if (d('shape')) { const s = d('shape'), m = Math.min(doc.w, doc.h) * 0.3;
@@ -876,7 +880,13 @@ DZ.edit = async (id) => {
     if (t.closest('#dz-bgrm')) { doc.bg.img = null; changed(true); return drawSide(); }
     if (t.closest('#dz-piece')) { const pid = await dzPortfolioPick(false); if (!pid) return;
       const pc = await dzPiece(pid); for (const ly of doc.layers) if (ly.slot != null) ly.ref = null; dzFillSlots(doc, pc); changed(true); return drawSide(); }
-    if (t.closest('#dz-pfphoto') && l) { const ref = await dzPortfolioPick(true); if (!ref) return; l.ref = ref; if (!l.cover && l.slot == null) { const im = await dzImg(ref); if (im) l.h = l.w * im.naturalHeight / im.naturalWidth; } changed(true); return drawSide(); }
+    if (d('pic')) {
+      const src = d('pic'); if (src === 'device') return $('#dz-file').click();
+      const ref = await dzPortfolioPick(src === 'refs' ? 'refs' : true); if (!ref) return;
+      const im = await dzImg(ref), w = Math.min(doc.w, doc.h) * 0.5, h = im ? w * im.naturalHeight / im.naturalWidth : w;
+      panel = null; return add({ t: 'image', ref, ...center(w, h) });
+    }
+    if ((t.closest('#dz-pfphoto') || t.closest('#dz-refphoto')) && l) { const ref = await dzPortfolioPick(t.closest('#dz-refphoto') ? 'refs' : true); if (!ref) return; l.ref = ref; if (!l.cover && l.slot == null) { const im = await dzImg(ref); if (im) l.h = l.w * im.naturalHeight / im.naturalWidth; } changed(true); return drawSide(); }
     if (d('c')) {
       const key = t.closest('[data-swk]').dataset.swk, c = d('c');
       if (key === 'bg') doc.bg.c = c === 'none' ? '@bg' : c; else if (l) l[key] = c;

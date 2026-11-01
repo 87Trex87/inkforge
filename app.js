@@ -285,7 +285,20 @@ const MIGRATIONS = [
    CREATE TABLE design_assets (
      design_id INTEGER NOT NULL REFERENCES designs(id) ON DELETE CASCADE,
      ref TEXT NOT NULL);
-   CREATE INDEX idx_design_assets ON design_assets (design_id);`
+   CREATE INDEX idx_design_assets ON design_assets (design_id);`,
+  // v19: references, pictures collected for ideas (not your own work), kept apart from the portfolio.
+  // Stored converted (PNG when see-through, otherwise JPG) at the size chosen when added.
+  `CREATE TABLE ref_images (
+     id INTEGER PRIMARY KEY,
+     title TEXT,
+     category TEXT NOT NULL DEFAULT 'Inspiration',
+     tags TEXT,
+     photo_ref TEXT NOT NULL,
+     thumb_ref TEXT NOT NULL,
+     w INTEGER, h INTEGER,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE INDEX idx_ref_cat ON ref_images (category);`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -498,6 +511,7 @@ const Media = {
       UNION ALL SELECT 1 FROM quotes WHERE design_ref = ?1
       UNION ALL SELECT 1 FROM designs WHERE thumb_ref = ?1
       UNION ALL SELECT 1 FROM design_assets WHERE ref = ?1
+      UNION ALL SELECT 1 FROM ref_images WHERE photo_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
@@ -1171,7 +1185,7 @@ const VIEWS = {
         <button class="btn primary icon-btn" id="pf-add" data-tip="Add to portfolio" aria-label="Add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="seg pf-seg" id="pf-filter">
-        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★']].map(([k, l]) =>
+        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★'], ['refs', 'References']].map(([k, l]) =>
           `<button data-f="${k}" class="${PF.filter === k ? 'on' : ''}" ${k === 'fav' ? 'data-tip="Favourites" aria-label="Favourites"' : ''}>${l}</button>`).join('')}
       </div>
       <div id="pf-grid"></div>`,
@@ -1180,7 +1194,8 @@ const VIEWS = {
       $('#pf-filter').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; PF.filter = b.dataset.f;
         document.querySelectorAll('#pf-filter button').forEach(x => x.classList.toggle('on', x === b)); renderPfGrid(); };
       $('#pf-print').onclick = openPortfolioPrint;
-      $('#pf-add').onclick = () => { PF.ctx = { kind: ['tattoo', 'art', 'flash'].includes(PF.filter) ? PF.filter : 'tattoo' }; location.hash = 'pf-edit/new'; };
+      $('#pf-add').onclick = () => { if (PF.filter === 'refs') return refImport();
+        PF.ctx = { kind: ['tattoo', 'art', 'flash'].includes(PF.filter) ? PF.filter : 'tattoo' }; location.hash = 'pf-edit/new'; };
       renderPfGrid();
     }
   },
@@ -2652,6 +2667,7 @@ const MERGE_SECTIONS = [
   ['bookings', 'Bookings', 'Appointments and reference photos'],
   ['forms', 'Forms', 'Form templates and signed forms'],
   ['portfolio', 'Portfolio', 'Tattoos, art and flash with photos'],
+  ['references', 'References', 'Pictures collected for ideas, by category'],
   ['inventory', 'Inventory', 'Stock items and stock takes'],
   ['rules', 'Rule book', 'Your studio rules'],
   ['quotes', 'Saved quotes', 'Quotes saved to finish or book later'],
@@ -2675,12 +2691,13 @@ const MERGE_TABLES = {
   rules: { section: 'rules' },
   quotes: { section: 'quotes', fk: { booking_id: 'bookings' }, refs: ['design_ref'] },
   designs: { section: 'designs', refs: ['thumb_ref'] },
+  ref_images: { section: 'references', refs: ['photo_ref', 'thumb_ref'] },
   design_assets: { section: 'designs', fk: { design_id: 'designs' }, refs: ['ref'] },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
-  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets'];
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
@@ -3383,7 +3400,130 @@ function renderGcalStatus() {
 }
 
 /* ---------- Portfolio helpers ---------- */
-const PF = { filter: 'all', q: '', ctx: null };
+const PF = { filter: 'all', q: '', ctx: null, cat: 'all' };
+
+/* ---------- References ----------
+   Pictures collected for ideas (Pinterest saves, stickers, anything not your own work), kept apart from
+   the portfolio and sorted into categories. Whatever the file type (WebP, AVIF...), each is converted on the
+   way in: PNG when it has see-through parts, JPG otherwise, at the size chosen. */
+const REF_CATS = ['Inspiration', 'Floral', 'Animals', 'Lettering', 'Stickers', 'Textures', 'Colour ideas'];
+const REF_SIZES = [['720', '720'], ['1080', '1080'], ['1600', '1600'], ['full', 'Full size']];
+async function refCats() {
+  const used = (await DB.all('SELECT category AS c, COUNT(*) AS n FROM ref_images GROUP BY category ORDER BY category COLLATE NOCASE'));
+  return { used, all: [...new Set([...used.map(r => r.c), ...REF_CATS])] };
+}
+async function renderRefs(el) {
+  const q = PF.q.trim(), like = '%' + q + '%', { used } = await refCats();
+  if (PF.cat !== 'all' && !used.some(r => r.c === PF.cat)) PF.cat = 'all';
+  const rows = await DB.all(`SELECT id, title, category, thumb_ref FROM ref_images WHERE (? = 'all' OR category = ?)
+    AND (? = '' OR title LIKE ? OR category LIKE ? OR tags LIKE ?) ORDER BY created_at DESC, id DESC`, [PF.cat, PF.cat, q, like, like, like]);
+  if ($('#pf-grid') !== el) return;
+  const total = used.reduce((t, r) => t + r.n, 0);
+  if (!total) {
+    el.innerHTML = `<div class="empty"><div class="empty-ico">${ICON.portfolio}</div><div style="font:24px var(--display)">Collect references</div>
+      <div class="muted">Pictures you've saved for ideas, like Pinterest finds, stickers or textures. They're kept apart from your own work, sorted by category, and can be used in the design studio.</div>
+      <button class="btn primary" id="ref-add" style="margin-top:12px">Add pictures</button></div>`;
+    $('#ref-add').onclick = refImport; return;
+  }
+  const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+  el.innerHTML = `<div class="ref-cats">${[['all', `All ${total}`], ...used.map(r => [r.c, `${r.c} ${r.n}`])].map(([k, l]) =>
+      `<button class="chip ${PF.cat === k ? 'on' : ''}" data-rc="${esc(k)}">${esc(l)}</button>`).join('')}</div>
+    ${rows.length ? `<div class="ref-grid">${rows.map((r, i) => `<button class="ref-tile" data-ref="${r.id}" title="${esc(r.title || '')}"><img src="${urls[i]}" alt="" loading="lazy"></button>`).join('')}</div>`
+      : '<div class="empty muted">Nothing here.</div>'}
+    <div class="muted count">${rows.length} picture${rows.length === 1 ? '' : 's'}</div>`;
+  el.onclick = (e) => {
+    const c = e.target.closest('[data-rc]'); if (c) { PF.cat = c.dataset.rc; return renderRefs(el); }
+    const t = e.target.closest('[data-ref]'); if (t) refSheet(+t.dataset.ref);
+  };
+}
+// Reads any image the browser understands and returns it as PNG (see-through) or JPG, long side at most `max`.
+async function refConvert(file, max) {
+  let src;
+  try { src = await createImageBitmap(file); }
+  catch {   // some formats only open through an <img>
+    const u = URL.createObjectURL(file);
+    try { src = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = u; }); }
+    catch { return null; } finally { setTimeout(() => URL.revokeObjectURL(u), 1000); }
+  }
+  const W = src.naturalWidth || src.width, H = src.naturalHeight || src.height; if (!W || !H) return null;
+  const draw = (m) => { const s = Math.min(1, m / Math.max(W, H)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(W * s)); c.height = Math.max(1, Math.round(H * s));
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); return c; };
+  // See-through? Look at a small copy.
+  const probe = draw(64), px = probe.getContext('2d').getImageData(0, 0, probe.width, probe.height).data;
+  let alpha = false; for (let i = 3; i < px.length; i += 4) if (px[i] < 250) { alpha = true; break; }
+  const big = draw(max || Math.max(W, H)), thumb = draw(420);
+  const type = alpha ? 'image/png' : 'image/jpeg', ext = alpha ? 'png' : 'jpg';
+  return { ext, w: big.width, h: big.height,
+    photo: await new Promise(r => big.toBlob(r, type, 0.9)), thumb: await new Promise(r => thumb.toBlob(r, type, 0.8)) };
+}
+// Add pictures: pick files, then a size and a category.
+function refImport() {
+  const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = 'image/*,.webp,.avif,.heic,.heif,.bmp,.gif,.tif,.tiff,.svg';
+  i.onchange = async () => {
+    const files = [...i.files]; if (!files.length) return;
+    const { all } = await refCats(), st = { size: Settings.get('ref_size', '1080'), cat: PF.cat !== 'all' ? PF.cat : all[0] };
+    const o = document.createElement('div'); o.id = 'merge-dlg';
+    o.innerHTML = `<div class="card"><h2>Add ${files.length} picture${files.length > 1 ? 's' : ''}</h2>
+      <p class="muted" style="margin-top:0;font-size:13px">Any picture type works (WebP, AVIF, PNG, JPG…). Each is saved as PNG if it has see-through parts, otherwise JPG.</p>
+      <div class="lbl">Size ${help('The long side in pixels. Smaller saves space; Full size keeps every pixel.')}</div>
+      <div class="seg" id="ri-size" style="margin-bottom:12px">${REF_SIZES.map(([k, l]) => `<button data-s="${k}" class="${st.size === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+      <label class="field"><span>Category</span><input class="in" id="ri-cat" list="ri-cats" value="${esc(st.cat)}" autocapitalize="words">
+        <datalist id="ri-cats">${all.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+      <div class="row"><button class="btn" id="ri-x">Cancel</button><button class="btn primary" id="ri-go" style="flex:1">Add</button></div></div>`;
+    document.body.appendChild(o);
+    o.querySelector('#ri-size').onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; st.size = b.dataset.s;
+      o.querySelectorAll('#ri-size button').forEach(x => x.classList.toggle('on', x === b)); };
+    o.querySelector('#ri-x').onclick = () => o.remove();
+    o.querySelector('#ri-go').onclick = async () => {
+      const cat = (o.querySelector('#ri-cat').value.trim() || 'Inspiration').replace(/^./, m => m.toUpperCase());
+      await Settings.set('ref_size', st.size); o.remove();
+      let ok = 0, bad = 0;
+      for (const [n, f] of files.entries()) {
+        toast(`Adding ${n + 1} of ${files.length}…`, 20000);
+        const r = await refConvert(f, st.size === 'full' ? 0 : +st.size);
+        if (!r) { bad++; continue; }
+        await DB.run('INSERT INTO ref_images (title, category, photo_ref, thumb_ref, w, h) VALUES (?, ?, ?, ?, ?, ?)',
+          [f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Reference', cat, await Media.save(r.photo, r.ext), await Media.save(r.thumb, r.ext), r.w, r.h]);
+        ok++;
+      }
+      toast(`Added ${ok} picture${ok === 1 ? '' : 's'}${bad ? `. ${bad} couldn't be read (this browser can't open that type)` : ''}.`, bad ? 7000 : 3000);
+      PF.cat = cat; renderPfGrid();
+    };
+  };
+  i.click();
+}
+// One reference: rename, re-categorise, tag, view full screen, save to the device or delete.
+async function refSheet(id) {
+  const r = await DB.one('SELECT * FROM ref_images WHERE id = ?', [id]); if (!r) return;
+  const { all } = await refCats(), url = await Media.url(r.photo_ref);
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card ref-sheet">
+    <button class="ref-big" id="rs-view" data-tip="View full screen"><img src="${url}" alt=""></button>
+    <div class="muted" style="font-size:11px;margin:6px 0 10px">${r.w} × ${r.h} px · ${r.photo_ref.endsWith('.png') ? 'PNG (see-through kept)' : 'JPG'}</div>
+    <label class="field"><span>Title</span><input class="in" id="rs-t" value="${esc(r.title || '')}"></label>
+    <div class="two"><label class="field"><span>Category</span><input class="in" id="rs-c" list="rs-cats" value="${esc(r.category)}" autocapitalize="words">
+      <datalist id="rs-cats">${all.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+      <label class="field"><span>Tags</span><input class="in" id="rs-g" value="${esc(r.tags || '')}" placeholder="dagger, roses"></label></div>
+    <div class="row" style="gap:6px"><button class="btn danger icon-btn" id="rs-del" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+      <button class="btn" id="rs-dl">Save to device</button><span style="flex:1"></span><button class="btn" id="rs-x">Close</button><button class="btn primary" id="rs-ok">Save</button></div></div>`;
+  document.body.appendChild(o);
+  const close = () => { o.remove(); renderPfGrid(); };
+  o.querySelector('#rs-view').onclick = () => openGallery([url], 0);
+  o.querySelector('#rs-x').onclick = () => o.remove();
+  o.querySelector('#rs-ok').onclick = async () => {
+    await DB.run(`UPDATE ref_images SET title = ?, category = ?, tags = ?, updated_at = datetime('now') WHERE id = ?`,
+      [o.querySelector('#rs-t').value.trim() || null, (o.querySelector('#rs-c').value.trim() || 'Inspiration').replace(/^./, m => m.toUpperCase()), o.querySelector('#rs-g').value.trim() || null, id]);
+    close();
+  };
+  o.querySelector('#rs-dl').onclick = async () => {
+    const f = await (await (await Media.dir()).getFileHandle(r.photo_ref)).getFile(), ext = r.photo_ref.split('.').pop();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = (r.title || 'reference').replace(/[^\w-]+/g, '_') + '.' + ext; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  o.querySelector('#rs-del').onclick = async () => {
+    if (!confirm(`Delete "${r.title || 'this reference'}"? Designs that already use it keep their copy.`)) return;
+    await DB.run('DELETE FROM ref_images WHERE id = ?', [id]); await Media.release(r.photo_ref); await Media.release(r.thumb_ref); close();
+  };
+}
 // Size new portfolio photos are saved at (long side in px), or the original file untouched.
 const PF_SIZES = [['540', '540'], ['720', '720'], ['1080', '1080'], ['original', 'Original']];
 const pfSizeDefault = () => Settings.get('pf_size', '1080');
@@ -3394,6 +3534,9 @@ const PF_KIND = { tattoo: 'Tattoo', art: 'Art', flash: 'Flash' };
 
 async function renderPfGrid() {
   const el = $('#pf-grid'); if (!el) return;
+  const pr = $('#pf-print'); if (pr) pr.hidden = PF.filter === 'refs';
+  $('#pf-q') && ($('#pf-q').placeholder = PF.filter === 'refs' ? 'Search title, category, tag…' : 'Search title, tag, placement…');
+  if (PF.filter === 'refs') return renderRefs(el);
   const q = PF.q.trim(), like = '%' + q + '%';
   const where = PF.filter === 'fav' ? 'p.favourite = 1' : PF.filter === 'all' ? '1' : 'p.kind = ?';
   const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite, p.bg,

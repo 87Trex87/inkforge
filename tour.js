@@ -93,7 +93,7 @@ const TOUR_STEPS = [
     more: 'The bend tool curves a design so a band meets neatly around an arm or leg, and can send it straight to the stencil maker. Split for printing cuts a large stencil into labelled pages with an overlap for taping.' },
   { id: 'portfolio', route: 'portfolio', sel: '#view', title: 'Portfolio',
     text: 'Your tattoos, art and flash, with fresh and healed photos.',
-    more: 'Print a portfolio book, set a white or black background for flash, zoom into photos, and turn any piece into a social post with one tap.' },
+    more: 'Print a portfolio book, set a white or black background for flash, zoom into photos, and turn any piece into a social post with one tap. The References tab keeps pictures you've collected for ideas, sorted by category and ready to use in the design studio.' },
   { id: 'forms', route: 'forms', sel: '#view', title: 'Consent and aftercare',
     text: 'Clients read, tick and sign on your phone or tablet.',
     more: 'Edit the forms to suit your studio. Signed copies are kept on the client\'s card; aftercare can be printed or sent with the receipt.' },

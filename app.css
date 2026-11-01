@@ -1241,3 +1241,16 @@ body.practice::before { content: ''; position: fixed; left: 0; right: 0; top: 0;
 .dz-chain.on { color: var(--teal); border-color: var(--teal); }
 .dz-chain:disabled { opacity: .35; cursor: default; }
 .dz-chain svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+/* References */
+.ref-cats { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
+.ref-cats .chip { flex: none; cursor: pointer; } .ref-cats .chip.on { background: var(--teal); color: #061211; border-color: var(--teal); }
+.ref-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
+.ref-tile { aspect-ratio: 1; padding: 6px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+  background: repeating-conic-gradient(#1a1f20 0 25%, #151a1b 0 50%) 0 0 / 14px 14px; display: grid; place-items: center; overflow: hidden; }
+.ref-tile img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ref-sheet { max-width: 520px; }
+.ref-big { display: grid; place-items: center; width: 100%; height: min(42vh, 360px); border: 1px solid var(--line); border-radius: 12px; cursor: zoom-in; padding: 8px;
+  background: repeating-conic-gradient(#1a1f20 0 25%, #151a1b 0 50%) 0 0 / 16px 16px; }
+.ref-big img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.pf-seg button { min-width: 0; padding: 0 8px; }
