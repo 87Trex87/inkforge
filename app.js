@@ -19,8 +19,8 @@ const DB = (() => {
     info: () => call('info'),
     all: async (sql, params) => (await call('exec', { sql, params })).rows,
     one: async (sql, params) => (await call('exec', { sql, params })).rows[0],
-    run: (sql, params) => call('exec', { sql, params }).finally(() => Snapshot.soon()),
-    tx: (items) => call('tx', { items }).finally(() => Snapshot.soon()),
+    run: (sql, params) => Cloud.guard(sql) || call('exec', { sql, params }).finally(() => Snapshot.soon()),
+    tx: (items) => Cloud.guard(items.map(i => i.sql).join(';')) || call('tx', { items }).finally(() => Snapshot.soon()),
     open: (path) => call('open', { path }),
     drop: (path) => call('drop', { path }),
     exportBytes: async (path) => (await call('export', { path })).bytes,
@@ -48,6 +48,7 @@ const Snapshot = {
       const bytes = await DB.exportBytes();
       const w = await (await this.handle(true)).createWritable();
       await w.write(bytes); await w.close();
+      if (WS.cur?.cloud) Cloud.soon();
     } catch (e) { console.warn('Snapshot failed:', e); }
   },
   async load() {
@@ -96,7 +97,7 @@ document.addEventListener('focusout', (e) => {
    The list lives in OPFS as workspaces.json (not localStorage). The original single database
    is the workspace "main", keeping its old file names, so existing data needs no migration. */
 const WS = {
-  list: [], last: null, auto: false, cur: null,
+  list: [], last: null, auto: false, cur: null, gid: '', device: null,
   dbPath: (w) => w.id === 'main' ? '/inkforge.db' : `/ws-${w.id}.db`,
   mediaName: (w) => w.id === 'main' ? 'media' : `media-${w.id}`,
   snapName: (w) => w.id === 'main' ? 'latest.sqlite' : `ws-${w.id}.sqlite`,
@@ -107,7 +108,7 @@ const WS = {
   },
   async save() {
     const w = await (await this.file(true)).createWritable();
-    await w.write(JSON.stringify({ list: this.list, last: this.last, auto: this.auto })); await w.close();
+    await w.write(JSON.stringify({ list: this.list, last: this.last, auto: this.auto, gid: this.gid, device: this.device })); await w.close();
   },
   get: (id) => WS.list.find(w => w.id === id),
   async create(name) {
@@ -2084,6 +2085,252 @@ async function renderStorage() {
 
 /* Backup file: "INKFORGE1" + u32 manifest length + JSON manifest + db bytes + media bytes.
    Plain SQLite files (older backups) are still accepted on restore. */
+/* ---------- Google Drive workspaces (optional) ----------
+   A cloud workspace lives in the artist's own Google Drive: InkForge / <workspace> / db.sqlite and a
+   media folder (content-hash names, so each picture is uploaded once). Every device works on its own
+   local copy, downloads the latest when the workspace opens and uploads a few seconds after changes.
+   Only one device may make changes: the workspace folder carries a lock (device id, name, last seen).
+   Another device opens it view only until the artist chooses Take over. A device that has lost the
+   lock never uploads again, so it can't overwrite newer work. Scope drive.file: the app only sees
+   files it created. Local workspaces are untouched by any of this. */
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const Cloud = {
+  token: null, exp: 0, editing: false, viewOnly: false, pending: false, holder: null, remote: new Set(),
+  _beat: null, _t: null, _busy: false, _warned: 0,
+  device() {
+    if (!WS.device) {
+      const ua = navigator.userAgent, guess = /iPad|Tablet/.test(ua) ? 'Tablet' : /iPhone|Android.*Mobile/.test(ua) ? 'Phone' : /Android/.test(ua) ? 'Tablet' : 'Computer';
+      WS.device = { id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2), name: guess };
+      WS.save();
+    }
+    return WS.device;
+  },
+  hasToken() { return !!this.token && Date.now() < this.exp - 60000; },
+  async auth(interactive = true) {
+    if (this.hasToken()) return;
+    if (!WS.gid) throw new Error('setup');
+    await Gcal.loadGis();
+    await new Promise((res, rej) => {
+      google.accounts.oauth2.initTokenClient({
+        client_id: WS.gid, scope: DRIVE_SCOPE,
+        callback: (r) => {
+          if (r.error) return rej(new Error(r.error_description || r.error));
+          if (!google.accounts.oauth2.hasGrantedAllScopes(r, DRIVE_SCOPE)) return rej(new Error('Please allow InkForge to use its files in your Google Drive.'));
+          this.token = r.access_token; this.exp = Date.now() + r.expires_in * 1000; res();
+        },
+        error_callback: (e) => rej(new Error(e.type === 'popup_closed' ? 'Google sign-in was closed.' : e.type === 'popup_failed_to_open' ? 'popup' : (e.message || 'Google sign-in failed.')))
+      }).requestAccessToken({ prompt: interactive ? '' : 'none' });
+    });
+  },
+  async req(path, opts = {}) {
+    if (!this.hasToken()) throw new Error('signin');
+    const up = opts.upload ? 'https://www.googleapis.com/upload/drive/v3' : 'https://www.googleapis.com/drive/v3';
+    const r = await fetch(up + path, { method: opts.method || 'GET', headers: { Authorization: 'Bearer ' + this.token, ...(opts.headers || {}) }, body: opts.body });
+    if (r.status === 401) { this.token = null; throw new Error('signin'); }
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error?.message || 'Google Drive error ' + r.status); }
+    return opts.raw ? r : r.status === 204 ? null : r.json();
+  },
+  q: (s) => '?' + new URLSearchParams(s).toString(),
+  async folder(name, parent, props = {}) {
+    return this.req('/files' + this.q({ fields: 'id' }), { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: parent ? [parent] : undefined, appProperties: props }) });
+  },
+  // New file (multipart) or new content for an existing one. Returns { id, version }.
+  async put(blob, name, parent, id) {
+    if (id) return this.req(`/files/${id}` + this.q({ uploadType: 'media', fields: 'id,version' }), { upload: true, method: 'PATCH', body: blob });
+    const b = 'if' + Math.random().toString(36).slice(2);
+    const meta = JSON.stringify({ name, parents: [parent] });
+    const body = new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: application/octet-stream\r\n\r\n`, blob, `\r\n--${b}--`]);
+    return this.req('/files' + this.q({ uploadType: 'multipart', fields: 'id,version' }), { upload: true, method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + b }, body });
+  },
+  async get(id) { return new Uint8Array(await (await this.req(`/files/${id}?alt=media`, { raw: true })).arrayBuffer()); },
+  async meta(id, fields) { return this.req(`/files/${id}` + this.q({ fields })); },
+  async names(folder) {
+    const out = new Map(); let page = '';
+    do {
+      const r = await this.req('/files' + this.q({ q: `'${folder}' in parents and trashed = false`, fields: 'nextPageToken,files(id,name)', pageSize: 1000, ...(page ? { pageToken: page } : {}) }));
+      for (const f of r.files) out.set(f.name, f.id); page = r.nextPageToken || '';
+    } while (page);
+    return out;
+  },
+  async lock(w) { const m = await this.meta(w.cloud.folder, 'appProperties'); const a = m.appProperties || {};
+    return { id: a.holder || '', name: a.holderName || '', beat: a.beat || '' }; },
+  async setLock(w, mine) {
+    const d = this.device();
+    await this.req(`/files/${w.cloud.folder}` + this.q({ fields: 'id' }), { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appProperties: mine ? { holder: d.id, holderName: d.name, beat: new Date().toISOString() } : { holder: '', holderName: '', beat: '' } }) });
+  },
+  async listWorkspaces() {
+    const r = await this.req('/files' + this.q({ q: "appProperties has { key='ifkind' and value='ws' } and trashed = false", fields: 'files(id,name,appProperties,modifiedTime)', pageSize: 100 }));
+    return r.files;
+  },
+
+  // Uploads a local workspace into Drive and makes it a cloud workspace held by this device.
+  async moveUp(w) {
+    await this.auth();
+    const bytes = await DB.exportBytes(w === WS.cur ? undefined : WS.dbPath(w));   // first, so a failure leaves nothing half-made in Drive
+    let root = (await this.req('/files' + this.q({ q: "appProperties has { key='ifkind' and value='root' } and trashed = false", fields: 'files(id)' }))).files[0];
+    if (!root) root = await this.folder('InkForge', null, { ifkind: 'root' });
+    const f = await this.folder(w.name, root.id, { ifkind: 'ws', ifid: w.id });
+    const media = await this.folder('media', f.id);
+    const dbf = await this.put(new Blob([bytes]), 'db.sqlite', f.id);
+    for await (const [name, h] of (await Media.dir(w)).entries()) if (h.kind === 'file') await this.put(await h.getFile(), name, media.id);
+    w.cloud = { folder: f.id, db: dbf.id, media: media.id, ver: dbf.version };
+    await this.setLock(w, true); await WS.save();
+  },
+
+  // Called while a cloud workspace opens (after the local database is open, before migrations).
+  // Resolves to 'edit' or 'view'; throws 'cancel' if the artist backs out.
+  async prepare(w) {
+    this.editing = this.viewOnly = false;
+    const d = this.device();
+    try { await this.auth(); }
+    catch (e) {
+      if (e.message === 'setup') throw e;
+      // Offline or sign-in closed: work on the local copy. Edits only if this device held the lock last time.
+      const mine = w.cloud.lastHolder === d.id;
+      toast(mine ? 'Google Drive is not reachable. Working on this device; changes upload when you reconnect.' : 'Google Drive is not reachable. Opened view only from this device\'s last copy.', 7000);
+      this.editing = mine; this.viewOnly = !mine; this.pending = mine; return this.start(w);
+    }
+    let lk = await this.lock(w);
+    if (lk.id && lk.id !== d.id) {
+      const ans = await cloudAsk(w, lk);
+      if (ans === 'cancel') throw new Error('cancel');
+      if (ans === 'take') { await this.setLock(w, true); lk = { id: d.id }; }
+    } else { await this.setLock(w, true); lk = { id: d.id }; }
+    this.editing = lk.id === d.id; this.viewOnly = !this.editing;
+    w.cloud.lastHolder = this.editing ? d.id : lk.id; await WS.save();
+    await this.pull(w);
+    return this.start(w);
+  },
+  // Latest database and any pictures this device doesn't have yet.
+  async pull(w) {
+    const m = await this.meta(w.cloud.db, 'version');
+    if (m.version !== w.cloud.ver || !(await hasData())) { await DB.importBytes(await this.get(w.cloud.db)); w.cloud.ver = m.version; await WS.save(); }
+    const remote = await this.names(w.cloud.media), dir = await Media.dir(w), here = new Set();
+    for await (const [name] of dir.entries()) here.add(name);
+    for (const [name, id] of remote) if (!here.has(name)) {
+      const out = await (await dir.getFileHandle(name, { create: true })).createWritable(); await out.write(await this.get(id)); await out.close();
+    }
+    this.remote = new Set(remote.keys());
+  },
+  start(w) {
+    clearInterval(this._beat);
+    this._beat = setInterval(() => this.beat(w), 60000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && WS.cur === w) this.beat(w); });
+    cloudBar();
+    return this.editing ? 'edit' : 'view';
+  },
+  // Every minute: still ours? Keep the lock fresh, retry anything not uploaded. Lost it? Stop editing.
+  async beat(w) {
+    if (WS.cur !== w || this._busy) return;
+    if (!this.hasToken()) { if (this.editing || this.viewOnly) cloudBar('signin'); return; }
+    try {
+      const lk = await this.lock(w), me = this.device().id;
+      if (this.editing && lk.id !== me) return this.lost(w, lk);
+      if (this.editing) { if (this.pending) await this.push(w); else await this.setLock(w, true); }
+      cloudBar();
+    } catch (e) { if (e.message === 'signin') cloudBar('signin'); }
+  },
+  lost(w, lk) {
+    this.editing = false; this.viewOnly = true; w.cloud.lastHolder = lk.id; WS.save();
+    cloudBar('lost', lk);
+  },
+  soon() { if (!this.editing || !WS.cur?.cloud) return; this.pending = true; clearTimeout(this._t); this._t = setTimeout(() => this.push(WS.cur), 1500); },
+  async push(w) {
+    if (!this.editing || this._busy || !this.hasToken()) { if (this.editing && !this.hasToken()) cloudBar('signin'); return; }
+    this._busy = true;
+    try {
+      const lk = await this.lock(w);
+      if (lk.id !== this.device().id) { this._busy = false; return this.lost(w, lk); }
+      this.pending = false;
+      for await (const [name, h] of (await Media.dir(w)).entries())
+        if (h.kind === 'file' && !this.remote.has(name)) { await this.put(await h.getFile(), name, w.cloud.media); this.remote.add(name); }
+      const r = await this.put(new Blob([await DB.exportBytes()]), 'db.sqlite', null, w.cloud.db);
+      w.cloud.ver = r.version; w.cloud.synced = new Date().toISOString(); await WS.save();
+      await this.setLock(w, true);
+      cloudBar();
+    } catch (e) { this.pending = true; if (e.message === 'signin') cloudBar('signin'); else console.warn('Drive upload failed:', e); }
+    this._busy = false;
+  },
+  // Leaving the workspace: upload what's left and hand the lock back, so the next device opens without asking.
+  async release(w) {
+    if (!w?.cloud || !this.editing || !this.hasToken()) return;
+    try { if (this.pending) await this.push(w); await this.setLock(w, false); } catch {}
+  },
+  // View only: writes are refused (settings like the calendar view still work locally).
+  guard(sql) {
+    if (!this.viewOnly || !booted || /\bsettings\b/i.test(sql || '')) return null;
+    if (Date.now() - this._warned > 3000) { this._warned = Date.now(); toast('View only: this workspace is being edited on another device. Use Take over to make changes.', 5000); }
+    return Promise.reject(new Error('View only'));
+  }
+};
+
+// Asks what to do when another device holds the lock. Resolves 'take', 'view' or 'cancel'.
+function cloudAsk(w, lk) {
+  return new Promise((res) => {
+    const ago = lk.beat ? Math.round((Date.now() - new Date(lk.beat)) / 60000) : null;
+    const o = document.createElement('div'); o.id = 'merge-dlg';
+    o.innerHTML = `<div class="card"><h2>In use on another device</h2>
+      <p>"${esc(w.name)}" is open for editing on <b>${esc(lk.name || 'another device')}</b>${ago != null ? `, last active ${ago < 1 ? 'just now' : ago < 120 ? ago + ' min ago' : Math.round(ago / 60) + ' h ago'}` : ''}.</p>
+      <p class="muted" style="font-size:13px">Only one device can make changes at a time. Taking over makes this device the one that edits; the other device switches to view only. Anything it hasn't uploaded yet stays on that device.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-a="cancel">Back</button><button class="btn" data-a="view">View only</button>
+        <button class="btn primary" data-a="take" style="flex:1">Take over</button></div></div>`;
+    o.onclick = (e) => { const a = e.target.closest('[data-a]')?.dataset.a; if (a) { o.remove(); res(a); } };
+    document.body.appendChild(o);
+  });
+}
+
+// Strip at the top for a cloud workspace: view only, lost lock, or sign-in needed.
+function cloudBar(state, lk) {
+  let b = $('#cloud-bar');
+  const w = WS.cur;
+  if (!w?.cloud || (!state && Cloud.editing)) { if (b) b.remove(); return; }
+  if (!b) { b = document.createElement('div'); b.id = 'cloud-bar'; document.body.appendChild(b); }
+  const name = lk?.name || 'another device';
+  b.innerHTML = state === 'signin'
+    ? `<span>Google Drive needs you to sign in again${Cloud.pending ? '; your latest changes are waiting to upload' : ''}.</span><button class="btn small primary" id="cb-sign">Sign in</button>`
+    : state === 'lost'
+      ? `<span><b>Taken over on ${esc(name)}.</b> This device is view only now.${Cloud.pending ? ' Your last changes did not upload.' : ''}</span>
+        ${Cloud.pending ? '<button class="btn small" id="cb-save">Save them as a file</button>' : ''}<button class="btn small primary" id="cb-take">Take back</button>`
+      : `<span><b>View only.</b> Being edited on another device.</span><button class="btn small" id="cb-ref">Refresh</button><button class="btn small primary" id="cb-take">Take over</button>`;
+  b.onclick = async (e) => {
+    if (e.target.id === 'cb-sign') { try { await Cloud.auth(); toast('Signed in.'); Cloud.beat(w); } catch (err) { toast(err.message === 'setup' ? 'Google Drive is not set up.' : err.message, 5000); } }
+    if (e.target.id === 'cb-save') { try { await exportBackup(w); } catch (err) { toast('Could not save: ' + err.message, 5000); } }
+    if (e.target.id === 'cb-ref') WS.switchTo(w.id);
+    if (e.target.id === 'cb-take') {
+      if (!confirm('Take over editing on this device? The other device switches to view only.')) return;
+      try { await Cloud.auth(); await Cloud.setLock(w, true); } catch (err) { return toast(err.message, 5000); }
+      Cloud.pending = false; WS.switchTo(w.id);
+    }
+  };
+}
+
+// One-time setup: the OAuth client ID for Google Drive (kept with the workspace list, not in a workspace).
+function cloudSetup() {
+  return new Promise((res) => {
+    const o = document.createElement('div'); o.id = 'merge-dlg';
+    o.innerHTML = `<div class="card"><h2>Connect Google Drive</h2>
+      <p class="muted" style="font-size:13px;margin-top:0">One-time setup in Google Cloud (free). If you set up Google Calendar for InkForge, use the same project and client ID.</p>
+      <ol class="cloud-steps">
+        <li>Open <b>console.cloud.google.com</b> and pick or create a project.</li>
+        <li>APIs &amp; Services › Library: enable <b>Google Drive API</b>.</li>
+        <li>OAuth consent screen: add the scope <code>${DRIVE_SCOPE}</code> and your Google account as a test user.</li>
+        <li>Credentials › OAuth client ID (Web application). Authorised JavaScript origin: <code>${esc(location.origin)}</code></li>
+        <li>Copy the client ID and paste it here.</li></ol>
+      <label class="field"><span>Client ID</span><input class="in" id="cs-id" value="${esc(WS.gid || '')}" placeholder="…apps.googleusercontent.com" autocapitalize="off" spellcheck="false"></label>
+      <label class="field"><span>Name for this device</span><input class="in" id="cs-dev" value="${esc(Cloud.device().name)}" placeholder="e.g. Studio tablet"></label>
+      <div class="row"><button class="btn" id="cs-x">Cancel</button><button class="btn primary" id="cs-ok" style="flex:1">Save</button></div></div>`;
+    document.body.appendChild(o);
+    o.querySelector('#cs-x').onclick = () => { o.remove(); res(false); };
+    o.querySelector('#cs-ok').onclick = async () => {
+      const id = o.querySelector('#cs-id').value.trim(), dev = o.querySelector('#cs-dev').value.trim();
+      if (!/\.apps\.googleusercontent\.com$/.test(id)) return toast('That doesn\'t look like a Google client ID.');
+      WS.gid = id; if (dev) WS.device.name = dev; await WS.save(); o.remove(); res(true);
+    };
+  });
+}
+
 const BACKUP_MAGIC = 'INKFORGE1';
 // The open workspace by default; any other workspace's file can be built without opening it.
 async function buildBackup(w = WS.cur) {
@@ -6158,19 +6405,23 @@ function showStart() {
       <div class="start-acts">
         <button class="start-big" id="st-new"><b>+ New workspace</b><span>Start fresh, e.g. for another artist</span></button>
         <label class="start-big"><b>Open file…</b><span>A workspace or backup file (.inkforge)</span><input type="file" accept=".inkforge,.sqlite,.db" hidden id="st-file"></label>
+        <button class="start-big" id="st-drive"><b>☁ Link from Google Drive</b><span>A workspace you keep in your Drive, to use on this device too</span></button>
       </div>
       <div class="letter">Recent</div>
       <div class="card list">${list.map(w => `<div class="c-row ws-row">
-          <button class="c-main ws-open" data-ws="${w.id}"><span class="c-n">${esc(w.name)}</span><span class="muted c-sub">${ago(w.opened)}</span></button>
+          <button class="c-main ws-open" data-ws="${w.id}"><span class="c-n">${w.cloud ? '<span class="ws-cloud" data-tip="Kept in Google Drive">☁</span> ' : ''}${esc(w.name)}</span><span class="muted c-sub">${w.cloud ? 'Google Drive · ' : ''}${ago(w.opened)}</span></button>
           <button class="btn small icon-btn ${menu === w.id ? 'on' : ''}" data-wsmenu="${w.id}" aria-label="More">⋯</button>
           ${menu === w.id ? `<div class="row tpl-acts">
             <button class="btn small" data-wsren="${w.id}">Rename</button>
             <button class="btn small" data-wssave="${w.id}" data-tip="Save this workspace as a file to share or keep safe">Save file</button>
+            ${w.cloud ? `<button class="btn small" data-wsunlink="${w.id}" data-tip="Keep using it on this device only. The copy in your Drive stays there.">Stop using Drive</button>`
+              : `<button class="btn small" data-wsup="${w.id}" data-tip="Keep this workspace in your Google Drive so your other devices can open it">Move to Google Drive</button>`}
             <button class="btn small danger" data-wsdel="${w.id}" style="margin-left:auto">Delete</button></div>` : ''}
         </div>`).join('')}</div>
       <label class="toggle" style="display:inline-flex;margin-top:12px" data-tip="Skip this screen and go straight to the last workspace. Switch any time by tapping the workspace name at the top.">
         <input type="checkbox" id="st-auto" ${WS.auto ? 'checked' : ''}><span>Open my last workspace automatically</span></label>
-      <p class="muted" style="font-size:12px;margin-top:16px">Workspaces are stored on this device. Save a workspace file to move it to another device or keep a copy safe: keeping that file safe is up to you.</p>
+      <p class="muted" style="font-size:12px;margin-top:16px">Workspaces are stored on this device. Save a workspace file to move it to another device or keep a copy safe: keeping that file safe is up to you.
+        Or keep a workspace in your own Google Drive (☁) to use it on several devices: one device edits at a time, the others can view or take over.</p>
     </div>`;
   };
   let menu = null;
@@ -6180,7 +6431,19 @@ function showStart() {
     const t = e.target, id = (a) => t.closest(`[${a}]`)?.getAttribute(a);
     if (id('data-ws')) { o.remove(); return startWorkspace(WS.get(id('data-ws'))); }
     if (id('data-wsmenu')) { menu = menu === id('data-wsmenu') ? null : id('data-wsmenu'); return draw(); }
-    const w = WS.get(id('data-wsren') || id('data-wssave') || id('data-wsdel'));
+    const w = WS.get(id('data-wsren') || id('data-wssave') || id('data-wsdel') || id('data-wsup') || id('data-wsunlink'));
+    if (w && id('data-wsup')) {
+      if (!WS.gid && !(await cloudSetup())) return;
+      if (!confirm(`Move "${w.name}" to your Google Drive?\n\nIt stays on this device too. Your other devices can then link to it from this screen.`)) return;
+      toast('Uploading to Google Drive…', 60000);
+      try { await Cloud.moveUp(w); toast(`"${w.name}" is now in your Google Drive.`); } catch (err) { toast('Could not upload: ' + (err.message === 'setup' ? 'Google Drive is not set up.' : err.message), 6000); }
+      menu = null; return draw();
+    }
+    if (w && id('data-wsunlink')) {
+      if (!confirm(`Stop using Google Drive for "${w.name}" on this device?\n\nThis device keeps its copy as a normal workspace. The copy in your Drive is left as it is.`)) return;
+      if (w.cloud.lastHolder === Cloud.device().id) { try { await Cloud.auth(); await Cloud.setLock(w, false); } catch {} }
+      delete w.cloud; await WS.save(); menu = null; return draw();
+    }
     if (w && id('data-wsren')) { const n = prompt('Workspace name:', w.name); if (n?.trim()) { w.name = n.trim(); await WS.save(); draw(); } return; }
     if (w && id('data-wssave')) { try { await exportBackup(w); } catch (err) { toast('Could not save: ' + err.message, 5000); } return; }
     if (w && id('data-wsdel')) {
@@ -6188,6 +6451,28 @@ function showStart() {
       try { await WS.remove(w); toast('Workspace deleted.'); } catch (err) { toast(err.message, 5000); }
       if (!WS.list.length) await WS.create('My workspace');
       menu = null; return draw();
+    }
+    if (t.closest('#st-drive')) {
+      if (!WS.gid && !(await cloudSetup())) return;
+      let found;
+      try { await Cloud.auth(); found = await Cloud.listWorkspaces(); } catch (err) { return toast(err.message === 'setup' ? 'Google Drive is not set up.' : 'Google Drive: ' + err.message, 6000); }
+      const fresh = found.filter(f => !WS.list.some(x => x.cloud?.folder === f.id));
+      if (!fresh.length) return toast(found.length ? 'All your Drive workspaces are already on this device.' : 'No InkForge workspaces in this Google Drive yet. Use "Move to Google Drive" on a workspace first.', 6000);
+      const pick = fresh.length === 1 ? fresh[0] : await new Promise(res => {
+        const d = document.createElement('div'); d.id = 'merge-dlg';
+        d.innerHTML = `<div class="card"><h2>Workspaces in your Drive</h2>${fresh.map(f => `<button class="c-row" data-f="${f.id}" style="width:100%"><span class="c-main"><span class="c-n">☁ ${esc(f.name)}</span><span class="muted c-sub">Changed ${new Date(f.modifiedTime).toLocaleString()}</span></span></button>`).join('')}
+          <button class="btn" data-f="" style="margin-top:10px">Cancel</button></div>`;
+        d.onclick = (e) => { const b = e.target.closest('[data-f]'); if (b) { d.remove(); res(fresh.find(f => f.id === b.dataset.f)); } };
+        document.body.appendChild(d);
+      });
+      if (!pick) return;
+      try {
+        const kids = await Cloud.names(pick.id);
+        if (!kids.get('db.sqlite') || !kids.get('media')) return toast('That Drive folder is missing its files.', 5000);
+        const nw = await WS.create(pick.name);
+        nw.cloud = { folder: pick.id, db: kids.get('db.sqlite'), media: kids.get('media'), ver: null }; await WS.save();
+        o.remove(); return startWorkspace(nw);
+      } catch (err) { return toast('Google Drive: ' + err.message, 6000); }
     }
     if (t.closest('#st-new')) {
       const n = prompt('Name for the new workspace (e.g. the artist\'s name):', '');
@@ -6216,6 +6501,16 @@ async function startWorkspace(w, fileBytes) {
   let recovered = false;
   try {
     await WS.open(w);
+    if (w.cloud && !fileBytes) {
+      if (!WS.gid && !(await cloudSetup())) return WS.switchTo(null);
+      try { await Cloud.prepare(w); }
+      catch (e) {
+        if (e.message === 'cancel') return WS.switchTo(null);
+        const mine = w.cloud.lastHolder === Cloud.device().id;
+        toast('Google Drive: ' + e.message + (mine ? '' : '. Opened view only.'), 7000);
+        Cloud.editing = mine; Cloud.viewOnly = !mine; Cloud.start(w);
+      }
+    }
     if (fileBytes) await restoreBackup(fileBytes);
     else if (!(await hasData())) {
       const snap = await Snapshot.load();
@@ -6234,12 +6529,13 @@ async function startWorkspace(w, fileBytes) {
     Cal.mode = Settings.get('cal_mode', innerWidth >= 900 ? 'week' : 'day');
     const info = await DB.info();
     // The badge names the open workspace; tapping it goes back to the start screen to switch.
-    badge.textContent = w.name;
+    badge.textContent = (w.cloud ? '☁ ' : '') + w.name;
     badge.className = 'badge ws-badge ' + (info.mode === 'opfs' ? 'ok' : 'warn');
     badge.dataset.tip = info.mode === 'opfs'
-      ? `Workspace "${w.name}", saved on this device. Tap to switch workspace.`
+      ? w.cloud ? `Workspace "${w.name}" in Google Drive, ${Cloud.editing ? 'editing on this device' : 'view only on this device'}. Tap to switch workspace.`
+        : `Workspace "${w.name}", saved on this device. Tap to switch workspace.`
       : 'This browser blocked on-device storage, so changes are lost on reload. Use https or localhost.';
-    badge.onclick = () => { if (Dirty.ok()) { Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(null)); } };
+    badge.onclick = () => { if (Dirty.ok()) { Dirty.set(false); Snapshot.save().then(() => Cloud.release(w)).finally(() => WS.switchTo(null)); } };
   } catch (err) {
     badge.textContent = 'DB error'; badge.className = 'badge warn'; badge.dataset.tip = err.message;
     console.error(err);
@@ -6251,6 +6547,7 @@ async function startWorkspace(w, fileBytes) {
   booted = true;
   Snapshot.ready = true;
   render();
+  if (w.cloud) cloudBar(Cloud.viewOnly ? undefined : null);
   if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
   else if (fileBytes) { toast(`Opened "${w.name}".`); Snapshot.soon(); }
   else Snapshot.soon();
