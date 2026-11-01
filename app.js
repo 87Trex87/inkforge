@@ -726,6 +726,7 @@ const VIEWS = {
           <button class="btn small" id="cal-today" style="min-height:46px">Today</button>
           <button class="btn icon-btn" id="cal-next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
           ${Gcal.enabled() ? `<button class="btn icon-btn gsync ${Gcal.state}" id="gcal-btn" aria-label="Sync Google Calendar"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 4v4h4M4 13a8 8 0 0 0 14.9 3M20 20v-4h-4"/></svg></button>` : ''}
+          <button class="btn icon-btn" id="cal-print" data-tip="Print or export your bookings" aria-label="Print or export bookings"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
           <button class="btn icon-btn" id="cal-share" data-tip="Share your open appointments" aria-label="Share open appointments"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg></button>
           <button class="btn primary icon-btn" id="cal-add" data-tip="New booking" aria-label="New booking"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
         </div>
@@ -744,6 +745,7 @@ const VIEWS = {
       }
       $('#cal-add').onclick = () => newBookingNext(null, Cal.date < new Date() ? new Date() : Cal.date);
       $('#cal-share').onclick = openAvailability;
+      $('#cal-print').onclick = openBookingsPrint;
       renderCal();
     }
   },
@@ -5051,7 +5053,9 @@ async function openPhonebookPrint() {
       <div class="qz-chips">${PB_COLS.map(([k, l]) => `<button class="chip qz-chip ${st.cols.has(k) ? 'on' : ''}" data-pk="${k}">${st.cols.has(k) ? '✓ ' : ''}${l}</button>`).join('')}</div>
       ${st.cols.has('medical') ? '<p class="muted" style="font-size:12px;margin:-4px 0 8px">Medical notes are private: keep the printout safe.</p>' : ''}
       <label class="toggle" style="display:inline-flex;margin:4px 0 12px"><input type="checkbox" id="pb-group" ${st.group ? 'checked' : ''}><span>Group by category</span></label>
-      <div class="row"><button class="btn" id="pb-close">Cancel</button><button class="btn primary" id="pb-go" style="flex:1" ${n ? '' : 'disabled'}>Print ${n} contact${n === 1 ? '' : 's'}</button></div></div>`;
+      <div class="row"><button class="btn" id="pb-close">Cancel</button>
+        <button class="btn" id="pb-csv" ${n ? '' : 'disabled'} data-tip="Spreadsheet of these contacts; opens in Excel">Export CSV</button>
+        <button class="btn primary" id="pb-go" style="flex:1" ${n ? '' : 'disabled'}>Print ${n}</button></div></div>`;
   };
   document.body.appendChild(o); draw();
   o.addEventListener('change', (e) => { if (e.target.id === 'pb-group') st.group = e.target.checked; });
@@ -5060,10 +5064,27 @@ async function openPhonebookPrint() {
     if (c) { st.cats.has(c.dataset.pc) ? st.cats.delete(c.dataset.pc) : st.cats.add(c.dataset.pc); return draw(); }
     if (k) { st.cols.has(k.dataset.pk) ? st.cols.delete(k.dataset.pk) : st.cols.add(k.dataset.pk); return draw(); }
     if (e.target.closest('#pb-close')) return o.remove();
-    if (!e.target.closest('#pb-go')) return;
+    const csv = e.target.closest('#pb-csv');
+    if (!csv && !e.target.closest('#pb-go')) return;
     await Settings.set('pb_print', JSON.stringify({ cols: [...st.cols], group: st.group }));
+    if (csv) return phonebookCsv([...st.cats], PB_COLS.filter(c => st.cols.has(c[0])));
     o.remove(); printPhonebook([...st.cats], PB_COLS.filter(c => st.cols.has(c[0])), st.group);
   });
+}
+// Spreadsheet export shared by the phonebook, bookings and stats. BOM so Excel reads UTF-8.
+async function saveCsv(name, head, rows) {
+  const q = (v) => v == null ? '' : /[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const blob = new Blob(['\ufeff' + [head, ...rows].map(r => r.map(q).join(',')).join('\r\n')], { type: 'text/csv' });
+  const file = new File([blob], name, { type: 'text/csv' });
+  try {
+    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: name });
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Spreadsheet saved.'); }
+  } catch (e) { if (e.name !== 'AbortError') toast('Could not export: ' + e.message); }
+}
+async function phonebookCsv(cats, cols) {
+  const rows = await DB.all(`SELECT * FROM clients WHERE category IN (${cats.map(() => '?').join(',')}) ORDER BY category COLLATE NOCASE, first_name COLLATE NOCASE, last_name COLLATE NOCASE`, cats);
+  await saveCsv(`InkForge-phonebook-${ymd(new Date())}.csv`, ['First name', 'Last name', 'Category', ...cols.map(c => c[1])],
+    rows.map(r => [r.first_name, r.last_name, r.category, ...cols.map(c => c[0] === 'instagram' && r.instagram ? '@' + r.instagram : r[c[0]])]));
 }
 async function printPhonebook(cats, cols, group) {
   const rows = await DB.all(`SELECT * FROM clients WHERE category IN (${cats.map(() => '?').join(',')})
@@ -5085,6 +5106,100 @@ async function printPhonebook(cats, cols, group) {
   const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
   addEventListener('afterprint', done);
   window.print();
+}
+
+/* Bookings print / export: a date range, which booking types, which status, which columns.
+   Print gives a table grouped by day (as many pages as needed); CSV gives the same rows. */
+const BK_COLS = [['client', 'Client', true], ['phone', 'Phone', true], ['kind', 'Type', true], ['description', 'Description', true],
+  ['placement', 'Placement', true], ['size', 'Size', false], ['quote', 'Quote', true], ['deposit', 'Deposit', true],
+  ['paid', 'Paid', false], ['notes', 'Notes', false]];
+const BK = { range: 'month', from: '', to: '', kinds: null, status: 'all' };
+function bkRange() {
+  const t = new Date(), y = t.getFullYear(), m = t.getMonth(), today = ymd(t);
+  if (BK.range === 'week') { const ws = Cal.weekStart(t); return [ymd(ws), ymd(addDays(ws, 6))]; }
+  if (BK.range === 'month') return [ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0))];
+  if (BK.range === 'next30') return [today, ymd(addDays(t, 30))];
+  if (BK.range === 'year') return [`${y}-01-01`, `${y}-12-31`];
+  return [BK.from || today, BK.to || BK.from || today];
+}
+async function bkRows() {
+  const [a, z] = bkRange(), kinds = [...(BK.kinds || Object.keys(BOOKING_KINDS))], today = ymd(new Date());
+  const rows = await DB.all(`SELECT b.*, c.first_name, c.last_name, c.phone FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
+    WHERE substr(b.start_at, 1, 10) BETWEEN ? AND ? AND b.kind IN (${kinds.map(() => '?').join(',')}) ORDER BY b.start_at`, [a, z, ...kinds]);
+  return rows.filter(r => BK.status === 'all' || (BK.status === 'upcoming' ? r.start_at.slice(0, 10) >= today && !r.completed
+    : BK.status === 'done' ? r.completed : r.start_at.slice(0, 10) < today && !r.completed));
+}
+async function openBookingsPrint() {
+  let saved = {}; try { saved = JSON.parse(Settings.get('bk_print', '{}')); } catch {}
+  BK.kinds ||= new Set(saved.kinds || Object.keys(BOOKING_KINDS).filter(k => k !== 'hold'));
+  const cols = new Set(saved.cols || BK_COLS.filter(c => c[2]).map(c => c[0]));
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const draw = async () => {
+    const n = (await bkRows()).length, [a, z] = bkRange();
+    o.innerHTML = `<div class="card"><h2>Print or export bookings</h2>
+      <div class="lbl">When</div>
+      <div class="qz-chips">${[['week', 'This week'], ['month', 'This month'], ['next30', 'Next 30 days'], ['year', 'This year'], ['custom', 'Custom']].map(([k, l]) =>
+        `<button class="chip qz-chip ${BK.range === k ? 'on' : ''}" data-br="${k}">${l}</button>`).join('')}</div>
+      ${BK.range === 'custom' ? `<div class="two"><label class="field"><span>From</span><input class="in" type="date" id="bk-from" value="${a}"></label>
+        <label class="field"><span>To</span><input class="in" type="date" id="bk-to" value="${z}"></label></div>` : `<p class="muted" style="font-size:12px;margin:-4px 0 8px">${esc(fmtDay(a))} to ${esc(fmtDay(z))}</p>`}
+      <div class="lbl">Types</div>
+      <div class="qz-chips">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button class="chip qz-chip ${BK.kinds.has(k) ? 'on' : ''}" data-bkk="${k}">${BK.kinds.has(k) ? '✓ ' : ''}${v.label}</button>`).join('')}</div>
+      <div class="lbl">Status</div>
+      <div class="seg" style="margin-bottom:10px">${[['all', 'All'], ['upcoming', 'Upcoming'], ['done', 'Completed'], ['past', 'Past, not completed']].map(([k, l]) =>
+        `<button data-bs="${k}" class="${BK.status === k ? 'on' : ''}" style="flex:1;font-size:13px">${l}</button>`).join('')}</div>
+      <div class="lbl">Columns <span class="muted" style="text-transform:none;letter-spacing:0">(date and time always included)</span></div>
+      <div class="qz-chips">${BK_COLS.map(([k, l]) => `<button class="chip qz-chip ${cols.has(k) ? 'on' : ''}" data-bc="${k}">${cols.has(k) ? '✓ ' : ''}${l}</button>`).join('')}</div>
+      <div class="row" style="margin-top:6px"><button class="btn" id="bk-close">Cancel</button>
+        <button class="btn" id="bk-csv" ${n ? '' : 'disabled'} data-tip="Spreadsheet of these bookings; opens in Excel">Export CSV</button>
+        <button class="btn primary" id="bk-go" style="flex:1" ${n ? '' : 'disabled'}>Print ${n} booking${n === 1 ? '' : 's'}</button></div></div>`;
+  };
+  document.body.appendChild(o); await draw();
+  const remember = () => Settings.set('bk_print', JSON.stringify({ kinds: [...BK.kinds], cols: [...cols] }));
+  o.addEventListener('change', (e) => { if (e.target.id === 'bk-from') BK.from = e.target.value; if (e.target.id === 'bk-to') BK.to = e.target.value; draw(); });
+  o.addEventListener('click', async (e) => {
+    const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    if (d('br')) { if (d('br') === 'custom' && BK.range !== 'custom') { const [a, z] = bkRange(); BK.from = a; BK.to = z; } BK.range = d('br'); return draw(); }
+    if (d('bkk')) { BK.kinds.has(d('bkk')) ? BK.kinds.delete(d('bkk')) : BK.kinds.add(d('bkk')); return draw(); }
+    if (d('bs')) { BK.status = d('bs'); return draw(); }
+    if (d('bc')) { cols.has(d('bc')) ? cols.delete(d('bc')) : cols.add(d('bc')); return draw(); }
+    if (t.closest('#bk-close')) return o.remove();
+    if (t.closest('#bk-csv')) { await remember(); return bookingsCsv(BK_COLS.filter(c => cols.has(c[0]))); }
+    if (t.closest('#bk-go')) { await remember(); o.remove(); return printBookings(BK_COLS.filter(c => cols.has(c[0]))); }
+  });
+}
+const bkCell = (r, k) => k === 'client' ? (r.first_name != null ? fullName(r) : '') : k === 'kind' ? kindLabel(r)
+  : ['quote', 'deposit', 'paid'].includes(k) ? (r[k] != null ? money(r[k]) + (k === 'deposit' && r[k] != null ? (r.deposit_paid ? ' ✓' : '') : '') : '')
+  : r[k] || '';
+async function printBookings(cols) {
+  const rows = await bkRows(), [a, z] = bkRange();
+  const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Bookings';
+  const sum = (k) => rows.reduce((t, r) => t + (r[k] || 0), 0);
+  let body = '', day = null;
+  for (const r of rows) {
+    const k = r.start_at.slice(0, 10);
+    if (k !== day) { day = k; body += `<tr class="pb-group"><td colspan="${cols.length + 2}">${esc(fmtDay(k))}${isDayOff(k) ? ' · day off' : ''}</td></tr>`; }
+    const end = new Date(new Date(r.start_at).getTime() + r.duration_min * 60000);
+    body += `<tr><td>${esc(fmtTime(r.start_at))}–${esc(fmtTime(end))}</td><td>${r.completed ? '✓' : ''}</td>${cols.map(c => `<td class="pb-${c[0]}">${esc(bkCell(r, c[0]))}</td>`).join('')}</tr>`;
+  }
+  const totals = ['quote', 'deposit', 'paid'].filter(k => cols.some(c => c[0] === k));
+  const foot = totals.length ? `<tr class="bk-total"><td colspan="2">Total</td>${cols.map(c => `<td>${totals.includes(c[0]) ? esc(money(sum(c[0]))) : ''}</td>`).join('')}</tr>` : '';
+  let p = $('#print-area');
+  if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+  p.innerHTML = `<div class="pbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>Bookings</b> · ${esc(fmtDay(a))} – ${esc(fmtDay(z))}<br>
+      ${rows.length} booking${rows.length === 1 ? '' : 's'} · ${esc([...BK.kinds].map(k => BOOKING_KINDS[k].label).join(', '))}</div></div>
+    <table><thead><tr><th>Time</th><th title="Completed">✓</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>`;
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done);
+  window.print();
+}
+async function bookingsCsv(cols) {
+  const rows = await bkRows(), [a, z] = bkRange();
+  const raw = (r, k) => ['quote', 'deposit', 'paid'].includes(k) ? r[k] : bkCell(r, k);
+  await saveCsv(`InkForge-bookings-${a}_to_${z}.csv`, ['Date', 'Start', 'End', 'Length (min)', 'Completed', ...cols.map(c => c[1]), ...(cols.some(c => c[0] === 'deposit') ? ['Deposit paid'] : [])],
+    rows.map(r => { const end = new Date(new Date(r.start_at).getTime() + r.duration_min * 60000);
+      return [r.start_at.slice(0, 10), r.start_at.slice(11, 16), `${pad(end.getHours())}:${pad(end.getMinutes())}`, r.duration_min, r.completed ? 'Yes' : '',
+        ...cols.map(c => raw(r, c[0])), ...(cols.some(c => c[0] === 'deposit') ? [r.deposit_paid ? 'Yes' : 'No'] : [])]; }));
 }
 
 /* Unsaved-form guard: navigating away from a dirty form asks first. */

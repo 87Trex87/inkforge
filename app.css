@@ -738,3 +738,8 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .pbook tbody tr:nth-child(even) td { background: #f7f4ee; }
 .pbook .pb-group td { background: none !important; padding-top: 12px; font-weight: 700; color: #14857c; text-transform: uppercase; letter-spacing: .06em; font-size: 9pt; border-bottom: 1.5px solid #14857c; }
 .pbook .pb-notes, .pbook .pb-medical { max-width: 60mm; white-space: pre-wrap; }
+
+/* Bookings printout: totals row */
+.pbook tfoot td { font-weight: 700; border-top: 2px solid #333; border-bottom: 0; padding-top: 6px; }
+.pbook th[title] { width: 14px; }
+.pbook tfoot { display: table-row-group; } /* totals once at the end, not on every page */
