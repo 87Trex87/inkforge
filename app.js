@@ -2893,10 +2893,11 @@ function qzDraw() {
       <span class="qz-sw sw-${k}"></span><b>${l}</b><span class="muted">${d}</span></button>`).join('')}</div>`;
   } else if (s === 3) {
     body = `<h2>How detailed?</h2>
-      <div class="qz-pin"><div class="qz-detail">${detailSvg(QZ.detail, QZ.colour || 'black')}</div>
+      <div class="qz-place qz-dl"><div class="qz-pin"><div class="qz-detail">${detailSvg(QZ.detail, QZ.colour || 'black')}</div>
       <div class="qz-dname"><b>${DETAIL_LEVELS[QZ.detail - 1][0]}</b><span class="muted">${DETAIL_LEVELS[QZ.detail - 1][1]}</span></div></div>
+      <div class="qz-picks">
       <input type="range" min="1" max="5" step="1" value="${QZ.detail}" data-qz="detail" class="qz-range" aria-label="Detail level">
-      <div class="qz-thumbs">${DETAIL_LEVELS.map((d, i) => `<button data-detail="${i + 1}" class="${QZ.detail === i + 1 ? 'on' : ''}" aria-label="${d[0]}">${detailSvg(i + 1, QZ.colour || 'black')}</button>`).join('')}</div>`;
+      <div class="qz-thumbs">${DETAIL_LEVELS.map((d, i) => `<button data-detail="${i + 1}" class="${QZ.detail === i + 1 ? 'on' : ''}" aria-label="${d[0]}">${detailSvg(i + 1, QZ.colour || 'black')}</button>`).join('')}</div></div></div>`;
   } else if (s === 4) {
     body = `<h2>Style</h2><p class="muted" style="margin-top:0">Not sure? Pick the closest, or skip.</p>
       <div class="qz-chips">${c.styles.map(([n]) => `<button class="chip qz-chip ${QZ.style === n ? 'on' : ''}" data-style="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;

@@ -786,3 +786,10 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
   .qz-place .qz-chart img { max-height: calc(100vh - 220px); }
   .qz-picks .qz-legend { margin-top: 0; }
 }
+
+/* Quote detail step: smaller preview in portrait, beside the slider in landscape */
+.qz-dl .qz-detail svg { width: min(130px, 36vw); }
+@media (orientation: landscape) and (min-width: 700px) {
+  .qz-dl .qz-detail svg { width: 100%; max-width: 280px; max-height: calc(100vh - 300px); }
+  .qz-dl .qz-picks .qz-range { margin-top: 0; }
+}
