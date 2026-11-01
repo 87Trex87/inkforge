@@ -269,7 +269,9 @@ const MIGRATIONS = [
   `ALTER TABLE quotes ADD COLUMN reply TEXT;`,
   // v16: a booking can carry a name and number without saving the person as a client.
   `ALTER TABLE bookings ADD COLUMN guest_name TEXT;
-   ALTER TABLE bookings ADD COLUMN guest_phone TEXT;`
+   ALTER TABLE bookings ADD COLUMN guest_phone TEXT;`,
+  // v17: background behind a portfolio picture ('' = as is / transparent, 'white', 'black'), on screen and in print.
+  `ALTER TABLE portfolio_items ADD COLUMN bg TEXT;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -678,12 +680,12 @@ const VIEWS = {
         }
       }
       $('#c-pf').onclick = () => { PF.ctx = { kind: 'tattoo', clientId: c.id }; location.hash = 'pf-edit/new'; };
-      const pfs = await DB.all(`SELECT p.id, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS thumb
+      const pfs = await DB.all(`SELECT p.id, p.bg, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS thumb
         FROM portfolio_items p WHERE p.client_id = ? ORDER BY coalesce(p.made_on, p.created_at) DESC`, [c.id]);
       const pe = $('#c-pfs');
       if (pe) {
         const urls = await Promise.all(pfs.map(p => Media.url(p.thumb)));
-        pe.innerHTML = pfs.length ? `<div class="pf-strip">${pfs.map((p, i) => `<a class="pf-tile" href="#pf/${p.id}">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</a>`).join('')}</div>` : 'None yet.';
+        pe.innerHTML = pfs.length ? `<div class="pf-strip">${pfs.map((p, i) => `<a class="pf-tile${pfBg(p.bg)}" href="#pf/${p.id}">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</a>`).join('')}</div>` : 'None yet.';
       }
       const tpls = await DB.all('SELECT id, kind FROM form_templates ORDER BY id');
       const firstOf = (k) => tpls.find(t => t.kind === k)?.id;
@@ -1152,7 +1154,7 @@ const VIEWS = {
       $('#view-title').textContent = PF_KIND[it.kind];
       const field = (l, v) => v ? `<div class="stat"><span class="muted">${l}</span><span class="val">${v}</span></div>` : '';
       el.innerHTML = `
-        <div class="carousel" id="pf-car">${photos.map((p, i) => `<div class="slide"><img src="${urls[i]}" alt="" data-i="${i}">
+        <div class="carousel${pfBg(it.bg)}" id="pf-car">${photos.map((p, i) => `<div class="slide"><img src="${urls[i]}" alt="" data-i="${i}">
           ${p.label ? `<span class="slide-label">${esc(p.label)}</span>` : ''}</div>`).join('') || '<div class="slide empty-slide muted">No photos</div>'}</div>
         ${photos.length > 1 ? `<div class="dots" id="pf-dots">${photos.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
         <div class="card">
@@ -1222,7 +1224,10 @@ const VIEWS = {
       const f = $('#pf-form');
       f.innerHTML = `
         <div class="seg" id="pf-kind" style="margin-bottom:14px">${Object.entries(PF_KIND).map(([k, l]) => `<button type="button" data-k="${k}" class="${it.kind === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
-        ${fsec(`Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil or sketch. Tap ◀ to move a photo forward.')}`, '<div class="thumbs pf-thumbs" id="pf-thumbs"></div>')}
+        ${fsec(`Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil or sketch. Tap ◀ to move a photo forward.')}`,
+          `<div class="thumbs pf-thumbs ${it.bg ? 'bg-' + it.bg : ''}" id="pf-thumbs"></div>
+           <div class="lbl" style="margin-top:10px">Background ${help('For pictures with see-through parts, like a black flash design saved as PNG. White or black sits the design on that colour, in the portfolio and in print.')}</div>
+           <div class="seg" id="pf-bg">${PF_BG.map(([k, l]) => `<button type="button" data-bg="${k}" class="${(it.bg || '') === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`)}
         <section class="fsec"><h3>Details</h3>
         <label class="field"><span>Title</span><input class="in" name="title" value="${esc(it.title)}" placeholder="Peony sleeve"></label>
         <label class="field"><span>Description</span><textarea class="in" name="description" rows="2">${esc(it.description)}</textarea></label>
@@ -1249,6 +1254,9 @@ const VIEWS = {
         f.querySelector('.pf-client').hidden = it.kind !== 'tattoo';
       };
       syncKind();
+      $('#pf-bg').onclick = (e) => { const b = e.target.closest('[data-bg]'); if (!b) return; it.bg = b.dataset.bg;
+        $('#pf-bg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+        $('#pf-thumbs').className = 'thumbs pf-thumbs' + (it.bg ? ' bg-' + it.bg : ''); Dirty.set(true); };
       $('#pf-kind').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; it.kind = b.dataset.k;
         $('#pf-kind').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); syncKind(); Dirty.set(true); };
       const LABELS = ['', 'Fresh', 'Healed', 'Stencil', 'Sketch', 'Process'];
@@ -1265,8 +1273,10 @@ const VIEWS = {
           toast(files.length > 1 ? `Processing ${files.length} photos…` : 'Processing photo…');
           for (const file of files) {
             try {
-              const blob = await Media.shrink(file, 2048, 0.86), thumb = await Media.shrink(file, 480, 0.78);
-              photos.push({ blob, thumb, url: URL.createObjectURL(thumb), label: '' });
+              const alpha = /png|webp|gif/.test(file.type);
+              const blob = alpha ? await pngBlob(file, 2048) : await Media.shrink(file, 2048, 0.86);
+              const thumb = alpha ? await pngBlob(file, 480) : await Media.shrink(file, 480, 0.78);
+              photos.push({ blob, thumb, url: URL.createObjectURL(thumb), label: '', ext: alpha ? 'png' : 'jpg' });
             } catch { toast('Could not read an image.'); }
           }
           Dirty.set(true); drawThumbs();
@@ -1292,11 +1302,11 @@ const VIEWS = {
         const vals = [it.kind, d.title.trim() || null, d.description.trim() || null, d.placement.trim() || null,
           d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ') || null,
           it.kind === 'tattoo' ? clientId : null, it.booking_id ?? null, d.made_on || null,
-          flash && d.price !== '' ? +d.price : null, flash && d.claimed ? 1 : 0];
-        const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed';
+          flash && d.price !== '' ? +d.price : null, flash && d.claimed ? 1 : 0, it.bg || null];
+        const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed, bg';
         const rows = [];
         for (const p of photos) {
-          if (p.blob) rows.push({ photo_ref: await Media.save(p.blob, 'jpg'), thumb_ref: await Media.save(p.thumb, 'jpg'), label: p.label || null });
+          if (p.blob) rows.push({ photo_ref: await Media.save(p.blob, p.ext || 'jpg'), thumb_ref: await Media.save(p.thumb, p.ext || 'jpg'), label: p.label || null });
           else rows.push({ photo_ref: p.photo_ref, thumb_ref: p.thumb_ref, label: p.label || null });
         }
         let pid = it.id;
@@ -3176,13 +3186,15 @@ function renderGcalStatus() {
 
 /* ---------- Portfolio helpers ---------- */
 const PF = { filter: 'all', q: '', ctx: null };
+const PF_BG = [['', 'Transparent'], ['white', 'White'], ['black', 'Black']];
+const pfBg = (bg) => bg === 'white' || bg === 'black' ? ' bg-' + bg : '';
 const PF_KIND = { tattoo: 'Tattoo', art: 'Art', flash: 'Flash' };
 
 async function renderPfGrid() {
   const el = $('#pf-grid'); if (!el) return;
   const q = PF.q.trim(), like = '%' + q + '%';
   const where = PF.filter === 'fav' ? 'p.favourite = 1' : PF.filter === 'all' ? '1' : 'p.kind = ?';
-  const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite,
+  const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite, p.bg,
       (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS thumb,
       (SELECT count(*) FROM portfolio_photos x WHERE x.item_id = p.id) AS n
     FROM portfolio_items p LEFT JOIN clients c ON c.id = p.client_id
@@ -3199,7 +3211,7 @@ async function renderPfGrid() {
   }
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb)));
   el.innerHTML = '<div class="pf-grid">' + rows.map((r, i) => `
-    <a class="pf-tile ${r.claimed ? 'claimed' : ''}" href="#pf/${r.id}" aria-label="${esc(r.title || PF_KIND[r.kind])}">
+    <a class="pf-tile ${r.claimed ? 'claimed' : ''}${pfBg(r.bg)}" href="#pf/${r.id}" aria-label="${esc(r.title || PF_KIND[r.kind])}">
       ${urls[i] ? `<img src="${urls[i]}" alt="" loading="lazy">` : ''}
       ${r.kind === 'flash' ? `<span class="pf-badge">${r.claimed ? 'Claimed' : r.price != null ? esc(money(r.price)) : 'Flash'}</span>` : ''}
       ${r.favourite ? '<span class="pf-star">★</span>' : ''}
@@ -4817,11 +4829,14 @@ async function portfolioPages() {
       const cw = fw * areaW - (fw < 1 ? gap / 2 : 0), ch = fh * areaH - (fy > 0 && fy + fh < 0.999 ? gap : fy > 0 || fy + fh < 0.999 ? gap / 2 : 0);
       const ih = ch - capH;
       // Picture, cover-cropped into its frame
-      x.fillStyle = C.frame; x.fillRect(cx, cy, cw, ih);
+      const solid = it.bg === 'white' ? '#ffffff' : it.bg === 'black' ? '#000000' : null;
+      x.fillStyle = solid || C.frame; x.fillRect(cx, cy, cw, ih);
       const url = await Media.url(it.photo_ref);
       const img = url ? await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }) : null;
       if (img) {
-        const sc = Math.max(cw / img.naturalWidth, ih / img.naturalHeight), w = img.naturalWidth * sc, h = img.naturalHeight * sc;
+        // A chosen background shows the whole design (with a margin); otherwise the photo fills its frame.
+        const sc = solid ? Math.min(cw / img.naturalWidth, ih / img.naturalHeight) * 0.9 : Math.max(cw / img.naturalWidth, ih / img.naturalHeight);
+        const w = img.naturalWidth * sc, h = img.naturalHeight * sc;
         x.save(); x.beginPath(); x.rect(cx, cy, cw, ih); x.clip(); x.drawImage(img, cx + (cw - w) / 2, cy + (ih - h) / 2, w, h); x.restore();
       }
       if (it.kind === 'flash' && PFP.info !== 'none') {
