@@ -57,6 +57,18 @@ const Snapshot = {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) Snapshot.save(); });
 
+// Combo boxes: browsers filter a datalist by the current value, so a filled box only offers its own
+// value. Park the value as the placeholder while the box is opened, and put it back if nothing new is picked.
+document.addEventListener('pointerdown', (e) => {
+  const i = e.target.closest?.('input[list]'); if (!i || !i.value) return;
+  i.dataset.prev = i.value; i.dataset.ph = i.placeholder; i.placeholder = i.value; i.value = '';
+}, true);
+document.addEventListener('focusout', (e) => {
+  const i = e.target; if (!i.matches?.('input[list]') || i.dataset.prev == null) return;
+  if (!i.value) i.value = i.dataset.prev;
+  i.placeholder = i.dataset.ph || ''; delete i.dataset.prev; delete i.dataset.ph;
+}, true);
+
 /* ---------- Workspaces ----------
    Each workspace (e.g. one per artist) is its own database file, media folder and snapshot.
    The list lives in OPFS as workspaces.json (not localStorage). The original single database
