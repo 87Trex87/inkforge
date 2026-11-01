@@ -1010,6 +1010,7 @@ const VIEWS = {
     render: () => `
       <div class="search-bar">
         <input class="in" id="pf-q" type="search" placeholder="Search title, tag, placement…" value="${esc(PF.q)}" autocomplete="off">
+        <button class="btn icon-btn" id="pf-print" data-tip="Print your portfolio as a book" aria-label="Print portfolio"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
         <button class="btn primary icon-btn" id="pf-add" data-tip="Add to portfolio" aria-label="Add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="seg pf-seg" id="pf-filter">
@@ -1021,6 +1022,7 @@ const VIEWS = {
       $('#pf-q').addEventListener('input', (e) => { PF.q = e.target.value; renderPfGrid(); });
       $('#pf-filter').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; PF.filter = b.dataset.f;
         document.querySelectorAll('#pf-filter button').forEach(x => x.classList.toggle('on', x === b)); renderPfGrid(); };
+      $('#pf-print').onclick = openPortfolioPrint;
       $('#pf-add').onclick = () => { PF.ctx = { kind: ['tattoo', 'art', 'flash'].includes(PF.filter) ? PF.filter : 'tattoo' }; location.hash = 'pf-edit/new'; };
       renderPfGrid();
     }
@@ -3708,6 +3710,183 @@ async function openAvailability() {
       else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved.'); }
     } catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); }
   });
+}
+
+/* ---------- Portfolio print ----------
+   A printable portfolio book: optional cover page, then 1 to 6 pieces per page in a clean gallery
+   layout, dark (ink-on-black, the classic tattoo book) or light, with as much or as little text as
+   wanted. Pages are drawn on A4 canvases and printed as images, so the look is exact. */
+const PFP = { which: null, per: 4, info: 'details', theme: 'dark', cover: true, photos: 'cover' };
+const PFP_INFO = [['none', 'Images only'], ['title', 'Title'], ['details', 'Title, placement, year'], ['full', 'Everything']];
+
+async function pfPrintItems(which, photos) {
+  const where = which === 'fav' ? 'p.favourite = 1' : which === 'all' ? '1' : 'p.kind = ?';
+  const items = await DB.all(`SELECT p.* FROM portfolio_items p WHERE ${where} ORDER BY coalesce(p.made_on, p.created_at) DESC, p.id DESC`,
+    ['tattoo', 'art', 'flash'].includes(which) ? [which] : []);
+  const out = [];
+  for (const it of items) {
+    const ph = await DB.all(`SELECT photo_ref FROM portfolio_photos WHERE item_id = ? ORDER BY sort, id ${photos === 'cover' ? 'LIMIT 1' : ''}`, [it.id]);
+    ph.forEach((p, i) => out.push({ ...it, photo_ref: p.photo_ref, extra: i > 0 }));
+  }
+  return out;
+}
+
+async function openPortfolioPrint() {
+  let saved = {}; try { saved = JSON.parse(Settings.get('pf_print', '{}')); } catch {}
+  Object.assign(PFP, saved, { which: PFP.which || PF.filter || 'all' });
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const draw = async () => {
+    const n = (await pfPrintItems(PFP.which, PFP.photos)).length, pages = Math.ceil(n / PFP.per) + (PFP.cover && n ? 1 : 0);
+    o.innerHTML = `<div class="card"><h2>Print portfolio</h2>
+      <div class="lbl">Which pieces</div>
+      <div class="qz-chips">${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★ Favourites']].map(([k, l]) =>
+        `<button class="chip qz-chip ${PFP.which === k ? 'on' : ''}" data-pw="${k}">${l}</button>`).join('')}</div>
+      <div class="lbl">Pictures per page</div>
+      <div class="pfp-per">${[1, 2, 3, 4, 6].map(n => `<button data-pp="${n}" class="${PFP.per === n ? 'on' : ''}" aria-label="${n} per page">${pfpIcon(n)}<span>${n}</span></button>`).join('')}</div>
+      <div class="lbl">Text with each picture</div>
+      <div class="qz-chips">${PFP_INFO.map(([k, l]) => `<button class="chip qz-chip ${PFP.info === k ? 'on' : ''}" data-pi="${k}">${l}</button>`).join('')}</div>
+      <div class="two">
+        <div><div class="lbl">Look</div><div class="seg">${[['dark', 'Dark'], ['light', 'Light']].map(([k, l]) => `<button data-pt="${k}" class="${PFP.theme === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div></div>
+        <div><div class="lbl">Photos</div><div class="seg">${[['cover', 'Main only'], ['all', 'All']].map(([k, l]) => `<button data-pph="${k}" class="${PFP.photos === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div></div>
+      </div>
+      <label class="toggle" style="display:inline-flex;margin:12px 0"><input type="checkbox" id="pfp-cover" ${PFP.cover ? 'checked' : ''}><span>Cover page with your logo</span></label>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">${n} picture${n === 1 ? '' : 's'} · ${pages} page${pages === 1 ? '' : 's'}. Client names are never printed. ${PFP.theme === 'dark' ? 'Dark pages use a lot of ink; Save as PDF to share it digitally.' : ''}</p>
+      <div class="row"><button class="btn" id="pfp-close">Cancel</button><button class="btn primary" id="pfp-go" style="flex:1" ${n ? '' : 'disabled'}>Print / PDF</button></div></div>`;
+  };
+  document.body.appendChild(o); await draw();
+  o.addEventListener('change', (e) => { if (e.target.id === 'pfp-cover') { PFP.cover = e.target.checked; draw(); } });
+  o.addEventListener('click', async (e) => {
+    const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    if (d('pw')) { PFP.which = d('pw'); return draw(); }
+    if (d('pp')) { PFP.per = +d('pp'); return draw(); }
+    if (d('pi')) { PFP.info = d('pi'); return draw(); }
+    if (d('pt')) { PFP.theme = d('pt'); return draw(); }
+    if (d('pph')) { PFP.photos = d('pph'); return draw(); }
+    if (t.closest('#pfp-close')) return o.remove();
+    if (!t.closest('#pfp-go')) return;
+    const { which, ...keep } = PFP; await Settings.set('pf_print', JSON.stringify(keep));
+    const btn = $('#pfp-go'); btn.disabled = true; btn.textContent = 'Making pages…';
+    try {
+      const pages = await portfolioPages();
+      o.remove();
+      let p = $('#print-area');
+      if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+      // JPEG keeps photo pages small; one image per A4 page.
+      p.innerHTML = pages.map(cv => `<img src="${cv.toDataURL('image/jpeg', 0.9)}" class="quote-print" alt="">`).join('');
+      await Promise.all([...p.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
+      document.body.classList.add('printing');
+      const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+      addEventListener('afterprint', done);
+      window.print();
+    } catch (err) { toast('Could not make the pages: ' + err.message, 5000); btn.disabled = false; btn.textContent = 'Print / PDF'; }
+  });
+}
+// Little layout pictures for the per-page buttons.
+function pfpIcon(n) {
+  const R = { 1: [[0, 0, 1, 1]], 2: [[0, 0, 1, .48], [0, .52, 1, .48]], 3: [[0, 0, 1, .58], [0, .62, .48, .38], [.52, .62, .48, .38]],
+    4: [[0, 0, .48, .48], [.52, 0, .48, .48], [0, .52, .48, .48], [.52, .52, .48, .48]],
+    6: [[0, 0, .48, .31], [.52, 0, .48, .31], [0, .345, .48, .31], [.52, .345, .48, .31], [0, .69, .48, .31], [.52, .69, .48, .31]] }[n];
+  return `<svg viewBox="0 0 20 28">${R.map(([x, y, w, h]) => `<rect x="${x * 20}" y="${y * 28}" width="${w * 20}" height="${h * 28}" rx="1.5"/>`).join('')}</svg>`;
+}
+// Cell rectangles (x, y, w, h as fractions of the gallery area) for each layout.
+const PFP_CELLS = { 1: [[0, 0, 1, 1]], 2: [[0, 0, 1, .5], [0, .5, 1, .5]], 3: [[0, 0, 1, .6], [0, .6, .5, .4], [.5, .6, .5, .4]],
+  4: [[0, 0, .5, .5], [.5, 0, .5, .5], [0, .5, .5, .5], [.5, .5, .5, .5]],
+  6: [[0, 0, .5, 1 / 3], [.5, 0, .5, 1 / 3], [0, 1 / 3, .5, 1 / 3], [.5, 1 / 3, .5, 1 / 3], [0, 2 / 3, .5, 1 / 3], [.5, 2 / 3, .5, 1 / 3]] };
+
+async function portfolioPages() {
+  const { W, H } = DOC, M = 80;
+  const dark = PFP.theme === 'dark';
+  const C = dark ? { bg: '#0c0d0e', ink: '#ece6d8', soft: '#8b8f92', accent: '#1fb5a8', frame: '#1c1f21' }
+    : { bg: '#fbf8f2', ink: '#151515', soft: '#7a766f', accent: '#14857c', frame: '#e8e2d6' };
+  await Promise.all([document.fonts.load("64px 'Pirata One'"), document.fonts.load('600 28px Inter'), document.fonts.load('400 28px Inter')]).catch(() => {});
+  const items = await pfPrintItems(PFP.which, PFP.photos);
+  const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Portfolio';
+  // "instagram.com/name" or a full link prints as "@name"; anything else as typed.
+  const handle = (Settings.get('artist_instagram') || '').trim().replace(/\/$/, '').replace(/^(https?:\/\/)?(www\.)?instagram\.com\//i, '@');
+  const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
+  const logo = logoUrl ? await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = logoUrl; }) : null;
+  const page = () => { const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d'); x.fillStyle = C.bg; x.fillRect(0, 0, W, H); return [cv, x]; };
+  const font = (px, w = 400, disp = false) => disp ? `${px}px 'Pirata One', serif` : `${w} ${px}px Inter, system-ui, sans-serif`;
+  const text = (x, s, tx, ty, f, col, align = 'left', spacing = 0) => {
+    x.font = f; x.fillStyle = col; x.textAlign = align; x.textBaseline = 'alphabetic';
+    if ('letterSpacing' in x) x.letterSpacing = spacing + 'px';
+    x.fillText(s, tx, ty);
+    if ('letterSpacing' in x) x.letterSpacing = '0px';
+  };
+  const fit = (x, s, f, maxW) => { x.font = f; if (x.measureText(s).width <= maxW) return s; while (s && x.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s + '…'; };
+  const pages = [];
+
+  if (PFP.cover && items.length) {
+    const [cv, x] = page();
+    // Faint frame and a soft glow behind the logo.
+    x.strokeStyle = C.frame; x.lineWidth = 3; x.strokeRect(50, 50, W - 100, H - 100);
+    const g = x.createRadialGradient(W / 2, H * 0.4, 0, W / 2, H * 0.4, W * 0.6);
+    g.addColorStop(0, dark ? 'rgba(31,181,168,.14)' : 'rgba(20,133,124,.08)'); g.addColorStop(1, 'transparent');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    let y = H * 0.36;
+    if (logo) { const sc = Math.min(560 / logo.naturalWidth, 420 / logo.naturalHeight); const w = logo.naturalWidth * sc, h = logo.naturalHeight * sc;
+      x.drawImage(logo, (W - w) / 2, y - h / 2, w, h); y += h / 2 + 130; } else y = H * 0.44;
+    text(x, fit(x, studio, font(120, 400, true), W - 200), W / 2, y, font(120, 400, true), C.ink, 'center');
+    x.fillStyle = C.accent; x.fillRect(W / 2 - 90, y + 50, 180, 5);
+    text(x, 'PORTFOLIO', W / 2, y + 130, font(34, 600), C.accent, 'center', 14);
+    const kinds = [...new Set(items.map(i => i.kind))].map(k => ({ tattoo: 'Tattoos', art: 'Art', flash: 'Flash' })[k]).join('  ·  ');
+    text(x, `${kinds}  ·  ${new Date().getFullYear()}`, W / 2, y + 185, font(24, 500), C.soft, 'center', 2);
+    const contact = [handle, Settings.get('artist_phone')].filter(Boolean).join('   ·   ');
+    if (contact) text(x, contact, W / 2, H - 110, font(24, 500), C.soft, 'center', 1);
+    pages.push(cv);
+  }
+
+  const capH = { none: 0, title: 54, details: 92, full: 150 }[PFP.info] * (PFP.per >= 4 ? 0.8 : 1);
+  const top = 170, bottom = H - 120, gap = 34, areaW = W - 2 * M, areaH = bottom - top;
+  const cells = PFP_CELLS[PFP.per];
+  const total = Math.ceil(items.length / PFP.per);
+  for (let pi = 0; pi < total; pi++) {
+    const [cv, x] = page();
+    // Running header and footer
+    text(x, fit(x, studio, font(40, 400, true), W / 2), M, 100, font(40, 400, true), C.ink);
+    text(x, 'PORTFOLIO', W - M, 96, font(20, 600), C.accent, 'right', 8);
+    x.fillStyle = C.frame; x.fillRect(M, 124, areaW, 2);
+    if (handle) text(x, handle, M, H - 62, font(20, 500), C.soft);
+    text(x, String(pi + 1 + (PFP.cover ? 1 : 0)).padStart(2, '0'), W - M, H - 62, font(22, 600), C.soft, 'right', 3);
+    const slice = items.slice(pi * PFP.per, (pi + 1) * PFP.per);
+    for (const [ci, it] of slice.entries()) {
+      const [fx, fy, fw, fh] = cells[ci];
+      const cx = M + fx * areaW + (fx > 0 ? gap / 2 : 0), cy = top + fy * areaH + (fy > 0 ? gap / 2 : 0);
+      const cw = fw * areaW - (fw < 1 ? gap / 2 : 0), ch = fh * areaH - (fy > 0 && fy + fh < 0.999 ? gap : fy > 0 || fy + fh < 0.999 ? gap / 2 : 0);
+      const ih = ch - capH;
+      // Picture, cover-cropped into its frame
+      x.fillStyle = C.frame; x.fillRect(cx, cy, cw, ih);
+      const url = await Media.url(it.photo_ref);
+      const img = url ? await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }) : null;
+      if (img) {
+        const sc = Math.max(cw / img.naturalWidth, ih / img.naturalHeight), w = img.naturalWidth * sc, h = img.naturalHeight * sc;
+        x.save(); x.beginPath(); x.rect(cx, cy, cw, ih); x.clip(); x.drawImage(img, cx + (cw - w) / 2, cy + (ih - h) / 2, w, h); x.restore();
+      }
+      if (it.kind === 'flash' && PFP.info !== 'none') {
+        const tag = it.claimed ? 'CLAIMED' : 'AVAILABLE';
+        x.font = font(16, 700); const tw = x.measureText(tag).width + 36;
+        x.fillStyle = it.claimed ? 'rgba(0,0,0,.65)' : C.accent; x.fillRect(cx + 16, cy + 16, tw, 34);
+        text(x, tag, cx + 16 + tw / 2, cy + 39, font(16, 700), it.claimed ? '#fff' : '#061211', 'center', 3);
+      }
+      if (!capH) continue;
+      // Caption under the picture
+      const k = PFP.per >= 4 ? 0.8 : 1, ty = cy + ih + 36 * k;
+      const title = it.title || ({ tattoo: 'Tattoo', art: 'Artwork', flash: 'Flash' })[it.kind];
+      text(x, fit(x, title, font(34 * k, 400, true), cw), cx, ty, font(34 * k, 400, true), C.ink);
+      if (PFP.info === 'title') continue;
+      const yr = (it.made_on || it.created_at || '').slice(0, 4);
+      const meta = [it.placement, yr, it.kind === 'flash' && it.price != null && PFP.info === 'full' ? money(it.price) : ''].filter(Boolean).join('  ·  ');
+      if (meta) text(x, fit(x, meta.toUpperCase(), font(17 * k, 600), cw), cx, ty + 34 * k, font(17 * k, 600), C.accent, 'left', 2);
+      if (PFP.info === 'full' && it.description) {
+        x.font = font(20 * k); const words = String(it.description).split(/\s+/); let line = '', lines = [];
+        for (const w of words) { const t = line ? line + ' ' + w : w; if (x.measureText(t).width > cw && line) { lines.push(line); line = w; } else line = t; }
+        if (line) lines.push(line);
+        lines.slice(0, 2).forEach((ln, i) => text(x, i === 1 && lines.length > 2 ? fit(x, ln + '…', font(20 * k), cw) : ln, cx, ty + (64 + i * 28) * k, font(20 * k), C.soft));
+      }
+    }
+    pages.push(cv);
+  }
+  return pages;
 }
 
 /* ---------- Stats ----------

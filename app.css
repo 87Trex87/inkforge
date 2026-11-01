@@ -743,3 +743,9 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .pbook tfoot td { font-weight: 700; border-top: 2px solid #333; border-bottom: 0; padding-top: 6px; }
 .pbook th[title] { width: 14px; }
 .pbook tfoot { display: table-row-group; } /* totals once at the end, not on every page */
+
+/* Portfolio print setup */
+.pfp-per { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
+.pfp-per button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink2); font-weight: 600; cursor: pointer; }
+.pfp-per svg { width: 22px; height: 30px; fill: currentColor; opacity: .7; }
+.pfp-per button.on { border-color: var(--teal); color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); }
