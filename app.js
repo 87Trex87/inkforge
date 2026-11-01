@@ -241,7 +241,9 @@ const MIGRATIONS = [
      completed INTEGER NOT NULL DEFAULT 0,
      created_at TEXT NOT NULL DEFAULT (datetime('now')),
      updated_at TEXT NOT NULL DEFAULT (datetime('now')));
-   CREATE INDEX idx_quotes_booking ON quotes (booking_id);`
+   CREATE INDEX idx_quotes_booking ON quotes (booking_id);`,
+  // v15: the client's reply from a quote link (option, day, start time, contact), as JSON.
+  `ALTER TABLE quotes ADD COLUMN reply TEXT;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -1842,6 +1844,8 @@ const VIEWS = {
         </div>
         <label class="field"><span>Most tattoos per day ${help('Once a day has this many tattoo bookings, it shows as booked on your open appointments.')}</span>
           <input class="in" id="s-maxday" type="number" min="1" max="10" value="${esc(Settings.get('max_per_day', '1'))}"></label>
+        <label class="field"><span>Time between bookings ${help('Setup, cleaning and a break. Kept free before and after every booking when working out open times.')}</span>
+          <div class="unit-in"><input class="in" id="s-gap" type="number" min="0" max="240" step="15" value="${esc(Settings.get('booking_gap', '60'))}"><em>min</em></div></label>
       </div>
       <div class="card"><h2>Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</h2>
         <div id="off-card"></div></div>
@@ -1897,6 +1901,7 @@ const VIEWS = {
       $('#s-start').addEventListener('change', save('day_start'));
       $('#s-end').addEventListener('change', save('day_end'));
       $('#s-maxday').addEventListener('change', (e) => Settings.set('max_per_day', String(Math.max(1, +e.target.value || 1))));
+      $('#s-gap').addEventListener('change', (e) => Settings.set('booking_gap', String(Math.max(0, Math.min(240, +e.target.value || 0)))));
       const drawLogo = async () => {
         const ref = Settings.get('studio_logo_ref'), u = await Media.url(ref);
         $('#s-logo-box').innerHTML = u ? `<img src="${u}" alt="Studio logo">` : '<span class="muted">None</span>';
@@ -3047,6 +3052,7 @@ function qzDraw() {
           <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print / PDF</button>
           <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture">Image</button>
           <button class="btn" id="qz-share" data-tip="A short text version for a chat">Text</button>
+          <button class="btn" id="qz-link" data-tip="A web page the client opens on their phone: they read the quote, pick a day and time and reply to you on WhatsApp. Nothing to install.">Link</button>
         </div>
         <button class="btn primary" id="qz-book" style="width:100%;margin-top:12px">${qzMulti() ? 'Book all together' : 'Book with this quote'}</button>
         <div class="row qz-links"><button class="btn small" id="qz-new">New quote</button>
@@ -3171,6 +3177,7 @@ function qzBind(el) {
       newBookingNext();
     })();
     if (t.closest('#qz-share')) return qzShare();
+    if (t.closest('#qz-link')) return qzLink();
     if (t.closest('#qz-print')) return qzPrint();
     if (t.closest('#qz-img')) return qzSaveImage();
   };
@@ -3249,7 +3256,7 @@ async function qzSaveQuote(quiet) {
 }
 
 // Opens a saved quote on its price page. If the rates changed since, the saved ones are shown until the artist chooses.
-async function qzOpenQuote(id) {
+async function qzOpenQuote(id, stay) {
   const q = await DB.one('SELECT * FROM quotes WHERE id = ?', [id]); if (!q) return;
   let data = {}, cfg = null; try { data = JSON.parse(q.data); cfg = JSON.parse(q.cfg); } catch {}
   if (QZ.design) URL.revokeObjectURL(QZ.design.url);
@@ -3261,6 +3268,7 @@ async function qzOpenQuote(id) {
     const u = await Media.url(q.design_ref);
     if (u) { const blob = await (await fetch(u)).blob(); QZ.design = { blob, url: URL.createObjectURL(blob) }; }
   }
+  if (stay) return;
   if (location.hash === '#quote') qzDraw(); else location.hash = 'quote';
 }
 
@@ -3280,7 +3288,8 @@ async function qlDraw() {
     <div class="row" style="gap:8px;margin-bottom:12px">
       <div class="seg" id="ql-f">${[['open', 'Open'], ['done', 'Completed'], ['all', 'All']].map(([k, l]) =>
         `<button data-f="${k}" class="${QL.f === k ? 'on' : ''}">${l} (${n[k]})</button>`).join('')}</div>
-      <button class="btn small primary" id="ql-new" style="margin-left:auto">New quote</button></div>
+      <button class="btn small" id="ql-reply" style="margin-left:auto" data-tip="Read the reply a client sent from a quote link">Paste client reply</button>
+      <button class="btn small primary" id="ql-new">New quote</button></div>
     ${cmp.length ? `<div class="card ql-cmp"><b>Quoted vs real time</b>
       <p>Across ${cmp.length} completed tattoo${cmp.length === 1 ? '' : 's'}, the real time was ${Math.abs(Math.round(avg)) < 1 ? 'right on the estimate' : `<b>${Math.abs(Math.round(avg))}% ${avg > 0 ? 'longer' : 'shorter'}</b> than quoted`} on average.
       ${avg > 10 ? 'You may want to raise your speeds in Calibrate.' : avg < -10 ? 'You may want to lower your speeds in Calibrate.' : ''}</p>
@@ -3290,6 +3299,8 @@ async function qlDraw() {
         <b>${esc(r.client_name || 'No name')}</b>
         <span class="muted">${esc(r.summary || '')}</span>
         <span class="ql-tags">${fmtDay(r.updated_at)}${r.booking_id ? `<em>Booked ${r.b_start ? fmtDay(r.b_start) : ''}</em>` : ''}${r.cfg !== cur && !r.completed ? '<em class="old">Older rates</em>' : ''}</span>
+        ${r.reply && !r.booking_id ? (() => { let rp = {}; try { rp = JSON.parse(r.reply); } catch {}
+          return `<span class="ql-reply">Client replied: ${esc(replyLine(rp))} <button class="btn small primary" data-qbk="${r.id}">Book it</button></span>`; })() : ''}
         ${r.b_done && r.b_min ? `<span class="ql-real">Took ${fmtH(r.b_min / 60)} (${diff(r)})${r.b_paid != null ? ` · paid ${money(r.b_paid)}` : ''}</span>` : ''}
       </div>
       <div class="ql-side"><b>${money(r.total)}</b><span class="muted">${fmtH(r.hours || 0)}</span>
@@ -3299,6 +3310,8 @@ async function qlDraw() {
   el.onclick = async (e) => {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (d('f')) { QL.f = d('f'); return qlDraw(); }
+    if (t.closest('#ql-reply')) return openReplyPaste();
+    if (d('qbk')) { const q = await DB.one('SELECT reply FROM quotes WHERE id = ?', [+d('qbk')]); return bookFromReply(+d('qbk'), JSON.parse(q.reply)); }
     if (t.closest('#ql-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url); Object.assign(QZ, QZ_RESET); location.hash = 'quote'; return; }
     if (d('qd')) {
       const q = await DB.one('SELECT client_name, design_ref FROM quotes WHERE id = ?', [+d('qd')]);
@@ -3314,6 +3327,118 @@ async function qlDraw() {
     await DB.run(`UPDATE quotes SET completed = ?, updated_at = datetime('now') WHERE id = ?`, [e.target.checked ? 1 : 0, +id]);
     qlDraw();
   };
+}
+
+/* Quote link: quote.html on this same site, with the quote packed into the part after '#'.
+   That part never leaves the client's phone, so no server sees it. The page shows the quote,
+   the open days (with start times that keep the booking gap) and replies on WhatsApp. */
+const b64u = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = (t) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0));
+async function packLink(obj) {
+  const raw = new TextEncoder().encode(JSON.stringify(obj));
+  if (typeof CompressionStream === 'undefined') return 'j' + b64u(raw);
+  const z = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());
+  let bin = ''; for (let i = 0; i < z.length; i += 8192) bin += String.fromCharCode(...z.subarray(i, i + 8192));
+  return 'z' + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+// WhatsApp needs the number with its country code; a local number starting with 0 gets the saved code.
+function waNumber() {
+  let n = (Settings.get('artist_phone') || '').replace(/[^\d+]/g, '');
+  if (!n) return null;
+  if (n.startsWith('+')) return n.slice(1);
+  if (n.startsWith('00')) return n.slice(2);
+  if (n.startsWith('0')) {
+    let cc = Settings.get('country_code');
+    if (!cc) { cc = (prompt('Your phone number starts with 0. What is your country calling code? (just the digits, e.g. 44 or 61)') || '').replace(/\D/g, '');
+      if (!cc) return null; Settings.set('country_code', cc); }
+    return cc + n.slice(1);
+  }
+  return n;
+}
+async function qzLink() {
+  const wa = waNumber();
+  if (!wa) return toast('Add your phone number in Settings first; replies are sent to it on WhatsApp.');
+  await qzSaveQuote(true);                              // the reply finds its way back to this saved quote
+  const r = qCalc(), cb = qzMulti() ? qCombo() : null, c = r.c;
+  const o = qzAvOpts(), [start, end] = availRange(o.months, o.from);
+  const pack = (days) => { const out = {}; for (const [k, v] of Object.entries(days)) if (v.wins.length) out[k] = v.wins; return out; };
+  const needOf = (x) => Math.ceil(x.per * 60 / 30) * 30;
+  const now = new Date(), valid = new Date(now.getTime() + 30 * 864e5);
+  const data = {
+    v: 1, st: Settings.get('studio_name') || Settings.get('artist_name') || 'Tattoo studio', ar: Settings.get('artist_name') || '',
+    ig: Settings.get('artist_instagram') || '', ph: wa, cur: Settings.get('currency') || '',
+    q: QZ.id, w: WS.cur?.id ?? WS.cur, cl: QZ.client || '', dt: ymd(now), vu: ymd(valid), gap: bookingGap(), sx: c.sessionMax,
+    pcs: (cb ? cb.all : [QZ]).map((p, i) => [qzPlacement(p) || 'Tattoo', `${p.w} × ${p.h} cm · ${qzSummary(p)}`, cb ? cb.each[i].total : r.total, cb ? cb.each[i].hours : r.hours]),
+    one: cb ? null : { p: r.total, lo: r.lo, hi: r.hi, h: r.hours, s: r.sessions, d: r.deposit, base: r.base, disc: r.disc, vat: r.vat },
+    sep: cb ? { p: cb.sep.total, h: cb.sep.hours, s: cb.sep.sessions, d: cb.sep.deposit } : null,
+    tog: cb ? { p: cb.tog.total, h: cb.tog.hours, s: cb.tog.sessions, d: cb.tog.deposit, sv: cb.save } : null,
+    vat: c.vatOn ? c.vatRate : 0,
+    notes: ['Breaks are not included in the time or the quote.', 'The final price may change if the design, size or placement changes.',
+      'The deposit secures your booking and comes off the final price.', ...new Set((cb ? cb.all : [QZ]).map(p => jobNote(p.job))), touchupLine(c)].filter(Boolean),
+    dn: QZ.withDesign && QZ.designNote ? QZ.designNote : '', dz: !!(QZ.withDesign && QZ.design),
+    // Open days with start windows: for the chosen option's first session.
+    days: pack(await availDays(start, end, { ...o, need: needOf(cb ? cb.tog : r) })),
+    daysS: cb ? pack(await availDays(start, end, { ...o, need: Math.max(...cb.each.map(needOf)) })) : null,
+    need: needOf(cb ? cb.tog : r), needS: cb ? Math.max(...cb.each.map(needOf)) : null
+  };
+  const url = new URL('quote.html', location.href).href + '#' + await packLink(data);
+  const msg = `Hi${QZ.client ? ' ' + QZ.client.split(' ')[0] : ''}! Here's your tattoo quote. Open it to see the details, pick a day and send it back to me:\n${url}`;
+  try {
+    if (navigator.share) await navigator.share({ text: msg });
+    else { await navigator.clipboard.writeText(msg); toast('Link copied. Paste it into a message to the client.'); }
+  } catch (e) { if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(msg); toast('Link copied.'); } catch { toast('Could not share the link.'); } } }
+  qzDraw();
+}
+
+// The code at the end of a client's WhatsApp reply, e.g. "IFR1.eyJx...". Returns the decoded reply or null.
+function readReplyCode(t) {
+  const m = String(t || '').match(/IFR1\.([A-Za-z0-9_-]+)/); if (!m) return null;
+  try { return JSON.parse(new TextDecoder().decode(unb64u(m[1]))); } catch { return null; }
+}
+const OPT_NAMES = { one: 'As quoted', tog: 'All together', sep: 'Separately' };
+const replyLine = (rp) => `${rp.d ? fmtDay(rp.d) : 'No day'}${rp.t ? ' at ' + rp.t : ''}${rp.o && rp.o !== 'one' ? ' · ' + OPT_NAMES[rp.o].toLowerCase() : ''}`;
+
+async function openReplyPaste() {
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card"><h2>Client reply</h2>
+    <p class="muted" style="font-size:13px;margin-top:0">Copy the client's whole WhatsApp message (or just the code at the end) and paste it here.</p>
+    <textarea class="in" id="rp-in" rows="5" placeholder="Paste the message here"></textarea>
+    <div id="rp-out"></div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="rp-close">Close</button><button class="btn primary" id="rp-go" style="flex:1" disabled>Book it</button></div></div>`;
+  document.body.appendChild(o);
+  const inp = o.querySelector('#rp-in'), out = o.querySelector('#rp-out'), go = o.querySelector('#rp-go');
+  let rp = null, q = null;
+  try { const clip = await navigator.clipboard.readText(); if (readReplyCode(clip)) inp.value = clip; } catch {}
+  const check = async () => {
+    rp = readReplyCode(inp.value); q = rp ? await DB.one('SELECT * FROM quotes WHERE id = ?', [rp.q]) : null;
+    go.disabled = !q;
+    out.innerHTML = !inp.value.trim() ? '' : !rp ? '<p class="err">No reply code found in that text.</p>'
+      : !q ? `<p class="err">That quote isn't in this workspace${rp.w && rp.w !== (WS.cur?.id ?? WS.cur) ? ' (it was sent from another workspace)' : ''}, or it was deleted.</p>`
+      : `<div class="rp-card"><b>${esc(rp.n || 'Client')}</b>${rp.p ? ` · ${esc(rp.p)}` : ''}
+          <div>${esc(q.summary || '')}</div>
+          <div class="rp-when">${esc(replyLine(rp))}</div>
+          ${rp.m ? `<div class="muted">"${esc(rp.m)}"</div>` : ''}</div>`;
+    if (q) await DB.run(`UPDATE quotes SET reply = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...rp, at: new Date().toISOString() }), q.id]);
+  };
+  inp.addEventListener('input', check); if (inp.value) check();
+  o.querySelector('#rp-close').onclick = () => { o.remove(); if ($('#ql')) qlDraw(); };
+  go.onclick = async () => { o.remove(); await bookFromReply(q.id, rp); };
+}
+
+// Opens a new booking from a saved quote and the client's reply: chosen option, day and start time, contact in the notes.
+async function bookFromReply(id, rp) {
+  await qzOpenQuote(id, true);
+  const r = qCalc(), cb = qzMulti() ? qCombo() : null, sep = cb && rp.o === 'sep';
+  const p = sep ? cb.all[0] : null, pr = cb ? (sep ? cb.each[0] : cb.tog) : r;
+  const digits = String(rp.p || '').replace(/\D/g, '').slice(-9);
+  const client = digits.length >= 7 ? await DB.one(`SELECT id FROM clients WHERE replace(replace(replace(phone, ' ', ''), '-', ''), '+', '') LIKE ?`, ['%' + digits]) : null;
+  Cal.prefillQuote = { quote: pr.total, deposit: pr.deposit, duration: Math.min(600, Math.ceil(pr.per * 2) * 30), quoteId: QZ.id,
+    size: cb ? (sep ? `${p.w} x ${p.h} cm` : cb.all.map(x => `${x.w} x ${x.h} cm`).join(' + ')) : `${QZ.w} x ${QZ.h} cm`,
+    placement: cb ? (sep ? qzPlacement(p) : cb.all.map(x => qzPlacement(x)).join(' + ')) : qzPlacement(),
+    description: cb ? (sep ? qzSummary(p) : cb.all.map((x, i) => `${i + 1}) ${qzSummary(x)}`).join('; ')) : qzSummary(),
+    job: (cb ? (sep ? p : cb.all.find(x => x.job !== 'new')) : QZ)?.job || 'new',
+    notes: [`Booked from the quote link: ${rp.n || ''}${rp.p ? ', ' + rp.p : ''}`, sep ? `Separately chosen: this is tattoo 1 of ${cb.all.length}.` : '', rp.m ? `Client: "${rp.m}"` : ''].filter(Boolean).join('\n') };
+  newBooking((rp.d || ymd(new Date())) + 'T' + (rp.t || Settings.get('day_start', '10:00')), client?.id || null);
 }
 
 const qzPlacement = (q = QZ) => q.place ? `${q.side === 'L' ? 'Left ' : q.side === 'R' ? 'Right ' : ''}${q.place.toLowerCase()}`.replace(/^./, m => m.toUpperCase()) : '';
@@ -3965,30 +4090,41 @@ const toMin = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number);
 const workHours = () => [Settings.get('day_start', '10:00'), Settings.get('day_end', '17:00')];
 const maxPerDay = () => Math.max(1, +Settings.get('max_per_day', '1') || 1);
 
-// opts (all optional, per client): need = minutes the session needs (a "some time left" day must
-// have at least this much free), fullOnly = only fully open days, hidden = dates to leave off.
-async function availability(start, end, opts = {}) {
-  const need = Math.max(30, opts.need || 120), hidden = new Set(opts.hidden || []);
-  const [ws, we] = workHours().map(toMin), work = Math.max(60, we - ws);
+// opts (all optional, per client): need = minutes the session needs, fullOnly = only fully open days,
+// hidden = dates to leave off. Each day gets its free windows inside working hours, keeping the
+// booking gap (setup and breaks) clear before and after every booking: wins = [[earliest, latest start]]
+// in minutes, only windows long enough for `need`.
+const bookingGap = () => Math.max(0, +Settings.get('booking_gap', '60') || 0);
+async function availDays(start, end, opts = {}) {
+  const need = Math.max(30, opts.need || 120), hidden = new Set(opts.hidden || []), gap = bookingGap();
+  const [ws, we] = workHours().map(toMin);
   const rows = await DB.all(`SELECT start_at, duration_min, kind FROM bookings WHERE start_at >= ? AND start_at < ?`, [ymd(start), ymd(end)]);
   const busy = Settings.get('gcal_busy', '1') === '1' ? await DB.all('SELECT start_at, end_at FROM gcal_busy WHERE start_at < ? AND end_at > ?', [ymd(end), ymd(start)]) : [];
   const off = daysOff(), today = ymd(new Date()), out = {};
   for (let d = new Date(start); d < end; d = addDays(d, 1)) {
     const k = ymd(d);
-    if (k < today || isDayOff(k, off)) { out[k] = 'off'; continue; }
-    if (hidden.has(k)) { out[k] = 'taken'; continue; }
+    if (k < today || isDayOff(k, off)) { out[k] = { st: 'off', wins: [] }; continue; }
+    if (hidden.has(k)) { out[k] = { st: 'taken', wins: [] }; continue; }
     const day = rows.filter(r => r.start_at.startsWith(k));
-    if (day.some(r => r.kind === 'hold' || r.kind === 'leave')) { out[k] = 'taken'; continue; }
+    if (day.some(r => r.kind === 'hold' || r.kind === 'leave')) { out[k] = { st: 'taken', wins: [] }; continue; }
     // Only tattoo sessions use up the day's tattoo count; consultations just take time.
-    if (day.filter(r => DONE_KINDS.includes(r.kind)).length >= maxPerDay()) { out[k] = 'taken'; continue; }
-    // Booked minutes inside working hours, from bookings and Google busy time.
+    if (day.filter(r => DONE_KINDS.includes(r.kind)).length >= maxPerDay()) { out[k] = { st: 'taken', wins: [] }; continue; }
     const spans = day.map(r => { const s = minutesOf(r.start_at); return [s, s + r.duration_min]; });
     for (const x of busy) { if (x.start_at >= ymd(addDays(d, 1)) || x.end_at <= k) continue;
       spans.push([x.start_at < k ? 0 : minutesOf(x.start_at), x.end_at >= ymd(addDays(d, 1)) ? 1440 : minutesOf(x.end_at)]); }
-    let used = 0; for (const [s, e] of spans) used += Math.max(0, Math.min(e, we) - Math.max(s, ws));
-    out[k] = used <= 0 && work >= need ? 'open' : !opts.fullOnly && work - used >= need ? 'part' : 'taken';
+    const inside = spans.filter(([s0, e0]) => e0 > ws && s0 < we).sort((p, q) => p[0] - q[0]);
+    // Free stretches between bookings, each booking padded by the gap.
+    const wins = []; let cur = ws;
+    for (const [s0, e0] of inside) { if (s0 - gap - cur >= need) wins.push([cur, s0 - gap - need]); cur = Math.max(cur, e0 + gap); }
+    if (we - cur >= need) wins.push([cur, we - need]);
+    const st = !wins.length ? 'taken' : !inside.length ? 'open' : opts.fullOnly ? 'taken' : 'part';
+    out[k] = { st, wins: st === 'taken' ? [] : wins };
   }
   return out;
+}
+async function availability(start, end, opts = {}) {
+  const days = await availDays(start, end, opts);
+  return Object.fromEntries(Object.entries(days).map(([k, v]) => [k, v.st]));
 }
 function availRange(months = AV.months, from = AV.from) {
   const t = new Date(), start = from === 'next' ? new Date(t.getFullYear(), t.getMonth() + 1, 1) : new Date(t.getFullYear(), t.getMonth(), 1);

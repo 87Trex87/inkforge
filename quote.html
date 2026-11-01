@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Your tattoo quote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0b0f0f; --bg2: #121818; --line: #263131; --ink: #ecebe6; --ink2: #9aa5a3; --teal: #1fb6a6; --gold: #e8b44c; --red: #e0605a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 Inter, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; }
+  h1, h2, .disp { font-family: 'Pirata One', serif; font-weight: 400; letter-spacing: .01em; }
+  h1 { font-size: 36px; margin: 0; line-height: 1.1; }
+  h2 { font-size: 26px; margin: 0 0 10px; }
+  .muted { color: var(--ink2); }
+  .card { background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-top: 14px; }
+  .head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; border-bottom: 3px solid var(--teal); padding-bottom: 12px; }
+  .head small { display: block; color: var(--ink2); font-size: 12px; text-align: right; }
+  .pc { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .pc:first-of-type { border-top: 0; }
+  .pc .n { font: 26px 'Pirata One', serif; color: var(--teal); text-align: center; }
+  .pc small { display: block; color: var(--ink2); font-size: 12px; }
+  .pc .p { text-align: right; font-weight: 600; }
+  .big { font: 64px/1 'Pirata One', serif; color: var(--teal); }
+  .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .facts span { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 4px; text-align: center; font-size: 12px; color: var(--ink2); }
+  .facts b { display: block; font-size: 16px; color: var(--ink); }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .opt { position: relative; text-align: left; border: 2px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 14px; padding: 14px; cursor: pointer; font: inherit; }
+  .opt.on { border-color: var(--teal); background: rgba(31,182,166,.1); }
+  .opt b { display: block; font-size: 15px; }
+  .opt .disp { font-size: 36px; color: var(--teal); display: block; margin: 4px 0; }
+  .opt small { color: var(--ink2); font-size: 12px; display: block; }
+  .save { position: absolute; top: -10px; right: 10px; background: var(--teal); color: #061211; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+  ul { margin: 0; padding-left: 18px; color: var(--ink2); font-size: 13px; }
+  label.f { display: block; margin-bottom: 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink2); font-weight: 600; }
+  input[type=text], input[type=tel], textarea { display: block; width: 100%; margin-top: 4px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; font: 15px Inter, sans-serif; text-transform: none; letter-spacing: 0; }
+  input:focus, textarea:focus { outline: 2px solid var(--teal); border-color: transparent; }
+  .months { display: grid; gap: 14px; }
+  .mo b { display: block; margin-bottom: 6px; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .grid i { font-style: normal; font-size: 11px; color: var(--ink2); text-align: center; }
+  .d { aspect-ratio: 1; border-radius: 8px; border: 1px solid transparent; background: none; color: #4b5655; font: 600 14px Inter, sans-serif; padding: 0; }
+  .d.ok { background: rgba(31,182,166,.16); color: var(--ink); border-color: rgba(31,182,166,.4); cursor: pointer; }
+  .d.part { background: rgba(232,180,76,.14); border-color: rgba(232,180,76,.45); color: var(--ink); cursor: pointer; }
+  .d.on { background: var(--teal); color: #061211; border-color: var(--teal); }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink2); margin: 8px 0 0; flex-wrap: wrap; }
+  .legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .legend .l1::before { background: rgba(31,182,166,.5); } .legend .l2::before { background: rgba(232,180,76,.55); }
+  .times { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .t { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 99px; padding: 7px 14px; font: 600 14px Inter, sans-serif; cursor: pointer; }
+  .t.on { background: var(--teal); color: #061211; border-color: var(--teal); }
+  .hint { font-size: 13px; color: var(--gold); margin-top: 8px; }
+  .chk { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin: 12px 0; }
+  .chk input { width: 20px; height: 20px; accent-color: var(--teal); flex: none; margin-top: 1px; }
+  .btn { display: block; width: 100%; border: 0; border-radius: 12px; padding: 15px; font: 700 16px Inter, sans-serif; cursor: pointer; text-align: center; text-decoration: none; }
+  .btn.pri { background: var(--teal); color: #061211; }
+  .btn.pri:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.sec { background: none; color: var(--ink2); border: 1px solid var(--line); margin-top: 8px; font-weight: 600; font-size: 14px; padding: 11px; }
+  .warn { border-color: var(--gold); color: var(--gold); font-size: 14px; }
+  .err { text-align: center; padding: 60px 16px; }
+  .foot { text-align: center; font-size: 11px; color: #5d6867; margin-top: 30px; }
+</style>
+</head>
+<body>
+<main id="app"><p class="muted" style="text-align:center;margin-top:40vh">Opening your quote…</p></main>
+<script>
+/* The quote travels in the link after '#', which browsers never send to the server.
+   The reply goes straight to the artist on WhatsApp; nothing is stored here. */
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const fromB64u = (t) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0));
+const toB64u = (bytes) => { let b = ''; bytes.forEach(x => b += String.fromCharCode(x)); return btoa(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const hm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+const fmtH = (h) => { const m = Math.round(h * 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`; };
+const dayName = (k) => new Date(k + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+
+async function unpack(h) {
+  const kind = h[0], bytes = fromB64u(h.slice(1));
+  if (kind === 'j') return JSON.parse(new TextDecoder().decode(bytes));
+  const out = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer();
+  return JSON.parse(new TextDecoder().decode(out));
+}
+
+let Q, S = { o: null, d: null, t: null };
+const money = (v) => (Q.cur || '') + Math.round(v).toLocaleString();
+
+function draw() {
+  const multi = !!Q.tog, today = new Date().toISOString().slice(0, 10), expired = Q.vu && today > Q.vu;
+  if (multi && !S.o) S.o = 'tog';
+  const days = multi && S.o === 'sep' ? Q.daysS : Q.days;
+  const keys = Object.keys(days || {}).sort();
+  const months = [...new Set(keys.map(k => k.slice(0, 7)))];
+  const wins = S.d ? days[S.d] || [] : [];
+  if (S.d && !wins.length) { S.d = null; S.t = null; }
+  // Start times every 30 minutes inside each free window.
+  const times = []; for (const [a, b] of wins) for (let m = a; m <= b && times.length < 24; m += 30) times.push(m);
+  if (S.t != null && !times.includes(S.t)) S.t = null;
+  const firstDay = (k) => { const w = days[k]; return w && w[0][0]; };
+  const dayStart = Math.min(...keys.map(firstDay).filter(x => x != null));
+  const ready = S.d && S.t != null && $('#nm')?.value.trim() && $('#ok')?.checked;
+
+  $('#app').innerHTML = `
+    <div class="head"><div><h1>${esc(Q.st)}</h1>${Q.ar && Q.ar !== Q.st ? `<div class="muted">${esc(Q.ar)}</div>` : ''}</div>
+      <small>Quote ${Q.q ? '#' + Q.q : ''}<br>${new Date(Q.dt + 'T00:00').toLocaleDateString()}<br>Valid until ${new Date(Q.vu + 'T00:00').toLocaleDateString()}</small></div>
+    ${expired ? '<div class="card warn">This quote has passed its valid-until date. You can still reply; the price may need updating.</div>' : ''}
+    <div class="card"><h2>${Q.cl ? 'Hi ' + esc(Q.cl.split(' ')[0]) + ', here' : 'Here'}'s your quote</h2>
+      ${Q.pcs.map((p, i) => `<div class="pc"><span class="n">${i + 1}</span><span><b>${esc(p[0])}</b><small>${esc(p[1])}</small></span>
+        <span class="p">${multi ? money(p[2]) + '<small>on its own</small>' : ''}</span></div>`).join('')}
+      ${Q.dn ? `<p class="muted" style="font-size:13px;margin:8px 0 0"><b style="color:var(--ink)">Design notes:</b> ${esc(Q.dn)}${Q.dz ? ' (picture sent separately)' : ''}</p>` : ''}
+    </div>
+    ${multi ? `<div class="card"><h2>Choose how</h2><div class="opts">
+        <button class="opt ${S.o === 'sep' ? 'on' : ''}" data-o="sep"><b>Separately</b><span class="disp">${money(Q.sep.p)}</span>
+          <small>${Q.sep.s} sessions · about ${fmtH(Q.sep.h)}</small><small>Deposit ${money(Q.sep.d)}</small></button>
+        <button class="opt ${S.o === 'tog' ? 'on' : ''}" data-o="tog">${Q.tog.sv ? `<span class="save">Save ${money(Q.tog.sv)}</span>` : ''}<b>All together</b><span class="disp">${money(Q.tog.p)}</span>
+          <small>${Q.tog.s > 1 ? Q.tog.s + ' sessions' : 'One session'} · about ${fmtH(Q.tog.h)}</small><small>Deposit ${money(Q.tog.d)}</small></button>
+      </div></div>`
+    : `<div class="card" style="text-align:center"><div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.06em">${Q.one.disc || Q.one.vat ? 'Total' : 'Estimate'}</div>
+        <div class="big">${money(Q.one.p)}</div><div class="muted">Range ${money(Q.one.lo)} – ${money(Q.one.hi)}</div>
+        <div class="facts"><span><b>${fmtH(Q.one.h)}</b>tattoo time</span><span><b>${Q.one.s}</b>session${Q.one.s > 1 ? 's' : ''}</span><span><b>${money(Q.one.d)}</b>deposit</span></div></div>`}
+    <div class="card"><h2>Good to know</h2><ul>${Q.notes.map(n => `<li>${esc(n)}</li>`).join('')}${Q.vat ? `<li>Prices include VAT at ${Q.vat}%.</li>` : ''}</ul></div>
+
+    <div class="card"><h2>Book your day</h2>
+      ${keys.length ? `<p class="muted" style="margin-top:0;font-size:13px">Pick a day, then a start time.${multi && S.o === 'sep' ? ' This is for your first tattoo; we\'ll set the others up together.' : ''}</p>
+        <div class="months">${months.map(ym => {
+          const [y, m] = ym.split('-').map(Number), first = new Date(y, m - 1, 1), lead = (first.getDay() + 6) % 7, n = new Date(y, m, 0).getDate();
+          let cells = ''; for (let i = 0; i < lead; i++) cells += '<span></span>';
+          for (let d = 1; d <= n; d++) { const k = `${ym}-${String(d).padStart(2, '0')}`, w = days[k];
+            cells += w ? `<button class="d ${w[0][0] > dayStart || w.length > 1 ? 'part' : 'ok'} ${S.d === k ? 'on' : ''}" data-d="${k}">${d}</button>` : `<span class="d">${d}</span>`; }
+          return `<div class="mo"><b>${first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</b><div class="grid">${'MTWTFSS'.split('').map(l => `<i>${l}</i>`).join('')}${cells}</div></div>`;
+        }).join('')}</div>
+        <div class="legend"><span class="l1">Whole day free</span><span class="l2">Later start</span></div>
+        ${S.d ? `<div style="margin-top:14px"><b>${dayName(S.d)}</b>
+          ${wins[0][0] > dayStart ? `<div class="hint">There's an earlier booking that day, so your session can start from ${hm(wins[0][0])}.</div>` : ''}
+          <div class="times">${times.map(m => `<button class="t ${S.t === m ? 'on' : ''}" data-t="${m}">${hm(m)}</button>`).join('')}</div></div>` : ''}`
+      : `<p class="muted">No open days are listed right now. Send your details and ${esc(Q.st)} will get back to you with a date.</p>`}
+      <div style="margin-top:16px">
+        <label class="f">Your name<input type="text" id="nm" autocomplete="name" value="${esc(S.nm ?? Q.cl ?? '')}"></label>
+        <label class="f">Phone number<input type="tel" id="pn" autocomplete="tel" value="${esc(S.pn || '')}"></label>
+        <label class="f">Anything to add? <span style="text-transform:none;letter-spacing:0">(optional)</span><textarea id="ms" rows="3">${esc(S.ms || '')}</textarea></label>
+        <label class="chk"><input type="checkbox" id="ok" ${S.ok ? 'checked' : ''}><span>I've read the quote and the notes above.</span></label>
+        <button class="btn pri" id="go" ${(S.d && S.t != null) || !keys.length ? '' : 'disabled'}>Send to ${esc(Q.st)} on WhatsApp</button>
+        <button class="btn sec" id="cp">Copy my reply instead</button>
+        <p class="muted" style="font-size:12px;text-align:center;margin:10px 0 0">The day you pick is a request until ${esc(Q.st)} confirms it.</p>
+      </div></div>
+    <div class="foot">Nothing you type here is stored on this page; it only goes into your message.</div>`;
+}
+
+function reply() {
+  const multi = !!Q.tog, nm = $('#nm').value.trim(), pn = $('#pn').value.trim(), ms = $('#ms').value.trim();
+  const code = toB64u(new TextEncoder().encode(JSON.stringify({ q: Q.q, w: Q.w, o: multi ? S.o : 'one', d: S.d, t: S.t != null ? hm(S.t) : null, n: nm, p: pn, m: ms })));
+  const opt = multi ? (S.o === 'tog' ? `All together (${money(Q.tog.p)})` : `Separately (${money(Q.sep.p)})`) : money(Q.one.p);
+  return `Hi! I'd like to book my tattoo.\n`
+    + `Name: ${nm}\n${pn ? 'Phone: ' + pn + '\n' : ''}`
+    + `Quote: ${Q.pcs.map(p => p[0]).join(' + ')} · ${opt}\n`
+    + (S.d ? `Day: ${dayName(S.d)}, starting ${hm(S.t)}\n` : 'Day: please suggest one\n')
+    + (ms ? `Note: ${ms}\n` : '')
+    + `\n(For ${Q.st}'s app) IFR1.${code}`;
+}
+
+function check() {
+  const ok = $('#ok').checked && $('#nm').value.trim() && (!Object.keys((Q.tog && S.o === 'sep' ? Q.daysS : Q.days) || {}).length || (S.d && S.t != null));
+  $('#go').disabled = !ok; $('#cp').disabled = !ok;
+}
+document.addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-o],[data-d],[data-t],#go,#cp'); if (!t) return;
+  const keep = () => { S.nm = $('#nm')?.value; S.pn = $('#pn')?.value; S.ms = $('#ms')?.value; S.ok = $('#ok')?.checked; };
+  if (t.dataset.o) { keep(); S.o = t.dataset.o; S.d = null; S.t = null; draw(); return check(); }
+  if (t.dataset.d) { keep(); S.d = t.dataset.d; S.t = null; draw(); check(); return $('.times')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  if (t.dataset.t) { keep(); S.t = +t.dataset.t; draw(); return check(); }
+  if (t.id === 'go') { location.href = `https://wa.me/${Q.ph}?text=${encodeURIComponent(reply())}`; return; }
+  if (t.id === 'cp') { try { await navigator.clipboard.writeText(reply()); t.textContent = 'Copied. Paste it in a message to ' + Q.st; } catch { prompt('Copy this and send it:', reply()); } }
+});
+document.addEventListener('input', () => Q && check());
+document.addEventListener('change', () => Q && check());
+
+(async () => {
+  try {
+    const h = location.hash.slice(1);
+    if (!h) throw new Error('empty');
+    Q = await unpack(h);
+    document.title = `Your tattoo quote · ${Q.st}`;
+    draw(); check();
+  } catch {
+    $('#app').innerHTML = '<div class="err"><h1>Quote not found</h1><p class="muted">This link looks incomplete. Ask your artist to send it again.</p></div>';
+  }
+})();
+</script>
+</body>
+</html>
