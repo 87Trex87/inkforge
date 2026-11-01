@@ -2769,6 +2769,7 @@ const QUOTE_V2 = {
   colour: { black: 1, bg: 1.15, colour: 1.3 },
   pain: [1, 1.05, 1.12, 1.2, 1.3],                         // pain levels 1-5
   textMin: 3,                                              // minutes per letter at 2 cm letter height
+  comboSetup: 20, comboOff: 5,                             // several tattoos in one booking: minutes saved per extra piece, extra % off
   job: { cover: [1, 1.15, 1.3, 1.5, 1.75], scar: [1.1, 1.3, 1.5, 1.75, 2], fix: [0.8, 0.95, 1.1, 1.3, 1.5] },  // time x, difficulty 1-5
   placements: [
     ['Head', 'Head & neck', 4], ['Face', 'Head & neck', 5], ['Neck', 'Head & neck', 4],
@@ -2826,11 +2827,12 @@ const qSave = (cfg) => Settings.set('quote_v2', JSON.stringify(cfg));
 const QZ_RESET = { design: null, designRef: null, designNote: '', withDesign: false, av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0,
   job: 'new', jobLvl: 3, place: '', side: '', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null,
   id: null, cfg: null, cfgKept: false,
-  sized: false, detailSet: false, styleSet: false, lettering: null };   // each step needs a real choice before Next
+  sized: false, detailSet: false, styleSet: false, lettering: null,
+  items: [], pos: 0 };                                                   // other tattoos in this quote; pos = where this one sits   // each step needs a real choice before Next
 const QZ = { ...QZ_RESET };
 // The answers stored with a saved quote.
 const QZ_KEYS = ['job', 'jobLvl', 'place', 'side', 'w', 'h', 'colour', 'detail', 'style', 'text', 'font', 'fontName', 'letter', 'hours',
-  'discType', 'discVal', 'client', 'designNote', 'withDesign'];
+  'discType', 'discVal', 'client', 'designNote', 'withDesign', 'items', 'pos'];
 const QZ_STEPS = ['Placement', 'Size', 'Colour', 'Detail', 'Style', 'Text', 'Quote'];
 
 // Price for one session of h hours on the rate curve.
@@ -2866,6 +2868,10 @@ function qCalc(q = QZ) {
   if (q.job && q.job !== 'new' && c.job[q.job]) f(`${jobOf(q.job)[1]} (${JOB_LEVELS[q.jobLvl - 1].toLowerCase()})`, c.job[q.job][q.jobLvl - 1]);
   const est = Math.max(0.5, Math.round(mins / 60 * 4) / 4);       // to the nearest quarter hour
   const hours = q.hours ?? est;
+  return { c, pain, est, hours, ...qPrice(c, q, hours), lines, minutes: Math.round(hours * 60) };
+}
+// Price for `hours` of tattooing on the rate curve, split into sessions; `off` = extra % off before discount and VAT.
+function qPrice(c, q, hours, off = 0) {
   const sessions = Math.max(1, Math.ceil(hours / c.sessionMax - 1e-9));
   const per = hours / sessions;
   // Tattoo price, then the discount off it, then VAT on what is left.
@@ -2874,11 +2880,31 @@ function qCalc(q = QZ) {
     const net = base - disc, vat = c.vatOn ? Math.round(net * c.vatRate / 100) : 0;
     return { base, disc: Math.round(disc), net: Math.round(net), vat, total: Math.round(net + vat) };
   };
-  const pr = fin(qRound(c, qCurve(c, per) * sessions));
-  const lo = fin(qRound(c, qCurve(c, hours * (1 - c.range / 100) / sessions) * sessions)).total;
-  const hi = fin(qRound(c, qCurve(c, hours * (1 + c.range / 100) / sessions) * sessions)).total;
-  return { c, pain, est, hours, sessions, per, ...pr, lo, hi, deposit: qRound(c, pr.total * c.deposit / 100), lines, minutes: Math.round(hours * 60) };
+  const k = 1 - off / 100;
+  const pr = fin(qRound(c, qCurve(c, per) * sessions * k));
+  const lo = fin(qRound(c, qCurve(c, hours * (1 - c.range / 100) / sessions) * sessions * k)).total;
+  const hi = fin(qRound(c, qCurve(c, hours * (1 + c.range / 100) / sessions) * sessions * k)).total;
+  return { sessions, per, ...pr, lo, hi, deposit: qRound(c, pr.total * c.deposit / 100) };
 }
+
+/* Several tattoos in one quote. Each piece is priced on its own (own booking, own setup), and together:
+   the times added up, less the setup saved for every extra piece, priced once on the rate curve, less comboOff %. */
+const QZ_PIECE = ['job', 'jobLvl', 'place', 'side', 'w', 'h', 'colour', 'detail', 'style', 'text', 'font', 'fontName', 'letter', 'hours',
+  'sized', 'detailSet', 'styleSet', 'lettering'];
+const qzPieceOf = (q) => Object.fromEntries(QZ_PIECE.map(k => [k, q[k]]));
+const qzPieces = () => { const it = QZ.items || [], at = Math.min(QZ.pos ?? it.length, it.length);
+  return [...it.slice(0, at), qzPieceOf(QZ), ...it.slice(at)]; };
+function qCombo() {
+  const all = qzPieces(), at = Math.min(QZ.pos ?? 0, all.length - 1);
+  const glob = { discType: QZ.discType, discVal: QZ.discVal, cfg: QZ.cfg };
+  const each = all.map(pc => qCalc({ ...pc, ...glob }));
+  const c = each[0].c, sum = (k) => each.reduce((a, r) => a + r[k], 0);
+  const sep = { total: sum('total'), hours: sum('hours'), sessions: sum('sessions'), deposit: sum('deposit') };
+  const hours = Math.max(0.5, Math.round((sep.hours - c.comboSetup * (all.length - 1) / 60) * 4) / 4);
+  const tog = { hours, ...qPrice(c, glob, hours, c.comboOff) };
+  return { c, all, at, each, sep, tog, save: Math.max(0, sep.total - tog.total) };
+}
+const qzMulti = () => (QZ.items || []).length > 0;
 const fmtH = (h) => { const m = Math.round(h * 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ' ' + (m % 60) + ' min' : ''}`; };
 
 /* Detail previews: one rose drawn five ways, in the chosen ink. Placeholders until real drawings exist. */
@@ -2977,9 +3003,10 @@ function qzDraw() {
   } else {
     const r = qCalc(), adjusted = QZ.hours != null || +QZ.discVal || r.c.vatOn;
     body = `<div class="qz-res"><div class="qz-col">
-      <div class="qz-result" id="qz-price">${qzPriceHTML(r)}</div>
+      <div class="qz-result" id="qz-price">${qzPriceBlock()}</div>
+      <div id="qz-pcs">${qzPiecesHTML()}</div>
       <details class="qz-sec" ${adjusted ? 'open' : ''}><summary>Adjust time, discount or VAT</summary>
-        ${reelSlider('data-qz', 'hours', `Time ${help('Your call overrides the estimate. The price follows your rate curve.')}`, 0.5, Math.max(20, Math.ceil(r.est * 2)), 0.25, r.hours, fmtH(r.hours) + (QZ.hours != null ? ' (yours)' : ''))}
+        ${reelSlider('data-qz', 'hours', `${qzMulti() ? 'Time for this tattoo' : 'Time'} ${help('Your call overrides the estimate. The price follows your rate curve.')}`, 0.5, Math.max(20, Math.ceil(r.est * 2)), 0.25, r.hours, fmtH(r.hours) + (QZ.hours != null ? ' (yours)' : ''))}
         ${QZ.hours != null ? '<button class="link" id="qz-reset" style="margin:-4px 0 10px">Use the estimate again</button>' : ''}
         <div class="lbl">Discount</div>
         <div class="qz-disc">
@@ -3021,7 +3048,7 @@ function qzDraw() {
           <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture">Image</button>
           <button class="btn" id="qz-share" data-tip="A short text version for a chat">Text</button>
         </div>
-        <button class="btn primary" id="qz-book" style="width:100%;margin-top:12px">Book with this quote</button>
+        <button class="btn primary" id="qz-book" style="width:100%;margin-top:12px">${qzMulti() ? 'Book all together' : 'Book with this quote'}</button>
         <div class="row qz-links"><button class="btn small" id="qz-new">New quote</button>
           <a class="btn small" href="#quotes">Saved quotes</a><a class="btn small" href="#quote-cal">Calibrate</a></div>
       </div></div>`;
@@ -3034,7 +3061,8 @@ function qzDraw() {
         <span>Saved price ${money(qCalc().total)}; with your current rates it would be ${money(now)}.</span>
         <div class="row" style="gap:6px;margin-top:8px"><button class="btn small primary" id="qz-cfgnow">Update to current rates</button>
         <button class="btn small" id="qz-cfgkeep">Keep saved prices</button></div></div>`;
-  el.innerHTML = `${steps}${flag}<div class="card qz-card-main">${body}</div>
+  const tag = qzMulti() && s < 6 ? `<div class="qz-pctag">Tattoo ${Math.min(QZ.pos, QZ.items.length) + 1} of ${QZ.items.length + 1}</div>` : '';
+  el.innerHTML = `${steps}${flag}${tag}<div class="card qz-card-main">${body}</div>
     ${s < 6 ? `<div class="form-foot qz-foot">
       ${r ? `<div class="qz-live"><span>≈ <b>${money(r.total)}</b> · ${fmtH(r.hours)}</span><span class="muted">so far</span></div>` : ''}
       <div class="row">
@@ -3046,6 +3074,25 @@ function qzDraw() {
   if (QZ.withAvail && s === 6) qzAvPanel();
 }
 
+const qzPriceBlock = () => qzMulti() ? qzComboHTML(qCombo()) : qzPriceHTML(qCalc());
+function qzComboHTML(cb) {
+  const t = cb.tog;
+  return `<div class="muted qz-k">All ${cb.all.length} together</div>
+    <div class="qz-price">${money(t.total)}</div>
+    <div class="qz-save">Separately ${money(cb.sep.total)}${cb.save ? ` · saves <b>${money(cb.save)}</b>` : ''}</div>
+    <div class="qz-facts"><span><b>${fmtH(t.hours)}</b>tattoo time</span><span><b>${t.sessions}</b>session${t.sessions > 1 ? 's' : ''}</span><span><b>${money(t.deposit)}</b>deposit</span></div>`;
+}
+function qzPiecesHTML() {
+  if (!qzMulti()) return `<button class="btn qz-addpc" id="qz-add" data-tip="Price another tattoo for the same client, on its own and together in one booking">+ Add another tattoo</button>`;
+  const cb = qCombo();
+  return `<div class="qz-pieces"><div class="lbl">Tattoos in this quote <span class="muted">(each on its own)</span></div>
+    ${cb.all.map((pc, j) => `<div class="qz-pc ${j === cb.at ? 'on' : ''}" ${j === cb.at ? '' : `data-pe="${j}"`}>
+      <span class="qz-pn">${j + 1}</span>
+      <span class="qz-pt"><b>${esc(qzPlacement(pc) || 'Tattoo')}</b><small>${pc.w} × ${pc.h} cm · ${esc(qzSummary(pc))}</small></span>
+      <span class="qz-pp"><b>${money(cb.each[j].total)}</b><small>${j === cb.at ? 'editing' : fmtH(cb.each[j].hours)}</small></span>
+      <button class="mini del" data-pr="${j}" aria-label="Remove this tattoo">&times;</button></div>`).join('')}
+    <button class="btn small qz-addpc" id="qz-add">+ Add another tattoo</button></div>`;
+}
 function qzPriceHTML(r) {
   const adj = r.disc || r.vat;
   return `<div class="muted qz-k">${adj ? 'Total' : 'Estimate'}</div>
@@ -3072,6 +3119,26 @@ function qzBind(el) {
     if (t.closest('#qz-cfgnow')) { QZ.cfg = null; QZ.cfgKept = false; return qzDraw(); }
     if (t.closest('#qz-cfgkeep')) { QZ.cfgKept = true; return qzDraw(); }
     if (t.closest('#qz-save')) return qzSaveQuote().then(qzDraw);
+    if (t.closest('#qz-add')) {
+      qzTouch();
+      QZ.items = qzPieces(); QZ.pos = QZ.items.length;
+      Object.assign(QZ, Object.fromEntries(QZ_PIECE.map(k => [k, QZ_RESET[k]])), { step: 0, seen: 0 });
+      return qzGo(0);
+    }
+    if (d('pr') != null) {
+      const all = qzPieces(), j = +d('pr'); if (all.length < 2) return;
+      if (!confirm(`Remove tattoo ${j + 1} (${qzPlacement(all[j]) || 'tattoo'}) from this quote?`)) return;
+      qzTouch();
+      all.splice(j, 1);
+      const k = Math.min(j === QZ.pos ? j : (j < QZ.pos ? QZ.pos - 1 : QZ.pos), all.length - 1);
+      Object.assign(QZ, all[k]); QZ.pos = k; QZ.items = all.filter((_, i) => i !== k);
+      return qzDraw();
+    }
+    if (d('pe') != null) {
+      const all = qzPieces(), j = +d('pe');
+      Object.assign(QZ, all[j]); QZ.pos = j; QZ.items = all.filter((_, i) => i !== j);
+      return qzDraw();
+    }
     if (d('place') != null) { QZ.place = d('place'); return qzDraw(); }
     if (d('side')) { QZ.side = d('side'); return qzDraw(); }
     if (d('job')) { QZ.job = d('job'); QZ.hours = null; return qzDraw(); }
@@ -3094,9 +3161,12 @@ function qzBind(el) {
       Object.assign(QZ, QZ_RESET); return qzDraw(); }
     if (t.closest('#qz-book')) return (async () => {
       await qzSaveQuote(true);                         // booking links back to the saved quote
-      const r = qCalc();
-      Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
-        placement: qzPlacement(), description: qzSummary(), job: QZ.job, quoteId: QZ.id,
+      const r = qCalc(), cb = qzMulti() ? qCombo() : null, pr = cb ? cb.tog : r;
+      Cal.prefillQuote = { quote: pr.total, deposit: pr.deposit, duration: Math.min(600, Math.ceil(pr.per * 2) * 30), quoteId: QZ.id,
+        size: cb ? cb.all.map(p => `${p.w} x ${p.h} cm`).join(' + ') : `${QZ.w} x ${QZ.h} cm`,
+        placement: cb ? cb.all.map(p => qzPlacement(p)).join(' + ') : qzPlacement(),
+        description: cb ? cb.all.map((p, i) => `${i + 1}) ${qzSummary(p)}`).join('; ') : qzSummary(),
+        job: (cb ? cb.all.find(p => p.job !== 'new') : null)?.job || QZ.job,
         design: QZ.design ? QZ.design.blob : null, notes: QZ.design && QZ.designNote ? 'Design notes: ' + QZ.designNote : null };
       newBookingNext();
     })();
@@ -3108,7 +3178,7 @@ function qzBind(el) {
   el.oninput = (e) => {
     const k = e.target.dataset.qz, tk = e.target.dataset.qzt;
     if (k || tk === 'text' || e.target.hasAttribute('data-qzd')) qzTouch(true);
-    if (e.target.hasAttribute('data-qzd')) { QZ.discVal = +e.target.value || 0; $('#qz-price').innerHTML = qzPriceHTML(qCalc()); return; }
+    if (e.target.hasAttribute('data-qzd')) { QZ.discVal = +e.target.value || 0; $('#qz-price').innerHTML = qzPriceBlock(); return; }
     if (e.target.dataset.avn) { e.target.closest('.slider').querySelector('b').textContent = fmtH(+e.target.value); return; }
     if (tk) { QZ[tk] = e.target.value; if (tk === 'text') { QZ.hours = null; const nx = $('#qz-next'); if (nx) nx.disabled = !QZ.text.trim(); } return; }
     if (!k) return;
@@ -3126,7 +3196,7 @@ function qzBind(el) {
       el.querySelectorAll('.qz-thumbs button').forEach((x, i) => x.classList.toggle('on', i + 1 === QZ.detail));
     }
     const live = $('.qz-live b'); if (live) live.textContent = money(qCalc().total);
-    const pc = $('#qz-price'); if (pc && k === 'hours') pc.innerHTML = qzPriceHTML(qCalc());
+    const pc = $('#qz-price'); if (pc && k === 'hours') { pc.innerHTML = qzPriceBlock(); const pl = $('#qz-pcs'); if (pl) pl.innerHTML = qzPiecesHTML(); }
   };
   el.onchange = async (e) => {
     if (e.target.id === 'qz-av') { QZ.withAvail = e.target.checked; return qzDraw(); }
@@ -3165,8 +3235,9 @@ async function qzSaveQuote(quiet) {
   if (QZ.design?.blob && !ref) ref = await Media.save(QZ.design.blob, 'jpg');
   if (!QZ.design) ref = null;
   const old = QZ.id ? await DB.one('SELECT design_ref FROM quotes WHERE id = ?', [QZ.id]) : null;
-  const vals = [(QZ.client || '').trim() || null, [qzPlacement(), `${QZ.w} x ${QZ.h} cm`, qzSummary()].filter(Boolean).join(' · '),
-    JSON.stringify(data), JSON.stringify(r.c), r.total, r.hours, ref];
+  const cb = qzMulti() ? qCombo() : null;
+  const summary = cb ? `${cb.all.length} tattoos: ${cb.all.map(p => qzPlacement(p)).join(', ')}` : [qzPlacement(), `${QZ.w} x ${QZ.h} cm`, qzSummary()].filter(Boolean).join(' · ');
+  const vals = [(QZ.client || '').trim() || null, summary, JSON.stringify(data), JSON.stringify(r.c), cb ? cb.tog.total : r.total, cb ? cb.tog.hours : r.hours, ref];
   if (old) await DB.run(`UPDATE quotes SET client_name = ?, summary = ?, data = ?, cfg = ?, total = ?, hours = ?, design_ref = ?, updated_at = datetime('now') WHERE id = ?`, [...vals, QZ.id]);
   else {
     await DB.run('INSERT INTO quotes (client_name, summary, data, cfg, total, hours, design_ref) VALUES (?, ?, ?, ?, ?, ?, ?)', vals);
@@ -3183,7 +3254,7 @@ async function qzOpenQuote(id) {
   let data = {}, cfg = null; try { data = JSON.parse(q.data); cfg = JSON.parse(q.cfg); } catch {}
   if (QZ.design) URL.revokeObjectURL(QZ.design.url);
   Object.assign(QZ, QZ_RESET, data, { id: q.id, step: 6, seen: 6, sized: true, detailSet: true, styleSet: true });
-  QZ.lettering = !!QZ.text; if (!QZ.side) QZ.side = 'C';
+  QZ.lettering = !!QZ.text; if (!QZ.side) QZ.side = 'C'; QZ.items = QZ.items || []; QZ.pos = Math.min(QZ.pos ?? QZ.items.length, QZ.items.length);
   QZ.cfg = cfg && JSON.stringify(cfg) !== JSON.stringify(qCfg()) ? { ...QUOTE_V2, ...cfg } : null;
   QZ.designRef = q.design_ref || null;
   if (q.design_ref) {
@@ -3245,9 +3316,9 @@ async function qlDraw() {
   };
 }
 
-const qzPlacement = () => QZ.place ? `${QZ.side === 'L' ? 'Left ' : QZ.side === 'R' ? 'Right ' : ''}${QZ.place.toLowerCase()}`.replace(/^./, m => m.toUpperCase()) : '';
-const qzSummary = () => [QZ.job !== 'new' && `${jobOf(QZ.job)[1]} (${JOB_LEVELS[QZ.jobLvl - 1].toLowerCase()})`, QZ.style, COLOUR_MODES.find(m => m[0] === QZ.colour)?.[1].toLowerCase(), DETAIL_LEVELS[QZ.detail - 1][0].toLowerCase(),
-  QZ.text && `text "${QZ.text}"${QZ.fontName ? ' in ' + QZ.fontName : ''}`].filter(Boolean).join(', ');
+const qzPlacement = (q = QZ) => q.place ? `${q.side === 'L' ? 'Left ' : q.side === 'R' ? 'Right ' : ''}${q.place.toLowerCase()}`.replace(/^./, m => m.toUpperCase()) : '';
+const qzSummary = (q = QZ) => [q.job !== 'new' && `${jobOf(q.job)[1]} (${JOB_LEVELS[q.jobLvl - 1].toLowerCase()})`, q.style, COLOUR_MODES.find(m => m[0] === q.colour)?.[1].toLowerCase(), DETAIL_LEVELS[q.detail - 1][0].toLowerCase(),
+  q.text && `text "${q.text}"${q.fontName ? ' in ' + q.fontName : ''}`].filter(Boolean).join(', ');
 
 /* Client quote sheet: an invoice-style A4 page (1240 x 1754, 150 dpi) drawn on a canvas, so Print and
    Save image are exactly the same. Shows what was asked for, the time and the price, not the maths. */
@@ -3353,8 +3424,73 @@ async function qzSheet() {
   return { cv, ref };
 }
 
+// Quote sheet for several tattoos: each one on its own, then the two options side by side.
+async function qzComboSheet() {
+  const { W, H, M, teal, ink, soft } = DOC;
+  const { cv, x, font, text, wrap, header } = await docCanvas();
+  await header();
+  const cb = qCombo(), c = cb.c;
+  const now = new Date(), valid = new Date(now.getTime() + 30 * 864e5);
+  const ref = 'Q' + now.toISOString().slice(2, 10).replace(/-/g, '') + '-' + String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+  const dfmt = (d) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  text('Tattoo quote', M, 360, font(96, 400, true));
+  [['Quote no.', ref], ['Date', dfmt(now)], ['Valid until', dfmt(valid)], ['Client', QZ.client || '—']].forEach(([k, v], i) => {
+    text(k, W - M - 440, 300 + i * 38, font(22, 600), soft); text(v, W - M, 300 + i * 38, font(24, 500), ink, 'right');
+  });
+  let y = 450;
+  text(`YOUR ${cb.all.length} TATTOOS`, M, y, font(22, 700), teal);
+  text('ON ITS OWN', W - M - 24, y, font(20, 700), soft, 'right'); y += 18;
+  cb.all.forEach((p, i) => {
+    const lines = wrap(`${p.w} × ${p.h} cm · ${qzSummary(p)}`, font(24), W - 2 * M - 420).slice(0, 2), h = 66 + lines.length * 32;
+    if (i % 2 === 0) { x.fillStyle = '#f7f4ee'; x.fillRect(M, y, W - 2 * M, h); }
+    text(String(i + 1), M + 24, y + 46, font(40, 400, true), teal);
+    text(qzPlacement(p) || 'Tattoo', M + 80, y + 44, font(28, 600));
+    lines.forEach((ln, j) => text(ln, M + 80, y + 80 + j * 32, font(24), soft));
+    text(money(cb.each[i].total), W - M - 24, y + 46, font(32, 600), ink, 'right');
+    text(`about ${fmtH(cb.each[i].hours)}`, W - M - 24, y + 80, font(22), soft, 'right');
+    y += h;
+  });
+  y += 50;
+  // The two options, the combined one highlighted.
+  const bw = (W - 2 * M - 30) / 2, bh = 330;
+  const opt = (bx, title, sub, price, rows, hi) => {
+    x.fillStyle = hi ? '#eef8f6' : '#fff'; x.strokeStyle = hi ? teal : '#d9d2c3'; x.lineWidth = hi ? 4 : 2;
+    x.beginPath(); x.roundRect(bx, y, bw, bh, 24); x.fill(); x.stroke();
+    text(title, bx + 34, y + 62, font(30, 700), hi ? teal : ink);
+    text(sub, bx + 34, y + 98, font(22), soft);
+    text(money(price), bx + 34, y + 196, font(84, 400, true), hi ? teal : ink);
+    rows.forEach((r, i) => text(r, bx + 34, y + 250 + i * 34, font(22, 500), soft));
+  };
+  opt(M, 'Separately', `Each tattoo in its own booking`, cb.sep.total,
+    [`${cb.sep.sessions} sessions · about ${fmtH(cb.sep.hours)} in total`, `Deposit ${money(cb.sep.deposit)}`], false);
+  opt(M + bw + 30, 'All together', cb.tog.sessions > 1 ? `In ${cb.tog.sessions} sessions instead of ${cb.sep.sessions}` : 'In one session',
+    cb.tog.total, [`About ${fmtH(cb.tog.hours)} · one setup`, `Deposit ${money(cb.tog.deposit)}`], true);
+  if (cb.save) {
+    const tx = `SAVE ${money(cb.save)}`; x.font = font(22, 700); const tw = x.measureText(tx).width + 36;
+    x.fillStyle = teal; x.beginPath(); x.roundRect(W - M - tw - 24, y - 20, tw, 44, 22); x.fill();
+    text(tx, W - M - 24 - tw / 2, y + 9, font(22, 700), '#fff', 'center');
+  }
+  y += bh + 56;
+  const rates = [...c.anchors].sort((a, b) => a[0] - b[0]).map(([h, p]) => `${h} h ${money(p)}`).join('  ·  ');
+  text('HOW THIS IS PRICED', M, y, font(22, 700), teal); y += 44;
+  for (const s of [`Priced on tattooing time at our rates: ${rates}.`,
+    'Together, the tattoos share one setup and one booking, so the time and the price come down.'])
+    for (const ln of wrap(s, font(26), W - 2 * M)) { text(ln, M, y, font(26)); y += 38; }
+  y += 24;
+  text('PLEASE NOTE', M, y, font(22, 700), teal); y += 44;
+  const notes = ['Breaks are not included in the time or the quote.', 'The final price may change if a design, size or placement changes.',
+    'The deposit secures your booking and comes off the final price.', 'This quote is valid for 30 days.',
+    c.vatOn ? `Prices include VAT at ${c.vatRate}%.` : '', ...new Set(cb.all.map(p => jobNote(p.job))), touchupLine(c)].filter(Boolean);
+  for (const s of notes) for (const ln of wrap('•  ' + s, font(26), W - 2 * M)) { if (y > H - 170) break; text(ln, M, y, font(26)); y += 38; }
+  const fy = Math.min(H - 60, Math.max(y + 60, H - 130));
+  x.fillStyle = teal; x.fillRect(M, fy - 50, W - 2 * M, 3);
+  text(`Thank you${QZ.client ? ', ' + QZ.client.split(' ')[0] : ''}!`, M, fy, font(44, 400, true));
+  text(ref, W - M, fy - 4, font(20), soft, 'right');
+  return { cv, ref };
+}
+
 async function qzPrint() {
-  const { cv } = await qzSheet();
+  const { cv } = qzMulti() ? await qzComboSheet() : await qzSheet();
   const extra = [];
   if (qzHasDesign()) extra.push(await designPage());
   if (QZ.withAvail) extra.push((await qzAvailSheet()).cv);
@@ -3426,7 +3562,7 @@ async function qzAvPanel() {
 }
 
 async function qzSaveImage() {
-  const { cv, ref } = await qzSheet();
+  const { cv, ref } = qzMulti() ? await qzComboSheet() : await qzSheet();
   const tag = QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : '';
   const pages = [[cv, `Quote-${ref}${tag}.png`]];
   if (qzHasDesign()) pages.push([await designPage(), `Design-${ref}${tag}.png`]);
@@ -3443,6 +3579,21 @@ async function qzSaveImage() {
 
 async function qzShare() {
   const r = qCalc(), studio = Settings.get('studio_name') || Settings.get('artist_name');
+  if (qzMulti()) {
+    const cb = qCombo(), notes = [...new Set(cb.all.map(p => jobNote(p.job)).filter(Boolean))];
+    const text = `Tattoo quote${studio ? ' from ' + studio : ''}\n\n`
+      + cb.all.map((p, i) => `${i + 1}. ${qzPlacement(p)} · ${p.w} x ${p.h} cm\n   ${qzSummary(p)}\n   On its own: ${money(cb.each[i].total)} (about ${fmtH(cb.each[i].hours)})`).join('\n')
+      + `\n\nSeparately: ${money(cb.sep.total)} over ${cb.sep.sessions} sessions`
+      + `\nAll together: ${money(cb.tog.total)} (about ${fmtH(cb.tog.hours)}${cb.tog.sessions > 1 ? `, ${cb.tog.sessions} sessions` : ', one session'})`
+      + (cb.save ? `\nYou save ${money(cb.save)} by doing them together.` : '')
+      + `\nDeposit to book together: ${money(cb.tog.deposit)}\n\nFinal price may change with design changes.`
+      + (notes.length ? '\n' + notes.join('\n') : '');
+    try {
+      if (navigator.share) await navigator.share({ text });
+      else { await navigator.clipboard.writeText(text); toast('Quote copied.'); }
+    } catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
+    return;
+  }
   const text = `Tattoo quote${studio ? ' from ' + studio : ''}\n`
     + `${qzPlacement()} · ${QZ.w} x ${QZ.h} cm\n${qzSummary()}\n\n`
     + (r.disc ? `Tattoo: ${money(r.base)}\nDiscount: -${money(r.disc)}\n` : '')
@@ -3509,6 +3660,11 @@ function qcDraw() {
     <details class="card qc-sec" data-sec="job" ${QC_OPEN.has('job') ? 'open' : ''}><summary><h2>Cover-ups and fix-ups ${help('Time multiplier for each difficulty. 1 = same as a new tattoo, 1.5 = 50% longer, 0.8 = quicker.')}</h2></summary>
       <div class="qc-row qc-jh"><span></span>${JOB_LEVELS.map(l => `<em>${l}</em>`).join('')}</div>
       ${JOB_TYPES.slice(1).map(([k, n]) => `<div class="qc-row qc-job"><span>${n}</span>${c.job[k].map((v, i) => num(`job.${k}.${i}`, v, '0.05')).join('')}</div>`).join('')}</details>
+    <details class="card qc-sec" data-sec="combo" ${QC_OPEN.has('combo') ? 'open' : ''}><summary><h2>Several tattoos in one booking ${help('Used when a quote has more than one tattoo. The client sees each one on its own and all together.')}</h2></summary>
+      <div class="two">
+        <label class="field"><span>Setup time saved ${help('For every extra tattoo done in the same booking.')}</span><div class="unit-in">${num('comboSetup', c.comboSetup, '5')}<em>min each</em></div></label>
+        <label class="field"><span>Extra discount ${help('Taken off the combined price, on top of the time saved.')}</span><div class="unit-in">${num('comboOff', c.comboOff, '1')}<em>%</em></div></label>
+      </div></details>
     <details class="card qc-sec" data-sec="letter" ${QC_OPEN.has('letter') ? 'open' : ''}><summary><h2>Lettering</h2></summary>
       <label class="field"><span>Minutes per letter ${help('At 2 cm letter height. Bigger letters scale up.')}</span><div class="unit-in">${num('textMin', c.textMin, '0.5')}<em>min</em></div></label>
       ${c.fonts.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`fonts.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</details>
