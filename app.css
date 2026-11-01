@@ -811,3 +811,21 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .qc-row.qc-job, .qc-row.qc-jh { display: grid; grid-template-columns: 1.4fr repeat(5, 1fr); gap: 6px; align-items: center; }
 .qc-jh em { font-size: 10px; font-style: normal; color: var(--ink2); text-align: center; }
 .qc-job .in { padding: 6px 4px; text-align: center; min-width: 0; }
+
+/* Saved quotes */
+.qz-flag { border: 1px solid var(--gold, #e8b44c); background: rgba(232,180,76,.1); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; }
+.qz-flag b { display: block; margin-bottom: 2px; }
+.qz-flag.kept { border-color: var(--line); background: var(--bg2); color: var(--ink2); }
+.ql-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; margin-bottom: 8px; }
+.ql-row.done { opacity: .75; }
+.ql-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; cursor: pointer; }
+.ql-main .muted { font-size: 13px; }
+.ql-tags { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--ink2); align-items: center; }
+.ql-tags em { font-style: normal; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--teal); color: var(--teal); }
+.ql-tags em.old { border-color: var(--gold, #e8b44c); color: var(--gold, #e8b44c); }
+.ql-real { font-size: 12px; color: var(--teal); }
+.ql-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+.ql-side b { font-size: 17px; }
+.ql-side .muted { font-size: 12px; }
+.ql-cmp { margin-bottom: 12px; font-size: 13px; }
+.ql-cmp p { margin: 4px 0 8px; color: var(--ink2); }

@@ -226,7 +226,22 @@ const MIGRATIONS = [
   // v12: inactive stock items are kept but left out of counts, stock takes, alerts and prints.
   `ALTER TABLE inventory_items ADD COLUMN active INTEGER NOT NULL DEFAULT 1;`,
   // v13: type of work on a booking (new, cover, scar, fix), so receipts can carry the right advice.
-  `ALTER TABLE bookings ADD COLUMN job TEXT;`
+  `ALTER TABLE bookings ADD COLUMN job TEXT;`,
+  // v14: saved quotes. data = the wizard answers, cfg = the Calibrate values it was priced with.
+  `CREATE TABLE quotes (
+     id INTEGER PRIMARY KEY,
+     client_name TEXT,
+     summary TEXT,
+     data TEXT NOT NULL,
+     cfg TEXT NOT NULL,
+     total REAL,
+     hours REAL,
+     design_ref TEXT,
+     booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL,
+     completed INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE INDEX idx_quotes_booking ON quotes (booking_id);`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -436,6 +451,7 @@ const Media = {
       UNION ALL SELECT 1 FROM booking_photos WHERE photo_ref = ?1
       UNION ALL SELECT 1 FROM signed_forms WHERE signature_ref = ?1
       UNION ALL SELECT 1 FROM portfolio_photos WHERE photo_ref = ?1 OR thumb_ref = ?1
+      UNION ALL SELECT 1 FROM quotes WHERE design_ref = ?1
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
@@ -976,6 +992,8 @@ const VIEWS = {
         for (const p of photos) if (!refs.includes(p.photo_ref)) await Media.release(p.photo_ref);
         Cal.date = new Date(d.date + 'T00:00');
         Dirty.set(false); Gcal.soon();
+        if (!b.id && fromQuote?.quoteId) await DB.run('UPDATE quotes SET booking_id = ? WHERE id = ?', [bid, fromQuote.quoteId]);
+        if (done) await DB.run(`UPDATE quotes SET completed = 1, updated_at = datetime('now') WHERE booking_id = ? AND completed = 0`, [bid]);
         if (!b.id) { b.id = bid; }
         Object.assign(b, { completed: done ? 1 : 0, paid: done ? num(d.paid) : null, time_min: vals[14], pay_method: done ? payMethod : null, client_id: clientId,
           description: vals[3], placement: vals[4], size: vals[5], start_at: vals[1] });
@@ -1022,6 +1040,7 @@ const VIEWS = {
     render: () => `<div class="grid">
       ${tile('settings', 'Settings & backup', 'Profile, storage, backup and restore', false, 'settings')}
       ${tile('quote', 'Quote calculator', 'Price a piece from your own rates', false, 'quote')}
+      ${tile('quote', 'Saved quotes', 'Pick a quote up again, book it or compare', false, 'quotes')}
       ${tile('quote', 'Stats', 'Tattoos, hours and earnings over time', false, 'stats')}
       ${tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory')}
       ${tile('rules', 'Rule book', 'Your studio rules', false, 'rules')}</div>`
@@ -1221,6 +1240,11 @@ const VIEWS = {
     title: () => 'Quote',
     render: () => '<div id="qz"></div>',
     mount() { qzDraw(); }
+  },
+  quotes: {
+    title: () => 'Saved quotes',
+    render: () => '<div id="ql"></div>',
+    mount() { qlDraw(); }
   },
   stats: {
     title: () => 'Stats',
@@ -2049,6 +2073,7 @@ const MERGE_SECTIONS = [
   ['portfolio', 'Portfolio', 'Tattoos, art and flash with photos'],
   ['inventory', 'Inventory', 'Stock items and stock takes'],
   ['rules', 'Rule book', 'Your studio rules'],
+  ['quotes', 'Saved quotes', 'Quotes saved to finish or book later'],
   ['reel', 'Reel templates', 'Saved reel templates and their images'],
   ['settings', 'Settings', 'Profile, quote and app settings, only where yours are still blank']
 ];
@@ -2066,11 +2091,12 @@ const MERGE_TABLES = {
   stock_takes: { section: 'inventory' },
   stock_take_lines: { section: 'inventory', fk: { take_id: 'stock_takes', item_id: 'inventory_items' } },
   rules: { section: 'rules' },
+  quotes: { section: 'quotes', fk: { booking_id: 'bookings' }, refs: ['design_ref'] },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
-  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules'];
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
@@ -2796,7 +2822,14 @@ function qCfg() {
 const qSave = (cfg) => Settings.set('quote_v2', JSON.stringify(cfg));
 
 // The wizard's answers, kept while the app is open.
-const QZ = { client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, job: 'new', jobLvl: 3, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null };
+// id = saved quote being edited; cfg = the saved Calibrate values while the artist keeps an old quote's prices.
+const QZ_RESET = { design: null, designRef: null, designNote: '', withDesign: false, av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0,
+  job: 'new', jobLvl: 3, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null,
+  id: null, cfg: null, cfgKept: false };
+const QZ = { ...QZ_RESET };
+// The answers stored with a saved quote.
+const QZ_KEYS = ['job', 'jobLvl', 'place', 'side', 'w', 'h', 'colour', 'detail', 'style', 'text', 'font', 'fontName', 'letter', 'hours',
+  'discType', 'discVal', 'client', 'designNote', 'withDesign'];
 const QZ_STEPS = ['Placement', 'Size', 'Colour', 'Detail', 'Style', 'Text', 'Quote'];
 
 // Price for one session of h hours on the rate curve.
@@ -2814,7 +2847,7 @@ function qCurve(c, h) {
 const qRound = (c, v) => c.round > 0 ? Math.round(v / c.round) * c.round : Math.round(v);
 
 function qCalc(q = QZ) {
-  const c = qCfg(), lines = [];
+  const c = q.cfg || qCfg(), lines = [];
   const pl = c.placements.find(p => p[0] === q.place), pain = pl ? pl[2] : 3;
   const st = c.styles.find(s => s[0] === q.style), font = c.fonts.find(f => f[0] === q.font);
   const area = q.w * q.h, inked = area * c.fill / 100;
@@ -2882,7 +2915,7 @@ function detailSvg(level, colour) {
 /* Wizard: one question per step, Back / Next, with a live estimate once there is enough to go on. */
 function qzDraw() {
   const el = $('#qz'); if (!el) return;
-  const c = qCfg(), s = QZ.step, cur = Settings.get('currency');
+  const c = QZ.cfg || qCfg(), s = QZ.step, cur = Settings.get('currency');
   const done = (i) => [QZ.place, true, QZ.colour, true, true, true, true][i];
   const steps = `<div class="qz-steps">${QZ_STEPS.map((n, i) => `<button data-step="${i}" class="${i === s ? 'on' : ''} ${i <= QZ.seen ? 'seen' : ''}" ${i <= QZ.seen ? '' : 'disabled'}>
       <i>${i < s && done(i) ? '✓' : i + 1}</i><span>${n}</span></button>`).join('')}</div>`;
@@ -2968,6 +3001,7 @@ function qzDraw() {
           </div></div>` : ''}
         <label class="field"><span>Client name <span class="muted">(optional, shown on the quote sheet)</span></span>
           <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off"></label>
+        <button class="btn" id="qz-save" style="width:100%;margin-bottom:8px">${QZ.id ? 'Update saved quote' : 'Save quote'}</button>
         <div class="qz-acts">
           <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print</button>
           <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, for clients who prefer an image">Save image</button>
@@ -2978,11 +3012,18 @@ function qzDraw() {
         ${QZ.withAvail ? '<div class="qz-avp" id="qz-avp"></div>' : ''}
         <button class="btn primary" id="qz-book" style="width:100%;margin-top:8px">Book with this quote</button>
       </div>
-      <div class="row" style="margin-top:12px"><button class="btn small" id="qz-new">Start over</button>
-        <a class="btn small" href="#quote-cal" style="margin-left:auto">Calibrate</a></div>`;
+      <div class="row" style="margin-top:12px"><button class="btn small" id="qz-new">${QZ.id ? 'New quote' : 'Start over'}</button>
+        <a class="btn small" href="#quotes" style="margin-left:auto">Saved quotes</a><a class="btn small" href="#quote-cal">Calibrate</a></div>`;
   }
   const r = s >= 1 && s < 6 && QZ.place ? qCalc() : null;
-  el.innerHTML = `${steps}<div class="card qz-card-main">${body}</div>
+  const now = QZ.cfg ? qCalc({ ...QZ, cfg: null }).total : 0;
+  const flag = !QZ.cfg ? '' : QZ.cfgKept
+    ? `<div class="qz-flag kept">Showing the saved prices. Changing anything switches to your current rates. <button class="link" id="qz-cfgnow">Use current rates</button></div>`
+    : `<div class="qz-flag"><b>Your rates have changed since this quote was saved.</b>
+        <span>Saved price ${money(qCalc().total)}; with your current rates it would be ${money(now)}.</span>
+        <div class="row" style="gap:6px;margin-top:8px"><button class="btn small primary" id="qz-cfgnow">Update to current rates</button>
+        <button class="btn small" id="qz-cfgkeep">Keep saved prices</button></div></div>`;
+  el.innerHTML = `${steps}${flag}<div class="card qz-card-main">${body}</div>
     ${s < 6 ? `<div class="form-foot qz-foot">
       ${r ? `<div class="qz-live"><span>≈ <b>${money(r.total)}</b> · ${fmtH(r.hours)}</span><span class="muted">so far</span></div>` : ''}
       <div class="row">
@@ -2990,7 +3031,7 @@ function qzDraw() {
       ${s === 4 || s === 5 ? `<button class="btn" id="qz-skip">Skip</button>` : ''}
       <button class="btn primary" id="qz-next" style="flex:1" ${(s === 0 && !QZ.place) || (s === 2 && !QZ.colour) ? 'disabled' : ''}>${s === 5 ? 'See quote' : 'Next'}</button></div></div>`
       : ''}
-    ${s === 0 ? '<a class="btn small" href="#quote-cal" style="margin-top:10px">Calibrate rates, pain and speeds</a>' : ''}`;
+    ${s === 0 ? '<div class="row" style="margin-top:10px;gap:6px"><a class="btn small" href="#quote-cal">Calibrate rates, pain and speeds</a><a class="btn small" href="#quotes">Saved quotes</a></div>' : ''}`;
   qzBind(el);
   if (QZ.withAvail && s === 6) qzAvPanel();
 }
@@ -3018,6 +3059,10 @@ function qzBind(el) {
   el.onclick = (e) => {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (d('step') != null && !t.closest('[data-step]').disabled) return qzGo(+d('step'));
+    if (['place', 'side', 'job', 'preset', 'colour', 'detail', 'style', 'font', 'dt', 'dq'].some(k => d(k) != null) || t.closest('#qz-reset')) qzTouch();
+    if (t.closest('#qz-cfgnow')) { QZ.cfg = null; QZ.cfgKept = false; return qzDraw(); }
+    if (t.closest('#qz-cfgkeep')) { QZ.cfgKept = true; return qzDraw(); }
+    if (t.closest('#qz-save')) return qzSaveQuote().then(qzDraw);
     if (d('place') != null) { QZ.place = d('place'); return qzDraw(); }
     if (d('side')) { QZ.side = d('side'); return qzDraw(); }
     if (d('job')) { QZ.job = d('job'); QZ.hours = null; return qzDraw(); }
@@ -3028,7 +3073,7 @@ function qzBind(el) {
     if (d('font') != null) { QZ.font = QZ.font === d('font') ? '' : d('font'); QZ.hours = null; return qzDraw(); }
     if (t.closest('#qz-chart')) return viewImage('img/pain-chart.png');
     if (t.closest('#qz-reset')) { QZ.hours = null; return qzDraw(); }
-    if (t.closest('#qz-dzrm')) { URL.revokeObjectURL(QZ.design.url); QZ.design = null; return qzDraw(); }
+    if (t.closest('#qz-dzrm')) { URL.revokeObjectURL(QZ.design.url); QZ.design = null; QZ.designRef = null; return qzDraw(); }
     if (d('dt')) { QZ.discType = d('dt'); QZ.discVal = 0; return qzDraw(); }
     const avk = t.closest('[data-avk] button');
     if (avk) { qzAvOpts(); const k = avk.parentElement.dataset.avk; QZ.av[k] = k === 'months' ? +avk.dataset.v : avk.dataset.v; return qzAvPanel(); }
@@ -3036,14 +3081,15 @@ function qzBind(el) {
     if (t.closest('#qz-avclear')) { QZ.av.hidden = []; return qzAvPanel(); }
     if (d('dq')) { QZ.discVal = +QZ.discVal === +d('dq') ? 0 : +d('dq'); return qzDraw(); }
     if (t.closest('#qz-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url);
-      Object.assign(QZ, { design: null, designNote: '', withDesign: false, av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0, job: 'new', jobLvl: 3, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null }); return qzDraw(); }
-    if (t.closest('#qz-book')) {
+      Object.assign(QZ, QZ_RESET); return qzDraw(); }
+    if (t.closest('#qz-book')) return (async () => {
+      await qzSaveQuote(true);                         // booking links back to the saved quote
       const r = qCalc();
       Cal.prefillQuote = { quote: r.total, deposit: r.deposit, size: `${QZ.w} x ${QZ.h} cm`, duration: Math.min(600, Math.ceil(r.per * 2) * 30),
-        placement: qzPlacement(), description: qzSummary(), job: QZ.job,
+        placement: qzPlacement(), description: qzSummary(), job: QZ.job, quoteId: QZ.id,
         design: QZ.design ? QZ.design.blob : null, notes: QZ.design && QZ.designNote ? 'Design notes: ' + QZ.designNote : null };
-      return newBookingNext();
-    }
+      newBookingNext();
+    })();
     if (t.closest('#qz-share')) return qzShare();
     if (t.closest('#qz-print')) return qzPrint();
     if (t.closest('#qz-img')) return qzSaveImage();
@@ -3051,6 +3097,7 @@ function qzBind(el) {
   // Sliders: update the value label at once, redraw the preview parts when the finger lifts.
   el.oninput = (e) => {
     const k = e.target.dataset.qz, tk = e.target.dataset.qzt;
+    if (k || tk === 'text' || e.target.hasAttribute('data-qzd')) qzTouch(true);
     if (e.target.hasAttribute('data-qzd')) { QZ.discVal = +e.target.value || 0; $('#qz-price').innerHTML = qzPriceHTML(qCalc()); return; }
     if (e.target.dataset.avn) { e.target.closest('.slider').querySelector('b').textContent = fmtH(+e.target.value); return; }
     if (tk) { QZ[tk] = e.target.value; if (tk === 'text') QZ.hours = null; return; }
@@ -3081,14 +3128,107 @@ function qzBind(el) {
         const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
         const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
         if (QZ.design) URL.revokeObjectURL(QZ.design.url);
-        QZ.design = { blob, url: URL.createObjectURL(blob) };
+        QZ.design = { blob, url: URL.createObjectURL(blob) }; QZ.designRef = null;
       } catch { toast('Could not read that image.'); }
       return qzDraw();
     }
     if (e.target.id === 'qz-avfull') { qzAvOpts(); QZ.av.fullOnly = e.target.checked; return qzAvPanel(); }
     if (e.target.dataset.avn) { qzAvOpts(); QZ.av.need = Math.round(+e.target.value * 60); return qzAvPanel(); }
-    if (e.target.id === 'qz-vat') { const c = qCfg(); c.vatOn = e.target.checked; await qSave(c); return qzDraw(); }
+    if (e.target.id === 'qz-vat') { qzTouch(); const c = qCfg(); c.vatOn = e.target.checked; await qSave(c); return qzDraw(); }
     if (e.target.dataset.qz === 'hours' || e.target.dataset.qzt === 'text' || e.target.hasAttribute('data-qzd')) qzDraw();
+  };
+}
+
+// Any change to what is priced drops the saved (older) rates in favour of the current ones.
+function qzTouch(redraw) {
+  if (!QZ.cfg) return;
+  QZ.cfg = null; QZ.cfgKept = false; toast('Switched to your current rates.');
+  if (redraw) { const f = $('.qz-flag'); if (f) f.remove(); }
+}
+
+async function qzSaveQuote(quiet) {
+  const r = qCalc(), data = {};
+  for (const k of QZ_KEYS) data[k] = QZ[k];
+  let ref = QZ.designRef;
+  if (QZ.design?.blob && !ref) ref = await Media.save(QZ.design.blob, 'jpg');
+  if (!QZ.design) ref = null;
+  const old = QZ.id ? await DB.one('SELECT design_ref FROM quotes WHERE id = ?', [QZ.id]) : null;
+  const vals = [(QZ.client || '').trim() || null, [qzPlacement(), `${QZ.w} x ${QZ.h} cm`, qzSummary()].filter(Boolean).join(' · '),
+    JSON.stringify(data), JSON.stringify(r.c), r.total, r.hours, ref];
+  if (old) await DB.run(`UPDATE quotes SET client_name = ?, summary = ?, data = ?, cfg = ?, total = ?, hours = ?, design_ref = ?, updated_at = datetime('now') WHERE id = ?`, [...vals, QZ.id]);
+  else {
+    await DB.run('INSERT INTO quotes (client_name, summary, data, cfg, total, hours, design_ref) VALUES (?, ?, ?, ?, ?, ?, ?)', vals);
+    QZ.id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+  }
+  if (old?.design_ref && old.design_ref !== ref) await Media.release(old.design_ref);
+  QZ.designRef = ref;
+  if (!quiet) toast('Quote saved.');
+}
+
+// Opens a saved quote on its price page. If the rates changed since, the saved ones are shown until the artist chooses.
+async function qzOpenQuote(id) {
+  const q = await DB.one('SELECT * FROM quotes WHERE id = ?', [id]); if (!q) return;
+  let data = {}, cfg = null; try { data = JSON.parse(q.data); cfg = JSON.parse(q.cfg); } catch {}
+  if (QZ.design) URL.revokeObjectURL(QZ.design.url);
+  Object.assign(QZ, QZ_RESET, data, { id: q.id, step: 6, seen: 6 });
+  QZ.cfg = cfg && JSON.stringify(cfg) !== JSON.stringify(qCfg()) ? { ...QUOTE_V2, ...cfg } : null;
+  QZ.designRef = q.design_ref || null;
+  if (q.design_ref) {
+    const u = await Media.url(q.design_ref);
+    if (u) { const blob = await (await fetch(u)).blob(); QZ.design = { blob, url: URL.createObjectURL(blob) }; }
+  }
+  if (location.hash === '#quote') qzDraw(); else location.hash = 'quote';
+}
+
+/* Saved quotes: open ones to pick up again, completed ones kept for comparing quoted time with the real time. */
+const QL = { f: 'open' };
+async function qlDraw() {
+  const el = $('#ql'); if (!el) return;
+  const rows = await DB.all(`SELECT q.*, b.completed AS b_done, b.time_min AS b_min, b.paid AS b_paid, b.start_at AS b_start
+    FROM quotes q LEFT JOIN bookings b ON b.id = q.booking_id ORDER BY q.updated_at DESC, q.id DESC`);
+  const cur = JSON.stringify(qCfg());
+  const n = { open: rows.filter(r => !r.completed).length, done: rows.filter(r => r.completed).length, all: rows.length };
+  const list = rows.filter(r => QL.f === 'all' || (QL.f === 'done') === !!r.completed);
+  const cmp = rows.filter(r => r.b_done && r.b_min && r.hours);
+  const avg = cmp.length ? cmp.reduce((a, r) => a + (r.b_min / 60 - r.hours) / r.hours, 0) / cmp.length * 100 : 0;
+  const diff = (r) => { const p = Math.round((r.b_min / 60 - r.hours) / r.hours * 100); return p === 0 ? 'on time' : `${p > 0 ? '+' : ''}${p}% time`; };
+  el.innerHTML = `
+    <div class="row" style="gap:8px;margin-bottom:12px">
+      <div class="seg" id="ql-f">${[['open', 'Open'], ['done', 'Completed'], ['all', 'All']].map(([k, l]) =>
+        `<button data-f="${k}" class="${QL.f === k ? 'on' : ''}">${l} (${n[k]})</button>`).join('')}</div>
+      <button class="btn small primary" id="ql-new" style="margin-left:auto">New quote</button></div>
+    ${cmp.length ? `<div class="card ql-cmp"><b>Quoted vs real time</b>
+      <p>Across ${cmp.length} completed tattoo${cmp.length === 1 ? '' : 's'}, the real time was ${Math.abs(Math.round(avg)) < 1 ? 'right on the estimate' : `<b>${Math.abs(Math.round(avg))}% ${avg > 0 ? 'longer' : 'shorter'}</b> than quoted`} on average.
+      ${avg > 10 ? 'You may want to raise your speeds in Calibrate.' : avg < -10 ? 'You may want to lower your speeds in Calibrate.' : ''}</p>
+      <a class="btn small" href="#quote-cal">Calibrate</a></div>` : ''}
+    ${list.length ? list.map(r => `<div class="card ql-row ${r.completed ? 'done' : ''}">
+      <div class="ql-main" data-qo="${r.id}">
+        <b>${esc(r.client_name || 'No name')}</b>
+        <span class="muted">${esc(r.summary || '')}</span>
+        <span class="ql-tags">${fmtDay(r.updated_at)}${r.booking_id ? `<em>Booked ${r.b_start ? fmtDay(r.b_start) : ''}</em>` : ''}${r.cfg !== cur && !r.completed ? '<em class="old">Older rates</em>' : ''}</span>
+        ${r.b_done && r.b_min ? `<span class="ql-real">Took ${fmtH(r.b_min / 60)} (${diff(r)})${r.b_paid != null ? ` · paid ${money(r.b_paid)}` : ''}</span>` : ''}
+      </div>
+      <div class="ql-side"><b>${money(r.total)}</b><span class="muted">${fmtH(r.hours || 0)}</span>
+        <label class="toggle" data-tip="Completed quotes are kept for comparing, not deleted"><input type="checkbox" data-qc="${r.id}" ${r.completed ? 'checked' : ''}><span>Done</span></label>
+        <button class="mini del" data-qd="${r.id}" aria-label="Delete quote">&times;</button></div>
+    </div>`).join('') : `<div class="empty muted">${QL.f === 'done' ? 'No completed quotes yet.' : 'No saved quotes. Save one from the price page of the quote calculator.'}</div>`}`;
+  el.onclick = async (e) => {
+    const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    if (d('f')) { QL.f = d('f'); return qlDraw(); }
+    if (t.closest('#ql-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url); Object.assign(QZ, QZ_RESET); location.hash = 'quote'; return; }
+    if (d('qd')) {
+      const q = await DB.one('SELECT client_name, design_ref FROM quotes WHERE id = ?', [+d('qd')]);
+      if (!q || !confirm(`Delete the quote${q.client_name ? ' for ' + q.client_name : ''}? This can't be undone.`)) return;
+      await DB.run('DELETE FROM quotes WHERE id = ?', [+d('qd')]); await Media.release(q.design_ref);
+      if (QZ.id === +d('qd')) QZ.id = null;
+      return qlDraw();
+    }
+    if (d('qo') && !t.closest('label')) return qzOpenQuote(+d('qo'));
+  };
+  el.onchange = async (e) => {
+    const id = e.target.dataset.qc; if (!id) return;
+    await DB.run(`UPDATE quotes SET completed = ?, updated_at = datetime('now') WHERE id = ?`, [e.target.checked ? 1 : 0, +id]);
+    qlDraw();
   };
 }
 
@@ -3189,7 +3329,7 @@ async function qzSheet() {
   text('PLEASE NOTE', M, y, font(22, 700), teal); y += 44;
   for (const s of ['Breaks are not included in the time or the quote.', 'The final price may change if the design, size or placement changes.',
     `The deposit secures your booking and comes off the final price.`, 'This quote is valid for 30 days.',
-    c.vatOn ? `Prices include VAT at ${c.vatRate}%.` : '', jobNote(QZ.job), touchupLine()].filter(Boolean))
+    c.vatOn ? `Prices include VAT at ${c.vatRate}%.` : '', jobNote(QZ.job), touchupLine(c)].filter(Boolean))
     for (const ln of wrapLines('•  ' + s, font(26), W - 2 * M)) { text(ln, M, y, font(26), ink); y += 38; }
 
   // Footer sits under the notes, or at the foot of the page when there is room.
@@ -3411,7 +3551,7 @@ function receiptOpts() {
     aftercare: !!o.aftercare, aftercareId: o.aftercareId || null };
 }
 // Touch-up fee line for documents, from Calibrate (0 = free). '' when the artist hides it.
-const touchupLine = () => { const c = qCfg(); if (!c.touchupNote) return '';
+const touchupLine = (c = qCfg()) => { if (!c.touchupNote) return '';
   return +c.touchupFee > 0 ? `Touch-ups after healing are ${money(+c.touchupFee)}.` : 'Touch-ups after healing are free.'; };
 
 async function openReceipt(bid) {
