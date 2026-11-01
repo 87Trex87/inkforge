@@ -4745,6 +4745,30 @@ function receiptText(b, p) {
 }
 
 // Prints canvas pages (quote sheets, receipts, aftercare) through #print-area, one A4 page each.
+/* ---------- Full screen ----------
+   Hides the browser's bars. iPhones don't let web pages do this; there, adding InkForge to the Home Screen
+   opens it without the bars. The design studio's own full screen (design.js) uses this too. */
+const FS = {
+  on: () => !!(document.fullscreenElement || document.webkitFullscreenElement),
+  can: () => !!(document.fullscreenEnabled || document.webkitFullscreenEnabled),
+  async set(want) {
+    try {
+      if (want && !FS.on()) await (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement);
+      else if (!want && FS.on()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } catch {}
+  }
+};
+(() => {
+  const b = document.getElementById('fs-btn'); if (!b) return;
+  const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
+  const ios = /iP(hone|od)/.test(navigator.userAgent);
+  b.hidden = standalone || (!FS.can() && !ios);
+  const ON = '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>', OFF = '<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>';
+  const show = () => { const on = FS.on(); b.innerHTML = on ? OFF : ON; b.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen'); b.dataset.tip = on ? 'Exit full screen' : 'Full screen: hides the browser\'s bars'; };
+  b.onclick = () => FS.can() ? FS.set(!FS.on()) : toast('On iPhone: tap Share, then "Add to Home Screen". InkForge then opens full screen.', 6000);
+  document.addEventListener('fullscreenchange', show); document.addEventListener('webkitfullscreenchange', show); show();
+})();
+
 async function printCanvas(...cvs) {
   let p = $('#print-area');
   if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }

@@ -1297,3 +1297,32 @@ body.practice::before { content: ''; position: fixed; left: 0; right: 0; top: 0;
 .dz-faces button { border: 0; background: none; color: var(--ink2); font: 600 12px var(--ui); padding: 7px 11px; border-radius: 9px; cursor: pointer; }
 .dz-faces button.on { background: var(--teal); color: #071413; }
 .dz-faces small { opacity: .7; font-size: 10px; }
+
+/* Full screen button (top bar) */
+.tb-fs { margin-left: auto; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--ink2); cursor: pointer; display: grid; place-items: center; padding: 0; flex: none; }
+.tb-fs[hidden] { display: none; }
+.tb-fs svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+/* Design studio: full screen design */
+#dz-panel { display: none; }
+body.dz-focus #nav, body.dz-focus #topbar { display: none !important; }
+body.dz-focus .dz-ed { position: fixed; inset: 0; z-index: 40; background: var(--bg); gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+body.dz-focus #dz-panel { display: grid; }
+body.dz-focus.dz-noside #dz-panel { background: var(--teal); color: #071413; }
+body.dz-focus .dz-body { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) min(330px, 40vw); grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+body.dz-focus .dz-stage { height: auto; min-height: 0; }
+body.dz-focus .dz-side { max-height: none; min-height: 0; overflow-y: auto; }
+body.dz-focus.dz-noside .dz-body { grid-template-columns: minmax(0, 1fr); }
+body.dz-focus.dz-noside .dz-side { display: none; }
+@media (orientation: portrait) and (max-width: 899px) {
+  body.dz-focus .dz-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 40%); }
+  body.dz-focus.dz-noside .dz-body { grid-template-rows: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .dz-top { flex-wrap: wrap; }
+  .dz-top #dz-name { flex: 1 1 100%; order: -1; }
+  .dz-top #dz-export { margin-left: auto; }
+  .dz-top .icon-btn { width: 40px; height: 40px; flex: none; }
+  .dz-top #dz-export { padding-left: 14px; padding-right: 14px; }
+  body.dz-focus .dz-top #dz-name, body.dz-focus .dz-top #dz-tpl { display: none; }
+}

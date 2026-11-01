@@ -596,6 +596,8 @@ DZ.edit = async (id) => {
       <input class="in" id="dz-name" value="${esc(name)}" aria-label="Design name">
       <button class="btn icon-btn" id="dz-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
       <button class="btn icon-btn" id="dz-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+      <button class="btn icon-btn" id="dz-panel" aria-label="Hide the panel" data-tip="Hide or show the side panel"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+      <button class="btn icon-btn" id="dz-focus" aria-label="Full screen design" data-tip="Full screen: the design fills the screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       <button class="btn icon-btn" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg></button>
       <button class="btn primary" id="dz-export">Export</button>
     </div>
@@ -625,7 +627,7 @@ DZ.edit = async (id) => {
   const tb = () => doc.sides ? 48 : 0;   // room above the design for the page tabs
   const fit = (crisp = true) => {
     // On phones the stage hugs the design's shape, so a wide card doesn't leave empty space above and below.
-    if (innerWidth < 900) { const sw = stage.clientWidth; stage.style.height = Math.round(Math.min(innerHeight * 0.58, (sw - 32) * doc.h / doc.w + 32 + tb())) + 'px'; }
+    if (innerWidth < 900 && !document.body.classList.contains('dz-focus')) { const sw = stage.clientWidth; stage.style.height = Math.round(Math.min(innerHeight * 0.58, (sw - 32) * doc.h / doc.w + 32 + tb())) + 'px'; }
     else stage.style.height = '';
     const r = stage.getBoundingClientRect(), pad = 16;
     fitK = Math.min((r.width - pad * 2) / doc.w, (Math.max(260, r.height) - tb() - pad * 2) / doc.h); k = fitK * z;
@@ -705,7 +707,7 @@ DZ.edit = async (id) => {
   })()); };
   const dropped = new Set(), made = new Set();   // pictures taken out (or made) while editing; tidied when leaving
   const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref)].filter(Boolean);
-  addEventListener('hashchange', function away() { removeEventListener('hashchange', away);
+  addEventListener('hashchange', function away() { removeEventListener('hashchange', away); focus(false);
     flush().then(async () => { const keep = docRefs(); for (const r of new Set([...dropped, ...made])) if (!keep.includes(r)) await Media.release(r); }); });
   // A change: redraw, remember for undo, save.
   let histT = null;
@@ -1056,6 +1058,20 @@ DZ.edit = async (id) => {
   stage.addEventListener('pointerup', ptUp); stage.addEventListener('pointercancel', ptUp);
   stage.addEventListener('wheel', (e) => { e.preventDefault(); const r = stage.getBoundingClientRect();
     zoomTo(z * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+  /* Full screen design: the editor covers the app (no menus), the browser's bars hide where allowed, and the
+     side panel can be tucked away so the design gets the whole screen. One button leaves both. */
+  let fsByUs = false;
+  const focus = (on) => {
+    const b = document.body; if (on === b.classList.contains('dz-focus')) return;
+    b.classList.toggle('dz-focus', on); if (!on) b.classList.remove('dz-noside');
+    const fb = $('#dz-focus');
+    if (fb) { fb.innerHTML = on ? '<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+      fb.dataset.tip = on ? 'Leave full screen' : 'Full screen: the design fills the screen'; fb.setAttribute('aria-label', fb.dataset.tip); fb.classList.toggle('primary', on); }
+    if (typeof FS !== 'undefined') { if (on && !FS.on() && FS.can()) { fsByUs = true; FS.set(true); } else if (!on && (fsByUs || FS.on())) { fsByUs = false; FS.set(false); } }
+    stage.style.height = ''; requestAnimationFrame(() => { fit(); redraw(); });
+  };
+  $('#dz-focus').onclick = () => focus(!document.body.classList.contains('dz-focus'));
+  $('#dz-panel').onclick = () => { document.body.classList.toggle('dz-noside'); requestAnimationFrame(() => { fit(); redraw(); }); };
   $('#dz-faces').onclick = (e) => { const f = e.target.closest('[data-face]')?.dataset.face; if (f) setFace(f); };
   stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') return frame(); zoomTo(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4)); };
