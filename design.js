@@ -36,6 +36,16 @@ const DZ_FIELDS = [['studio', 'Studio'], ['artist', 'Artist'], ['phone', 'Phone'
 const DZ_PIECE_FIELDS = /\{(title|placement|tags|date)\}/;
 const DZ_PALETTE = ['#000000', '#ffffff', '#1fb6a6', '#c9a24a', '#a8322b', '#e0605a', '#3b5bdb', '#7b4fa0', '#2e7d32', '#f0b860', '#8c9593'];
 
+/* ---------- Sizes ----------
+   Print designs are laid out at 300 dots per inch, so page pixels convert to real sizes. Posts stay in
+   pixels. The unit picked in the editor is remembered (one for print, one for posts). */
+const DZ_UNITS = { mm: [300 / 25.4, 1], cm: [300 / 2.54, 2], in: [300, 2], px: [1, 0] };   // page px per unit, decimals shown
+const dzUnit = (doc) => DZ_KINDS[doc.kind]?.social ? Settings.get('dz_unit_post', 'px') : Settings.get('dz_unit', 'mm');
+const dzToU = (doc, px) => { const [k, d] = DZ_UNITS[dzUnit(doc)]; return +(px / k).toFixed(d); };
+const dzFromU = (doc, v) => v * DZ_UNITS[dzUnit(doc)][0];
+// Keep proportions: pictures and the logo by default, shapes not; text sizes with its letters.
+const dzKeep = (l) => l.t === 'text' || (l.keep ?? l.t !== 'shape');
+
 /* ---------- Fonts ---------- */
 const DZF = {
   loaded: new Set(['Inter', 'Pirata One', 'Georgia', 'Arial']),
@@ -538,6 +548,7 @@ DZ.edit = async (id) => {
     if (!l) return;
     Object.assign(selBox.style, { left: l.x * k + 'px', top: l.y * k + 'px', width: l.w * k + 'px', height: (l.h || 1) * k + 'px', transform: `rotate(${l.rot || 0}deg)` });
     selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('cropping', cropping);
+    for (const [kk, v] of [['w', l.w], ['h', l.h || 0]]) { const i = side?.querySelector(`[data-dim="${kk}"]`); if (i && document.activeElement !== i) i.value = dzToU(doc, v); }
   };
 
   // Saving: a few seconds after changes, with a small thumbnail for the list; pictures listed for backups.
@@ -662,6 +673,14 @@ DZ.edit = async (id) => {
         <button data-act="fx" class="${l.fx ? 'on' : ''}" title="Flip left to right">⇋<span>Flip</span></button>
         <button data-act="fy" class="${l.fy ? 'on' : ''}" title="Flip upside down">⇵<span>Flip</span></button>
         <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
+      <div class="dz-dims">
+        <label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="w" value="${dzToU(doc, l.w)}"></label>
+        <button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
+          <svg viewBox="0 0 24 24">${dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
+            : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>
+        <label><span>H</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="h" value="${dzToU(doc, l.h || 0)}" ${l.t === 'text' ? 'disabled title="Text height follows the text; use Size for the letters"' : ''}></label>
+        <select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
+      </div>
       ${l.t === 'text' ? `
         <textarea class="in dz-text" data-k="text" rows="3">${esc(l.text)}</textarea>
         <div class="dz-fields">${DZ_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>
@@ -798,7 +817,7 @@ DZ.edit = async (id) => {
       if (sy) {   // corners keep the proportions; text scales its font with it
         const s = Math.max(w / o.w, hgt / (o.h || 1)); w = o.w * s; hgt = (o.h || 1) * s;
         if (o.t === 'text') l.size = Math.max(6, o.size * s);
-        if (o.t === 'shape' && o.shape !== 'line' && !e.shiftKey) { w = Math.max(20, o.w + sx * lx); hgt = Math.max(10, (o.h || 1) + sy * ly); }
+        if (o.t !== 'text' && o.shape !== 'line' && dzKeep(o) === e.shiftKey) { w = Math.max(20, o.w + sx * lx); hgt = Math.max(10, (o.h || 1) + sy * ly); }
       } else hgt = o.h || 1;
       // Keep the opposite edge where it was.
       const ocx = o.x + o.w / 2, ocy = o.y + (o.h || 0) / 2;
@@ -883,6 +902,7 @@ DZ.edit = async (id) => {
       if (a === 'lock') l.lock = !l.lock;
       if (a === 'fx') l.fx = !l.fx;
       if (a === 'fy') l.fy = !l.fy;
+      if (a === 'keep') l.keep = !dzKeep(l);
       changed(true); return drawSide();
     }
     if (d('al')) { l.al = d('al'); changed(true); return drawSide(); }
@@ -919,6 +939,15 @@ DZ.edit = async (id) => {
   side.addEventListener('pointerup', ldrop); side.addEventListener('pointercancel', ldrop);
   side.addEventListener('input', (e) => {
     const t = e.target, l = layer(), key = t.dataset.k;
+    if (t.dataset.dim && l) {
+      const v = dzFromU(doc, +t.value); if (!(v > 0)) return;
+      const cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, r = l.w / (l.h || 1), keep = dzKeep(l) && l.t !== 'text';
+      if (t.dataset.dim === 'w') { l.w = v; if (keep) l.h = v / r; } else { l.h = v; if (keep) l.w = v * r; }
+      l.x = cx - l.w / 2; if (l.t !== 'text') l.y = cy - l.h / 2;
+      const other = side.querySelector(`[data-dim="${t.dataset.dim === 'w' ? 'h' : 'w'}"]`);
+      if (other && keep) other.value = dzToU(doc, t.dataset.dim === 'w' ? l.h : l.w);
+      return changed();
+    }
     if (t.dataset.v) { doc.vals[t.dataset.v] = t.value; return changed(); }
     if (t.dataset.cpick) { const kk = t.dataset.cpick; if (kk === 'bg') doc.bg.c = t.value; else if (l) l[kk] = t.value; return changed(); }
     if (key === 'bgop') { doc.bg.op = +t.value; t.closest('.dz-sl').querySelector('b').textContent = Math.round(t.value * 100) + '%'; return changed(); }
@@ -949,6 +978,8 @@ DZ.edit = async (id) => {
     }
     if (t.hasAttribute('data-fit') && l) { l.fit = t.checked ? 1 : 0; return changed(true); }
     if (t.dataset.k === 'arc') return drawSide();
+    if (t.hasAttribute('data-unit')) { await Settings.set(DZ_KINDS[doc.kind].social ? 'dz_unit_post' : 'dz_unit', t.value); return drawSide(); }
+    if (t.dataset.dim) { changed(true); return; }
     if (t.hasAttribute('data-cover') && l) { l.cover = t.checked ? 1 : 0; changed(true); return drawSide(); }
     if (t.dataset.k === 'text' || t.dataset.v) changed(true);
   });
