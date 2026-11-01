@@ -687,7 +687,7 @@ DZ.edit = async (id) => {
       <button class="btn primary" id="dz-export">Export</button>
     </div>
     <div class="dz-body">
-      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><div id="dz-sel" hidden>
+      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
@@ -725,7 +725,7 @@ DZ.edit = async (id) => {
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
     const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
-    drawFolds(); placeSel();
+    drawFolds(); drawCut(); placeSel();
   };
   // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
   // drawing is stretched; it's redrawn sharp a moment after zooming stops.
@@ -748,7 +748,8 @@ DZ.edit = async (id) => {
   };
   const frame = () => { z = 1; vx = vy = 0; fit(); redraw(); };
   let drawing = null;
-  let cropping = false;   // crop mode for the selected picture or shape
+  let cropping = false;
+  let cut = null, cutDrag = null;   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
   const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) placeSel(); };
   // Page tabs (top right of the design): front, back and the master page under both.
   const drawFaces = () => {
@@ -756,7 +757,7 @@ DZ.edit = async (id) => {
     const nm = dzFaceNames(doc), n = (f) => doc.layers.filter(l => dzSide(l) === f).length;
     b.innerHTML = ['f', 'b', 'm'].map(f => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Backgrounds and frames shown under both sides"' : ''}>${nm[f]}${n(f) ? ` <small>${n(f)}</small>` : ''}</button>`).join('');
   };
-  const setFace = (f) => { if (f === face) return; endCrop(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
+  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
   // Leaving crop mode: an uncropped item drops its crop entirely.
   const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
@@ -766,7 +767,7 @@ DZ.edit = async (id) => {
     if (mo) mo.innerHTML = picked().map(m => `<i class="dz-mo ${m.lock ? 'locked' : ''}" style="left:${m.x * k}px;top:${m.y * k}px;width:${m.w * k}px;height:${(m.h || 1) * k}px;transform:rotate(${m.rot || 0}deg)"></i>`).join('');
     stage.classList.toggle('picking', picking);
     const l = layer();
-    selBox.hidden = !l;
+    selBox.hidden = !l || !!cut;
     if (!l) return;
     Object.assign(selBox.style, { left: l.x * k + 'px', top: l.y * k + 'px', width: l.w * k + 'px', height: (l.h || 1) * k + 'px', transform: `rotate(${l.rot || 0}deg)` });
     selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('cropping', cropping);
@@ -802,7 +803,7 @@ DZ.edit = async (id) => {
     const push = () => { const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
     if (now) push(); else histT = setTimeout(push, 450);
   };
-  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; if (!layer()) sel = null;
+  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
@@ -945,6 +946,7 @@ DZ.edit = async (id) => {
       return;
     }
     const kindName = l.t === 'text' ? 'Text' : l.t === 'image' ? (l.logo ? 'Logo' : 'Picture') : 'Shape';
+    if (cut) { side.innerHTML = cutPanel(l); return; }
     if (cropping) {
       side.innerHTML = `<div class="dz-lh"><b>Crop ${kindName.toLowerCase()}</b><button class="btn small primary" data-act="cropdone">Done</button></div>
         <p class="muted" style="font-size:13px;margin:0 0 10px">Drag the edges or corners to cut away what you don't want. Drag inside the box to choose which part shows. The faint part is what gets cut.</p>
@@ -964,6 +966,7 @@ DZ.edit = async (id) => {
         <button data-act="clip" class="${clipped(l) ? 'on' : ''}" ${F().indexOf(l) ? '' : 'disabled'} title="Clip to the layer below: only shows inside it">↳<span>Clip</span></button>
         ${l.t === 'image' ? (l.ref || l.logo ? '<button data-act="toshape" title="Trace the picture into a shape you can fill">◆<span>To shape</span></button>' : '')
           : '<button data-act="flatten1" title="Flatten into a picture: its fill and outline become permanent">▦<span>Flatten</span></button>'}
+        <button data-act="cut" title="Select part of it with a box, ellipse, lasso or by colour, then delete, split or move that part">⬚<span>Select area</span></button>
         <button data-act="pick" title="Select more items">☐<span>Select</span></button>
         <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
@@ -1006,7 +1009,7 @@ DZ.edit = async (id) => {
       ${fsec('Save', `<div class="dz-combine"><button class="btn small" data-mact="refs">Save to references</button><button class="btn small" data-mact="png">Save as PNG</button>
         ${l.t !== 'image' || l.crop || l.r ? '<button class="btn small" data-mact="merge">Turn into a picture</button>' : ''}</div>`, { fold: true })}`;
   };
-  const select = (idv) => { if (idv !== sel) endCrop(); sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
+  const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
   // Several: outside selection mode one item left becomes a normal selection.
   const setPicks = (ids) => {
     endCrop(); picks = new Set(ids); panel = null;
@@ -1077,6 +1080,149 @@ DZ.edit = async (id) => {
       rot: l.rot || 0, op: l.op ?? 1, fx: l.fx, fy: l.fy, name: (l.name || layerName(l)) + ' shape', ...(l.side ? { side: l.side } : {}), ...(l.clip ? { clip: true } : {}) };
     doc.layers[doc.layers.indexOf(l)] = sh; sel = sh.id; changed(true); drawSide();
     toast('Now a shape: give it a colour, gradient or texture. Undo brings the picture back.', 5000);
+  };
+  /* ---------- Selecting an area ----------
+     Part of one item is selected with a box, ellipse, lasso (with smoothing for a steadier line) or by colour,
+     added to or taken from the selection, feathered for a soft edge, inverted or moved. Then that part can be
+     deleted, kept alone (crop), split off into its own layer (isolate), split off and moved, or copied. The item
+     is worked on as a picture of itself (shapes and text become pictures once a change is made); the selection
+     is a mask the same size as that picture. Pen setting: draw with a finger or stylus, or with a stylus only
+     (fingers then move and zoom the view). */
+  const copt = (() => { try { return { tool: 'lasso', mode: 'new', lazy: 30, tol: 20, feather: 0, ...JSON.parse(Settings.get('dz_cut', '{}')) }; } catch { return { tool: 'lasso', mode: 'new', lazy: 30, tol: 20, feather: 0 }; } })();
+  const saveCopt = () => Settings.set('dz_cut', JSON.stringify(copt));
+  const blank = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  const startCut = async (l) => {
+    if (l.lock) return toast('Unlock it first.');
+    endCrop();
+    const f = await flatten([l], 3000); if (!f) return toast('Nothing visible to select from.');
+    cut = { id: l.id, R: { x: f.bx, y: f.by, w: f.bw, h: f.bh }, sc: f.cv.width / f.bw, cv: f.cv, mask: blank(f.cv.width, f.cv.height), any: false, soft: null, data: null };
+    placeSel(); drawSide(); drawCut();
+  };
+  function endCut() { if (!cut) return; cut = null; cutDrag = null; drawCut(); placeSel(); }
+  // The selection with its feather (soft edge), at the picture's size.
+  const soft = () => {
+    if (cut.soft) return cut.soft;
+    const fp = copt.feather * cut.sc; if (!fp) return (cut.soft = cut.mask);
+    const c = blank(cut.mask.width, cut.mask.height), x = c.getContext('2d'); x.filter = `blur(${fp / 2}px)`; x.drawImage(cut.mask, 0, 0); x.filter = 'none';
+    return (cut.soft = c);
+  };
+  // On screen: outside the selection is dimmed; the shape being drawn is outlined.
+  function drawCut() {
+    const oc = $('#dz-cutcv'); if (!oc) return;
+    const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
+    if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
+    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !cut; if (!cut) return;
+    const R = cut.R, rx = R.x * k, ry = R.y * k, rw = R.w * k, rh = R.h * k;
+    if (cut.any) { x.save(); x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, 0, W, H); x.globalCompositeOperation = 'destination-out'; x.drawImage(soft(), rx, ry, rw, rh); x.restore(); }
+    x.setLineDash([6, 4]); x.lineWidth = 1.5; x.strokeStyle = '#1fb6a6'; x.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
+    const d = cutDrag; if (!d) return;
+    x.strokeStyle = '#fff'; x.setLineDash([5, 4]); x.beginPath();
+    if (d.pts) { d.pts.forEach(([a, b], i) => i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k));
+      x.stroke(); if (d.cur) { x.setLineDash([2, 3]); x.strokeStyle = 'rgba(255,255,255,.6)'; x.beginPath(); const lp = d.pts.at(-1); x.moveTo(lp[0] * k, lp[1] * k); x.lineTo(d.cur.x * k, d.cur.y * k); x.stroke(); } }
+    else if (d.p1) { const a = d.p0, b = d.p1, l0 = Math.min(a.x, b.x) * k, t0 = Math.min(a.y, b.y) * k, ww = Math.abs(b.x - a.x) * k, hh = Math.abs(b.y - a.y) * k;
+      if (copt.tool === 'ellipse') x.ellipse(l0 + ww / 2, t0 + hh / 2, ww / 2, hh / 2, 0, 0, Math.PI * 2); else x.rect(l0, t0, ww, hh); x.stroke(); }
+  }
+  // Adds a new area (drawn by `draw` in picture pixels) to the selection: replace, add or take away.
+  const applySel = (draw) => {
+    const m = cut.mask, mx = m.getContext('2d'), tmp = blank(m.width, m.height), tx = tmp.getContext('2d');
+    tx.fillStyle = '#fff'; draw(tx);
+    if (copt.mode === 'new') mx.clearRect(0, 0, m.width, m.height);
+    mx.globalCompositeOperation = copt.mode === 'sub' ? 'destination-out' : 'source-over'; mx.drawImage(tmp, 0, 0); mx.globalCompositeOperation = 'source-over';
+    cut.any = copt.mode !== 'sub' || cut.any; cut.soft = null; drawCut(); drawSide();
+  };
+  const rp = (p) => [(p.x - cut.R.x) * cut.sc, (p.y - cut.R.y) * cut.sc];
+  const cutDown = (e) => {
+    if (Settings.get('dz_pen', 'any') === 'pen' && e.pointerType === 'touch') return;   // stylus only: fingers move the view
+    e.dzHit = true; e.preventDefault(); page.setPointerCapture(e.pointerId);
+    const p = toPage(e);
+    if (copt.moving) { cutDrag = { move: true, p0: p, m0: (() => { const c = blank(cut.mask.width, cut.mask.height); c.getContext('2d').drawImage(cut.mask, 0, 0); return c; })() }; return; }
+    if (copt.tool === 'color') {   // every pixel close to the tapped colour
+      const c = cut.cv, W = c.width, H = c.height, [ix, iy] = rp(p).map(Math.floor); if (ix < 0 || iy < 0 || ix >= W || iy >= H) return;
+      cut.data ||= c.getContext('2d').getImageData(0, 0, W, H).data;
+      const px = cut.data, o = (iy * W + ix) * 4, tr = px[o], tg = px[o + 1], tb = px[o + 2], ta = px[o + 3], lim = copt.tol * 2.55;
+      const id = new ImageData(W, H), q = id.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const hit = ta < 24 ? px[i + 3] <= 24 + lim : px[i + 3] > 24 && Math.max(Math.abs(px[i] - tr), Math.abs(px[i + 1] - tg), Math.abs(px[i + 2] - tb)) <= lim;
+        if (hit) { q[i] = q[i + 1] = q[i + 2] = q[i + 3] = 255; }
+      }
+      return applySel((x) => { const t2 = blank(W, H); t2.getContext('2d').putImageData(id, 0, 0); x.drawImage(t2, 0, 0); });
+    }
+    cutDrag = copt.tool === 'lasso' ? { pts: [[p.x, p.y]], lp: p } : { p0: p, p1: null };
+  };
+  const cutMove = (e) => {
+    if (pts.size > 1) { cutDrag = null; return drawCut(); }   // a second finger: zoom instead
+    const p = toPage(e), d = cutDrag;
+    if (d.move) {
+      const x = cut.mask.getContext('2d'); x.clearRect(0, 0, cut.mask.width, cut.mask.height);
+      x.drawImage(d.m0, (p.x - d.p0.x) * cut.sc, (p.y - d.p0.y) * cut.sc); cut.soft = null; return drawCut();
+    }
+    if (d.pts) {   // smoothing: the line trails the pointer on a string, so wobbles don't show
+      const L = copt.lazy * 0.6 / k, dx = p.x - d.lp.x, dy = p.y - d.lp.y, dist = Math.hypot(dx, dy);
+      if (dist > L) { const t = (dist - L) / dist; d.lp = { x: d.lp.x + dx * t, y: d.lp.y + dy * t };
+        const last = d.pts.at(-1); if (Math.hypot(d.lp.x - last[0], d.lp.y - last[1]) * k > 1.5) d.pts.push([d.lp.x, d.lp.y]); }
+      d.cur = L ? p : null;
+    } else d.p1 = p;
+    drawCut();
+  };
+  const cutUp = () => {
+    const d = cutDrag; cutDrag = null;
+    if (d.move) { drawCut(); return; }
+    if (d.pts) { if (d.pts.length < 3) return drawCut();
+      return applySel((x) => { x.beginPath(); d.pts.forEach((pt, i) => { const [a, b] = rp({ x: pt[0], y: pt[1] }); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.closePath(); x.fill(); }); }
+    if (!d.p1 || Math.abs(d.p1.x - d.p0.x) * k < 3 || Math.abs(d.p1.y - d.p0.y) * k < 3) return drawCut();
+    const [ax, ay] = rp(d.p0), [bx, by] = rp(d.p1), l0 = Math.min(ax, bx), t0 = Math.min(ay, by), ww = Math.abs(bx - ax), hh = Math.abs(by - ay);
+    applySel((x) => { x.beginPath(); if (copt.tool === 'ellipse') x.ellipse(l0 + ww / 2, t0 + hh / 2, ww / 2, hh / 2, 0, 0, Math.PI * 2); else x.rect(l0, t0, ww, hh); x.fill(); });
+  };
+  // What to do with the selection. Results are pictures where the item was; Undo brings the item back.
+  const cutOp = async (a) => {
+    if (!cut) return;
+    const l = doc.layers.find(x => x.id === cut.id); if (!l) return endCut();
+    const m = cut.mask, W = m.width, H = m.height;
+    if (a === 'done') { endCut(); return drawSide(); }
+    if (a === 'clear') { m.getContext('2d').clearRect(0, 0, W, H); cut.any = false; cut.soft = null; drawCut(); return drawSide(); }
+    if (a === 'all') { const x = m.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); cut.any = true; cut.soft = null; drawCut(); return drawSide(); }
+    if (a === 'invert') { const c = blank(W, H), x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.globalCompositeOperation = 'destination-out'; x.drawImage(m, 0, 0);
+      const mx = m.getContext('2d'); mx.clearRect(0, 0, W, H); mx.drawImage(c, 0, 0); cut.any = true; cut.soft = null; drawCut(); return drawSide(); }
+    if (a === 'movesel') { copt.moving = !copt.moving; return drawSide(); }
+    if (!cut.any) return toast('Select an area first.');
+    const part = (inside) => { const c = blank(W, H), x = c.getContext('2d'); x.drawImage(cut.cv, 0, 0); x.globalCompositeOperation = inside ? 'destination-in' : 'destination-out'; x.drawImage(soft(), 0, 0); return c; };
+    const pic = async (c, nm) => { const ref = await Media.save(await pngOf(c), 'png'); made.add(ref);
+      return { id: dzId(), t: 'image', ref, x: cut.R.x, y: cut.R.y, w: cut.R.w, h: cut.R.h, op: 1, rot: 0, name: nm, ...(l.side ? { side: l.side } : {}), ...(l.clip ? { clip: true } : {}) }; };
+    const nm = l.name || layerName(l), i = doc.layers.indexOf(l);
+    let pick = null;
+    if (a === 'del') doc.layers[i] = await pic(part(false), nm);
+    else if (a === 'crop') doc.layers[i] = await pic(part(true), nm);
+    else if (a === 'copy' || a === 'iso' || a === 'lift') {
+      // The new piece goes above the item's clip group, so layers clipped to the item stay clipped to it.
+      const piece = await pic(part(true), nm + (a === 'copy' ? ' (copy)' : ' (cut)'));
+      if (a !== 'copy') doc.layers[i] = await pic(part(false), nm);
+      let j = i + 1; while (j < doc.layers.length && doc.layers[j].clip && !l.clip) j++;
+      doc.layers.splice(j, 0, piece); pick = piece.id;
+    }
+    else return;
+    const keep = a === 'del' || a === 'crop' ? doc.layers[i].id : pick;
+    cut = null; cutDrag = null; copt.moving = false; drawCut();
+    sel = keep; changed(true); drawSide();
+    toast({ del: 'Deleted the selected area.', crop: 'Kept only the selected area.', copy: 'Copied to a new layer.', iso: 'Split into two layers.', lift: 'Cut out: drag it to move.' }[a] + ' Undo brings it back.');
+  };
+  const cutPanel = (l) => {
+    const pen = Settings.get('dz_pen', 'any'), T = copt.tool;
+    return `<div class="dz-lh"><b>Select an area</b><button class="btn small primary" data-cut="done">Done</button></div>
+      <div class="seg dz-ctools">${[['box', '▭ Box'], ['ellipse', '◯ Ellipse'], ['lasso', '✎ Lasso'], ['color', '◉ Colour']].map(([t, n]) => `<button data-ctool="${t}" class="${T === t ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="seg" style="margin:6px 0">${[['new', 'New'], ['add', 'Add'], ['sub', 'Take away']].map(([m, n]) => `<button data-cmode="${m}" class="${copt.mode === m ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:0 0 6px">${copt.moving ? 'Drag on the design to move the selection outline.' : T === 'color' ? 'Tap a colour on the item: every part close to it is selected.' : T === 'lasso' ? 'Draw round the part you want.' : 'Drag across the part you want.'}</p>
+      ${T === 'lasso' ? slider('c:lazy', 'Smoothing', 0, 100, 1, copt.lazy, v => v + '%') : ''}
+      ${T === 'color' ? slider('c:tol', 'Colour range', 0, 100, 1, copt.tol, v => v + '%') : ''}
+      ${slider('c:feather', 'Feather (soft edge)', 0, 80, 1, copt.feather, v => v + ' px')}
+      <div class="dz-combine" style="margin-bottom:10px"><button class="btn small" data-cut="all">Select all</button><button class="btn small" data-cut="invert" ${cut.any ? '' : 'disabled'}>Invert</button>
+        <button class="btn small ${copt.moving ? 'primary' : ''}" data-cut="movesel" ${cut.any ? '' : 'disabled'}>Move selection</button><button class="btn small" data-cut="clear" ${cut.any ? '' : 'disabled'}>Clear</button></div>
+      <div class="lbl">With the selected area</div>
+      <div class="dz-combine"><button class="btn small" data-cut="lift" ${cut.any ? '' : 'disabled'}>Cut out and move</button><button class="btn small" data-cut="iso" ${cut.any ? '' : 'disabled'}>Split into two layers</button>
+        <button class="btn small" data-cut="copy" ${cut.any ? '' : 'disabled'}>Copy to new layer</button><button class="btn small" data-cut="crop" ${cut.any ? '' : 'disabled'}>Keep only this</button>
+        <button class="btn small danger" data-cut="del" ${cut.any ? '' : 'disabled'}>Delete area</button></div>
+      ${l.t !== 'image' ? '<p class="muted" style="font-size:11px;margin:8px 0 0">This item becomes a picture once you change it.</p>' : ''}
+      ${fsec('Pen', `<div class="seg">${[['any', 'Finger or stylus'], ['pen', 'Stylus only']].map(([v, n]) => `<button data-pen="${v}" class="${pen === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+        <p class="muted" style="font-size:11px;margin:6px 0 0">Stylus only: draw with the pen; fingers move and zoom the view.</p>`, { fold: pen === 'any' })}`;
   };
   const saveRef = async (ids) => {
     const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
@@ -1226,6 +1372,7 @@ DZ.edit = async (id) => {
   page.addEventListener('pointerdown', (e) => {
     cancelPress();
     if (pinch || pts.size > 1) return;
+    if (cut) return cutDown(e);
     const h = e.target.closest('[data-h]')?.dataset.h, p = toPage(e);
     if (!h || many()) {
       const hl = hit(p);
@@ -1249,6 +1396,7 @@ DZ.edit = async (id) => {
     drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, l0: { ...l, crop: l.crop ? { ...l.crop } : null } };
   });
   page.addEventListener('pointermove', (e) => {
+    if (cutDrag) return cutMove(e);
     if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) cancelPress();
     if (!drag || pinch) return;
     if (drag.h === 'group') {
@@ -1302,7 +1450,7 @@ DZ.edit = async (id) => {
     }
     redraw();
   });
-  const end = () => { cancelPress(); if (!drag) return; const d = drag; drag = null; guides(false, false);
+  const end = () => { cancelPress(); if (cutDrag) return cutUp(); if (!drag) return; const d = drag; drag = null; guides(false, false);
     if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
     changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
@@ -1320,6 +1468,12 @@ DZ.edit = async (id) => {
       return;
     }
     const l = layer(); if (!l) return;
+    if (cut) {
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); cutOp('del'); }
+      if (e.key === 'Escape') { endCut(); drawSide(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') { e.preventDefault(); cutOp('invert'); }
+      return;
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') { doc.layers = doc.layers.filter(x => x !== l); sel = null; changed(true); drawSide(); }
     const step = e.shiftKey ? 20 : 4, mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (mv && !l.lock) { e.preventDefault(); l.x += mv[0]; l.y += mv[1]; changed(); }
@@ -1409,6 +1563,7 @@ DZ.edit = async (id) => {
       if (a === 'pick') return startPicking(l.id);
       if (a === 'flatten' || a === 'flatten1') return merge([l.id]);
       if (a === 'toshape') return toShape(l);
+      if (a === 'cut') return startCut(l);
       if (a === 'clip') { if (F().indexOf(l) > 0) l.clip = !l.clip || undefined; }
       if (a === 'del') { doc.layers.splice(i, 1); sel = null; }
       if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id; }
@@ -1423,6 +1578,10 @@ DZ.edit = async (id) => {
       changed(true); return drawSide();
     }
     if (d('al')) { l.al = d('al'); changed(true); return drawSide(); }
+    if (d('ctool')) { copt.tool = d('ctool'); saveCopt(); return drawSide(); }
+    if (d('cmode')) { copt.mode = d('cmode'); saveCopt(); return drawSide(); }
+    if (d('pen')) { await Settings.set('dz_pen', d('pen')); return drawSide(); }
+    if (d('cut')) return cutOp(d('cut'));
     if (d('fm')) {
       const m = d('fm');
       if (m === 'solid') delete l.fm;
@@ -1522,6 +1681,12 @@ DZ.edit = async (id) => {
     }
     if (t.dataset.v) { doc.vals[t.dataset.v] = t.value; return changed(); }
     if (t.dataset.cpick) { const kk = t.dataset.cpick; if (kk === 'bg') doc.bg.c = t.value; else if (kk === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = t.value; } else if (l) l[kk] = t.value; return changed(); }
+    if (/^c:/.test(key || '')) {   // selection settings
+      const kk = key.slice(2); copt[kk] = +t.value; saveCopt();
+      const b = t.closest('.dz-sl')?.querySelector('b'); if (b) b.textContent = kk === 'feather' ? t.value + ' px' : t.value + '%';
+      if (kk === 'feather' && cut) { cut.soft = null; drawCut(); }
+      return;
+    }
     if (l && /^[gt]:/.test(key || '')) {   // gradient and texture sliders
       const [o, kk] = key.split(':'), tg = o === 'g' ? l.grad : l.tex; if (!tg) return;
       tg[kk] = +t.value;
