@@ -102,7 +102,7 @@ function dzStar(x, cx, cy, r) {
   x.closePath();
 }
 // Draws the design onto a canvas at `scale` (canvas px per page px). Text layers get their height measured.
-async function dzDraw(cv, doc, scale = 1) {
+async function dzDraw(cv, doc, scale = 1, opts = {}) {
   await DZF.all(doc);
   const x = cv.getContext('2d'), W = doc.w * scale, H = doc.h * scale;
   x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
@@ -140,9 +140,10 @@ async function dzDraw(cv, doc, scale = 1) {
     x.save();
     x.setTransform(scale, 0, 0, scale, 0, 0);
     x.translate(l.x + l.w / 2, l.y + (l.h || 0) / 2); x.rotate((l.rot || 0) * Math.PI / 180);
-    if (l.fx || l.fy) x.scale(l.fx ? -1 : 1, l.fy ? -1 : 1);   // mirrored
     x.globalAlpha = l.op ?? 1;
+    const flip = () => { if (l.fx || l.fy) x.scale(l.fx ? -1 : 1, l.fy ? -1 : 1); };   // mirrored
     if (l.t === 'text') {
+      flip();
       const px = l._px || l.size, lh = px * (l.lh || 1.2); x.font = dzFontStr(doc, l, px);
       if ('letterSpacing' in x) x.letterSpacing = (l.ls || 0) + 'px';
       x.fillStyle = dzCol(doc, l.c) || '#000'; x.textBaseline = 'alphabetic';
@@ -165,27 +166,41 @@ async function dzDraw(cv, doc, scale = 1) {
         const ax = l.al === 'center' ? 0 : l.al === 'right' ? l.w / 2 : -l.w / 2;
         lines.forEach((ln, i) => x.fillText(ln, ax, -l.h / 2 + i * lh + px * 0.9));
       }
-    } else if (l.t === 'image') {
-      const r = Math.min(l.r || 0, l.w / 2, l.h / 2), clip = l.cover || r;
-      if (clip) { x.save(); x.beginPath(); x.roundRect(-l.w / 2, -l.h / 2, l.w, l.h, r); x.clip(); }
-      // cover = fill the box and crop the overflow (photos); otherwise the whole picture fits inside (logos, stickers).
-      if (im) { const s = (l.cover ? Math.max : Math.min)(l.w / im.naturalWidth, l.h / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
-        x.drawImage(im, -w / 2 + (l.cover ? (l.px || 0) * (w - l.w) / 2 : 0), -h / 2 + (l.cover ? (l.py || 0) * (h - l.h) / 2 : 0), w, h); }
-      else if (l.slot != null) { x.fillStyle = 'rgba(128,128,128,.18)'; x.fillRect(-l.w / 2, -l.h / 2, l.w, l.h);
-        x.fillStyle = 'rgba(128,128,128,.8)'; x.font = `600 ${Math.max(14, Math.min(l.w, l.h) * 0.08)}px Inter, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('Photo', 0, 0); }
-      else if (l.logo) { x.strokeStyle = 'rgba(128,128,128,.6)'; x.setLineDash([10, 8]); x.lineWidth = 3; x.strokeRect(-l.w / 2, -l.h / 2, l.w, l.h); }
-      if (clip) x.restore();
-      const st = dzCol(doc, l.stroke);
-      if (st && l.sw) { x.beginPath(); x.roundRect(-l.w / 2, -l.h / 2, l.w, l.h, r); x.strokeStyle = st; x.lineWidth = l.sw; x.stroke(); }
-    } else if (l.t === 'shape') {
-      const f = dzCol(doc, l.fill), st = dzCol(doc, l.stroke), sw = l.sw || 0;
-      x.beginPath();
-      if (l.shape === 'ellipse') x.ellipse(0, 0, l.w / 2, l.h / 2, 0, 0, Math.PI * 2);
-      else if (l.shape === 'star') dzStar(x, 0, 0, Math.min(l.w, l.h) / 2);
-      else if (l.shape === 'line') { x.moveTo(-l.w / 2, 0); x.lineTo(l.w / 2, 0); }
-      else x.roundRect(-l.w / 2, -l.h / 2, l.w, l.h, Math.min(l.r || 0, l.w / 2, l.h / 2));
-      if (l.shape === 'line') { x.strokeStyle = st || f || '#000'; x.lineWidth = Math.max(1, sw || l.h); x.lineCap = 'round'; x.stroke(); }
-      else { if (f) { x.fillStyle = f; x.fill(); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
+    } else {
+      // Pictures and shapes. A crop shows part of the full picture or shape: `crop` is the kept part
+      // (fractions of the whole); the box is that part, and the whole sits around it, clipped away.
+      const body = (L) => {
+        x.save(); flip();
+        if (L.t === 'image') {
+        const r = Math.min(L.r || 0, L.w / 2, L.h / 2), clip = L.cover || r;
+        if (clip) { x.save(); x.beginPath(); x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, r); x.clip(); }
+        // cover = fill the box and crop the overflow (photos); otherwise the whole picture fits inside (logos, stickers).
+        if (im) { const s = (L.cover ? Math.max : Math.min)(L.w / im.naturalWidth, L.h / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
+          x.drawImage(im, -w / 2 + (L.cover ? (L.px || 0) * (w - L.w) / 2 : 0), -h / 2 + (L.cover ? (L.py || 0) * (h - L.h) / 2 : 0), w, h); }
+        else if (L.slot != null) { x.fillStyle = 'rgba(128,128,128,.18)'; x.fillRect(-L.w / 2, -L.h / 2, L.w, L.h);
+          x.fillStyle = 'rgba(128,128,128,.8)'; x.font = `600 ${Math.max(14, Math.min(L.w, L.h) * 0.08)}px Inter, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('Photo', 0, 0); }
+        else if (L.logo) { x.strokeStyle = 'rgba(128,128,128,.6)'; x.setLineDash([10, 8]); x.lineWidth = 3; x.strokeRect(-L.w / 2, -L.h / 2, L.w, L.h); }
+        if (clip) x.restore();
+        const st = dzCol(doc, L.stroke);
+        if (st && L.sw) { x.beginPath(); x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, r); x.strokeStyle = st; x.lineWidth = L.sw; x.stroke(); }
+      } else if (L.t === 'shape') {
+        const f = dzCol(doc, L.fill), st = dzCol(doc, L.stroke), sw = L.sw || 0;
+        x.beginPath();
+        if (L.shape === 'ellipse') x.ellipse(0, 0, L.w / 2, L.h / 2, 0, 0, Math.PI * 2);
+        else if (L.shape === 'star') dzStar(x, 0, 0, Math.min(L.w, L.h) / 2);
+        else if (L.shape === 'line') { x.moveTo(-L.w / 2, 0); x.lineTo(L.w / 2, 0); }
+        else x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, Math.min(L.r || 0, L.w / 2, L.h / 2));
+        if (L.shape === 'line') { x.strokeStyle = st || f || '#000'; x.lineWidth = Math.max(1, sw || L.h); x.lineCap = 'round'; x.stroke(); }
+        else { if (f) { x.fillStyle = f; x.fill(); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
+        }
+        x.restore();
+      };
+      const c = l.crop;
+      if (c && (c.w < 1 || c.h < 1 || opts.ghost === l.id)) {
+        const FW = l.w / c.w, FH = l.h / c.h, ox = (0.5 - (c.x + c.w / 2)) * FW, oy = (0.5 - (c.y + c.h / 2)) * FH, full = { ...l, w: FW, h: FH };
+        if (opts.ghost === l.id) { x.save(); x.globalAlpha *= 0.28; x.translate(ox, oy); body(full); x.restore(); }   // the part being cut away, faint
+        x.save(); x.beginPath(); x.rect(-l.w / 2, -l.h / 2, l.w, l.h); x.clip(); x.translate(ox, oy); body(full); x.restore();
+      } else body(l);
     }
     x.restore();
   }
@@ -470,7 +485,7 @@ DZ.edit = async (id) => {
     <div class="dz-body">
       <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
-        <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h rot" data-h="rot"></i></div>
+        <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div></div>
       <div class="dz-side" id="dz-side"></div>
     </div></div>`;
@@ -490,13 +505,17 @@ DZ.edit = async (id) => {
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px';
   };
   let drawing = null;
-  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, k * Math.min(2, devicePixelRatio || 1)); if (job === drawing) placeSel(); };
+  let cropping = false;   // crop mode for the selected picture or shape
+  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, k * Math.min(2, devicePixelRatio || 1), { ghost: cropping ? sel : null }); if (job === drawing) placeSel(); };
+  // Leaving crop mode: an uncropped item drops its crop entirely.
+  const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
+    if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
   const placeSel = () => {
     const l = layer();
     selBox.hidden = !l;
     if (!l) return;
     Object.assign(selBox.style, { left: l.x * k + 'px', top: l.y * k + 'px', width: l.w * k + 'px', height: (l.h || 1) * k + 'px', transform: `rotate(${l.rot || 0}deg)` });
-    selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text');
+    selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('cropping', cropping);
   };
 
   // Saving: a few seconds after changes, with a small thumbnail for the list; pictures listed for backups.
@@ -604,6 +623,12 @@ DZ.edit = async (id) => {
       return;
     }
     const kindName = l.t === 'text' ? 'Text' : l.t === 'image' ? (l.logo ? 'Logo' : 'Picture') : 'Shape';
+    if (cropping) {
+      side.innerHTML = `<div class="dz-lh"><b>Crop ${kindName.toLowerCase()}</b><button class="btn small primary" data-act="cropdone">Done</button></div>
+        <p class="muted" style="font-size:13px;margin:0 0 10px">Drag the edges or corners to cut away what you don't want. Drag inside the box to choose which part shows. The faint part is what gets cut.</p>
+        <div class="row" style="gap:6px"><button class="btn small" data-act="cropreset" ${l.crop && (l.crop.w < 1 || l.crop.h < 1) ? '' : 'disabled'}>Reset crop</button></div>`;
+      return;
+    }
     side.innerHTML = `
       <div class="dz-lh"><b>${kindName}</b><button class="btn small" data-act="done">Done</button></div>
       <div class="dz-acts">
@@ -611,6 +636,7 @@ DZ.edit = async (id) => {
         <button data-act="up" title="Bring forward">▲<span>Forward</span></button>
         <button data-act="down" title="Send back">▼<span>Back</span></button>
         <button data-act="lock" class="${l.lock ? 'on' : ''}" title="Lock">${l.lock ? '🔒' : '🔓'}<span>${l.lock ? 'Locked' : 'Lock'}</span></button>
+        ${l.t !== 'text' ? `<button data-act="crop" class="${cropping ? 'on' : ''}" title="Crop">⛶<span>Crop</span></button>` : ''}
         <button data-act="fx" class="${l.fx ? 'on' : ''}" title="Flip left to right">⇋<span>Flip</span></button>
         <button data-act="fy" class="${l.fy ? 'on' : ''}" title="Flip upside down">⇵<span>Flip</span></button>
         <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
@@ -642,7 +668,7 @@ DZ.edit = async (id) => {
       ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}
       ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}`;
   };
-  const select = (idv) => { sel = idv; panel = null; placeSel(); drawSide(); };
+  const select = (idv) => { if (idv !== sel) endCrop(); sel = idv; panel = null; placeSel(); drawSide(); };
 
   /* Adding things */
   const center = (w, h) => ({ x: (doc.w - w) / 2, y: (doc.h - h) / 2, w, h });
@@ -674,12 +700,28 @@ DZ.edit = async (id) => {
     if (!h) { const hl = hit(p); if (hl?.id !== sel) { select(hl?.id || null); l = hl; } }
     if (!l || l.lock) return;
     e.preventDefault(); page.setPointerCapture(e.pointerId);
-    drag = { h: h || 'move', p0: p, l0: { ...l } };
+    drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, l0: { ...l, crop: l.crop ? { ...l.crop } : null } };
   });
   page.addEventListener('pointermove', (e) => {
     if (!drag) return;
     const l = layer(), p = toPage(e), o = drag.l0, a = (o.rot || 0) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
-    if (drag.h === 'move') {
+    if (cropping && o.crop) {
+      // Crop: edges cut away (the whole stays where it is); dragging inside slides the whole under the window.
+      const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y, lx = dx * cos + dy * sin, ly = -dx * sin + dy * cos;
+      const c0 = o.crop, FW = o.w / c0.w, FH = o.h / c0.h, mn = 0.04, cl = (v, a1, b1) => Math.max(a1, Math.min(b1, v));
+      if (drag.h === 'pan') { l.crop = { ...c0, x: cl(c0.x - lx / FW, 0, 1 - c0.w), y: cl(c0.y - ly / FH, 0, 1 - c0.h) }; }
+      else if (drag.h !== 'rot') {
+        let L = c0.x, T = c0.y, Rr = c0.x + c0.w, B = c0.y + c0.h;
+        if (drag.h.includes('e')) Rr = cl(Rr + lx / FW, L + mn, 1);
+        if (drag.h.includes('w')) L = cl(L + lx / FW, 0, Rr - mn);
+        if (drag.h.includes('s')) B = cl(B + ly / FH, T + mn, 1);
+        if (drag.h.includes('n')) T = cl(T + ly / FH, 0, B - mn);
+        const c = { x: L, y: T, w: Rr - L, h: B - T }; l.crop = c; l.w = c.w * FW; l.h = c.h * FH;
+        const ux = (c0.x + c0.w / 2 - 0.5) * FW, uy = (c0.y + c0.h / 2 - 0.5) * FH, vx = (c.x + c.w / 2 - 0.5) * FW, vy = (c.y + c.h / 2 - 0.5) * FH;
+        const ccx = o.x + o.w / 2 - (ux * cos - uy * sin), ccy = o.y + o.h / 2 - (ux * sin + uy * cos);
+        l.x = ccx + vx * cos - vy * sin - l.w / 2; l.y = ccy + vx * sin + vy * cos - l.h / 2;
+      }
+    } else if (drag.h === 'move') {
       l.x = o.x + p.x - drag.p0.x; l.y = o.y + p.y - drag.p0.y;
       const cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, snap = 12 / k;
       const gx = Math.abs(cx - doc.w / 2) < snap, gy = Math.abs(cy - doc.h / 2) < snap;
@@ -718,7 +760,7 @@ DZ.edit = async (id) => {
     if (e.key === 'Delete' || e.key === 'Backspace') { doc.layers = doc.layers.filter(x => x !== l); sel = null; changed(true); drawSide(); }
     const step = e.shiftKey ? 20 : 4, mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (mv && !l.lock) { e.preventDefault(); l.x += mv[0]; l.y += mv[1]; changed(); }
-    if (e.key === 'Escape') select(null);
+    if (e.key === 'Escape') { if (cropping) { endCrop(); return drawSide(); } select(null); }
   });
 
   /* Side panel events */
@@ -766,6 +808,14 @@ DZ.edit = async (id) => {
     if (d('act')) {
       const a = d('act'), i = doc.layers.indexOf(l);
       if (a === 'done') return select(null);
+      if (a === 'crop') { if (cropping) { endCrop(); return drawSide(); } if (l.lock) return toast('Unlock it first to crop.');
+        l.crop ||= { x: 0, y: 0, w: 1, h: 1 }; cropping = true; placeSel(); redraw(); return drawSide(); }
+      if (a === 'cropdone') { endCrop(); return drawSide(); }
+      if (a === 'cropreset' && l.crop) {
+        const c = l.crop, FW = l.w / c.w, FH = l.h / c.h, a1 = (l.rot || 0) * Math.PI / 180;
+        const vx = (c.x + c.w / 2 - 0.5) * FW, vy = (c.y + c.h / 2 - 0.5) * FH;   // back to the whole, centred where the whole was
+        const cx = l.x + l.w / 2 - (vx * Math.cos(a1) - vy * Math.sin(a1)), cy = l.y + l.h / 2 - (vx * Math.sin(a1) + vy * Math.cos(a1));
+        l.crop = { x: 0, y: 0, w: 1, h: 1 }; l.w = FW; l.h = FH; l.x = cx - FW / 2; l.y = cy - FH / 2; changed(true); return drawSide(); }
       if (a === 'unbend') { l.arc = 0; changed(true); return drawSide(); }
       if (a === 'del') { doc.layers.splice(i, 1); sel = null; }
       if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id; }

@@ -1139,3 +1139,12 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
 .dz-lr button.on { color: var(--gold, #e8b44c); }
 .dz-lr button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 .dz-lr [data-ldel] { color: #e0605a; }
+
+/* Design studio: crop mode */
+#dz-sel .n { top: -7px; left: 50%; margin-left: -10px; width: 20px; height: 12px; border-radius: 6px; cursor: ns-resize; }
+#dz-sel .s { bottom: -7px; left: 50%; margin-left: -10px; width: 20px; height: 12px; border-radius: 6px; cursor: ns-resize; }
+#dz-sel:not(.cropping) .n, #dz-sel:not(.cropping) .s { display: none; }
+#dz-sel.cropping { border-color: #fff; border-style: dashed; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+#dz-sel.cropping .e, #dz-sel.cropping .w { display: block; }
+#dz-sel.cropping .h { background: var(--teal); border-color: #fff; }
+#dz-sel.cropping .rot { display: none; }
