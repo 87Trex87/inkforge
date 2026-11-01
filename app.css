@@ -438,7 +438,7 @@ a.btn.primary { color: #061211; }
   border: 2px solid var(--bg2); background: #3a4447; color: #fff; font-size: 12px; line-height: 1; display: grid; place-items: center; }
 .tl-tr.own { background: var(--teal); color: #061211; }
 .tl-tr.on { box-shadow: 0 0 0 2px var(--ink); transform: scale(1.15); }
-.tl-head { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--red); z-index: 4; pointer-events: none; border-radius: 2px; }
+.tl-row .tl-head { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--red); z-index: 4; pointer-events: none; border-radius: 2px; }
 .tl-ghost { flex: none; height: 50px; min-width: 50px; padding: 0 10px; border-radius: 8px; border: 1px dashed var(--teal2); background: none; color: var(--teal);
   font-weight: 600; font-size: 12px; cursor: pointer; display: grid; place-items: center; }
 .tl-ghost svg { width: 20px; height: 20px; } .tl-add { font-size: 22px; }
@@ -999,3 +999,29 @@ form > .fsec:first-child, form > .seg + .fsec, .card > .fsec:first-child { borde
 .gv-stage img { max-width: calc(100vw - 24px); max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); }
 html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !important; }
 .carousel.bg-white { background: #fff; } .carousel.bg-black { background: #000; }
+
+/* Month: compact days with names; the chosen day's bookings right under the grid (beside it on wide screens) */
+.mwrap { display: grid; gap: 12px; margin-bottom: 20px; }
+.mgrid { gap: 3px; }
+.mday { aspect-ratio: auto; height: 60px; align-items: stretch; justify-content: flex-start; gap: 2px; padding: 4px 4px 3px; position: relative; overflow: hidden; }
+.mday .n { font-size: 12px; line-height: 1; text-align: left; padding-left: 2px; }
+.mday.today .n { background: var(--teal); color: #061211; border-radius: 99px; width: max-content; padding: 2px 6px; }
+.mevs { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mev { display: block; font-size: 10px; font-weight: 600; line-height: 14px; padding: 0 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--ink); background: color-mix(in srgb, var(--k, var(--teal)) 26%, transparent); border-left: 2px solid var(--k, var(--teal)); }
+.mmore { font-size: 10px; color: var(--teal); font-weight: 700; padding-left: 3px; }
+.mdot { display: none; }
+.mside-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 2px 2px 8px; }
+.mside-h > div { display: flex; flex-direction: column; } .mside-h b { font: 20px var(--display); color: var(--teal); font-weight: 400; }
+.mside-h .muted { font-size: 12px; }
+.mside .card.list { margin: 0; }
+/* Small phones: names don't fit, so a count badge instead */
+@media (max-width: 340px) {
+  .mday { height: 48px; } .mevs { display: none; }
+  .mdot { display: grid; place-items: center; position: absolute; right: 4px; bottom: 4px; min-width: 16px; height: 16px; border-radius: 8px; background: var(--teal); color: #061211; font: 700 10px var(--ui); padding: 0 4px; }
+}
+@media (min-width: 700px) { .mday { height: 84px; } .mev { font-size: 11px; line-height: 16px; } .mev:hover { filter: brightness(1.25); } }
+@media (min-width: 1000px) {
+  .mwrap { grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); align-items: start; gap: 18px; }
+  .mside { position: sticky; top: 130px; max-height: calc(100dvh - 150px); overflow-y: auto; }
+}

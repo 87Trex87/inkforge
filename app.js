@@ -2862,26 +2862,36 @@ async function renderCal() {
     const byDay = {};
     rows.forEach(b => (byDay[b.start_at.slice(0, 10)] ||= []).push(b));
     const today = ymd(new Date()), sel = ymd(d), off = daysOff();
-    let html = '<div class="month"><div class="wk">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span>${x}</span>`).join('') + '</div><div class="mgrid">';
-    for (let i = 0; i < 42; i++) {
+    // Only as many weeks as the month needs (4 to 6), so the grid stays short.
+    const weeks = Math.ceil(((first.getDay() + 6) % 7 + new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()) / 7);
+    // Each day shows who's booked (first names, coloured by booking type); "+2" when more don't fit.
+    const who = (b) => (b.first_name || (b.guest_name || '').split(' ')[0] || (kindOf(b) !== 'tattoo' ? kindLabel(b) : 'Booking'));
+    let html = '<div class="mwrap"><div class="month"><div class="wk">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span>${x}</span>`).join('') + '</div><div class="mgrid">';
+    for (let i = 0; i < weeks * 7; i++) {
       const day = addDays(start, i), k = ymd(day), list = byDay[k] || [];
-      html += `<button class="mday ${day.getMonth() !== d.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k === sel ? 'sel' : ''} ${isDayOff(k, off) ? 'off' : ''}" data-d="${k}">
+      html += `<div role="button" tabindex="0" class="mday ${day.getMonth() !== d.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k === sel ? 'sel' : ''} ${isDayOff(k, off) ? 'off' : ''} ${list.length ? 'has' : ''}" data-d="${k}">
         <span class="n">${day.getDate()}</span>
-        <span class="pips">${list.slice(0, 3).map(() => '<i></i>').join('')}${list.length > 3 ? '<b>+</b>' : ''}</span></button>`;
+        <span class="mevs">${list.slice(0, 2).map(b => `<span class="mev k-${kindOf(b)}" data-bk="${b.id}" title="${esc(fmtTime(b.start_at) + ' ' + bName(b))}">${esc(who(b))}</span>`).join('')}
+          ${list.length > 2 ? `<span class="mmore">+${list.length - 2}</span>` : ''}</span>
+        ${list.length ? `<span class="mdot">${list.length}</span>` : ''}</div>`;
     }
     html += '</div></div>';
     const dayList = byDay[sel] || [];
-    html += `<div class="day-head">${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>`
-      + (dayList.length ? '<div class="card list">' + dayList.map(agendaRow).join('') + '</div>'
-        : `<div class="empty muted" style="padding:20px">${isDayOff(sel, off) ? 'Your day off.' : 'Free day.'} <a href="#" id="m-add" style="color:var(--teal)">Book it</a></div>`);
+    html += `<div class="mside"><div class="mside-h"><div><b>${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</b>
+        <span class="muted">${dayList.length ? `${dayList.length} booking${dayList.length > 1 ? 's' : ''}` : isDayOff(sel, off) ? 'Your day off' : 'Free day'}</span></div>
+        <button class="btn small primary" id="m-add">+ Book</button></div>`
+      + (dayList.length ? '<div class="card list">' + dayList.map(agendaRow).join('') + '</div>' : '') + '</div></div>';
     if ($('#cal') !== el) return;
     el.innerHTML = html;
+    // A tap selects the day; a name on a bigger screen opens that booking.
     el.querySelector('.mgrid').onclick = (e) => {
+      const ev = e.target.closest('[data-bk]');
+      if (ev && matchMedia('(min-width: 700px)').matches) { location.hash = 'booking-edit/' + ev.dataset.bk; return; }
       const b = e.target.closest('.mday'); if (!b) return;
-      if (b.dataset.d === sel) return newBooking(sel + 'T' + Settings.get('day_start', '10:00'));
       Cal.date = new Date(b.dataset.d + 'T00:00'); renderCal();
     };
-    const ma = $('#m-add'); if (ma) ma.onclick = (e) => { e.preventDefault(); newBooking(sel + 'T' + Settings.get('day_start', '10:00')); };
+    el.querySelector('.mgrid').onkeydown = (e) => { if (e.key === 'Enter') e.target.closest('.mday')?.click(); };
+    $('#m-add').onclick = () => newBooking(sel + 'T' + Settings.get('day_start', '10:00'));
     return;
   }
   // Day / week timeline
@@ -2930,6 +2940,7 @@ async function renderCal() {
       html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''} ${short ? 'short' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)"
         title="${esc([bName(b), kindLabel(b), fmtTime(b.start_at) + ' · ' + fmtDur(b.duration_min), b.placement, b.description].filter(Boolean).join(' · '))}">
         <b>${esc(mode === 'week' ? (b.first_name || b.guest_name || (kindOf(b) !== 'tattoo' ? kindLabel(b) : '—')) : bName(b))}</b>
+        ${mode === 'week' && !short ? `<span class="muted">${fmtTime(b.start_at)}</span>` : ''}
         ${mode === 'day' ? `<span>${kindOf(b) !== 'tattoo' && b.first_name != null ? kindLabel(b) + ' · ' : ''}${fmtTime(b.start_at)} · ${fmtDur(b.duration_min)}${b.placement ? ' · ' + esc(b.placement) : ''}</span>
         ${b.description ? `<span class="muted">${esc(b.description)}</span>` : ''}` : ''}</a>`;
     });
