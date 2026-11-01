@@ -228,6 +228,17 @@ function dzPathTo(x, L) {
     x.closePath();
   }
 }
+// A canvas cut down to its visible (not see-through) pixels, with where that part was; null if all see-through.
+function dzTrim(c) {
+  const W = c.width, H = c.height, d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) { const r = y * W * 4;
+    for (let x = 0; x < W; x++) if (d[r + x * 4 + 3] > 3) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; y1 = y; } }
+  if (x1 < 0) return null;
+  if (!x0 && !y0 && x1 === W - 1 && y1 === H - 1) return { c, x: 0, y: 0 };
+  const o = document.createElement('canvas'); o.width = x1 - x0 + 1; o.height = y1 - y0 + 1; o.getContext('2d').drawImage(c, -x0, -y0);
+  return { c: o, x: x0, y: y0 };
+}
 // CSS for a gradient's colour bar (left to right).
 const dzGradCss = (doc, g) => `linear-gradient(90deg, ${[...g.stops].sort((a, b) => a.p - b.p).map(st => `${dzCol(doc, st.c) || '#000'} ${Math.round(st.p * 1000) / 10}%`).join(', ')})`;
 // Draws the design onto a canvas at `scale` (canvas px per page px). Text layers get their height measured.
@@ -964,7 +975,7 @@ DZ.edit = async (id) => {
         <button data-act="fx" class="${l.fx ? 'on' : ''}" title="Flip left to right">⇋<span>Flip</span></button>
         <button data-act="fy" class="${l.fy ? 'on' : ''}" title="Flip upside down">⇵<span>Flip</span></button>
         <button data-act="clip" class="${clipped(l) ? 'on' : ''}" ${F().indexOf(l) ? '' : 'disabled'} title="Clip to the layer below: only shows inside it">↳<span>Clip</span></button>
-        ${l.t === 'image' ? (l.ref || l.logo ? '<button data-act="toshape" title="Trace the picture into a shape you can fill">◆<span>To shape</span></button>' : '')
+        ${l.t === 'image' ? (l.ref || l.logo ? '<button data-act="toshape" title="Trace the picture into a shape you can fill">◆<span>To shape</span></button><button data-act="flatten1" title="Flatten: bake in its rotation, flips, crop and opacity, and fit the handles to what shows">▦<span>Flatten</span></button>' : '')
           : '<button data-act="flatten1" title="Flatten into a picture: its fill and outline become permanent">▦<span>Flatten</span></button>'}
         <button data-act="cut" title="Select part of it with a box, ellipse, lasso or by colour, then delete, split or move that part">⬚<span>Select area</span></button>
         <button data-act="pick" title="Select more items">☐<span>Select</span></button>
@@ -1046,7 +1057,8 @@ DZ.edit = async (id) => {
     const sc = Math.min(1, max / Math.max(bw, bh)), c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(bw * sc)); c.height = Math.max(1, Math.round(bh * sc));
     await dzDraw(c, d, sc, { noBg: true });
-    return { cv: c, bx, by, bw, bh };
+    const tr = dzTrim(c); if (!tr) return null;   // cut to what's visible, so the handles fit it
+    return { cv: tr.c, bx: bx + tr.x / sc, by: by + tr.y / sc, bw: tr.c.width / sc, bh: tr.c.height / sc };
   };
   const pngOf = (c) => new Promise(r => c.toBlob(r, 'image/png'));
   const targets = () => many() ? [...picks] : sel ? [sel] : [];
@@ -1055,7 +1067,7 @@ DZ.edit = async (id) => {
     if (!list.length) return toast('Nothing visible to merge.');
     if (list.some(l => l.lock)) return toast('Unlock the selected layers first.');
     const txt = list.some(l => l.t === 'text');
-    if (!confirm(`${list.length === 1 ? 'Flatten this layer into a picture? Its fill and outline become part of the picture.' : `Merge ${list.length} layers into one picture?`}${txt ? '\n\nText becomes part of the picture and can no longer be edited.' : ''}\n\nUndo brings the layers back.`)) return;
+    if (!confirm(`${list.length === 1 ? (list[0].t === 'image' ? 'Flatten this picture? Its rotation, flips, crop and opacity become part of it, and its handles fit what shows.' : 'Flatten this layer into a picture? Its fill and outline become part of the picture.') : `Merge ${list.length} layers into one picture?`}${txt ? '\n\nText becomes part of the picture and can no longer be edited.' : ''}\n\nUndo brings the layers back.`)) return;
     const f = await flatten(list); if (!f) return;
     const ref = await Media.save(await pngOf(f.cv), 'png'); made.add(ref);
     const gone = new Set(list.map(l => l.id)), top = Math.max(...list.map(l => doc.layers.indexOf(l)));
@@ -1117,7 +1129,11 @@ DZ.edit = async (id) => {
     x.setLineDash([6, 4]); x.lineWidth = 1.5; x.strokeStyle = '#1fb6a6'; x.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
     const d = cutDrag; if (!d) return;
     x.strokeStyle = '#fff'; x.setLineDash([5, 4]); x.beginPath();
-    if (d.pts) { d.pts.forEach(([a, b], i) => i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k));
+    if (d.pts) {
+      const [sx, sy] = d.pts[0], tip = d.cur || d.lp, near = d.pts.length > 6 && Math.hypot((tip.x - sx) * k, (tip.y - sy) * k) < 18;
+      x.save(); x.setLineDash([]); x.beginPath(); x.arc(sx * k, sy * k, near ? 10 : 5, 0, Math.PI * 2);
+      x.fillStyle = near ? 'rgba(46,204,113,.35)' : 'rgba(255,255,255,.25)'; x.strokeStyle = near ? '#2ecc71' : '#fff'; x.lineWidth = 2; x.fill(); x.stroke(); x.restore();
+      x.beginPath(); d.pts.forEach(([a, b], i) => i ? x.lineTo(a * k, b * k) : x.moveTo(a * k, b * k));
       x.stroke(); if (d.cur) { x.setLineDash([2, 3]); x.strokeStyle = 'rgba(255,255,255,.6)'; x.beginPath(); const lp = d.pts.at(-1); x.moveTo(lp[0] * k, lp[1] * k); x.lineTo(d.cur.x * k, d.cur.y * k); x.stroke(); } }
     else if (d.p1) { const a = d.p0, b = d.p1, l0 = Math.min(a.x, b.x) * k, t0 = Math.min(a.y, b.y) * k, ww = Math.abs(b.x - a.x) * k, hh = Math.abs(b.y - a.y) * k;
       if (copt.tool === 'ellipse') x.ellipse(l0 + ww / 2, t0 + hh / 2, ww / 2, hh / 2, 0, 0, Math.PI * 2); else x.rect(l0, t0, ww, hh); x.stroke(); }
@@ -1186,21 +1202,23 @@ DZ.edit = async (id) => {
     if (a === 'movesel') { copt.moving = !copt.moving; return drawSide(); }
     if (!cut.any) return toast('Select an area first.');
     const part = (inside) => { const c = blank(W, H), x = c.getContext('2d'); x.drawImage(cut.cv, 0, 0); x.globalCompositeOperation = inside ? 'destination-in' : 'destination-out'; x.drawImage(soft(), 0, 0); return c; };
-    const pic = async (c, nm) => { const ref = await Media.save(await pngOf(c), 'png'); made.add(ref);
-      return { id: dzId(), t: 'image', ref, x: cut.R.x, y: cut.R.y, w: cut.R.w, h: cut.R.h, op: 1, rot: 0, name: nm, ...(l.side ? { side: l.side } : {}), ...(l.clip ? { clip: true } : {}) }; };
+    const pic = async (c0, nm) => { const tr = dzTrim(c0); if (!tr) return null;   // nothing left
+      const c = tr.c, ref = await Media.save(await pngOf(c), 'png'); made.add(ref);
+      return { id: dzId(), t: 'image', ref, x: cut.R.x + tr.x / cut.sc, y: cut.R.y + tr.y / cut.sc, w: c.width / cut.sc, h: c.height / cut.sc, op: 1, rot: 0, name: nm, ...(l.side ? { side: l.side } : {}), ...(l.clip ? { clip: true } : {}) }; };
     const nm = l.name || layerName(l), i = doc.layers.indexOf(l);
     let pick = null;
-    if (a === 'del') doc.layers[i] = await pic(part(false), nm);
-    else if (a === 'crop') doc.layers[i] = await pic(part(true), nm);
+    if (a === 'del' || a === 'crop') doc.layers[i] = await pic(part(a === 'crop'), nm);
     else if (a === 'copy' || a === 'iso' || a === 'lift') {
       // The new piece goes above the item's clip group, so layers clipped to the item stay clipped to it.
       const piece = await pic(part(true), nm + (a === 'copy' ? ' (copy)' : ' (cut)'));
+      if (!piece) return toast('Nothing visible in the selected area.');
       if (a !== 'copy') doc.layers[i] = await pic(part(false), nm);
       let j = i + 1; while (j < doc.layers.length && doc.layers[j].clip && !l.clip) j++;
       doc.layers.splice(j, 0, piece); pick = piece.id;
     }
     else return;
-    const keep = a === 'del' || a === 'crop' ? doc.layers[i].id : pick;
+    const keep = a === 'del' || a === 'crop' ? doc.layers[i]?.id : pick;
+    doc.layers = doc.layers.filter(Boolean);   // the item was all cut away
     cut = null; cutDrag = null; copt.moving = false; drawCut();
     sel = keep; changed(true); drawSide();
     toast({ del: 'Deleted the selected area.', crop: 'Kept only the selected area.', copy: 'Copied to a new layer.', iso: 'Split into two layers.', lift: 'Cut out: drag it to move.' }[a] + ' Undo brings it back.');
