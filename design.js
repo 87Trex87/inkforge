@@ -56,8 +56,7 @@ function dzPaper(wmm, hmm, label) {
   return { w: Math.round(wmm * dpi / 25.4), h: Math.round(hmm * dpi / 25.4), dpi, label, mm: [wmm, hmm] };
 }
 const dzMM = (v) => (Math.round(v * 10) / 10).toString();
-/* Folded pamphlets: one landscape sheet, both sides. The design holds the outside on top and the inside
-   below it; export splits them into two pages. Panel names follow how the sheet folds: on a trifold the
+/* Folded pamphlets: one landscape sheet, always two-sided (outside = front, inside = back). Panel names follow how the sheet folds: on a trifold the
    panel that folds in is 1.5 mm narrower so it tucks in without buckling. */
 const DZ_FOLD_TYPES = {
   tri: { name: 'Trifold', sub: '3 panels, folds in' },
@@ -69,7 +68,7 @@ const DZ_FOLD_TYPES = {
 const DZ_FOLD_SHEETS = ['A4', 'Letter', 'Legal', 'A3', 'Tabloid'];
 function dzFold(type, sheet) {
   const p = DZ_PAPER.find(x => x[0] === sheet) || DZ_PAPER[2], wmm = p[2], hmm = p[1];   // laid flat, landscape
-  const dpi = [300, 250, 200, 150, 100].find(d => (wmm * d / 25.4) * (2 * hmm * d / 25.4) <= 16e6) || 72;
+  const dpi = [300, 250, 200, 150, 100].find(d => (wmm * d / 25.4) * (hmm * d / 25.4) <= 16e6) || 72;
   const W = Math.round(wmm * dpi / 25.4), H = Math.round(hmm * dpi / 25.4), mm = dpi / 25.4, n = type === 'bi' ? 2 : type === 'quad' || type === 'gate' ? 4 : 3;
   let out, inn, lo, li;
   if (type === 'tri') { const f = W / 3 - 1.5 * mm, o2 = (W - f) / 2; out = [f, f + o2]; inn = [o2, 2 * o2];
@@ -78,8 +77,8 @@ function dzFold(type, sheet) {
   else if (type === 'gate') { out = inn = [W / 4, W * 3 / 4]; lo = ['Cover, right half', 'Back', 'Cover, left half']; li = ['Left flap', 'Inside middle', 'Right flap']; }
   else { out = inn = [...Array(n - 1)].map((_, i) => W * (i + 1) / n); lo = [...Array(n)].map((_, i) => 'Outside ' + (i + 1)); li = [...Array(n)].map((_, i) => 'Inside ' + (i + 1)); }
   const r = (a) => a.map(Math.round), name = DZ_FOLD_TYPES[type].name;
-  return { w: W, h: 2 * H, dpi, label: name, mm: [wmm, hmm], sheet: p[0],
-    fold: { type, side: H, out: r(out), inn: r(inn), lo, li } };
+  return { w: W, h: H, dpi, label: name, mm: [wmm, hmm], sheet: p[0],
+    fold: { type, out: r(out), inn: r(inn), lo, li } };
 }
 // Keep proportions: pictures and the logo by default, shapes not; text sizes with its letters.
 const dzKeep = (l) => l.t === 'text' || (l.keep ?? l.t !== 'shape');
@@ -252,8 +251,10 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     x.restore();
   };
   // Clipping: a layer marked `clip` only shows inside the nearest unclipped layer under it (its base),
-  // so a texture laid over a shape takes the shape's form. The bottom layer can't be clipped.
-  const L = doc.layers, show = (l) => !l.hide && (!opts.only || opts.only.has(l.id));
+  // so a texture laid over a shape takes the shape's form. The bottom layer of each page can't be clipped.
+  // Two-sided designs: the master page (shared backgrounds, frames) sits under the front or the back.
+  const show = (l) => !l.hide && (!opts.only || opts.only.has(l.id));
+  for (const L of dzPages(doc, opts.face))
   for (let i = 0; i < L.length; i++) {
     const base = L[i]; let j = i + 1;
     while (j < L.length && L[j].clip) j++;
@@ -267,10 +268,18 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(off, 0, 0);
   }
 }
-// A finished copy of the design as its own canvas (full size unless `scale`).
-async function dzCanvas(doc, scale = 1) {
+// The layer lists drawn for a page, bottom first: f = front, b = back, m = master (only the master).
+const dzSide = (l) => l.side || 'f';
+function dzPages(doc, face = 'f') {
+  if (!doc.sides) return [doc.layers];
+  const own = doc.layers.filter(l => dzSide(l) === face);
+  return face === 'm' ? [own] : [doc.layers.filter(l => l.side === 'm'), own];
+}
+const dzFaceNames = (doc) => doc.fold ? { f: 'Outside', b: 'Inside', m: 'Master' } : { f: 'Front', b: 'Back', m: 'Master' };
+// A finished copy of the design as its own canvas (full size unless `scale`), front unless `face`.
+async function dzCanvas(doc, scale = 1, face) {
   const cv = document.createElement('canvas'); cv.width = Math.round(doc.w * scale); cv.height = Math.round(doc.h * scale);
-  await dzDraw(cv, doc, scale); return cv;
+  await dzDraw(cv, doc, scale, { face }); return cv;
 }
 
 /* ---------- Templates ---------- */
@@ -395,13 +404,14 @@ function dzFillSlots(doc, piece) {
   const fh = doc.layers.some(l => l.t === 'text' && l.text === 'Healed');
   for (const l of doc.layers.filter(l => l.slot != null).sort((a, b) => a.slot - b.slot)) l.ref = pick(fh ? (l.slot === 0 ? 'fresh' : l.slot === 1 ? 'healed' : '') : '') || l.ref || null;
 }
-function dzNew(kind, opt, theme, piece, size) {
+function dzNew(kind, opt, theme, piece, size, sides) {
   const k = DZ_KINDS[kind], code = Math.random().toString(36).slice(2, 8).toUpperCase(), exp = new Date(); exp.setFullYear(exp.getFullYear() + 1);
   let doc;
   if (opt?.custom) { doc = JSON.parse(JSON.stringify(opt.custom.doc)); doc.layers.forEach(l => l.id = dzId()); doc.theme = theme || doc.theme; }
   else doc = { v: 1, kind, w: k.w, h: k.h, theme, bg: { c: '@bg' }, layers: opt?.make ? opt.make(k.w, k.h) : [] };
   doc.kind = kind; doc.w = k.w; doc.h = k.h;
   delete doc.dpi; delete doc.paper; delete doc.fold;
+  if (k.social) delete doc.sides; else if (sides || size?.fold) doc.sides = 2; else if (!opt?.custom) delete doc.sides;
   if (size) { doc.w = size.w; doc.h = size.h; doc.dpi = size.dpi;
     doc.paper = size.fold ? `${size.label}, ${size.sheet} sheet (${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm)` : `${size.label}, ${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm`;
     if (size.fold) doc.fold = size.fold; }
@@ -479,7 +489,7 @@ DZ.list = async () => {
 // opts.piece: start a post from this portfolio piece (only post sizes are offered).
 async function dzPicker(opts = {}) {
   const st = { kind: null, li: 0, theme: 'ink', piece: opts.piece ? await dzPiece(opts.piece) : null,
-    ps: Settings.get('dz_paper', 'A4'), land: false, cw: 200, ch: 200, cu: 'mm', ft: 'tri', fs: Settings.get('dz_fold_sheet', 'A4') };
+    ps: Settings.get('dz_paper', 'A4'), land: false, cw: 200, ch: 200, cu: 'mm', ft: 'tri', fs: Settings.get('dz_fold_sheet', 'A4'), two: false };
   // The chosen blank page size (mm, turned for landscape) at its dpi.
   const size = () => {
     if (DZ_KINDS[st.kind]?.fold) return dzFold(st.ft, st.fs);
@@ -521,6 +531,8 @@ async function dzPicker(opts = {}) {
       ${social ? `<div class="dz-piece">${pu ? `<img src="${pu}" alt="">` : '<span class="muted">No tattoo chosen</span>'}
         <div><b>${esc(st.piece?.vals.title || (st.piece ? 'Untitled piece' : 'Show off a tattoo'))}</b><small class="muted">${st.piece ? `${st.piece.photos.length} photo${st.piece.photos.length > 1 ? 's' : ''}` : 'Pick a portfolio piece to fill the photos, title and hashtags'}</small></div>
         <button class="btn small" data-piece>${st.piece ? 'Change' : 'Choose'}</button></div>` : ''}
+      ${!social && !sz?.fold ? `<div class="lbl">Sides</div><div class="seg" style="margin-bottom:12px">${[[false, 'One side'], [true, 'Front and back']].map(([v, n]) =>
+          `<button data-two="${v ? 1 : 0}" class="${st.two === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>` : ''}
       <div class="lbl">Layout</div><div class="dz-tpls">${lays.map((l, i) =>
         `<button data-li="${i}" class="${st.li === i ? 'on' : ''}"><canvas data-prev="${i}"></canvas><span>${esc(l.name)}${l.custom ? ' <em>yours</em>' : ''}</span>
           ${l.custom ? `<i class="dz-tdel" data-tdel="${esc(l.custom.id)}" title="Delete this template">&times;</i>` : ''}</button>`).join('')}</div>
@@ -528,14 +540,15 @@ async function dzPicker(opts = {}) {
         `<button data-theme="${k}" class="${st.theme === k ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>
       <div class="row" style="margin-top:14px"><button class="btn" data-back>Back</button><button class="btn primary" data-go style="flex:1">Create</button></div></div>`;
     for (const cv of o.querySelectorAll('canvas[data-prev]')) {
-      const doc = dzNew(st.kind, lays[+cv.dataset.prev], st.theme, st.piece, sz), sc = 220 / Math.max(doc.w, doc.h);
+      const doc = dzNew(st.kind, lays[+cv.dataset.prev], st.theme, st.piece, sz, st.two), sc = 220 / Math.max(doc.w, doc.h);
       cv.width = Math.round(doc.w * sc); cv.height = Math.round(doc.h * sc); dzDraw(cv, doc, sc);
     }
   };
   o.onclick = async (e) => {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('[data-x]')) return o.remove();
-    if (d('kind')) { st.kind = d('kind'); st.li = 0; return draw(); }
+    if (d('kind')) { st.kind = d('kind'); st.li = 0; st.two = false; return draw(); }
+    if (d('two') != null) { st.two = d('two') === '1'; return draw(); }
     if (t.closest('[data-back]')) { st.kind = null; return draw(); }
     if (d('tdel')) { e.stopPropagation();
       if (!confirm('Delete this template? Designs made from it are not affected.')) return;
@@ -550,7 +563,7 @@ async function dzPicker(opts = {}) {
     if (t.closest('[data-go]')) {
       const sz = size();
       if (sz) await Settings.set(sz.fold ? 'dz_fold_sheet' : 'dz_paper', sz.fold ? st.fs : st.ps);
-      const doc = dzNew(st.kind, dzLayouts(st.kind)[st.li], st.theme, st.piece, sz);
+      const doc = dzNew(st.kind, dzLayouts(st.kind)[st.li], st.theme, st.piece, sz, st.two);
       const n = await DB.one('SELECT COUNT(*) AS n FROM designs WHERE kind = ?', [st.kind]);
       const base = sz ? (sz.fold ? `${sz.label} pamphlet` : `${sz.label} page`) : DZ_KINDS[st.kind].label;
       const name = st.piece?.vals.title ? `${st.piece.vals.title} (${DZ_KINDS[st.kind].label.toLowerCase()})` : base + (n.n ? ' ' + (n.n + 1) : '');
@@ -591,12 +604,15 @@ DZ.edit = async (id) => {
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
-        <div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
+        <div class="dz-faces" id="dz-faces"></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
       <div class="dz-side" id="dz-side"></div>
     </div></div>`;
   const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
   let k = 1;   // screen px per page px
   const layer = () => doc.layers.find(l => l.id === sel);
+  // Two-sided: the page being edited (f, b or m) and its own layers.
+  let face = 'f';
+  const F = () => doc.sides ? doc.layers.filter(l => dzSide(l) === face) : doc.layers;
   /* Several selected: `picks` holds them (sel is then null). Selection mode (`picking`, from a long press or
      the Select button) makes taps add and remove items, for touchscreens; on a computer Ctrl/Shift-click. */
   let picks = new Set(), picking = false, anchor = null;
@@ -606,17 +622,18 @@ DZ.edit = async (id) => {
   // Canvas size: fit the page into the stage; drawn at device resolution for crisp text.
   /* View: zoom (z, 1 = the whole design fits) and pan (vx, vy, screen px from centred). */
   let fitK = 1, z = 1, vx = 0, vy = 0, rs = 1, crispT = null;
+  const tb = () => doc.sides ? 48 : 0;   // room above the design for the page tabs
   const fit = (crisp = true) => {
     // On phones the stage hugs the design's shape, so a wide card doesn't leave empty space above and below.
-    if (innerWidth < 900) { const sw = stage.clientWidth; stage.style.height = Math.round(Math.min(innerHeight * 0.58, (sw - 32) * doc.h / doc.w + 32)) + 'px'; }
+    if (innerWidth < 900) { const sw = stage.clientWidth; stage.style.height = Math.round(Math.min(innerHeight * 0.58, (sw - 32) * doc.h / doc.w + 32 + tb())) + 'px'; }
     else stage.style.height = '';
     const r = stage.getBoundingClientRect(), pad = 16;
-    fitK = Math.min((r.width - pad * 2) / doc.w, (Math.max(260, r.height) - pad * 2) / doc.h); k = fitK * z;
+    fitK = Math.min((r.width - pad * 2) / doc.w, (Math.max(260, r.height) - tb() - pad * 2) / doc.h); k = fitK * z;
     const w = doc.w * k, h = doc.h * k;
     // Keep some of the design on screen however far it's dragged.
     const mx = Math.max(0, (r.width + w) / 2 - 80), my = Math.max(0, (r.height + h) / 2 - 80);
     vx = Math.max(-mx, Math.min(mx, vx)); vy = Math.max(-my, Math.min(my, vy));
-    Object.assign(page.style, { width: w + 'px', height: h + 'px', left: (r.width - w) / 2 + vx + 'px', top: (r.height - h) / 2 + vy + 'px' });
+    Object.assign(page.style, { width: w + 'px', height: h + 'px', left: (r.width - w) / 2 + vx + 'px', top: (r.height - h + tb()) / 2 + vy + 'px' });
     cv.style.width = w + 'px'; cv.style.height = h + 'px';
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
@@ -629,24 +646,30 @@ DZ.edit = async (id) => {
   const drawFolds = () => {
     const f = doc.fold, box = $('#dz-folds'); if (!box) return; box.innerHTML = '';
     if (!f) return;
-    box.innerHTML = [0, 1].map(sd => { const y = sd * f.side, fl = sd ? f.inn : f.out, nm = sd ? f.li : f.lo, ed = [0, ...fl, doc.w];
-      return fl.map(x => `<i class="dz-fl" style="left:${x * k}px;top:${y * k}px;height:${f.side * k}px"></i>`).join('')
-        + nm.map((n, i) => `<span class="dz-pl" style="left:${ed[i] * k}px;width:${(ed[i + 1] - ed[i]) * k}px;top:${y * k}px">${esc(n)}</span>`).join('')
-        + `<b class="dz-stag" style="top:${(y + f.side) * k}px">${sd ? 'Inside' : 'Outside'}</b>`; }).join('')
-      + `<i class="dz-fsep" style="top:${f.side * k}px"></i>`;
+    // The master shows the outside's folds (it sits under both sides).
+    const sd = face === 'b', fl = sd ? f.inn : f.out, nm = sd ? f.li : f.lo, ed = [0, ...fl, doc.w];
+    box.innerHTML = fl.map(x => `<i class="dz-fl" style="left:${x * k}px;top:0;height:${doc.h * k}px"></i>`).join('')
+      + (face === 'm' ? '' : nm.map((n, i) => `<span class="dz-pl" style="left:${ed[i] * k}px;width:${(ed[i + 1] - ed[i]) * k}px;top:0">${esc(n)}</span>`).join(''));
   };
   const zoomTo = (nz, sx, sy) => {
     const r = stage.getBoundingClientRect();
     if (sx == null) { sx = r.width / 2; sy = r.height / 2; }
-    const left = (r.width - doc.w * k) / 2 + vx, top = (r.height - doc.h * k) / 2 + vy, dx = (sx - left) / k, dy = (sy - top) / k;
+    const left = (r.width - doc.w * k) / 2 + vx, top = (r.height - doc.h * k + tb()) / 2 + vy, dx = (sx - left) / k, dy = (sy - top) / k;
     z = Math.max(0.5, Math.min(8, nz)); const nk = fitK * z;
-    vx = sx - dx * nk - (r.width - doc.w * nk) / 2; vy = sy - dy * nk - (r.height - doc.h * nk) / 2;
+    vx = sx - dx * nk - (r.width - doc.w * nk) / 2; vy = sy - dy * nk - (r.height - doc.h * nk + tb()) / 2;
     fit(false); clearTimeout(crispT); crispT = setTimeout(() => { fit(true); redraw(); }, 160);
   };
   const frame = () => { z = 1; vx = vy = 0; fit(); redraw(); };
   let drawing = null;
   let cropping = false;   // crop mode for the selected picture or shape
-  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null }); if (job === drawing) placeSel(); };
+  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) placeSel(); };
+  // Page tabs (top right of the design): front, back and the master page under both.
+  const drawFaces = () => {
+    const b = $('#dz-faces'); if (!b) return; b.hidden = !doc.sides; if (!doc.sides) return;
+    const nm = dzFaceNames(doc), n = (f) => doc.layers.filter(l => dzSide(l) === f).length;
+    b.innerHTML = ['f', 'b', 'm'].map(f => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Backgrounds and frames shown under both sides"' : ''}>${nm[f]}${n(f) ? ` <small>${n(f)}</small>` : ''}</button>`).join('');
+  };
+  const setFace = (f) => { if (f === face) return; endCrop(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
   // Leaving crop mode: an uncropped item drops its crop entirely.
   const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
@@ -726,7 +749,8 @@ DZ.edit = async (id) => {
   const drawLayers = () => {
     side.innerHTML = `<div class="dz-lbar"><button class="btn small ${picking ? 'primary' : ''}" data-mact="${picking ? 'done' : 'pick'}">${picking ? 'Done selecting' : 'Select…'}</button>
         ${picking || picks.size ? `<button class="btn small" data-mact="all">All</button><button class="btn small" data-mact="none" ${picks.size ? '' : 'disabled'}>None</button>` : ''}</div>
-      <div class="dz-ll" id="dz-ll">${[...doc.layers].reverse().map(l => { const i = doc.layers.indexOf(l), cl = i > 0 && l.clip;
+      ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? 'Master page: shown under both sides.' : `${dzFaceNames(doc)[face]} only. The master page shows underneath.`}</p>` : ''}
+      <div class="dz-ll" id="dz-ll">${[...F()].reverse().map(l => { const i = F().indexOf(l), cl = i > 0 && l.clip;
         return `<div class="dz-lr ${l.id === sel || picks.has(l.id) ? 'on' : ''} ${l.hide ? 'off' : ''} ${cl ? 'clip' : ''}" data-lid="${l.id}">
         <span class="grip" data-grip aria-label="Drag to reorder">⠿</span><span class="li">${layerIco(l)}</span>
         <span class="nm" data-lname title="${l.id === sel ? 'Tap to rename' : 'Tap to select'}">${cl ? '<b class="clipmark">↳</b>' : ''}${esc(layerName(l))}</span>
@@ -740,7 +764,8 @@ DZ.edit = async (id) => {
   const drawSide = () => {
     if (tab === 'layers') drawLayers(); else drawEdit();
     side.insertAdjacentHTML('afterbegin', `<div class="seg dz-tabs"><button data-tab="edit" class="${tab === 'edit' ? 'on' : ''}">${layer() || many() ? 'Selected' : 'Design'}</button>
-      <button data-tab="layers" class="${tab === 'layers' ? 'on' : ''}">Layers <small>${doc.layers.length}</small></button></div>`);
+      <button data-tab="layers" class="${tab === 'layers' ? 'on' : ''}">Layers <small>${F().length}</small></button></div>`);
+    drawFaces();
   };
   const AL = [['l', 'Left', '<path d="M4 3v18M8 7h12v4H8zM8 14h7v4H8z"/>'], ['c', 'Centre', '<path d="M12 3v18M5 7h14v4H5zM8 14h8v4H8z"/>'], ['r', 'Right', '<path d="M20 3v18M4 7h12v4H4zM9 14h7v4H9z"/>'],
     ['t', 'Top', '<path d="M3 4h18M7 8v12h4V8zM14 8v7h4V8z"/>'], ['m', 'Middle', '<path d="M3 12h18M7 5v14h4V5zM14 8v8h4V8z"/>'], ['b', 'Bottom', '<path d="M3 20h18M7 4v12h4V4zM14 9v7h4V9z"/>'],
@@ -793,6 +818,9 @@ DZ.edit = async (id) => {
             <div class="two"><label class="field"><span>Placement</span><input class="in" data-v="placement" value="${esc(doc.vals?.placement ?? '')}"></label>
               <label class="field"><span>Date</span><input class="in" type="date" data-v="date" value="${esc(doc.vals?.date ?? '')}"></label></div>
             <label class="field"><span>Tags ${help('Comma separated; shown as #hashtags wherever {tags} is used.')}</span><input class="in" data-v="tags" value="${esc(doc.vals?.tags ?? '')}" placeholder="blackwork, floral"></label>`) : ''}
+        ${!DZ_KINDS[doc.kind].social && !doc.fold ? fsec('Sides', `<div class="seg">${[[0, 'One side'], [1, 'Front and back']].map(([v, n]) =>
+            `<button data-sides="${v}" class="${!!doc.sides === !!v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+          <p class="muted" style="font-size:11px;margin:6px 0 0">${doc.sides ? 'Switch between Front, Back and Master at the top right of the design. Master holds backgrounds and frames shown under both sides.' : 'Front and back adds a back page and a master page for things shared by both.'}</p>`) : ''}
         ${fsec('Theme', `<div class="dz-themes">${Object.entries(DZ_THEMES).map(([kk, t]) =>
           `<button data-theme="${kk}" class="${doc.theme === kk ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>`)}
         ${fsec('Background', `${swatches('bg', doc.bg?.c)}
@@ -819,7 +847,7 @@ DZ.edit = async (id) => {
         ${l.t !== 'text' ? `<button data-act="crop" class="${cropping ? 'on' : ''}" title="Crop">⛶<span>Crop</span></button>` : ''}
         <button data-act="fx" class="${l.fx ? 'on' : ''}" title="Flip left to right">⇋<span>Flip</span></button>
         <button data-act="fy" class="${l.fy ? 'on' : ''}" title="Flip upside down">⇵<span>Flip</span></button>
-        <button data-act="clip" class="${clipped(l) ? 'on' : ''}" ${doc.layers.indexOf(l) ? '' : 'disabled'} title="Clip to the layer below: only shows inside it">↳<span>Clip</span></button>
+        <button data-act="clip" class="${clipped(l) ? 'on' : ''}" ${F().indexOf(l) ? '' : 'disabled'} title="Clip to the layer below: only shows inside it">↳<span>Clip</span></button>
         <button data-act="pick" title="Select more items">☐<span>Select</span></button>
         <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
@@ -871,10 +899,10 @@ DZ.edit = async (id) => {
   };
   const togglePick = (id) => { const s = new Set(picks); if (sel && !s.size) s.add(sel); s.has(id) ? s.delete(id) : s.add(id); anchor = id; setPicks(s); };
   const startPicking = (id) => { const s = new Set(picks); if (sel) s.add(sel); if (id) s.add(id); picking = true; anchor = id || anchor; setPicks(s); navigator.vibrate?.(30); };
-  const clipped = (l) => doc.layers.indexOf(l) > 0 && !!l.clip;
+  const clipped = (l) => F().indexOf(l) > 0 && !!l.clip;
   // Whole clip groups: a base with the layers clipped to it travel together, in layer order.
   const groupOf = (ids) => {
-    const L = doc.layers, out = new Set(ids);
+    const L = F(), out = new Set(ids);
     for (let i = 0; i < L.length; i++) if (ids.includes(L[i].id)) {
       let b = i; while (b > 0 && L[b].clip) b--;
       let e = b + 1; while (e < L.length && L[e].clip) e++;
@@ -894,7 +922,7 @@ DZ.edit = async (id) => {
     if (!bases.length) return null;
     const bs = bases.map(box), bx = Math.floor(Math.min(...bs.map(b => b.x0))), by = Math.floor(Math.min(...bs.map(b => b.y0)));
     const bw = Math.max(1, Math.ceil(Math.max(...bs.map(b => b.x1))) - bx), bh = Math.max(1, Math.ceil(Math.max(...bs.map(b => b.y1))) - by);
-    const d = JSON.parse(JSON.stringify({ ...doc, layers: vis })); d.w = bw; d.h = bh;
+    const d = JSON.parse(JSON.stringify({ ...doc, layers: vis })); d.w = bw; d.h = bh; delete d.sides;
     for (const l of d.layers) { l.x -= bx; l.y -= by; }
     const sc = Math.min(1, max / Math.max(bw, bh)), c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(bw * sc)); c.height = Math.max(1, Math.round(bh * sc));
@@ -912,7 +940,7 @@ DZ.edit = async (id) => {
     const f = await flatten(list); if (!f) return;
     const ref = await Media.save(await pngOf(f.cv), 'png'); made.add(ref);
     const gone = new Set(list.map(l => l.id)), top = Math.max(...list.map(l => doc.layers.indexOf(l)));
-    const m = { id: dzId(), t: 'image', ref, x: f.bx, y: f.by, w: f.bw, h: f.bh, op: 1, rot: 0, name: list.length > 1 ? 'Merged' : layerName(list[0]) };
+    const m = { id: dzId(), t: 'image', ref, side: list[0].side, x: f.bx, y: f.by, w: f.bw, h: f.bh, op: 1, rot: 0, name: list.length > 1 ? 'Merged' : layerName(list[0]) };
     const out = []; doc.layers.forEach((l, i) => { if (!gone.has(l.id)) out.push(l); if (i === top) out.push(m); });
     doc.layers = out; picking = false; picks = new Set(); sel = m.id; changed(true); drawSide();
     toast('Merged into one picture.');
@@ -951,7 +979,7 @@ DZ.edit = async (id) => {
     const L = picked(), every = (f) => L.length && L.every(f);
     if (a === 'pick') return startPicking(null);
     if (a === 'done') { picking = false; return setPicks([]); }
-    if (a === 'all') { if (!picking && !many()) picking = true; return setPicks(doc.layers.filter(l => !l.hide).map(l => l.id)); }
+    if (a === 'all') { if (!picking && !many()) picking = true; return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
     if (a === 'none') return setPicks([]);
     if (a === 'merge') return merge(targets());
     if (a === 'refs') return saveRef(targets());
@@ -959,7 +987,7 @@ DZ.edit = async (id) => {
     if (!L.length) return;
     if (a === 'hide') { const v = !every(l => l.hide); L.forEach(l => l.hide = v); }
     if (a === 'lock') { const v = !every(l => l.lock); L.forEach(l => l.lock = v); }
-    if (a === 'clip') { const v = !every(l => l.clip); L.forEach(l => { if (doc.layers.indexOf(l) > 0) l.clip = v || undefined; }); }
+    if (a === 'clip') { const v = !every(l => l.clip); L.forEach(l => { if (F().indexOf(l) > 0) l.clip = v || undefined; }); }
     if (a === 'del') { const gone = new Set(L.map(l => l.id)); doc.layers = doc.layers.filter(l => !gone.has(l.id)); picks = new Set(); toast(`Deleted ${L.length}. Undo brings ${L.length === 1 ? 'it' : 'them'} back.`); }
     if (a === 'dup') {   // copies go together above the highest one, keeping their order (and clipping)
       const top = Math.max(...L.map(l => doc.layers.indexOf(l))), cs = L.map(l => ({ ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30, lock: undefined }));
@@ -970,7 +998,7 @@ DZ.edit = async (id) => {
 
   /* Adding things */
   const center = (w, h) => ({ x: (doc.w - w) / 2, y: (doc.h - h) / 2, w, h });
-  const add = (l) => { doc.layers.push({ id: dzId(), op: 1, rot: 0, ...l }); sel = doc.layers.at(-1).id; changed(true); drawSide(); };
+  const add = (l) => { doc.layers.push({ id: dzId(), op: 1, rot: 0, ...l, ...(doc.sides && face !== 'f' ? { side: face } : {}) }); sel = doc.layers.at(-1).id; changed(true); drawSide(); };
   const importPic = async (file, max = 2000) => {
     const alpha = /png|webp|gif/.test(file.type);
     const blob = alpha ? await pngBlob(file, max) : await Media.shrink(file, max, 0.9);
@@ -984,9 +1012,10 @@ DZ.edit = async (id) => {
     const over = (l) => { const a = -(l.rot || 0) * Math.PI / 180, cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, dx = p.x - cx, dy = p.y - cy;
       const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a), tol = 10 / k;
       return Math.abs(lx) <= l.w / 2 + tol && Math.abs(ly) <= (l.h || 0) / 2 + tol; };
-    for (let i = doc.layers.length - 1; i >= 0; i--) {
-      const l = doc.layers[i]; if (l.hide || !over(l)) continue;
-      if (i > 0 && l.clip) { let b = i; while (b > 0 && doc.layers[b].clip) b--; if (doc.layers[b].hide || !over(doc.layers[b])) continue; }   // only where it shows
+    const L = F();   // only the page being edited (master items are edited on the Master tab)
+    for (let i = L.length - 1; i >= 0; i--) {
+      const l = L[i]; if (l.hide || !over(l)) continue;
+      if (i > 0 && l.clip) { let b = i; while (b > 0 && L[b].clip) b--; if (L[b].hide || !over(L[b])) continue; }   // only where it shows
       return l;
     }
     return null;
@@ -1027,6 +1056,7 @@ DZ.edit = async (id) => {
   stage.addEventListener('pointerup', ptUp); stage.addEventListener('pointercancel', ptUp);
   stage.addEventListener('wheel', (e) => { e.preventDefault(); const r = stage.getBoundingClientRect();
     zoomTo(z * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+  $('#dz-faces').onclick = (e) => { const f = e.target.closest('[data-face]')?.dataset.face; if (f) setFace(f); };
   stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') return frame(); zoomTo(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4)); };
   let press = null;   // long press: hold still on an item to start selecting several
@@ -1119,7 +1149,7 @@ DZ.edit = async (id) => {
     if (!document.body.contains(el)) return removeEventListener('keydown', keys);
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(e.shiftKey ? 1 : -1); }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(doc.layers.filter(l => !l.hide).map(l => l.id)); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); if (targets().length) merge(targets()); return; }
     if (many()) {
       if (e.key === 'Escape') { picking = false; return setPicks([]); }
@@ -1145,12 +1175,12 @@ DZ.edit = async (id) => {
     if (row && !t.closest('[data-grip]')) {
       const ly = doc.layers.find(x => x.id === row.dataset.lid); if (!ly) return;
       if (rowHeld) { rowHeld = false; return; }   // the long press already picked it
-      if (t.closest('[data-lclip]')) { if (doc.layers.indexOf(ly) > 0) ly.clip = !ly.clip || undefined; changed(true); return drawSide(); }
+      if (t.closest('[data-lclip]')) { if (F().indexOf(ly) > 0) ly.clip = !ly.clip || undefined; changed(true); return drawSide(); }
       if (t.closest('[data-lhide]')) { ly.hide = !ly.hide; if (ly.hide && sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
       if (t.closest('[data-llock]')) { ly.lock = !ly.lock; placeSel(); changed(true); return drawSide(); }
       if (t.closest('[data-ldel]')) { doc.layers = doc.layers.filter(x => x !== ly); if (sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
       if (e.shiftKey && !t.closest('button')) {   // a range in the list, from the last one picked
-        const list = [...doc.layers].reverse(), a = list.findIndex(x => x.id === (anchor || sel)), b = list.indexOf(ly);
+        const list = [...F()].reverse(), a = list.findIndex(x => x.id === (anchor || sel)), b = list.indexOf(ly);
         if (a < 0) return togglePick(ly.id);
         return setPicks(new Set([...picks, ...list.slice(Math.min(a, b), Math.max(a, b) + 1).map(x => x.id)]));
       }
@@ -1176,6 +1206,16 @@ DZ.edit = async (id) => {
     if (d('field')) { const f = d('field');
       return add({ t: 'text', text: `{${f}}`, size: Math.round(doc.h * 0.05), font: '@2', c: '@fg', al: 'center', lh: 1.2, ...center(doc.w * 0.6, doc.h * 0.06) }); }
     if (d('theme')) { doc.theme = d('theme'); await DZF.all(doc); changed(true); return drawSide(); }
+    if (d('sides') != null) {
+      const two = d('sides') === '1'; if (two === !!doc.sides) return;
+      if (two) doc.sides = 2;
+      else {   // back to one side: the master's items go under the front; the back's are removed (Undo brings them back)
+        const back = doc.layers.filter(l => l.side === 'b');
+        if (back.length && !confirm(`Remove the back page and its ${back.length} item${back.length === 1 ? '' : 's'}?\n\nThe master page's items stay, under the front. Undo brings the back page back.`)) return;
+        doc.layers = [...doc.layers.filter(l => l.side === 'm'), ...doc.layers.filter(l => dzSide(l) === 'f')]; doc.layers.forEach(l => delete l.side); delete doc.sides;
+      }
+      face = 'f'; sel = null; changed(true); fit(); return drawSide();
+    }
     if (t.closest('#dz-code')) { doc.vals.code = Math.random().toString(36).slice(2, 8).toUpperCase(); changed(true); return drawSide(); }
     if (t.closest('#dz-bgrm')) { doc.bg.img = null; changed(true); return drawSide(); }
     if (t.closest('#dz-piece')) { const pid = await dzPortfolioPick(false); if (!pid) return;
@@ -1207,11 +1247,13 @@ DZ.edit = async (id) => {
       if (a === 'unbend') { l.arc = 0; changed(true); return drawSide(); }
       if (a === 'pick') return startPicking(l.id);
       if (a === 'flatten') return merge([l.id]);
-      if (a === 'clip') { if (i > 0) l.clip = !l.clip || undefined; }
+      if (a === 'clip') { if (F().indexOf(l) > 0) l.clip = !l.clip || undefined; }
       if (a === 'del') { doc.layers.splice(i, 1); sel = null; }
       if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id; }
-      if (a === 'up' && i < doc.layers.length - 1) [doc.layers[i], doc.layers[i + 1]] = [doc.layers[i + 1], doc.layers[i]];
-      if (a === 'down' && i > 0) [doc.layers[i], doc.layers[i - 1]] = [doc.layers[i - 1], doc.layers[i]];
+      if (a === 'up' || a === 'down') {   // past the next item on the same page
+        const FL = F(), o = FL[FL.indexOf(l) + (a === 'up' ? 1 : -1)];
+        if (o) { const j = doc.layers.indexOf(o); [doc.layers[i], doc.layers[j]] = [doc.layers[j], doc.layers[i]]; }
+      }
       if (a === 'lock') l.lock = !l.lock;
       if (a === 'fx') l.fx = !l.fx;
       if (a === 'fy') l.fy = !l.fy;
@@ -1252,7 +1294,10 @@ DZ.edit = async (id) => {
   const ldrop = () => {
     if (!ldrag) return;
     const { from, to } = ldrag; ldrag = null;
-    if (from !== to) { const list = [...doc.layers].reverse(), [m] = list.splice(from, 1); list.splice(to, 0, m); doc.layers = list.reverse(); changed(true); }
+    if (from !== to) {   // reorder this page's layers, in the places they already take in the whole list
+      const FL = F(), list = [...FL].reverse(), [m] = list.splice(from, 1); list.splice(to, 0, m); list.reverse();
+      const at = FL.map(l => doc.layers.indexOf(l)), all = [...doc.layers]; at.forEach((p, j) => all[p] = list[j]); doc.layers = all; changed(true);
+    }
     drawSide();
   };
   const rowUp = () => { clearTimeout(rowPress?.t); rowPress = null; };
@@ -1373,12 +1418,12 @@ function dzExport(doc, name) {
   const draw = () => {
     o.innerHTML = `<div class="card"><h2>Export</h2>
       <p class="muted" style="font-size:13px;margin-top:0">${esc(kind.label)}, ${esc(doc.paper || kind.sub)}. Saved at ${kind.social ? 'full size' : `print quality (${doc.dpi || 300} dpi)`}.
-        ${doc.fold ? 'Saved as two pages, outside then inside. Print double-sided, flipping on the short edge.' : ''}</p>
+        ${doc.sides ? `Saved as two pages, ${dzFaceNames(doc).f.toLowerCase()} then ${dzFaceNames(doc).b.toLowerCase()}. Print double-sided${doc.w > doc.h ? ', flipping on the short edge' : ''}.` : ''}</p>
       <div class="dz-ex">
         <button data-ex="png"><b>Save picture</b><small>PNG, for printing elsewhere or posting</small></button>
         <button data-ex="share"><b>Share</b><small>Send it in WhatsApp or another app</small></button>
         ${kind.fold ? '<button data-ex="print"><b>Print / PDF</b><small>Two pages: outside, then inside</small></button>' : ''}
-        ${kind.page ? '<button data-ex="print"><b>Print / PDF</b><small>Fits the paper in your printer; choose the same size there</small></button>' : ''}
+        ${kind.page ? `<button data-ex="print"><b>Print / PDF</b><small>${doc.sides ? 'Two pages. ' : ''}Fits the paper in your printer; choose the same size there</small></button>` : ''}
         ${kind.per ? `<button data-ex="print"><b>Print / PDF</b><small>${st.sheet ? `${kind.per} on an A4 sheet with cut marks` : 'One per page'}</small></button>` : ''}
       </div>
       ${kind.per ? `<label class="toggle" style="display:inline-flex;margin-top:10px"><input type="checkbox" id="dx-sheet" ${st.sheet ? 'checked' : ''}><span>Fill an A4 sheet (${kind.per} per page)</span></label>` : ''}
@@ -1391,10 +1436,10 @@ function dzExport(doc, name) {
     if (!a) return;
     toast('Preparing…');
     const cv = await dzCanvas(doc);
-    if (doc.fold) {   // the two sides as their own pages
-      const sides = [0, 1].map(i => { const c = document.createElement('canvas'); c.width = doc.w; c.height = doc.fold.side; c.getContext('2d').drawImage(cv, 0, -i * doc.fold.side); return c; });
-      if (a === 'print') { o.remove(); return printCanvas(...sides); }
-      const fs = await Promise.all(sides.map(async (c, i) => new File([await new Promise(r => c.toBlob(r, 'image/png'))], `${file()}_${i ? 'inside' : 'outside'}.png`, { type: 'image/png' })));
+    if (doc.sides) {   // the two sides as their own pages
+      const sides = [cv, await dzCanvas(doc, 1, 'b')], nm = dzFaceNames(doc);
+      if (a === 'print') { o.remove(); return printCanvas(...(kind.per ? [await dzSheet(sides[0], doc.kind, st.sheet), await dzSheet(sides[1], doc.kind, st.sheet, true)] : sides)); }
+      const fs = await Promise.all(sides.map(async (c, i) => new File([await new Promise(r => c.toBlob(r, 'image/png'))], `${file()}_${(i ? nm.b : nm.f).toLowerCase()}.png`, { type: 'image/png' })));
       if (a === 'share') {
         try { if (navigator.canShare?.({ files: fs })) return await navigator.share({ files: fs, title: name }); } catch (err) { if (err.name === 'AbortError') return; }
       }
@@ -1414,7 +1459,7 @@ function dzExport(doc, name) {
   document.body.appendChild(o); draw();
 }
 // An A4 page (300 dpi): the design once, centred, or as many copies as fit with cut marks.
-async function dzSheet(cv, kind, fill) {
+async function dzSheet(cv, kind, fill, back) {
   const W = 2480, H = 3508, pg = document.createElement('canvas'); pg.width = W; pg.height = H;
   const x = pg.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
   const k = DZ_KINDS[kind];
@@ -1426,13 +1471,15 @@ async function dzSheet(cv, kind, fill) {
     x.drawImage(cv, (W - w) / 2, (H - h) / 2, w, h); marks((W - w) / 2, (H - h) / 2, w, h); return pg;
   }
   if (kind === 'flyer') {   // two A5 on an A4, each turned sideways (A5 is exactly half an A4)
-    for (let i = 0; i < 2; i++) { x.save(); x.translate(0, i * H / 2); x.rotate(-Math.PI / 2); x.drawImage(cv, -H / 2, 0, H / 2, W); x.restore(); }
+    for (let i = 0; i < 2; i++) { x.save();
+      if (back) { x.translate(W, i * H / 2); x.rotate(Math.PI / 2); } else { x.translate(0, i * H / 2 + H / 2); x.rotate(-Math.PI / 2); }
+      x.drawImage(cv, 0, 0, H / 2, W); x.restore(); }
     x.strokeStyle = '#bbb'; x.setLineDash([12, 10]); x.lineWidth = 2; x.beginPath(); x.moveTo(0, H / 2); x.lineTo(W, H / 2); x.stroke();
     return pg;
   }
   const cols = Math.max(1, Math.floor((W - 120) / k.w)), rows = Math.max(1, Math.floor((H - 120) / k.h));
   const ox = (W - cols * k.w) / 2, oy = (H - rows * k.h) / 2;
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const px = ox + c * k.w, py = oy + r * k.h; x.drawImage(cv, px, py); marks(px, py, k.w, k.h); }
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const px = ox + (back ? cols - 1 - c : c) * k.w, py = oy + r * k.h; x.drawImage(cv, px, py); marks(px, py, k.w, k.h); }
   return pg;
 }
 
