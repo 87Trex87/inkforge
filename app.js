@@ -547,11 +547,20 @@ const ICON = {
   quote: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M8 15h2M12 15h2M16 11v6"/></svg>',
   stock: '<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg>',
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
+  stats: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
+  saved: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
   settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
 };
-const tile = (icon, title, tipText, soon, go) =>
-  `<div class="card tile" ${go ? `data-go="${go}"` : ''} data-tip="${esc(tipText)}"><div class="ico">${ICON[icon]}</div>
-   <div class="t">${title}</div>${soon ? '<span class="soon">Soon</span>' : ''}</div>`;
+const tile = (icon, title, sub, soon, go) =>
+  `<div class="card tile" ${go ? `data-go="${go}"` : ''}><div class="ico">${ICON[icon]}</div>
+   <div class="tt"><div class="t">${title}</div><div class="s">${esc(sub)}</div></div>${soon ? '<span class="soon">Soon</span>' : ''}</div>`;
+// Menu group: a small heading over a grid of tiles.
+const tileGroup = (label, tiles) => `<div class="mgrp">${label}</div><div class="grid">${tiles.join('')}</div>`;
+/* Form sections, the same look as the quote screens: a heading per group of fields. Folded sections
+   hold the less-used fields and open by themselves when something in them is already filled in. */
+const fsec = (title, body, o = {}) => o.fold
+  ? `<details class="fsec fold ${o.cls || ''}" ${o.id ? `id="${o.id}"` : ''} ${o.open ? 'open' : ''}><summary>${title}${o.hint ? ` <span class="fsec-h">${o.hint}</span>` : ''}</summary><div class="fsec-b">${body}</div></details>`
+  : `<section class="fsec ${o.cls || ''}" ${o.id ? `id="${o.id}"` : ''}><h3>${title}</h3>${body}</section>`;
 
 const VIEWS = {
   home: {
@@ -572,6 +581,7 @@ const VIEWS = {
       <div class="grid">
         ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil')}
         ${tile('quote', 'Quick quote', 'Price a piece in seconds', false, 'quote')}
+        ${tile('saved', 'Saved quotes', 'Replies and quotes to finish', false, 'quotes')}
       </div>`;
     },
     async mount() {
@@ -714,7 +724,9 @@ const VIEWS = {
       let photoRef = c.photo_ref || null, newPhoto = null;
       const inp = (name, label, type = 'text', extra = '') =>
         `<label class="field"><span>${label}</span><input class="in" name="${name}" type="${type}" value="${esc(c[name])}" ${extra}></label>`;
+      const moreOpen = !!(c.pronouns || c.dob || c.tags || (c.category && c.category !== 'Client'));
       f.innerHTML = `
+        <section class="fsec"><h3>Contact</h3>
         <div class="photo-pick">
           <label class="avatar-pick" data-tip="Add or change photo">
             <span id="f-ava">${avatar(c, await Media.url(photoRef), 'lg')}</span>
@@ -723,16 +735,20 @@ const VIEWS = {
           </label>
           ${photoRef ? '<button type="button" class="btn small" id="f-photo-rm">Remove photo</button>' : ''}
         </div>
-        <label class="field"><span>Category ${help('Keep suppliers, services and other contacts apart from clients. Type a new name to make your own category.')}</span>
-          <input class="in" name="category" list="c-catlist" value="${esc(c.category || (VIEWS.clients.cat && VIEWS.clients.cat !== 'all' ? VIEWS.clients.cat : 'Client'))}" autocapitalize="words">
-          <datalist id="c-catlist">${[...new Set([...CLIENT_CATS, ...(await DB.all('SELECT DISTINCT category AS c FROM clients')).map(r => r.c)])].map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
         <div class="two">${inp('first_name', 'First name or business', 'text', 'required autocapitalize="words"')}${inp('last_name', 'Last name', 'text', 'autocapitalize="words"')}</div>
         <div class="two">${inp('phone', 'Phone', 'tel', 'inputmode="tel"')}${inp('email', 'Email', 'email', 'inputmode="email"')}</div>
-        <div class="two">${inp('instagram', 'Instagram', 'text', 'placeholder="@handle" autocapitalize="off"')}${inp('pronouns', 'Pronouns', 'text', 'placeholder="optional"')}</div>
-        <div class="two">${inp('dob', 'Birthday', 'date')}${inp('tags', 'Tags', 'text', 'placeholder="regular, blackwork"')}</div>
-        <label class="field"><span>Medical / allergies ${help('Latex, blood thinners, skin conditions, etc. Shown highlighted on the client page.')}</span>
-          <textarea class="in" name="medical" rows="2">${esc(c.medical)}</textarea></label>
-        <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(c.notes)}</textarea></label>
+        ${inp('instagram', 'Instagram', 'text', 'placeholder="@handle" autocapitalize="off"')}
+        </section>
+        ${fsec('More about them', `
+          <label class="field"><span>Category ${help('Keep suppliers, services and other contacts apart from clients. Type a new name to make your own category.')}</span>
+            <input class="in" name="category" list="c-catlist" value="${esc(c.category || (VIEWS.clients.cat && VIEWS.clients.cat !== 'all' ? VIEWS.clients.cat : 'Client'))}" autocapitalize="words">
+            <datalist id="c-catlist">${[...new Set([...CLIENT_CATS, ...(await DB.all('SELECT DISTINCT category AS c FROM clients')).map(r => r.c)])].map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+          <div class="two">${inp('dob', 'Birthday', 'date')}${inp('pronouns', 'Pronouns', 'text', 'placeholder="optional"')}</div>
+          ${inp('tags', 'Tags', 'text', 'placeholder="regular, blackwork"')}`, { fold: true, open: moreOpen, hint: 'category, birthday, tags' })}
+        ${fsec('Health and notes', `
+          <label class="field"><span>Medical / allergies ${help('Latex, blood thinners, skin conditions, etc. Shown highlighted on the client page.')}</span>
+            <textarea class="in" name="medical" rows="2">${esc(c.medical)}</textarea></label>
+          <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(c.notes)}</textarea></label>`)}
         <div class="form-foot row">
           <button type="button" class="btn" id="f-cancel">Cancel</button>
           <button type="submit" class="btn primary" style="flex:1">Save</button>
@@ -844,6 +860,7 @@ const VIEWS = {
       f.innerHTML = `
         <div class="field"><span class="lbl">Type</span>
           <div class="seg kinds" id="b-kind">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button type="button" data-k="${k}" class="${k === kind ? 'on' : ''}">${v.label}</button>`).join('')}</div></div>
+        <section class="fsec"><h3>Who and when</h3>
         <label class="field"><span>Client ${help('Search existing clients, or type a new name and pick "Add" to create one. Optional for meetings and leave.')}</span>
           <div class="picker">
             <input class="in" id="b-client" placeholder="Search clients, or type any name" value="${esc(client ? fullName(client) : guest.name)}" autocomplete="off">
@@ -862,24 +879,27 @@ const VIEWS = {
           </div>
         </div>
         <div class="off-warn" id="b-offwarn" hidden></div>
+        </section>
+        <section class="fsec"><h3>Details</h3>
         <label class="field"><span id="b-desc-l">Tattoo description</span><textarea class="in" name="description" rows="2" placeholder="e.g. Fine-line peony with stem">${esc(b.description)}</textarea></label>
-        <div id="b-ink">
+        <div class="b-ink">
         <label class="field"><span>Type of work</span><select class="in" name="job">${JOB_TYPES.map(([k, n]) => `<option value="${k}" ${(b.job || 'new') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <div class="two">
           <label class="field"><span>Placement</span><input class="in" name="placement" value="${esc(b.placement)}" placeholder="Left forearm"></label>
           <label class="field"><span>Size</span><input class="in" name="size" value="${esc(b.size)}" placeholder="15 x 10 cm"></label>
-        </div>
+        </div></div>
+        <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="2">${esc(b.notes)}</textarea></label>
+        </section>
+        <section class="fsec b-ink"><h3>Price and deposit</h3>
         <div class="two">
           <label class="field"><span>Quote${cur ? ` (${esc(cur)})` : ''}</span><input class="in" name="quote" type="number" inputmode="decimal" min="0" step="any" value="${b.quote ?? ''}"></label>
           <label class="field"><span>Deposit${cur ? ` (${esc(cur)})` : ''}</span>
             <div class="row" style="flex-wrap:nowrap"><input class="in" name="deposit" type="number" inputmode="decimal" min="0" step="any" value="${b.deposit ?? ''}">
             <label class="toggle" data-tip="Deposit received"><input type="checkbox" name="deposit_paid" ${b.deposit_paid ? 'checked' : ''}><span>Paid</span></label></div></label>
-        </div>
-        <div class="field"><span class="lbl">Reference photos ${help('Client references or your sketch. Stored on the device, included in backups.')}</span>
-          <div class="thumbs" id="b-thumbs"></div></div>
-        </div>
-        <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(b.notes)}</textarea></label>
-        <div class="b-done" id="b-done">
+        </div></section>
+        ${fsec(`Reference photos ${help('Client references or your sketch. Stored on the device, included in backups.')}`, '<div class="thumbs" id="b-thumbs"></div>',
+          { fold: true, open: photos.length || added.length, cls: 'b-ink', hint: photos.length || added.length ? String(photos.length + added.length) : '' })}
+        <section class="fsec b-done" id="b-done"><h3>After the session</h3>
           <label class="toggle b-done-t"><input type="checkbox" name="completed" ${b.completed ? 'checked' : ''}><span>Tattoo completed</span></label>
           <div id="b-done-in">
             <div class="two">
@@ -896,7 +916,7 @@ const VIEWS = {
             </div>
             <div id="b-fu-info" class="muted" style="font-size:13px;margin-top:8px"></div>
           </div>
-        </div>
+        </section>
         ${b.id && kind === 'tattoo' ? `<button type="button" class="btn small" id="b-pf" style="margin-bottom:8px" data-tip="Add the finished tattoo to your portfolio, prefilled from this booking">+ Add finished tattoo to portfolio</button>` : ''}
         <div class="form-foot row">
           ${b.id ? '<button type="button" class="btn danger icon-btn" id="b-del" data-tip="Delete booking" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
@@ -923,7 +943,7 @@ const VIEWS = {
       const showKind = () => {
         const ink = BOOKING_KINDS[kind].ink;
         showDone(); offWarn();
-        $('#b-ink').hidden = !ink;
+        f.querySelectorAll('.b-ink').forEach(x => x.hidden = !ink);
         $('#b-desc-l').textContent = kind === 'tattoo' || kind === 'touchup' ? 'Tattoo description' : kind === 'consult' ? 'Idea / what to discuss' : kind === 'followup' ? 'What to check' : kind === 'hold' ? 'Held for (private)' : 'Details';
         f.description.placeholder = ink ? 'e.g. Fine-line peony with stem' : kind === 'leave' ? 'e.g. Holiday' : '';
       };
@@ -1079,21 +1099,24 @@ const VIEWS = {
   },
   studio: {
     title: () => 'Studio',
-    render: () => `<div class="grid">
-      ${tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio')}
-      ${tile('stencil', 'Stencil maker', 'Photo to stencil', false, 'stencil')}
-      ${tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')}
-      ${tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel')}</div>`
+    render: () => tileGroup('Create', [
+        tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil'),
+        tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel')])
+      + tileGroup('Your work', [
+        tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
+        tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')])
   },
   more: {
     title: () => 'More',
-    render: () => `<div class="grid">
-      ${tile('settings', 'Settings & backup', 'Profile, storage, backup and restore', false, 'settings')}
-      ${tile('quote', 'Quote calculator', 'Price a piece from your own rates', false, 'quote')}
-      ${tile('quote', 'Saved quotes', 'Pick a quote up again, book it or compare', false, 'quotes')}
-      ${tile('quote', 'Stats', 'Tattoos, hours and earnings over time', false, 'stats')}
-      ${tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory')}
-      ${tile('rules', 'Rule book', 'Your studio rules', false, 'rules')}</div>`
+    render: () => tileGroup('Quotes and earnings', [
+        tile('quote', 'Quote calculator', 'Price a piece from your own rates', false, 'quote'),
+        tile('saved', 'Saved quotes', 'Pick a quote up again, book it or compare', false, 'quotes'),
+        tile('stats', 'Stats', 'Tattoos, hours and earnings over time', false, 'stats')])
+      + tileGroup('Running the studio', [
+        tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory'),
+        tile('rules', 'Rule book', 'Your studio rules', false, 'rules')])
+      + tileGroup('App', [
+        tile('settings', 'Settings & backup', 'Profile, your week, Google, backup', false, 'settings')])
   },
   portfolio: {
     title: () => 'Portfolio',
@@ -1199,18 +1222,20 @@ const VIEWS = {
       const f = $('#pf-form');
       f.innerHTML = `
         <div class="seg" id="pf-kind" style="margin-bottom:14px">${Object.entries(PF_KIND).map(([k, l]) => `<button type="button" data-k="${k}" class="${it.kind === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
-        <div class="field"><span class="lbl">Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil or sketch. Tap ◀ to move a photo forward.')}</span>
-          <div class="thumbs pf-thumbs" id="pf-thumbs"></div></div>
+        ${fsec(`Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil or sketch. Tap ◀ to move a photo forward.')}`, '<div class="thumbs pf-thumbs" id="pf-thumbs"></div>')}
+        <section class="fsec"><h3>Details</h3>
         <label class="field"><span>Title</span><input class="in" name="title" value="${esc(it.title)}" placeholder="Peony sleeve"></label>
         <label class="field"><span>Description</span><textarea class="in" name="description" rows="2">${esc(it.description)}</textarea></label>
         <div class="two">
           <label class="field"><span>Placement</span><input class="in" name="placement" value="${esc(it.placement)}"></label>
           <label class="field"><span>Date</span><input class="in" type="date" name="made_on" value="${esc(it.made_on)}"></label>
         </div>
-        <label class="field"><span>Tags ${help('Comma separated, e.g. blackwork, floral, fine-line. Used by search.')}</span><input class="in" name="tags" value="${esc(it.tags)}" placeholder="blackwork, floral"></label>
-        <label class="field pf-client"><span>Client (optional)</span>
-          <div class="picker"><input class="in" id="pf-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
-          <div class="pick-list" id="pf-client-list" hidden></div></div></label>
+        </section>
+        ${fsec('More', `
+          <label class="field"><span>Tags ${help('Comma separated, e.g. blackwork, floral, fine-line. Used by search.')}</span><input class="in" name="tags" value="${esc(it.tags)}" placeholder="blackwork, floral"></label>
+          <label class="field pf-client"><span>Client (optional)</span>
+            <div class="picker"><input class="in" id="pf-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
+            <div class="pick-list" id="pf-client-list" hidden></div></div></label>`, { fold: true, open: !!(it.tags || client), hint: 'tags, client' })}
         <div class="two pf-flash">
           <label class="field"><span>Price${cur ? ` (${esc(cur)})` : ''}</span><input class="in" name="price" type="number" inputmode="decimal" min="0" step="any" value="${it.price ?? ''}"></label>
           <label class="field"><span>&nbsp;</span><label class="toggle"><input type="checkbox" name="claimed" ${it.claimed ? 'checked' : ''}><span>Claimed</span></label></label>
@@ -1371,21 +1396,25 @@ const VIEWS = {
       const f = $('#inv-form');
       const inp = (n, l, t = 'text', x = '') => `<label class="field"><span>${l}</span><input class="in" name="${n}" type="${t}" value="${esc(it[n] ?? '')}" ${x}></label>`;
       f.innerHTML = `
+        <section class="fsec"><h3>Item</h3>
         ${inp('name', 'Name', 'text', 'required placeholder="Black ink 8oz"')}
         <div class="two">
           <label class="field"><span>Category</span><input class="in" name="category" list="inv-cats" value="${esc(it.category ?? '')}">
             <datalist id="inv-cats">${sugg.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
           ${inp('unit', 'Unit', 'text', 'placeholder="box, bottle, pack"')}
-        </div>
+        </div></section>
+        <section class="fsec"><h3>Stock</h3>
         <div class="two">
           ${inp('qty', 'In stock', 'number', 'inputmode="decimal" min="0" step="any"')}
           <label class="field"><span>Minimum ${help('When stock drops to this, the item is flagged and goes on the shopping list.')}</span>
             <input class="in" name="min_qty" type="number" inputmode="decimal" min="0" step="any" value="${it.min_qty ?? 0}"></label>
         </div>
-        <div class="two">${inp('supplier', 'Supplier')}${inp('cost', 'Cost per unit' + (cur ? ` (${esc(cur)})` : ''), 'number', 'inputmode="decimal" min="0" step="any"')}</div>
-        <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="2">${esc(it.notes ?? '')}</textarea></label>
-        <label class="toggle" style="display:inline-flex;margin-bottom:12px" data-tip="Switch off to keep the item without counting it in stock takes, low-stock alerts or printouts">
-          <input type="checkbox" name="active" ${it.active === 0 ? '' : 'checked'}><span>Active</span></label>
+        <label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Switch off to keep the item without counting it in stock takes, low-stock alerts or printouts">
+          <input type="checkbox" name="active" ${it.active === 0 ? '' : 'checked'}><span>Active</span></label></section>
+        ${fsec('Supplier and cost', `
+          <div class="two">${inp('supplier', 'Supplier')}${inp('cost', 'Cost per unit' + (cur ? ` (${esc(cur)})` : ''), 'number', 'inputmode="decimal" min="0" step="any"')}</div>
+          <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="2">${esc(it.notes ?? '')}</textarea></label>`,
+          { fold: true, open: !!(it.supplier || it.cost != null || it.notes), hint: 'supplier, cost, notes' })}
         <div class="form-foot row">
           ${it.id ? '<button type="button" class="btn danger icon-btn" id="inv-del" aria-label="Delete" data-tip="Delete item"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
           <button type="button" class="btn" id="inv-cancel">Cancel</button>
@@ -1885,9 +1914,18 @@ const VIEWS = {
           </div></div>
         <div class="two">
           <label class="field"><span>Currency symbol ${help('Shown before quotes and deposits, e.g. R, $, £, €.')}</span><input class="in" id="s-cur" value="${esc(Settings.get('currency'))}" maxlength="4"></label>
+          <label class="field"><span>Country code ${help('Numbers typed with a leading 0 get this code, so WhatsApp and quote links work. For South Africa: 27.')}</span>
+            <div class="unit-in"><input class="in" id="s-cc" type="text" inputmode="numeric" placeholder="27" value="${esc(countryCode())}"><em>+</em></div></label>
+        </div>
+        <div class="lbl" style="margin-top:6px">Contact details ${help('On quotes, receipts and forms. Leave any blank to hide that line.')}</div>
+        <div class="two">
+          <label class="field"><span>Contact number ${help('With the country code, e.g. +27 82 123 4567. Quote replies come to this number on WhatsApp.')}</span><input class="in" id="s-aphone" type="tel" value="${esc(Settings.get('artist_phone'))}"></label>
+          <label class="field"><span>Instagram</span><input class="in" id="s-ig" value="${esc(Settings.get('artist_instagram'))}" placeholder="instagram.com/…" autocapitalize="off"></label>
+          <label class="field"><span>Facebook</span><input class="in" id="s-fb" value="${esc(Settings.get('artist_facebook'))}" placeholder="facebook.com/…" autocapitalize="off"></label>
+          <label class="field"><span>TikTok</span><input class="in" id="s-tt" value="${esc(Settings.get('artist_tiktok'))}" placeholder="tiktok.com/@…" autocapitalize="off"></label>
         </div>
       </div>
-      <div class="card"><h2>Working hours ${help('Your normal day. Used for new bookings and for the open appointments you share. Longer sessions can still run past the end time.')}</h2>
+      <details class="card qc-sec" data-sec="week" ${SET_OPEN.has('week') ? 'open' : ''}><summary><h2>Your week ${help('Your normal day and days off. Used for new bookings and for the open times clients see. Longer sessions can still run past the end time.')}</h2></summary>
         <div class="two">
           <label class="field"><span>Start</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
           <label class="field"><span>Finish</span><input class="in" id="s-end" type="time" value="${esc(Settings.get('day_end', '17:00'))}"></label>
@@ -1896,20 +1934,10 @@ const VIEWS = {
           <input class="in" id="s-maxday" type="number" min="1" max="10" value="${esc(Settings.get('max_per_day', '1'))}"></label>
         <label class="field"><span>Time between bookings ${help('Setup, cleaning and a break. Kept free before and after every booking when working out open times.')}</span>
           <div class="unit-in"><input class="in" id="s-gap" type="number" min="0" max="240" step="15" value="${esc(Settings.get('booking_gap', '60'))}"><em>min</em></div></label>
-      </div>
-      <div class="card"><h2>Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</h2>
-        <div id="off-card"></div></div>
-      <div class="card"><h2>Contact details ${help('Printed at the bottom of your aftercare form. Leave any blank to hide that line.')}</h2>
-        <div class="two">
-          <label class="field"><span>Country code ${help('Numbers typed with a leading 0 get this code, so WhatsApp and quote links work. For South Africa: 27.')}</span>
-            <div class="unit-in"><input class="in" id="s-cc" type="text" inputmode="numeric" placeholder="27" value="${esc(countryCode())}"><em>+</em></div></label>
-          <label class="field"><span>Contact number ${help('With the country code, e.g. +27 82 123 4567. Quote replies come to this number on WhatsApp.')}</span><input class="in" id="s-aphone" type="tel" value="${esc(Settings.get('artist_phone'))}"></label>
-          <label class="field"><span>Instagram</span><input class="in" id="s-ig" value="${esc(Settings.get('artist_instagram'))}" placeholder="instagram.com/…" autocapitalize="off"></label>
-          <label class="field"><span>Facebook</span><input class="in" id="s-fb" value="${esc(Settings.get('artist_facebook'))}" placeholder="facebook.com/…" autocapitalize="off"></label>
-          <label class="field"><span>TikTok</span><input class="in" id="s-tt" value="${esc(Settings.get('artist_tiktok'))}" placeholder="tiktok.com/@…" autocapitalize="off"></label>
-        </div>
-      </div>
-      <div class="card"><h2>Google Calendar ${help('Bookings sync both ways with an "InkForge" calendar in your Google account. Only time, title and the labelled note lines are used; everything else in Google is ignored.')}</h2>
+        <div class="lbl" style="margin-top:6px">Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</div>
+        <div id="off-card"></div>
+      </details>
+      <details class="card qc-sec" data-sec="gcal" ${SET_OPEN.has('gcal') ? 'open' : ''}><summary><h2>Google Calendar ${help('Bookings sync both ways with an "InkForge" calendar in your Google account. Only time, title and the labelled note lines are used; everything else in Google is ignored.')}</h2></summary>
         <div id="gcal-status" style="margin-bottom:12px"></div>
         <label class="field"><span>OAuth client ID ${help('Created once in Google Cloud. See the setup guide below.')}</span>
           <input class="in" id="s-gid" value="${esc(Settings.get('gcal_client_id'))}" placeholder="…apps.googleusercontent.com" autocapitalize="off" spellcheck="false"></label>
@@ -1930,11 +1958,8 @@ const VIEWS = {
           </ol>
           <p class="muted">Google only lets InkForge manage calendars it creates, plus see when you're busy. It cannot read or change your other events.</p>
         </details>
-      </div>
-      <div class="card"><h2>Storage ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</h2>
-        <div id="storage-info" class="muted">Checking…</div>
-      </div>
-      <div class="card"><h2>Backup ${help('A backup holds everything: clients, bookings, forms, portfolio, stock, rules, reel templates, settings and all photos. Save one regularly, e.g. to cloud storage.')}</h2>
+      </details>
+      <details class="card qc-sec" data-sec="backup" ${SET_OPEN.has('backup') ? 'open' : ''}><summary><h2>Backup and storage ${help('A backup holds everything: clients, bookings, forms, portfolio, stock, rules, reel templates, settings and all photos. Save one regularly, e.g. to cloud storage.')}</h2></summary>
         <div id="last-backup" class="muted" style="margin-bottom:12px"></div>
         <div class="row">
           <button class="btn primary" id="b-export" data-tip="Save this workspace as a file: a backup, or to open it on another device">Save workspace file</button>
@@ -1943,11 +1968,14 @@ const VIEWS = {
           <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
         </div>
         <input type="file" id="merge-file" accept=".inkforge,.sqlite,.db" hidden>
-      </div>`;
+        <div class="lbl" style="margin-top:14px">Storage on this device ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</div>
+        <div id="storage-info" class="muted">Checking…</div>
+      </details>`;
     },
     async mount() {
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-setup').onclick = runSetup;
+      $('#view').addEventListener('toggle', (e) => { const k = e.target.dataset?.sec; if (k) e.target.open ? SET_OPEN.add(k) : SET_OPEN.delete(k); }, true);
       $('#s-name').addEventListener('change', save('artist_name'));
       $('#s-studio').addEventListener('change', save('studio_name'));
       $('#s-cur').addEventListener('change', save('currency'));
@@ -2154,6 +2182,7 @@ function runSetup() {
   document.body.appendChild(o); draw();
 }
 
+const SET_OPEN = new Set();   // Settings sections the artist has opened
 function renderDaysOff() {
   const el = $('#off-card'); if (!el) return;
   const o = daysOff();
