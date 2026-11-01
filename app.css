@@ -773,3 +773,16 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .sd-box b { font: 15pt/1.1 "Pirata One", serif; color: #14857c; } .sd-box span { font-size: 7pt; color: #555; text-transform: uppercase; letter-spacing: .05em; }
 .sd-box.red { border-color: #f1c4bf; background: #fdf0ee; } .sd-box.red b { color: #a12a22; }
 .inv-off .c-row { opacity: .55; }
+
+/* Quote placement step: bigger tap targets; chart beside the list when the screen is landscape */
+.qz-place .qz-chip { min-height: 40px; font-size: 14px; padding: 8px 14px; }
+.qz-place .qz-chip b { width: 12px; height: 12px; }
+.qz-place .lbl { margin-top: 6px; }
+.qz-picks .qz-legend { margin: 10px 0 0; }
+@media (orientation: landscape) and (min-width: 700px) {
+  #qz:has(.qz-place) { max-width: 1100px; }
+  .qz-place { display: grid; grid-template-columns: minmax(260px, 45%) 1fr; gap: 18px; align-items: start; }
+  .qz-place .qz-pin { margin: 0; padding: 0; box-shadow: none; background: none; top: calc(env(safe-area-inset-top, 0px) + 122px); }
+  .qz-place .qz-chart img { max-height: calc(100vh - 220px); }
+  .qz-picks .qz-legend { margin-top: 0; }
+}

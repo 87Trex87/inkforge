@@ -2872,12 +2872,14 @@ function qzDraw() {
   if (s === 0) {
     const groups = [...new Set(c.placements.map(p => p[1]))];
     body = `<h2>Where is the tattoo?</h2>
-      <div class="qz-pin"><button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button></div>
+      <div class="qz-place"><div class="qz-pin"><button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button></div>
+      <div class="qz-picks">
+      <div class="qz-legend">${PAIN_COLOURS.map((col, i) => `<span><b style="background:${col}"></b>${PAIN_NAMES[i]}</span>`).join('')}</div>
       <div class="seg" id="qz-side" style="margin:10px 0">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right']].map(([k, l]) =>
         `<button data-side="${k}" class="${QZ.side === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
       ${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="qz-chips">${c.placements.filter(p => p[1] === g).map(([n, , pn]) =>
         `<button data-place="${esc(n)}" class="chip qz-chip ${QZ.place === n ? 'on' : ''}"><b style="background:${PAIN_COLOURS[pn - 1]}" title="${PAIN_NAMES[pn - 1]} pain"></b>${esc(n)}</button>`).join('')}</div>`).join('')}
-      <div class="qz-legend">${PAIN_COLOURS.map((col, i) => `<span><b style="background:${col}"></b>${PAIN_NAMES[i]}</span>`).join('')}</div>`;
+      </div></div>`;
   } else if (s === 1) {
     const presets = [['Small', 5, 5], ['Palm', 10, 10], ['Forearm', 12, 22], ['Half sleeve', 25, 35], ['Back piece', 40, 55], ['Full sleeve', 30, 65]];
     const sc = 120 / Math.max(QZ.w, QZ.h, 20);
