@@ -1222,3 +1222,11 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
 .tour-pick { display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; padding: 14px; margin-top: 8px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
 .tour-pick:hover { border-color: var(--teal); } .tour-pick b { font-size: 15px; } .tour-pick span { font-size: 13px; color: var(--ink2); }
 @media (max-width: 899px) { .tour-card.at-sheet { bottom: calc(env(safe-area-inset-bottom, 0px) + 76px); } }
+
+/* Practice workspace: orange accent so it's never mistaken for the real thing */
+body.practice { --teal: #f0a23b; --teal2: #b9741f; }
+body.practice #db-badge { background: #f0a23b; color: #1a1205; border-color: #f0a23b; }
+body.practice::before { content: ''; position: fixed; left: 0; right: 0; top: 0; height: 3px; background: #f0a23b; z-index: 200; }
+.practice-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border-color: #f0a23b; background: rgba(240,162,59,.08); }
+.practice-note b { color: #f0a23b; } .practice-note span { flex: 1 1 260px; font-size: 13px; color: var(--ink2); }
+.ws-practice { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #1a1205; background: #f0a23b; border-radius: 99px; padding: 1px 7px; vertical-align: 2px; }

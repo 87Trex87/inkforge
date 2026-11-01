@@ -593,7 +593,9 @@ const VIEWS = {
       const h = new Date().getHours();
       const greet = h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
       const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-      return `
+      return `${WS.cur?.test ? `<div class="card practice-note"><b>Practice workspace</b><span>Everything here is made up: try printing, quotes, receipts and more.
+          Phone numbers are fake, so nothing can be sent. Bookings move along each day you open it.</span>
+          <button class="btn small" data-go-ws="${esc(WS.list.find(x => !x.test)?.id || '')}">Back to my workspace</button></div>` : ''}
       <div class="card hero">
         <div class="muted">${esc(today)}</div>
         <div class="big">${greet}${name ? ', ' + esc(name) : ''}</div>
@@ -615,6 +617,7 @@ const VIEWS = {
       if (rows.length) { el.className = 'card list flush'; el.innerHTML = rows.map(agendaRow).join(''); }
       else el.innerHTML = `No sessions booked. <a href="#" id="h-add" style="color:var(--teal)">Book one</a>`;
       const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBookingNext(); };
+      const bw = document.querySelector('[data-go-ws]'); if (bw) bw.onclick = () => { Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(bw.dataset.goWs || null)); };
       // Birthdays in the next 7 days, with a one-tap WhatsApp greeting.
       const bd = (await DB.all('SELECT id, first_name, last_name, phone, dob FROM clients WHERE dob IS NOT NULL AND dob <> \'\''))
         .map(c => { const [y, m, d] = c.dob.split('-').map(Number); let n = new Date(t.getFullYear(), m - 1, d); if (n < t) n = new Date(t.getFullYear() + 1, m - 1, d);
@@ -2013,6 +2016,8 @@ const VIEWS = {
       return `
       <div class="card su-again"><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
         <button class="btn small" id="s-setup">Run setup</button></div>
+      ${WS.cur?.test ? '' : `<div class="card su-again"><div><b>Practice workspace</b><span class="muted">A separate workspace full of made-up data to try things on.</span></div>
+        <button class="btn small" id="s-practice">${Practice.get() ? 'Open' : 'Make one'}</button></div>`}
       <div class="card su-again"><div><b>Take a tour</b><span class="muted">A guided look around with examples; all removed afterwards.</span></div>
         <button class="btn small" id="s-tour">Start</button></div>
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
@@ -2090,6 +2095,7 @@ const VIEWS = {
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-setup').onclick = runSetup;
       $('#s-tour').onclick = () => tourOffer();
+      const sp = $('#s-practice'); if (sp) sp.onclick = () => Practice.open();
       $('#s-pfsize').onclick = (e) => { const b = e.target.closest('[data-sz]'); if (!b) return; Settings.set('pf_size', b.dataset.sz);
         $('#s-pfsize').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
       $('#view').addEventListener('toggle', (e) => { const k = e.target.dataset?.sec; if (k) e.target.open ? SET_OPEN.add(k) : SET_OPEN.delete(k); }, true);
@@ -2439,6 +2445,7 @@ const Cloud = {
 
   // Uploads a local workspace into Drive and makes it a cloud workspace held by this device.
   async moveUp(w) {
+    if (w.test) throw new Error('The practice workspace stays on this device.');
     await this.auth();
     const bytes = await DB.exportBytes(w === WS.cur ? undefined : WS.dbPath(w));   // first, so a failure leaves nothing half-made in Drive
     let root = (await this.req('/files' + this.q({ q: "appProperties has { key='ifkind' and value='root' } and trashed = false", fields: 'files(id)' }))).files[0];
@@ -3330,7 +3337,7 @@ const Gcal = {
   },
 
   async sync({ interactive = false } = {}) {
-    if (typeof Tour !== 'undefined' && Tour.on) return;   // the tour's examples never reach Google
+    if ((typeof Tour !== 'undefined' && Tour.on) || WS.cur?.test) return;   // tour examples and the practice workspace never reach Google
     if (this.running || !this.enabled()) return;
     if (!this.hasToken()) { if (!interactive) return; await this.auth(); }
     this.running = true; this.setState('syncing');
@@ -3355,7 +3362,7 @@ const Gcal = {
   },
   // Background sync after local edits, only while signed in.
   soon() {
-    if (typeof Tour !== 'undefined' && Tour.on) return;
+    if ((typeof Tour !== 'undefined' && Tour.on) || WS.cur?.test) return;
     clearTimeout(this._t);
     if (this.enabled() && this.hasToken()) this._t = setTimeout(() => this.sync().then(() => renderCal()).catch(e => toast('Google sync: ' + e.message, 5000)), 1200);
   },
@@ -6772,13 +6779,13 @@ function showStart() {
       </div>
       <div class="letter">Recent</div>
       <div class="card list">${list.map(w => `<div class="c-row ws-row">
-          <button class="c-main ws-open" data-ws="${w.id}"><span class="c-n">${w.cloud ? '<span class="ws-cloud" data-tip="Kept in Google Drive">☁</span> ' : ''}${esc(w.name)}</span><span class="muted c-sub">${w.cloud ? 'Google Drive · ' : ''}${ago(w.opened)}</span></button>
+          <button class="c-main ws-open" data-ws="${w.id}"><span class="c-n">${w.cloud ? '<span class="ws-cloud" data-tip="Kept in Google Drive">☁</span> ' : ''}${esc(w.name)}${w.test ? ' <span class="ws-practice">practice</span>' : ''}</span><span class="muted c-sub">${w.cloud ? 'Google Drive · ' : ''}${ago(w.opened)}</span></button>
           <button class="btn small icon-btn ${menu === w.id ? 'on' : ''}" data-wsmenu="${w.id}" aria-label="More">⋯</button>
           ${menu === w.id ? `<div class="row tpl-acts">
             <button class="btn small" data-wsren="${w.id}">Rename</button>
             <button class="btn small" data-wssave="${w.id}" data-tip="Save this workspace as a file to share or keep safe">Save file</button>
             ${w.cloud ? `<button class="btn small" data-wsunlink="${w.id}" data-tip="Keep using it on this device only. The copy in your Drive stays there.">Stop using Drive</button>`
-              : `<button class="btn small" data-wsup="${w.id}" data-tip="Keep this workspace in your Google Drive so your other devices can open it">Move to Google Drive</button>`}
+              : w.test ? '' : `<button class="btn small" data-wsup="${w.id}" data-tip="Keep this workspace in your Google Drive so your other devices can open it">Move to Google Drive</button>`}
             <button class="btn small danger" data-wsdel="${w.id}" style="margin-left:auto">Delete</button></div>` : ''}
         </div>`).join('')}</div>
       <label class="toggle" style="display:inline-flex;margin-top:12px" data-tip="Skip this screen and go straight to the last workspace. Switch any time by tapping the workspace name at the top.">
@@ -6861,7 +6868,7 @@ function showStart() {
 // `fileBytes`: a workspace/backup file to load into it first (from "Open file…").
 async function startWorkspace(w, fileBytes) {
   const badge = $('#db-badge');
-  let recovered = false;
+  let recovered = false, tourBack = false;
   try {
     await WS.open(w);
     if (w.cloud && !fileBytes) {
@@ -6874,7 +6881,8 @@ async function startWorkspace(w, fileBytes) {
         Cloud.editing = mine; Cloud.viewOnly = !mine; Cloud.start(w);
       }
     }
-    const tourBack = !fileBytes && await Tour.recover();
+    tourBack = !fileBytes && await Tour.recover();
+    document.body.classList.toggle('practice', !!w.test);
     if (fileBytes) await restoreBackup(fileBytes);
     else if (!(await hasData())) {
       const snap = await Snapshot.load();
@@ -6893,7 +6901,7 @@ async function startWorkspace(w, fileBytes) {
     Cal.mode = Settings.get('cal_mode', innerWidth >= 900 ? 'week' : 'day');
     const info = await DB.info();
     // The badge names the open workspace; tapping it goes back to the start screen to switch.
-    badge.textContent = (w.cloud ? '☁ ' : '') + w.name;
+    badge.textContent = (w.test ? 'PRACTICE · ' : '') + (w.cloud ? '☁ ' : '') + w.name;
     badge.className = 'badge ws-badge ' + (info.mode === 'opfs' ? 'ok' : 'warn');
     badge.dataset.tip = info.mode === 'opfs'
       ? w.cloud ? `Workspace "${w.name}" in Google Drive, ${Cloud.editing ? 'editing on this device' : 'view only on this device'}. Tap to switch workspace.`
@@ -6913,6 +6921,12 @@ async function startWorkspace(w, fileBytes) {
   render();
   if (w.cloud) cloudBar(Cloud.viewOnly ? undefined : null);
   if (tourBack) toast('The tour was interrupted; its examples have been removed.', 6000);
+  if (w.test) {
+    if (!w.seeded) { toast('Filling the practice workspace…', 20000);
+      try { await Practice.seed(); w.seeded = true; await WS.save(); toast('Practice workspace ready. Try anything; it\'s all made up.', 6000); } catch (e) { console.error(e); toast('Could not fill the practice workspace: ' + e.message, 8000); }
+      render(); }
+    else { await Practice.refresh(); render(); }
+  }
   if (w.fresh && Settings.get('setup_done') !== '1') runSetup();
   if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
   else if (fileBytes) { toast(`Opened "${w.name}".`); Snapshot.soon(); }

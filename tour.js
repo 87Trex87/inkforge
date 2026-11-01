@@ -114,8 +114,8 @@ const TOUR_STEPS = [
     text: 'Tap here to switch between studios or artists.',
     more: 'Each workspace has its own clients, bookings and settings. Keep one per artist, or a test workspace to try things out.' },
   { id: 'end', basic: 1, title: 'That\'s the tour',
-    text: 'Finish removes all the examples. Run it again any time from Settings.',
-    more: 'Tip: start with first-time setup (your hours, days off and prices), add your logo, then try a quote. Everything can be changed later.' }
+    text: 'Finish removes all the examples. Want somewhere to play? Make a practice workspace.',
+    more: 'The practice workspace is separate from yours and full of made-up clients, bookings, quotes, portfolio pieces and stock, so you can try printing, quoting, receipts and everything else without touching your real data. It shows in orange and never syncs with Google. Run this tour again any time from Settings.' }
 ];
 
 /* ---------- Running the tour ---------- */
@@ -157,7 +157,8 @@ Tour.show = async () => {
   card.innerHTML = `<div class="tour-top"><span class="tour-n">${Tour.i + 1} / ${n}</span><button class="link" data-a="skip">${Tour.i === n - 1 ? '' : 'Skip tour'}</button></div>
     <h3>${s.title}</h3><p class="tour-t">${s.text}</p><p class="tour-m">${s.more || ''}</p>
     <div class="tour-acts">${s.more ? '<button class="btn small" data-a="more">See more</button>' : '<span></span>'}
-      <span style="flex:1"></span>${Tour.i ? '<button class="btn small" data-a="back">Back</button>' : ''}
+      <span style="flex:1"></span>${s.id === 'end' && !WS.cur?.test ? `<button class="btn small" data-a="practice">${Practice.get() ? 'Open practice workspace' : 'Make a practice workspace'}</button>` : ''}
+      ${Tour.i ? '<button class="btn small" data-a="back">Back</button>' : ''}
       <button class="btn small primary" data-a="next" disabled>${Tour.i === n - 1 ? 'Finish' : 'Next'}</button></div>
     <div class="tour-dots">${Tour.steps.map((_, j) => `<i class="${j === Tour.i ? 'on' : j < Tour.i ? 'done' : ''}"></i>`).join('')}</div>`;
   card.onclick = (e) => {
@@ -166,6 +167,7 @@ Tour.show = async () => {
     if (a === 'next') { if (Tour.i === n - 1) return Tour.end(); Tour.i++; Tour.show(); }
     if (a === 'back') { Tour.i--; Tour.show(); }
     if (a === 'skip') Tour.end();
+    if (a === 'practice') Tour.end().then(() => Practice.open());
   };
   Tour.target = null; tourPlace();
   // Open the screen, run the demo, then highlight.
@@ -229,4 +231,113 @@ Tour.recover = async () => {
   await DB.importBytes(new Uint8Array(await f.arrayBuffer()));
   try { await (await navigator.storage.getDirectory()).removeEntry(`tour-${WS.cur?.id || 'main'}.sqlite`); } catch {}
   return true;
+};
+
+
+/* ---------- Practice workspace ----------
+   A separate workspace full of made-up data to try everything on: clients (fake numbers, so nothing can
+   be sent), bookings that always sit around today, finished tattoos for Stats, quotes, portfolio pieces
+   drawn from the quote's detail roses, stock, rules, a voucher and a post. It's marked `test` in the
+   workspace list: orange accent, a PRACTICE badge, and no Google Calendar or Drive. Each time it opens,
+   bookings move along so the upcoming ones stay upcoming. Delete it from the start screen like any other. */
+const Practice = {
+  get: () => WS.list.find(w => w.test),
+  // Make (or open) the practice workspace; the data goes in the first time it opens.
+  async open() {
+    let w = Practice.get();
+    if (!w) { w = await WS.create('Practice studio'); w.test = true; await WS.save(); }
+    Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(w.id));
+  },
+  // A portfolio picture: one of the quote's detail roses on paper, at 1080 x 1350.
+  async picture(level, colour, healed) {
+    const svg = new Blob([detailSvg(level, colour).replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" ')], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(svg), img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; });
+    const c = document.createElement('canvas'); c.width = 1080; c.height = 1350; const x = c.getContext('2d');
+    x.fillStyle = healed ? '#eadfcf' : '#f6efe3'; x.fillRect(0, 0, 1080, 1350);
+    if (healed) x.filter = 'saturate(.75) contrast(.92) blur(.6px)';
+    if (img) x.drawImage(img, 40, 120, 1000, 1000);
+    URL.revokeObjectURL(url);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.86)), small = document.createElement('canvas'); small.width = 384; small.height = 480;
+    small.getContext('2d').drawImage(c, 0, 0, 384, 480);
+    return { photo: await Media.save(blob, 'jpg'), thumb: await Media.save(await new Promise(r => small.toBlob(r, 'image/jpeg', 0.8)), 'jpg') };
+  },
+  async seed() {
+    const t = new Date(), day = (n) => ymd(addDays(t, n)), at = (n, hm) => day(n) + 'T' + hm;
+    const S = { studio_name: 'Practice Studio', artist_name: 'Alex Demo', currency: Settings.get('currency') || 'R', country_code: '27',
+      artist_phone: '+27 00 000 0000', artist_instagram: '@practice.studio', day_start: '10:00', day_end: '17:00', max_per_day: '2', booking_gap: '60',
+      setup_done: '1', days_off: JSON.stringify({ weekly: [0], until: '', dates: [] }), test_anchor: ymd(t) };
+    for (const [k, v] of Object.entries(S)) await Settings.set(k, v);
+    // Clients: made-up names, fake numbers (+27 00 ...), two birthdays this week.
+    const bday = (n) => { const d = addDays(t, n); return `1992-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+    const people = [['Sam', 'Rivera', 'regular, fine line', bday(2), 'Latex allergy'], ['Jordan', 'Lee', 'first tattoo', null, null], ['Taylor', 'Nkosi', 'blackwork, sleeve', bday(5), null],
+      ['Morgan', 'Botha', 'regular', null, 'On blood thinners: check before booking'], ['Casey', 'van Wyk', 'colour', null, null], ['Riley', 'Moyo', 'script', null, null],
+      ['Jamie', 'Pillay', 'cover-up', null, null], ['Alex', 'Smith', 'flash', null, null], ['Quinn', 'Dlamini', 'regular, geometric', null, null],
+      ['Avery', 'Jacobs', 'walk-in', null, null], ['Drew', 'Fourie', 'touch-up due', null, null]];
+    for (const [i, [f, l, tags, dob, med]] of people.entries())
+      await DB.run(`INSERT INTO clients (first_name, last_name, phone, email, instagram, category, tags, dob, medical) VALUES (?, ?, ?, ?, ?, 'Client', ?, ?, ?)`,
+        [f, l, `+27 00 000 ${String(1000 + i * 37).slice(-4)}`, `${f.toLowerCase()}@example.com`, `${f.toLowerCase()}.${l.toLowerCase().replace(/\s/g, '')}`, tags, dob, med]);
+    await DB.run(`INSERT INTO clients (first_name, last_name, phone, category, notes) VALUES ('Ink Supplies', 'Co', '+27 00 000 9999', 'Supplier', 'Needles, ink and aftercare')`);
+    const id = async (f) => (await DB.one('SELECT id FROM clients WHERE first_name = ?', [f])).id;
+    // Bookings: a few in the past (finished, for Stats) and the coming weeks.
+    const B = [[-80, '11:00', 180, 'tattoo', 'Taylor', 'Blackwork panther', 'Left forearm', 2600, 1, 2700, 175, 'Card'],
+      [-62, '13:00', 120, 'tattoo', 'Sam', 'Fine-line peony', 'Ribs', 1600, 1, 1600, 115, 'EFT'], [-45, '10:00', 240, 'tattoo', 'Quinn', 'Geometric half sleeve, session 1', 'Right upper arm', 3400, 1, 3400, 230, 'Card'],
+      [-30, '14:00', 60, 'tattoo', 'Riley', 'Script: "breathe"', 'Inner wrist', 750, 1, 800, 50, 'Cash'], [-21, '11:00', 180, 'tattoo', 'Casey', 'Colour koi', 'Calf', 2400, 1, 2500, 190, 'Card'],
+      [-12, '13:00', 120, 'tattoo', 'Jamie', 'Cover-up: rose over old script', 'Shoulder', 2200, 1, 2200, 140, 'EFT'], [-5, '10:00', 30, 'followup', 'Riley', 'Check healing', 'Inner wrist', null, 0, null, null, null],
+      [0, '13:00', 180, 'tattoo', 'Sam', 'Fine-line rose with stem', 'Left forearm', 1800, 0], [1, '10:00', 60, 'consult', 'Jordan', 'Small script, first tattoo', null, null, 0],
+      [2, '11:00', 240, 'tattoo', 'Quinn', 'Geometric half sleeve, session 2', 'Right upper arm', 3400, 0], [4, '14:00', 120, 'tattoo', 'Alex', 'Flash: dagger and roses', 'Thigh', 1400, 0],
+      [6, '10:00', 300, 'tattoo', 'Taylor', 'Blackwork sleeve, session 2', 'Left upper arm', 3800, 0], [8, '15:00', 60, 'touchup', 'Drew', 'Touch-up on lettering', 'Forearm', 250, 0],
+      [9, '10:00', 420, 'hold', null, 'Held for a back piece', null, null, 0], [12, '11:00', 180, 'tattoo', 'Casey', 'Colour koi, finishing session', 'Calf', 2000, 0],
+      [15, '13:00', 120, 'tattoo', 'Avery', 'Small moth', 'Sternum', 1300, 0], [19, '10:00', 60, 'consult', 'Morgan', 'Back piece ideas', null, null, 0]];
+    for (const [n, hm, dur, kind, who, desc, place, quote, done, paid, mins, pay] of B) {
+      const c = who ? await id(who) : null;
+      await DB.run(`INSERT INTO bookings (client_id, start_at, duration_min, kind, description, placement, size, quote, deposit, deposit_paid, completed, completed_at, paid, time_min, pay_method)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [c, at(n, hm), dur, kind, desc, place, place ? '12 x 9 cm' : null, quote, quote ? Math.round(quote * 0.25 / 50) * 50 : null,
+        quote && (done || n < 3) ? 1 : 0, done ? 1 : 0, done ? addDays(t, n).toISOString() : null, done ? paid : null, done ? mins : null, done ? pay : null]);
+    }
+    // Portfolio: pieces drawn from the quote's detail roses, fresh and healed.
+    const P = [['Fine-line peony', 'tattoo', 'Ribs', 'fine line, floral', 1, 'black', -62, 'Sam'], ['Blackwork panther', 'tattoo', 'Left forearm', 'blackwork, animal', 3, 'black', -80, 'Taylor'],
+      ['Black and grey rose', 'tattoo', 'Shoulder', 'black and grey, rose, cover-up', 4, 'bg', -12, 'Jamie'], ['Colour koi', 'tattoo', 'Calf', 'colour, japanese', 5, 'colour', -21, 'Casey'],
+      ['Rose flash', 'flash', null, 'flash, rose', 2, 'colour', -3, null], ['Linework study', 'art', null, 'sketch, linework', 1, 'black', -8, null]];
+    for (const [title, kind, place, tags, lv, col, n, who] of P) {
+      await DB.run(`INSERT INTO portfolio_items (kind, title, placement, tags, client_id, made_on, price, favourite) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [kind, title, place, tags, who ? await id(who) : null, day(n), kind === 'flash' ? 900 : null, lv === 5 ? 1 : 0]);
+      const pid = (await DB.one('SELECT last_insert_rowid() AS id')).id, fresh = await Practice.picture(lv, col, false);
+      await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [pid, fresh.photo, fresh.thumb, kind === 'tattoo' ? 'Fresh' : null]);
+      if (kind === 'tattoo') { const h = await Practice.picture(lv, col, true); await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 1)', [pid, h.photo, h.thumb, 'Healed']); }
+    }
+    // Stock, rules, saved quotes.
+    await DB.run(`INSERT INTO inventory_items (name, category, unit, qty, min_qty, supplier, cost) VALUES
+      ('Black ink 4oz', 'Ink', 'bottle', 1, 2, 'Ink Supplies Co', 320), ('Grey wash set', 'Ink', 'set', 2, 1, 'Ink Supplies Co', 650), ('Needles 3RL', 'Needles', 'box', 6, 2, 'Ink Supplies Co', 180),
+      ('Needles 9RM', 'Needles', 'box', 1, 2, 'Ink Supplies Co', 190), ('Nitrile gloves (M)', 'Hygiene', 'box', 4, 3, NULL, 120), ('Cling wrap', 'Hygiene', 'roll', 2, 2, NULL, 60),
+      ('Stencil paper', 'Stencil', 'pack', 1, 1, NULL, 450), ('Aftercare balm', 'Aftercare', 'tub', 14, 6, NULL, 45)`);
+    await DB.run(`INSERT INTO rules (title, body, category) VALUES ('Deposits are non-refundable', 'They secure your date and go towards the final price.', 'Client rules'),
+      ('48 hours to reschedule', 'Move your booking with at least 48 hours notice to keep your deposit.', 'Client rules'),
+      ('Arrive fed and hydrated', 'Eat a proper meal before your session.', 'Client rules'), ('Clean down after every client', 'Surfaces, machine and chair before the next setup.', 'Staff rules')`);
+    const cfg = qCfg();
+    for (const [client, q] of [['Morgan Botha', { job: 'new', jobLvl: 3, place: 'Upper back', side: 'C', w: 30, h: 35, colour: 'black', detail: 4, style: 'Blackwork', text: '', font: '', fontName: '', letter: 2, hours: null }],
+      ['Jordan Lee', { job: 'new', jobLvl: 3, place: 'Inner bicep', side: 'L', w: 8, h: 3, colour: 'black', detail: 1, style: 'Script / Text', text: 'still here', font: 'Handwritten', fontName: '', letter: 2, hours: null }]]) {
+      const data = { ...q, discType: 'pct', discVal: 0, client, designNote: '', withDesign: false, items: [], pos: 0, sized: true, detailSet: true, styleSet: true, lettering: !!q.text };
+      const r = qCalc({ ...data, cfg: null });
+      await DB.run('INSERT INTO quotes (client_name, summary, data, cfg, total, hours) VALUES (?, ?, ?, ?, ?, ?)',
+        [client, `${q.place} · ${q.w} x ${q.h} cm · ${q.style}`, JSON.stringify(data), JSON.stringify(cfg), r.total, r.hours]);
+    }
+    // Design studio: a voucher and a post from the first portfolio piece.
+    const mk = async (name, kind, doc) => { await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [name, kind, JSON.stringify(doc)]);
+      const did = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+      for (const r of [...new Set(doc.layers.filter(l => l.ref).map(l => l.ref))]) await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [did, r]);
+      await dzThumb(did, doc); };
+    const v = dzNew('voucher', dzLayouts('voucher')[0], 'gold'); Object.assign(v.vals, { amount: '1000', to: 'Sam', from: 'Jordan' });
+    await mk('Gift voucher', 'voucher', v);
+    const piece = await dzPiece((await DB.one(`SELECT id FROM portfolio_items WHERE title = 'Black and grey rose'`)).id);
+    await mk('Black and grey rose (portrait post)', 'portrait', dzNew('portrait', dzLayouts('portrait')[3], 'ink', piece));
+  },
+  // Keeps the practice bookings around today: everything moves on by the days since it was last opened.
+  async refresh() {
+    const a = Settings.get('test_anchor'); if (!a) return;
+    const n = Math.round((new Date(ymd(new Date()) + 'T00:00') - new Date(a + 'T00:00')) / 864e5); if (n <= 0) return;
+    await DB.run(`UPDATE bookings SET start_at = strftime('%Y-%m-%dT%H:%M', start_at, '+${n} days')`);
+    await DB.run(`UPDATE portfolio_items SET made_on = date(made_on, '+${n} days') WHERE made_on IS NOT NULL`);
+    for (const [f, k] of [['Sam', 2], ['Taylor', 5]]) { const d = addDays(new Date(), k); await DB.run('UPDATE clients SET dob = ? WHERE first_name = ? AND dob IS NOT NULL', [`1992-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, f]); }
+    await Settings.set('test_anchor', ymd(new Date()));
+  }
 };
