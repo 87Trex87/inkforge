@@ -567,6 +567,7 @@ const ICON = {
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
   stats: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
   split: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18M3 12h18" stroke-dasharray="2.5 2"/></svg>',
+  tour: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>',
   bend: '<svg viewBox="0 0 24 24"><path d="M3 9c5-5 13-5 18 0M5 15c4-3.5 10-3.5 14 0"/><path d="M3 9l2 6M21 9l-2 6"/></svg>',
   design: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15l3-4 3 3 2-2 3 3"/><circle cx="8.5" cy="9" r="1.2"/></svg>',
   cake: '<svg viewBox="0 0 24 24"><path d="M4 20h16v-7H4zM4 15c2 1 4 1 4-1 0 2 4 2 4 0 0 2 4 2 4 0 0 2 2 2 4 1M12 13V9M12 6v.5"/></svg>',
@@ -1155,7 +1156,8 @@ const VIEWS = {
         tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory'),
         tile('rules', 'Rule book', 'Your studio rules', false, 'rules')])
       + tileGroup('App', [
-        tile('settings', 'Settings & backup', 'Profile, your week, Google, backup', false, 'settings')])
+        tile('settings', 'Settings & backup', 'Profile, your week, Google, backup', false, 'settings'),
+        tile('tour', 'Take a tour', 'A guided look around InkForge', false, 'tour')])
   },
   portfolio: {
     title: () => 'Portfolio',
@@ -1401,6 +1403,11 @@ const VIEWS = {
     title: () => 'Split for printing',
     render: () => '<div id="sp"></div>',
     mount() { SP.mount(); }
+  },
+  tour: {
+    title: () => 'Take a tour',
+    render: () => '<div class="muted" style="padding:20px">Choose a tour…</div>',
+    mount() { tourOffer(); }
   },
   bend: {
     title: () => 'Bend tool',
@@ -2006,6 +2013,8 @@ const VIEWS = {
       return `
       <div class="card su-again"><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
         <button class="btn small" id="s-setup">Run setup</button></div>
+      <div class="card su-again"><div><b>Take a tour</b><span class="muted">A guided look around with examples; all removed afterwards.</span></div>
+        <button class="btn small" id="s-tour">Start</button></div>
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
         <label class="field"><span>Artist name</span><input class="in" id="s-name" value="${esc(Settings.get('artist_name'))}" autocomplete="name"></label>
         <label class="field"><span>Studio</span><input class="in" id="s-studio" value="${esc(Settings.get('studio_name'))}"></label>
@@ -2080,6 +2089,7 @@ const VIEWS = {
     async mount() {
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-setup').onclick = runSetup;
+      $('#s-tour').onclick = () => tourOffer();
       $('#s-pfsize').onclick = (e) => { const b = e.target.closest('[data-sz]'); if (!b) return; Settings.set('pf_size', b.dataset.sz);
         $('#s-pfsize').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
       $('#view').addEventListener('toggle', (e) => { const k = e.target.dataset?.sec; if (k) e.target.open ? SET_OPEN.add(k) : SET_OPEN.delete(k); }, true);
@@ -2265,7 +2275,7 @@ function runSetup() {
   const finish = async () => {
     await Settings.set('setup_done', '1');
     if (WS.cur?.fresh) { delete WS.cur.fresh; await WS.save(); }
-    o.remove(); render();
+    o.remove(); render(); tourOffer(true);
   };
   o.addEventListener('input', (e) => { const k = e.target.dataset.f; if (k) S[k] = e.target.value;
     if (k === 'country_code') Settings.set('country_code', e.target.value.replace(/\D/g, ''));   // so the number below converts as it's typed
@@ -2498,7 +2508,7 @@ const Cloud = {
     this.editing = false; this.viewOnly = true; w.cloud.lastHolder = lk.id; WS.save();
     cloudBar('lost', lk);
   },
-  soon() { if (!this.editing || !WS.cur?.cloud) return; this.pending = true; clearTimeout(this._t); this._t = setTimeout(() => this.push(WS.cur), 1500); },
+  soon() { if (!this.editing || !WS.cur?.cloud || (typeof Tour !== 'undefined' && Tour.on)) return; this.pending = true; clearTimeout(this._t); this._t = setTimeout(() => this.push(WS.cur), 1500); },
   async push(w) {
     if (!this.editing || this._busy || !this.hasToken()) { if (this.editing && !this.hasToken()) cloudBar('signin'); return; }
     this._busy = true;
@@ -3320,6 +3330,7 @@ const Gcal = {
   },
 
   async sync({ interactive = false } = {}) {
+    if (typeof Tour !== 'undefined' && Tour.on) return;   // the tour's examples never reach Google
     if (this.running || !this.enabled()) return;
     if (!this.hasToken()) { if (!interactive) return; await this.auth(); }
     this.running = true; this.setState('syncing');
@@ -3344,6 +3355,7 @@ const Gcal = {
   },
   // Background sync after local edits, only while signed in.
   soon() {
+    if (typeof Tour !== 'undefined' && Tour.on) return;
     clearTimeout(this._t);
     if (this.enabled() && this.hasToken()) this._t = setTimeout(() => this.sync().then(() => renderCal()).catch(e => toast('Google sync: ' + e.message, 5000)), 1200);
   },
@@ -6731,9 +6743,9 @@ addEventListener('hashchange', () => { if (booted) render(); });
 (async () => {
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
-  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 6 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1) {
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 6 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1 || typeof TOUR_VERSION === 'undefined' || TOUR_VERSION !== 1) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
-    if (!tried) { await Promise.all(['reel.js', 'design.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
+    if (!tried) { await Promise.all(['reel.js', 'design.js', 'tour.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }
   try { sessionStorage.removeItem('if-reload'); } catch {}
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
@@ -6862,6 +6874,7 @@ async function startWorkspace(w, fileBytes) {
         Cloud.editing = mine; Cloud.viewOnly = !mine; Cloud.start(w);
       }
     }
+    const tourBack = !fileBytes && await Tour.recover();
     if (fileBytes) await restoreBackup(fileBytes);
     else if (!(await hasData())) {
       const snap = await Snapshot.load();
@@ -6899,6 +6912,7 @@ async function startWorkspace(w, fileBytes) {
   Snapshot.ready = true;
   render();
   if (w.cloud) cloudBar(Cloud.viewOnly ? undefined : null);
+  if (tourBack) toast('The tour was interrupted; its examples have been removed.', 6000);
   if (w.fresh && Settings.get('setup_done') !== '1') runSetup();
   if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
   else if (fileBytes) { toast(`Opened "${w.name}".`); Snapshot.soon(); }
