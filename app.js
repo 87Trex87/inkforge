@@ -1183,6 +1183,7 @@ const VIEWS = {
         <div class="row" style="margin-bottom:24px">
           <button class="btn danger icon-btn" id="pf-del" data-tip="Delete" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
           <button class="btn" id="pf-share" ${photos.length ? '' : 'disabled'}>Share</button>
+          <button class="btn" id="pf-save" ${photos.length ? '' : 'disabled'} data-tip="Save this photo to your device, exactly as it is stored">Save</button>
           <button class="btn primary" style="flex:1" onclick="location.hash='pf-edit/${it.id}'">Edit</button>
         </div></div></div>`;
       const car = $('#pf-car'), dots = $('#pf-dots');
@@ -1206,15 +1207,22 @@ const VIEWS = {
       };
       const cl = $('#pf-claimed');
       if (cl) cl.onchange = () => DB.run(`UPDATE portfolio_items SET claimed = ?, updated_at = datetime('now') WHERE id = ?`, [cl.checked ? 1 : 0, it.id]);
-      $('#pf-share').onclick = async () => {
-        const p = photos[cur()] || photos[0];
+      // The stored file itself, named after the piece, with its real type (JPEG, PNG…).
+      const photoFile = async () => {
+        const i = cur(), p = photos[i] || photos[0], ext = p.photo_ref.split('.').pop();
         const f = await (await (await Media.dir()).getFileHandle(p.photo_ref)).getFile();
-        const file = new File([f], (it.title || 'inkforge').replace(/[^\w-]+/g, '_') + '.jpg', { type: 'image/jpeg' });
+        const type = Object.keys(IMG_EXT).find(k => IMG_EXT[k] === ext) || f.type || 'image/jpeg';
+        return new File([f], (it.title || 'inkforge').replace(/[^\w-]+/g, '_') + (photos.length > 1 ? '-' + (i + 1) : '') + '.' + ext, { type });
+      };
+      const download = (file) => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+      $('#pf-share').onclick = async () => {
+        const file = await photoFile();
         try {
           if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: it.title || '' });
-          else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); }
+          else download(file);
         } catch (e) { if (e.name !== 'AbortError') toast('Could not share: ' + e.message); }
       };
+      $('#pf-save').onclick = async () => { const file = await photoFile(); download(file); toast(`Saved ${file.name}`); };
       $('#pf-del').onclick = async () => {
         if (!confirm(`Delete "${it.title || PF_KIND[it.kind]}" and its ${photos.length} photo${photos.length === 1 ? '' : 's'}?`)) return;
         await DB.run('DELETE FROM portfolio_items WHERE id = ?', [it.id]);
@@ -1244,6 +1252,8 @@ const VIEWS = {
         <div class="seg" id="pf-kind" style="margin-bottom:14px">${Object.entries(PF_KIND).map(([k, l]) => `<button type="button" data-k="${k}" class="${it.kind === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
         ${fsec(`Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil or sketch. Tap ◀ to move a photo forward.')}`,
           `<div class="thumbs pf-thumbs ${it.bg ? 'bg-' + it.bg : ''}" id="pf-thumbs"></div>
+           <div class="lbl" style="margin-top:10px">Size for new photos ${help('Long side in pixels. Smaller saves space; Original keeps the file exactly as you picked it. Set the usual size in Settings.')}</div>
+           <div class="seg" id="pf-size">${PF_SIZES.map(([k, l]) => `<button type="button" data-sz="${k}" class="${pfSizeDefault() === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
            <div class="lbl" style="margin-top:10px">Background ${help('For pictures with see-through parts, like a black flash design saved as PNG. White or black sits the design on that colour, in the portfolio and in print.')}</div>
            <div class="seg" id="pf-bg">${PF_BG.map(([k, l]) => `<button type="button" data-bg="${k}" class="${(it.bg || '') === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`)}
         <section class="fsec"><h3>Details</h3>
@@ -1272,6 +1282,9 @@ const VIEWS = {
         f.querySelector('.pf-client').hidden = it.kind !== 'tattoo';
       };
       syncKind();
+      let pfSize = pfSizeDefault();
+      $('#pf-size').onclick = (e) => { const b = e.target.closest('[data-sz]'); if (!b) return; pfSize = b.dataset.sz;
+        $('#pf-size').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
       $('#pf-bg').onclick = (e) => { const b = e.target.closest('[data-bg]'); if (!b) return; it.bg = b.dataset.bg;
         $('#pf-bg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
         $('#pf-thumbs').className = 'thumbs pf-thumbs' + (it.bg ? ' bg-' + it.bg : ''); Dirty.set(true); };
@@ -1291,10 +1304,11 @@ const VIEWS = {
           toast(files.length > 1 ? `Processing ${files.length} photos…` : 'Processing photo…');
           for (const file of files) {
             try {
-              const alpha = /png|webp|gif/.test(file.type);
-              const blob = alpha ? await pngBlob(file, 2048) : await Media.shrink(file, 2048, 0.86);
+              const alpha = /png|webp|gif/.test(file.type), keep = pfSize === 'original' && IMG_EXT[file.type];
+              // Original keeps the file exactly as it is; otherwise it's resized to the chosen long side.
+              const blob = keep ? file : alpha ? await pngBlob(file, +pfSize || 4096) : await Media.shrink(file, +pfSize || 4096, 0.9);
               const thumb = alpha ? await pngBlob(file, 480) : await Media.shrink(file, 480, 0.78);
-              photos.push({ blob, thumb, url: URL.createObjectURL(thumb), label: '', ext: alpha ? 'png' : 'jpg' });
+              photos.push({ blob, thumb, url: URL.createObjectURL(thumb), label: '', ext: keep ? IMG_EXT[file.type] : alpha ? 'png' : 'jpg', thumbExt: alpha ? 'png' : 'jpg' });
             } catch { toast('Could not read an image.'); }
           }
           Dirty.set(true); drawThumbs();
@@ -1324,7 +1338,7 @@ const VIEWS = {
         const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed, bg';
         const rows = [];
         for (const p of photos) {
-          if (p.blob) rows.push({ photo_ref: await Media.save(p.blob, p.ext || 'jpg'), thumb_ref: await Media.save(p.thumb, p.ext || 'jpg'), label: p.label || null });
+          if (p.blob) rows.push({ photo_ref: await Media.save(p.blob, p.ext || 'jpg'), thumb_ref: await Media.save(p.thumb, p.thumbExt || p.ext || 'jpg'), label: p.label || null });
           else rows.push({ photo_ref: p.photo_ref, thumb_ref: p.thumb_ref, label: p.label || null });
         }
         let pid = it.id;
@@ -1996,6 +2010,8 @@ const VIEWS = {
           <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
         </div>
         <input type="file" id="merge-file" accept=".inkforge,.sqlite,.db" hidden>
+        <div class="lbl" style="margin-top:14px">Portfolio picture size ${help('The usual size new portfolio photos are saved at (long side). You can still pick another size when adding photos.')}</div>
+        <div class="seg" id="s-pfsize">${PF_SIZES.map(([k, l]) => `<button type="button" data-sz="${k}" class="${pfSizeDefault() === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
         <div class="lbl" style="margin-top:14px">Storage on this device ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</div>
         <div id="storage-info" class="muted">Checking…</div>
       </details>`;
@@ -2003,6 +2019,8 @@ const VIEWS = {
     async mount() {
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-setup').onclick = runSetup;
+      $('#s-pfsize').onclick = (e) => { const b = e.target.closest('[data-sz]'); if (!b) return; Settings.set('pf_size', b.dataset.sz);
+        $('#s-pfsize').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
       $('#view').addEventListener('toggle', (e) => { const k = e.target.dataset?.sec; if (k) e.target.open ? SET_OPEN.add(k) : SET_OPEN.delete(k); }, true);
       $('#s-name').addEventListener('change', save('artist_name'));
       $('#s-studio').addEventListener('change', save('studio_name'));
@@ -2107,7 +2125,7 @@ function runSetup() {
     day_start: Settings.get('day_start', '10:00'), day_end: Settings.get('day_end', '17:00'), weekly: [...off.weekly],
     max_per_day: Settings.get('max_per_day', '1'), booking_gap: Settings.get('booking_gap', '60'),
     r1: an[0]?.[1] ?? 650, r4: (an.find(a => a[0] === 4) || an[1] || [4, 2500])[1], r9: (an.find(a => a[0] === 9) || an[an.length - 1] || [9, 4500])[1],
-    deposit: c0.deposit, touchup: c0.touchupFee, vatOn: c0.vatOn, vatRate: c0.vatRate, followup: Settings.get('followup_weeks', '6')
+    pf_size: pfSizeDefault(), deposit: c0.deposit, touchup: c0.touchupFee, vatOn: c0.vatOn, vatRate: c0.vatRate, followup: Settings.get('followup_weeks', '6')
   };
   const o = document.createElement('div'); o.id = 'setup';
   const chips = (key, opts, unit = '') => `<div class="su-chips">${opts.map(([v, l]) => `<button type="button" data-k="${key}" data-v="${v}" class="${String(S[key]) === String(v) ? 'on' : ''}">${l ?? v + unit}</button>`).join('')}</div>`;
@@ -2124,7 +2142,9 @@ function runSetup() {
       <div class="two"><label class="field"><span>Country code ${help('Used for WhatsApp and quote links. South Africa: 27.')}</span><div class="unit-in"><input class="in" data-f="country_code" inputmode="numeric" placeholder="27" value="${esc(S.country_code)}"><em>+</em></div></label>
         <label class="field"><span>Currency symbol</span><input class="in" data-f="currency" maxlength="4" value="${esc(S.currency)}" placeholder="R"></label></div>
       <div class="two"><label class="field"><span>Contact number</span><input class="in" type="tel" data-f="artist_phone" value="${esc(S.artist_phone)}"></label>
-        <label class="field"><span>Instagram</span><input class="in" data-f="artist_instagram" value="${esc(S.artist_instagram)}" placeholder="@yourstudio" autocapitalize="off"></label></div>`;
+        <label class="field"><span>Instagram</span><input class="in" data-f="artist_instagram" value="${esc(S.artist_instagram)}" placeholder="@yourstudio" autocapitalize="off"></label></div>
+      <div class="lbl">Portfolio picture size ${help('Long side in pixels for photos you add to your portfolio. Original keeps them exactly as they are; smaller saves space.')}</div>
+      ${chips('pf_size', PF_SIZES)}`;
     if (st === 1) body = `<h2>Your week</h2><p class="muted">Used for the calendar, new bookings and the open days clients see.</p>
       <div class="two"><label class="field"><span>Start</span><input class="in" type="time" data-f="day_start" value="${esc(S.day_start)}"></label>
         <label class="field"><span>Finish</span><input class="in" type="time" data-f="day_end" value="${esc(S.day_end)}"></label></div>
@@ -2162,7 +2182,7 @@ function runSetup() {
   const save = async () => {
     const st = S.step;
     if (st === 0) {
-      for (const k of ['artist_name', 'studio_name', 'currency', 'artist_instagram']) await Settings.set(k, String(S[k] || '').trim());
+      for (const k of ['artist_name', 'studio_name', 'currency', 'artist_instagram', 'pf_size']) await Settings.set(k, String(S[k] || '').trim());
       await Settings.set('country_code', String(S.country_code || '').replace(/\D/g, ''));
       const ph = intlPhone(S.artist_phone);
       if (ph === null) { toast(phoneBad(), 6000); return false; }
@@ -2967,7 +2987,7 @@ function openGallery(srcs, start = 0, bg = '', labels = []) {
   const show = (n) => { i = (n + srcs.length) % srcs.length; sc = 1; tx = ty = 0; img.src = srcs[i]; apply(false);
     o.querySelector('.gv-count').textContent = srcs.length > 1 ? `${i + 1} / ${srcs.length}` : '';
     o.querySelector('.gv-label').textContent = labels[i] || ''; };
-  const close = () => { o.remove(); removeEventListener('keydown', key); };
+  const close = () => { o.remove(); removeEventListener('keydown', key); document.documentElement.classList.remove('gv-lock'); };
   const key = (e) => { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') show(i + 1); if (e.key === 'ArrowLeft') show(i - 1);
     if (e.key === '+' || e.key === '=') { const r = stage.getBoundingClientRect(); zoomAt(sc * 1.5, r.left + r.width / 2, r.top + r.height / 2, true); }
     if (e.key === '-') { const r = stage.getBoundingClientRect(); zoomAt(sc / 1.5, r.left + r.width / 2, r.top + r.height / 2, true); } };
@@ -3012,6 +3032,7 @@ function openGallery(srcs, start = 0, bg = '', labels = []) {
     }
   };
   stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+  document.documentElement.classList.add('gv-lock');
   document.body.appendChild(o); show(start);
 }
 
@@ -3269,6 +3290,10 @@ function renderGcalStatus() {
 
 /* ---------- Portfolio helpers ---------- */
 const PF = { filter: 'all', q: '', ctx: null };
+// Size new portfolio photos are saved at (long side in px), or the original file untouched.
+const PF_SIZES = [['540', '540'], ['720', '720'], ['1080', '1080'], ['original', 'Original']];
+const pfSizeDefault = () => Settings.get('pf_size', '1080');
+const IMG_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 const PF_BG = [['', 'Transparent'], ['white', 'White'], ['black', 'Black']];
 const pfBg = (bg) => bg === 'white' || bg === 'black' ? ' bg-' + bg : '';
 const PF_KIND = { tattoo: 'Tattoo', art: 'Art', flash: 'Flash' };

@@ -990,3 +990,12 @@ form > .fsec:first-child, form > .seg + .fsec, .card > .fsec:first-child { borde
 .gv-side.prev { left: 12px; } .gv-side.next { right: 12px; }
 .gv-bar { position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); left: 50%; transform: translateX(-50%); display: flex; gap: 8px; z-index: 2; }
 .gv-fit { font-size: 14px; min-width: 64px; }
+
+/* Viewer: the whole picture always fits (width and height), the chosen background fills the whole screen,
+   and the page behind can't scroll while it's open. */
+#img-viewer { height: 100vh; height: 100dvh; touch-action: none; overscroll-behavior: contain; }
+#img-viewer.bg-white { background: #fff; } #img-viewer.bg-black { background: #000; }
+#img-viewer.bg-white .gv-stage, #img-viewer.bg-black .gv-stage { background: none; }
+.gv-stage img { max-width: calc(100vw - 24px); max-height: calc(100vh - 150px); max-height: calc(100dvh - 150px); }
+html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !important; }
+.carousel.bg-white { background: #fff; } .carousel.bg-black { background: #000; }
