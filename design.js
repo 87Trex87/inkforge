@@ -1153,7 +1153,22 @@ DZ.edit = async (id) => {
     }
     return null;
   };
-  const guides = (gx, gy) => { page.querySelector('.dz-guide.v').hidden = !gx; page.querySelector('.dz-guide.hz').hidden = !gy; };
+  // Guide lines at page positions (false = hidden).
+  const guides = (gx, gy) => { const v = page.querySelector('.dz-guide.v'), hz = page.querySelector('.dz-guide.hz');
+    v.hidden = gx === false; hz.hidden = gy === false; if (gx !== false) v.style.left = gx * k + 'px'; if (gy !== false) hz.style.top = gy * k + 'px'; };
+  // Snapping while moving: the moved items' edges and centres line up with the page's edges and centre and with
+  // every other item on the page (the master page's too). Hold Alt to move freely.
+  const snapTo = (list, e) => {
+    if (e.altKey || !list.length) return guides(false, false);
+    const ids = new Set(list.map(m => m.id)), bs = list.map(box);
+    const B = { x0: Math.min(...bs.map(b => b.x0)), x1: Math.max(...bs.map(b => b.x1)), y0: Math.min(...bs.map(b => b.y0)), y1: Math.max(...bs.map(b => b.y1)) };
+    const tx = [0, doc.w / 2, doc.w], ty = [0, doc.h / 2, doc.h];
+    for (const o of dzPages(doc, face).flat()) if (!o.hide && !ids.has(o.id)) { const b = box(o); tx.push(b.x0, (b.x0 + b.x1) / 2, b.x1); ty.push(b.y0, (b.y0 + b.y1) / 2, b.y1); }
+    const best = (cs, ts) => { let r = null; for (const c of cs) for (const t of ts) { const d = t - c; if (Math.abs(d) < 10 / k && (!r || Math.abs(d) < Math.abs(r.d))) r = { d, t }; } return r; };
+    const sx = best([B.x0, (B.x0 + B.x1) / 2, B.x1], tx), sy = best([B.y0, (B.y0 + B.y1) / 2, B.y1], ty);
+    for (const m of list) { if (sx) m.x += sx.d; if (sy) m.y += sy.d; }
+    guides(sx ? sx.t : false, sy ? sy.t : false);
+  };
   let drag = null;
   const pts = new Map(); let pinch = null, bg = null;
   stage.addEventListener('pointerdown', (e) => {
@@ -1240,6 +1255,7 @@ DZ.edit = async (id) => {
       const p = toPage(e), dx = p.x - drag.p0.x, dy = p.y - drag.p0.y;
       if (!drag.moved && Math.hypot(dx, dy) * k < 6) return; drag.moved = true;
       for (const [id, o] of drag.l0) { const m = doc.layers.find(x => x.id === id); if (m) { m.x = o.x + dx; m.y = o.y + dy; } }
+      snapTo(doc.layers.filter(m => drag.l0.has(m.id)), e);
       placeSel(); return redraw();
     }
     const l = layer(), p = toPage(e), o = drag.l0, a = (o.rot || 0) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
@@ -1261,9 +1277,7 @@ DZ.edit = async (id) => {
       }
     } else if (drag.h === 'move') {
       l.x = o.x + p.x - drag.p0.x; l.y = o.y + p.y - drag.p0.y;
-      const cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, snap = 12 / k;
-      const gx = Math.abs(cx - doc.w / 2) < snap, gy = Math.abs(cy - doc.h / 2) < snap;
-      if (gx) l.x = doc.w / 2 - l.w / 2; if (gy) l.y = doc.h / 2 - (l.h || 0) / 2; guides(gx, gy);
+      snapTo([l], e);
     } else if (drag.h === 'rot') {
       const cx = o.x + o.w / 2, cy = o.y + (o.h || 0) / 2;
       let deg = Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI + 90; deg = ((deg + 540) % 360) - 180;
