@@ -10,6 +10,7 @@
 const DESIGN_VERSION = 1;   // app.js checks this matches, to catch a stale cached copy
 
 const DZ_KINDS = {
+  page: { label: 'Blank page', sub: 'A2 to A6, Letter, custom…', w: 2480, h: 3508, per: 0, page: 1 },
   voucher: { label: 'Gift voucher', sub: 'DL, 210 × 99 mm', w: 2480, h: 1169, per: 2 },
   card: { label: 'Business card', sub: '85 × 55 mm', w: 1004, h: 650, per: 10 },
   flyer: { label: 'Flyer / pamphlet', sub: 'A5, 148 × 210 mm', w: 1748, h: 2480, per: 2 },
@@ -39,10 +40,21 @@ const DZ_PALETTE = ['#000000', '#ffffff', '#1fb6a6', '#c9a24a', '#a8322b', '#e06
 /* ---------- Sizes ----------
    Print designs are laid out at 300 dots per inch, so page pixels convert to real sizes. Posts stay in
    pixels. The unit picked in the editor is remembered (one for print, one for posts). */
-const DZ_UNITS = { mm: [300 / 25.4, 1], cm: [300 / 2.54, 2], in: [300, 2], px: [1, 0] };   // page px per unit, decimals shown
+const DZ_UNITS = { mm: [300 / 25.4, 1], cm: [300 / 2.54, 2], in: [300, 2], px: [1, 0] };   // page px per unit (at 300 dpi), decimals shown
 const dzUnit = (doc) => DZ_KINDS[doc.kind]?.social ? Settings.get('dz_unit_post', 'px') : Settings.get('dz_unit', 'mm');
-const dzToU = (doc, px) => { const [k, d] = DZ_UNITS[dzUnit(doc)]; return +(px / k).toFixed(d); };
-const dzFromU = (doc, v) => v * DZ_UNITS[dzUnit(doc)][0];
+// Large pages are laid out at a lower dpi (doc.dpi) so the drawing stays within what phones can handle.
+const dzPer = (doc) => { const u = dzUnit(doc), [k] = DZ_UNITS[u]; return u === 'px' ? 1 : k * (doc.dpi || 300) / 300; };
+const dzToU = (doc, px) => +(px / dzPer(doc)).toFixed(DZ_UNITS[dzUnit(doc)][1]);
+const dzFromU = (doc, v) => v * dzPer(doc);
+/* Blank pages: paper sizes in mm (portrait). The dpi is the highest of 300/250/200/150 that keeps the page
+   under about 16 million pixels (the canvas limit on iPhones and iPads). */
+const DZ_PAPER = [['A6', 105, 148], ['A5', 148, 210], ['A4', 210, 297], ['A3', 297, 420], ['A2', 420, 594],
+  ['Letter', 215.9, 279.4], ['Legal', 215.9, 355.6], ['Tabloid', 279.4, 431.8], ['DL', 99, 210], ['4 × 6 in', 101.6, 152.4], ['5 × 7 in', 127, 177.8], ['Square', 210, 210]];
+function dzPaper(wmm, hmm, label) {
+  const dpi = [300, 250, 200, 150, 100].find(d => (wmm * d / 25.4) * (hmm * d / 25.4) <= 16e6) || 72;
+  return { w: Math.round(wmm * dpi / 25.4), h: Math.round(hmm * dpi / 25.4), dpi, label, mm: [wmm, hmm] };
+}
+const dzMM = (v) => (Math.round(v * 10) / 10).toString();
 // Keep proportions: pictures and the logo by default, shapes not; text sizes with its letters.
 const dzKeep = (l) => l.t === 'text' || (l.keep ?? l.t !== 'shape');
 
@@ -339,7 +351,7 @@ const DZ_TATTOO = [
 const dzCustom = () => { try { return JSON.parse(Settings.get('dz_tpls', '[]')); } catch { return []; } };
 function dzLayouts(kind) {
   const built = DZ_KINDS[kind]?.social ? [...DZ_TATTOO, ...DZ_TEMPLATES.post] : DZ_TEMPLATES[kind];
-  return [...built.map(t => ({ name: t[0], make: t[1] })), ...dzCustom().filter(c => c.kind === kind).map(c => ({ name: c.name, custom: c })), { name: 'Blank' }];
+  return [...(built || []).map(t => ({ name: t[0], make: t[1] })), ...dzCustom().filter(c => c.kind === kind).map(c => ({ name: c.name, custom: c })), { name: 'Blank' }];
 }
 // A portfolio piece for a post: its photos (in order) and details.
 async function dzPiece(id) {
@@ -357,12 +369,13 @@ function dzFillSlots(doc, piece) {
   const fh = doc.layers.some(l => l.t === 'text' && l.text === 'Healed');
   for (const l of doc.layers.filter(l => l.slot != null).sort((a, b) => a.slot - b.slot)) l.ref = pick(fh ? (l.slot === 0 ? 'fresh' : l.slot === 1 ? 'healed' : '') : '') || l.ref || null;
 }
-function dzNew(kind, opt, theme, piece) {
+function dzNew(kind, opt, theme, piece, size) {
   const k = DZ_KINDS[kind], code = Math.random().toString(36).slice(2, 8).toUpperCase(), exp = new Date(); exp.setFullYear(exp.getFullYear() + 1);
   let doc;
   if (opt?.custom) { doc = JSON.parse(JSON.stringify(opt.custom.doc)); doc.layers.forEach(l => l.id = dzId()); doc.theme = theme || doc.theme; }
   else doc = { v: 1, kind, w: k.w, h: k.h, theme, bg: { c: '@bg' }, layers: opt?.make ? opt.make(k.w, k.h) : [] };
   doc.kind = kind; doc.w = k.w; doc.h = k.h;
+  if (size) { doc.w = size.w; doc.h = size.h; doc.dpi = size.dpi; doc.paper = `${size.label}, ${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm`; } else { delete doc.dpi; delete doc.paper; }
   doc.vals = kind === 'voucher' ? { amount: '', to: '', from: '', ...(opt?.custom ? doc.vals : {}), code, expires: ymd(exp) } : {};
   dzFillSlots(doc, piece);
   return doc;
@@ -400,13 +413,13 @@ function dzPortfolioPick(photos) {
 const DZ = {};
 DZ.list = async () => {
   const el = $('#dz-list'); if (!el) return;
-  const rows = await DB.all('SELECT id, name, kind, thumb_ref, updated_at FROM designs ORDER BY updated_at DESC, id DESC');
+  const rows = await DB.all('SELECT id, name, kind, thumb_ref, updated_at, CASE WHEN kind = ? THEN doc END AS doc FROM designs ORDER BY updated_at DESC, id DESC', ['page']);
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Vouchers, business cards, flyers and posts with your studio's details.</p>
       <button class="btn primary" id="dz-new">+ New design</button></div>
     ${rows.length ? `<div class="dz-grid">${rows.map((r, i) => `<div class="dz-item" data-open="${r.id}">
         <div class="dz-thumb">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</div>
-        <div class="dz-meta"><b>${esc(r.name)}</b><span class="muted">${esc(DZ_KINDS[r.kind]?.label || '')}</span></div>
+        <div class="dz-meta"><b>${esc(r.name)}</b><span class="muted">${esc(r.kind === 'page' ? (JSON.parse(r.doc || '{}').paper || 'Blank page').split(',')[0] + ' page' : DZ_KINDS[r.kind]?.label || '')}</span></div>
         <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate">⧉</button>
         <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>`
       : `<div class="empty"><div class="empty-ico">${ICON.design}</div><div style="font:24px var(--display)">Make something</div>
@@ -436,7 +449,16 @@ DZ.list = async () => {
 // New design: pick what it is, then a layout and a theme (previews drawn with your own details and photos).
 // opts.piece: start a post from this portfolio piece (only post sizes are offered).
 async function dzPicker(opts = {}) {
-  const st = { kind: null, li: 0, theme: 'ink', piece: opts.piece ? await dzPiece(opts.piece) : null };
+  const st = { kind: null, li: 0, theme: 'ink', piece: opts.piece ? await dzPiece(opts.piece) : null,
+    ps: Settings.get('dz_paper', 'A4'), land: false, cw: 200, ch: 200, cu: 'mm' };
+  // The chosen blank page size (mm, turned for landscape) at its dpi.
+  const size = () => {
+    if (!DZ_KINDS[st.kind]?.page) return null;
+    const f = { mm: 1, cm: 10, in: 25.4 }[st.cu], p = DZ_PAPER.find(x => x[0] === st.ps);
+    let [w, h] = p ? [p[1], p[2]] : [Math.min(1200, Math.max(20, st.cw * f)), Math.min(1200, Math.max(20, st.ch * f))];
+    if (p && st.land !== w > h) [w, h] = [h, w];
+    return dzPaper(w, h, p ? p[0] : 'Custom');
+  };
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const kinds = Object.entries(DZ_KINDS).filter(([, v]) => !st.piece || v.social);
   const draw = async () => {
@@ -450,7 +472,16 @@ async function dzPicker(opts = {}) {
       return;
     }
     const lays = dzLayouts(st.kind), social = DZ_KINDS[st.kind].social, pu = st.piece ? await Media.url(st.piece.thumb) : '';
+    const sz = size();
     o.innerHTML = `<div class="card dz-pick"><h2>${DZ_KINDS[st.kind].label}</h2>
+      ${sz ? `<div class="lbl">Size</div><div class="dz-papers">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => {
+          const pp = DZ_PAPER.find(x => x[0] === n);
+          return `<button data-ps="${esc(n)}" class="${st.ps === n ? 'on' : ''}"><b>${esc(n)}</b><small>${pp ? `${dzMM(pp[1])} × ${dzMM(pp[2])}` : 'your size'}</small></button>`; }).join('')}</div>
+        ${st.ps === 'Custom' ? `<div class="dz-csize"><label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-cs="cw" value="${st.cw}"></label>
+          <span class="muted">×</span><label><span>H</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-cs="ch" value="${st.ch}"></label>
+          <select class="in" data-cs="cu">${['mm', 'cm', 'in'].map(u => `<option ${st.cu === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>`
+        : `<div class="seg" style="margin-top:8px">${[[false, 'Portrait'], [true, 'Landscape']].map(([v, n]) => `<button data-land="${v ? 1 : 0}" class="${st.land === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>`}
+        <p class="muted" style="font-size:12px;margin:6px 0 12px">${dzMM(sz.mm[0])} × ${dzMM(sz.mm[1])} mm, ${sz.w} × ${sz.h} px at ${sz.dpi} dpi${sz.dpi < 300 ? ' (large pages use a lower dpi so they open on phones and tablets)' : ''}.</p>` : ''}
       ${social ? `<div class="dz-piece">${pu ? `<img src="${pu}" alt="">` : '<span class="muted">No tattoo chosen</span>'}
         <div><b>${esc(st.piece?.vals.title || (st.piece ? 'Untitled piece' : 'Show off a tattoo'))}</b><small class="muted">${st.piece ? `${st.piece.photos.length} photo${st.piece.photos.length > 1 ? 's' : ''}` : 'Pick a portfolio piece to fill the photos, title and hashtags'}</small></div>
         <button class="btn small" data-piece>${st.piece ? 'Change' : 'Choose'}</button></div>` : ''}
@@ -461,7 +492,7 @@ async function dzPicker(opts = {}) {
         `<button data-theme="${k}" class="${st.theme === k ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>
       <div class="row" style="margin-top:14px"><button class="btn" data-back>Back</button><button class="btn primary" data-go style="flex:1">Create</button></div></div>`;
     for (const cv of o.querySelectorAll('canvas[data-prev]')) {
-      const doc = dzNew(st.kind, lays[+cv.dataset.prev], st.theme, st.piece), sc = 220 / Math.max(doc.w, doc.h);
+      const doc = dzNew(st.kind, lays[+cv.dataset.prev], st.theme, st.piece, sz), sc = 220 / Math.max(doc.w, doc.h);
       cv.width = Math.round(doc.w * sc); cv.height = Math.round(doc.h * sc); dzDraw(cv, doc, sc);
     }
   };
@@ -476,10 +507,15 @@ async function dzPicker(opts = {}) {
     if (t.closest('[data-piece]')) { const id = await dzPortfolioPick(false); if (id) { st.piece = await dzPiece(id); draw(); } return; }
     if (d('li') != null) { st.li = +d('li'); o.querySelectorAll('[data-li]').forEach(b => b.classList.toggle('on', +b.dataset.li === st.li)); return; }
     if (d('theme')) { st.theme = d('theme'); return draw(); }
+    if (d('ps')) { st.ps = d('ps'); return draw(); }
+    if (d('land') != null) { st.land = d('land') === '1'; return draw(); }
     if (t.closest('[data-go]')) {
-      const doc = dzNew(st.kind, dzLayouts(st.kind)[st.li], st.theme, st.piece);
+      const sz = size();
+      if (sz) await Settings.set('dz_paper', st.ps);
+      const doc = dzNew(st.kind, dzLayouts(st.kind)[st.li], st.theme, st.piece, sz);
       const n = await DB.one('SELECT COUNT(*) AS n FROM designs WHERE kind = ?', [st.kind]);
-      const name = st.piece?.vals.title ? `${st.piece.vals.title} (${DZ_KINDS[st.kind].label.toLowerCase()})` : DZ_KINDS[st.kind].label + (n.n ? ' ' + (n.n + 1) : '');
+      const base = sz ? `${sz.label === 'Custom' ? 'Custom' : sz.label} page` : DZ_KINDS[st.kind].label;
+      const name = st.piece?.vals.title ? `${st.piece.vals.title} (${DZ_KINDS[st.kind].label.toLowerCase()})` : base + (n.n ? ' ' + (n.n + 1) : '');
       await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [name, st.kind, JSON.stringify(doc)]);
       const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
       // Photos used by the post count as this design's pictures (kept in backups).
@@ -488,6 +524,9 @@ async function dzPicker(opts = {}) {
       o.remove(); location.hash = 'design/' + id;
     }
   };
+  // Custom size: typing updates the numbers below without redrawing (keeps the keyboard up); leaving the box redraws.
+  o.addEventListener('input', (e) => { const k = e.target.dataset.cs; if (k === 'cw' || k === 'ch') st[k] = +e.target.value || 0; });
+  o.addEventListener('change', (e) => { const k = e.target.dataset.cs; if (!k) return; if (k === 'cu') st.cu = e.target.value; else st[k] = +e.target.value || 0; draw(); });
   document.body.appendChild(o); draw();
 }
 DZ.post = (pieceId) => dzPicker({ piece: pieceId });
@@ -1285,10 +1324,11 @@ function dzExport(doc, name) {
   const file = () => (name || 'design').replace(/[^\w-]+/g, '_');
   const draw = () => {
     o.innerHTML = `<div class="card"><h2>Export</h2>
-      <p class="muted" style="font-size:13px;margin-top:0">${esc(kind.label)}, ${esc(kind.sub)}. Saved at print quality (300 dpi).</p>
+      <p class="muted" style="font-size:13px;margin-top:0">${esc(kind.label)}, ${esc(doc.paper || kind.sub)}. Saved at ${kind.social ? 'full size' : `print quality (${doc.dpi || 300} dpi)`}.</p>
       <div class="dz-ex">
         <button data-ex="png"><b>Save picture</b><small>PNG, for printing elsewhere or posting</small></button>
         <button data-ex="share"><b>Share</b><small>Send it in WhatsApp or another app</small></button>
+        ${kind.page ? '<button data-ex="print"><b>Print / PDF</b><small>Fits the paper in your printer; choose the same size there</small></button>' : ''}
         ${kind.per ? `<button data-ex="print"><b>Print / PDF</b><small>${st.sheet ? `${kind.per} on an A4 sheet with cut marks` : 'One per page'}</small></button>` : ''}
       </div>
       ${kind.per ? `<label class="toggle" style="display:inline-flex;margin-top:10px"><input type="checkbox" id="dx-sheet" ${st.sheet ? 'checked' : ''}><span>Fill an A4 sheet (${kind.per} per page)</span></label>` : ''}
@@ -1308,7 +1348,7 @@ function dzExport(doc, name) {
       catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); }
       return;
     }
-    if (a === 'print') { o.remove(); return printCanvas(await dzSheet(cv, doc.kind, st.sheet)); }
+    if (a === 'print') { o.remove(); return printCanvas(kind.page ? cv : await dzSheet(cv, doc.kind, st.sheet)); }
   });
   document.body.appendChild(o); draw();
 }
