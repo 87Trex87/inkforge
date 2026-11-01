@@ -1872,6 +1872,8 @@ const VIEWS = {
     title: () => 'Settings',
     render() {
       return `
+      <div class="card su-again"><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
+        <button class="btn small" id="s-setup">Run setup</button></div>
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
         <label class="field"><span>Artist name</span><input class="in" id="s-name" value="${esc(Settings.get('artist_name'))}" autocomplete="name"></label>
         <label class="field"><span>Studio</span><input class="in" id="s-studio" value="${esc(Settings.get('studio_name'))}"></label>
@@ -1945,6 +1947,7 @@ const VIEWS = {
     },
     async mount() {
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
+      $('#s-setup').onclick = runSetup;
       $('#s-name').addEventListener('change', save('artist_name'));
       $('#s-studio').addEventListener('change', save('studio_name'));
       $('#s-cur').addEventListener('change', save('currency'));
@@ -1961,14 +1964,7 @@ const VIEWS = {
       $('#s-logo').addEventListener('change', async (e) => {
         const f = e.target.files[0]; if (!f) return;
         try {
-          // Keep transparency: redraw as PNG, capped at 1000 px so it stays small.
-          const bmp = await createImageBitmap(f), sc = Math.min(1, 1000 / Math.max(bmp.width, bmp.height));
-          const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
-          c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-          const ref = await Media.save(await new Promise(r => c.toBlob(r, 'image/png')), 'png');
-          const old = Settings.get('studio_logo_ref');
-          await Settings.set('studio_logo_ref', ref);
-          if (old && old !== ref) await Media.release(old);
+          await saveLogoFile(f);
           drawLogo(); toast('Logo saved.');
         } catch { toast('Could not read that image.'); }
         e.target.value = '';
@@ -2029,6 +2025,134 @@ const VIEWS = {
     }
   }
 };
+
+/* ---------- First-time setup ----------
+   Runs once when a new workspace is created (and again from Settings). Four short steps with the
+   settings most artists change on day one, pre-filled with the current values; everything is saved
+   as the artist moves on and can be changed later in Settings. */
+async function saveLogoFile(f) {
+  // Keep transparency: redraw as PNG, capped at 1000 px so it stays small.
+  const bmp = await createImageBitmap(f), sc = Math.min(1, 1000 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  const ref = await Media.save(await new Promise(r => c.toBlob(r, 'image/png')), 'png');
+  const old = Settings.get('studio_logo_ref');
+  await Settings.set('studio_logo_ref', ref);
+  if (old && old !== ref) await Media.release(old);
+}
+
+function runSetup() {
+  const STEPS = ['About you', 'Your week', 'Your prices', 'Done'];
+  const c0 = qCfg(), an = [...c0.anchors].sort((a, b) => a[0] - b[0]), off = daysOff();
+  const S = {
+    step: 0,
+    artist_name: Settings.get('artist_name'), studio_name: Settings.get('studio_name'), currency: Settings.get('currency') || 'R',
+    country_code: countryCode(), artist_phone: Settings.get('artist_phone'), artist_instagram: Settings.get('artist_instagram'),
+    day_start: Settings.get('day_start', '10:00'), day_end: Settings.get('day_end', '17:00'), weekly: [...off.weekly],
+    max_per_day: Settings.get('max_per_day', '1'), booking_gap: Settings.get('booking_gap', '60'),
+    r1: an[0]?.[1] ?? 650, r4: (an.find(a => a[0] === 4) || an[1] || [4, 2500])[1], r9: (an.find(a => a[0] === 9) || an[an.length - 1] || [9, 4500])[1],
+    deposit: c0.deposit, touchup: c0.touchupFee, vatOn: c0.vatOn, vatRate: c0.vatRate, followup: Settings.get('followup_weeks', '6')
+  };
+  const o = document.createElement('div'); o.id = 'setup';
+  const chips = (key, opts, unit = '') => `<div class="su-chips">${opts.map(([v, l]) => `<button type="button" data-k="${key}" data-v="${v}" class="${String(S[key]) === String(v) ? 'on' : ''}">${l ?? v + unit}</button>`).join('')}</div>`;
+  const cur = () => esc(S.currency || '');
+  const draw = async () => {
+    const st = S.step, logo = await Media.url(Settings.get('studio_logo_ref'));
+    let body = '';
+    if (st === 0) body = `<h2>Welcome to InkForge</h2><p class="muted">A few details for your quotes, receipts and forms. Skip anything you're not sure of.</p>
+      <div class="two"><label class="field"><span>Your name</span><input class="in" data-f="artist_name" value="${esc(S.artist_name)}" autocomplete="name"></label>
+        <label class="field"><span>Studio name</span><input class="in" data-f="studio_name" value="${esc(S.studio_name)}"></label></div>
+      <div class="field"><span class="lbl">Logo <span class="muted">(optional, a PNG with a clear background works best)</span></span>
+        <div class="row" style="flex-wrap:nowrap"><span class="logo-box">${logo ? `<img src="${logo}" alt="Logo">` : '<span class="muted">None</span>'}</span>
+          <label class="btn small">${logo ? 'Change' : 'Choose picture'}<input type="file" accept="image/png,image/*" hidden id="su-logo"></label></div></div>
+      <div class="two"><label class="field"><span>Country code ${help('Used for WhatsApp and quote links. South Africa: 27.')}</span><div class="unit-in"><input class="in" data-f="country_code" inputmode="numeric" placeholder="27" value="${esc(S.country_code)}"><em>+</em></div></label>
+        <label class="field"><span>Currency symbol</span><input class="in" data-f="currency" maxlength="4" value="${esc(S.currency)}" placeholder="R"></label></div>
+      <div class="two"><label class="field"><span>Contact number</span><input class="in" type="tel" data-f="artist_phone" value="${esc(S.artist_phone)}"></label>
+        <label class="field"><span>Instagram</span><input class="in" data-f="artist_instagram" value="${esc(S.artist_instagram)}" placeholder="@yourstudio" autocapitalize="off"></label></div>`;
+    if (st === 1) body = `<h2>Your week</h2><p class="muted">Used for the calendar, new bookings and the open days clients see.</p>
+      <div class="two"><label class="field"><span>Start</span><input class="in" type="time" data-f="day_start" value="${esc(S.day_start)}"></label>
+        <label class="field"><span>Finish</span><input class="in" type="time" data-f="day_end" value="${esc(S.day_end)}"></label></div>
+      <div class="lbl">Days off every week</div>
+      <div class="off-days">${WEEKDAYS.map(([n, l]) => `<button type="button" class="${S.weekly.includes(n) ? 'on' : ''}" data-wd="${n}">${l}</button>`).join('')}</div>
+      <div class="lbl" style="margin-top:14px">Tattoos per day, at most</div>${chips('max_per_day', [[1], [2], [3], [4]])}
+      <div class="lbl">Break between bookings ${help('Setup, cleaning and a breather; kept free around every booking.')}</div>
+      ${chips('booking_gap', [[0, 'None'], [30, '30 min'], [60, '1 hour'], [90, '1½ hours']])}`;
+    if (st === 2) body = `<h2>Your prices</h2><p class="muted">What you charge for tattooing time. Quotes work out everything in between; fine-tune it later in Calibrate.</p>
+      <div class="su-rates">${[['r1', '1 hour'], ['r4', '4 hours'], ['r9', 'Full day (9 h)']].map(([k, l]) =>
+        `<label class="field"><span>${l}</span><div class="unit-in"><input class="in" type="number" inputmode="decimal" min="0" step="10" data-f="${k}" value="${S[k]}"><em>${cur()}</em></div></label>`).join('')}</div>
+      <div class="lbl">Deposit to book</div>${chips('deposit', [[0, 'None'], [20], [30], [50]], '%')}
+      <div class="two"><label class="field"><span>Touch-up price ${help('0 = free touch-ups. Mentioned on quotes and receipts.')}</span><div class="unit-in"><input class="in" type="number" min="0" step="10" data-f="touchup" value="${S.touchup}"><em>${cur()}</em></div></label>
+        <label class="field"><span>Healing check after ${help('When you finish a tattoo, InkForge offers to book a short follow-up this many weeks later.')}</span><div class="unit-in"><input class="in" type="number" min="1" max="52" data-f="followup" value="${esc(S.followup)}"><em>weeks</em></div></label></div>
+      <div class="row" style="gap:10px;align-items:center"><label class="toggle"><input type="checkbox" id="su-vat" ${S.vatOn ? 'checked' : ''}><span>Add VAT to quotes</span></label>
+        ${S.vatOn ? `<div class="unit-in" style="width:110px"><input class="in" type="number" step="0.5" data-f="vatRate" value="${S.vatRate}"><em>%</em></div>` : ''}</div>`;
+    if (st === 3) {
+      const wd = WEEKDAYS.filter(([n]) => S.weekly.includes(n)).map(x => x[1]).join(', ');
+      const sum = [['Studio', [S.studio_name, S.artist_name].filter(Boolean).join(' · ') || '—'], ['Contact', [S.artist_phone, S.artist_instagram].filter(Boolean).join(' · ') || '—'],
+        ['Hours', `${S.day_start} – ${S.day_end}${wd ? ' · off ' + wd : ''}`], ['Bookings', `Up to ${S.max_per_day} a day · ${+S.booking_gap ? S.booking_gap + ' min' : 'no'} break between`],
+        ['Rates', `${money(+S.r1)} 1 h · ${money(+S.r4)} 4 h · ${money(+S.r9)} full day`], ['Deposit', +S.deposit ? S.deposit + '%' : 'None'],
+        ['Touch-ups', +S.touchup ? money(+S.touchup) : 'Free'], ['VAT', S.vatOn ? S.vatRate + '%' : 'Not added']];
+      body = `<h2>You're all set</h2><p class="muted">These are saved. Change any of them later in More › Settings, or fine-tune prices in Calibrate.</p>
+        <div class="su-sum">${sum.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
+    }
+    o.innerHTML = `<div class="su-in">
+      <div class="su-steps">${STEPS.map((n, i) => `<span class="${i === st ? 'on' : i < st ? 'done' : ''}"><i>${i < st ? '✓' : i + 1}</i>${n}</span>`).join('')}</div>
+      <div class="card su-card">${body}</div>
+      <div class="row su-foot">
+        ${st ? '<button class="btn" id="su-back">Back</button>' : '<button class="btn" id="su-later">Later</button>'}
+        ${st < 3 ? '<button class="btn" id="su-skip">Skip</button>' : ''}
+        <button class="btn primary" id="su-next" style="flex:1">${st === 3 ? 'Start using InkForge' : 'Next'}</button></div></div>`;
+  };
+  // Saves what the current step covers.
+  const save = async () => {
+    const st = S.step;
+    if (st === 0) {
+      for (const k of ['artist_name', 'studio_name', 'currency', 'artist_instagram']) await Settings.set(k, String(S[k] || '').trim());
+      await Settings.set('country_code', String(S.country_code || '').replace(/\D/g, ''));
+      const ph = intlPhone(S.artist_phone);
+      if (ph === null) { toast(phoneBad(), 6000); return false; }
+      await Settings.set('artist_phone', ph);
+    }
+    if (st === 1) {
+      for (const k of ['day_start', 'day_end', 'max_per_day', 'booking_gap']) await Settings.set(k, String(S[k]));
+      await Settings.set('days_off', JSON.stringify({ ...daysOff(), weekly: S.weekly }));
+    }
+    if (st === 2) {
+      const cfg = qCfg(), rest = cfg.anchors.filter(a => ![1, 4, 9].includes(a[0]));
+      cfg.anchors = [[1, +S.r1 || 0], [4, +S.r4 || 0], [9, +S.r9 || 0], ...rest].sort((a, b) => a[0] - b[0]);
+      Object.assign(cfg, { deposit: +S.deposit, touchupFee: +S.touchup || 0, vatOn: !!S.vatOn, vatRate: +S.vatRate || cfg.vatRate });
+      await qSave(cfg);
+      await Settings.set('followup_weeks', String(Math.max(1, Math.min(52, +S.followup || 6))));
+    }
+    return true;
+  };
+  const finish = async () => {
+    await Settings.set('setup_done', '1');
+    if (WS.cur?.fresh) { delete WS.cur.fresh; await WS.save(); }
+    o.remove(); render();
+  };
+  o.addEventListener('input', (e) => { const k = e.target.dataset.f; if (k) S[k] = e.target.value;
+    if (k === 'country_code') Settings.set('country_code', e.target.value.replace(/\D/g, ''));   // so the number below converts as it's typed
+  });
+  o.addEventListener('change', async (e) => {
+    if (e.target.id === 'su-vat') { S.vatOn = e.target.checked; return draw(); }
+    if (e.target.id === 'su-logo') { const f = e.target.files[0]; if (!f) return; try { await saveLogoFile(f); toast('Logo saved.'); } catch { toast('Could not read that image.'); } return draw(); }
+    if (e.target.type === 'tel') S[e.target.dataset.f] = e.target.value;      // after the +country fix-up
+  });
+  o.addEventListener('click', async (e) => {
+    const t = e.target;
+    const wd = t.closest('[data-wd]'); if (wd) { const n = +wd.dataset.wd; S.weekly = S.weekly.includes(n) ? S.weekly.filter(x => x !== n) : [...S.weekly, n]; return draw(); }
+    const ch = t.closest('[data-k]'); if (ch) { S[ch.dataset.k] = ch.dataset.v; return draw(); }
+    if (t.closest('#su-later')) { if (WS.cur?.fresh) { delete WS.cur.fresh; await WS.save(); } o.remove(); toast('You can run setup any time from More › Settings.'); return; }
+    if (t.closest('#su-back')) { S.step--; return draw(); }
+    if (t.closest('#su-skip')) { S.step++; return draw(); }
+    if (t.closest('#su-next')) {
+      if (S.step === 3) return finish();
+      if (!(await save())) return;
+      S.step++; draw(); o.scrollTo(0, 0);
+    }
+  });
+  document.body.appendChild(o); draw();
+}
 
 function renderDaysOff() {
   const el = $('#off-card'); if (!el) return;
@@ -6477,7 +6601,7 @@ function showStart() {
     if (t.closest('#st-new')) {
       const n = prompt('Name for the new workspace (e.g. the artist\'s name):', '');
       if (!n?.trim()) return;
-      const nw = await WS.create(n.trim()); o.remove(); return startWorkspace(nw);
+      const nw = await WS.create(n.trim()); nw.fresh = true; await WS.save(); o.remove(); return startWorkspace(nw);
     }
   });
   o.addEventListener('change', async (e) => {
@@ -6548,6 +6672,7 @@ async function startWorkspace(w, fileBytes) {
   Snapshot.ready = true;
   render();
   if (w.cloud) cloudBar(Cloud.viewOnly ? undefined : null);
+  if (w.fresh && Settings.get('setup_done') !== '1') runSetup();
   if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
   else if (fileBytes) { toast(`Opened "${w.name}".`); Snapshot.soon(); }
   else Snapshot.soon();

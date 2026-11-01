@@ -906,3 +906,25 @@ input.bad { border-color: #e0605a !important; }
 .cloud-steps { font-size: 13px; color: var(--ink2); padding-left: 18px; margin: 0 0 12px; display: grid; gap: 4px; }
 .cloud-steps code { font-size: 11px; word-break: break-all; color: var(--ink); }
 .ws-cloud { color: var(--teal); }
+
+/* First-time setup */
+#setup { position: fixed; inset: 0; z-index: 96; background: var(--bg); overflow-y: auto; padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px 24px; }
+.su-in { max-width: 620px; margin: 0 auto; }
+.su-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 14px; }
+.su-steps span { display: flex; flex-direction: column; align-items: center; gap: 4px; font: 600 11px var(--ui); color: var(--ink2); text-align: center; }
+.su-steps i { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-style: normal; border: 1px solid var(--line); background: var(--bg2); }
+.su-steps .on { color: var(--teal); } .su-steps .on i { background: var(--teal); color: #061211; border-color: var(--teal); }
+.su-steps .done i { border-color: var(--teal); color: var(--teal); }
+.su-card h2 { margin-top: 0; font-size: 28px; }
+.su-card > p.muted { margin-top: -4px; font-size: 14px; }
+.su-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.su-chips button { min-width: 56px; padding: 9px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: 600 14px var(--ui); cursor: pointer; }
+.su-chips button.on { background: var(--teal); border-color: var(--teal); color: #061211; }
+.su-rates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+@media (max-width: 520px) { .su-rates { grid-template-columns: 1fr 1fr; } }
+.su-sum { display: grid; gap: 1px; background: var(--line); border-radius: 12px; overflow: hidden; }
+.su-sum div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; background: var(--bg); font-size: 14px; }
+.su-sum span { color: var(--ink2); } .su-sum b { text-align: right; font-weight: 600; }
+.su-foot { gap: 8px; margin-top: 12px; position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 calc(env(safe-area-inset-bottom, 0px) + 6px); }
+.su-again { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.su-again div { display: flex; flex-direction: column; gap: 2px; } .su-again .muted { font-size: 13px; }
