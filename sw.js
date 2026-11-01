@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Bump VERSION whenever shipped files change. */
-const VERSION = 'inkforge-v60';
+const VERSION = 'inkforge-v61';
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'reel.js', 'design.js', 'icon.svg', 'manifest.webmanifest',
   'lib/sqlite3.js', 'lib/sqlite3.wasm', 'lib/db-worker.js', 'lib/stencil-worker.js', 'img/pain-chart.png', 'quote.html'];
 

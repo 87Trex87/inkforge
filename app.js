@@ -1136,7 +1136,7 @@ const VIEWS = {
     render: () => tileGroup('Create', [
         tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil'),
         tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel'),
-        tile('design', 'Design studio', 'Vouchers, business cards, flyers and posts', false, 'designs')])
+        tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs')])
       + tileGroup('Your work', [
         tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
         tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')])
@@ -1217,6 +1217,7 @@ const VIEWS = {
           <button class="btn danger icon-btn" id="pf-del" data-tip="Delete" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
           <button class="btn" id="pf-share" ${photos.length ? '' : 'disabled'}>Share</button>
           <button class="btn" id="pf-save" ${photos.length ? '' : 'disabled'} data-tip="Save this photo to your device, exactly as it is stored">Save</button>
+          <button class="btn" id="pf-post" ${photos.length ? '' : 'disabled'} data-tip="Design a social post with this tattoo: layouts, your logo as a watermark, title and hashtags">Post</button>
           <button class="btn primary" style="flex:1" onclick="location.hash='pf-edit/${it.id}'">Edit</button>
         </div></div></div>`;
       const car = $('#pf-car'), dots = $('#pf-dots');
@@ -1248,6 +1249,7 @@ const VIEWS = {
         return new File([f], (it.title || 'inkforge').replace(/[^\w-]+/g, '_') + (photos.length > 1 ? '-' + (i + 1) : '') + '.' + ext, { type });
       };
       const download = (file) => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+      $('#pf-post').onclick = () => DZ.post(it.id);
       $('#pf-share').onclick = async () => {
         const file = await photoFile();
         try {

@@ -13,7 +13,9 @@ const DZ_KINDS = {
   voucher: { label: 'Gift voucher', sub: 'DL, 210 × 99 mm', w: 2480, h: 1169, per: 2 },
   card: { label: 'Business card', sub: '85 × 55 mm', w: 1004, h: 650, per: 10 },
   flyer: { label: 'Flyer / pamphlet', sub: 'A5, 148 × 210 mm', w: 1748, h: 2480, per: 2 },
-  post: { label: 'Social post', sub: 'Square, 1080 px', w: 1080, h: 1080, per: 0 }
+  post: { label: 'Square post', sub: '1080 × 1080, feed', w: 1080, h: 1080, per: 0, social: 1 },
+  portrait: { label: 'Portrait post', sub: '1080 × 1350, feed (4:5)', w: 1080, h: 1350, per: 0, social: 1 },
+  story: { label: 'Story / reel cover', sub: '1080 × 1920 (9:16)', w: 1080, h: 1920, per: 0, social: 1 }
 };
 const DZ_THEMES = {
   ink: { name: 'Ink', bg: '#0f1213', fg: '#f1ece2', accent: '#1fb6a6', soft: '#8c9593', f1: 'Pirata One', f2: 'Inter' },
@@ -29,7 +31,9 @@ const DZ_FONTS = [['Inter', ''], ['Pirata One', ''], ['Bebas Neue', 'Bebas Neue'
   ['Georgia', ''], ['Arial', '']];
 // {field}: label, where it comes from.
 const DZ_FIELDS = [['studio', 'Studio'], ['artist', 'Artist'], ['phone', 'Phone'], ['instagram', 'Instagram'], ['facebook', 'Facebook'], ['tiktok', 'TikTok'],
-  ['amount', 'Amount'], ['to', 'For'], ['from', 'From'], ['code', 'Code'], ['expires', 'Valid until']];
+  ['amount', 'Amount'], ['to', 'For'], ['from', 'From'], ['code', 'Code'], ['expires', 'Valid until'],
+  ['title', 'Title'], ['placement', 'Placement'], ['tags', 'Hashtags'], ['date', 'Date']];
+const DZ_PIECE_FIELDS = /\{(title|placement|tags|date)\}/;
 const DZ_PALETTE = ['#000000', '#ffffff', '#1fb6a6', '#c9a24a', '#a8322b', '#e0605a', '#3b5bdb', '#7b4fa0', '#2e7d32', '#f0b860', '#8c9593'];
 
 /* ---------- Fonts ---------- */
@@ -72,7 +76,11 @@ function dzFill(doc, s) {
     instagram: get('artist_instagram').replace(/^(https?:\/\/)?(www\.)?instagram\.com\//i, '@').replace(/\/$/, ''),
     facebook: get('artist_facebook').replace(/^https?:\/\/(www\.)?/, ''), tiktok: get('artist_tiktok').replace(/^https?:\/\/(www\.)?/, ''),
     amount: v.amount !== '' && v.amount != null && !isNaN(+v.amount) ? money(+v.amount) : (v.amount || ''), to: v.to || '', from: v.from || '', code: v.code || '',
-    expires: v.expires ? new Date(v.expires + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '' };
+    expires: v.expires ? new Date(v.expires + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '',
+    title: v.title || '', placement: v.placement || '',
+    // Tags become hashtags: "fine line, floral" -> "#fineline #floral"
+    tags: String(v.tags || '').split(',').map(t => t.trim().replace(/[^\p{L}\p{N}_]/gu, '')).filter(Boolean).map(t => '#' + t.toLowerCase()).join(' '),
+    date: v.date ? new Date(v.date + 'T00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : '' };
   return String(s || '').replace(/\{(\w+)\}/g, (m, k) => k in map ? map[k] : m);
 }
 const dzFontStr = (doc, l, px) => `${l.it ? 'italic ' : ''}${l.b ? 700 : 400} ${px}px "${dzFont(doc, l.font)}", Inter, sans-serif`;
@@ -127,9 +135,17 @@ async function dzDraw(cv, doc, scale = 1) {
       const ax = l.al === 'center' ? 0 : l.al === 'right' ? l.w / 2 : -l.w / 2;
       lines.forEach((ln, i) => x.fillText(ln, ax, -l.h / 2 + i * lh + px * 0.9));
     } else if (l.t === 'image') {
-      if (im) { const s = Math.min(l.w / im.naturalWidth, l.h / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
-        x.drawImage(im, -w / 2, -h / 2, w, h); }
+      const r = Math.min(l.r || 0, l.w / 2, l.h / 2), clip = l.cover || r;
+      if (clip) { x.save(); x.beginPath(); x.roundRect(-l.w / 2, -l.h / 2, l.w, l.h, r); x.clip(); }
+      // cover = fill the box and crop the overflow (photos); otherwise the whole picture fits inside (logos, stickers).
+      if (im) { const s = (l.cover ? Math.max : Math.min)(l.w / im.naturalWidth, l.h / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
+        x.drawImage(im, -w / 2 + (l.cover ? (l.px || 0) * (w - l.w) / 2 : 0), -h / 2 + (l.cover ? (l.py || 0) * (h - l.h) / 2 : 0), w, h); }
+      else if (l.slot != null) { x.fillStyle = 'rgba(128,128,128,.18)'; x.fillRect(-l.w / 2, -l.h / 2, l.w, l.h);
+        x.fillStyle = 'rgba(128,128,128,.8)'; x.font = `600 ${Math.max(14, Math.min(l.w, l.h) * 0.08)}px Inter, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('Photo', 0, 0); }
       else if (l.logo) { x.strokeStyle = 'rgba(128,128,128,.6)'; x.setLineDash([10, 8]); x.lineWidth = 3; x.strokeRect(-l.w / 2, -l.h / 2, l.w, l.h); }
+      if (clip) x.restore();
+      const st = dzCol(doc, l.stroke);
+      if (st && l.sw) { x.beginPath(); x.roundRect(-l.w / 2, -l.h / 2, l.w, l.h, r); x.strokeStyle = st; x.lineWidth = l.sw; x.stroke(); }
     } else if (l.t === 'shape') {
       const f = dzCol(doc, l.fill), st = dzCol(doc, l.stroke), sw = l.sw || 0;
       x.beginPath();
@@ -152,7 +168,7 @@ async function dzCanvas(doc, scale = 1) {
 /* ---------- Templates ---------- */
 let dzN = 0; const dzId = () => 'L' + Date.now().toString(36) + (dzN++);
 const dzT = (text, x, y, w, size, o = {}) => ({ id: dzId(), t: 'text', text, x, y, w, h: size * 1.2, size, font: '@2', c: '@fg', al: 'left', lh: 1.2, ...o });
-const dzLogo = (x, y, w, h) => ({ id: dzId(), t: 'image', logo: true, x, y, w, h });
+const dzLogo = (x, y, w, h, o = {}) => ({ id: dzId(), t: 'image', logo: true, x, y, w, h, ...o });
 const dzS = (shape, x, y, w, h, o = {}) => ({ id: dzId(), t: 'shape', shape, x, y, w, h, fill: '@accent', ...o });
 const DZ_TEMPLATES = {
   voucher: [
@@ -214,11 +230,97 @@ const DZ_TEMPLATES = {
       dzT('{studio}  ·  {instagram}', W * 0.07, H * 0.87, W * 0.86, H * 0.035, { al: 'center', c: '@accent' })]]
   ]
 };
-function dzNew(kind, ti, theme) {
-  const k = DZ_KINDS[kind], tpl = ti >= 0 ? DZ_TEMPLATES[kind][ti] : null;
-  const code = Math.random().toString(36).slice(2, 8).toUpperCase(), exp = new Date(); exp.setFullYear(exp.getFullYear() + 1);
-  return { v: 1, kind, w: k.w, h: k.h, theme, bg: { c: '@bg' }, layers: tpl ? tpl[1](k.w, k.h) : [],
-    vals: kind === 'voucher' ? { amount: '', to: '', from: '', code, expires: ymd(exp) } : {} };
+// Photo spots: `slot` n takes the piece's n-th photo; cover crops to fill the spot.
+const dzPh = (slot, x, y, w, h, o = {}) => ({ id: dzId(), t: 'image', slot, cover: 1, x, y, w, h, ...o });
+const dzMark = (W, H, o = {}) => dzLogo(W * 0.78, W * 0.04, W * 0.18, W * 0.12, { op: 0.85, ...o });   // logo watermark
+const DZ_TATTOO = [
+  ['Showcase', (W, H) => { const m = W * 0.06, band = H * 0.17;
+    return [dzPh(0, m, m, W - 2 * m, H - band - m * 1.5, { r: W * 0.02 }),
+      dzT('{title}', m, H - band + m * 0.1, W * 0.66, Math.min(W * 0.06, H * 0.045), { font: '@1', fit: 1 }),
+      dzT('{tags}', m, H - band + H * 0.065, W * 0.66, Math.min(W * 0.03, H * 0.021), { c: '@soft', lh: 1.35 }),
+      dzLogo(W - m - W * 0.2, H - band + m * 0.1, W * 0.2, band - m * 1.2, { op: 0.9 })]; }],
+  ['Full photo', (W, H) => [dzPh(0, 0, 0, W, H), dzS('rect', 0, H * 0.8, W, H * 0.2, { fill: '@bg', op: 0.78 }),
+    dzT('{title}', W * 0.06, H * 0.82, W * 0.88, Math.min(W * 0.065, H * 0.05), { font: '@1', fit: 1 }),
+    dzT('{tags}', W * 0.06, H * 0.9, W * 0.88, Math.min(W * 0.03, H * 0.022), { c: '@soft' }), dzMark(W, H)]],
+  ['Framed', (W, H) => [dzT('{title}', W * 0.08, H * 0.045, W * 0.84, Math.min(W * 0.07, H * 0.055), { font: '@1', al: 'center', fit: 1 }),
+    dzPh(0, W * 0.1, H * 0.14, W * 0.8, H * 0.66, { r: W * 0.03, stroke: '@accent', sw: 8 }),
+    dzT('{placement}', W * 0.08, H * 0.83, W * 0.84, Math.min(W * 0.04, H * 0.03), { al: 'center', c: '@accent' }),
+    dzT('{studio}  ·  {instagram}', W * 0.08, H * 0.9, W * 0.84, Math.min(W * 0.03, H * 0.023), { al: 'center', c: '@soft' })]],
+  ['Fresh & healed', (W, H) => { const tall = H > W * 1.4, lab = Math.min(W * 0.045, H * 0.034);
+    const a = tall ? [W * 0.08, H * 0.12, W * 0.84, H * 0.36] : [W * 0.05, H * 0.15, W * 0.44, H * 0.62];
+    const b = tall ? [W * 0.08, H * 0.52, W * 0.84, H * 0.36] : [W * 0.51, H * 0.15, W * 0.44, H * 0.62];
+    const tag = (r, t) => [dzS('rect', r[0] + W * 0.02, r[1] + W * 0.02, W * 0.2, lab * 1.6, { r: lab * 0.8 }),
+      dzT(t, r[0] + W * 0.02, r[1] + W * 0.02 + lab * 0.3, W * 0.2, lab, { c: '@bg', al: 'center', b: 1 })];
+    return [dzT('{title}', W * 0.06, H * 0.04, W * 0.88, Math.min(W * 0.065, H * 0.05), { font: '@1', al: 'center', fit: 1 }),
+      dzPh(0, ...a, { r: W * 0.02 }), dzPh(1, ...b, { r: W * 0.02 }), ...tag(a, 'Fresh'), ...tag(b, 'Healed'),
+      dzT('{tags}', W * 0.06, H * (tall ? 0.91 : 0.82), W * 0.88, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }), dzMark(W, H, { y: H - W * 0.16 })]; }],
+  ['Polaroid', (W, H) => { const fw = W * 0.76, fh = Math.min(H * 0.74, fw * 1.2), fx = (W - fw) / 2, fy = (H - fh) / 2 - H * 0.03;
+    return [dzS('rect', fx, fy, fw, fh, { fill: '#fdfbf6', rot: -3, r: 6 }),
+      dzPh(0, fx + fw * 0.06, fy + fw * 0.06, fw * 0.88, fh - fw * 0.06 - fh * 0.2, { rot: -3 }),
+      dzT('{title}', fx + fw * 0.06, fy + fh * 0.84, fw * 0.88, fh * 0.07, { font: 'Permanent Marker', c: '#222222', al: 'center', rot: -3, fit: 1 }),
+      dzT('{tags}', W * 0.08, H * 0.92, W * 0.84, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }), dzMark(W, H)]; }],
+  ['Photo grid', (W, H) => { const m = W * 0.05, top = H * 0.12, g = W * 0.02, cw = (W - 2 * m - g) / 2, ch = Math.min(cw, (H * 0.72 - g) / 2);
+    return [dzT('{title}', m, H * 0.035, W - 2 * m, Math.min(W * 0.06, H * 0.05), { font: '@1', al: 'center', fit: 1 }),
+      ...[0, 1, 2, 3].map(i => dzPh(i, m + (i % 2) * (cw + g), top + Math.floor(i / 2) * (ch + g), cw, ch, { r: W * 0.015 })),
+      dzT('{tags}', m, top + 2 * ch + g + H * 0.03, W - 2 * m, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }),
+      dzT('{studio}  ·  {instagram}', m, H - H * 0.06, W - 2 * m, Math.min(W * 0.028, H * 0.021), { al: 'center', c: '@accent' })]; }]
+];
+// Layout choices for a type: built-in ones, your saved templates, then a blank page.
+const dzCustom = () => { try { return JSON.parse(Settings.get('dz_tpls', '[]')); } catch { return []; } };
+function dzLayouts(kind) {
+  const built = DZ_KINDS[kind]?.social ? [...DZ_TATTOO, ...DZ_TEMPLATES.post] : DZ_TEMPLATES[kind];
+  return [...built.map(t => ({ name: t[0], make: t[1] })), ...dzCustom().filter(c => c.kind === kind).map(c => ({ name: c.name, custom: c })), { name: 'Blank' }];
+}
+// A portfolio piece for a post: its photos (in order) and details.
+async function dzPiece(id) {
+  const it = await DB.one('SELECT * FROM portfolio_items WHERE id = ?', [id]); if (!it) return null;
+  const photos = await DB.all('SELECT photo_ref, thumb_ref, label FROM portfolio_photos WHERE item_id = ? ORDER BY sort, id', [id]);
+  return { id, photos, vals: { title: it.title || '', placement: it.placement || '', tags: it.tags || '', date: it.made_on || '' }, thumb: photos[0]?.thumb_ref };
+}
+// Fills photo spots with a piece's photos (a "Fresh & healed" layout looks for photos labelled that way first).
+function dzFillSlots(doc, piece) {
+  if (!piece) return;
+  doc.vals = { ...doc.vals, ...piece.vals, piece: piece.id };
+  const used = new Set(), pick = (want) => {
+    const byLabel = want && piece.photos.find(p => (p.label || '').toLowerCase() === want && !used.has(p.photo_ref));
+    const p = byLabel || piece.photos.find(p => !used.has(p.photo_ref)); if (p) used.add(p.photo_ref); return p?.photo_ref || null; };
+  const fh = doc.layers.some(l => l.t === 'text' && l.text === 'Healed');
+  for (const l of doc.layers.filter(l => l.slot != null).sort((a, b) => a.slot - b.slot)) l.ref = pick(fh ? (l.slot === 0 ? 'fresh' : l.slot === 1 ? 'healed' : '') : '') || l.ref || null;
+}
+function dzNew(kind, opt, theme, piece) {
+  const k = DZ_KINDS[kind], code = Math.random().toString(36).slice(2, 8).toUpperCase(), exp = new Date(); exp.setFullYear(exp.getFullYear() + 1);
+  let doc;
+  if (opt?.custom) { doc = JSON.parse(JSON.stringify(opt.custom.doc)); doc.layers.forEach(l => l.id = dzId()); doc.theme = theme || doc.theme; }
+  else doc = { v: 1, kind, w: k.w, h: k.h, theme, bg: { c: '@bg' }, layers: opt?.make ? opt.make(k.w, k.h) : [] };
+  doc.kind = kind; doc.w = k.w; doc.h = k.h;
+  doc.vals = kind === 'voucher' ? { amount: '', to: '', from: '', ...(opt?.custom ? doc.vals : {}), code, expires: ymd(exp) } : {};
+  dzFillSlots(doc, piece);
+  return doc;
+}
+// Saves a design's thumbnail for the list (also used right after creating one).
+async function dzThumb(id, doc) {
+  const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
+  const ref = await Media.save(await new Promise(r => th.toBlob(r, 'image/jpeg', 0.8)), 'jpg');
+  const old = (await DB.one('SELECT thumb_ref FROM designs WHERE id = ?', [id]))?.thumb_ref;
+  await DB.run('UPDATE designs SET thumb_ref = ? WHERE id = ?', [ref, id]);
+  if (old && old !== ref) await Media.release(old);
+}
+// Grid of portfolio pieces (or their photos) to pick from. Resolves the id / photo_ref, or null.
+function dzPortfolioPick(photos) {
+  return new Promise(async (res) => {
+    const rows = photos
+      ? await DB.all(`SELECT x.photo_ref AS v, x.thumb_ref AS t, p.title FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id ORDER BY coalesce(p.made_on, p.created_at) DESC, x.sort LIMIT 240`)
+      : await DB.all(`SELECT p.id AS v, p.title, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS t
+          FROM portfolio_items p WHERE EXISTS (SELECT 1 FROM portfolio_photos x WHERE x.item_id = p.id) ORDER BY coalesce(p.made_on, p.created_at) DESC LIMIT 240`);
+    if (!rows.length) { toast('Add tattoos with photos to your portfolio first.'); return res(null); }
+    const urls = await Promise.all(rows.map(r => Media.url(r.t)));
+    const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
+    o.innerHTML = `<div class="card dz-pick"><h2>${photos ? 'Choose a photo' : 'Choose a portfolio piece'}</h2>
+      <div class="dz-pf">${rows.map((r, i) => `<button data-v="${esc(r.v)}" title="${esc(r.title || '')}"><img src="${urls[i]}" alt=""></button>`).join('')}</div>
+      <button class="btn" data-v="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+    o.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v ? (photos ? b.dataset.v : +b.dataset.v) : null); };
+    document.body.appendChild(o);
+  });
 }
 
 /* ---------- List of designs ---------- */
@@ -258,45 +360,64 @@ DZ.list = async () => {
   };
 };
 
-// New design: pick what it is, then a template and a theme (previews drawn with your own details).
-function dzPicker() {
-  const st = { kind: null, ti: 0, theme: 'ink' };
+// New design: pick what it is, then a layout and a theme (previews drawn with your own details and photos).
+// opts.piece: start a post from this portfolio piece (only post sizes are offered).
+async function dzPicker(opts = {}) {
+  const st = { kind: null, li: 0, theme: 'ink', piece: opts.piece ? await dzPiece(opts.piece) : null };
   const o = document.createElement('div'); o.id = 'merge-dlg';
+  const kinds = Object.entries(DZ_KINDS).filter(([, v]) => !st.piece || v.social);
   const draw = async () => {
     if (!st.kind) {
-      o.innerHTML = `<div class="card dz-pick"><h2>New design</h2><div class="dz-kinds">${Object.entries(DZ_KINDS).map(([k, v]) =>
-        `<button data-kind="${k}"><span class="dz-shape" style="aspect-ratio:${v.w}/${v.h}"></span><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
+      o.innerHTML = `<div class="card dz-pick"><h2>${st.piece ? 'Make a post' : 'New design'}</h2>
+        ${st.piece ? '' : '<div class="lbl">Print</div>'}<div class="dz-kinds">${kinds.filter(([, v]) => !v.social).map(([k, v]) =>
+          `<button data-kind="${k}"><span class="dz-shape" style="aspect-ratio:${v.w}/${v.h}"></span><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
+        <div class="lbl" style="margin-top:10px">Social posts ${st.piece ? '' : '<span class="muted">(show off a tattoo)</span>'}</div><div class="dz-kinds three">${kinds.filter(([, v]) => v.social).map(([k, v]) =>
+          `<button data-kind="${k}"><span class="dz-shape" style="aspect-ratio:${v.w}/${v.h}"></span><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
         <button class="btn" data-x style="width:100%;margin-top:12px">Cancel</button></div>`;
       return;
     }
-    const tpls = DZ_TEMPLATES[st.kind];
+    const lays = dzLayouts(st.kind), social = DZ_KINDS[st.kind].social, pu = st.piece ? await Media.url(st.piece.thumb) : '';
     o.innerHTML = `<div class="card dz-pick"><h2>${DZ_KINDS[st.kind].label}</h2>
-      <div class="lbl">Layout</div><div class="dz-tpls">${[...tpls.map((t, i) => [t[0], i]), ['Blank', -1]].map(([n, i]) =>
-        `<button data-ti="${i}" class="${st.ti === i ? 'on' : ''}"><canvas data-prev="${i}"></canvas><span>${n}</span></button>`).join('')}</div>
+      ${social ? `<div class="dz-piece">${pu ? `<img src="${pu}" alt="">` : '<span class="muted">No tattoo chosen</span>'}
+        <div><b>${esc(st.piece?.vals.title || (st.piece ? 'Untitled piece' : 'Show off a tattoo'))}</b><small class="muted">${st.piece ? `${st.piece.photos.length} photo${st.piece.photos.length > 1 ? 's' : ''}` : 'Pick a portfolio piece to fill the photos, title and hashtags'}</small></div>
+        <button class="btn small" data-piece>${st.piece ? 'Change' : 'Choose'}</button></div>` : ''}
+      <div class="lbl">Layout</div><div class="dz-tpls">${lays.map((l, i) =>
+        `<button data-li="${i}" class="${st.li === i ? 'on' : ''}"><canvas data-prev="${i}"></canvas><span>${esc(l.name)}${l.custom ? ' <em>yours</em>' : ''}</span>
+          ${l.custom ? `<i class="dz-tdel" data-tdel="${esc(l.custom.id)}" title="Delete this template">&times;</i>` : ''}</button>`).join('')}</div>
       <div class="lbl" style="margin-top:12px">Theme</div><div class="dz-themes">${Object.entries(DZ_THEMES).map(([k, t]) =>
         `<button data-theme="${k}" class="${st.theme === k ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>
       <div class="row" style="margin-top:14px"><button class="btn" data-back>Back</button><button class="btn primary" data-go style="flex:1">Create</button></div></div>`;
     for (const cv of o.querySelectorAll('canvas[data-prev]')) {
-      const doc = dzNew(st.kind, +cv.dataset.prev, st.theme), sc = 220 / Math.max(doc.w, doc.h);
+      const doc = dzNew(st.kind, lays[+cv.dataset.prev], st.theme, st.piece), sc = 220 / Math.max(doc.w, doc.h);
       cv.width = Math.round(doc.w * sc); cv.height = Math.round(doc.h * sc); dzDraw(cv, doc, sc);
     }
   };
   o.onclick = async (e) => {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('[data-x]')) return o.remove();
-    if (d('kind')) { st.kind = d('kind'); st.ti = 0; return draw(); }
+    if (d('kind')) { st.kind = d('kind'); st.li = 0; return draw(); }
     if (t.closest('[data-back]')) { st.kind = null; return draw(); }
-    if (d('ti') != null) { st.ti = +d('ti'); o.querySelectorAll('[data-ti]').forEach(b => b.classList.toggle('on', +b.dataset.ti === st.ti)); return; }
+    if (d('tdel')) { e.stopPropagation();
+      if (!confirm('Delete this template? Designs made from it are not affected.')) return;
+      await Settings.set('dz_tpls', JSON.stringify(dzCustom().filter(c => c.id !== d('tdel')))); st.li = 0; return draw(); }
+    if (t.closest('[data-piece]')) { const id = await dzPortfolioPick(false); if (id) { st.piece = await dzPiece(id); draw(); } return; }
+    if (d('li') != null) { st.li = +d('li'); o.querySelectorAll('[data-li]').forEach(b => b.classList.toggle('on', +b.dataset.li === st.li)); return; }
     if (d('theme')) { st.theme = d('theme'); return draw(); }
     if (t.closest('[data-go]')) {
-      const doc = dzNew(st.kind, st.ti, st.theme), n = await DB.one('SELECT COUNT(*) AS n FROM designs WHERE kind = ?', [st.kind]);
-      await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [DZ_KINDS[st.kind].label + (n.n ? ' ' + (n.n + 1) : ''), st.kind, JSON.stringify(doc)]);
+      const doc = dzNew(st.kind, dzLayouts(st.kind)[st.li], st.theme, st.piece);
+      const n = await DB.one('SELECT COUNT(*) AS n FROM designs WHERE kind = ?', [st.kind]);
+      const name = st.piece?.vals.title ? `${st.piece.vals.title} (${DZ_KINDS[st.kind].label.toLowerCase()})` : DZ_KINDS[st.kind].label + (n.n ? ' ' + (n.n + 1) : '');
+      await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [name, st.kind, JSON.stringify(doc)]);
       const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+      // Photos used by the post count as this design's pictures (kept in backups).
+      for (const r of [...new Set(doc.layers.filter(l => l.ref).map(l => l.ref))]) await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [id, r]);
+      await dzThumb(id, doc);
       o.remove(); location.hash = 'design/' + id;
     }
   };
   document.body.appendChild(o); draw();
 }
+DZ.post = (pieceId) => dzPicker({ piece: pieceId });
 
 /* ---------- Editor ---------- */
 DZ.edit = async (id) => {
@@ -312,6 +433,7 @@ DZ.edit = async (id) => {
       <input class="in" id="dz-name" value="${esc(name)}" aria-label="Design name">
       <button class="btn icon-btn" id="dz-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
       <button class="btn icon-btn" id="dz-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+      <button class="btn icon-btn" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg></button>
       <button class="btn primary" id="dz-export">Export</button>
     </div>
     <div class="dz-body">
@@ -347,8 +469,10 @@ DZ.edit = async (id) => {
   };
 
   // Saving: a few seconds after changes, with a small thumbnail for the list; pictures listed for backups.
-  let saveT = null;
-  const save = () => { clearTimeout(saveT); saveT = setTimeout(async () => {
+  let saveT = null, saving = null, dirty = false;
+  const save = () => { dirty = true; clearTimeout(saveT); saveT = setTimeout(flush, 900); };
+  // Writes now (also when leaving the editor, so the list always has the latest thumbnail).
+  const flush = () => { clearTimeout(saveT); if (!dirty) return saving || Promise.resolve(); dirty = false; return (saving = (async () => {
     const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
     const ref = await Media.save(await new Promise(r => th.toBlob(r, 'image/jpeg', 0.8)), 'jpg');
     const old = (await DB.one('SELECT thumb_ref FROM designs WHERE id = ?', [id]))?.thumb_ref;
@@ -359,7 +483,9 @@ DZ.edit = async (id) => {
       ...refs.map(r => ({ sql: 'INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', params: [id, r] }))]);
     if (old && old !== ref) await Media.release(old);
     for (const r of before) if (!refs.includes(r)) await Media.release(r);
-  }, 900); };
+    if ($('#dz-list')) DZ.list();
+  })()); };
+  addEventListener('hashchange', function away() { removeEventListener('hashchange', away); flush(); });
   // A change: redraw, remember for undo, save.
   let histT = null;
   const changed = (now) => {
@@ -392,6 +518,7 @@ DZ.edit = async (id) => {
     const l = layer();
     if (!l) {
       const kinds = doc.kind === 'voucher' || doc.layers.some(x => /\{(amount|to|from|code|expires)\}/.test(x.text || ''));
+      const post = DZ_KINDS[doc.kind].social || doc.layers.some(x => x.slot != null || DZ_PIECE_FIELDS.test(x.text || ''));
       side.innerHTML = `
         <div class="dz-add">${[['text', 'Text', 'T'], ['heading', 'Heading', 'H'], ['image', 'Picture', '▣'], ['logo', 'Logo', '◎'], ['shape', 'Shape', '◆'], ['field', 'Studio info', '@']]
           .map(([a, n, i]) => `<button data-add="${a}"><i>${i}</i><span>${n}</span></button>`).join('')}</div>
@@ -406,6 +533,12 @@ DZ.edit = async (id) => {
             <label class="field"><span>From</span><input class="in" data-v="from" value="${esc(doc.vals?.from ?? '')}"></label></div>
             <div class="row" style="flex-wrap:nowrap"><label class="field" style="flex:1;margin:0"><span>Code</span><input class="in" data-v="code" value="${esc(doc.vals?.code ?? '')}"></label>
             <button class="btn small" id="dz-code" style="align-self:flex-end">New code</button></div>`) : ''}
+        ${post ? fsec('Post details', `
+            <button class="btn small" id="dz-piece" style="margin-bottom:10px">${doc.vals?.piece ? 'Use another portfolio piece' : 'Fill from a portfolio piece'}</button>
+            <label class="field"><span>Title</span><input class="in" data-v="title" value="${esc(doc.vals?.title ?? '')}"></label>
+            <div class="two"><label class="field"><span>Placement</span><input class="in" data-v="placement" value="${esc(doc.vals?.placement ?? '')}"></label>
+              <label class="field"><span>Date</span><input class="in" type="date" data-v="date" value="${esc(doc.vals?.date ?? '')}"></label></div>
+            <label class="field"><span>Tags ${help('Comma separated; shown as #hashtags wherever {tags} is used.')}</span><input class="in" data-v="tags" value="${esc(doc.vals?.tags ?? '')}" placeholder="blackwork, floral"></label>`) : ''}
         ${fsec('Theme', `<div class="dz-themes">${Object.entries(DZ_THEMES).map(([kk, t]) =>
           `<button data-theme="${kk}" class="${doc.theme === kk ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>`)}
         ${fsec('Background', `${swatches('bg', doc.bg?.c)}
@@ -440,7 +573,13 @@ DZ.edit = async (id) => {
         <div class="lbl" style="margin-top:8px">Outline</div>${swatches('stroke', l.stroke, true)}
         ${slider('sw', 'Outline width', 0, 40, 1, l.sw || 0)}
         ${l.shape === 'rect' || !l.shape ? slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0) : ''}`
-      : `${l.logo ? '<p class="muted" style="font-size:12px;margin:0 0 8px">Your studio logo from Settings.</p>' : '<label class="btn small" style="margin-bottom:8px">Replace picture<input type="file" accept="image/*" hidden id="dz-repl"></label>'}`}
+      : `${l.logo ? '<p class="muted" style="font-size:12px;margin:0 0 8px">Your studio logo from Settings.</p>'
+          : `<div class="row" style="gap:6px;margin-bottom:8px"><button class="btn small" id="dz-pfphoto">From portfolio</button>
+              <label class="btn small">From device<input type="file" accept="image/*" hidden id="dz-repl"></label></div>`}
+        ${l.logo ? '' : `<label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Fill the whole box and crop what doesn't fit, like a photo frame. Off: the whole picture fits inside."><input type="checkbox" data-cover ${l.cover ? 'checked' : ''}><span>Fill the box (crop)</span></label>
+          ${l.cover ? slider('px', 'Move photo left / right', -1, 1, 0.02, l.px || 0, v => Math.round(v * 100)) + slider('py', 'Move photo up / down', -1, 1, 0.02, l.py || 0, v => Math.round(v * 100)) : ''}
+          ${slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0)}
+          <div class="lbl">Outline</div>${swatches('stroke', l.stroke, true)}${slider('sw', 'Outline width', 0, 40, 1, l.sw || 0)}`}`}
       ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}
       ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}`;
   };
@@ -542,6 +681,9 @@ DZ.edit = async (id) => {
     if (d('theme')) { doc.theme = d('theme'); await DZF.all(doc); changed(true); return drawSide(); }
     if (t.closest('#dz-code')) { doc.vals.code = Math.random().toString(36).slice(2, 8).toUpperCase(); changed(true); return drawSide(); }
     if (t.closest('#dz-bgrm')) { doc.bg.img = null; changed(true); return drawSide(); }
+    if (t.closest('#dz-piece')) { const pid = await dzPortfolioPick(false); if (!pid) return;
+      const pc = await dzPiece(pid); for (const ly of doc.layers) if (ly.slot != null) ly.ref = null; dzFillSlots(doc, pc); changed(true); return drawSide(); }
+    if (t.closest('#dz-pfphoto') && l) { const ref = await dzPortfolioPick(true); if (!ref) return; l.ref = ref; if (!l.cover && l.slot == null) { const im = await dzImg(ref); if (im) l.h = l.w * im.naturalHeight / im.naturalWidth; } changed(true); return drawSide(); }
     if (d('c')) {
       const key = t.closest('[data-swk]').dataset.swk, c = d('c');
       if (key === 'bg') doc.bg.c = c === 'none' ? '@bg' : c; else if (l) l[key] = c;
@@ -596,16 +738,28 @@ DZ.edit = async (id) => {
       l.font = t.value; await DZF.load(dzFont(doc, l.font)); changed(true);
     }
     if (t.hasAttribute('data-fit') && l) { l.fit = t.checked ? 1 : 0; return changed(true); }
+    if (t.hasAttribute('data-cover') && l) { l.cover = t.checked ? 1 : 0; changed(true); return drawSide(); }
     if (t.dataset.k === 'text' || t.dataset.v) changed(true);
   });
 
   /* Top bar */
-  $('#dz-back').onclick = () => { clearTimeout(saveT); save(); location.hash = 'designs'; };
+  $('#dz-back').onclick = async () => { await flush(); location.hash = 'designs'; };
+  $('#dz-tpl').onclick = async () => {
+    const n = prompt('Name for this template:', name); if (!n?.trim()) return;
+    const tdoc = JSON.parse(JSON.stringify(doc));
+    // Photos from a portfolio piece become empty photo spots, ready for the next piece.
+    for (const l of tdoc.layers) if (l.slot != null) l.ref = null;
+    delete tdoc.vals?.piece; if (tdoc.kind === 'voucher') tdoc.vals = { amount: tdoc.vals?.amount || '' };
+    const list = dzCustom(); list.push({ id: Date.now().toString(36), name: n.trim(), kind: doc.kind, doc: tdoc });
+    await Settings.set('dz_tpls', JSON.stringify(list));
+    toast(`Saved "${n.trim()}". It's under layouts when you start a new ${DZ_KINDS[doc.kind].label.toLowerCase()}.`, 5000);
+  };
   $('#dz-name').onchange = (e) => { name = e.target.value.trim() || name; save(); };
   $('#dz-undo').onclick = () => undo(-1); $('#dz-redo').onclick = () => undo(1);
   $('#dz-export').onclick = () => { select(null); dzExport(doc, name); };
   new ResizeObserver(() => { fit(); redraw(); }).observe(stage);
   fit(); drawSide(); await redraw();
+  if (!row.thumb_ref) { dirty = true; flush(); }
 };
 
 // Font file (.ttf .otf .woff .woff2) kept with the workspace; Android's file picker needs the wide accept list.
