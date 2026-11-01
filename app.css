@@ -1311,7 +1311,7 @@ body.dz-focus #dz-panel { display: grid; }
 body.dz-focus.dz-noside #dz-panel { background: var(--teal); color: #071413; }
 body.dz-focus .dz-body { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) min(330px, 40vw); grid-template-rows: minmax(0, 1fr); align-items: stretch; }
 body.dz-focus .dz-stage { height: auto; min-height: 0; }
-body.dz-focus .dz-side { max-height: none; min-height: 0; overflow-y: auto; }
+body.dz-focus .dz-side { max-height: none; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 body.dz-focus.dz-noside .dz-body { grid-template-columns: minmax(0, 1fr); }
 body.dz-focus.dz-noside .dz-side { display: none; }
 @media (orientation: portrait) and (max-width: 899px) {
@@ -1326,3 +1326,12 @@ body.dz-focus.dz-noside .dz-side { display: none; }
   .dz-top #dz-export { padding-left: 14px; padding-right: 14px; }
   body.dz-focus .dz-top #dz-name, body.dz-focus .dz-top #dz-tpl { display: none; }
 }
+
+/* Design studio: gradient and texture fills */
+.dz-fm { margin: 4px 0 8px; }
+.dz-gbar { position: relative; height: 26px; border-radius: 8px; border: 1px solid var(--line); margin: 14px 10px 8px; cursor: copy; touch-action: none; }
+.dz-gbar i { position: absolute; top: 50%; width: 18px; height: 30px; margin: -15px 0 0 -9px; border-radius: 7px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.6); cursor: grab; touch-action: none; }
+.dz-gbar i.on { border-color: var(--teal); box-shadow: 0 0 0 2px var(--teal), 0 1px 4px rgba(0,0,0,.6); z-index: 1; }
+.dz-gbar i.drag { cursor: grabbing; }
+.dz-gacts { gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.dz-gacts span { flex: 1; min-width: 120px; }

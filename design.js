@@ -148,6 +148,30 @@ function dzStar(x, cx, cy, r) {
   for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; x.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
   x.closePath();
 }
+/* Fills beyond a plain colour (shapes and text): l.fm = 'grad' uses l.grad, 'tex' uses l.tex.
+   Gradient: { type: 'linear' | 'radial', ang (degrees, linear), sz (radial size), stops: [{ c, p }] } with 2 to 5
+   colours at positions 0..1. Texture: a repeating picture { ref, ts (tile size, % of the shorter side), rot, fx, fy }.
+   Drawn in the layer's own space (centred on 0, 0), so they turn and flip with the layer. */
+function dzPaint(x, doc, L, tex) {
+  const w = L.w, h = L.h || 1;
+  if (L.fm === 'grad' && L.grad?.stops?.length) {
+    const g = L.grad;
+    let gr;
+    if (g.type === 'radial') gr = x.createRadialGradient(0, 0, 0, 0, 0, Math.max(1, Math.hypot(w, h) / 2 * (g.sz ?? 1)));
+    else { const a = (g.ang ?? 90) * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), e = Math.abs(w / 2 * c) + Math.abs(h / 2 * sn) || 1;
+      gr = x.createLinearGradient(-c * e, -sn * e, c * e, sn * e); }
+    for (const st of [...g.stops].sort((a, b) => a.p - b.p)) gr.addColorStop(Math.max(0, Math.min(1, st.p)), dzCol(doc, st.c) || '#000');
+    return gr;
+  }
+  if (L.fm === 'tex' && tex) {
+    const t = L.tex, pt = x.createPattern(tex, 'repeat'), sc = Math.max(1, Math.min(w, h)) * (t.ts || 40) / 100 / (tex.naturalWidth || 1);
+    pt.setTransform(new DOMMatrix().rotate(t.rot || 0).scale(sc * (t.fx ? -1 : 1), sc * (t.fy ? -1 : 1)));
+    return pt;
+  }
+  return null;
+}
+// CSS for a gradient's colour bar (left to right).
+const dzGradCss = (doc, g) => `linear-gradient(90deg, ${[...g.stops].sort((a, b) => a.p - b.p).map(st => `${dzCol(doc, st.c) || '#000'} ${Math.round(st.p * 1000) / 10}%`).join(', ')})`;
 // Draws the design onto a canvas at `scale` (canvas px per page px). Text layers get their height measured.
 async function dzDraw(cv, doc, scale = 1, opts = {}) {
   await DZF.all(doc);
@@ -159,6 +183,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
       x.drawImage(im, (W - im.naturalWidth * s) / 2, (H - im.naturalHeight * s) / 2, im.naturalWidth * s, im.naturalHeight * s); x.globalAlpha = 1; } }
   const one = async (x, l) => {
     const im = l.t === 'image' ? await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref) : null;
+    const tex = l.fm === 'tex' && l.tex?.ref ? await dzImg(l.tex.ref) : null;
     let lines = null;
     if (l.t === 'text') {   // measure first, so the box (and its centre) is the real height of the text
       x.setTransform(1, 0, 0, 1, 0, 0);
@@ -192,7 +217,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
       flip();
       const px = l._px || l.size, lh = px * (l.lh || 1.2); x.font = dzFontStr(doc, l, px);
       if ('letterSpacing' in x) x.letterSpacing = (l.ls || 0) + 'px';
-      x.fillStyle = dzCol(doc, l.c) || '#000'; x.textBaseline = 'alphabetic';
+      x.fillStyle = (!l.arc && dzPaint(x, doc, l, tex)) || dzCol(doc, l.c) || '#000'; x.textBaseline = 'alphabetic';   // bent text: plain colour
       if (l.arc && l._arc) {
         // Each letter sits on the circle, turned to follow it: up = a rainbow over the centre, down = a smile under it.
         const { chars, ws, wt, R } = l._arc, up = l.arc > 0;
@@ -236,8 +261,9 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
         else if (L.shape === 'star') dzStar(x, 0, 0, Math.min(L.w, L.h) / 2);
         else if (L.shape === 'line') { x.moveTo(-L.w / 2, 0); x.lineTo(L.w / 2, 0); }
         else x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, Math.min(L.r || 0, L.w / 2, L.h / 2));
-        if (L.shape === 'line') { x.strokeStyle = st || f || '#000'; x.lineWidth = Math.max(1, sw || L.h); x.lineCap = 'round'; x.stroke(); }
-        else { if (f) { x.fillStyle = f; x.fill(); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
+        const pf = dzPaint(x, doc, L, tex);
+        if (L.shape === 'line') { x.strokeStyle = pf || st || f || '#000'; x.lineWidth = Math.max(1, sw || L.h); x.lineCap = 'round'; x.stroke(); }
+        else { if (pf || f) { x.fillStyle = pf || f; x.fill(); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
         }
         x.restore();
       };
@@ -696,7 +722,7 @@ DZ.edit = async (id) => {
     const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
     const ref = await Media.save(await new Promise(r => th.toBlob(r, 'image/jpeg', 0.8)), 'jpg');
     const old = (await DB.one('SELECT thumb_ref FROM designs WHERE id = ?', [id]))?.thumb_ref;
-    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => l.ref)].filter(Boolean))];
+    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => l.ref), ...doc.layers.map(l => l.tex?.ref)].filter(Boolean))];
     const before = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id])).map(x => x.ref);
     await DB.tx([{ sql: `UPDATE designs SET name = ?, doc = ?, thumb_ref = ?, updated_at = datetime('now') WHERE id = ?`, params: [name, JSON.stringify(doc), ref, id] },
       { sql: 'DELETE FROM design_assets WHERE design_id = ?', params: [id] },
@@ -706,7 +732,7 @@ DZ.edit = async (id) => {
     if ($('#dz-list')) DZ.list();
   })()); };
   const dropped = new Set(), made = new Set();   // pictures taken out (or made) while editing; tidied when leaving
-  const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref)].filter(Boolean);
+  const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref), ...doc.layers.map(l => l.tex?.ref)].filter(Boolean);
   addEventListener('hashchange', function away() { removeEventListener('hashchange', away); focus(false);
     flush().then(async () => { const keep = docRefs(); for (const r of new Set([...dropped, ...made])) if (!keep.includes(r)) await Media.release(r); }); });
   // A change: redraw, remember for undo, save.
@@ -727,6 +753,33 @@ DZ.edit = async (id) => {
       ${roles.map(([c, n]) => `<button data-c="${c}" class="role ${cur === c ? 'on' : ''}" title="Theme ${n}" style="background:${dzCol(doc, c)}"></button>`).join('')}
       <span class="sep"></span>${DZ_PALETTE.map(c => `<button data-c="${c}" class="${cur === c ? 'on' : ''}" style="background:${c}"></button>`).join('')}
       <label class="pick" title="Any colour"><input type="color" data-cpick="${key}" value="${/^#/.test(cur || '') ? cur : '#888888'}">+</label></div>`;
+  };
+  /* Fill: plain colour, gradient or texture. `key` is the plain colour's property (fill for shapes, c for text). */
+  let gsel = 0;   // the gradient colour being edited
+  const fillUI = (l, key, allowNone) => {
+    const fm = l.fm || 'solid';
+    const seg = `<div class="seg dz-fm">${[['solid', 'Colour'], ['grad', 'Gradient'], ['tex', 'Texture']].map(([m, n]) => `<button data-fm="${m}" class="${fm === m ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>`;
+    if (fm === 'grad') {
+      const g = l.grad; gsel = Math.min(gsel, g.stops.length - 1);
+      return seg + `<div class="dz-gbar" data-gbar style="background:${dzGradCss(doc, g)}" title="Drag the markers to move the colours; tap the bar to add one">
+          ${g.stops.map((st, i) => `<i data-gs="${i}" class="${i === gsel ? 'on' : ''}" style="left:${st.p * 100}%;background:${dzCol(doc, st.c)}"></i>`).join('')}</div>
+        <div class="row dz-gacts"><span class="muted" style="font-size:12px">Colour ${gsel + 1} of ${g.stops.length}, at ${Math.round(g.stops[gsel].p * 100)}%</span>
+          <button class="btn small" data-gact="add" ${g.stops.length >= 5 ? 'disabled' : ''}>+ Colour</button><button class="btn small" data-gact="del" ${g.stops.length <= 2 ? 'disabled' : ''}>Remove</button></div>
+        ${swatches('gstop', g.stops[gsel].c)}
+        <div class="row" style="gap:6px;margin:6px 0;flex-wrap:nowrap"><div class="seg" style="flex:1">${[['linear', 'Linear'], ['radial', 'Radial']].map(([t, n]) => `<button data-gtype="${t}" class="${(g.type || 'linear') === t ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+          <button class="btn small" data-gact="rev" title="Reverse the colours">⇋ Reverse</button>${g.type === 'radial' ? '' : '<button class="btn small" data-gact="turn" title="Turn 90°">↻ 90°</button>'}</div>
+        ${g.type === 'radial' ? slider('g:sz', 'Size', 0.2, 2, 0.05, g.sz ?? 1, v => Math.round(v * 100) + '%') : slider('g:ang', 'Angle', -180, 180, 1, Math.round(g.ang ?? 90), v => v + '°')}`;
+    }
+    if (fm === 'tex') {
+      const t = l.tex || {};
+      return seg + `<div class="row" style="gap:6px;margin:8px 0;flex-wrap:wrap"><button class="btn small" data-tex="refs">${t.ref ? 'Change: ' : ''}From references</button>
+          <label class="btn small">From device<input type="file" accept="image/*" hidden id="dz-texfile"></label></div>
+        ${t.ref ? `${slider('t:ts', 'Tile size', 5, 300, 1, t.ts || 40, v => v + '%')}${slider('t:rot', 'Rotation', -180, 180, 1, Math.round(t.rot || 0), v => v + '°')}
+          <div class="row" style="gap:6px"><button class="btn small ${t.fx ? 'primary' : ''}" data-tflip="fx">⇋ Flip</button><button class="btn small ${t.fy ? 'primary' : ''}" data-tflip="fy">⇵ Flip</button></div>
+          <p class="muted" style="font-size:11px;margin:6px 0 0">Seamless (tileable) pictures repeat without visible joins.</p>`
+        : '<p class="muted" style="font-size:12px;margin:0">Pick a picture to fill with. Seamless (tileable) textures work best.</p>'}`;
+    }
+    return seg + swatches(key, l[key], allowNone);
   };
   const slider = (key, label, min, max, step, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt ? fmt(val) : val}</b></span>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-k="${key}"></label>`;
@@ -873,10 +926,10 @@ DZ.edit = async (id) => {
         ${slider('size', 'Size', 8, Math.round(doc.h * 0.4), 1, Math.round(l.size))}
         ${slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
         ${l.arc ? '<p class="muted" style="font-size:11px;margin:-4px 0 8px">Bent text runs on one line. <button class="link" data-act="unbend">Straighten</button></p>' : ''}
-        ${swatches('c', l.c)}
+        <div class="lbl">Colour</div>${fillUI(l, 'c')}${l.arc && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Bent text shows the plain colour.</p>' : ''}
         ${fsec('Spacing', slider('ls', 'Letter spacing', -5, 40, 1, l.ls || 0) + slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2), { fold: true })}`
       : l.t === 'shape' ? `
-        <div class="lbl">Fill</div>${swatches('fill', l.fill, true)}
+        <div class="lbl">${l.shape === 'line' ? 'Colour' : 'Fill'}</div>${fillUI(l, 'fill', true)}
         <div class="lbl" style="margin-top:8px">Outline</div>${swatches('stroke', l.stroke, true)}
         ${slider('sw', 'Outline width', 0, 40, 1, l.sw || 0)}
         ${l.shape === 'rect' || !l.shape ? slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0) : ''}`
@@ -1245,7 +1298,7 @@ DZ.edit = async (id) => {
     if ((t.closest('#dz-pfphoto') || t.closest('#dz-refphoto')) && l) { const ref = await dzPortfolioPick(t.closest('#dz-refphoto') ? 'refs' : true); if (!ref) return; l.ref = ref; if (!l.cover && l.slot == null) { const im = await dzImg(ref); if (im) l.h = l.w * im.naturalHeight / im.naturalWidth; } changed(true); return drawSide(); }
     if (d('c')) {
       const key = t.closest('[data-swk]').dataset.swk, c = d('c');
-      if (key === 'bg') doc.bg.c = c === 'none' ? '@bg' : c; else if (l) l[key] = c;
+      if (key === 'bg') doc.bg.c = c === 'none' ? '@bg' : c; else if (key === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = c; } else if (l) l[key] = c;
       changed(); return drawSide();
     }
     if (!l) return;
@@ -1277,6 +1330,29 @@ DZ.edit = async (id) => {
       changed(true); return drawSide();
     }
     if (d('al')) { l.al = d('al'); changed(true); return drawSide(); }
+    if (d('fm')) {
+      const m = d('fm');
+      if (m === 'solid') delete l.fm;
+      else { l.fm = m;
+        if (m === 'grad' && !l.grad) { const c0 = l.t === 'text' ? l.c : l.fill; l.grad = { type: 'linear', ang: 90, stops: [{ c: c0 && c0 !== 'none' ? c0 : '@accent', p: 0 }, { c: '@bg', p: 1 }] }; gsel = 0; }
+        if (m === 'tex') l.tex ||= { ts: 40, rot: 0 }; }
+      changed(true); return drawSide();
+    }
+    if (d('gtype') && l.grad) { l.grad.type = d('gtype'); changed(true); return drawSide(); }
+    if (d('gact') && l.grad) {
+      const g = l.grad, a = d('gact');
+      if (a === 'add' && g.stops.length < 5) {   // in the middle of the widest gap
+        const o = [...g.stops].sort((p, q) => p.p - q.p); let best = 0;
+        for (let i = 1; i < o.length; i++) if (o[i].p - o[i - 1].p > o[best + 1].p - o[best].p) best = i - 1;
+        g.stops.push({ c: o[best].c, p: (o[best].p + o[best + 1].p) / 2 }); gsel = g.stops.length - 1;
+      }
+      if (a === 'del' && g.stops.length > 2) { g.stops.splice(gsel, 1); gsel = 0; }
+      if (a === 'rev') g.stops.forEach(st => st.p = 1 - st.p);
+      if (a === 'turn') g.ang = (((g.ang ?? 90) + 90 + 180) % 360) - 180;
+      changed(true); return drawSide();
+    }
+    if (d('tex') === 'refs') { const ref = await dzPortfolioPick('refs'); if (!ref) return; l.tex = { ts: 40, rot: 0, ...l.tex, ref }; l.fm = 'tex'; changed(true); return drawSide(); }
+    if (d('tflip') && l.tex) { l.tex[d('tflip')] = !l.tex[d('tflip')]; changed(true); return drawSide(); }
     if (d('tog')) { l[d('tog')] = !l[d('tog')]; changed(true); return drawSide(); }
     if (d('ins') && l.t === 'text') {
       const ta = side.querySelector('.dz-text'), at = ta.selectionStart ?? ta.value.length, ins = `{${d('ins')}}`;
@@ -1284,6 +1360,26 @@ DZ.edit = async (id) => {
       const nt = side.querySelector('.dz-text'); nt.focus(); nt.setSelectionRange(at + ins.length, at + ins.length);
     }
   });
+  let gdrag = null;
+  side.addEventListener('pointerdown', (e) => {
+    const bar = e.target.closest('[data-gbar]'), l = layer(); if (!bar || !l?.grad) return;
+    e.preventDefault();
+    const r = bar.getBoundingClientRect(), at = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), mk = e.target.closest('[data-gs]');
+    if (mk) gsel = +mk.dataset.gs;
+    else if (l.grad.stops.length < 5) {   // a new colour here, the colour of the nearest one
+      const near = [...l.grad.stops].sort((a, b) => Math.abs(a.p - at) - Math.abs(b.p - at))[0];
+      l.grad.stops.push({ c: near.c, p: at }); gsel = l.grad.stops.length - 1; changed(true); drawSide(); return;
+    } else return;
+    gdrag = { r, mk }; mk.classList.add('drag'); bar.setPointerCapture(e.pointerId);
+    side.querySelectorAll('[data-gs]').forEach(m => m.classList.toggle('on', +m.dataset.gs === gsel));
+  });
+  side.addEventListener('pointermove', (e) => {
+    const l = layer(); if (!gdrag || !l?.grad) return;
+    const p = Math.max(0, Math.min(1, (e.clientX - gdrag.r.left) / gdrag.r.width)); l.grad.stops[gsel].p = Math.round(p * 1000) / 1000;
+    gdrag.mk.style.left = p * 100 + '%'; gdrag.mk.closest('[data-gbar]').style.background = dzGradCss(doc, l.grad); redraw();
+  });
+  const gup = () => { if (!gdrag) return; gdrag = null; changed(true); drawSide(); };
+  side.addEventListener('pointerup', gup); side.addEventListener('pointercancel', gup);
   let ldrag = null, rowPress = null, rowHeld = false;
   side.addEventListener('pointerdown', (e) => {
     const r = e.target.closest('.dz-lr'); rowHeld = false;
@@ -1332,7 +1428,14 @@ DZ.edit = async (id) => {
       return changed();
     }
     if (t.dataset.v) { doc.vals[t.dataset.v] = t.value; return changed(); }
-    if (t.dataset.cpick) { const kk = t.dataset.cpick; if (kk === 'bg') doc.bg.c = t.value; else if (l) l[kk] = t.value; return changed(); }
+    if (t.dataset.cpick) { const kk = t.dataset.cpick; if (kk === 'bg') doc.bg.c = t.value; else if (kk === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = t.value; } else if (l) l[kk] = t.value; return changed(); }
+    if (l && /^[gt]:/.test(key || '')) {   // gradient and texture sliders
+      const [o, kk] = key.split(':'), tg = o === 'g' ? l.grad : l.tex; if (!tg) return;
+      tg[kk] = +t.value;
+      const b = t.closest('.dz-sl')?.querySelector('b');
+      if (b) b.textContent = kk === 'sz' ? Math.round(t.value * 100) + '%' : kk === 'ts' ? t.value + '%' : t.value + '°';
+      return changed();
+    }
     if (key === 'bgop') { doc.bg.op = +t.value; t.closest('.dz-sl').querySelector('b').textContent = Math.round(t.value * 100) + '%'; return changed(); }
     if (!l || !key || key === 'font') return;
     l[key] = key === 'text' ? t.value : +t.value;
@@ -1344,6 +1447,11 @@ DZ.edit = async (id) => {
   side.addEventListener('change', async (e) => {
     const t = e.target, l = layer();
     if (t.dataset.cpick) return drawSide();
+    if (t.id === 'dz-texfile' && l) {
+      const f = t.files[0]; t.value = ''; if (!f) return;
+      const { ref } = await importPic(f, 2000); made.add(ref);
+      l.tex = { ts: 40, rot: 0, ...l.tex, ref }; l.fm = 'tex'; changed(true); return drawSide();
+    }
     if (t.id === 'dz-file' || t.id === 'dz-repl' || t.id === 'dz-bgfile') {
       const f = t.files[0]; t.value = ''; if (!f) return;
       try {
