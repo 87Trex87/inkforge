@@ -205,8 +205,12 @@ const MIGRATIONS = [
    ALTER TABLE bookings ADD COLUMN promo_kind TEXT;
    ALTER TABLE bookings ADD COLUMN promo_value REAL;
    ALTER TABLE bookings ADD COLUMN promo_until TEXT;
-   CREATE INDEX idx_bookings_done ON bookings (completed, start_at);`
+   CREATE INDEX idx_bookings_done ON bookings (completed, start_at);`,
+  // v10: phonebook categories, so suppliers and services live apart from clients.
+  `ALTER TABLE clients ADD COLUMN category TEXT NOT NULL DEFAULT 'Client';
+   CREATE INDEX idx_clients_cat ON clients (category);`
 ];
+const CLIENT_CATS = ['Client', 'Supplier', 'Service'];
 /* Booking types. ink: shows the tattoo fields (placement, size, quote, deposit, references). */
 const BOOKING_KINDS = {
   tattoo: { label: 'Tattoo', ink: true }, consult: { label: 'Consultation', ink: true }, touchup: { label: 'Touch-up', ink: true },
@@ -520,14 +524,18 @@ const VIEWS = {
     render: () => `
       <div class="search-bar">
         <input class="in" id="c-search" type="search" placeholder="Search name, phone, tag…" autocomplete="off" value="${esc(VIEWS.clients.q || '')}">
-        <button class="btn primary icon-btn" id="c-add" data-tip="Add client" aria-label="Add client">
+        <button class="btn icon-btn" id="c-print" data-tip="Print your phonebook as a table" aria-label="Print phonebook"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
+        <button class="btn primary icon-btn" id="c-add" data-tip="Add contact" aria-label="Add contact">
           <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
+      <div class="c-cats" id="c-cats"></div>
       <div id="c-list"></div>`,
     mount() {
       const s = $('#c-search');
       s.addEventListener('input', () => { VIEWS.clients.q = s.value; renderClientList(); });
       $('#c-add').onclick = () => location.hash = 'client-edit/new';
+      $('#c-print').onclick = openPhonebookPrint;
+      $('#c-cats').onclick = (e) => { const b = e.target.closest('[data-cat]'); if (!b) return; VIEWS.clients.cat = b.dataset.cat; renderClientList(); };
       renderClientList();
     }
   },
@@ -551,6 +559,7 @@ const VIEWS = {
         <div class="card c-head">
           ${avatar(c, photo, 'lg')}
           <div class="c-name">${esc(fullName(c))}</div>
+          ${c.category && c.category !== 'Client' ? `<span class="chip">${esc(c.category)}</span>` : ''}
           ${c.pronouns ? `<div class="muted">${esc(c.pronouns)}</div>` : ''}
           ${tagChips(c.tags)}
           <div class="acts">
@@ -650,7 +659,10 @@ const VIEWS = {
           </label>
           ${photoRef ? '<button type="button" class="btn small" id="f-photo-rm">Remove photo</button>' : ''}
         </div>
-        <div class="two">${inp('first_name', 'First name', 'text', 'required autocapitalize="words"')}${inp('last_name', 'Last name', 'text', 'autocapitalize="words"')}</div>
+        <label class="field"><span>Category ${help('Keep suppliers, services and other contacts apart from clients. Type a new name to make your own category.')}</span>
+          <input class="in" name="category" list="c-catlist" value="${esc(c.category || (VIEWS.clients.cat && VIEWS.clients.cat !== 'all' ? VIEWS.clients.cat : 'Client'))}" autocapitalize="words">
+          <datalist id="c-catlist">${[...new Set([...CLIENT_CATS, ...(await DB.all('SELECT DISTINCT category AS c FROM clients')).map(r => r.c)])].map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+        <div class="two">${inp('first_name', 'First name or business', 'text', 'required autocapitalize="words"')}${inp('last_name', 'Last name', 'text', 'autocapitalize="words"')}</div>
         <div class="two">${inp('phone', 'Phone', 'tel', 'inputmode="tel"')}${inp('email', 'Email', 'email', 'inputmode="email"')}</div>
         <div class="two">${inp('instagram', 'Instagram', 'text', 'placeholder="@handle" autocapitalize="off"')}${inp('pronouns', 'Pronouns', 'text', 'placeholder="optional"')}</div>
         <div class="two">${inp('dob', 'Birthday', 'date')}${inp('tags', 'Tags', 'text', 'placeholder="regular, blackwork"')}</div>
@@ -682,7 +694,9 @@ const VIEWS = {
         d.instagram = d.instagram.replace(/^@/, '');
         d.tags = d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ');
         if (newPhoto) photoRef = await Media.save(newPhoto, 'jpg');
-        const cols = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags'];
+        // Categories are tidied to "Title case" so "supplier" and "Supplier" stay one group.
+        d.category = (d.category || 'Client').replace(/\s+/g, ' ').replace(/^./, m => m.toUpperCase());
+        const cols = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags', 'category'];
         const vals = cols.map(k => d[k] || null); vals[0] = d.first_name; vals[1] = d.last_name || '';
         let cid = c.id;
         if (cid) {
@@ -4984,11 +4998,18 @@ async function renderClientList() {
   const q = (VIEWS.clients.q || '').trim();
   const like = '%' + q.replace(/[%_]/g, '') + '%';
   const digits = q.replace(/\D/g, '');
+  // Category chips with counts; the chosen one filters the list (All shows everyone).
+  const cats = await DB.all(`SELECT category AS c, COUNT(*) AS n FROM clients GROUP BY category ORDER BY (category = 'Client') DESC, category COLLATE NOCASE`);
+  const cat = VIEWS.clients.cat && (VIEWS.clients.cat === 'all' || cats.some(x => x.c === VIEWS.clients.cat)) ? VIEWS.clients.cat : 'all';
+  VIEWS.clients.cat = cat;
+  const ce = $('#c-cats');
+  if (ce) { ce.hidden = cats.length < 2; ce.innerHTML = [['all', 'All', cats.reduce((t, x) => t + x.n, 0)], ...cats.map(x => [x.c, x.c, x.n])]
+    .map(([k, l, n]) => `<button class="chip qz-chip ${cat === k ? 'on' : ''}" data-cat="${esc(k)}">${esc(l)} <span class="muted">${n}</span></button>`).join(''); }
   const rows = await DB.all(
-    `SELECT id, first_name, last_name, phone, tags, medical, photo_ref FROM clients
-     WHERE ?1 = '' OR (first_name || ' ' || last_name) LIKE ?2 OR email LIKE ?2 OR instagram LIKE ?2 OR tags LIKE ?2
-       OR (?3 <> '' AND replace(replace(replace(phone,' ',''),'-',''),'+','') LIKE '%' || ?3 || '%')
-     ORDER BY first_name COLLATE NOCASE, last_name COLLATE NOCASE`, [q, like, digits]);
+    `SELECT id, first_name, last_name, phone, tags, medical, photo_ref, category FROM clients
+     WHERE (?4 = 'all' OR category = ?4) AND (?1 = '' OR (first_name || ' ' || last_name) LIKE ?2 OR email LIKE ?2 OR instagram LIKE ?2 OR tags LIKE ?2
+       OR (?3 <> '' AND replace(replace(replace(phone,' ',''),'-',''),'+','') LIKE '%' || ?3 || '%'))
+     ORDER BY first_name COLLATE NOCASE, last_name COLLATE NOCASE`, [q, like, digits, cat]);
   if ($('#c-list') !== el) return;
   if (!rows.length) {
     el.innerHTML = q ? '<div class="empty muted">No matches.</div>'
@@ -5002,11 +5023,68 @@ async function renderClientList() {
     const L = (c.first_name || '#').charAt(0).toUpperCase();
     if (L !== letter) { if (letter) html += '</div>'; letter = L; html += `<div class="letter">${esc(L)}</div><div class="card list">`; }
     html += `<a class="c-row" href="#client/${c.id}">${avatar(c, urls[i])}
-      <span class="c-main"><span class="c-n">${esc(fullName(c))}</span><span class="muted c-sub">${esc(c.phone || c.tags || '')}</span></span>
+      <span class="c-main"><span class="c-n">${esc(fullName(c))}${cat === 'all' && c.category !== 'Client' ? ` <span class="chip c-catchip">${esc(c.category)}</span>` : ''}</span><span class="muted c-sub">${esc(c.phone || c.tags || '')}</span></span>
       ${c.medical ? '<span class="dot" data-tip="Has medical notes"></span>' : ''}
       <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
   });
-  el.innerHTML = html + '</div>' + `<div class="muted count">${rows.length} client${rows.length === 1 ? '' : 's'}</div>`;
+  const noun = cat === 'all' ? 'contact' : cat.toLowerCase();
+  el.innerHTML = html + '</div>' + `<div class="muted count">${rows.length} ${noun}${rows.length === 1 ? '' : 's'}</div>`;
+}
+
+/* Phonebook print: a table of contacts (pick categories and columns), printed through #print-area as
+   real text so a long list flows over as many pages as it needs, with the header row repeated. */
+const PB_COLS = [['phone', 'Phone', true], ['email', 'Email', true], ['instagram', 'Instagram', false], ['dob', 'Birthday', false],
+  ['tags', 'Tags', false], ['notes', 'Notes', false], ['medical', 'Medical', false]];
+async function openPhonebookPrint() {
+  const cats = await DB.all(`SELECT category AS c, COUNT(*) AS n FROM clients GROUP BY category ORDER BY (category = 'Client') DESC, category COLLATE NOCASE`);
+  if (!cats.length) return toast('Your phonebook is empty.');
+  let saved = {}; try { saved = JSON.parse(Settings.get('pb_print', '{}')); } catch {}
+  const st = { cats: new Set(VIEWS.clients.cat && VIEWS.clients.cat !== 'all' ? [VIEWS.clients.cat] : cats.map(x => x.c)),
+    cols: new Set(saved.cols || PB_COLS.filter(c => c[2]).map(c => c[0])), group: saved.group ?? true };
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const draw = () => {
+    const n = cats.filter(x => st.cats.has(x.c)).reduce((t, x) => t + x.n, 0);
+    o.innerHTML = `<div class="card"><h2>Print phonebook</h2>
+      <div class="lbl">Categories</div>
+      <div class="qz-chips">${cats.map(x => `<button class="chip qz-chip ${st.cats.has(x.c) ? 'on' : ''}" data-pc="${esc(x.c)}">${st.cats.has(x.c) ? '✓ ' : ''}${esc(x.c)} <span>${x.n}</span></button>`).join('')}</div>
+      <div class="lbl">Columns <span class="muted" style="text-transform:none;letter-spacing:0">(name is always included)</span></div>
+      <div class="qz-chips">${PB_COLS.map(([k, l]) => `<button class="chip qz-chip ${st.cols.has(k) ? 'on' : ''}" data-pk="${k}">${st.cols.has(k) ? '✓ ' : ''}${l}</button>`).join('')}</div>
+      ${st.cols.has('medical') ? '<p class="muted" style="font-size:12px;margin:-4px 0 8px">Medical notes are private: keep the printout safe.</p>' : ''}
+      <label class="toggle" style="display:inline-flex;margin:4px 0 12px"><input type="checkbox" id="pb-group" ${st.group ? 'checked' : ''}><span>Group by category</span></label>
+      <div class="row"><button class="btn" id="pb-close">Cancel</button><button class="btn primary" id="pb-go" style="flex:1" ${n ? '' : 'disabled'}>Print ${n} contact${n === 1 ? '' : 's'}</button></div></div>`;
+  };
+  document.body.appendChild(o); draw();
+  o.addEventListener('change', (e) => { if (e.target.id === 'pb-group') st.group = e.target.checked; });
+  o.addEventListener('click', async (e) => {
+    const c = e.target.closest('[data-pc]'), k = e.target.closest('[data-pk]');
+    if (c) { st.cats.has(c.dataset.pc) ? st.cats.delete(c.dataset.pc) : st.cats.add(c.dataset.pc); return draw(); }
+    if (k) { st.cols.has(k.dataset.pk) ? st.cols.delete(k.dataset.pk) : st.cols.add(k.dataset.pk); return draw(); }
+    if (e.target.closest('#pb-close')) return o.remove();
+    if (!e.target.closest('#pb-go')) return;
+    await Settings.set('pb_print', JSON.stringify({ cols: [...st.cols], group: st.group }));
+    o.remove(); printPhonebook([...st.cats], PB_COLS.filter(c => st.cols.has(c[0])), st.group);
+  });
+}
+async function printPhonebook(cats, cols, group) {
+  const rows = await DB.all(`SELECT * FROM clients WHERE category IN (${cats.map(() => '?').join(',')})
+    ORDER BY ${group ? "(category = 'Client') DESC, category COLLATE NOCASE," : ''} first_name COLLATE NOCASE, last_name COLLATE NOCASE`, cats);
+  const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Phonebook';
+  const cell = (r, k) => k === 'dob' && r.dob ? new Date(r.dob + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+    : k === 'instagram' && r.instagram ? '@' + r.instagram : r[k] || '';
+  const head = `<tr><th>Name</th>${!group && cats.length > 1 ? '<th>Category</th>' : ''}${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr>`;
+  let body = '', last = null;
+  for (const r of rows) {
+    if (group && r.category !== last) { last = r.category; body += `<tr class="pb-group"><td colspan="${cols.length + 1}">${esc(last)}</td></tr>`; }
+    body += `<tr><td><b>${esc(fullName(r))}</b></td>${!group && cats.length > 1 ? `<td>${esc(r.category)}</td>` : ''}${cols.map(c => `<td class="pb-${c[0]}">${esc(cell(r, c[0]))}</td>`).join('')}</tr>`;
+  }
+  let p = $('#print-area');
+  if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+  p.innerHTML = `<div class="pbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>Phonebook</b> · ${esc(cats.join(', '))}<br>${rows.length} contact${rows.length === 1 ? '' : 's'} · ${esc(fmtDay(ymd(new Date())))}</div></div>
+    <table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done);
+  window.print();
 }
 
 /* Unsaved-form guard: navigating away from a dirty form asks first. */
