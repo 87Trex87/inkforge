@@ -566,6 +566,7 @@ const ICON = {
   stock: '<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg>',
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
   stats: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
+  bend: '<svg viewBox="0 0 24 24"><path d="M3 9c5-5 13-5 18 0M5 15c4-3.5 10-3.5 14 0"/><path d="M3 9l2 6M21 9l-2 6"/></svg>',
   design: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15l3-4 3 3 2-2 3 3"/><circle cx="8.5" cy="9" r="1.2"/></svg>',
   cake: '<svg viewBox="0 0 24 24"><path d="M4 20h16v-7H4zM4 15c2 1 4 1 4-1 0 2 4 2 4 0 0 2 4 2 4 0 0 2 2 2 4 1M12 13V9M12 6v.5"/></svg>',
   saved: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
@@ -1136,7 +1137,8 @@ const VIEWS = {
     render: () => tileGroup('Create', [
         tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil'),
         tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel'),
-        tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs')])
+        tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs'),
+        tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend')])
       + tileGroup('Your work', [
         tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
         tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')])
@@ -1392,6 +1394,11 @@ const VIEWS = {
     title: () => 'Quote',
     render: () => '<div id="qz"></div>',
     mount() { qzDraw(); }
+  },
+  bend: {
+    title: () => 'Bend tool',
+    render: () => '<div id="bt"></div>',
+    mount() { BT.mount(); }
   },
   designs: {
     title: () => 'Design studio',

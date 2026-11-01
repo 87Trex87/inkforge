@@ -1068,3 +1068,101 @@ async function dzSheet(cv, kind, fill) {
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const px = ox + c * k.w, py = oy + r * k.h; x.drawImage(cv, px, py); marks(px, py, k.w, k.h); }
   return pg;
 }
+
+
+/* ---------- Bend tool ----------
+   Bends a picture into an arc, mainly for bands around an arm or leg: a limb tapers like a cone, so a
+   band drawn straight won't meet flush when it's wrapped round. A slight bend makes the ends line up.
+   The picture's width is laid along a circular arc covering `deg` degrees (up = a rainbow, down = a
+   smile); its height runs from the outer edge in. See-through parts stay see-through. */
+const BT = { src: null, name: 'band', deg: 20 };
+// The bent picture on its own canvas, at most `max` px on the long side of the source.
+function btWarp(src, deg, max) {
+  const s = Math.min(1, max / Math.max(src.width, src.height)), W = Math.max(2, Math.round(src.width * s)), H = Math.max(2, Math.round(src.height * s));
+  const down = deg < 0, a = Math.min(360, Math.abs(deg)) * Math.PI / 180;
+  const sc = document.createElement('canvas'); sc.width = W; sc.height = H; const sx = sc.getContext('2d', { willReadFrequently: true });
+  if (a < 0.001) { sx.drawImage(src, 0, 0, W, H); return sc; }
+  if (down) { sx.translate(0, H); sx.scale(1, -1); }   // bending down = bend the upside-down picture up, then turn it back
+  sx.drawImage(src, 0, 0, W, H);
+  const sd = sx.getImageData(0, 0, W, H).data;
+  // The middle of the picture keeps its length; the inner edge can't go below a small radius.
+  const Ri = Math.max(H * 0.05, W / a - H / 2), Ro = Ri + H;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i <= 180; i++) { const f = -a / 2 + a * i / 180;
+    for (const r of [Ri, Ro]) { const x = r * Math.sin(f), y = -r * Math.cos(f); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }
+  const OW = Math.ceil(x1 - x0) + 2, OH = Math.ceil(y1 - y0) + 2;
+  const out = document.createElement('canvas'); out.width = OW; out.height = OH;
+  const ox = out.getContext('2d'), od = ox.createImageData(OW, OH), o = od.data;
+  for (let py = 0; py < OH; py++) for (let px = 0; px < OW; px++) {
+    const x = px + x0, y = py + y0, r = Math.hypot(x, y);
+    if (r < Ri - 1 || r > Ro + 1) continue;
+    const f = Math.atan2(x, -y); if (Math.abs(f) > a / 2 + 0.002) continue;
+    // Smooth sampling (bilinear) so edges and fine lines stay clean.
+    const u = Math.max(0, Math.min(W - 1.001, (f / a + 0.5) * (W - 1))), v = Math.max(0, Math.min(H - 1.001, (Ro - r) / (Ro - Ri) * (H - 1)));
+    const ix = u | 0, iy = v | 0, fx = u - ix, fy = v - iy, i00 = (iy * W + ix) * 4, i10 = i00 + 4, i01 = i00 + W * 4, i11 = i01 + 4, j = (py * OW + px) * 4;
+    for (let c = 0; c < 4; c++) o[j + c] = (sd[i00 + c] * (1 - fx) + sd[i10 + c] * fx) * (1 - fy) + (sd[i01 + c] * (1 - fx) + sd[i11 + c] * fx) * fy;
+  }
+  ox.putImageData(od, 0, 0);
+  if (!down) return out;
+  const fl = document.createElement('canvas'); fl.width = OW; fl.height = OH; const fc = fl.getContext('2d');
+  fc.translate(0, OH); fc.scale(1, -1); fc.drawImage(out, 0, 0); return fl;
+}
+const btLabel = (d) => +d === 0 ? 'Straight' : `${d > 0 ? 'Up' : 'Down'} ${Math.abs(d)}°`;
+BT.mount = () => {
+  const el = $('#bt'); if (!el) return;
+  if (!BT.src) {
+    el.innerHTML = `<label class="card st-pick">
+        <div class="empty-ico">${ICON.bend}</div>
+        <div style="font:26px var(--display)">Bend a band</div>
+        <div class="muted">Bend a design into an arc so a band meets flush around a tapering arm or leg. PNGs keep their see-through background.</div>
+        <span class="btn primary" style="margin-top:14px">Choose image</span>
+        <input type="file" accept="image/png,image/*" id="bt-file" hidden></label>`;
+    $('#bt-file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
+      try { BT.src = await createImageBitmap(f); BT.name = f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_') || 'band'; BT.mount(); } catch { toast('Could not read that image.'); } };
+    return;
+  }
+  el.innerHTML = `<div class="bt">
+    <div class="bt-stage"><canvas id="bt-cv"></canvas></div>
+    <div class="card bt-ctl">
+      <label class="dz-sl"><span>Bend <b id="bt-l">${btLabel(BT.deg)}</b></span><input type="range" id="bt-deg" min="-360" max="360" step="1" value="${BT.deg}"></label>
+      <div class="bt-fine">${[[-5, '−5'], [-1, '−1'], [0, 'Straight'], [1, '+1'], [5, '+5']].map(([d, l]) => `<button class="btn small" data-d="${d}">${l}</button>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:8px 0 12px">For bands, a slight bend (around 10° to 40°) lets the ends meet flush on a limb that gets narrower. Up for a forearm band worn wrist-down, down the other way round. The middle keeps its length.</p>
+      <div class="bt-acts">
+        <label class="btn">Change image<input type="file" accept="image/png,image/*" id="bt-file" hidden></label>
+        <button class="btn" id="bt-png">Save PNG</button>
+        <button class="btn" id="bt-share">Share</button>
+        <button class="btn primary" id="bt-st">Make a stencil</button>
+      </div>
+      <div class="muted" id="bt-size" style="font-size:11px;margin-top:8px"></div>
+    </div></div>`;
+  const cv = $('#bt-cv'), stage = el.querySelector('.bt-stage');
+  let q = 0;
+  // Preview: a smaller copy while the slider moves, so it keeps up.
+  const show = () => { if (q) return; q = requestAnimationFrame(() => { q = 0;
+    const b = btWarp(BT.src, BT.deg, 900), r = stage.getBoundingClientRect(), s = Math.min(1, (r.width - 24) / b.width, (r.height - 24) / b.height);
+    cv.width = b.width; cv.height = b.height; cv.getContext('2d').drawImage(b, 0, 0);
+    cv.style.width = Math.round(b.width * s) + 'px'; cv.style.height = Math.round(b.height * s) + 'px';
+    const long = Math.max(BT.src.width, BT.src.height), k = Math.min(1, 3000 / long) / Math.min(1, 900 / long);   // full size vs preview
+    $('#bt-size').textContent = `Saves as a ${Math.round(b.width * k)} × ${Math.round(b.height * k)} px PNG with a see-through background.`;
+  }); };
+  const set = (d) => { BT.deg = Math.max(-360, Math.min(360, Math.round(d))); $('#bt-deg').value = BT.deg; $('#bt-l').textContent = btLabel(BT.deg); show(); };
+  $('#bt-deg').oninput = (e) => set(+e.target.value);
+  el.querySelector('.bt-fine').onclick = (e) => { const b = e.target.closest('[data-d]'); if (b) set(+b.dataset.d === 0 ? 0 : BT.deg + +b.dataset.d); };
+  $('#bt-file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
+    try { BT.src = await createImageBitmap(f); BT.name = f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_') || 'band'; BT.mount(); } catch { toast('Could not read that image.'); } };
+  // Full quality for saving; the stencil maker gets it on white, the way it expects a photo.
+  const result = async () => { toast('Bending…'); await new Promise(r => setTimeout(r, 30));
+    const b = btWarp(BT.src, BT.deg, 3000); return new File([await new Promise(r => b.toBlob(r, 'image/png'))], `${BT.name}-bent.png`, { type: 'image/png' }); };
+  $('#bt-png').onclick = async () => { const f = await result(); const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); };
+  $('#bt-share').onclick = async () => { const f = await result();
+    try { if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: f.name }); else { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); } }
+    catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); } };
+  $('#bt-st').onclick = async () => {
+    toast('Opening in the stencil maker…'); await new Promise(r => setTimeout(r, 30));
+    const b = btWarp(BT.src, BT.deg, 2400), w = document.createElement('canvas'); w.width = b.width; w.height = b.height;
+    const x = w.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w.width, w.height); x.drawImage(b, 0, 0);
+    await stLoad(await new Promise(r => w.toBlob(r, 'image/png'))); location.hash = 'stencil';
+  };
+  new ResizeObserver(show).observe(stage);
+  show();
+};
