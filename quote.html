@@ -140,7 +140,7 @@ function draw() {
       : `<p class="muted">No open days are listed right now. Send your details and ${esc(Q.st)} will get back to you with a date.</p>`}
       <div style="margin-top:16px">
         <label class="f">Your name<input type="text" id="nm" autocomplete="name" value="${esc(S.nm ?? Q.cl ?? '')}"></label>
-        <label class="f">Phone number<input type="tel" id="pn" autocomplete="tel" value="${esc(S.pn || '')}"></label>
+        <label class="f">Phone number<input type="tel" id="pn" autocomplete="tel" placeholder="${Q.cc ? '+' + Q.cc + ' ' : '+'}…" value="${esc(S.pn || '')}"></label>
         <label class="f">Anything to add? <span style="text-transform:none;letter-spacing:0">(optional)</span><textarea id="ms" rows="3">${esc(S.ms || '')}</textarea></label>
         <label class="chk"><input type="checkbox" id="ok" ${S.ok ? 'checked' : ''}><span>I've read the quote and the notes above.</span></label>
         <button class="btn pri" id="go" ${(S.d && S.t != null) || !keys.length ? '' : 'disabled'}>Send to ${esc(Q.st)} on WhatsApp</button>
@@ -150,8 +150,11 @@ function draw() {
     <div class="foot">Nothing you type here is stored on this page; it only goes into your message.</div>`;
 }
 
+// International form so the artist's app can match a saved client: a leading 0 gets the artist's country code.
+const intl = (v) => { const t = v.trim(); if (!t || t.startsWith('+')) return t; if (t.startsWith('00')) return '+' + t.slice(2);
+  return /^0\d/.test(t) && Q.cc ? `+${Q.cc} ${t.slice(1)}` : t; };
 function reply() {
-  const multi = !!Q.tog, nm = $('#nm').value.trim(), pn = $('#pn').value.trim(), ms = $('#ms').value.trim();
+  const multi = !!Q.tog, nm = $('#nm').value.trim(), pn = intl($('#pn').value), ms = $('#ms').value.trim();
   const code = toB64u(new TextEncoder().encode(JSON.stringify({ q: Q.q, w: Q.w, o: multi ? S.o : 'one', d: S.d, t: S.t != null ? hm(S.t) : null, n: nm, p: pn, m: ms })));
   const opt = multi ? (S.o === 'tog' ? `All together (${money(Q.tog.p)})` : `Separately (${money(Q.sep.p)})`) : money(Q.one.p);
   return `Hi! I'd like to book my tattoo.\n`

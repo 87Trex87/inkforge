@@ -57,6 +57,28 @@ const Snapshot = {
 };
 document.addEventListener('visibilitychange', () => { if (document.hidden) Snapshot.save(); });
 
+/* Phone numbers are kept in international form (+27 82 123 4567) so WhatsApp and links work.
+   A local number starting with 0 is converted with the country code from Settings. */
+const countryCode = () => (Settings.get('country_code') || '').replace(/\D/g, '');
+function intlPhone(v) {
+  const t = String(v || '').trim(); if (!t) return '';
+  if (t.startsWith('+')) return t;
+  if (t.startsWith('00')) return '+' + t.slice(2);
+  if (/^0\d/.test(t) && countryCode()) return `+${countryCode()} ${t.slice(1)}`;
+  return null;                                                          // can't tell the country
+}
+const phoneHint = () => countryCode() ? `+${countryCode()} 82 123 4567` : '+ country code, then the number';
+const phoneBad = () => countryCode() ? 'Check the number; it needs to start with + and the country code.'
+  : 'Start the number with + and the country code (e.g. +27 82 123 4567), or set your country code in Settings.';
+document.addEventListener('focusin', (e) => { if (e.target.matches?.('input[type=tel]') && !e.target.placeholder) e.target.placeholder = phoneHint(); });
+document.addEventListener('focusout', (e) => {
+  const i = e.target; if (!i.matches?.('input[type=tel]') || i.dataset.raw != null) return;
+  const v = intlPhone(i.value);
+  if (v === null) { i.classList.add('bad'); toast(phoneBad()); return; }
+  i.classList.remove('bad');
+  if (v !== i.value.trim()) { i.value = v; i.dispatchEvent(new Event('change', { bubbles: true })); }
+}, true);
+
 // Combo boxes: browsers filter a datalist by the current value, so a filled box only offers its own
 // value. Park the value as the placeholder while the box is opened, and put it back if nothing new is picked.
 document.addEventListener('pointerdown', (e) => {
@@ -243,7 +265,10 @@ const MIGRATIONS = [
      updated_at TEXT NOT NULL DEFAULT (datetime('now')));
    CREATE INDEX idx_quotes_booking ON quotes (booking_id);`,
   // v15: the client's reply from a quote link (option, day, start time, contact), as JSON.
-  `ALTER TABLE quotes ADD COLUMN reply TEXT;`
+  `ALTER TABLE quotes ADD COLUMN reply TEXT;`,
+  // v16: a booking can carry a name and number without saving the person as a client.
+  `ALTER TABLE bookings ADD COLUMN guest_name TEXT;
+   ALTER TABLE bookings ADD COLUMN guest_phone TEXT;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -729,6 +754,7 @@ const VIEWS = {
         const d = Object.fromEntries(new FormData(f));
         for (const k in d) d[k] = d[k].trim();
         if (!d.first_name) return toast('First name is required.');
+        if (d.phone) { const ph = intlPhone(d.phone); if (ph === null) return toast(phoneBad()); d.phone = ph; }
         d.instagram = d.instagram.replace(/^@/, '');
         d.tags = d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ');
         if (newPhoto) photoRef = await Media.save(newPhoto, 'jpg');
@@ -809,6 +835,7 @@ const VIEWS = {
       if (fromQuote?.design) added.push({ blob: fromQuote.design, url: URL.createObjectURL(fromQuote.design) });
       let clientId = b.client_id;
       const client = clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [clientId]) : null;
+      const guest = { name: (!clientId && (fromQuote?.guestName ?? b.guest_name)) || '', phone: (!clientId && (fromQuote?.guestPhone ?? b.guest_phone)) || '' };
       const cur = Settings.get('currency');
       const durOpts = []; for (let m = 30; m <= 600; m += 30) durOpts.push(m);
       const f = $('#b-form');
@@ -818,9 +845,14 @@ const VIEWS = {
           <div class="seg kinds" id="b-kind">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button type="button" data-k="${k}" class="${k === kind ? 'on' : ''}">${v.label}</button>`).join('')}</div></div>
         <label class="field"><span>Client ${help('Search existing clients, or type a new name and pick "Add" to create one. Optional for meetings and leave.')}</span>
           <div class="picker">
-            <input class="in" id="b-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
+            <input class="in" id="b-client" placeholder="Search clients, or type any name" value="${esc(client ? fullName(client) : guest.name)}" autocomplete="off">
             <div class="pick-list" id="b-client-list" hidden></div>
           </div></label>
+        <div class="b-guest" id="b-guest" hidden>
+          <span class="chip guest">not saved</span><span class="muted">This name isn't in your clients. It's kept on this booking only.</span>
+          <div class="row" style="gap:8px;width:100%"><input class="in" type="tel" name="guest_phone" placeholder="Their number (optional)" value="${esc(guest.phone)}" style="flex:1">
+            <button type="button" class="btn small" id="b-guest-add">Save as client</button></div>
+        </div>
         <div class="two">
           <label class="field"><span>Date</span><input class="in" type="date" name="date" value="${b.start_at.slice(0, 10)}" required></label>
           <div class="two tight">
@@ -913,8 +945,19 @@ const VIEWS = {
           + (q ? `<button type="button" class="c-row add" data-new="1"><span class="ava">+</span><span class="c-main"><span class="c-n">Add "${esc(q)}"</span><span class="muted c-sub">New client</span></span></button>` : '');
         cl.hidden = !cl.innerHTML;
       };
+      const gbox = $('#b-guest');
+      const showGuest = () => { gbox.hidden = !!clientId || !ci.value.trim(); };
+      showGuest();
       ci.addEventListener('focus', pickClient);
-      ci.addEventListener('input', () => { clientId = null; pickClient(); });
+      ci.addEventListener('input', () => { clientId = null; pickClient(); showGuest(); });
+      $('#b-guest-add').onclick = async () => {
+        const [first, ...rest] = ci.value.trim().split(/\s+/);
+        const ph = intlPhone(f.guest_phone.value);
+        if (ph === null) return toast(phoneBad());
+        await DB.run('INSERT INTO clients (first_name, last_name, phone) VALUES (?, ?, ?)', [first, rest.join(' '), ph || null]);
+        clientId = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+        toast('Saved to your clients.'); showGuest(); Dirty.set(true);
+      };
       ci.addEventListener('blur', () => setTimeout(() => cl.hidden = true, 150));
       cl.addEventListener('mousedown', e => e.preventDefault());
       cl.addEventListener('click', async (e) => {
@@ -924,9 +967,11 @@ const VIEWS = {
           await DB.run('INSERT INTO clients (first_name, last_name) VALUES (?, ?)', [first, rest.join(' ')]);
           clientId = (await DB.one('SELECT last_insert_rowid() AS id')).id;
           toast('Client added. Fill in their details later.');
+          showGuest();
         } else {
           clientId = +r.dataset.id;
           ci.value = r.querySelector('.c-n').textContent;
+          showGuest();
         }
         cl.hidden = true; ci.blur(); Dirty.set(true);
       });
@@ -976,14 +1021,16 @@ const VIEWS = {
       // Saves the form and returns the booking id (null if something needs fixing first).
       const save = async () => {
         const d = Object.fromEntries(new FormData(f));
-        if (ci.value.trim() && !clientId) { toast('Pick a client from the list, or choose "Add".'); return null; }
+        const gName = !clientId ? ci.value.trim() || null : null;
+        const gPhone = gName ? intlPhone(d.guest_phone) : '';
+        if (gPhone === null) { toast(phoneBad()); return null; }
         const num = (v) => v === '' || v == null ? null : +v;
         const done = DONE_KINDS.includes(kind) && !!d.completed;
         const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
           d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind,
           done ? 1 : 0, done ? (b.completed_at || new Date().toISOString()) : null,
-          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null];
-        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job';
+          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null, gName, gPhone || null];
+        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job, guest_name, guest_phone';
         const refs = [...keep];
         for (const a of added) refs.push(await Media.save(a.blob, 'jpg'));
         let bid = b.id;
@@ -1851,7 +1898,9 @@ const VIEWS = {
         <div id="off-card"></div></div>
       <div class="card"><h2>Contact details ${help('Printed at the bottom of your aftercare form. Leave any blank to hide that line.')}</h2>
         <div class="two">
-          <label class="field"><span>Contact number</span><input class="in" id="s-aphone" type="tel" value="${esc(Settings.get('artist_phone'))}"></label>
+          <label class="field"><span>Country code ${help('Numbers typed with a leading 0 get this code, so WhatsApp and quote links work. For South Africa: 27.')}</span>
+            <div class="unit-in"><input class="in" id="s-cc" type="text" inputmode="numeric" placeholder="27" value="${esc(countryCode())}"><em>+</em></div></label>
+          <label class="field"><span>Contact number ${help('With the country code, e.g. +27 82 123 4567. Quote replies come to this number on WhatsApp.')}</span><input class="in" id="s-aphone" type="tel" value="${esc(Settings.get('artist_phone'))}"></label>
           <label class="field"><span>Instagram</span><input class="in" id="s-ig" value="${esc(Settings.get('artist_instagram'))}" placeholder="instagram.com/…" autocapitalize="off"></label>
           <label class="field"><span>Facebook</span><input class="in" id="s-fb" value="${esc(Settings.get('artist_facebook'))}" placeholder="facebook.com/…" autocapitalize="off"></label>
           <label class="field"><span>TikTok</span><input class="in" id="s-tt" value="${esc(Settings.get('artist_tiktok'))}" placeholder="tiktok.com/@…" autocapitalize="off"></label>
@@ -1929,7 +1978,8 @@ const VIEWS = {
         await Settings.set('studio_logo_ref', ''); await Media.release(old); drawLogo();
       };
       renderDaysOff();
-      $('#s-aphone').addEventListener('change', save('artist_phone'));
+      $('#s-cc').addEventListener('change', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); Settings.set('country_code', e.target.value); });
+      $('#s-aphone').addEventListener('change', (e) => { const v = intlPhone(e.target.value); if (v !== null) { e.target.value = v; Settings.set('artist_phone', v); } });
       $('#s-ig').addEventListener('change', save('artist_instagram'));
       $('#s-fb').addEventListener('change', save('artist_facebook'));
       $('#s-tt').addEventListener('change', save('artist_tiktok'));
@@ -2348,7 +2398,9 @@ async function bookingsBetween(from, to) {
     FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
     WHERE b.start_at >= ? AND b.start_at < ? ORDER BY b.start_at`, [ymd(from), ymd(to)]);
 }
-const bName = (b) => b.first_name != null ? fullName(b) : kindOf(b) !== 'tattoo' ? kindLabel(b) : 'No client';
+const bName = (b) => b.first_name != null ? fullName(b) : b.guest_name ? b.guest_name : kindOf(b) !== 'tattoo' ? kindLabel(b) : 'No client';
+const bFirst = (b) => b.first_name || (b.guest_name || '').split(' ')[0] || '';
+const guestChip = (b) => b.first_name == null && b.guest_name ? ' <span class="chip guest" data-tip="Not saved in your clients">not saved</span>' : '';
 
 async function renderCal() {
   const el = $('#cal'); if (!el) return;
@@ -2429,7 +2481,7 @@ async function renderCal() {
       const short = h < 48;
       html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''} ${short ? 'short' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)"
         title="${esc([bName(b), kindLabel(b), fmtTime(b.start_at) + ' · ' + fmtDur(b.duration_min), b.placement, b.description].filter(Boolean).join(' · '))}">
-        <b>${esc(mode === 'week' ? (b.first_name || (kindOf(b) !== 'tattoo' ? kindLabel(b) : '—')) : bName(b))}</b>
+        <b>${esc(mode === 'week' ? (b.first_name || b.guest_name || (kindOf(b) !== 'tattoo' ? kindLabel(b) : '—')) : bName(b))}</b>
         ${mode === 'day' ? `<span>${kindOf(b) !== 'tattoo' && b.first_name != null ? kindLabel(b) + ' · ' : ''}${fmtTime(b.start_at)} · ${fmtDur(b.duration_min)}${b.placement ? ' · ' + esc(b.placement) : ''}</span>
         ${b.description ? `<span class="muted">${esc(b.description)}</span>` : ''}` : ''}</a>`;
     });
@@ -2457,7 +2509,7 @@ function agendaRow(b) {
   const end = new Date(new Date(b.start_at).getTime() + b.duration_min * 60000);
   return `<a class="c-row" href="#booking-edit/${b.id}">
     <span class="time-col"><b>${fmtTime(b.start_at)}</b><small class="muted">${fmtTime(end)}</small></span>
-    <span class="c-main"><span class="c-n">${b.completed ? '<span class="done-tick" data-tip="Completed">✓</span>' : ''}${esc(bName(b))}${b.first_name != null ? kindChip(b) : ''}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
+    <span class="c-main"><span class="c-n">${b.completed ? '<span class="done-tick" data-tip="Completed">✓</span>' : ''}${esc(bName(b))}${b.first_name != null || b.guest_name ? kindChip(b) : ''}${guestChip(b)}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
       <span class="muted c-sub">${esc([b.placement, b.description].filter(Boolean).join(' · ') || fmtDur(b.duration_min))}</span></span>
     ${b.quote != null ? `<span class="price ${b.deposit_paid ? 'paid' : ''}" data-tip="${b.deposit_paid ? 'Deposit paid' : 'Deposit not paid'}">${money(b.quote)}</span>` : ''}
     <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
@@ -3343,21 +3395,12 @@ async function packLink(obj) {
 }
 // WhatsApp needs the number with its country code; a local number starting with 0 gets the saved code.
 function waNumber() {
-  let n = (Settings.get('artist_phone') || '').replace(/[^\d+]/g, '');
-  if (!n) return null;
-  if (n.startsWith('+')) return n.slice(1);
-  if (n.startsWith('00')) return n.slice(2);
-  if (n.startsWith('0')) {
-    let cc = Settings.get('country_code');
-    if (!cc) { cc = (prompt('Your phone number starts with 0. What is your country calling code? (just the digits, e.g. 44 or 61)') || '').replace(/\D/g, '');
-      if (!cc) return null; Settings.set('country_code', cc); }
-    return cc + n.slice(1);
-  }
-  return n;
+  const n = intlPhone(Settings.get('artist_phone'));
+  return n ? n.replace(/\D/g, '') : null;
 }
 async function qzLink() {
   const wa = waNumber();
-  if (!wa) return toast('Add your phone number in Settings first; replies are sent to it on WhatsApp.');
+  if (!wa) return toast(Settings.get('artist_phone') ? 'Your contact number in Settings needs its country code, e.g. +27 82 123 4567.' : 'Add your phone number in Settings first; replies are sent to it on WhatsApp.');
   await qzSaveQuote(true);                              // the reply finds its way back to this saved quote
   const r = qCalc(), cb = qzMulti() ? qCombo() : null, c = r.c;
   const o = qzAvOpts(), [start, end] = availRange(o.months, o.from);
@@ -3366,7 +3409,7 @@ async function qzLink() {
   const now = new Date(), valid = new Date(now.getTime() + 30 * 864e5);
   const data = {
     v: 1, st: Settings.get('studio_name') || Settings.get('artist_name') || 'Tattoo studio', ar: Settings.get('artist_name') || '',
-    ig: Settings.get('artist_instagram') || '', ph: wa, cur: Settings.get('currency') || '',
+    ig: Settings.get('artist_instagram') || '', ph: wa, cc: countryCode(), cur: Settings.get('currency') || '',
     q: QZ.id, w: WS.cur?.id ?? WS.cur, cl: QZ.client || '', dt: ymd(now), vu: ymd(valid), gap: bookingGap(), sx: c.sessionMax,
     pcs: (cb ? cb.all : [QZ]).map((p, i) => [qzPlacement(p) || 'Tattoo', `${p.w} × ${p.h} cm · ${qzSummary(p)}`, cb ? cb.each[i].total : r.total, cb ? cb.each[i].hours : r.hours]),
     one: cb ? null : { p: r.total, lo: r.lo, hi: r.hi, h: r.hours, s: r.sessions, d: r.deposit, base: r.base, disc: r.disc, vat: r.vat },
@@ -3430,14 +3473,15 @@ async function bookFromReply(id, rp) {
   await qzOpenQuote(id, true);
   const r = qCalc(), cb = qzMulti() ? qCombo() : null, sep = cb && rp.o === 'sep';
   const p = sep ? cb.all[0] : null, pr = cb ? (sep ? cb.each[0] : cb.tog) : r;
-  const digits = String(rp.p || '').replace(/\D/g, '').slice(-9);
+  const digits = String(intlPhone(rp.p) || rp.p || '').replace(/\D/g, '').slice(-9);
   const client = digits.length >= 7 ? await DB.one(`SELECT id FROM clients WHERE replace(replace(replace(phone, ' ', ''), '-', ''), '+', '') LIKE ?`, ['%' + digits]) : null;
   Cal.prefillQuote = { quote: pr.total, deposit: pr.deposit, duration: Math.min(600, Math.ceil(pr.per * 2) * 30), quoteId: QZ.id,
     size: cb ? (sep ? `${p.w} x ${p.h} cm` : cb.all.map(x => `${x.w} x ${x.h} cm`).join(' + ')) : `${QZ.w} x ${QZ.h} cm`,
     placement: cb ? (sep ? qzPlacement(p) : cb.all.map(x => qzPlacement(x)).join(' + ')) : qzPlacement(),
     description: cb ? (sep ? qzSummary(p) : cb.all.map((x, i) => `${i + 1}) ${qzSummary(x)}`).join('; ')) : qzSummary(),
     job: (cb ? (sep ? p : cb.all.find(x => x.job !== 'new')) : QZ)?.job || 'new',
-    notes: [`Booked from the quote link: ${rp.n || ''}${rp.p ? ', ' + rp.p : ''}`, sep ? `Separately chosen: this is tattoo 1 of ${cb.all.length}.` : '', rp.m ? `Client: "${rp.m}"` : ''].filter(Boolean).join('\n') };
+    guestName: client ? null : rp.n || null, guestPhone: client ? null : intlPhone(rp.p) || rp.p || null,
+    notes: [`Booked from the quote link${client ? '' : ': ' + (rp.n || '') + (rp.p ? ', ' + rp.p : '')}`, sep ? `Separately chosen: this is tattoo 1 of ${cb.all.length}.` : '', rp.m ? `Client: "${rp.m}"` : ''].filter(Boolean).join('\n') };
   newBooking((rp.d || ymd(new Date())) + 'T' + (rp.t || Settings.get('day_start', '10:00')), client?.id || null);
 }
 
@@ -3919,7 +3963,7 @@ async function openReceipt(bid) {
 
 // Receipt page, plus the chosen aftercare form as a second page when asked for.
 async function receiptPages(b, promo, opts) {
-  const tag = b.first_name ? '-' + b.first_name.replace(/[^\w-]+/g, '_') : '';
+  const tag = bFirst(b) ? '-' + bFirst(b).replace(/[^\w-]+/g, '_') : '';
   const r = await receiptSheet(b, promo, opts.show);
   const pages = [{ cv: r.cv, name: `Receipt-${r.ref}${tag}.png` }];
   if (opts.aftercare && opts.aftercareId) {
@@ -3935,7 +3979,7 @@ async function receiptPages(b, promo, opts) {
 const promoLabel = (p) => p ? (p.kind === 'pct' ? `${+p.value}% off` : `${money(p.value)} off`) + ' your next tattoo' : '';
 function receiptText(b, p) {
   const studio = Settings.get('studio_name') || Settings.get('artist_name');
-  return `Thank you${b.first_name ? ', ' + b.first_name : ''}!${studio ? ' From ' + studio : ''}\n`
+  return `Thank you${bFirst(b) ? ', ' + bFirst(b) : ''}!${studio ? ' From ' + studio : ''}\n`
     + `${b.description || 'Tattoo'}${b.placement ? ' · ' + b.placement : ''}\nPaid: ${b.paid != null ? money(b.paid) : '—'}\n`
     + (p ? `\nAs a thank you: ${promoLabel(p)}. Valid until ${fmtDay(p.until)}.\n` : '')
     + (jobNote(b.job) ? '\n' + jobNote(b.job) : '')
@@ -3987,7 +4031,7 @@ async function receiptSheet(b, promo, show) {
   const { cv, x, font, text, wrap, header } = await docCanvas();
   await header();
   const ref = 'R' + b.start_at.slice(2, 10).replace(/-/g, '') + '-' + b.id;
-  text(`Thank you${b.first_name ? ', ' + b.first_name : ''}!`, M, 370, font(96, 400, true));
+  text(`Thank you${bFirst(b) ? ', ' + bFirst(b) : ''}!`, M, 370, font(96, 400, true));
   text('Receipt', M, 425, font(28, 600), soft);
   [['Receipt no.', ref], ['Session', fmtDay(b.start_at)], ['Client', bName(b)]].forEach(([k, v], i) => {
     text(k, W - M - 440, 330 + i * 38, font(22, 600), soft); text(v, W - M, 330 + i * 38, font(24, 500), ink, 'right');
