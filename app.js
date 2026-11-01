@@ -4942,8 +4942,8 @@ async function portfolioPages() {
       const url = await Media.url(it.photo_ref);
       const img = url ? await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }) : null;
       if (img) {
-        // A chosen background shows the whole design (with a margin); otherwise the photo fills its frame.
-        const sc = solid ? Math.min(cw / img.naturalWidth, ih / img.naturalHeight) * 0.9 : Math.max(cw / img.naturalWidth, ih / img.naturalHeight);
+        // The whole picture always fits its frame, never cropped; a chosen background adds a small margin.
+        const sc = Math.min(cw / img.naturalWidth, ih / img.naturalHeight) * (solid ? 0.9 : 1);
         const w = img.naturalWidth * sc, h = img.naturalHeight * sc;
         x.save(); x.beginPath(); x.rect(cx, cy, cw, ih); x.clip(); x.drawImage(img, cx + (cw - w) / 2, cy + (ih - h) / 2, w, h); x.restore();
       }
