@@ -271,7 +271,21 @@ const MIGRATIONS = [
   `ALTER TABLE bookings ADD COLUMN guest_name TEXT;
    ALTER TABLE bookings ADD COLUMN guest_phone TEXT;`,
   // v17: background behind a portfolio picture ('' = as is / transparent, 'white', 'black'), on screen and in print.
-  `ALTER TABLE portfolio_items ADD COLUMN bg TEXT;`
+  `ALTER TABLE portfolio_items ADD COLUMN bg TEXT;`,
+  // v18: design studio (vouchers, cards, flyers, posts). doc = the design as JSON; its pictures are listed
+  // in design_assets so backups and merges carry them and Media.release never removes one still in use.
+  `CREATE TABLE designs (
+     id INTEGER PRIMARY KEY,
+     name TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     doc TEXT NOT NULL,
+     thumb_ref TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE TABLE design_assets (
+     design_id INTEGER NOT NULL REFERENCES designs(id) ON DELETE CASCADE,
+     ref TEXT NOT NULL);
+   CREATE INDEX idx_design_assets ON design_assets (design_id);`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -482,6 +496,8 @@ const Media = {
       UNION ALL SELECT 1 FROM signed_forms WHERE signature_ref = ?1
       UNION ALL SELECT 1 FROM portfolio_photos WHERE photo_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM quotes WHERE design_ref = ?1
+      UNION ALL SELECT 1 FROM designs WHERE thumb_ref = ?1
+      UNION ALL SELECT 1 FROM design_assets WHERE ref = ?1
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
@@ -550,6 +566,8 @@ const ICON = {
   stock: '<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg>',
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
   stats: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
+  design: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15l3-4 3 3 2-2 3 3"/><circle cx="8.5" cy="9" r="1.2"/></svg>',
+  cake: '<svg viewBox="0 0 24 24"><path d="M4 20h16v-7H4zM4 15c2 1 4 1 4-1 0 2 4 2 4 0 0 2 4 2 4 0 0 2 2 2 4 1M12 13V9M12 6v.5"/></svg>',
   saved: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
   settings: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
 };
@@ -580,6 +598,7 @@ const VIEWS = {
       </div>
       <div class="card"><h2>Today ${help('Today\'s sessions. Tap one to open it.')}</h2>
         <div id="home-today" class="muted">…</div></div>
+      <div id="home-bday"></div>
       <div class="grid">
         ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil')}
         ${tile('quote', 'Quick quote', 'Price a piece in seconds', false, 'quote')}
@@ -593,6 +612,19 @@ const VIEWS = {
       if (rows.length) { el.className = 'card list flush'; el.innerHTML = rows.map(agendaRow).join(''); }
       else el.innerHTML = `No sessions booked. <a href="#" id="h-add" style="color:var(--teal)">Book one</a>`;
       const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBookingNext(); };
+      // Birthdays in the next 7 days, with a one-tap WhatsApp greeting.
+      const bd = (await DB.all('SELECT id, first_name, last_name, phone, dob FROM clients WHERE dob IS NOT NULL AND dob <> \'\''))
+        .map(c => { const [y, m, d] = c.dob.split('-').map(Number); let n = new Date(t.getFullYear(), m - 1, d); if (n < t) n = new Date(t.getFullYear() + 1, m - 1, d);
+          return { ...c, days: Math.round((n - t) / 864e5), age: n.getFullYear() - y }; })
+        .filter(c => c.days <= 7).sort((x, y) => x.days - y.days);
+      const be = $('#home-bday');
+      if (be && bd.length) be.innerHTML = `<div class="card"><h2>Birthdays this week</h2><div class="card list flush">${bd.map(c => {
+        const wa = (intlPhone(c.phone) || '').replace(/\D/g, ''), studio = Settings.get('studio_name') || Settings.get('artist_name') || '';
+        const msg = encodeURIComponent(`Happy birthday, ${c.first_name}! 🎉 Wishing you a great year${studio ? ' from everyone at ' + studio : ''}.`);
+        return `<div class="c-row bday ${c.days ? '' : 'bd-today'}"><span class="ico-c">${ICON.cake}</span>
+          <a class="c-main" href="#client/${c.id}"><span class="c-n">${esc(fullName(c))}</span>
+            <span class="muted c-sub">${c.days === 0 ? 'Today' : c.days === 1 ? 'Tomorrow' : addDays(t, c.days).toLocaleDateString(undefined, { weekday: 'long' })} · turns ${c.age}</span></a>
+          ${wa ? `<a class="btn small" href="https://wa.me/${wa}?text=${msg}" target="_blank" rel="noopener">Send wishes</a>` : ''}</div>`; }).join('')}</div></div>`;
     }
   },
   clients: {
@@ -1103,7 +1135,8 @@ const VIEWS = {
     title: () => 'Studio',
     render: () => tileGroup('Create', [
         tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil'),
-        tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel')])
+        tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel'),
+        tile('design', 'Design studio', 'Vouchers, business cards, flyers and posts', false, 'designs')])
       + tileGroup('Your work', [
         tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
         tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')])
@@ -1357,6 +1390,16 @@ const VIEWS = {
     title: () => 'Quote',
     render: () => '<div id="qz"></div>',
     mount() { qzDraw(); }
+  },
+  designs: {
+    title: () => 'Design studio',
+    render: () => '<div id="dz-list"></div>',
+    mount() { DZ.list(); }
+  },
+  design: {
+    title: () => 'Design',
+    render: () => '<div id="dz"></div>',
+    mount(id) { DZ.edit(+id); }
   },
   quotes: {
     title: () => 'Saved quotes',
@@ -2577,6 +2620,7 @@ const MERGE_SECTIONS = [
   ['inventory', 'Inventory', 'Stock items and stock takes'],
   ['rules', 'Rule book', 'Your studio rules'],
   ['quotes', 'Saved quotes', 'Quotes saved to finish or book later'],
+  ['designs', 'Designs', 'Vouchers, business cards, flyers and posts'],
   ['reel', 'Reel templates', 'Saved reel templates and their images'],
   ['settings', 'Settings', 'Profile, quote and app settings, only where yours are still blank']
 ];
@@ -2595,11 +2639,13 @@ const MERGE_TABLES = {
   stock_take_lines: { section: 'inventory', fk: { take_id: 'stock_takes', item_id: 'inventory_items' } },
   rules: { section: 'rules' },
   quotes: { section: 'quotes', fk: { booking_id: 'bookings' }, refs: ['design_ref'] },
+  designs: { section: 'designs', refs: ['thumb_ref'] },
+  design_assets: { section: 'designs', fk: { design_id: 'designs' }, refs: ['ref'] },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
-  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes'];
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
@@ -6667,9 +6713,9 @@ addEventListener('hashchange', () => { if (booted) render(); });
 (async () => {
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
-  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 6) {
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 6 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
-    if (!tried) { await Promise.all(['reel.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
+    if (!tried) { await Promise.all(['reel.js', 'design.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }
   try { sessionStorage.removeItem('if-reload'); } catch {}
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
