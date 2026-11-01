@@ -208,8 +208,12 @@ const MIGRATIONS = [
    CREATE INDEX idx_bookings_done ON bookings (completed, start_at);`,
   // v10: phonebook categories, so suppliers and services live apart from clients.
   `ALTER TABLE clients ADD COLUMN category TEXT NOT NULL DEFAULT 'Client';
-   CREATE INDEX idx_clients_cat ON clients (category);`
+   CREATE INDEX idx_clients_cat ON clients (category);`,
+  // v11: rule book categories, e.g. client rules apart from staff rules.
+  `ALTER TABLE rules ADD COLUMN category TEXT NOT NULL DEFAULT 'Client rules';`
 ];
+const RULE_CATS = ['Client rules', 'Staff rules'];
+const RULES = { cat: 'all' };
 const CLIENT_CATS = ['Client', 'Supplier', 'Service'];
 /* Booking types. ink: shows the tattoo fields (placement, size, quote, deposit, references). */
 const BOOKING_KINDS = {
@@ -1354,23 +1358,29 @@ const VIEWS = {
     title: () => 'Rule book',
     render: () => `
       <div class="row" style="margin-bottom:12px">
-        <button class="btn" id="r-share" style="flex:1" data-tip="Send the whole rule book as text, e.g. to a client or apprentice">Share</button>
+        <button class="btn" id="r-share" style="flex:1" data-tip="Send the rules you're viewing as text, e.g. to a client or apprentice">Share</button>
+        <button class="btn icon-btn" id="r-print" data-tip="Print or export your rules" aria-label="Print or export rules"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
         <button class="btn primary" id="r-add" style="flex:1">+ Add rule</button>
       </div>
+      <div class="c-cats" id="r-cats"></div>
       <div id="r-list"></div>`,
     mount() {
       $('#r-add').onclick = () => location.hash = 'rule-edit/new';
+      $('#r-print').onclick = openRulesPrint;
+      $('#r-cats').onclick = (e) => { const b = e.target.closest('[data-cat]'); if (!b) return; RULES.cat = b.dataset.cat; renderRules(); };
       $('#r-share').onclick = async () => {
-        const rs = await DB.all('SELECT title, body FROM rules ORDER BY sort, id');
+        const rs = await DB.all(`SELECT title, body, category FROM rules WHERE ?1 = 'all' OR category = ?1 ORDER BY category COLLATE NOCASE, sort, id`, [RULES.cat]);
         if (!rs.length) return toast('No rules yet.');
-        const text = `${Settings.get('studio_name') || 'Studio'} rules\n\n` + rs.map((r, i) => `${i + 1}. ${r.title}${r.body ? '\n' + r.body : ''}`).join('\n\n');
+        const text = `${Settings.get('studio_name') || 'Studio'} ${RULES.cat === 'all' ? 'rules' : RULES.cat.toLowerCase()}\n\n` + rulesText(rs, RULES.cat === 'all');
         try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('Rules copied.'); } }
         catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
       };
       $('#r-list').addEventListener('click', async (e) => {
         const b = e.target.closest('[data-mv]'); if (!b) return;
         e.preventDefault();
-        const rs = await DB.all('SELECT id FROM rules ORDER BY sort, id');
+        // Moves within the rule's own category; other categories keep their order.
+        const me = await DB.one('SELECT category FROM rules WHERE id = ?', [+b.dataset.id]);
+        const rs = await DB.all('SELECT id FROM rules WHERE category = ? ORDER BY sort, id', [me.category]);
         const i = rs.findIndex(r => r.id === +b.dataset.id), j = i + +b.dataset.mv;
         if (j < 0 || j >= rs.length) return;
         [rs[i], rs[j]] = [rs[j], rs[i]];
@@ -1388,6 +1398,9 @@ const VIEWS = {
       if (!r) { location.hash = 'rules'; return; }
       const f = $('#r-form');
       f.innerHTML = `
+        <label class="field"><span>Category ${help('Keep client rules apart from staff rules. Type a new name for your own category, e.g. Guest artists.')}</span>
+          <input class="in" name="category" list="r-catlist" value="${esc(r.category || (RULES.cat !== 'all' ? RULES.cat : 'Client rules'))}" autocapitalize="words">
+          <datalist id="r-catlist">${[...new Set([...RULE_CATS, ...(await DB.all('SELECT DISTINCT category AS c FROM rules')).map(x => x.c)])].map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
         <label class="field"><span>Rule</span><input class="in" name="title" value="${esc(r.title ?? '')}" required placeholder="Deposits are non-refundable"></label>
         <label class="field"><span>Details</span><textarea class="in" name="body" rows="6" placeholder="Optional explanation">${esc(r.body ?? '')}</textarea></label>
         <div class="form-foot row">
@@ -1407,8 +1420,9 @@ const VIEWS = {
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
         const d = Object.fromEntries(new FormData(f));
-        if (r.id) await DB.run('UPDATE rules SET title = ?, body = ? WHERE id = ?', [d.title.trim(), d.body.trim() || null, r.id]);
-        else await DB.run('INSERT INTO rules (title, body, sort) VALUES (?, ?, (SELECT coalesce(max(sort), -1) + 1 FROM rules))', [d.title.trim(), d.body.trim() || null]);
+        const cat = (d.category || 'Client rules').trim().replace(/\s+/g, ' ').replace(/^./, m => m.toUpperCase());
+        if (r.id) await DB.run('UPDATE rules SET title = ?, body = ?, category = ? WHERE id = ?', [d.title.trim(), d.body.trim() || null, cat, r.id]);
+        else await DB.run('INSERT INTO rules (title, body, category, sort) VALUES (?, ?, ?, (SELECT coalesce(max(sort), -1) + 1 FROM rules))', [d.title.trim(), d.body.trim() || null, cat]);
         Dirty.set(false); toast('Saved.'); location.replace('#rules');
       });
     }
@@ -3999,15 +4013,78 @@ async function renderInventory() {
       <span class="muted c-sub">${t.n} counted · ${t.diff || 0} adjusted${t.notes ? ' · ' + esc(t.notes) : ''}</span></span></div>`).join('')}</div>` : '';
 }
 
+// Rules as numbered text, numbering starting again in each category.
+function rulesText(rs, grouped) {
+  let out = '', cat = null, n = 0;
+  for (const r of rs) {
+    if (grouped && r.category !== cat) { cat = r.category; n = 0; out += `${out ? '\n' : ''}${cat.toUpperCase()}\n\n`; }
+    out += `${++n}. ${r.title}${r.body ? '\n' + r.body : ''}\n\n`;
+  }
+  return out.trim();
+}
 async function renderRules() {
   const el = $('#r-list'); if (!el) return;
-  const rs = await DB.all('SELECT * FROM rules ORDER BY sort, id');
-  el.innerHTML = rs.length ? '<div class="card list">' + rs.map((r, i) => `
+  const cats = await DB.all(`SELECT category AS c, COUNT(*) AS n FROM rules GROUP BY category ORDER BY (category = 'Client rules') DESC, category COLLATE NOCASE`);
+  if (RULES.cat !== 'all' && !cats.some(x => x.c === RULES.cat)) RULES.cat = 'all';
+  const ce = $('#r-cats');
+  if (ce) { ce.hidden = cats.length < 2; ce.innerHTML = [['all', 'All', cats.reduce((t, x) => t + x.n, 0)], ...cats.map(x => [x.c, x.c, x.n])]
+    .map(([k, l, n]) => `<button class="chip qz-chip ${RULES.cat === k ? 'on' : ''}" data-cat="${esc(k)}">${esc(l)} <span class="muted">${n}</span></button>`).join(''); }
+  const rs = await DB.all(`SELECT * FROM rules WHERE ?1 = 'all' OR category = ?1 ORDER BY (category = 'Client rules') DESC, category COLLATE NOCASE, sort, id`, [RULES.cat]);
+  if (!rs.length) { el.innerHTML = `<div class="empty"><div class="empty-ico">${ICON.rules}</div><div style="font:24px var(--display)">No rules yet</div><div class="muted">Deposits, cancellations, touch-ups, age, guests…</div></div>`; return; }
+  // One card per category, numbered from 1 in each.
+  const groups = []; for (const r of rs) { const g = groups[groups.length - 1]; if (g && g.cat === r.category) g.rows.push(r); else groups.push({ cat: r.category, rows: [r] }); }
+  el.innerHTML = groups.map(g => `${RULES.cat === 'all' && cats.length > 1 ? `<div class="letter">${esc(g.cat)}</div>` : ''}<div class="card list">` + g.rows.map((r, i) => `
     <a class="c-row rule" href="#rule-edit/${r.id}"><span class="rule-n">${i + 1}</span>
       <span class="c-main"><span class="c-n">${esc(r.title)}</span>${r.body ? `<span class="muted rule-b">${esc(r.body)}</span>` : ''}</span>
       <span class="row" style="gap:4px;flex-wrap:nowrap"><button class="mini" data-mv="-1" data-id="${r.id}" ${i ? '' : 'disabled'} aria-label="Move up">&uarr;</button>
-      <button class="mini" data-mv="1" data-id="${r.id}" ${i < rs.length - 1 ? '' : 'disabled'} aria-label="Move down">&darr;</button></span></a>`).join('') + '</div>'
-    : `<div class="empty"><div class="empty-ico">${ICON.rules}</div><div style="font:24px var(--display)">No rules yet</div><div class="muted">Deposits, cancellations, touch-ups, age, guests…</div></div>`;
+      <button class="mini" data-mv="1" data-id="${r.id}" ${i < g.rows.length - 1 ? '' : 'disabled'} aria-label="Move down">&darr;</button></span></a>`).join('') + '</div>').join('');
+}
+
+/* Rule book print / export: pick categories, with or without the details. Print gives a clean
+   numbered document (as many pages as needed); CSV gives category, number, rule and details. */
+async function openRulesPrint() {
+  const cats = await DB.all(`SELECT category AS c, COUNT(*) AS n FROM rules GROUP BY category ORDER BY (category = 'Client rules') DESC, category COLLATE NOCASE`);
+  if (!cats.length) return toast('No rules yet.');
+  const st = { cats: new Set(RULES.cat !== 'all' ? [RULES.cat] : cats.map(x => x.c)), details: true };
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const draw = () => {
+    const n = cats.filter(x => st.cats.has(x.c)).reduce((t, x) => t + x.n, 0);
+    o.innerHTML = `<div class="card"><h2>Print or export rules</h2>
+      <div class="lbl">Categories</div>
+      <div class="qz-chips">${cats.map(x => `<button class="chip qz-chip ${st.cats.has(x.c) ? 'on' : ''}" data-rc="${esc(x.c)}">${st.cats.has(x.c) ? '✓ ' : ''}${esc(x.c)} <span>${x.n}</span></button>`).join('')}</div>
+      <label class="toggle" style="display:inline-flex;margin:4px 0 12px"><input type="checkbox" id="rp-det" ${st.details ? 'checked' : ''}><span>Include details under each rule</span></label>
+      <div class="row"><button class="btn" id="rp-close">Cancel</button>
+        <button class="btn" id="rp-csv" ${n ? '' : 'disabled'}>Export CSV</button>
+        <button class="btn primary" id="rp-go" style="flex:1" ${n ? '' : 'disabled'}>Print ${n} rule${n === 1 ? '' : 's'}</button></div></div>`;
+  };
+  document.body.appendChild(o); draw();
+  const rows = () => DB.all(`SELECT * FROM rules WHERE category IN (${[...st.cats].map(() => '?').join(',')}) ORDER BY (category = 'Client rules') DESC, category COLLATE NOCASE, sort, id`, [...st.cats]);
+  o.addEventListener('change', (e) => { if (e.target.id === 'rp-det') st.details = e.target.checked; });
+  o.addEventListener('click', async (e) => {
+    const c = e.target.closest('[data-rc]');
+    if (c) { st.cats.has(c.dataset.rc) ? st.cats.delete(c.dataset.rc) : st.cats.add(c.dataset.rc); return draw(); }
+    if (e.target.closest('#rp-close')) return o.remove();
+    if (e.target.closest('#rp-csv')) {
+      const rs = await rows(); let cat = null, n = 0;
+      return saveCsv(`InkForge-rules-${ymd(new Date())}.csv`, ['Category', 'No.', 'Rule', ...(st.details ? ['Details'] : [])],
+        rs.map(r => { if (r.category !== cat) { cat = r.category; n = 0; } return [r.category, ++n, r.title, ...(st.details ? [r.body || ''] : [])]; }));
+    }
+    if (!e.target.closest('#rp-go')) return;
+    const rs = await rows(); o.remove();
+    const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Rule book';
+    let body = '', cat = null, n = 0;
+    for (const r of rs) {
+      if (r.category !== cat) { if (cat) body += '</ol>'; cat = r.category; n = 0; body += `<h2>${esc(cat)}</h2><ol>`; }
+      n++; body += `<li><b>${esc(r.title)}</b>${st.details && r.body ? `<p>${esc(r.body)}</p>` : ''}</li>`;
+    }
+    let p = $('#print-area');
+    if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+    p.innerHTML = `<div class="pbook rbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>${esc(st.cats.size === 1 ? [...st.cats][0] : 'Rule book')}</b><br>${esc(fmtDay(ymd(new Date())))}</div></div>${body}</ol></div>`;
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+    addEventListener('afterprint', done);
+    window.print();
+  });
 }
 
 /* ---------- Reel UI (engine in reel.js) ---------- */
