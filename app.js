@@ -1153,10 +1153,19 @@ const VIEWS = {
       const urls = await Promise.all(photos.map(p => Media.url(p.photo_ref)));
       $('#view-title').textContent = PF_KIND[it.kind];
       const field = (l, v) => v ? `<div class="stat"><span class="muted">${l}</span><span class="val">${v}</span></div>` : '';
-      el.innerHTML = `
-        <div class="carousel${pfBg(it.bg)}" id="pf-car">${photos.map((p, i) => `<div class="slide"><img src="${urls[i]}" alt="" data-i="${i}">
-          ${p.label ? `<span class="slide-label">${esc(p.label)}</span>` : ''}</div>`).join('') || '<div class="slide empty-slide muted">No photos</div>'}</div>
-        ${photos.length > 1 ? `<div class="dots" id="pf-dots">${photos.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
+      const many = photos.length > 1;
+      el.innerHTML = `<div class="pfv">
+        <div class="pfv-media">
+        <div class="pfv-stage">
+          <div class="carousel${pfBg(it.bg)}" id="pf-car">${photos.map((p, i) => `<div class="slide"><img src="${urls[i]}" alt="" data-i="${i}">
+            ${p.label ? `<span class="slide-label">${esc(p.label)}</span>` : ''}</div>`).join('') || '<div class="slide empty-slide muted">No photos</div>'}</div>
+          ${many ? `<button class="pfv-nav prev" id="pf-prev" aria-label="Previous photo">‹</button><button class="pfv-nav next" id="pf-next" aria-label="Next photo">›</button>
+            <span class="pfv-count" id="pf-count">1 / ${photos.length}</span>` : ''}
+          ${photos.length ? `<button class="pfv-zoom" id="pf-zoom" aria-label="Full screen" data-tip="Full screen, pinch or scroll to zoom"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>` : ''}
+        </div>
+        ${many ? `<div class="pfv-thumbs${pfBg(it.bg)}" id="pf-dots">${photos.map((p, i) => `<button class="${i ? '' : 'on'}" data-go-i="${i}" aria-label="Photo ${i + 1}"><img src="${urls[i]}" alt=""></button>`).join('')}</div>` : ''}
+        </div>
+        <div class="pfv-info">
         <div class="card">
           <div class="row" style="justify-content:space-between;flex-wrap:nowrap">
             <h2 style="margin:0">${esc(it.title || PF_KIND[it.kind])}</h2>
@@ -1175,11 +1184,20 @@ const VIEWS = {
           <button class="btn danger icon-btn" id="pf-del" data-tip="Delete" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
           <button class="btn" id="pf-share" ${photos.length ? '' : 'disabled'}>Share</button>
           <button class="btn primary" style="flex:1" onclick="location.hash='pf-edit/${it.id}'">Edit</button>
-        </div>`;
+        </div></div></div>`;
       const car = $('#pf-car'), dots = $('#pf-dots');
       const cur = () => Math.round(car.scrollLeft / car.clientWidth);
-      if (dots) car.addEventListener('scroll', () => dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i === cur())), { passive: true });
-      car.onclick = (e) => { const img = e.target.closest('img'); if (img) viewImage(img.src); };
+      const go = (i) => car.scrollTo({ left: Math.max(0, Math.min(photos.length - 1, i)) * car.clientWidth, behavior: 'smooth' });
+      const mark = () => { const i = cur();
+        dots?.querySelectorAll('button').forEach((d, j) => d.classList.toggle('on', j === i));
+        const c = $('#pf-count'); if (c) c.textContent = `${i + 1} / ${photos.length}`;
+        const pv = $('#pf-prev'), nx = $('#pf-next'); if (pv) { pv.disabled = i === 0; nx.disabled = i === photos.length - 1; } };
+      if (many) { car.addEventListener('scroll', mark, { passive: true }); mark();
+        $('#pf-prev').onclick = () => go(cur() - 1); $('#pf-next').onclick = () => go(cur() + 1);
+        dots.onclick = (e) => { const b = e.target.closest('[data-go-i]'); if (b) go(+b.dataset.goI); }; }
+      const full = (i) => openGallery(urls, i, it.bg, photos.map(p => p.label));
+      car.onclick = (e) => { const img = e.target.closest('img'); if (img) full(+img.dataset.i); };
+      const zb = $('#pf-zoom'); if (zb) zb.onclick = () => full(cur());
       $('#pf-fav').onclick = async (e) => {
         const btn = e.currentTarget;   // currentTarget is null after the await
         it.favourite = it.favourite ? 0 : 1;
@@ -2925,11 +2943,76 @@ function agendaRow(b) {
     <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
 }
 
-function viewImage(src) {
-  const o = document.createElement('div');
-  o.id = 'img-viewer'; o.innerHTML = `<img src="${src}" alt="">`;
-  o.onclick = () => o.remove();
-  document.body.appendChild(o);
+function viewImage(src) { openGallery([src], 0); }
+
+/* Full-screen picture viewer. Fits the picture to the screen; pinch, scroll wheel, double-tap or the
+   + / − buttons zoom (up to 6x), drag pans a zoomed picture, swipe or the arrows move between pictures. */
+function openGallery(srcs, start = 0, bg = '', labels = []) {
+  let i = start, sc = 1, tx = 0, ty = 0;
+  const o = document.createElement('div'); o.id = 'img-viewer';
+  o.className = bg === 'white' || bg === 'black' ? 'bg-' + bg : '';
+  o.innerHTML = `<div class="gv-stage"><img alt="" draggable="false"></div>
+    <div class="gv-top"><span class="gv-count"></span><span class="gv-label"></span><button class="gv-btn" data-a="close" aria-label="Close">✕</button></div>
+    ${srcs.length > 1 ? '<button class="gv-btn gv-side prev" data-a="prev" aria-label="Previous">‹</button><button class="gv-btn gv-side next" data-a="next" aria-label="Next">›</button>' : ''}
+    <div class="gv-bar"><button class="gv-btn" data-a="out" aria-label="Zoom out">−</button><button class="gv-btn gv-fit" data-a="fit">Fit</button><button class="gv-btn" data-a="in" aria-label="Zoom in">+</button></div>`;
+  const img = o.querySelector('img'), stage = o.querySelector('.gv-stage');
+  const apply = (anim) => { img.style.transition = anim ? 'transform .18s' : 'none'; img.style.transform = `translate(${tx}px, ${ty}px) scale(${sc})`;
+    o.querySelector('.gv-fit').textContent = sc > 1.01 ? Math.round(sc * 100) + '%' : 'Fit'; };
+  const clamp = () => { const r = stage.getBoundingClientRect(), w = img.offsetWidth * sc, h = img.offsetHeight * sc;
+    const mx = Math.max(0, (w - r.width) / 2), my = Math.max(0, (h - r.height) / 2); tx = Math.max(-mx, Math.min(mx, tx)); ty = Math.max(-my, Math.min(my, ty)); };
+  // Zoom towards a point on screen so the spot under the finger or cursor stays put.
+  const zoomAt = (ns, cx, cy, anim) => { const r = stage.getBoundingClientRect(); ns = Math.max(1, Math.min(6, ns));
+    const px = cx - (r.left + r.width / 2), py = cy - (r.top + r.height / 2);
+    tx = px - (px - tx) * ns / sc; ty = py - (py - ty) * ns / sc; sc = ns; if (sc === 1) tx = ty = 0; clamp(); apply(anim); };
+  const show = (n) => { i = (n + srcs.length) % srcs.length; sc = 1; tx = ty = 0; img.src = srcs[i]; apply(false);
+    o.querySelector('.gv-count').textContent = srcs.length > 1 ? `${i + 1} / ${srcs.length}` : '';
+    o.querySelector('.gv-label').textContent = labels[i] || ''; };
+  const close = () => { o.remove(); removeEventListener('keydown', key); };
+  const key = (e) => { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') show(i + 1); if (e.key === 'ArrowLeft') show(i - 1);
+    if (e.key === '+' || e.key === '=') { const r = stage.getBoundingClientRect(); zoomAt(sc * 1.5, r.left + r.width / 2, r.top + r.height / 2, true); }
+    if (e.key === '-') { const r = stage.getBoundingClientRect(); zoomAt(sc / 1.5, r.left + r.width / 2, r.top + r.height / 2, true); } };
+  addEventListener('keydown', key);
+  o.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-a]')?.dataset.a, r = stage.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (a === 'close') return close();
+    if (a === 'prev') return show(i - 1);
+    if (a === 'next') return show(i + 1);
+    if (a === 'in') return zoomAt(sc * 1.5, cx, cy, true);
+    if (a === 'out') return zoomAt(sc / 1.5, cx, cy, true);
+    if (a === 'fit') { sc = 1; tx = ty = 0; return apply(true); }
+  });
+  stage.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(sc * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY, false); }, { passive: false });
+  // Pointers: one finger pans (or swipes when not zoomed), two fingers pinch, a double tap toggles 2.5x.
+  const pts = new Map(); let start0 = null, pinch0 = null, lastTap = 0, moved = false;
+  stage.addEventListener('pointerdown', (e) => {
+    stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1) { start0 = { x: e.clientX, y: e.clientY, tx, ty }; moved = false; }
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch0 = { d: Math.hypot(a.x - b.x, a.y - b.y), sc, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; }
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2 && pinch0) { const [a, b] = [...pts.values()]; zoomAt(pinch0.sc * Math.hypot(a.x - b.x, a.y - b.y) / pinch0.d, (a.x + b.x) / 2, (a.y + b.y) / 2, false); moved = true; return; }
+    if (pts.size === 1 && start0) { const dx = e.clientX - start0.x, dy = e.clientY - start0.y; if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+      if (sc > 1) { tx = start0.tx + dx; ty = start0.ty + dy; clamp(); apply(false); } else { img.style.transition = 'none'; img.style.transform = `translate(${dx}px, 0)`; } }
+  });
+  const up = (e) => {
+    if (!pts.has(e.pointerId)) return; pts.delete(e.pointerId);
+    if (pts.size === 1) { const [a] = [...pts.values()]; start0 = { x: a.x, y: a.y, tx, ty }; pinch0 = null; return; }
+    if (pts.size) return;
+    pinch0 = null;
+    const dx = start0 ? e.clientX - start0.x : 0;
+    if (sc === 1 && srcs.length > 1 && Math.abs(dx) > 60) return show(i + (dx < 0 ? 1 : -1));
+    if (sc === 1) apply(true);
+    if (!moved) {
+      if (Date.now() - lastTap < 300) { zoomAt(sc > 1 ? 1 : 2.5, e.clientX, e.clientY, true); lastTap = 0; }
+      else { lastTap = Date.now(); const r = img.getBoundingClientRect();
+        // A single tap on the dark area outside the picture closes the viewer.
+        const outside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+        if (outside && sc === 1) setTimeout(() => { if (lastTap && Date.now() - lastTap >= 290) close(); }, 300); }
+    }
+  };
+  stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+  document.body.appendChild(o); show(start);
 }
 
 /* ---------- Google Calendar sync ----------
