@@ -836,3 +836,34 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .qz-steps button span, .qz-steps button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #main { scrollbar-gutter: stable; }
 @media (max-width: 420px) { .qz-steps button { font-size: 9px; letter-spacing: 0; text-transform: none; padding: 2px 1px; } }
+
+/* Quote price page: two columns on wide screens, compact on phones */
+.qz-res { display: grid; gap: 4px; }
+.qz-col.qz-out { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 6px; }
+.qz-who { display: flex; gap: 8px; align-items: flex-end; }
+.qz-extras { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.qz-extras .toggle { display: flex; margin: 0; font-size: 13px; padding: 8px 10px; }
+.qz-dz { margin-top: 10px; }
+.qz-acts .btn { padding-left: 4px; padding-right: 4px; }
+.qz-links { gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+.qz-links .btn:first-child:is(button) { margin-right: auto; }
+.qz-yn { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.qz-yn button { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 12px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink); cursor: pointer; }
+.qz-yn button span { font-size: 12px; color: var(--ink2); }
+.qz-yn button.on { border-color: var(--teal); background: rgba(31,182,166,.14); }
+.qz-yn button.on b { color: var(--teal); }
+.qz-chip.qz-none { border-style: dashed; }
+@media (min-width: 900px) {
+  #qz:has(.qz-res) { max-width: 1100px; }
+  .qz-res { grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  .qz-col.qz-out { border-top: 0; padding-top: 0; margin-top: 0; border-left: 1px solid var(--line); padding-left: 24px; }
+}
+/* Calibrate: folding sections */
+.qc-sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+.qc-sec > summary::-webkit-details-marker { display: none; }
+.qc-sec > summary h2 { margin: 0; }
+.qc-sec > summary::after { content: '+'; color: var(--ink2); font-size: 20px; }
+.qc-sec[open] > summary::after { content: '−'; }
+.qc-sec[open] > summary { margin-bottom: 10px; }
+.qc-vat { flex-wrap: wrap; } .qc-vat .toggle { min-width: 0; flex: 1 1 180px; }

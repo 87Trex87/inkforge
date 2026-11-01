@@ -2824,8 +2824,9 @@ const qSave = (cfg) => Settings.set('quote_v2', JSON.stringify(cfg));
 // The wizard's answers, kept while the app is open.
 // id = saved quote being edited; cfg = the saved Calibrate values while the artist keeps an old quote's prices.
 const QZ_RESET = { design: null, designRef: null, designNote: '', withDesign: false, av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0,
-  job: 'new', jobLvl: 3, place: '', side: 'L', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null,
-  id: null, cfg: null, cfgKept: false };
+  job: 'new', jobLvl: 3, place: '', side: '', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null,
+  id: null, cfg: null, cfgKept: false,
+  sized: false, detailSet: false, styleSet: false, lettering: null };   // each step needs a real choice before Next
 const QZ = { ...QZ_RESET };
 // The answers stored with a saved quote.
 const QZ_KEYS = ['job', 'jobLvl', 'place', 'side', 'w', 'h', 'colour', 'detail', 'style', 'text', 'font', 'fontName', 'letter', 'hours',
@@ -2916,7 +2917,7 @@ function detailSvg(level, colour) {
 function qzDraw() {
   const el = $('#qz'); if (!el) return;
   const c = QZ.cfg || qCfg(), s = QZ.step, cur = Settings.get('currency');
-  const done = (i) => [QZ.place, true, QZ.colour, true, true, true, true][i];
+  const done = (i) => [QZ.place && QZ.side, QZ.sized, QZ.colour, QZ.detailSet, QZ.styleSet, QZ.lettering === false || (QZ.lettering && QZ.text.trim()), true][i];
   const steps = `<div class="qz-steps">${QZ_STEPS.map((n, i) => `<button data-step="${i}" class="${i === s ? 'on' : ''} ${i <= QZ.seen ? 'seen' : ''}" ${i <= QZ.seen ? '' : 'disabled'}>
       <i>${i < s && done(i) ? '✓' : i + 1}</i><span>${n}</span></button>`).join('')}</div>`;
   let body = '';
@@ -2933,7 +2934,8 @@ function qzDraw() {
       <div class="qz-place"><div class="qz-pin"><button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button></div>
       <div class="qz-picks">
       <div class="qz-legend">${PAIN_COLOURS.map((col, i) => `<span><b style="background:${col}"></b>${PAIN_NAMES[i]}</span>`).join('')}</div>
-      <div class="seg" id="qz-side" style="margin:10px 0">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right']].map(([k, l]) =>
+      <div class="lbl" style="margin-top:10px">Which side?</div>
+      <div class="seg" id="qz-side" style="margin:4px 0 10px">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right']].map(([k, l]) =>
         `<button data-side="${k}" class="${QZ.side === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
       ${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="qz-chips">${c.placements.filter(p => p[1] === g).map(([n, , pn]) =>
         `<button data-place="${esc(n)}" class="chip qz-chip ${QZ.place === n ? 'on' : ''}"><b style="background:${PAIN_COLOURS[pn - 1]}" title="${PAIN_NAMES[pn - 1]} pain"></b>${esc(n)}</button>`).join('')}</div>`).join('')}
@@ -2941,8 +2943,8 @@ function qzDraw() {
   } else if (s === 1) {
     const presets = [['Small', 5, 5], ['Palm', 10, 10], ['Forearm', 12, 22], ['Half sleeve', 25, 35], ['Back piece', 40, 55], ['Full sleeve', 30, 65]];
     const sc = 120 / Math.max(QZ.w, QZ.h, 20);
-    body = `<h2>How big?</h2><p class="muted" style="margin-top:0">The box the design fits in. Calibrate sets how much of that box is actually inked.</p>
-      <div class="qz-chips" style="margin-bottom:12px">${presets.map(([n, w, h]) => `<button class="chip qz-chip ${QZ.w === w && QZ.h === h ? 'on' : ''}" data-preset="${w}x${h}">${n}</button>`).join('')}</div>
+    body = `<h2>How big?</h2><p class="muted" style="margin-top:0">Pick a size or set the box the design fits in.</p>
+      <div class="qz-chips" style="margin-bottom:12px">${presets.map(([n, w, h]) => `<button class="chip qz-chip ${QZ.sized && QZ.w === w && QZ.h === h ? 'on' : ''}" data-preset="${w}x${h}">${n}</button>`).join('')}</div>
       <div class="qz-pin"><div class="qz-size"><div class="qz-box" style="width:${QZ.w * sc}px;height:${QZ.h * sc}px"><span>${QZ.w} × ${QZ.h} cm</span></div></div></div>
       ${reelSlider('data-qz', 'w', 'Width', 1, 70, 0.5, QZ.w, QZ.w + ' cm')}
       ${reelSlider('data-qz', 'h', 'Height', 1, 70, 0.5, QZ.h, QZ.h + ' cm')}`;
@@ -2955,23 +2957,28 @@ function qzDraw() {
       <div class="qz-dname"><b>${DETAIL_LEVELS[QZ.detail - 1][0]}</b><span class="muted">${DETAIL_LEVELS[QZ.detail - 1][1]}</span></div></div>
       <div class="qz-picks">
       <input type="range" min="1" max="5" step="1" value="${QZ.detail}" data-qz="detail" class="qz-range" aria-label="Detail level">
-      <div class="qz-thumbs">${DETAIL_LEVELS.map((d, i) => `<button data-detail="${i + 1}" class="${QZ.detail === i + 1 ? 'on' : ''}" aria-label="${d[0]}">${detailSvg(i + 1, QZ.colour || 'black')}</button>`).join('')}</div></div></div>`;
+      <p class="muted" style="font-size:12px;margin:0 0 8px">${QZ.detailSet ? '' : 'Tap the closest match.'}</p>
+      <div class="qz-thumbs">${DETAIL_LEVELS.map((d, i) => `<button data-detail="${i + 1}" class="${QZ.detailSet && QZ.detail === i + 1 ? 'on' : ''}" aria-label="${d[0]}">${detailSvg(i + 1, QZ.colour || 'black')}</button>`).join('')}</div></div></div>`;
   } else if (s === 4) {
-    body = `<h2>Style</h2><p class="muted" style="margin-top:0">Not sure? Pick the closest, or skip.</p>
-      <div class="qz-chips">${c.styles.map(([n]) => `<button class="chip qz-chip ${QZ.style === n ? 'on' : ''}" data-style="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
+    body = `<h2>Style</h2><p class="muted" style="margin-top:0">Pick the closest match.</p>
+      <div class="qz-chips"><button class="chip qz-chip qz-none ${QZ.styleSet && !QZ.style ? 'on' : ''}" data-style="">No particular style</button>
+        ${c.styles.map(([n]) => `<button class="chip qz-chip ${QZ.style === n ? 'on' : ''}" data-style="${esc(n)}">${esc(n)}</button>`).join('')}</div>`;
   } else if (s === 5) {
-    body = `<h2>Any lettering?</h2><p class="muted" style="margin-top:0">Optional. Skip if there's no text.</p>
-      <label class="field"><span>Text</span><input class="in" data-qzt="text" value="${esc(QZ.text)}" placeholder="e.g. Family first"></label>
-      ${QZ.text ? `<div class="lbl">Font style</div><div class="qz-chips">${c.fonts.map(([n]) => `<button class="chip qz-chip ${QZ.font === n ? 'on' : ''}" data-font="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+    body = `<h2>Any lettering?</h2>
+      <div class="qz-yn">${[['0', 'No lettering', 'Just the design'], ['1', 'Add lettering', 'Words, names or dates']].map(([k, l, d]) =>
+        `<button data-lettering="${k}" class="${QZ.lettering === (k === '1') ? 'on' : ''}"><b>${l}</b><span>${d}</span></button>`).join('')}</div>
+      ${QZ.lettering ? `<label class="field" style="margin-top:12px"><span>Text</span><input class="in" data-qzt="text" value="${esc(QZ.text)}" placeholder="e.g. Family first"></label>` : ''}
+      ${QZ.lettering && QZ.text ? `<div class="lbl">Font style</div><div class="qz-chips">${c.fonts.map(([n]) => `<button class="chip qz-chip ${QZ.font === n ? 'on' : ''}" data-font="${esc(n)}">${esc(n)}</button>`).join('')}</div>
       <label class="field" style="margin-top:12px"><span>Font name ${help('Browse fonts on dafont.com, then type the name or paste the link here.')}</span>
         <input class="in" data-qzt="fontName" value="${esc(QZ.fontName)}" placeholder="Font name or link"></label>
       <a class="btn small" href="https://www.dafont.com/" target="_blank" rel="noopener" style="margin-bottom:12px">Browse fonts on dafont.com ↗</a>
       ${reelSlider('data-qz', 'letter', 'Letter height', 0.5, 10, 0.5, QZ.letter, QZ.letter + ' cm')}
       <p class="muted" style="font-size:12px">Double-check the spelling with the client.</p>` : ''}`;
   } else {
-    const r = qCalc();
-    body = `<div class="qz-result" id="qz-price">${qzPriceHTML(r)}</div>
-      <details class="qz-sec" open><summary>Adjust</summary>
+    const r = qCalc(), adjusted = QZ.hours != null || +QZ.discVal || r.c.vatOn;
+    body = `<div class="qz-res"><div class="qz-col">
+      <div class="qz-result" id="qz-price">${qzPriceHTML(r)}</div>
+      <details class="qz-sec" ${adjusted ? 'open' : ''}><summary>Adjust time, discount or VAT</summary>
         ${reelSlider('data-qz', 'hours', `Time ${help('Your call overrides the estimate. The price follows your rate curve.')}`, 0.5, Math.max(20, Math.ceil(r.est * 2)), 0.25, r.hours, fmtH(r.hours) + (QZ.hours != null ? ' (yours)' : ''))}
         ${QZ.hours != null ? '<button class="link" id="qz-reset" style="margin:-4px 0 10px">Use the estimate again</button>' : ''}
         <div class="lbl">Discount</div>
@@ -2988,32 +2995,36 @@ function qzDraw() {
         <div class="stat"><span><b>Estimated time</b></span><span><b>${fmtH(r.est)}</b></span></div>
         ${r.sessions > 1 ? `<p class="muted" style="font-size:12px;margin:6px 0 0">${r.sessions} sessions of about ${fmtH(r.per)}, each priced on your rates. Breaks are not included.</p>` : ''}
       </details>
-      <div class="qz-out">
-        <label class="toggle" style="display:inline-flex;margin-bottom:10px" data-tip="Attach a sketch, concept or reference with notes. It prints as its own page and goes into the booking.">
-          <input type="checkbox" id="qz-dz" ${QZ.withDesign ? 'checked' : ''}><span>Add design or concept</span></label>
+      </div><div class="qz-col qz-out">
+        <div class="qz-who">
+          <label class="field" style="margin:0;flex:1"><span>Client name</span>
+            <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off" placeholder="Optional"></label>
+          <button class="btn" id="qz-save" data-tip="Keep it to finish, send or book later">${QZ.id ? 'Update' : 'Save'}</button></div>
+        <div class="lbl" style="margin-top:12px">Add to the quote</div>
+        <div class="qz-extras">
+          <label class="toggle" data-tip="A sketch, concept or reference with notes. It prints as its own page and goes into the booking.">
+            <input type="checkbox" id="qz-dz" ${QZ.withDesign ? 'checked' : ''}><span>Design or concept</span></label>
+          <label class="toggle" data-tip="Adds a page with your open days (${AV.months} month${AV.months > 1 ? 's' : ''} ahead)">
+            <input type="checkbox" id="qz-av" ${QZ.withAvail ? 'checked' : ''}><span>Open appointments</span></label></div>
         ${QZ.withDesign ? `<div class="qz-dz">
           <label class="qz-dzimg">${QZ.design ? `<img src="${QZ.design.url}" alt="Design">` : '<span>+<small>Add picture</small></span>'}
             <input type="file" accept="image/*" hidden id="qz-dzfile"></label>
           <div class="qz-dzside">
             ${QZ.design ? '<div class="row" style="gap:6px;margin-bottom:8px"><label class="btn small">Replace<input type="file" accept="image/*" hidden id="qz-dzfile2"></label><button class="btn small danger" id="qz-dzrm">Remove</button></div>' : ''}
             <label class="field" style="margin:0"><span>Notes for the client</span>
-              <textarea class="in" rows="4" data-qzt="designNote" placeholder="e.g. Rough concept; linework will be refined, roses can be swapped for peonies">${esc(QZ.designNote || '')}</textarea></label>
+              <textarea class="in" rows="3" data-qzt="designNote" placeholder="e.g. Rough concept; linework will be refined">${esc(QZ.designNote || '')}</textarea></label>
           </div></div>` : ''}
-        <label class="field"><span>Client name <span class="muted">(optional, shown on the quote sheet)</span></span>
-          <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off"></label>
-        <button class="btn" id="qz-save" style="width:100%;margin-bottom:8px">${QZ.id ? 'Update saved quote' : 'Save quote'}</button>
-        <div class="qz-acts">
-          <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print</button>
-          <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, for clients who prefer an image">Save image</button>
-          <button class="btn" id="qz-share">Send text</button>
-        </div>
-        <label class="toggle" style="display:inline-flex;margin-top:8px" data-tip="Adds a page with your open days (${AV.months} month${AV.months > 1 ? 's' : ''} ahead)">
-          <input type="checkbox" id="qz-av" ${QZ.withAvail ? 'checked' : ''}><span>Include open appointments</span></label>
         ${QZ.withAvail ? '<div class="qz-avp" id="qz-avp"></div>' : ''}
-        <button class="btn primary" id="qz-book" style="width:100%;margin-top:8px">Book with this quote</button>
-      </div>
-      <div class="row" style="margin-top:12px"><button class="btn small" id="qz-new">${QZ.id ? 'New quote' : 'Start over'}</button>
-        <a class="btn small" href="#quotes" style="margin-left:auto">Saved quotes</a><a class="btn small" href="#quote-cal">Calibrate</a></div>`;
+        <div class="lbl" style="margin-top:12px">Send to the client</div>
+        <div class="qz-acts">
+          <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print / PDF</button>
+          <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture">Image</button>
+          <button class="btn" id="qz-share" data-tip="A short text version for a chat">Text</button>
+        </div>
+        <button class="btn primary" id="qz-book" style="width:100%;margin-top:12px">Book with this quote</button>
+        <div class="row qz-links"><button class="btn small" id="qz-new">New quote</button>
+          <a class="btn small" href="#quotes">Saved quotes</a><a class="btn small" href="#quote-cal">Calibrate</a></div>
+      </div></div>`;
   }
   const r = s >= 1 && s < 6 && QZ.place ? qCalc() : null;
   const now = QZ.cfg ? qCalc({ ...QZ, cfg: null }).total : 0;
@@ -3028,10 +3039,9 @@ function qzDraw() {
       ${r ? `<div class="qz-live"><span>≈ <b>${money(r.total)}</b> · ${fmtH(r.hours)}</span><span class="muted">so far</span></div>` : ''}
       <div class="row">
       <button class="btn" id="qz-back" ${s ? '' : 'disabled'}>Back</button>
-      ${s === 4 || s === 5 ? `<button class="btn" id="qz-skip">Skip</button>` : ''}
-      <button class="btn primary" id="qz-next" style="flex:1" ${(s === 0 && !QZ.place) || (s === 2 && !QZ.colour) ? 'disabled' : ''}>${s === 5 ? 'See quote' : 'Next'}</button></div></div>`
+      <button class="btn primary" id="qz-next" style="flex:1" ${done(s) ? '' : 'disabled'}>${s === 5 ? 'See quote' : 'Next'}</button></div></div>`
       : ''}
-    ${s === 0 ? '<div class="row" style="margin-top:10px;gap:6px"><a class="btn small" href="#quote-cal">Calibrate rates, pain and speeds</a><a class="btn small" href="#quotes">Saved quotes</a></div>' : ''}`;
+    ${s === 0 ? '<div class="row qz-links"><a class="btn small" href="#quotes">Saved quotes</a><a class="btn small" href="#quote-cal">Calibrate</a></div>' : ''}`;
   qzBind(el);
   if (QZ.withAvail && s === 6) qzAvPanel();
 }
@@ -3052,10 +3062,9 @@ function qzPriceHTML(r) {
 function qzGo(n) { QZ.step = Math.max(0, Math.min(6, n)); QZ.seen = Math.max(QZ.seen, QZ.step); qzDraw(); $('#main').scrollTo(0, 0); }
 
 function qzBind(el) {
-  const next = $('#qz-next'), back = $('#qz-back'), skip = $('#qz-skip');
+  const next = $('#qz-next'), back = $('#qz-back');
   if (next) next.onclick = () => qzGo(QZ.step + 1);
   if (back) back.onclick = () => qzGo(QZ.step - 1);
-  if (skip) skip.onclick = () => { if (QZ.step === 4) QZ.style = ''; if (QZ.step === 5) Object.assign(QZ, { text: '', font: '', fontName: '' }); qzGo(QZ.step + 1); };
   el.onclick = (e) => {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (d('step') != null && !t.closest('[data-step]').disabled) return qzGo(+d('step'));
@@ -3066,10 +3075,11 @@ function qzBind(el) {
     if (d('place') != null) { QZ.place = d('place'); return qzDraw(); }
     if (d('side')) { QZ.side = d('side'); return qzDraw(); }
     if (d('job')) { QZ.job = d('job'); QZ.hours = null; return qzDraw(); }
-    if (d('preset')) { const [w, h] = d('preset').split('x').map(Number); Object.assign(QZ, { w, h, hours: null }); return qzDraw(); }
+    if (d('preset')) { const [w, h] = d('preset').split('x').map(Number); Object.assign(QZ, { w, h, hours: null, sized: true }); return qzDraw(); }
     if (d('colour')) { QZ.colour = d('colour'); QZ.hours = null; return qzDraw(); }
-    if (d('detail')) { QZ.detail = +d('detail'); QZ.hours = null; return qzDraw(); }
-    if (d('style') != null) { QZ.style = QZ.style === d('style') ? '' : d('style'); QZ.hours = null; return qzDraw(); }
+    if (d('detail')) { QZ.detail = +d('detail'); QZ.detailSet = true; QZ.hours = null; return qzDraw(); }
+    if (d('style') != null) { QZ.style = d('style'); QZ.styleSet = true; QZ.hours = null; return qzDraw(); }
+    if (d('lettering') != null) { qzTouch(); QZ.lettering = d('lettering') === '1'; if (!QZ.lettering) Object.assign(QZ, { text: '', font: '', fontName: '' }); QZ.hours = null; return qzDraw(); }
     if (d('font') != null) { QZ.font = QZ.font === d('font') ? '' : d('font'); QZ.hours = null; return qzDraw(); }
     if (t.closest('#qz-chart')) return viewImage('img/pain-chart.png');
     if (t.closest('#qz-reset')) { QZ.hours = null; return qzDraw(); }
@@ -3100,9 +3110,11 @@ function qzBind(el) {
     if (k || tk === 'text' || e.target.hasAttribute('data-qzd')) qzTouch(true);
     if (e.target.hasAttribute('data-qzd')) { QZ.discVal = +e.target.value || 0; $('#qz-price').innerHTML = qzPriceHTML(qCalc()); return; }
     if (e.target.dataset.avn) { e.target.closest('.slider').querySelector('b').textContent = fmtH(+e.target.value); return; }
-    if (tk) { QZ[tk] = e.target.value; if (tk === 'text') QZ.hours = null; return; }
+    if (tk) { QZ[tk] = e.target.value; if (tk === 'text') { QZ.hours = null; const nx = $('#qz-next'); if (nx) nx.disabled = !QZ.text.trim(); } return; }
     if (!k) return;
     QZ[k] = +e.target.value; if (k !== 'hours') QZ.hours = null;
+    if (k === 'w' || k === 'h') QZ.sized = true;
+    if (k === 'detail' && !QZ.detailSet) { QZ.detailSet = true; const nx = $('#qz-next'); if (nx) nx.disabled = false; }
     const b = e.target.closest('.slider')?.querySelector('b');
     if (k === 'jobLvl') $('#qz-jln').textContent = JOB_LEVELS[QZ.jobLvl - 1];
     else if (b) b.textContent = k === 'hours' ? fmtH(QZ.hours) + ' (yours)' : QZ[k] + ' cm';
@@ -3170,7 +3182,8 @@ async function qzOpenQuote(id) {
   const q = await DB.one('SELECT * FROM quotes WHERE id = ?', [id]); if (!q) return;
   let data = {}, cfg = null; try { data = JSON.parse(q.data); cfg = JSON.parse(q.cfg); } catch {}
   if (QZ.design) URL.revokeObjectURL(QZ.design.url);
-  Object.assign(QZ, QZ_RESET, data, { id: q.id, step: 6, seen: 6 });
+  Object.assign(QZ, QZ_RESET, data, { id: q.id, step: 6, seen: 6, sized: true, detailSet: true, styleSet: true });
+  QZ.lettering = !!QZ.text; if (!QZ.side) QZ.side = 'C';
   QZ.cfg = cfg && JSON.stringify(cfg) !== JSON.stringify(qCfg()) ? { ...QUOTE_V2, ...cfg } : null;
   QZ.designRef = q.design_ref || null;
   if (q.design_ref) {
@@ -3444,6 +3457,7 @@ async function qzShare() {
 }
 
 /* Calibrate: every number the calculator uses, grouped, with a live sample so changes make sense. */
+const QC_OPEN = new Set();   // Calibrate sections the artist has opened
 function qcDraw() {
   const el = $('#qc'); if (!el) return;
   const c = qCfg(), cur = Settings.get('currency') || '';
@@ -3466,14 +3480,14 @@ function qcDraw() {
         <div class="unit-in" style="width:120px">${num('vatRate', c.vatRate, '0.5')}<em>%</em></div></div>
       <div class="qc-vat"><label class="toggle" data-tip="Adds a line about your touch-up price to quote sheets and receipts"><input type="checkbox" id="qc-tu" ${c.touchupNote ? 'checked' : ''}><span>Touch-up fee on documents ${help('Set 0 if your touch-ups are free; documents then say so.')}</span></label>
         <div class="unit-in" style="width:120px">${num('touchupFee', c.touchupFee, '10')}<em>${esc(cur)}</em></div></div></div>
-    <div class="card"><h2>Speed ${help('How many minutes one square centimetre takes at each detail level. Fill is how much of the size box is actually inked.')}</h2>
+    <details class="card qc-sec" data-sec="speed" ${QC_OPEN.has('speed') ? 'open' : ''}><summary><h2>Speed ${help('How many minutes one square centimetre takes at each detail level. Fill is how much of the size box is actually inked.')}</h2></summary>
       <label class="field"><span>Design fill of the size box</span><div class="unit-in">${num('fill', c.fill, '5')}<em>%</em></div></label>
       ${DETAIL_LEVELS.map(([n], i) => `<div class="qc-row"><span class="qc-ic">${detailSvg(i + 1, 'bg')}</span><span>${n}</span>
         <div class="unit-in">${num(`speed.${i}`, c.speed[i], '0.05')}<em>min/cm²</em></div></div>`).join('')}
-      <p class="muted" style="font-size:12px">A 10 × 10 cm ${DETAIL_LEVELS[2][0].toLowerCase()} piece ≈ ${fmtH(100 * c.fill / 100 * c.speed[2] / 60)}.</p></div>
-    <div class="card"><h2>Colour</h2>${COLOUR_MODES.map(([k, l]) => `<div class="qc-row"><span class="qz-sw sw-${k}"></span><span>${l}</span>
-        <div class="unit-in">${num(`colour.${k}`, c.colour[k], '0.05')}<em>× time</em></div></div>`).join('')}</div>
-    <div class="card"><h2>Pain and difficulty ${help('Each placement has a pain level; each level adds time. Change a placement\'s level below.')}</h2>
+      <p class="muted" style="font-size:12px">A 10 × 10 cm ${DETAIL_LEVELS[2][0].toLowerCase()} piece ≈ ${fmtH(100 * c.fill / 100 * c.speed[2] / 60)}.</p></details>
+    <details class="card qc-sec" data-sec="colour" ${QC_OPEN.has('colour') ? 'open' : ''}><summary><h2>Colour</h2></summary>${COLOUR_MODES.map(([k, l]) => `<div class="qc-row"><span class="qz-sw sw-${k}"></span><span>${l}</span>
+        <div class="unit-in">${num(`colour.${k}`, c.colour[k], '0.05')}<em>× time</em></div></div>`).join('')}</details>
+    <details class="card qc-sec" data-sec="pain" ${QC_OPEN.has('pain') ? 'open' : ''}><summary><h2>Pain and difficulty ${help('Each placement has a pain level; each level adds time. Change a placement\'s level below.')}</h2></summary>
       ${PAIN_NAMES.map((n, i) => `<div class="qc-row"><b class="qc-dot" style="background:${PAIN_COLOURS[i]}"></b><span>${n}</span>
         <div class="unit-in">${num(`pain.${i}`, c.pain[i], '0.05')}<em>× time</em></div></div>`).join('')}
       <details class="guide" ${R.qcOpen === 'pl' ? 'open' : ''} data-open="pl"><summary>Placements (${c.placements.length})</summary>
@@ -3485,19 +3499,19 @@ function qcDraw() {
           <select class="in" id="qc-pl-group">${[...new Set(c.placements.map(p => p[1]))].map(g => `<option>${esc(g)}</option>`).join('')}</select>
           <select class="in" id="qc-pl-pain">${PAIN_NAMES.map((pn, j) => `<option value="${j + 1}" ${j === 2 ? 'selected' : ''}>${pn} pain</option>`).join('')}</select>
           <button class="btn small primary" id="qc-pl-add">Add</button></div>
-      </details></div>
-    <div class="card"><h2>Styles ${help('Adds or removes time for a style. 1 = no change, 1.3 = 30% longer.')}</h2>
+      </details></details>
+    <details class="card qc-sec" data-sec="styles" ${QC_OPEN.has('styles') ? 'open' : ''}><summary><h2>Styles ${help('Adds or removes time for a style. 1 = no change, 1.3 = 30% longer.')}</h2></summary>
       ${c.styles.map(([n, f], i) => `<div class="qc-row qc-del"><span>${esc(n)}</span><div class="unit-in">${num(`styles.${i}.1`, f, '0.05')}<em>×</em></div>
         <button class="mini del" data-del="styles.${i}" aria-label="Remove ${esc(n)}">&times;</button></div>`).join('')}
       <div class="qc-add"><input class="in" id="qc-st-name" placeholder="New style, e.g. Ornamental">
         <div class="unit-in"><input class="in" id="qc-st-f" type="number" step="0.05" value="1"><em>×</em></div>
-        <button class="btn small primary" id="qc-st-add">Add</button></div></div>
-    <div class="card"><h2>Cover-ups and fix-ups ${help('Time multiplier for each difficulty. 1 = same as a new tattoo, 1.5 = 50% longer, 0.8 = quicker.')}</h2>
+        <button class="btn small primary" id="qc-st-add">Add</button></div></details>
+    <details class="card qc-sec" data-sec="job" ${QC_OPEN.has('job') ? 'open' : ''}><summary><h2>Cover-ups and fix-ups ${help('Time multiplier for each difficulty. 1 = same as a new tattoo, 1.5 = 50% longer, 0.8 = quicker.')}</h2></summary>
       <div class="qc-row qc-jh"><span></span>${JOB_LEVELS.map(l => `<em>${l}</em>`).join('')}</div>
-      ${JOB_TYPES.slice(1).map(([k, n]) => `<div class="qc-row qc-job"><span>${n}</span>${c.job[k].map((v, i) => num(`job.${k}.${i}`, v, '0.05')).join('')}</div>`).join('')}</div>
-    <div class="card"><h2>Lettering</h2>
+      ${JOB_TYPES.slice(1).map(([k, n]) => `<div class="qc-row qc-job"><span>${n}</span>${c.job[k].map((v, i) => num(`job.${k}.${i}`, v, '0.05')).join('')}</div>`).join('')}</details>
+    <details class="card qc-sec" data-sec="letter" ${QC_OPEN.has('letter') ? 'open' : ''}><summary><h2>Lettering</h2></summary>
       <label class="field"><span>Minutes per letter ${help('At 2 cm letter height. Bigger letters scale up.')}</span><div class="unit-in">${num('textMin', c.textMin, '0.5')}<em>min</em></div></label>
-      ${c.fonts.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`fonts.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</div>
+      ${c.fonts.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`fonts.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</details>
     <button class="btn danger" id="qc-reset" style="margin:4px 0 24px">Reset all to defaults</button>`;
   el.oninput = (e) => {
     const p = e.target.dataset.p; if (!p) return;
@@ -3512,7 +3526,10 @@ function qcDraw() {
     if (e.target.id === 'qc-tu') { const cfg = qCfg(); cfg.touchupNote = e.target.checked; return qSave(cfg); }
     if (e.target.dataset.p && e.target.tagName === 'SELECT') qcDraw();
   };
-  el.addEventListener('toggle', (e) => { if (e.target.dataset.open) R.qcOpen = e.target.open ? e.target.dataset.open : null; }, true);
+  el.addEventListener('toggle', (e) => {
+    if (e.target.dataset.open) R.qcOpen = e.target.open ? e.target.dataset.open : null;
+    const k = e.target.dataset.sec; if (k) e.target.open ? QC_OPEN.add(k) : QC_OPEN.delete(k);
+  }, true);
   el.onclick = async (e) => {
     const cfg = qCfg();
     const del = e.target.closest('[data-del]');
