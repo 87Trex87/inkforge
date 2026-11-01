@@ -1033,7 +1033,7 @@ DZ.edit = async (id) => {
     }
   }, true);
   stage.addEventListener('pointerdown', (e) => {
-    if (pinch || e.dzHit || e.target.closest('.dz-zoom')) return;
+    if (pinch || e.dzHit || e.target.closest('.dz-zoom, .dz-faces')) return;
     // Background (around the design, or an empty part of it): drag to pan, tap to deselect.
     bg = { x: e.clientX, y: e.clientY, vx, vy, moved: false }; stage.setPointerCapture(e.pointerId);
   });
