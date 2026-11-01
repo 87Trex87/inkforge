@@ -756,3 +756,20 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .rbook li { margin: 0 0 9px; break-inside: avoid; font-size: 11pt; }
 .rbook li::marker { font-weight: 700; color: #14857c; }
 .rbook li p { margin: 2px 0 0; color: #444; white-space: pre-wrap; font-size: 10pt; }
+
+/* Stock printouts: tight rows so many fit on a page */
+.sbook { font-size: 8.5pt; line-height: 1.2; }
+.sbook .pb-head { padding-bottom: 5px; margin-bottom: 6px; } .sbook .pb-head h1 { font-size: 20pt; }
+.sbook th { padding: 3px 5px; font-size: 7pt; }
+.sbook td { padding: 2.5px 5px; }
+.sbook .pb-group td { padding-top: 6px; padding-bottom: 2px; font-size: 7.5pt; }
+.sbook .num { text-align: right; white-space: nowrap; }
+.sbook td.box { border: 1px solid #999; background: #fff !important; min-width: 16mm; }
+.sbook td.box.wide { min-width: 40mm; }
+.sbook tr.low td { color: #a12a22; }
+.sbook .lowtag { font-size: 6.5pt; border: 1px solid currentColor; border-radius: 3px; padding: 0 3px; margin-left: 4px; }
+.sd { display: grid; grid-template-columns: repeat(auto-fit, minmax(28mm, 1fr)); gap: 6px; margin-bottom: 8px; }
+.sd-box { border: 1px solid #cfe7e3; background: #eef8f6; border-radius: 6px; padding: 5px 8px; display: flex; flex-direction: column; }
+.sd-box b { font: 15pt/1.1 "Pirata One", serif; color: #14857c; } .sd-box span { font-size: 7pt; color: #555; text-transform: uppercase; letter-spacing: .05em; }
+.sd-box.red { border-color: #f1c4bf; background: #fdf0ee; } .sd-box.red b { color: #a12a22; }
+.inv-off .c-row { opacity: .55; }

@@ -210,7 +210,9 @@ const MIGRATIONS = [
   `ALTER TABLE clients ADD COLUMN category TEXT NOT NULL DEFAULT 'Client';
    CREATE INDEX idx_clients_cat ON clients (category);`,
   // v11: rule book categories, e.g. client rules apart from staff rules.
-  `ALTER TABLE rules ADD COLUMN category TEXT NOT NULL DEFAULT 'Client rules';`
+  `ALTER TABLE rules ADD COLUMN category TEXT NOT NULL DEFAULT 'Client rules';`,
+  // v12: inactive stock items are kept but left out of counts, stock takes, alerts and prints.
+  `ALTER TABLE inventory_items ADD COLUMN active INTEGER NOT NULL DEFAULT 1;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -1236,6 +1238,7 @@ const VIEWS = {
     render: () => `
       <div class="search-bar">
         <input class="in" id="inv-q" type="search" placeholder="Search stock…" value="${esc(INV.q)}" autocomplete="off">
+        <button class="btn icon-btn" id="inv-print" data-tip="Print a blank stock sheet, or your current stock" aria-label="Print stock"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
         <button class="btn primary icon-btn" id="inv-add" data-tip="Add item" aria-label="Add item"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="row" style="margin-bottom:12px">
@@ -1247,9 +1250,11 @@ const VIEWS = {
     mount() {
       $('#inv-q').addEventListener('input', (e) => { INV.q = e.target.value; renderInventory(); });
       $('#inv-add').onclick = () => location.hash = 'inv-edit/new';
+      $('#inv-print').onclick = openStockPrint;
+      $('#inv-hist').addEventListener('click', (e) => { if (e.target.id === 'inv-showoff') { INV.showOff = !INV.showOff; renderInventory(); } });
       $('#inv-take').onclick = () => location.hash = 'stocktake';
       $('#inv-shop').onclick = async () => {
-        const low = await DB.all('SELECT name, qty, min_qty, unit, supplier FROM inventory_items WHERE qty <= min_qty ORDER BY supplier, name COLLATE NOCASE');
+        const low = await DB.all('SELECT name, qty, min_qty, unit, supplier FROM inventory_items WHERE active = 1 AND qty <= min_qty ORDER BY supplier, name COLLATE NOCASE');
         if (!low.length) return toast('Nothing is running low.');
         const text = 'Shopping list\n\n' + low.map(i => `• ${i.name} (have ${fmtQty(i.qty)}${i.unit ? ' ' + i.unit : ''}, min ${fmtQty(i.min_qty)})${i.supplier ? ' – ' + i.supplier : ''}`).join('\n');
         try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('List copied.'); } }
@@ -1290,6 +1295,8 @@ const VIEWS = {
         </div>
         <div class="two">${inp('supplier', 'Supplier')}${inp('cost', 'Cost per unit' + (cur ? ` (${esc(cur)})` : ''), 'number', 'inputmode="decimal" min="0" step="any"')}</div>
         <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="2">${esc(it.notes ?? '')}</textarea></label>
+        <label class="toggle" style="display:inline-flex;margin-bottom:12px" data-tip="Switch off to keep the item without counting it in stock takes, low-stock alerts or printouts">
+          <input type="checkbox" name="active" ${it.active === 0 ? '' : 'checked'}><span>Active</span></label>
         <div class="form-foot row">
           ${it.id ? '<button type="button" class="btn danger icon-btn" id="inv-del" aria-label="Delete" data-tip="Delete item"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
           <button type="button" class="btn" id="inv-cancel">Cancel</button>
@@ -1308,10 +1315,10 @@ const VIEWS = {
         e.preventDefault();
         const d = Object.fromEntries(new FormData(f));
         const n = (v) => v === '' ? null : +v, s = (v) => v.trim() || null;
-        const vals = [d.name.trim(), s(d.category), s(d.unit), +d.qty || 0, +d.min_qty || 0, s(d.supplier), n(d.cost), s(d.notes)];
-        const cols = 'name, category, unit, qty, min_qty, supplier, cost, notes';
+        const vals = [d.name.trim(), s(d.category), s(d.unit), +d.qty || 0, +d.min_qty || 0, s(d.supplier), n(d.cost), s(d.notes), d.active ? 1 : 0];
+        const cols = 'name, category, unit, qty, min_qty, supplier, cost, notes, active';
         if (it.id) await DB.run(`UPDATE inventory_items SET ${cols.split(', ').map(c => c + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, it.id]);
-        else await DB.run(`INSERT INTO inventory_items (${cols}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, vals);
+        else await DB.run(`INSERT INTO inventory_items (${cols}) VALUES (${vals.map(() => '?').join(', ')})`, vals);
         Dirty.set(false); toast('Saved.'); location.replace('#inventory');
       });
     }
@@ -1320,7 +1327,7 @@ const VIEWS = {
     title: () => 'Stock take',
     render: () => '<div id="stk"></div>',
     async mount() {
-      const items = await DB.all('SELECT * FROM inventory_items ORDER BY category COLLATE NOCASE, name COLLATE NOCASE');
+      const items = await DB.all('SELECT * FROM inventory_items WHERE active = 1 ORDER BY category COLLATE NOCASE, name COLLATE NOCASE');
       const el = $('#stk');
       if (!items.length) { el.innerHTML = '<div class="card muted">Add some inventory items first.</div>'; return; }
       let cat = null;
@@ -3981,17 +3988,18 @@ async function statsCsv() {
 }
 
 /* ---------- Inventory & rules helpers ---------- */
-const INV = { q: '' };
+const INV = { q: '', showOff: false };
 const fmtQty = (n) => +(+n).toFixed(2);
 
 async function renderInventory() {
   const el = $('#inv-list'); if (!el) return;
   const like = '%' + INV.q.trim() + '%';
-  const rows = await DB.all(`SELECT * FROM inventory_items WHERE name LIKE ?1 OR category LIKE ?1 OR supplier LIKE ?1
+  const all = await DB.all(`SELECT * FROM inventory_items WHERE name LIKE ?1 OR category LIKE ?1 OR supplier LIKE ?1
     ORDER BY (qty <= min_qty) DESC, category COLLATE NOCASE, name COLLATE NOCASE`, [like]);
   if ($('#inv-list') !== el) return;
+  const rows = all.filter(r => r.active), off = all.filter(r => !r.active);
   const low = rows.filter(r => r.qty <= r.min_qty);
-  if (!rows.length) {
+  if (!rows.length && !off.length) {
     el.innerHTML = INV.q ? '<div class="empty muted">No matches.</div>'
       : `<div class="empty"><div class="empty-ico">${ICON.stock}</div><div style="font:24px var(--display)">Nothing stocked yet</div><div class="muted">Tap + to add needles, ink, gloves…</div></div>`;
   } else {
@@ -4003,14 +4011,97 @@ async function renderInventory() {
         <b>${fmtQty(i.qty)}<small>${esc(i.unit || '')}</small></b>
         <button class="mini" data-step="1" data-id="${i.id}" aria-label="One more">+</button></span></a>`;
     el.innerHTML = (low.length ? `<div class="letter" style="color:var(--red)">Running low (${low.length})</div><div class="card list">${low.map(row).join('')}</div>` : '')
-      + (rows.length > low.length ? `<div class="letter">In stock</div><div class="card list">${rows.filter(r => r.qty > r.min_qty).map(row).join('')}</div>` : '');
+      + (rows.length > low.length ? `<div class="letter">In stock</div><div class="card list">${rows.filter(r => r.qty > r.min_qty).map(row).join('')}</div>` : '')
+      + (off.length && INV.showOff ? `<div class="letter">Inactive (${off.length})</div><div class="card list inv-off">${off.map(i => `<a class="c-row" href="#inv-edit/${i.id}">
+          <span class="c-main"><span class="c-n">${esc(i.name)}</span><span class="muted c-sub">${esc([i.category, 'not counted'].filter(Boolean).join(' · '))}</span></span>
+          <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('')}</div>` : '');
   }
   const h = await DB.all(`SELECT t.id, t.taken_at, t.notes, count(l.take_id) AS n, sum(l.counted <> l.expected) AS diff
     FROM stock_takes t LEFT JOIN stock_take_lines l ON l.take_id = t.id GROUP BY t.id ORDER BY t.taken_at DESC LIMIT 5`);
   const he = $('#inv-hist');
-  if (he) he.innerHTML = h.length ? `<div class="letter">Past stock takes</div><div class="card list">${h.map(t => `<div class="c-row"><span class="c-main">
+  const offN = (await DB.one('SELECT COUNT(*) AS n FROM inventory_items WHERE active = 0')).n;
+  if (he) he.innerHTML = (offN ? `<button class="link" id="inv-showoff" style="margin:4px 0 8px">${INV.showOff ? 'Hide' : 'Show'} ${offN} inactive item${offN === 1 ? '' : 's'}</button>` : '')
+    + (h.length ? `<div class="letter">Past stock takes</div><div class="card list">${h.map(t => `<div class="c-row"><span class="c-main">
       <span class="c-n">${new Date(t.taken_at + 'Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-      <span class="muted c-sub">${t.n} counted · ${t.diff || 0} adjusted${t.notes ? ' · ' + esc(t.notes) : ''}</span></span></div>`).join('')}</div>` : '';
+      <span class="muted c-sub">${t.n} counted · ${t.diff || 0} adjusted${t.notes ? ' · ' + esc(t.notes) : ''}</span></span></div>`).join('')}</div>` : '');
+}
+
+/* Stock print: a blank count sheet (to fill in by hand during a stock take) or the current stock
+   (table, with a small dashboard on the first page, or CSV). Active items only, filtered by category,
+   optionally just what's running low. Rows are kept tight so as many fit on a page as possible. */
+async function openStockPrint() {
+  const cats = await DB.all(`SELECT coalesce(category, 'Uncategorised') AS c, COUNT(*) AS n FROM inventory_items WHERE active = 1 GROUP BY 1 ORDER BY 1 COLLATE NOCASE`);
+  if (!cats.length) return toast('No active stock items yet.');
+  const st = { mode: 'stock', cats: new Set(cats.map(x => x.c)), low: false, cost: true, supplier: true, expected: true };
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const draw = () => {
+    const n = cats.filter(x => st.cats.has(x.c)).reduce((t, x) => t + x.n, 0);
+    o.innerHTML = `<div class="card"><h2>Print stock</h2>
+      <div class="seg" style="margin-bottom:12px">${[['blank', 'Blank count sheet'], ['stock', 'Current stock']].map(([k, l]) => `<button data-sm="${k}" class="${st.mode === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:-4px 0 10px">${st.mode === 'blank' ? 'Product list with empty Counted boxes, to fill in by hand during a stock take.' : 'What you have now, with a summary at the top. Print or export to a spreadsheet.'}</p>
+      <div class="lbl">Categories</div>
+      <div class="qz-chips">${cats.map(x => `<button class="chip qz-chip ${st.cats.has(x.c) ? 'on' : ''}" data-sc="${esc(x.c)}">${st.cats.has(x.c) ? '✓ ' : ''}${esc(x.c)} <span>${x.n}</span></button>`).join('')}</div>
+      <div class="row" style="gap:14px;margin:4px 0 12px;flex-wrap:wrap">
+        ${st.mode === 'stock' ? `<label class="toggle"><input type="checkbox" id="sp-low" ${st.low ? 'checked' : ''}><span>Running low only</span></label>
+          <label class="toggle"><input type="checkbox" id="sp-cost" ${st.cost ? 'checked' : ''}><span>Cost and value</span></label>` : ''}
+        ${st.mode === 'blank' ? `<label class="toggle" data-tip="Switch off for a blind count, so whoever counts doesn't see what the app expects"><input type="checkbox" id="sp-exp" ${st.expected ? 'checked' : ''}><span>Show expected</span></label>` : ''}
+        <label class="toggle"><input type="checkbox" id="sp-sup" ${st.supplier ? 'checked' : ''}><span>Supplier</span></label>
+      </div>
+      <div class="row"><button class="btn" id="sp-close">Cancel</button>
+        ${st.mode === 'stock' ? `<button class="btn" id="sp-csv" ${n ? '' : 'disabled'}>Export CSV</button>` : ''}
+        <button class="btn primary" id="sp-go" style="flex:1" ${n ? '' : 'disabled'}>Print</button></div></div>`;
+  };
+  document.body.appendChild(o); draw();
+  const rows = async () => (await DB.all(`SELECT *, coalesce(category, 'Uncategorised') AS cat FROM inventory_items WHERE active = 1 ORDER BY cat COLLATE NOCASE, name COLLATE NOCASE`))
+    .filter(r => st.cats.has(r.cat) && (!st.low || st.mode === 'blank' || r.qty <= r.min_qty));
+  o.addEventListener('change', (e) => { const k = { 'sp-low': 'low', 'sp-cost': 'cost', 'sp-sup': 'supplier', 'sp-exp': 'expected' }[e.target.id]; if (k) st[k] = e.target.checked; });
+  o.addEventListener('click', async (e) => {
+    const t = e.target, m = t.closest('[data-sm]'), c = t.closest('[data-sc]');
+    if (m) { st.mode = m.dataset.sm; return draw(); }
+    if (c) { st.cats.has(c.dataset.sc) ? st.cats.delete(c.dataset.sc) : st.cats.add(c.dataset.sc); return draw(); }
+    if (t.closest('#sp-close')) return o.remove();
+    if (t.closest('#sp-csv')) {
+      const rs = await rows(); if (!rs.length) return toast('Nothing matches.');
+      return saveCsv(`InkForge-stock-${ymd(new Date())}.csv`, ['Category', 'Item', 'Unit', 'In stock', 'Minimum', 'Low', ...(st.supplier ? ['Supplier'] : []), ...(st.cost ? ['Cost per unit', 'Value'] : [])],
+        rs.map(r => [r.cat, r.name, r.unit || '', fmtQty(r.qty), fmtQty(r.min_qty), r.qty <= r.min_qty ? 'Yes' : '', ...(st.supplier ? [r.supplier || ''] : []),
+          ...(st.cost ? [r.cost ?? '', r.cost != null ? +(r.cost * r.qty).toFixed(2) : ''] : [])]));
+    }
+    if (!t.closest('#sp-go')) return;
+    const rs = await rows(); if (!rs.length) return toast('Nothing matches.');
+    o.remove(); printStock(st, rs);
+  });
+}
+async function printStock(st, rs) {
+  const blank = st.mode === 'blank', studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Stock';
+  const cols = blank ? ['Item', 'Unit', ...(st.supplier ? ['Supplier'] : []), ...(st.expected ? ['Expected'] : []), 'Counted', 'Notes']
+    : ['Item', 'Unit', ...(st.supplier ? ['Supplier'] : []), 'In stock', 'Min', ...(st.cost ? ['Cost', 'Value'] : [])];
+  let body = '', cat = null;
+  for (const r of rs) {
+    if (r.cat !== cat) { cat = r.cat; body += `<tr class="pb-group"><td colspan="${cols.length}">${esc(cat)}</td></tr>`; }
+    const low = r.qty <= r.min_qty;
+    body += blank
+      ? `<tr><td>${esc(r.name)}</td><td>${esc(r.unit || '')}</td>${st.supplier ? `<td>${esc(r.supplier || '')}</td>` : ''}${st.expected ? `<td class="num">${fmtQty(r.qty)}</td>` : ''}<td class="box"></td><td class="box wide"></td></tr>`
+      : `<tr class="${low ? 'low' : ''}"><td>${esc(r.name)}${low ? ' <b class="lowtag">LOW</b>' : ''}</td><td>${esc(r.unit || '')}</td>${st.supplier ? `<td>${esc(r.supplier || '')}</td>` : ''}
+          <td class="num">${fmtQty(r.qty)}</td><td class="num">${fmtQty(r.min_qty)}</td>${st.cost ? `<td class="num">${r.cost != null ? esc(money(r.cost)) : ''}</td><td class="num">${r.cost != null ? esc(money(+(r.cost * r.qty).toFixed(2))) : ''}</td>` : ''}</tr>`;
+  }
+  // Dashboard for the current-stock printout: a strip of key numbers on page one.
+  let dash = '';
+  if (!blank) {
+    const low = rs.filter(r => r.qty <= r.min_qty).length, value = rs.reduce((t, r) => t + (r.cost != null ? r.cost * r.qty : 0), 0);
+    const last = await DB.one('SELECT taken_at FROM stock_takes ORDER BY taken_at DESC LIMIT 1');
+    const box = (v, l, red) => `<div class="sd-box ${red ? 'red' : ''}"><b>${v}</b><span>${l}</span></div>`;
+    dash = `<div class="sd">${box(rs.length, 'items')}${box(new Set(rs.map(r => r.cat)).size, 'categories')}${box(low, 'running low', low > 0)}
+      ${st.cost ? box(esc(money(Math.round(value))), 'stock value') : ''}${box(last ? esc(new Date(last.taken_at + 'Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })) : '—', 'last stock take')}</div>`;
+  }
+  let p = $('#print-area');
+  if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+  p.innerHTML = `<div class="pbook sbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>${blank ? 'Stock count sheet' : 'Current stock'}</b> · ${esc(fmtDay(ymd(new Date())))}
+      ${blank ? '<br>Counted by: ____________________' : ''}</div></div>${dash}
+    <table><thead><tr>${cols.map(c => `<th class="${['Expected', 'Counted', 'In stock', 'Min', 'Cost', 'Value'].includes(c) ? 'num' : ''}">${c}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+  document.body.classList.add('printing');
+  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+  addEventListener('afterprint', done);
+  window.print();
 }
 
 // Rules as numbered text, numbering starting again in each category.
