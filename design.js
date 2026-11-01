@@ -126,6 +126,7 @@ async function dzDraw(cv, doc, scale = 1) {
     x.save();
     x.setTransform(scale, 0, 0, scale, 0, 0);
     x.translate(l.x + l.w / 2, l.y + (l.h || 0) / 2); x.rotate((l.rot || 0) * Math.PI / 180);
+    if (l.fx || l.fy) x.scale(l.fx ? -1 : 1, l.fy ? -1 : 1);   // mirrored
     x.globalAlpha = l.op ?? 1;
     if (l.t === 'text') {
       const px = l._px || l.size, lh = px * (l.lh || 1.2); x.font = dzFontStr(doc, l, px);
@@ -514,7 +515,31 @@ DZ.edit = async (id) => {
       ${cur && cur[0] !== '@' && !DZ_FONTS.some(f => f[0] === cur) && !custom.some(f => f.name === cur) ? `<option value="${esc(cur)}" selected>${esc(cur)} (device)</option>` : ''}
       <optgroup label="More"><option value="+device">Use a font on this device…</option><option value="+import">Import a font file…</option></optgroup>`;
   };
+  /* Layers: top of the list is in front. Drag the grip to reorder; hide, lock, rename, delete. */
+  let tab = 'edit';
+  const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  const LOCK = (on) => on ? '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
+    : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>';
+  const layerName = (l) => l.name || (l.t === 'text' ? ((dzFill(doc, l.text).trim() || l.text).split('\n')[0].trim().slice(0, 30) || 'Text')
+    : l.t === 'image' ? (l.logo ? 'Logo' : l.slot != null ? `Photo ${l.slot + 1}` : 'Picture')
+    : ({ ellipse: 'Circle', line: 'Line', star: 'Star' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
+  const layerIco = (l) => l.t === 'text' ? 'T' : l.t === 'image' ? (l.logo ? '◎' : '▣') : '◆';
+  const drawLayers = () => {
+    side.innerHTML = `<div class="dz-ll" id="dz-ll">${[...doc.layers].reverse().map(l => `<div class="dz-lr ${l.id === sel ? 'on' : ''} ${l.hide ? 'off' : ''}" data-lid="${l.id}">
+        <span class="grip" data-grip aria-label="Drag to reorder">⠿</span><span class="li">${layerIco(l)}</span>
+        <span class="nm" data-lname title="${l.id === sel ? 'Tap to rename' : 'Tap to select'}">${esc(layerName(l))}</span>
+        <button data-lhide title="${l.hide ? 'Show' : 'Hide'}" aria-label="${l.hide ? 'Show' : 'Hide'}">${l.hide ? EYE_OFF : EYE}</button>
+        <button data-llock class="${l.lock ? 'on' : ''}" title="${l.lock ? 'Unlock' : 'Lock'}" aria-label="Lock">${LOCK(l.lock)}</button>
+        <button data-ldel title="Delete" aria-label="Delete">✕</button></div>`).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
+      <p class="muted" style="font-size:12px;margin:10px 2px 0">The top of the list sits in front. Drag ⠿ to change the order. Tap a name to select it; tap it again to rename.</p>`;
+  };
   const drawSide = () => {
+    if (tab === 'layers') drawLayers(); else drawEdit();
+    side.insertAdjacentHTML('afterbegin', `<div class="seg dz-tabs"><button data-tab="edit" class="${tab === 'edit' ? 'on' : ''}">${layer() ? 'Selected' : 'Design'}</button>
+      <button data-tab="layers" class="${tab === 'layers' ? 'on' : ''}">Layers <small>${doc.layers.length}</small></button></div>`);
+  };
+  const drawEdit = () => {
     const l = layer();
     if (!l) {
       const kinds = doc.kind === 'voucher' || doc.layers.some(x => /\{(amount|to|from|code|expires)\}/.test(x.text || ''));
@@ -556,6 +581,8 @@ DZ.edit = async (id) => {
         <button data-act="up" title="Bring forward">▲<span>Forward</span></button>
         <button data-act="down" title="Send back">▼<span>Back</span></button>
         <button data-act="lock" class="${l.lock ? 'on' : ''}" title="Lock">${l.lock ? '🔒' : '🔓'}<span>${l.lock ? 'Locked' : 'Lock'}</span></button>
+        <button data-act="fx" class="${l.fx ? 'on' : ''}" title="Flip left to right">⇋<span>Flip</span></button>
+        <button data-act="fy" class="${l.fy ? 'on' : ''}" title="Flip upside down">⇵<span>Flip</span></button>
         <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
       ${l.t === 'text' ? `
         <textarea class="in dz-text" data-k="text" rows="3">${esc(l.text)}</textarea>
@@ -608,6 +635,7 @@ DZ.edit = async (id) => {
   };
   const guides = (gx, gy) => { page.querySelector('.dz-guide.v').hidden = !gx; page.querySelector('.dz-guide.hz').hidden = !gy; };
   let drag = null;
+  stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('#dz-page') && sel) select(null); });
   page.addEventListener('pointerdown', (e) => {
     const h = e.target.closest('[data-h]')?.dataset.h, p = toPage(e);
     let l = layer();
@@ -664,6 +692,19 @@ DZ.edit = async (id) => {
   /* Side panel events */
   side.addEventListener('click', async (e) => {
     const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
+    if (d('tab')) { tab = d('tab'); return drawSide(); }
+    const row = t.closest('[data-lid]');
+    if (row && !t.closest('[data-grip]')) {
+      const ly = doc.layers.find(x => x.id === row.dataset.lid); if (!ly) return;
+      if (t.closest('[data-lhide]')) { ly.hide = !ly.hide; if (ly.hide && sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
+      if (t.closest('[data-llock]')) { ly.lock = !ly.lock; placeSel(); changed(true); return drawSide(); }
+      if (t.closest('[data-ldel]')) { doc.layers = doc.layers.filter(x => x !== ly); if (sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
+      if (t.closest('[data-lname]') && sel === ly.id) {
+        const n = prompt('Layer name:', layerName(ly)); if (n == null) return;
+        ly.name = n.trim() || undefined; changed(true); return drawSide();
+      }
+      return select(ly.id);
+    }
     if (d('add')) {
       const a = d('add');
       if (a === 'text') return add({ t: 'text', text: 'Your text', size: Math.round(doc.h * 0.05), font: '@2', c: '@fg', al: 'center', lh: 1.2, ...center(doc.w * 0.6, doc.h * 0.06) });
@@ -698,6 +739,8 @@ DZ.edit = async (id) => {
       if (a === 'up' && i < doc.layers.length - 1) [doc.layers[i], doc.layers[i + 1]] = [doc.layers[i + 1], doc.layers[i]];
       if (a === 'down' && i > 0) [doc.layers[i], doc.layers[i - 1]] = [doc.layers[i - 1], doc.layers[i]];
       if (a === 'lock') l.lock = !l.lock;
+      if (a === 'fx') l.fx = !l.fx;
+      if (a === 'fy') l.fy = !l.fy;
       changed(true); return drawSide();
     }
     if (d('al')) { l.al = d('al'); changed(true); return drawSide(); }
@@ -708,6 +751,30 @@ DZ.edit = async (id) => {
       const nt = side.querySelector('.dz-text'); nt.focus(); nt.setSelectionRange(at + ins.length, at + ins.length);
     }
   });
+  let ldrag = null;
+  side.addEventListener('pointerdown', (e) => {
+    const g = e.target.closest('[data-grip]'); if (!g) return;
+    e.preventDefault();
+    const row = g.closest('.dz-lr'), rows = [...$('#dz-ll').children];
+    ldrag = { row, rows, from: rows.indexOf(row), to: rows.indexOf(row), y0: e.clientY, h: row.offsetHeight + 4 };
+    row.classList.add('drag'); g.setPointerCapture(e.pointerId);
+  });
+  side.addEventListener('pointermove', (e) => {
+    if (!ldrag) return;
+    const { row, rows, from, h } = ldrag, dy = e.clientY - ldrag.y0;
+    const to = Math.max(0, Math.min(rows.length - 1, from + Math.round(dy / h))); ldrag.to = to;
+    row.style.transform = `translateY(${dy}px)`;
+    rows.forEach((r, i) => { if (r === row) return;
+      const sh = from < to && i > from && i <= to ? -h : from > to && i < from && i >= to ? h : 0;
+      r.style.transform = sh ? `translateY(${sh}px)` : ''; });
+  });
+  const ldrop = () => {
+    if (!ldrag) return;
+    const { from, to } = ldrag; ldrag = null;
+    if (from !== to) { const list = [...doc.layers].reverse(), [m] = list.splice(from, 1); list.splice(to, 0, m); doc.layers = list.reverse(); changed(true); }
+    drawSide();
+  };
+  side.addEventListener('pointerup', ldrop); side.addEventListener('pointercancel', ldrop);
   side.addEventListener('input', (e) => {
     const t = e.target, l = layer(), key = t.dataset.k;
     if (t.dataset.v) { doc.vals[t.dataset.v] = t.value; return changed(); }

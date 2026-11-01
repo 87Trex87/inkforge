@@ -1085,7 +1085,7 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
 .dz-shapes button, .dz-fields button { padding: 6px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; font-size: 12px; }
 .dz-fields { margin: 6px 0 10px; } .dz-fields button { font-size: 11px; padding: 4px 9px; color: var(--teal); }
 .dz-lh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; } .dz-lh b { color: var(--teal); text-transform: uppercase; font-size: 12px; letter-spacing: .06em; }
-.dz-acts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 12px; }
+.dz-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(46px, 1fr)); gap: 4px; margin-bottom: 12px; }
 .dz-acts button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; font-size: 15px; }
 .dz-acts button span { font-size: 10px; color: var(--ink2); } .dz-acts .on { border-color: var(--teal); } .dz-acts .danger { color: #e0605a; }
 .dz-text { margin-bottom: 4px; }
@@ -1122,3 +1122,20 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
 .dz-pf { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; max-height: 60vh; overflow-y: auto; }
 .dz-pf button { aspect-ratio: 1; padding: 0; border: 0; border-radius: 8px; overflow: hidden; cursor: pointer; background: var(--bg3); }
 .dz-pf img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Design studio: Design / Layers tabs and the layers list */
+.dz-tabs { margin-bottom: 12px; } .dz-tabs button { flex: 1; } .dz-tabs small { opacity: .7; margin-left: 4px; }
+.dz-ll { display: grid; gap: 4px; }
+.dz-lr { display: grid; grid-template-columns: 26px 24px 1fr 32px 32px 32px; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--bg); position: relative; transition: transform .12s; }
+.dz-lr.drag { transition: none; z-index: 2; box-shadow: 0 6px 18px rgba(0,0,0,.5); border-color: var(--teal); }
+.dz-lr.on { border-color: var(--teal); background: rgba(31,182,166,.1); }
+.dz-lr.off .nm, .dz-lr.off .li { opacity: .4; }
+.dz-lr .grip { cursor: grab; touch-action: none; color: var(--ink2); font-size: 18px; text-align: center; user-select: none; padding: 6px 0; }
+.dz-lr .li { color: var(--teal); font-weight: 700; text-align: center; }
+.dz-lr .nm { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; padding: 6px 0; }
+.dz-lr button { width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; color: var(--ink2); cursor: pointer; display: grid; place-items: center; padding: 0; font-size: 13px; }
+.dz-lr button:hover { background: var(--bg2); color: var(--ink); }
+.dz-lr button.on { color: var(--gold, #e8b44c); }
+.dz-lr button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.dz-lr [data-ldel] { color: #e0605a; }
