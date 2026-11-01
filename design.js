@@ -120,8 +120,22 @@ async function dzDraw(cv, doc, scale = 1) {
       // "Shrink to fit": a long name or amount gets smaller instead of wrapping onto a second line.
       const txt = dzFill(doc, l.text), want = l.fit ? txt.split('\n').length : Infinity;
       let px = l.size;
-      for (;;) { x.font = dzFontStr(doc, l, px); lines = dzWrap(x, txt, l.w); if (lines.length <= want || px <= 8) break; px *= 0.94; }
-      l._px = px; l.h = Math.max(px, lines.length * px * (l.lh || 1.2));
+      if (l.arc) {
+        // Bent text: one line laid along a circle. The bend is the angle the text covers (up to a full circle).
+        const one = txt.replace(/\s*\n\s*/g, ' '), chars = [...one], a = Math.min(360, Math.abs(l.arc)) * Math.PI / 180;
+        let ws, wt, R;
+        for (;;) {
+          x.font = dzFontStr(doc, l, px); if ('letterSpacing' in x) x.letterSpacing = '0px';
+          ws = chars.map(c => x.measureText(c).width + (l.ls || 0)); wt = ws.reduce((m, v) => m + v, 0) || 1; R = wt / a;
+          const chord = a >= Math.PI ? 2 * R : 2 * R * Math.sin(a / 2);
+          if (!l.fit || chord <= l.w || px <= 8) break; px *= 0.94;
+        }
+        l._arc = { chars, ws, wt, R }; lines = [one];
+        l._px = px; l.h = R * (1 - Math.cos(a / 2)) + px * 1.15;
+      } else {
+        for (;;) { x.font = dzFontStr(doc, l, px); lines = dzWrap(x, txt, l.w); if (lines.length <= want || px <= 8) break; px *= 0.94; }
+        l._arc = null; l._px = px; l.h = Math.max(px, lines.length * px * (l.lh || 1.2));
+      }
     }
     x.save();
     x.setTransform(scale, 0, 0, scale, 0, 0);
@@ -132,9 +146,25 @@ async function dzDraw(cv, doc, scale = 1) {
       const px = l._px || l.size, lh = px * (l.lh || 1.2); x.font = dzFontStr(doc, l, px);
       if ('letterSpacing' in x) x.letterSpacing = (l.ls || 0) + 'px';
       x.fillStyle = dzCol(doc, l.c) || '#000'; x.textBaseline = 'alphabetic';
-      x.textAlign = l.al || 'left';
-      const ax = l.al === 'center' ? 0 : l.al === 'right' ? l.w / 2 : -l.w / 2;
-      lines.forEach((ln, i) => x.fillText(ln, ax, -l.h / 2 + i * lh + px * 0.9));
+      if (l.arc && l._arc) {
+        // Each letter sits on the circle, turned to follow it: up = a rainbow over the centre, down = a smile under it.
+        const { chars, ws, wt, R } = l._arc, up = l.arc > 0;
+        if ('letterSpacing' in x) x.letterSpacing = '0px';
+        x.textAlign = 'center';
+        const cy = up ? -l.h / 2 + px * 0.9 + R : l.h / 2 - px * 0.25 - R;
+        let at = -wt / 2;
+        chars.forEach((ch, i) => {
+          const phi = (at + ws[i] / 2) / R; at += ws[i];
+          x.save();
+          if (up) { x.translate(R * Math.sin(phi), cy - R * Math.cos(phi)); x.rotate(phi); }
+          else { x.translate(R * Math.sin(phi), cy + R * Math.cos(phi)); x.rotate(-phi); }
+          x.fillText(ch, 0, 0); x.restore();
+        });
+      } else {
+        x.textAlign = l.al || 'left';
+        const ax = l.al === 'center' ? 0 : l.al === 'right' ? l.w / 2 : -l.w / 2;
+        lines.forEach((ln, i) => x.fillText(ln, ax, -l.h / 2 + i * lh + px * 0.9));
+      }
     } else if (l.t === 'image') {
       const r = Math.min(l.r || 0, l.w / 2, l.h / 2), clip = l.cover || r;
       if (clip) { x.save(); x.beginPath(); x.roundRect(-l.w / 2, -l.h / 2, l.w, l.h, r); x.clip(); }
@@ -593,6 +623,8 @@ DZ.edit = async (id) => {
           <button class="btn small ${l.b ? 'primary' : ''}" data-tog="b" style="font-weight:800">B</button><button class="btn small ${l.it ? 'primary' : ''}" data-tog="it" style="font-style:italic">I</button></div>
         <label class="toggle" style="display:inline-flex;margin-top:8px" data-tip="Long text gets smaller to stay on its lines instead of wrapping, e.g. a studio name or amount"><input type="checkbox" data-fit ${l.fit ? 'checked' : ''}><span>Shrink to fit</span></label>
         ${slider('size', 'Size', 8, Math.round(doc.h * 0.4), 1, Math.round(l.size))}
+        ${slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
+        ${l.arc ? '<p class="muted" style="font-size:11px;margin:-4px 0 8px">Bent text runs on one line. <button class="link" data-act="unbend">Straighten</button></p>' : ''}
         ${swatches('c', l.c)}
         ${fsec('Spacing', slider('ls', 'Letter spacing', -5, 40, 1, l.ls || 0) + slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2), { fold: true })}`
       : l.t === 'shape' ? `
@@ -734,6 +766,7 @@ DZ.edit = async (id) => {
     if (d('act')) {
       const a = d('act'), i = doc.layers.indexOf(l);
       if (a === 'done') return select(null);
+      if (a === 'unbend') { l.arc = 0; changed(true); return drawSide(); }
       if (a === 'del') { doc.layers.splice(i, 1); sel = null; }
       if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id; }
       if (a === 'up' && i < doc.layers.length - 1) [doc.layers[i], doc.layers[i + 1]] = [doc.layers[i + 1], doc.layers[i]];
@@ -783,7 +816,8 @@ DZ.edit = async (id) => {
     if (!l || !key || key === 'font') return;
     l[key] = key === 'text' ? t.value : +t.value;
     const b = t.closest('.dz-sl')?.querySelector('b');
-    if (b) b.textContent = key === 'op' ? Math.round(t.value * 100) + '%' : key === 'rot' ? t.value + '°' : t.value;
+    if (b) b.textContent = key === 'op' ? Math.round(t.value * 100) + '%' : key === 'rot' ? t.value + '°'
+      : key === 'arc' ? (+t.value === 0 ? 'straight' : (t.value > 0 ? 'up ' : 'down ') + Math.abs(t.value) + '°') : t.value;
     changed();
   });
   side.addEventListener('change', async (e) => {
@@ -805,6 +839,7 @@ DZ.edit = async (id) => {
       l.font = t.value; await DZF.load(dzFont(doc, l.font)); changed(true);
     }
     if (t.hasAttribute('data-fit') && l) { l.fit = t.checked ? 1 : 0; return changed(true); }
+    if (t.dataset.k === 'arc') return drawSide();
     if (t.hasAttribute('data-cover') && l) { l.cover = t.checked ? 1 : 0; changed(true); return drawSide(); }
     if (t.dataset.k === 'text' || t.dataset.v) changed(true);
   });
