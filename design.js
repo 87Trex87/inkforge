@@ -116,12 +116,11 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   await DZF.all(doc);
   const x = cv.getContext('2d'), W = doc.w * scale, H = doc.h * scale;
   x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
-  x.fillStyle = dzCol(doc, doc.bg?.c) || '#ffffff'; x.fillRect(0, 0, W, H);
-  if (doc.bg?.img) { const im = await dzImg(doc.bg.img);
+  if (!opts.noBg) x.fillStyle = dzCol(doc, doc.bg?.c) || '#ffffff', x.fillRect(0, 0, W, H);
+  if (doc.bg?.img && !opts.noBg) { const im = await dzImg(doc.bg.img);
     if (im) { const s = Math.max(W / im.naturalWidth, H / im.naturalHeight); x.globalAlpha = doc.bg.op ?? 1;
       x.drawImage(im, (W - im.naturalWidth * s) / 2, (H - im.naturalHeight * s) / 2, im.naturalWidth * s, im.naturalHeight * s); x.globalAlpha = 1; } }
-  for (const l of doc.layers) {
-    if (l.hide) continue;
+  const one = async (x, l) => {
     const im = l.t === 'image' ? await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref) : null;
     let lines = null;
     if (l.t === 'text') {   // measure first, so the box (and its centre) is the real height of the text
@@ -213,6 +212,21 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
       } else body(l);
     }
     x.restore();
+  };
+  // Clipping: a layer marked `clip` only shows inside the nearest unclipped layer under it (its base),
+  // so a texture laid over a shape takes the shape's form. The bottom layer can't be clipped.
+  const L = doc.layers, show = (l) => !l.hide && (!opts.only || opts.only.has(l.id));
+  for (let i = 0; i < L.length; i++) {
+    const base = L[i]; let j = i + 1;
+    while (j < L.length && L[j].clip) j++;
+    const clips = L.slice(i + 1, j).filter(show); i = j - 1;
+    if (!show(base)) continue;
+    if (!clips.length) { await one(x, base); continue; }
+    const off = document.createElement('canvas'); off.width = cv.width; off.height = cv.height;
+    const ox = off.getContext('2d');
+    await one(ox, base); ox.globalCompositeOperation = 'source-atop';
+    for (const c of clips) await one(ox, c);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(off, 0, 0);
   }
 }
 // A finished copy of the design as its own canvas (full size unless `scale`).
@@ -496,7 +510,7 @@ DZ.edit = async (id) => {
       <button class="btn primary" id="dz-export">Export</button>
     </div>
     <div class="dz-body">
-      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-sel" hidden>
+      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-multi"></div><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
@@ -506,6 +520,11 @@ DZ.edit = async (id) => {
   const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
   let k = 1;   // screen px per page px
   const layer = () => doc.layers.find(l => l.id === sel);
+  /* Several selected: `picks` holds them (sel is then null). Selection mode (`picking`, from a long press or
+     the Select button) makes taps add and remove items, for touchscreens; on a computer Ctrl/Shift-click. */
+  let picks = new Set(), picking = false, anchor = null;
+  const many = () => picking || picks.size > 1;
+  const picked = () => doc.layers.filter(l => picks.has(l.id));
 
   // Canvas size: fit the page into the stage; drawn at device resolution for crisp text.
   /* View: zoom (z, 1 = the whole design fits) and pan (vx, vy, screen px from centred). */
@@ -546,6 +565,9 @@ DZ.edit = async (id) => {
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
   const placeSel = () => {
     if (!selBox) return;
+    const mo = $('#dz-multi');
+    if (mo) mo.innerHTML = picked().map(m => `<i class="dz-mo ${m.lock ? 'locked' : ''}" style="left:${m.x * k}px;top:${m.y * k}px;width:${m.w * k}px;height:${(m.h || 1) * k}px;transform:rotate(${m.rot || 0}deg)"></i>`).join('');
+    stage.classList.toggle('picking', picking);
     const l = layer();
     selBox.hidden = !l;
     if (!l) return;
@@ -568,10 +590,13 @@ DZ.edit = async (id) => {
       { sql: 'DELETE FROM design_assets WHERE design_id = ?', params: [id] },
       ...refs.map(r => ({ sql: 'INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', params: [id, r] }))]);
     if (old && old !== ref) await Media.release(old);
-    for (const r of before) if (!refs.includes(r)) await Media.release(r);
+    for (const r of before) if (!refs.includes(r)) dropped.add(r);
     if ($('#dz-list')) DZ.list();
   })()); };
-  addEventListener('hashchange', function away() { removeEventListener('hashchange', away); flush(); });
+  const dropped = new Set(), made = new Set();   // pictures taken out (or made) while editing; tidied when leaving
+  const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref)].filter(Boolean);
+  addEventListener('hashchange', function away() { removeEventListener('hashchange', away);
+    flush().then(async () => { const keep = docRefs(); for (const r of new Set([...dropped, ...made])) if (!keep.includes(r)) await Media.release(r); }); });
   // A change: redraw, remember for undo, save.
   let histT = null;
   const changed = (now) => {
@@ -580,7 +605,8 @@ DZ.edit = async (id) => {
     const push = () => { const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
     if (now) push(); else histT = setTimeout(push, 450);
   };
-  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; if (!layer()) sel = null; redraw(); save(); drawSide(); };
+  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; if (!layer()) sel = null;
+    picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
   const swatches = (key, cur, allowNone) => {
@@ -611,20 +637,50 @@ DZ.edit = async (id) => {
     : ({ ellipse: 'Circle', line: 'Line', star: 'Star' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
   const layerIco = (l) => l.t === 'text' ? 'T' : l.t === 'image' ? (l.logo ? '◎' : '▣') : '◆';
   const drawLayers = () => {
-    side.innerHTML = `<div class="dz-ll" id="dz-ll">${[...doc.layers].reverse().map(l => `<div class="dz-lr ${l.id === sel ? 'on' : ''} ${l.hide ? 'off' : ''}" data-lid="${l.id}">
+    side.innerHTML = `<div class="dz-lbar"><button class="btn small ${picking ? 'primary' : ''}" data-mact="${picking ? 'done' : 'pick'}">${picking ? 'Done selecting' : 'Select…'}</button>
+        ${picking || picks.size ? `<button class="btn small" data-mact="all">All</button><button class="btn small" data-mact="none" ${picks.size ? '' : 'disabled'}>None</button>` : ''}</div>
+      <div class="dz-ll" id="dz-ll">${[...doc.layers].reverse().map(l => { const i = doc.layers.indexOf(l), cl = i > 0 && l.clip;
+        return `<div class="dz-lr ${l.id === sel || picks.has(l.id) ? 'on' : ''} ${l.hide ? 'off' : ''} ${cl ? 'clip' : ''}" data-lid="${l.id}">
         <span class="grip" data-grip aria-label="Drag to reorder">⠿</span><span class="li">${layerIco(l)}</span>
-        <span class="nm" data-lname title="${l.id === sel ? 'Tap to rename' : 'Tap to select'}">${esc(layerName(l))}</span>
+        <span class="nm" data-lname title="${l.id === sel ? 'Tap to rename' : 'Tap to select'}">${cl ? '<b class="clipmark">↳</b>' : ''}${esc(layerName(l))}</span>
+        <button data-lclip class="${cl ? 'on' : ''}" ${i ? '' : 'disabled'} title="${cl ? 'Unclip' : 'Clip to the layer below: only shows inside it'}" aria-label="Clip to layer below"><svg viewBox="0 0 24 24"><path d="M7 4v10a3 3 0 0 0 3 3h10"/><path d="M16 13l4 4-4 4"/></svg></button>
         <button data-lhide title="${l.hide ? 'Show' : 'Hide'}" aria-label="${l.hide ? 'Show' : 'Hide'}">${l.hide ? EYE_OFF : EYE}</button>
         <button data-llock class="${l.lock ? 'on' : ''}" title="${l.lock ? 'Unlock' : 'Lock'}" aria-label="Lock">${LOCK(l.lock)}</button>
-        <button data-ldel title="Delete" aria-label="Delete">✕</button></div>`).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
-      <p class="muted" style="font-size:12px;margin:10px 2px 0">The top of the list sits in front. Drag ⠿ to change the order. Tap a name to select it; tap it again to rename.</p>`;
+        <button data-ldel title="Delete" aria-label="Delete">✕</button></div>`; }).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
+      <p class="muted" style="font-size:12px;margin:10px 2px 0">The top of the list sits in front. Drag ⠿ to change the order. Tap a name to select it; tap it again to rename.
+        Hold a layer (or Ctrl/Shift-click) to select several. ↳ clips a layer to the one below it.</p>`;
   };
   const drawSide = () => {
     if (tab === 'layers') drawLayers(); else drawEdit();
-    side.insertAdjacentHTML('afterbegin', `<div class="seg dz-tabs"><button data-tab="edit" class="${tab === 'edit' ? 'on' : ''}">${layer() ? 'Selected' : 'Design'}</button>
+    side.insertAdjacentHTML('afterbegin', `<div class="seg dz-tabs"><button data-tab="edit" class="${tab === 'edit' ? 'on' : ''}">${layer() || many() ? 'Selected' : 'Design'}</button>
       <button data-tab="layers" class="${tab === 'layers' ? 'on' : ''}">Layers <small>${doc.layers.length}</small></button></div>`);
   };
+  const AL = [['l', 'Left', '<path d="M4 3v18M8 7h12v4H8zM8 14h7v4H8z"/>'], ['c', 'Centre', '<path d="M12 3v18M5 7h14v4H5zM8 14h8v4H8z"/>'], ['r', 'Right', '<path d="M20 3v18M4 7h12v4H4zM9 14h7v4H9z"/>'],
+    ['t', 'Top', '<path d="M3 4h18M7 8v12h4V8zM14 8v7h4V8z"/>'], ['m', 'Middle', '<path d="M3 12h18M7 5v14h4V5zM14 8v8h4V8z"/>'], ['b', 'Bottom', '<path d="M3 20h18M7 4v12h4V4zM14 9v7h4V9z"/>'],
+    ['dh', 'Space across', '<path d="M3 4v16M21 4v16M9 8h6v8H9z"/>'], ['dv', 'Space down', '<path d="M4 3h16M4 21h16M8 9h8v6H8z"/>']];
+  const drawMulti = () => {
+    const L = picked(), n = L.length, all = (f) => n && L.every(f);
+    side.innerHTML = `<div class="dz-lh"><b>${n ? `${n} selected` : 'Select items'}</b><button class="btn small" data-mact="done">Done</button></div>
+      <p class="muted" style="font-size:12px;margin:0 0 10px">${picking ? 'Tap items on the design or in Layers to add or remove them. Drag a selected item to move them all.'
+        : 'Ctrl-click adds or removes; Shift-click in Layers picks a range. On a touchscreen, hold an item for a moment.'}</p>
+      <div class="row" style="gap:6px;margin-bottom:10px"><button class="btn small" data-mact="all">Select all</button><button class="btn small" data-mact="none" ${n ? '' : 'disabled'}>Clear</button></div>
+      <div class="dz-acts">
+        <button data-mact="dup" ${n ? '' : 'disabled'} title="Duplicate">⧉<span>Copy</span></button>
+        <button data-mact="hide" ${n ? '' : 'disabled'} title="Hide or show">${all(l => l.hide) ? '◌' : '◉'}<span>${all(l => l.hide) ? 'Show' : 'Hide'}</span></button>
+        <button data-mact="lock" class="${all(l => l.lock) ? 'on' : ''}" ${n ? '' : 'disabled'} title="Lock">${all(l => l.lock) ? '🔒' : '🔓'}<span>${all(l => l.lock) ? 'Locked' : 'Lock'}</span></button>
+        <button data-mact="clip" class="${all(l => l.clip) ? 'on' : ''}" ${n ? '' : 'disabled'} title="Clip to the layer below: each only shows inside it">↳<span>Clip</span></button>
+        <button data-mact="del" class="danger" ${n ? '' : 'disabled'} title="Delete">✕<span>Delete</span></button></div>
+      ${fsec('Align', `<div class="dz-align">${AL.map(([a, t, ic]) => `<button data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} title="${t}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${t}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('')}</div>
+        <p class="muted" style="font-size:11px;margin:6px 0 0">${n === 1 ? 'One item lines up with the page.' : 'Items line up with each other. Spacing needs three or more.'}</p>`)}
+      ${fsec('Combine and save', `<div class="dz-combine">
+        <button class="btn small" data-mact="merge" ${n ? '' : 'disabled'}>Merge into one picture</button>
+        <button class="btn small" data-mact="refs" ${n ? '' : 'disabled'}>Save to references</button>
+        <button class="btn small" data-mact="png" ${n ? '' : 'disabled'}>Save as PNG</button></div>
+        <p class="muted" style="font-size:11px;margin:6px 0 0">Merging turns the selection into a single picture layer on the design (Undo brings the layers back).
+          Saving makes a see-through picture of just the selection and leaves the design as it is. Clipped layers go with the layer they're clipped to.</p>`)}`;
+  };
   const drawEdit = () => {
+    if (many()) return drawMulti();
     const l = layer();
     if (!l) {
       const kinds = doc.kind === 'voucher' || doc.layers.some(x => /\{(amount|to|from|code|expires)\}/.test(x.text || ''));
@@ -676,7 +732,11 @@ DZ.edit = async (id) => {
         ${l.t !== 'text' ? `<button data-act="crop" class="${cropping ? 'on' : ''}" title="Crop">⛶<span>Crop</span></button>` : ''}
         <button data-act="fx" class="${l.fx ? 'on' : ''}" title="Flip left to right">⇋<span>Flip</span></button>
         <button data-act="fy" class="${l.fy ? 'on' : ''}" title="Flip upside down">⇵<span>Flip</span></button>
+        <button data-act="clip" class="${clipped(l) ? 'on' : ''}" ${doc.layers.indexOf(l) ? '' : 'disabled'} title="Clip to the layer below: only shows inside it">↳<span>Clip</span></button>
+        <button data-act="pick" title="Select more items">☐<span>Select</span></button>
         <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
+      ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
+        <button class="btn small" data-act="flatten">Flatten group</button></div>` : ''}
       <div class="dz-dims">
         <label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="w" value="${dzToU(doc, l.w)}"></label>
         <button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
@@ -711,9 +771,115 @@ DZ.edit = async (id) => {
           ${slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0)}
           <div class="lbl">Outline</div>${swatches('stroke', l.stroke, true)}${slider('sw', 'Outline width', 0, 40, 1, l.sw || 0)}`}`}
       ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}
-      ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}`;
+      ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
+      ${fsec('Save', `<div class="dz-combine"><button class="btn small" data-mact="refs">Save to references</button><button class="btn small" data-mact="png">Save as PNG</button>
+        ${l.t !== 'image' || l.crop || l.r ? '<button class="btn small" data-mact="merge">Turn into a picture</button>' : ''}</div>`, { fold: true })}`;
   };
-  const select = (idv) => { if (idv !== sel) endCrop(); sel = idv; panel = null; placeSel(); drawSide(); };
+  const select = (idv) => { if (idv !== sel) endCrop(); sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
+  // Several: outside selection mode one item left becomes a normal selection.
+  const setPicks = (ids) => {
+    endCrop(); picks = new Set(ids); panel = null;
+    if (!picking && picks.size <= 1) { sel = [...picks][0] || null; picks = new Set(); } else sel = null;
+    placeSel(); drawSide();
+  };
+  const togglePick = (id) => { const s = new Set(picks); if (sel && !s.size) s.add(sel); s.has(id) ? s.delete(id) : s.add(id); anchor = id; setPicks(s); };
+  const startPicking = (id) => { const s = new Set(picks); if (sel) s.add(sel); if (id) s.add(id); picking = true; anchor = id || anchor; setPicks(s); navigator.vibrate?.(30); };
+  const clipped = (l) => doc.layers.indexOf(l) > 0 && !!l.clip;
+  // Whole clip groups: a base with the layers clipped to it travel together, in layer order.
+  const groupOf = (ids) => {
+    const L = doc.layers, out = new Set(ids);
+    for (let i = 0; i < L.length; i++) if (ids.includes(L[i].id)) {
+      let b = i; while (b > 0 && L[b].clip) b--;
+      let e = b + 1; while (e < L.length && L[e].clip) e++;
+      for (let q = b; q < e; q++) out.add(L[q].id);
+    }
+    return L.filter(l => out.has(l.id));
+  };
+  // The page area an item covers (rotation included).
+  const box = (l) => {
+    const a = (l.rot || 0) * Math.PI / 180, c = Math.abs(Math.cos(a)), sn = Math.abs(Math.sin(a)), h = l.h || 1;
+    const hw = (l.w * c + h * sn) / 2, hh = (l.w * sn + h * c) / 2, cx = l.x + l.w / 2, cy = l.y + h / 2;
+    return { x0: cx - hw, y0: cy - hh, x1: cx + hw, y1: cy + hh };
+  };
+  // A see-through picture of some layers, cut to the area they cover. Clipped layers stay inside their base.
+  const flatten = async (list, max = 4000) => {
+    const vis = list.filter(l => !l.hide), bases = vis.filter(l => !(l.clip && vis.indexOf(l) > 0));
+    if (!bases.length) return null;
+    const bs = bases.map(box), bx = Math.floor(Math.min(...bs.map(b => b.x0))), by = Math.floor(Math.min(...bs.map(b => b.y0)));
+    const bw = Math.max(1, Math.ceil(Math.max(...bs.map(b => b.x1))) - bx), bh = Math.max(1, Math.ceil(Math.max(...bs.map(b => b.y1))) - by);
+    const d = JSON.parse(JSON.stringify({ ...doc, layers: vis })); d.w = bw; d.h = bh;
+    for (const l of d.layers) { l.x -= bx; l.y -= by; }
+    const sc = Math.min(1, max / Math.max(bw, bh)), c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bw * sc)); c.height = Math.max(1, Math.round(bh * sc));
+    await dzDraw(c, d, sc, { noBg: true });
+    return { cv: c, bx, by, bw, bh };
+  };
+  const pngOf = (c) => new Promise(r => c.toBlob(r, 'image/png'));
+  const targets = () => many() ? [...picks] : sel ? [sel] : [];
+  const merge = async (ids) => {
+    const list = groupOf(ids).filter(l => !l.hide);
+    if (!list.length) return toast('Nothing visible to merge.');
+    if (list.some(l => l.lock)) return toast('Unlock the selected layers first.');
+    const txt = list.some(l => l.t === 'text');
+    if (!confirm(`Merge ${list.length === 1 ? 'this layer' : list.length + ' layers'} into one picture?${txt ? '\n\nText becomes part of the picture and can no longer be edited.' : ''}\n\nUndo brings the layers back.`)) return;
+    const f = await flatten(list); if (!f) return;
+    const ref = await Media.save(await pngOf(f.cv), 'png'); made.add(ref);
+    const gone = new Set(list.map(l => l.id)), top = Math.max(...list.map(l => doc.layers.indexOf(l)));
+    const m = { id: dzId(), t: 'image', ref, x: f.bx, y: f.by, w: f.bw, h: f.bh, op: 1, rot: 0, name: list.length > 1 ? 'Merged' : layerName(list[0]) };
+    const out = []; doc.layers.forEach((l, i) => { if (!gone.has(l.id)) out.push(l); if (i === top) out.push(m); });
+    doc.layers = out; picking = false; picks = new Set(); sel = m.id; changed(true); drawSide();
+    toast('Merged into one picture.');
+  };
+  const saveRef = async (ids) => {
+    const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
+    const title = prompt('Name for the reference:', list.length === 1 ? layerName(list[0]) : name); if (title == null) return;
+    const s = Math.min(1, 420 / Math.max(f.cv.width, f.cv.height)), th = document.createElement('canvas');
+    th.width = Math.max(1, Math.round(f.cv.width * s)); th.height = Math.max(1, Math.round(f.cv.height * s)); th.getContext('2d').drawImage(f.cv, 0, 0, th.width, th.height);
+    await DB.run('INSERT INTO ref_images (title, category, photo_ref, thumb_ref, w, h) VALUES (?, ?, ?, ?, ?, ?)',
+      [title.trim() || 'Design part', 'Design studio', await Media.save(await pngOf(f.cv), 'png'), await Media.save(await pngOf(th), 'png'), f.cv.width, f.cv.height]);
+    toast('Saved to References, in Design studio.');
+  };
+  const savePng = async (ids) => {
+    const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
+    const fn = ((list.length === 1 ? layerName(list[0]) : name) || 'design').replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 60) + '.png';
+    const a = document.createElement('a'); a.href = URL.createObjectURL(await pngOf(f.cv)); a.download = fn; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast('Saved ' + fn);
+  };
+  // Line up the selected items with each other (one item: with the page), or space three or more evenly.
+  const align = (how) => {
+    const L = picked().filter(l => !l.lock); if (!L.length) return toast('Unlock the items first.');
+    const bs = new Map(L.map(l => [l, box(l)])), all = [...bs.values()];
+    const T = L.length === 1 && picks.size <= 1 ? { x0: 0, y0: 0, x1: doc.w, y1: doc.h }
+      : { x0: Math.min(...all.map(b => b.x0)), y0: Math.min(...all.map(b => b.y0)), x1: Math.max(...all.map(b => b.x1)), y1: Math.max(...all.map(b => b.y1)) };
+    if (how === 'dh' || how === 'dv') {
+      const h = how === 'dh', cen = (b) => h ? (b.x0 + b.x1) / 2 : (b.y0 + b.y1) / 2, o = [...L].sort((p, q) => cen(bs.get(p)) - cen(bs.get(q)));
+      const c0 = cen(bs.get(o[0])), c1 = cen(bs.get(o.at(-1)));
+      o.forEach((l, i) => { const dv = c0 + (c1 - c0) * i / (o.length - 1) - cen(bs.get(l)); if (h) l.x += dv; else l.y += dv; });
+    } else for (const l of L) { const b = bs.get(l);
+      if (how === 'l') l.x += T.x0 - b.x0; if (how === 'r') l.x += T.x1 - b.x1; if (how === 'c') l.x += (T.x0 + T.x1 - b.x0 - b.x1) / 2;
+      if (how === 't') l.y += T.y0 - b.y0; if (how === 'b') l.y += T.y1 - b.y1; if (how === 'm') l.y += (T.y0 + T.y1 - b.y0 - b.y1) / 2; }
+    changed(true);
+  };
+  const multiAct = async (a) => {
+    const L = picked(), every = (f) => L.length && L.every(f);
+    if (a === 'pick') return startPicking(null);
+    if (a === 'done') { picking = false; return setPicks([]); }
+    if (a === 'all') { if (!picking && !many()) picking = true; return setPicks(doc.layers.filter(l => !l.hide).map(l => l.id)); }
+    if (a === 'none') return setPicks([]);
+    if (a === 'merge') return merge(targets());
+    if (a === 'refs') return saveRef(targets());
+    if (a === 'png') return savePng(targets());
+    if (!L.length) return;
+    if (a === 'hide') { const v = !every(l => l.hide); L.forEach(l => l.hide = v); }
+    if (a === 'lock') { const v = !every(l => l.lock); L.forEach(l => l.lock = v); }
+    if (a === 'clip') { const v = !every(l => l.clip); L.forEach(l => { if (doc.layers.indexOf(l) > 0) l.clip = v || undefined; }); }
+    if (a === 'del') { const gone = new Set(L.map(l => l.id)); doc.layers = doc.layers.filter(l => !gone.has(l.id)); picks = new Set(); toast(`Deleted ${L.length}. Undo brings ${L.length === 1 ? 'it' : 'them'} back.`); }
+    if (a === 'dup') {   // copies go together above the highest one, keeping their order (and clipping)
+      const top = Math.max(...L.map(l => doc.layers.indexOf(l))), cs = L.map(l => ({ ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30, lock: undefined }));
+      doc.layers.splice(top + 1, 0, ...cs); picks = new Set(cs.map(c => c.id));
+    }
+    changed(true); placeSel(); drawSide();
+  };
 
   /* Adding things */
   const center = (w, h) => ({ x: (doc.w - w) / 2, y: (doc.h - h) / 2, w, h });
@@ -728,11 +894,13 @@ DZ.edit = async (id) => {
   /* Pointer: select, move, resize, rotate, with centre guides. */
   const toPage = (e) => { const r = page.getBoundingClientRect(); return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }; };
   const hit = (p) => {
-    for (let i = doc.layers.length - 1; i >= 0; i--) {
-      const l = doc.layers[i]; if (l.hide) continue;
-      const a = -(l.rot || 0) * Math.PI / 180, cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, dx = p.x - cx, dy = p.y - cy;
+    const over = (l) => { const a = -(l.rot || 0) * Math.PI / 180, cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, dx = p.x - cx, dy = p.y - cy;
       const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a), tol = 10 / k;
-      if (Math.abs(lx) <= l.w / 2 + tol && Math.abs(ly) <= (l.h || 0) / 2 + tol) return l;
+      return Math.abs(lx) <= l.w / 2 + tol && Math.abs(ly) <= (l.h || 0) / 2 + tol; };
+    for (let i = doc.layers.length - 1; i >= 0; i--) {
+      const l = doc.layers[i]; if (l.hide || !over(l)) continue;
+      if (i > 0 && l.clip) { let b = i; while (b > 0 && doc.layers[b].clip) b--; if (doc.layers[b].hide || !over(doc.layers[b])) continue; }   // only where it shows
+      return l;
     }
     return null;
   };
@@ -767,16 +935,33 @@ DZ.edit = async (id) => {
   const ptUp = (e) => {
     pts.delete(e.pointerId);
     if (pinch && pts.size < 2) { pinch = null; bg = null; return; }
-    if (bg) { if (!bg.moved && sel) select(null); bg = null; }
+    if (bg) { if (!bg.moved && (sel || (picks.size && !picking))) select(null); bg = null; }
   };
   stage.addEventListener('pointerup', ptUp); stage.addEventListener('pointercancel', ptUp);
   stage.addEventListener('wheel', (e) => { e.preventDefault(); const r = stage.getBoundingClientRect();
     zoomTo(z * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') return frame(); zoomTo(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4)); };
+  let press = null;   // long press: hold still on an item to start selecting several
+  const cancelPress = () => { if (press) clearTimeout(press.t); press = null; };
   page.addEventListener('pointerdown', (e) => {
+    cancelPress();
     if (pinch || pts.size > 1) return;
     const h = e.target.closest('[data-h]')?.dataset.h, p = toPage(e);
+    if (!h || many()) {
+      const hl = hit(p);
+      if (hl && (e.ctrlKey || e.metaKey || e.shiftKey)) { e.dzHit = true; return togglePick(hl.id); }
+      if (many() && hl) {
+        // Several selected: tapping one in selection mode adds it (or, without moving, takes it out); dragging moves them all.
+        e.dzHit = true; e.preventDefault();
+        const was = picks.has(hl.id); if (!was) { if (!picking) return select(hl.id); setPicks([...picks, hl.id]); }
+        page.setPointerCapture(e.pointerId);
+        drag = { h: 'group', p0: p, moved: false, tap: was && picking ? hl.id : null, l0: new Map(picked().filter(m => !m.lock).map(m => [m.id, { x: m.x, y: m.y }])) };
+        return;
+      }
+      if (many()) return;
+      if (hl) press = { x: e.clientX, y: e.clientY, t: setTimeout(() => { press = null; if (drag) { const l = layer(); if (l) Object.assign(l, drag.l0); drag = null; guides(false, false); redraw(); } startPicking(hl.id); }, 550) };
+    }
     let l = layer();
     if (!h) { const hl = hit(p); if (hl?.id !== sel) { select(hl?.id || null); l = hl; } }
     if (!l || l.lock) return;
@@ -785,7 +970,14 @@ DZ.edit = async (id) => {
     drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, l0: { ...l, crop: l.crop ? { ...l.crop } : null } };
   });
   page.addEventListener('pointermove', (e) => {
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) cancelPress();
     if (!drag || pinch) return;
+    if (drag.h === 'group') {
+      const p = toPage(e), dx = p.x - drag.p0.x, dy = p.y - drag.p0.y;
+      if (!drag.moved && Math.hypot(dx, dy) * k < 6) return; drag.moved = true;
+      for (const [id, o] of drag.l0) { const m = doc.layers.find(x => x.id === id); if (m) { m.x = o.x + dx; m.y = o.y + dy; } }
+      placeSel(); return redraw();
+    }
     const l = layer(), p = toPage(e), o = drag.l0, a = (o.rot || 0) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
     if (cropping && o.crop) {
       // Crop: edges cut away (the whole stays where it is); dragging inside slides the whole under the window.
@@ -832,12 +1024,23 @@ DZ.edit = async (id) => {
     }
     redraw();
   });
-  const end = () => { if (!drag) return; drag = null; guides(false, false); changed(true); drawSide(); };
+  const end = () => { cancelPress(); if (!drag) return; const d = drag; drag = null; guides(false, false);
+    if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
+    changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
   addEventListener('keydown', function keys(e) {
     if (!document.body.contains(el)) return removeEventListener('keydown', keys);
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(e.shiftKey ? 1 : -1); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(doc.layers.filter(l => !l.hide).map(l => l.id)); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); if (targets().length) merge(targets()); return; }
+    if (many()) {
+      if (e.key === 'Escape') { picking = false; return setPicks([]); }
+      if (e.key === 'Delete' || e.key === 'Backspace') return multiAct('del');
+      const st = e.shiftKey ? 20 : 4, mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
+      if (mv) { e.preventDefault(); for (const m of picked()) if (!m.lock) { m.x += mv[0]; m.y += mv[1]; } changed(); placeSel(); }
+      return;
+    }
     const l = layer(); if (!l) return;
     if (e.key === 'Delete' || e.key === 'Backspace') { doc.layers = doc.layers.filter(x => x !== l); sel = null; changed(true); drawSide(); }
     const step = e.shiftKey ? 20 : 4, mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
@@ -849,17 +1052,27 @@ DZ.edit = async (id) => {
   side.addEventListener('click', async (e) => {
     const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
     if (d('tab')) { tab = d('tab'); return drawSide(); }
+    if (d('mact')) return multiAct(d('mact'));
+    if (d('align')) return align(d('align'));
     const row = t.closest('[data-lid]');
     if (row && !t.closest('[data-grip]')) {
       const ly = doc.layers.find(x => x.id === row.dataset.lid); if (!ly) return;
+      if (rowHeld) { rowHeld = false; return; }   // the long press already picked it
+      if (t.closest('[data-lclip]')) { if (doc.layers.indexOf(ly) > 0) ly.clip = !ly.clip || undefined; changed(true); return drawSide(); }
       if (t.closest('[data-lhide]')) { ly.hide = !ly.hide; if (ly.hide && sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
       if (t.closest('[data-llock]')) { ly.lock = !ly.lock; placeSel(); changed(true); return drawSide(); }
       if (t.closest('[data-ldel]')) { doc.layers = doc.layers.filter(x => x !== ly); if (sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
+      if (e.shiftKey && !t.closest('button')) {   // a range in the list, from the last one picked
+        const list = [...doc.layers].reverse(), a = list.findIndex(x => x.id === (anchor || sel)), b = list.indexOf(ly);
+        if (a < 0) return togglePick(ly.id);
+        return setPicks(new Set([...picks, ...list.slice(Math.min(a, b), Math.max(a, b) + 1).map(x => x.id)]));
+      }
+      if ((picking || e.ctrlKey || e.metaKey) && !t.closest('button')) return togglePick(ly.id);
       if (t.closest('[data-lname]') && sel === ly.id) {
         const n = prompt('Layer name:', layerName(ly)); if (n == null) return;
         ly.name = n.trim() || undefined; changed(true); return drawSide();
       }
-      return select(ly.id);
+      anchor = ly.id; return select(ly.id);
     }
     if (d('add')) {
       const a = d('add');
@@ -905,6 +1118,9 @@ DZ.edit = async (id) => {
         const cx = l.x + l.w / 2 - (vx * Math.cos(a1) - vy * Math.sin(a1)), cy = l.y + l.h / 2 - (vx * Math.sin(a1) + vy * Math.cos(a1));
         l.crop = { x: 0, y: 0, w: 1, h: 1 }; l.w = FW; l.h = FH; l.x = cx - FW / 2; l.y = cy - FH / 2; changed(true); return drawSide(); }
       if (a === 'unbend') { l.arc = 0; changed(true); return drawSide(); }
+      if (a === 'pick') return startPicking(l.id);
+      if (a === 'flatten') return merge([l.id]);
+      if (a === 'clip') { if (i > 0) l.clip = !l.clip || undefined; }
       if (a === 'del') { doc.layers.splice(i, 1); sel = null; }
       if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id; }
       if (a === 'up' && i < doc.layers.length - 1) [doc.layers[i], doc.layers[i + 1]] = [doc.layers[i + 1], doc.layers[i]];
@@ -923,8 +1139,13 @@ DZ.edit = async (id) => {
       const nt = side.querySelector('.dz-text'); nt.focus(); nt.setSelectionRange(at + ins.length, at + ins.length);
     }
   });
-  let ldrag = null;
+  let ldrag = null, rowPress = null, rowHeld = false;
   side.addEventListener('pointerdown', (e) => {
+    const r = e.target.closest('.dz-lr'); rowHeld = false;
+    if (r && !e.target.closest('[data-grip]') && !e.target.closest('button') && e.pointerType !== 'mouse') {
+      clearTimeout(rowPress?.t);
+      rowPress = { x: e.clientX, y: e.clientY, t: setTimeout(() => { rowPress = null; rowHeld = true; startPicking(r.dataset.lid); }, 550) };
+    }
     const g = e.target.closest('[data-grip]'); if (!g) return;
     e.preventDefault();
     const row = g.closest('.dz-lr'), rows = [...$('#dz-ll').children];
@@ -932,6 +1153,7 @@ DZ.edit = async (id) => {
     row.classList.add('drag'); g.setPointerCapture(e.pointerId);
   });
   side.addEventListener('pointermove', (e) => {
+    if (rowPress && Math.hypot(e.clientX - rowPress.x, e.clientY - rowPress.y) > 8) { clearTimeout(rowPress.t); rowPress = null; }
     if (!ldrag) return;
     const { row, rows, from, h } = ldrag, dy = e.clientY - ldrag.y0;
     const to = Math.max(0, Math.min(rows.length - 1, from + Math.round(dy / h))); ldrag.to = to;
@@ -946,7 +1168,10 @@ DZ.edit = async (id) => {
     if (from !== to) { const list = [...doc.layers].reverse(), [m] = list.splice(from, 1); list.splice(to, 0, m); doc.layers = list.reverse(); changed(true); }
     drawSide();
   };
-  side.addEventListener('pointerup', ldrop); side.addEventListener('pointercancel', ldrop);
+  const rowUp = () => { clearTimeout(rowPress?.t); rowPress = null; };
+  side.addEventListener('pointerup', (e) => { rowUp(); ldrop(e); }); side.addEventListener('pointercancel', (e) => { rowUp(); ldrop(e); });
+  side.addEventListener('contextmenu', (e) => { if (e.target.closest('.dz-lr')) e.preventDefault(); });
+  page.addEventListener('contextmenu', (e) => e.preventDefault());
   side.addEventListener('input', (e) => {
     const t = e.target, l = layer(), key = t.dataset.k;
     if (t.dataset.dim && l) {
