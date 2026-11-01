@@ -1169,3 +1169,33 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
   .bt { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
   .bt-stage { height: calc(100dvh - 150px); }
 }
+
+/* Split for printing */
+.sp { display: grid; gap: 12px; }
+.sp-stage { height: min(56vh, 560px); border-radius: 14px; border: 1px solid var(--line); background: var(--bg3); display: grid; place-items: center; overflow: hidden; }
+.sp-img { position: relative; box-shadow: 0 4px 20px rgba(0,0,0,.5); }
+.sp-img canvas { display: block; }
+#sp-ov { position: absolute; inset: 0; }
+.sp-band { position: absolute; background: rgba(31,182,166,.18); pointer-events: none; }
+.sp-band.v { top: 0; bottom: 0; } .sp-band.h { left: 0; right: 0; }
+.sp-cut { position: absolute; z-index: 2; touch-action: none; }
+.sp-cut.v { top: 0; bottom: 0; width: 24px; margin-left: -12px; cursor: ew-resize; background: linear-gradient(90deg, transparent 11px, #e0605a 11px 13px, transparent 13px); }
+.sp-cut.h { left: 0; right: 0; height: 24px; margin-top: -12px; cursor: ns-resize; background: linear-gradient(transparent 11px, #e0605a 11px 13px, transparent 13px); }
+.sp-cut span { position: absolute; background: #e0605a; color: #fff; font: 700 10px var(--ui); padding: 2px 5px; border-radius: 6px; white-space: nowrap; }
+.sp-cut.v span { top: 6px; left: 50%; transform: translateX(-50%); } .sp-cut.h span { left: 6px; top: 50%; transform: translateY(-50%); }
+.sp-cut.on span { background: var(--teal); color: #061211; }
+.sp-lab { position: absolute; transform: translate(-50%, -50%); font: 800 16px var(--ui); font-style: normal; color: #0d4f49; background: rgba(255,255,255,.85);
+  padding: 3px 8px; border-radius: 8px; text-align: center; pointer-events: none; line-height: 1.2; }
+.sp-lab small { display: block; font-size: 10px; font-weight: 600; color: #555; }
+.sp-lab.bad { color: #b3261e; outline: 2px solid #e0605a; }
+.sp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.sp-step { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.sp-step button { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: 700 18px var(--ui); cursor: pointer; }
+.sp-step b { min-width: 20px; text-align: center; font-size: 18px; }
+@media (min-width: 900px) { .sp { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; } .sp-stage { height: calc(100dvh - 150px); } }
+@media print {
+  .sp-page { break-after: page; page-break-after: always; }
+  .sp-page:last-child { break-after: auto; page-break-after: auto; }
+  .sp-page img { display: block; }
+  .sp-cap { font: 8pt Inter, sans-serif; color: #666; margin-top: 2mm; }
+}

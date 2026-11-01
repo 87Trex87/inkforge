@@ -1166,3 +1166,175 @@ BT.mount = () => {
   new ResizeObserver(show).observe(stage);
   show();
 };
+
+
+/* ---------- Split for printing ----------
+   Big stencils (back pieces, sleeves) don't fit one sheet. The design is cut into pieces that each fit a
+   page, printed at real size, then taped together. Cuts sit at positions in cm; dragging one is only
+   allowed while every piece next to it still fits the page. An overlap repeats a strip of the design on
+   both pieces, and each piece prints the exact cut as a dashed line: lay one dashed line over the other. */
+const SP_PAPER = { A4: [190, 277], A3: [277, 400], Letter: [196, 259] };   // printable area in mm (10 mm margins)
+const SP = { src: null, name: 'stencil', wcm: 40, paper: 'A4', land: false, ov: 1, xs: [], ys: [] };
+const spMax = () => { const [w, h] = SP_PAPER[SP.paper]; return SP.land ? [h / 10, w / 10] : [w / 10, h / 10]; };   // cm
+const spHcm = () => SP.src ? SP.wcm * SP.src.height / SP.src.width : 0;
+const spNeed = (len, max) => Math.max(1, Math.ceil((len - SP.ov) / Math.max(0.5, max - SP.ov) - 1e-9));
+// Even cuts into n pieces along a length.
+const spEven = (len, n) => Array.from({ length: n - 1 }, (_, i) => len * (i + 1) / n);
+function spReset(keep) {
+  const [mw, mh] = spMax(), W = SP.wcm, H = spHcm();
+  const nx = Math.max(spNeed(W, mw), keep ? SP.xs.length + 1 : 0), ny = Math.max(spNeed(H, mh), keep ? SP.ys.length + 1 : 0);
+  SP.xs = spEven(W, nx); SP.ys = spEven(H, ny);
+}
+// Each piece: its cut-to-cut area plus the overlap on sides that have a neighbour (cm).
+function spPieces() {
+  const W = SP.wcm, H = spHcm(), xs = [0, ...SP.xs, W], ys = [0, ...SP.ys, H], o = SP.ov / 2, out = [];
+  for (let r = 0; r < ys.length - 1; r++) for (let c = 0; c < xs.length - 1; c++) {
+    const x0 = Math.max(0, xs[c] - (c ? o : 0)), x1 = Math.min(W, xs[c + 1] + (c < xs.length - 2 ? o : 0));
+    const y0 = Math.max(0, ys[r] - (r ? o : 0)), y1 = Math.min(H, ys[r + 1] + (r < ys.length - 2 ? o : 0));
+    out.push({ r, c, label: String.fromCharCode(65 + r) + (c + 1), x0, x1, y0, y1, cuts: { l: c ? xs[c] : null, r: c < xs.length - 2 ? xs[c + 1] : null, t: r ? ys[r] : null, b: r < ys.length - 2 ? ys[r + 1] : null } });
+  }
+  return out;
+}
+const spFits = () => { const [mw, mh] = spMax(); return spPieces().every(p => p.x1 - p.x0 <= mw + 1e-6 && p.y1 - p.y0 <= mh + 1e-6); };
+
+SP.open = async (blob, name, wcm) => {
+  SP.src = await createImageBitmap(blob); SP.name = name || 'stencil'; SP.wcm = wcm || SP.wcm; spReset();
+  if (location.hash === '#split') SP.mount(); else location.hash = 'split';
+};
+SP.mount = () => {
+  const el = $('#sp'); if (!el) return;
+  if (!SP.src) {
+    el.innerHTML = `<label class="card st-pick"><div class="empty-ico">${ICON.split}</div>
+      <div style="font:26px var(--display)">Split for printing</div>
+      <div class="muted">For stencils bigger than your paper: cut a design into pages, print them at real size and tape them together. Make the stencil first, then tap Split in the stencil maker, or choose an image here.</div>
+      <span class="btn primary" style="margin-top:14px">Choose image</span><input type="file" accept="image/*" id="sp-file" hidden></label>`;
+    $('#sp-file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
+      try { SP.src = await createImageBitmap(f); SP.name = f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_'); spReset(); SP.mount(); } catch { toast('Could not read that image.'); } };
+    return;
+  }
+  const draw = () => {
+    const H = spHcm(), [mw, mh] = spMax(), ps = spPieces(), pages = ps.length;
+    el.innerHTML = `<div class="sp">
+      <div class="sp-stage" id="sp-stage"><div class="sp-img" id="sp-img"><canvas id="sp-cv"></canvas><div id="sp-ov"></div></div></div>
+      <div class="card sp-ctl">
+        <div class="two">
+          <label class="field"><span>Width ${help('Real size of the whole design on the skin. Height follows the image.')}</span>
+            <div class="unit-in"><input class="in" id="sp-w" type="number" inputmode="decimal" min="5" max="300" step="0.5" value="${+SP.wcm.toFixed(1)}"><em>cm</em></div></label>
+          <label class="field"><span>Height</span><div class="unit-in"><input class="in" value="${H.toFixed(1)}" disabled><em>cm</em></div></label>
+        </div>
+        <div class="lbl">Paper</div>
+        <div class="row" style="gap:6px;flex-wrap:nowrap">
+          <div class="seg" style="flex:1">${Object.keys(SP_PAPER).map(k => `<button data-paper="${k}" class="${SP.paper === k ? 'on' : ''}" style="flex:1">${k}</button>`).join('')}</div>
+          <div class="seg">${[['0', 'Portrait'], ['1', 'Landscape']].map(([k, l]) => `<button data-land="${k}" class="${+SP.land === +k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div class="lbl" style="margin-top:10px">Overlap for taping ${help('A strip of the design printed on both pieces, so you can line them up. 0 = pieces just touch.')}</div>
+        <div class="seg">${[0, 0.5, 1, 2].map(v => `<button data-ov="${v}" class="${SP.ov === v ? 'on' : ''}" style="flex:1">${v ? v + ' cm' : 'None'}</button>`).join('')}</div>
+        <div class="sp-grid">
+          <div><span class="lbl">Columns</span><div class="sp-step"><button data-nx="-1">−</button><b>${SP.xs.length + 1}</b><button data-nx="1">+</button></div></div>
+          <div><span class="lbl">Rows</span><div class="sp-step"><button data-ny="-1">−</button><b>${SP.ys.length + 1}</b><button data-ny="1">+</button></div></div>
+        </div>
+        <p class="muted" style="font-size:12px;margin:8px 0">${pages} page${pages > 1 ? 's' : ''} on ${SP.paper} ${SP.land ? 'landscape' : 'portrait'} (up to ${mw.toFixed(1)} × ${mh.toFixed(1)} cm each).
+          Drag the dashed cut lines to move a cut, for example away from a face or fine detail. <button class="link" id="sp-even">Space evenly</button></p>
+        <div class="row" style="gap:6px"><button class="btn" id="sp-save">Save pieces</button><button class="btn primary" id="sp-print" style="flex:1">Print ${pages} page${pages > 1 ? 's' : ''}</button></div>
+        <label class="btn small" style="margin-top:10px">Another image<input type="file" accept="image/*" id="sp-file" hidden></label>
+      </div></div>`;
+    lay(); bind();
+  };
+  // Preview: the design with its cut lines (draggable), overlap strips and piece labels.
+  let pxcm = 1;
+  const lay = () => {
+    const st = $('#sp-stage'), r = st.getBoundingClientRect(), H = spHcm(), cv = $('#sp-cv');
+    pxcm = Math.min((r.width - 24) / SP.wcm, (r.height - 24) / H);
+    const w = SP.wcm * pxcm, h = H * pxcm, s = Math.min(2, devicePixelRatio || 1);
+    Object.assign($('#sp-img').style, { width: w + 'px', height: h + 'px' });
+    cv.width = Math.round(w * s); cv.height = Math.round(h * s); cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height); x.drawImage(SP.src, 0, 0, cv.width, cv.height);
+    overlay();
+  };
+  const overlay = () => {
+    const H = spHcm(), o = SP.ov * pxcm, ps = spPieces(), [mw, mh] = spMax();
+    $('#sp-ov').innerHTML = SP.xs.map((v, i) => `<i class="sp-band v" style="left:${v * pxcm - o / 2}px;width:${o}px"></i><b class="sp-cut v" data-cx="${i}" style="left:${v * pxcm}px"><span>${v.toFixed(1)}</span></b>`).join('')
+      + SP.ys.map((v, i) => `<i class="sp-band h" style="top:${v * pxcm - o / 2}px;height:${o}px"></i><b class="sp-cut h" data-cy="${i}" style="top:${v * pxcm}px"><span>${v.toFixed(1)}</span></b>`).join('')
+      + ps.map(p => { const bad = p.x1 - p.x0 > mw + 1e-6 || p.y1 - p.y0 > mh + 1e-6;
+        return `<em class="sp-lab ${bad ? 'bad' : ''}" style="left:${(p.x0 + p.x1) / 2 * pxcm}px;top:${(p.y0 + p.y1) / 2 * pxcm}px">${p.label}<small>${(p.x1 - p.x0).toFixed(1)} × ${(p.y1 - p.y0).toFixed(1)} cm</small></em>`; }).join('');
+  };
+  const bind = () => {
+    const ctl = el.querySelector('.sp-ctl');
+    ctl.onclick = (e) => {
+      const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+      if (d('paper')) { SP.paper = d('paper'); spReset(); return draw(); }
+      if (d('land') != null) { SP.land = d('land') === '1'; spReset(); return draw(); }
+      if (d('ov') != null) { SP.ov = +d('ov'); spReset(true); if (!spFits()) spReset(); return draw(); }
+      if (d('nx') || d('ny')) {
+        const ax = !!d('nx'), dn = +(d('nx') || d('ny')), [mw, mh] = spMax(), len = ax ? SP.wcm : spHcm(), n = (ax ? SP.xs : SP.ys).length + 1 + dn;
+        if (n < spNeed(len, ax ? mw : mh)) return toast('Fewer pieces would not fit the paper.');
+        if (n > 12) return;
+        if (ax) SP.xs = spEven(len, n); else SP.ys = spEven(len, n); return draw();
+      }
+      if (t.closest('#sp-even')) { SP.xs = spEven(SP.wcm, SP.xs.length + 1); SP.ys = spEven(spHcm(), SP.ys.length + 1); return overlay(); }
+      if (t.closest('#sp-print')) return spPrint();
+      if (t.closest('#sp-save')) return spSave();
+    };
+    $('#sp-w').onchange = (e) => { SP.wcm = Math.max(5, Math.min(300, +e.target.value || SP.wcm)); spReset(); draw(); };
+    ctl.querySelector('#sp-file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
+      try { SP.src = await createImageBitmap(f); SP.name = f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_'); spReset(); draw(); } catch { toast('Could not read that image.'); } };
+    // Dragging a cut: clamped so both pieces beside it still fit the page.
+    const ov = $('#sp-ov'); let dr = null;
+    // The lines are redrawn while dragging, so the drag follows the pointer on the whole window, not the line itself.
+    ov.onpointerdown = (e) => { const c = e.target.closest('.sp-cut'); if (!c) return; e.preventDefault();
+      dr = { ax: c.dataset.cx != null, i: +(c.dataset.cx ?? c.dataset.cy) };
+      addEventListener('pointermove', move); addEventListener('pointerup', stop); addEventListener('pointercancel', stop); };
+    const stop = () => { dr = null; removeEventListener('pointermove', move); removeEventListener('pointerup', stop); removeEventListener('pointercancel', stop); };
+    const move = (e) => {
+      if (!dr) return;
+      const r = $('#sp-img').getBoundingClientRect(), arr = dr.ax ? SP.xs : SP.ys, len = dr.ax ? SP.wcm : spHcm(), max = (dr.ax ? spMax()[0] : spMax()[1]);
+      const v = ((dr.ax ? e.clientX - r.left : e.clientY - r.top)) / pxcm, a = dr.i ? arr[dr.i - 1] : 0, b = dr.i < arr.length - 1 ? arr[dr.i + 1] : len;
+      // A piece is its cut-to-cut length plus half the overlap on each side that has a neighbour.
+      const extra = (lo, hi) => (lo > 0 ? SP.ov / 2 : 0) + (hi < len ? SP.ov / 2 : 0);
+      const lo = Math.max(a + 1, b - (max - extra(v, b))), hi = Math.min(b - 1, a + (max - extra(a, v)));
+      if (lo <= hi) { arr[dr.i] = Math.max(lo, Math.min(hi, v)); overlay(); $('#sp-ov').querySelector(dr.ax ? `[data-cx="${dr.i}"]` : `[data-cy="${dr.i}"]`)?.classList.add('on'); }
+    };
+  };
+  // Each piece as its own canvas at print resolution (about 300 dpi), with its cut lines dashed and its label.
+  const pieceCanvas = (p) => {
+    const sx = SP.src.width / SP.wcm, w = Math.round((p.x1 - p.x0) * sx), h = Math.round((p.y1 - p.y0) * sx);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const x = cv.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+    x.drawImage(SP.src, p.x0 * sx, p.y0 * sx, w, h, 0, 0, w, h);
+    x.strokeStyle = 'rgba(80,80,80,.85)'; x.lineWidth = Math.max(2, sx * 0.03); x.setLineDash([sx * 0.25, sx * 0.18]);
+    for (const [k, v] of Object.entries(p.cuts)) { if (v == null) continue; x.beginPath();
+      if (k === 'l' || k === 'r') { const X = (v - p.x0) * sx; x.moveTo(X, 0); x.lineTo(X, h); } else { const Y = (v - p.y0) * sx; x.moveTo(0, Y); x.lineTo(w, Y); } x.stroke(); }
+    x.setLineDash([]); x.font = `700 ${Math.round(sx * 0.5)}px Inter, sans-serif`; x.fillStyle = 'rgba(80,80,80,.9)'; x.textBaseline = 'top';
+    x.fillText(p.label, sx * 0.2, sx * 0.2);
+    return cv;
+  };
+  const spPrint = async () => {
+    if (!spFits()) return toast('A piece is bigger than the paper. Add a column or row.');
+    const [mw, mh] = spMax();
+    let pa = $('#print-area'); if (!pa) { pa = document.createElement('div'); pa.id = 'print-area'; document.body.appendChild(pa); }
+    const urls = [];
+    pa.innerHTML = spPieces().map(p => {
+      let cv = pieceCanvas(p), w = p.x1 - p.x0, h = p.y1 - p.y0;
+      if (SP.land) { const r = document.createElement('canvas'); r.width = cv.height; r.height = cv.width; const x = r.getContext('2d');   // landscape pieces print turned onto a portrait page
+        x.translate(r.width, 0); x.rotate(Math.PI / 2); x.drawImage(cv, 0, 0); cv = r; [w, h] = [h, w]; }
+      const u = cv.toDataURL('image/png'); urls.push(u);
+      return `<div class="sp-page"><img src="${u}" style="width:${w}cm;height:${h}cm" alt="">
+        <div class="sp-cap">${p.label} · ${esc(SP.name)} · ${w.toFixed(1)} × ${h.toFixed(1)} cm${SP.ov ? ` · overlap ${SP.ov} cm: lay the dashed lines over each other` : ''} · print at 100% / actual size</div></div>`;
+    }).join('');
+    await Promise.all([...pa.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); pa.innerHTML = ''; removeEventListener('afterprint', done); };
+    addEventListener('afterprint', done);
+    window.print();
+  };
+  const spSave = async () => {
+    const files = [];
+    for (const p of spPieces()) { const cv = pieceCanvas(p); files.push(new File([await new Promise(r => cv.toBlob(r, 'image/png'))], `${SP.name}-${p.label}.png`, { type: 'image/png' })); }
+    try {
+      if (navigator.canShare?.({ files })) return await navigator.share({ files, title: SP.name });
+      for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); await new Promise(r => setTimeout(r, 250)); }
+      toast(`Saved ${files.length} pieces.`);
+    } catch (err) { if (err.name !== 'AbortError') toast('Could not save: ' + err.message); }
+  };
+  draw();
+  new ResizeObserver(() => { if ($('#sp-stage')) lay(); }).observe($('#sp-stage'));
+};

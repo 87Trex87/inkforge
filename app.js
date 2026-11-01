@@ -566,6 +566,7 @@ const ICON = {
   stock: '<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg>',
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
   stats: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
+  split: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18M3 12h18" stroke-dasharray="2.5 2"/></svg>',
   bend: '<svg viewBox="0 0 24 24"><path d="M3 9c5-5 13-5 18 0M5 15c4-3.5 10-3.5 14 0"/><path d="M3 9l2 6M21 9l-2 6"/></svg>',
   design: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15l3-4 3 3 2-2 3 3"/><circle cx="8.5" cy="9" r="1.2"/></svg>',
   cake: '<svg viewBox="0 0 24 24"><path d="M4 20h16v-7H4zM4 15c2 1 4 1 4-1 0 2 4 2 4 0 0 2 4 2 4 0 0 2 2 2 4 1M12 13V9M12 6v.5"/></svg>',
@@ -1138,7 +1139,8 @@ const VIEWS = {
         tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil'),
         tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel'),
         tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs'),
-        tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend')])
+        tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend'),
+        tile('split', 'Split for printing', 'Big stencils over several pages to tape together', false, 'split')])
       + tileGroup('Your work', [
         tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
         tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')])
@@ -1394,6 +1396,11 @@ const VIEWS = {
     title: () => 'Quote',
     render: () => '<div id="qz"></div>',
     mount() { qzDraw(); }
+  },
+  split: {
+    title: () => 'Split for printing',
+    render: () => '<div id="sp"></div>',
+    mount() { SP.mount(); }
   },
   bend: {
     title: () => 'Bend tool',
@@ -1707,8 +1714,9 @@ const VIEWS = {
         <div id="st-sliders"></div>
         <div class="row st-export">
           <label class="field" style="margin:0;flex:0 0 120px"><span>Print width ${help('Real size on paper in centimetres. Height follows the image proportions.')}</span>
-            <input class="in" id="st-cm" type="number" inputmode="decimal" min="1" max="40" step="0.5" value="${ST.cm}"></label>
+            <input class="in" id="st-cm" type="number" inputmode="decimal" min="1" max="300" step="0.5" value="${ST.cm}"></label>
           <button class="btn" id="st-print" style="align-self:flex-end">Print</button>
+          <button class="btn" id="st-split" style="align-self:flex-end" data-tip="Too big for one sheet? Split it over several pages to tape together">Split</button>
           <button class="btn primary" id="st-save" style="align-self:flex-end;flex:1">Save / share</button>
         </div>
       </div>` : `
@@ -1736,9 +1744,10 @@ const VIEWS = {
       $('#st-ink').onclick = (e) => { const b = e.target.closest('.ink'); if (!b) return; ST.p.ink = b.dataset.c;
         $('#st-ink').querySelectorAll('.ink').forEach(x => x.classList.toggle('on', x === b)); stDraw(false); stSave(); };
       $('#st-new').onclick = () => { ST.src = null; render(); };
-      $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(40, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); });
+      $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(300, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); });
       $('#st-save').onclick = stExport;
       $('#st-print').onclick = stPrint;
+      $('#st-split').onclick = async () => { if (!ST.mask) return; await SP.open(await stBlob(), `stencil-${ymd(new Date())}`, ST.cm); };
       stPrepare(); stRun();
     }
   },
