@@ -6891,11 +6891,15 @@ addEventListener('hashchange', () => { if (booted) render(); });
 
 /* ---------- Boot ---------- */
 (async () => {
+  // A cached older index.html may not list newer files (e.g. tour.js). Load any that are missing now,
+  // rather than failing when a workspace opens.
+  for (const [src, have] of [['reel.js', () => typeof REEL_VERSION !== 'undefined'], ['design.js', () => typeof DESIGN_VERSION !== 'undefined'], ['tour.js', () => typeof TOUR_VERSION !== 'undefined']])
+    if (!have()) await new Promise(res => { const sc = document.createElement('script'); sc.src = src + '?v=' + Date.now(); sc.onload = sc.onerror = res; document.head.appendChild(sc); });
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
   if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 6 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1 || typeof TOUR_VERSION === 'undefined' || TOUR_VERSION !== 1) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
-    if (!tried) { await Promise.all(['reel.js', 'design.js', 'tour.js', 'app.js', 'app.css'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
+    if (!tried) { await Promise.all(['./', 'index.html', 'reel.js', 'design.js', 'tour.js', 'app.js', 'app.css', 'sw.js'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }
   try { sessionStorage.removeItem('if-reload'); } catch {}
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
