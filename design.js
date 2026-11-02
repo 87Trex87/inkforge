@@ -1191,7 +1191,7 @@ DZ.edit = async (id) => {
     const L = picked(), n = L.length, all = (f) => n && L.every(f);
     side.innerHTML = `<div class="dz-lh"><b>${n ? `${n} selected` : 'Select items'}</b><button class="btn small" data-mact="done">Done</button></div>
       <p class="muted" style="font-size:12px;margin:0 0 10px">${picking ? 'Tap items on the design or in Layers to add or remove them. Drag a selected item to move them all.'
-        : 'Ctrl-click adds or removes; Shift-click in Layers picks a range. Shift-drag on an empty spot draws a box: left to right picks what's wholly inside, right to left anything it touches. On a touchscreen, hold an item for a moment, or hold an empty spot then drag for the box.'}</p>
+        : 'Ctrl-click adds or removes; Shift-click in Layers picks a range. Shift-drag on an empty spot draws a box: left to right picks what’s wholly inside, right to left anything it touches. On a touchscreen, hold an item for a moment, or hold an empty spot then drag for the box.'}</p>
       <div class="row" style="gap:6px;margin-bottom:10px"><button class="btn small" data-mact="all">Select all</button><button class="btn small" data-mact="none" ${n ? '' : 'disabled'}>Clear</button></div>
       <div class="dz-acts">
         <button data-mact="dup" ${n ? '' : 'disabled'} title="Duplicate">⧉<span>Copy</span></button>
