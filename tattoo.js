@@ -208,8 +208,8 @@ TT.open = async (el, id) => {
   const buildTrauma = () => {
     const rg = trRed.getContext('2d'), mg = trMask.getContext('2d'), ri = rg.createImageData(tw, th), mi = mg.createImageData(tw, th);
     for (let i = 0; i < TR.length; i++) { const t = TR[i], j = i * 4; if (!t) continue;
-      ri.data[j] = 214; ri.data[j + 1] = 64; ri.data[j + 2] = 52; ri.data[j + 3] = Math.min(150, t * 230);
-      const m = Math.max(0, Math.min(1, (t - 0.45) / 0.85)); mi.data[j] = mi.data[j + 1] = mi.data[j + 2] = 255; mi.data[j + 3] = m * m * (3 - 2 * m) * 235; }
+      ri.data[j] = 214; ri.data[j + 1] = 64; ri.data[j + 2] = 52; ri.data[j + 3] = Math.min(150, Math.max(0, t - 0.3) * 160);
+      const m = Math.max(0, Math.min(1, (t - 1) / 1.2)); mi.data[j] = mi.data[j + 1] = mi.data[j + 2] = 255; mi.data[j + 3] = m * m * (3 - 2 * m) * 235; }
     rg.putImageData(ri, 0, 0); mg.putImageData(mi, 0, 0);
     const tg = trTex.getContext('2d'); tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, trTex.width, trTex.height);
     tg.fillStyle = tg.createPattern(patty, 'repeat'); tg.fillRect(0, 0, trTex.width, trTex.height);
@@ -385,12 +385,12 @@ TT.open = async (el, id) => {
         let inkC = st.tool === 'erase' ? 1 : Math.sqrt(Math.min(1, st.ink.v * 1.6));
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q);
-          if (t0 > 0.7) inkC *= Math.max(0.3, 1 - (t0 - 0.7) * 0.8) * (Math.random() < Math.min(0.5, (t0 - 0.9) * 0.6) ? 0 : 1);   // chewed skin: patchy
-          trAdd(q, pen.foot, 0.011 * depth * Math.sqrt(lay.length) / (cal.tough || 1));
+          if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
+          trAdd(q, pen.foot, 0.007 * Math.pow(depth, 4) / (cal.tough || 1));   // tough skin: light passes barely work it; digging in does
           const risk = Math.max(0, Math.min(1, (0.06 - gapMm(pen.speed)) / 0.04)) * Math.max(0, Math.min(1, (depth - 0.65) / 0.2)) * (cal.blow ?? 1);   // a normal line lands ~0.1 mm apart
           if (risk > 0.04 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
-          if (t0 > 1 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
+          if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
         }
         puncture(pen.cx, q, turnOf(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         if (st.tool !== 'erase') st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100);
