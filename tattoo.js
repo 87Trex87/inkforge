@@ -142,6 +142,41 @@ TT.open = async (el, id) => {
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0 }, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? 75, view: 'work', viewC: null, magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt };
+  /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
+     saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
+     spot; ink lighter than what's there is held back in proportion to how saturated it is (a light value can't take
+     over a dark one, but fills a feathered edge), while darker ink still goes in. Where two inks share a spot they
+     mix like pigment (blue and yellow make green). The pixels are worked on directly and copied to the layer's
+     canvas once per frame. */
+  const INK = TT_LAYERS.map(([key]) => key).filter(key => key !== 'stencil');
+  const imgd = {}, dirty = {};
+  const syncIn = (key) => { if (INK.includes(key)) imgd[key] = L[key].getContext('2d').getImageData(0, 0, W, H); };
+  INK.forEach(syncIn);
+  const ALOG = new Float32Array(256); for (let i = 0; i < 256; i++) ALOG[i] = -Math.log(Math.max(0.02, i / 255));
+  const lumOf = (D, i) => (D[i] * 0.299 + D[i + 1] * 0.587 + D[i + 2] * 0.114) / 255;
+  const dotPig = (T, cx0, cy0, r, amt, erase) => {
+    const x0 = Math.max(0, Math.floor(cx0 - r - 1)), x1 = Math.min(W - 1, Math.ceil(cx0 + r + 1)), y0 = Math.max(0, Math.floor(cy0 - r - 1)), y1 = Math.min(H - 1, Math.ceil(cy0 + r + 1));
+    if (x0 > x1 || y0 > y1) return;
+    const D = imgd[T.key].data, col = T.col, lc = T.lum, Ac = T.ac;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const cov = Math.min(1, r + 0.5 - Math.hypot(x + 0.5 - cx0, y + 0.5 - cy0)); if (cov <= 0) continue;
+      const a = amt * cov, i = (y * W + x) * 4;
+      if (erase) { D[i + 3] = Math.floor(D[i + 3] * (1 - a)); continue; }
+      let keep = 1, lw = 0, dw = 0;   // the ink already here, in every layer: how saturated, and how light
+      for (const key of INK) { const E = imgd[key].data, d2 = E[i + 3] / 255; if (!d2) continue; keep *= 1 - d2; lw += lumOf(E, i) * d2; dw += d2; }
+      const block = (1 - keep) * (dw ? Math.min(1, (lc + 0.03) / (lw / dw + 0.03)) : 0);
+      const add = a * (1 - block); if (add <= 0.0005) continue;
+      const d0 = D[i + 3] / 255;
+      if (d0 > 0.004) { const t = add / (d0 + add); for (let c = 0; c < 3; c++) D[i + c] = 255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)); }
+      else { D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; }
+      D[i + 3] = Math.min(255, Math.floor(D[i + 3] + add * 255 + Math.random()));
+    }
+    const b = dirty[T.key] ||= { x0, y0, x1, y1 }; b.x0 = Math.min(b.x0, x0); b.y0 = Math.min(b.y0, y0); b.x1 = Math.max(b.x1, x1); b.y1 = Math.max(b.y1, y1);
+  };
+  const flushPig = () => { for (const key in dirty) { const b = dirty[key]; L[key].getContext('2d').putImageData(imgd[key], 0, 0, b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1); delete dirty[key]; } };
+  // One mark: into pigment (the page), or painted on a canvas (the test pad).
+  const put = (cx, x, y, r, al, erase) => { if (cx.pig) return dotPig(cx, x, y, r, al, erase);
+    cx.globalAlpha = al; cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill(); };
   const hist = [], fut = [];   // undo and redo: { key, data } snapshots of one layer
   const snap = (key) => { hist.push({ key, data: L[key].getContext('2d').getImageData(0, 0, W, H) }); if (hist.length > 15) hist.shift(); fut.length = 0; };
   el.innerHTML = `<div class="dz-ed tt-ed">
@@ -256,8 +291,8 @@ TT.open = async (el, id) => {
       const dd = Math.max(0.02, depth * (1 + (Math.random() - 0.5) * hang * 0.5));
       const px = p.x + u * -sa + v * ca, py = p.y + u * ca + v * sa, al = Math.min(1, (0.18 + dd * 0.6) * flow * nd.e * inkC);
       if (al <= 0.004) continue;
-      cx.globalAlpha = al; cx.beginPath(); cx.arc(px, py, rr, 0, 7); cx.fill();
-      if (bleed && !erase) { cx.globalAlpha = al * bleed * 0.25; cx.beginPath(); cx.arc(px, py, rr * 1.6, 0, 7); cx.fill(); }
+      put(cx, px, py, rr, al, erase);
+      if (bleed && !erase) put(cx, px, py, rr * 1.6, al * bleed * 0.25, false);
     }
     cx.globalAlpha = 1;
   };
@@ -267,8 +302,10 @@ TT.open = async (el, id) => {
     if (key === 'stencil' && st.tool !== 'erase') { toast('The stencil layer holds a picture to trace. Load one from Layers.'); return false; }
     if (st.view !== 'work') { st.view = 'work'; st.viewC = null; drawView(); }
     const c = L[key]; snap(key);
-    const cx = c.getContext('2d'); cx.globalCompositeOperation = st.tool === 'erase' ? 'destination-out' : 'source-over';
-    cx.fillStyle = st.tool === 'erase' ? '#000' : ttToHex(st.ink.c);
+    let cx;
+    if (INK.includes(key)) { const col = st.ink.c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
+      cx = { pig: true, key, col, lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; }
+    else { cx = c.getContext('2d'); cx.globalCompositeOperation = 'destination-out'; cx.fillStyle = '#000'; }   // the stencil: only the laser
     const p = toPage(e);
     pen = { cx, last: p, t: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId };
     if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('The needle is dry: dip into an ink cap first.', 1800);
@@ -294,7 +331,7 @@ TT.open = async (el, id) => {
       }
       pen.carry = t - d; pen.last = p; pen.t = ev.timeStamp;
     }
-    st.dirty = true; paint(); drawNeedleInk();
+    flushPig(); st.dirty = true; paint(); drawNeedleInk();
   };
   const strokeEnd = () => { pen = null; drawNeedleInk(); };
 
@@ -352,7 +389,7 @@ TT.open = async (el, id) => {
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
 
-  const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, 0, 0); st.dirty = true; paint(); };
+  const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, 0, 0); syncIn(h.key); st.dirty = true; paint(); };
   const swap = (from, to) => { const h = from.pop(); if (!h) return false; to.push({ key: h.key, data: L[h.key].getContext('2d').getImageData(0, 0, W, H) }); undoTo(h); return true; };
   const undo = () => swap(hist, fut) || toast('Nothing to undo.');
   const redo = () => swap(fut, hist) || toast('Nothing to redo.');
@@ -485,7 +522,7 @@ TT.open = async (el, id) => {
     if (ly) {
       if (t.closest('[data-hide]')) { st.hide.has(ly) ? st.hide.delete(ly) : st.hide.add(ly); st.dirty = true; paint(); return drawSide(); }
       if (t.closest('[data-clear]')) { if (!confirm('Clear everything on this layer? Undo brings it back.')) return;
-        const c = L[ly]; snap(ly); c.getContext('2d').clearRect(0, 0, W, H); st.dirty = true; paint(); return; }
+        const c = L[ly]; snap(ly); c.getContext('2d').clearRect(0, 0, W, H); syncIn(ly); st.dirty = true; paint(); return; }
       if (t.closest('[data-stl]')) return loadStencil();
       if (t.matches('input')) return;
       st.layer = ly; st.dirty = true; return drawSide();
