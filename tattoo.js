@@ -58,7 +58,12 @@ const TT_SIZES = [['A4', 21, 29.7], ['A5', 14.8, 21], ['A6', 10.5, 14.8], ['Squa
 
 const TT = {
   st: null,
-  cal() { try { return { penOnly: true, pMax: 1, ...JSON.parse(Settings.get('tt_cal', '{}')) }; } catch { return { penOnly: true, pMax: 1 }; } },
+  /* Overall calibration, for this device and hand, on top of every needle's own feel: the pen's pressure range,
+     a pressure curve, hand speed (how far apart punctures land), how much fast strokes lighten, the angle the pen
+     is naturally held at (tilt counts from there) and ink flow. Set by Tune in, or by hand. */
+  calDefaults: { penOnly: true, pMin: 0, pMax: 1, curve: 0, hand: 1, fade: 1, flow: 1, tilt0: 0 },
+  cal() { try { return { ...TT.calDefaults, ...JSON.parse(Settings.get('tt_cal', '{}')) }; } catch { return { ...TT.calDefaults }; } },
+  saveCal(c) { Settings.set('tt_cal', JSON.stringify(c)); },
   feel(id) { let o = {}; try { o = JSON.parse(Settings.get('tt_feel', '{}'))[id] || {}; } catch {} const nd = TT_NEEDLES.find(n => n.id === id);
     return { ...TT_FEEL, ...TT_FEEL_LIQ[nd.kind], ...o }; },
   setFeel(id, f) { let all = {}; try { all = JSON.parse(Settings.get('tt_feel', '{}')); } catch {} if (f) all[id] = f; else delete all[id]; Settings.set('tt_feel', JSON.stringify(all)); }
@@ -202,9 +207,15 @@ TT.open = async (el, id) => {
   const toPage = (e) => { const { ox, oy, r } = org(); return { x: (e.clientX - r.left - ox) / k, y: (e.clientY - r.top - oy) / k }; };
 
   /* ---------- Needle engine ---------- */
-  const cal = TT.cal();
+  let cal = TT.cal();
   let feel = TT.feel(st.needle), lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size);
-  const curve = (p, c) => Math.pow(Math.max(0, Math.min(1, p)), Math.pow(2, c / 50));   // c -100..100: soft (light presses go deep) .. firm (press harder)
+  const curve = (p, c) => Math.pow(Math.max(0, Math.min(1, p)), Math.pow(2, Math.max(-150, Math.min(150, c)) / 50));   // c -100..100: soft (light presses go deep) .. firm (press harder)
+  // The input, through the overall calibration and then the needle's feel.
+  const pNorm = (ev) => ev.pointerType === 'mouse' ? 0.6 : Math.max(0, Math.min(1, ((ev.pressure || 0.5) - cal.pMin) / Math.max(0.05, cal.pMax - cal.pMin)));
+  const tiltOf = (ev) => Math.max(0, Math.min(1, (Math.hypot(ev.tiltX || 0, ev.tiltY || 0) - cal.tilt0) / Math.max(10, 60 - cal.tilt0)));
+  const depthOf = (pr, speed, tilt) => { const d = feel.dMin + (feel.dMax - feel.dMin) * curve(pr, feel.pCurve + cal.curve);
+    return Math.max(0.02, Math.min(1, d * (1 - Math.min(0.9, speed / 200 * feel.speedFade / 100 * cal.fade) - tilt * feel.tiltFade / 100 * 0.6))); };
+  const gapMm = (speed) => Math.max(0.02, speed * (feel.hand / 100) * cal.hand / feel.hz);   // mm between punctures
   /* Magnums hold their angle like a calligraphy nib: the row of needles stays at magAng whatever way the stroke
      goes (pulled along the row it lines; across it, it shades). With "follows the pen" the row sits across the
      way the pen leans, when it leans enough to tell. Rounds have no direction, so they follow the stroke. */
@@ -220,7 +231,7 @@ TT.open = async (el, id) => {
   const puncture = (cx, p, a, depth, tilt, inkC, erase, sc = mm) => {
     const hang = (feel.hang ?? 40) / 100, loose = 1 - st.stretch / 100;
     const ca = Math.cos(a), sa = Math.sin(a), sp = 1 + tilt * feel.tiltSpread / 100 * 0.8 * (0.5 + hang);
-    const rr = feel.size / 2 * sc * (0.45 + depth * 0.35) * sp, flow = feel.flow / 100, bleed = feel.bleed / 100 * (1 + loose * 0.8);
+    const rr = feel.size / 2 * sc * (0.45 + depth * 0.35) * sp, flow = feel.flow / 100 * cal.flow, bleed = feel.bleed / 100 * (1 + loose * 0.8);
     const hit = (1 - (feel.miss / 100) * (1 - depth)) * (1 - loose * 0.15), wob = loose * 0.12, wu = (Math.random() - 0.5) * wob, wv = (Math.random() - 0.5) * wob;
     for (const nd of lay) {
       if (Math.random() > hit) continue;
@@ -253,13 +264,9 @@ TT.open = async (el, id) => {
       if (d < 0.01) continue;
       const v = d * k / (96 / 25.4) / dt;   // the hand's speed on the screen, mm per second (zoom doesn't change it)
       pen.speed = pen.speed ? pen.speed * 0.7 + v * 0.3 : v; pen.a = Math.atan2(dy, dx);
-      const pr = ev.pointerType === 'mouse' ? 0.6 : (ev.pressure || 0.5) / Math.max(0.05, cal.pMax);
-      const tilt = Math.min(1, Math.hypot(ev.tiltX || 0, ev.tiltY || 0) / 60);
-      let depth = feel.dMin + (feel.dMax - feel.dMin) * curve(pr, feel.pCurve);
-      depth *= 1 - Math.min(0.9, (pen.speed / 200) * feel.speedFade / 100) - tilt * feel.tiltFade / 100 * 0.6;
-      depth = Math.max(0.02, Math.min(1, depth));
+      const tilt = tiltOf(ev), depth = depthOf(pNorm(ev), pen.speed, tilt);
       // punctures land every (hand speed / machine speed) along the skin; `hand` scales screen speed to a tattooing hand's
-      const gap = Math.max(0.02, pen.speed * (feel.hand / 100) / feel.hz / z) * mm;
+      const gap = gapMm(pen.speed) / z * mm;
       let t = pen.carry;
       while (t <= d) {
         const q = { x: pen.last.x + dx * t / d, y: pen.last.y + dy * t / d };
@@ -302,7 +309,7 @@ TT.open = async (el, id) => {
       const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top, vx, vy }; return; }
     cv.setPointerCapture(e.pointerId);
     const touch = e.pointerType === 'touch';
-    if (space || e.button === 1 || (touch && TT.cal().penOnly)) { pan = { x: e.clientX, y: e.clientY, vx, vy }; return; }
+    if (space || e.button === 1 || (touch && cal.penOnly)) { pan = { x: e.clientX, y: e.clientY, vx, vy }; return; }
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     if (strokeStart(e)) strokeMove(e);
   });
@@ -401,6 +408,9 @@ TT.open = async (el, id) => {
     $('#tt-angi').setAttribute('transform', `rotate(${st.magAng} 12 12)`); $('#tt-angl').textContent = st.magTilt ? 'pen' : st.magAng + '°'; }
   const slider = (key, label, min, max, step, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt ? fmt(val) : val}</b></span>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-f="${key}"></label>`;
+  const cslider = (key, label, min, max, step, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt(val)}</b></span>
+    <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-c="${key}"></label>`;
+  const CFMT = { curve: v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even', pMin: v => Math.round(v * 100) + '%', pMax: v => Math.round(v * 100) + '%', hand: v => '× ' + v, fade: v => '× ' + v, flow: v => '× ' + v, tilt0: v => v + '°' };
   const curveSvg = (c) => `<svg class="tt-curve" viewBox="0 0 100 100"><path d="M0 100 ${[...Array(21)].map((_, i) => `L${i * 5} ${100 - curve(i / 20, c) * 100}`).join(' ')}"/></svg>`;
   const drawSide = () => {
     sel(st.panel); side.hidden = !st.panel; if (!st.panel) return;
@@ -421,7 +431,14 @@ TT.open = async (el, id) => {
         <button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
       <canvas class="tt-pad" id="tt-pad" width="560" height="200"></canvas>
       <div class="tt-live" id="tt-live">Pressure – · Speed – · Tilt –</div>
-      <div class="row" style="gap:6px;margin:6px 0 10px"><button class="btn small" data-padclear>Clear the pad</button><button class="btn small" data-pcal>Calibrate pressure</button></div>
+      <div class="row" style="gap:6px;margin:6px 0 10px"><button class="btn small" data-padclear>Clear the pad</button><button class="btn small primary" data-tune>Tune in (guided)</button></div>
+      ${fsec('All needles', `<p class="muted" style="font-size:11px;margin:0 0 6px">Your calibration for this device. Tune in sets these from a few short tasks.</p>
+        ${cslider('curve', 'Pressure curve', -100, 100, 1, cal.curve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
+        ${cslider('pMin', 'Lightest pen reading', 0, 0.9, 0.01, cal.pMin, v => Math.round(v * 100) + '%')}${cslider('pMax', 'Hardest pen reading', 0.1, 1, 0.01, cal.pMax, v => Math.round(v * 100) + '%')}
+        ${cslider('hand', 'Hand speed', 0.1, 5, 0.05, cal.hand, v => '× ' + v)}${cslider('fade', 'Fast strokes lighten', 0.1, 5, 0.05, cal.fade, v => '× ' + v)}
+        ${cslider('flow', 'Ink flow', 0.3, 3, 0.05, cal.flow, v => '× ' + v)}${cslider('tilt0', 'Natural angle', 0, 50, 1, cal.tilt0, v => v + '°')}
+        <button class="btn small" data-calreset>Reset all needles' calibration</button>`, { fold: true })}
+      <div class="lbl" style="margin-top:8px">${nd.id} only</div>
       <div class="lbl">Pressure → depth</div>
       <div class="tt-crow">${curveSvg(f.pCurve)}<div style="flex:1">${slider('pCurve', 'Curve', -100, 100, 1, f.pCurve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
         ${slider('dMin', 'Lightest', 0, 1, 0.01, f.dMin, v => Math.round(v * 100) + '%')}${slider('dMax', 'Deepest', 0, 1, 0.01, f.dMax, v => Math.round(v * 100) + '%')}</div></div>
@@ -457,14 +474,14 @@ TT.open = async (el, id) => {
     if (t.closest('[data-sz]')) { feel.size = +t.closest('[data-sz]').dataset.sz; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); return drawSide(); }
     if (t.closest('[data-feelreset]')) { TT.setFeel(st.needle, null); setNeedle(st.needle); return drawSide(); }
     if (t.closest('[data-padclear]')) return padInit();
-    if (t.closest('[data-pcal]')) { calib = { max: 0 }; toast('Draw on the pad as hard as you would really press, for a few seconds.', 4000);
-      setTimeout(() => { if (!calib) return; const m = calib.max; calib = null; if (m < 0.05) return toast('No pen pressure came through. Try with the stylus on the pad.');
-        Settings.set('tt_cal', JSON.stringify({ ...TT.cal(), pMax: m })); cal.pMax = m; toast(`Your firm press now reads as full depth (${Math.round(m * 100)}% of the pen's range).`, 4000); }, 4500); }
-    if (t.matches('[data-penonly]')) { Settings.set('tt_cal', JSON.stringify({ ...TT.cal(), penOnly: t.checked })); }
+    if (t.closest('[data-tune]')) return tuneIn();
+    if (t.closest('[data-calreset]')) { if (!confirm('Put the calibration for all needles back to the defaults?')) return; cal = { ...TT.calDefaults, penOnly: cal.penOnly }; TT.saveCal(cal); return drawSide(); }
+    if (t.matches('[data-penonly]')) { cal.penOnly = t.checked; TT.saveCal(cal); }
   });
   side.addEventListener('input', (e) => {
     const t = e.target;
     if (t.matches('[data-lop]')) { const ly = t.closest('[data-ly]').dataset.ly; st.op[ly] = +t.value; st.dirty = true; st.viewC = null; return paint(); }
+    if (t.dataset.c) { cal[t.dataset.c] = +t.value; TT.saveCal(cal); t.closest('.dz-sl').querySelector('b').textContent = CFMT[t.dataset.c](+t.value); return; }
     if (t.matches('[data-stretch]')) { st.stretch = +t.value; st.dirty = true; t.closest('.dz-sl').querySelector('b').textContent = t.value + '%'; return; }
     const fk = t.dataset.f; if (!fk) return;
     feel[fk] = +t.value; TT.setFeel(st.needle, feel);
@@ -473,41 +490,136 @@ TT.open = async (el, id) => {
     if (fk === 'pCurve') side.querySelector('.tt-curve').outerHTML = curveSvg(feel.pCurve);
   });
 
-  // The test pad: a strip of skin in the panel to try the current needle on.
-  let calib = null;
-  const padInit = () => {
-    const c = $('#tt-pad'); if (!c) return; const p = c.getContext('2d');
-    p.fillStyle = st.skin; p.fillRect(0, 0, c.width, c.height);
-    let last = null, t = 0, carry = 0, sp = 0;
-    c.onpointerdown = (e) => { c.setPointerCapture(e.pointerId); last = null; carry = 0; sp = 0; p.fillStyle = ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]); move(e); };
-    const move = (e) => {
-      calLive(e); if (!c.hasPointerCapture?.(e.pointerId) && e.type !== 'pointerdown') return;
-      const r = c.getBoundingClientRect(), s = c.width / r.width;
-      const co = e.getCoalescedEvents?.();
-      for (const ev of co?.length ? co : [e]) {
-        const q = { x: (ev.clientX - r.left) * s, y: (ev.clientY - r.top) * s };
-        if (calib && ev.pressure) calib.max = Math.max(calib.max, ev.pressure);
-        if (!last) { last = q; t = ev.timeStamp; continue; }
-        const dx = q.x - last.x, dy = q.y - last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - t) / 1000; if (d < 0.01) continue;
-        const pm = 8;   // the pad shows needles bigger than the page: 8 px per mm
-        sp = sp ? sp * 0.7 + d / pm / dt * 0.3 : d / pm / dt;
-        const pr = ev.pointerType === 'mouse' ? 0.6 : (ev.pressure || 0.5) / Math.max(0.05, cal.pMax), tilt = Math.min(1, Math.hypot(ev.tiltX || 0, ev.tiltY || 0) / 60);
-        let depth = feel.dMin + (feel.dMax - feel.dMin) * curve(pr, feel.pCurve);
-        depth = Math.max(0.02, Math.min(1, depth * (1 - Math.min(0.9, sp / 200 * feel.speedFade / 100) - tilt * feel.tiltFade / 100 * 0.6)));
-        const gap = Math.max(0.03, sp * (feel.hand / 100) / feel.hz) * pm, a = turnOf(Math.atan2(dy, dx), ev);
-        let tt = carry;
-        while (tt <= d) { puncture(p, { x: last.x + dx * tt / d, y: last.y + dy * tt / d }, a, depth, tilt, 1, false, pm); tt += gap; }
-        carry = tt - d; last = q; t = ev.timeStamp;
+  /* A strip of skin to draw on (the test pad, the Tune in tasks): `pm` px per mm. Strokes are kept as samples so
+     they can be drawn again with other settings. `under` draws what goes beneath the ink (a stencil, an example). */
+  const skinPad = (c, pm, under) => {
+    const g = c.getContext('2d'), ink = document.createElement('canvas'); ink.width = c.width; ink.height = c.height; const ix = ink.getContext('2d');
+    const pad = { strokes: [], ink, show() { g.globalCompositeOperation = 'source-over'; g.fillStyle = st.skin; g.fillRect(0, 0, c.width, c.height);
+      under?.(g); g.globalCompositeOperation = 'multiply'; g.drawImage(ink, 0, 0); g.globalCompositeOperation = 'source-over'; } };
+    const one = (S) => {   // a stroke's samples into ink
+      let last = null, sp = 0, carry = 0; ix.fillStyle = pad.color || ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]);
+      for (const q of S) {
+        if (!last) { last = q; continue; }
+        const dx = q.x - last.x, dy = q.y - last.y, d = Math.hypot(dx, dy), dt = Math.max(1, q.t - last.t) / 1000; if (d < 0.01) continue;
+        const v = d / q.s / (96 / 25.4) / dt; sp = sp ? sp * 0.7 + v * 0.3 : v;   // screen mm per second, as on the page
+        const tilt = tiltOf(q), depth = depthOf(pNorm(q), sp, tilt), gap = gapMm(sp) * pm, a = turnOf(Math.atan2(dy, dx), q);
+        let tt = carry; while (tt <= d) { puncture(ix, { x: last.x + dx * tt / d, y: last.y + dy * tt / d }, a, depth, tilt, 1, false, pm); tt += gap; }
+        carry = tt - d; last = q;
       }
     };
-    c.onpointermove = move; c.onpointerup = c.onpointercancel = () => { last = null; };
+    pad.replay = () => { ix.clearRect(0, 0, ink.width, ink.height); pad.strokes.forEach(one); pad.show(); };
+    pad.clear = () => { pad.strokes = []; ix.clearRect(0, 0, ink.width, ink.height); pad.show(); };
+    let cur = null;
+    const take = (e) => { const r = c.getBoundingClientRect(), sc = c.width / r.width, co = e.getCoalescedEvents?.();
+      return (co?.length ? co : [e]).map(ev => ({ x: (ev.clientX - r.left) * sc, y: (ev.clientY - r.top) * sc, t: ev.timeStamp, s: sc, pressure: ev.pressure, tiltX: ev.tiltX, tiltY: ev.tiltY, pointerType: ev.pointerType })); };
+    c.onpointerdown = (e) => { if (e.pointerType === 'touch' && TT.cal().penOnly) return; e.preventDefault(); c.setPointerCapture(e.pointerId); cur = take(e); pad.strokes.push(cur); };
+    c.onpointermove = (e) => { calLive(e); if (!cur) return; const add = take(e); const from = Math.max(0, cur.length - 1); cur.push(...add); one(cur.slice(from)); pad.show(); };
+    c.onpointerup = c.onpointercancel = () => { if (cur) { ix.clearRect(0, 0, ink.width, ink.height); pad.strokes.forEach(one); pad.show(); } cur = null; pad.onstroke?.(); };
+    pad.show(); return pad;
   };
+  // The test pad in the feel panel.
+  const padInit = () => { const c = $('#tt-pad'); if (c) skinPad(c, 8); };
+
   let liveT = 0, liveLast = null;
   const calLive = (e) => {
     const l = $('#tt-live'); if (!l) return; const now = e.timeStamp;
     if (liveLast && now - liveT > 30) { const d = Math.hypot(e.clientX - liveLast.x, e.clientY - liveLast.y) / (now - liveT) * 1000 / (96 / 25.4); l.dataset.sp = Math.round(d); }
     if (now - liveT > 30) { liveT = now; liveLast = { x: e.clientX, y: e.clientY }; }
     l.textContent = `Pressure ${e.pointerType === 'mouse' ? 'mouse' : Math.round((e.pressure || 0) * 100) + '%'} · Speed ${l.dataset.sp || 0} mm/s · Tilt ${Math.round(Math.hypot(e.tiltX || 0, e.tiltY || 0))}°`;
+  };
+
+  /* ---------- Tune in ----------
+     A few short tasks, each with a stencil to follow or an example to match. Each measures how this hand on this
+     device naturally draws (pressure, speed, angle) and sets the overall calibration from it; the attempt is then
+     drawn again with the new settings. The result can be copied to send on, so the defaults can learn from it. */
+  const W2 = 960, H2 = 400, PM2 = 6;   // the task pad: px, and px per mm
+  const pct = (a, q) => { const b = [...a].sort((m, n) => m - n); return b.length ? b[Math.min(b.length - 1, Math.max(0, Math.floor(q * (b.length - 1))))] : 0; };
+  const speeds = (pad) => pad.strokes.flatMap(S => S.slice(1).map((q, i) => { const p = S[i], dt = Math.max(1, q.t - p.t) / 1000; return Math.hypot(q.x - p.x, q.y - p.y) / q.s / (96 / 25.4) / dt; })).filter(v => v > 1 && v < 3000);
+  const penPress = (pad) => pad.strokes.flat().filter(q => q.pointerType === 'pen' && q.pressure > 0).map(q => q.pressure);
+  const box = { x: 560, y: 80, w: 360, h: 240 }, exBox = { x: 40, y: 80, w: 360, h: 240 };
+  const grain = (g, x0, y0, w, h, dens) => { for (let i = 0; i < w * h / 40; i++) { const xx = x0 + Math.random() * w, yy = y0 + Math.random() * h, a = dens(xx - x0, w); if (Math.random() < a) { g.globalAlpha = 0.5 + a * 0.5; g.beginPath(); g.arc(xx, yy, 1.4, 0, 7); g.fill(); } } g.globalAlpha = 1; };
+  const outline = (g, b) => { g.save(); g.setLineDash([8, 6]); g.strokeStyle = 'rgba(70,40,120,.7)'; g.lineWidth = 2; g.strokeRect(b.x, b.y, b.w, b.h); g.restore(); };
+  const label = (g, t, x, y) => { g.fillStyle = 'rgba(40,20,70,.75)'; g.font = '600 18px Inter, sans-serif'; g.fillText(t, x, y); };
+  let exCache = {};
+  const example = (kind) => exCache[kind] ||= (() => { const c = document.createElement('canvas'); c.width = W2; c.height = H2; const g = c.getContext('2d'); g.fillStyle = '#151515';
+    if (kind === 'whip') grain(g, exBox.x, exBox.y, exBox.w, exBox.h, (x, w) => Math.pow(1 - x / w, 1.6));
+    if (kind === 'pack') { g.globalAlpha = 0.93; g.fillRect(exBox.x, exBox.y, exBox.w, exBox.h); g.globalAlpha = 1; grain(g, exBox.x, exBox.y, exBox.w, exBox.h, () => 0.4); }
+    return c; })();
+  const TUNE = [
+    { id: 'range', title: 'Pressure range', needle: '3RL', text: 'Draw back and forth along the strip. Start with the lightest touch you would ever use, and build up to the hardest you would ever press.',
+      under: (g) => { const gr = g.createLinearGradient(80, 0, 880, 0); gr.addColorStop(0, 'rgba(70,40,120,.08)'); gr.addColorStop(1, 'rgba(70,40,120,.45)'); g.fillStyle = gr;
+        g.beginPath(); g.moveTo(80, 230); g.lineTo(880, 170); g.lineTo(880, 290); g.closePath(); g.fill(); label(g, 'lightest', 80, 330); label(g, 'hardest', 800, 330); },
+      fit(pad) { const ps = penPress(pad); if (ps.length < 30 || pct(ps, 0.97) - pct(ps, 0.05) < 0.15) return 'No pressure range came through (a mouse or finger has none), so pressure stays as it was.';
+        cal.pMin = +(pct(ps, 0.05) * 0.9).toFixed(3); cal.pMax = +Math.max(cal.pMin + 0.1, pct(ps, 0.97)).toFixed(3);
+        return `Your lightest touch reads ${Math.round(cal.pMin * 100)}% and your hardest ${Math.round(cal.pMax * 100)}% of the pen's range; that's now the full range from barely in to full depth.`; } },
+    { id: 'line', title: 'Lining', needle: '3RL', text: 'Trace the stencil line the way you would pull a line: your normal pressure and speed. It should come out solid and even.',
+      under: (g) => { g.strokeStyle = 'rgba(70,40,120,.55)'; g.lineWidth = 3; g.beginPath(); g.moveTo(80, 300); g.bezierCurveTo(330, 20, 600, 400, 880, 110); g.stroke(); },
+      fit(pad) { const sp = speeds(pad), ps = pad.strokes.flat().filter(q => q.pointerType !== 'mouse').map(pNorm); if (sp.length < 20) return 'Not enough line to measure: trace the whole line.';
+        const v = pct(sp, 0.5), f0 = TT.feel('3RL'), want = 0.1 * f0.hz * 100 / v;   // a solid line: punctures about 0.1 mm apart at your lining speed
+        cal.hand = +Math.max(0.1, Math.min(10, want / f0.hand)).toFixed(3); let msg = `You line at about ${Math.round(v)} mm/s; punctures now land close enough there for a solid line.`;
+        if (ps.length > 20) { const pm = Math.max(0.05, Math.min(0.97, pct(ps, 0.5))), g2 = Math.log(0.85) / Math.log(pm);
+          cal.curve = +Math.max(-100, Math.min(100, 50 * Math.log2(g2) - f0.pCurve)).toFixed(1); msg += ` Your normal lining pressure (${Math.round(pm * 100)}% of your range) now goes in firmly.`; }
+        return msg; } },
+    { id: 'shade', title: 'Whip shading', needle: '7RS', text: 'Shade the empty box to match the example: start each stroke slow and pressed in at the dark (left) end, and flick out fast and light to the right.',
+      under: (g) => { g.drawImage(example('whip'), 0, 0); outline(g, box); label(g, 'example', exBox.x, exBox.y - 12); label(g, 'yours', box.x, box.y - 12); },
+      fit(pad) { const sp = speeds(pad); if (sp.length < 20) return 'Not enough shading to measure: do several strokes.';
+        const v = pct(sp, 0.9), f0 = TT.feel('7RS'), want = 0.75 * 200 * 100 / v;   // your flick speed fades the needle to about a quarter
+        cal.fade = +Math.max(0.1, Math.min(10, want / f0.speedFade)).toFixed(3);
+        return `Your flicks reach about ${Math.round(v)} mm/s; at that speed the needle now fades out like whip shading.`; } },
+    { id: 'tilt', title: 'How you hold it', needle: '3RL', text: 'Draw a few lines holding the pen the way you hold your machine.',
+      under: (g) => { g.strokeStyle = 'rgba(70,40,120,.4)'; g.lineWidth = 2; for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(100 + i * 200, 320); g.lineTo(220 + i * 200, 80); g.stroke(); } },
+      fit(pad) { const ts = pad.strokes.flat().filter(q => q.pointerType === 'pen').map(q => Math.hypot(q.tiltX || 0, q.tiltY || 0)); if (ts.length < 20 || pct(ts, 0.9) < 2) return 'This pen doesn\u2019t report tilt (or it was held straight up), so tilt stays as it was.';
+        cal.tilt0 = Math.round(Math.max(0, Math.min(50, pct(ts, 0.5)))); return `You hold it at about ${cal.tilt0}\u00b0; tilt now counts from there, so your normal grip doesn't spread the needles.`; } },
+    { id: 'pack', title: 'Packing', needle: '15CM', text: 'Pack the empty box solid to match the example: go over it until it is even and dark.',
+      under: (g) => { g.drawImage(example('pack'), 0, 0); outline(g, box); label(g, 'example', exBox.x, exBox.y - 12); label(g, 'yours', box.x, box.y - 12); },
+      fit(pad) { if (!pad.strokes.length) return 'Pack the box first.';
+        const d = pad.ink.getContext('2d').getImageData(box.x, box.y, box.w, box.h).data; let sum = 0; for (let i = 3; i < d.length; i += 4) sum += d[i]; const cov = sum / (d.length / 4) / 255;
+        const before = cal.flow; if (cov < 0.88) cal.flow = +Math.min(3, cal.flow * 0.9 / Math.max(0.2, cov)).toFixed(3); else if (cov > 0.98) cal.flow = +Math.max(0.4, cal.flow * 0.95).toFixed(3);
+        const v = pct(speeds(pad), 0.5), fast = v > 150 ? ` You packed fast (about ${Math.round(v)} mm/s): slower, overlapping passes go in darker, as on skin.` : '';
+        return `Your packing covered ${Math.round(cov * 100)}% of the box.${fast} ${cal.flow > before ? 'Ink now goes in a little more readily.' : cal.flow < before ? 'Ink now goes in a touch less readily.' : 'That\u2019s about right, so ink flow stays.'}`; } }
+  ];
+  const tuneIn = () => {
+    const keep = { needle: st.needle, stretch: st.stretch, ink: st.ink }, was = { ...cal }; st.stretch = 75;
+    const o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98; document.body.appendChild(o);
+    let i = 0, pad = null, msg = '', before = null;
+    const finish = () => { setNeedle(keep.needle); st.stretch = keep.stretch; st.ink = keep.ink; o.remove(); drawSide(); };
+    const draw = () => {
+      if (i >= TUNE.length) {
+        const rows = [['Pressure range', `${Math.round(cal.pMin * 100)}–${Math.round(cal.pMax * 100)}%`], ['Pressure curve', cal.curve > 0 ? 'firm ' + Math.round(cal.curve) : cal.curve < 0 ? 'soft ' + Math.round(-cal.curve) : 'even'],
+          ['Hand speed', '× ' + cal.hand], ['Fast strokes lighten', '× ' + cal.fade], ['Natural angle', cal.tilt0 + '°'], ['Ink flow', '× ' + cal.flow]];
+        o.innerHTML = `<div class="card tt-tcard"><h2>Tuned in</h2><p class="muted" style="margin-top:0">These apply to every needle on this device. Each needle's own settings still sit on top, under the sliders icon.</p>
+          <div class="tt-sum">${rows.map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join('')}</div>
+          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:12px"><button class="btn" data-t="again">Start over</button><button class="btn" data-t="copy" data-tip="Copy these settings to send on, to help tune the defaults">Copy settings</button>
+            <span style="flex:1"></span><button class="btn" data-t="cancel">Undo all</button><button class="btn primary" data-t="save">Save</button></div></div>`;
+        return;
+      }
+      const T = TUNE[i]; setNeedle(T.needle);
+      o.innerHTML = `<div class="card tt-tcard"><div class="tt-tsteps">${TUNE.map((x, j) => `<i class="${j < i ? 'done' : j === i ? 'on' : ''}"></i>`).join('')}</div>
+        <h2>${i + 1}. ${T.title}</h2><p class="muted" style="margin:0 0 8px">${T.text}</p>
+        <canvas class="tt-tpad" width="${W2}" height="${H2}"></canvas>
+        <p class="tt-tmsg">${msg || '&nbsp;'}</p>
+        <div class="row" style="gap:6px"><button class="btn" data-t="skip">Skip</button><button class="btn" data-t="redo">Try again</button><span style="flex:1"></span>
+          <button class="btn" data-t="exit">Stop</button><button class="btn primary" data-t="next" ${msg ? '' : 'disabled'}>${msg ? (i === TUNE.length - 1 ? 'Finish' : 'Next') : 'Draw first'}</button></div></div>`;
+      pad = skinPad(o.querySelector('canvas'), PM2, T.under); pad.color = '#161616';
+      before = { ...cal };
+      pad.onstroke = () => { clearTimeout(pad.tm); pad.tm = setTimeout(() => {   // a moment after drawing: measure, set, draw it again with the result
+        Object.assign(cal, before); msg = T.fit(pad); pad.replay();
+        o.querySelector('.tt-tmsg').textContent = msg; const nb = o.querySelector('[data-t="next"]'); nb.disabled = false; nb.textContent = i === TUNE.length - 1 ? 'Finish' : 'Next'; }, 900); };
+    };
+    o.onclick = async (e) => {
+      const a = e.target.closest('[data-t]')?.dataset.t; if (!a) return;
+      if (a === 'next') { i++; msg = ''; return draw(); }
+      if (a === 'skip') { Object.assign(cal, before || cal); i++; msg = ''; return draw(); }
+      if (a === 'redo') { Object.assign(cal, before); msg = ''; return draw(); }
+      if (a === 'exit' || a === 'cancel') { Object.assign(cal, was); return finish(); }
+      if (a === 'again') { Object.assign(cal, { ...TT.calDefaults, penOnly: cal.penOnly }); i = 0; msg = ''; return draw(); }
+      if (a === 'save') { TT.saveCal(cal); Settings.set('tt_tuned', '1'); toast('Saved: every needle now uses your calibration.'); return finish(); }
+      if (a === 'copy') {
+        const txt = JSON.stringify({ inkforge_tattoo_tune: 1, cal: { ...cal }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio }, feel: JSON.parse(Settings.get('tt_feel', '{}')) });
+        try { await navigator.clipboard.writeText(txt); toast('Settings copied. Paste them into a message to send on.'); } catch { prompt('Copy these settings:', txt); }
+      }
+    };
+    draw();
   };
 
   /* ---------- Stencil picture ---------- */
@@ -578,6 +690,7 @@ TT.open = async (el, id) => {
   };
 
   if (!TT_NEEDLES.some(n => n.id === st.needle)) st.needle = '3RL';
+  if (!Settings.get('tt_tuned')) setTimeout(() => toast('New here? Under the sliders icon, Tune in sets the needles to your pen and hand in a few short tasks.', 6000), 800);
   setNeedle(st.needle); st.dirty = false; drawTray(); sel(); drawView();
   new ResizeObserver(() => fit()).observe(stage); fit();
 };
@@ -607,6 +720,10 @@ function ttStyle() {
 .tt-load i { position: absolute; inset: 5px; border-radius: 50%; border: 2px solid #222; } .tt-load span { position: relative; font: 700 9px var(--ui); color: #fff; text-shadow: 0 1px 2px #000; }
 .tt-capedit { flex: none; } .tt-zoom { left: auto !important; right: 10px !important; bottom: 76px !important; }
 .tt-layers { display: grid; gap: 4px; }
+.tt-tune .card { max-width: 1000px; width: calc(100vw - 24px); } .tt-tpad { width: 100%; height: auto; border-radius: 12px; touch-action: none; display: block; cursor: crosshair; }
+.tt-tmsg { min-height: 2.6em; font-size: 13px; color: var(--teal); margin: 8px 0; }
+.tt-tsteps { display: flex; gap: 4px; margin-bottom: 8px; } .tt-tsteps i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); } .tt-tsteps i.on { background: var(--teal); } .tt-tsteps i.done { background: rgba(31,182,166,.45); }
+.tt-sum { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; font-size: 14px; } .tt-sum b { color: var(--teal); }
 .tt-ndg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 0 4px 4px; }
 .tt-ndg button { border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 12px var(--ui); padding: 8px 2px; cursor: pointer; }
 .tt-ndg button:hover { background: rgba(255,255,255,.1); } .tt-ndg button.on { background: rgba(31,182,166,.25); color: var(--teal); }
