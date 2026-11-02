@@ -261,6 +261,27 @@ const DZ_GEN = {
     return { closed: true, nodes };
   })
 };
+/* The clipping library (Clipper, kept in lib/ so it works offline), loaded the first time a shape is combined or
+   contoured. It counts in whole numbers, so page pixels are scaled up by DZ_CS. A failure isn't remembered, so the
+   next try loads it again. */
+const DZ_CS = 100;
+let dzClipLoad = null;
+function dzClipper() {
+  if (window.ClipperLib) return Promise.resolve();
+  return dzClipLoad ||= new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = 'lib/clipper.js';
+    sc.onload = () => { if (window.ClipperLib) res(); else { dzClipLoad = null; rej(new Error('the shape library did not start')); } };
+    sc.onerror = () => { dzClipLoad = null; rej(new Error('the shape library could not be loaded')); };
+    document.head.appendChild(sc);
+  });
+}
+const DZ_BOOL_ICON = Object.fromEntries(Object.entries({
+  add: '<path d="M3 3h7v4h4v7H7v-4H3z"/>', subtract: '<path d="M3 3h10v10H3z" class="g"/><path d="M3 3h10v4H7v6H3z"/>',
+  intersect: '<rect x="2" y="2" width="8" height="8" class="g"/><rect x="6" y="6" width="8" height="8" class="g"/><path d="M6 6h4v4H6z"/>',
+  xor: '<path d="M2 2h8v4H6v4H2z"/><path d="M14 14H6v-4h4V6h4z"/>', divide: '<rect x="2" y="2" width="8" height="8"/><rect x="6" y="6" width="8" height="8"/>',
+  separate: '<rect x="1.5" y="1.5" width="5" height="5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M8 3v2M8 11v2M3 8h2M11 8h2" class="g"/>',
+  contour: '<rect x="4.5" y="4.5" width="7" height="7" rx="1"/><rect x="1.5" y="1.5" width="13" height="13" rx="3" class="g"/>'
+}).map(([kk, v]) => [kk, `<svg viewBox="0 0 16 16" class="dz-bi">${v}</svg>`]));
 // The subpaths a shape draws with (null for the plain kinds drawn directly: line, box, circle, old traced).
 const dzSubs = (L) => L.shape === 'vec' ? L.subs : DZ_GEN[L.shape] && !['ellipse', 'rect', 'path'].includes(L.shape) ? DZ_GEN[L.shape](L) : null;
 function dzSubsTo(x, L, subs) {
@@ -751,7 +772,7 @@ DZ.edit = async (id) => {
       <button class="btn primary" id="dz-export">Export</button>
     </div>
     <div class="dz-body">
-      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><div id="dz-sel" hidden>
+      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
@@ -789,7 +810,7 @@ DZ.edit = async (id) => {
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
     const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
-    drawFolds(); drawCut(); drawNodes(); placeSel();
+    drawFolds(); drawCut(); drawNodes(); drawCont(); placeSel();
   };
   // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
   // drawing is stretched; it's redrawn sharp a moment after zooming stops.
@@ -814,7 +835,8 @@ DZ.edit = async (id) => {
   let drawing = null;
   let cropping = false;
   let cut = null, cutDrag = null;
-  let nodes = null, ndrag = null;   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
+  let nodes = null, ndrag = null;
+  let cont = null, cdrag = null;   // the contour tool (see "Shape builder" below)   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
   const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) placeSel(); };
   // Page tabs (top right of the design): front, back and the master page under both.
   const drawFaces = () => {
@@ -822,7 +844,7 @@ DZ.edit = async (id) => {
     const nm = dzFaceNames(doc), n = (f) => doc.layers.filter(l => dzSide(l) === f).length;
     b.innerHTML = ['f', 'b', 'm'].map(f => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Backgrounds and frames shown under both sides"' : ''}>${nm[f]}${n(f) ? ` <small>${n(f)}</small>` : ''}</button>`).join('');
   };
-  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
+  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); endCont(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
   // Leaving crop mode: an uncropped item drops its crop entirely.
   const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
@@ -832,7 +854,7 @@ DZ.edit = async (id) => {
     if (mo) mo.innerHTML = picked().map(m => `<i class="dz-mo ${m.lock ? 'locked' : ''}" style="left:${m.x * k}px;top:${m.y * k}px;width:${m.w * k}px;height:${(m.h || 1) * k}px;transform:rotate(${m.rot || 0}deg)"></i>`).join('');
     stage.classList.toggle('picking', picking);
     const l = layer();
-    selBox.hidden = !l || !!cut || !!nodes;
+    selBox.hidden = !l || !!cut || !!nodes || !!cont;
     if (!l) return;
     Object.assign(selBox.style, { left: l.x * k + 'px', top: l.y * k + 'px', width: l.w * k + 'px', height: (l.h || 1) * k + 'px', transform: `rotate(${l.rot || 0}deg)` });
     selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('cropping', cropping);
@@ -868,7 +890,7 @@ DZ.edit = async (id) => {
     const push = () => { const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
     if (now) push(); else histT = setTimeout(push, 450);
   };
-  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); if (!layer()) sel = null;
+  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
@@ -964,6 +986,11 @@ DZ.edit = async (id) => {
         <button data-mact="del" class="danger" ${n ? '' : 'disabled'} title="Delete">✕<span>Delete</span></button></div>
       ${fsec('Align', `<div class="dz-align">${AL.map(([a, t, ic]) => `<button data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} title="${t}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${t}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('')}</div>
         <p class="muted" style="font-size:11px;margin:6px 0 0">${n === 1 ? 'One item lines up with the page.' : 'Items line up with each other. Spacing needs three or more.'}</p>`)}
+      ${fsec('Shape builder', `<div class="dz-bool">${[['add', 'Add', 'Weld them into one outline'], ['subtract', 'Subtract', 'The bottom one, with the rest cut out of it'],
+          ['intersect', 'Intersect', 'Only where they all overlap'], ['xor', 'Exclude', 'Everything except where they overlap'], ['divide', 'Divide', 'Cut into every separate piece the overlaps make'],
+          ['separate', 'Separate', 'Split each into its separate pieces'], ['contour', 'Contour', 'Grow or shrink the outline (O)']].map(([b, nm, tip]) =>
+          `<button data-bool="${b}" ${!n || (n < 2 && !['separate', 'contour'].includes(b)) ? 'disabled' : ''} title="${tip}">${DZ_BOOL_ICON[b]}<span>${nm}</span></button>`).join('')}</div>
+        <p class="muted" style="font-size:11px;margin:6px 0 0">The result is a new shape you can reshape with Edit nodes. Text and pictures are traced first, so they work too.</p>`)}
       ${fsec('Combine and save', `<div class="dz-combine">
         <button class="btn small" data-mact="merge" ${n ? '' : 'disabled'}>Merge into one picture</button>
         <button class="btn small" data-mact="refs" ${n ? '' : 'disabled'}>Save to references</button>
@@ -972,6 +999,7 @@ DZ.edit = async (id) => {
           Saving makes a see-through picture of just the selection and leaves the design as it is. Clipped layers go with the layer they're clipped to.</p>`)}`;
   };
   const drawEdit = () => {
+    if (cont) { side.innerHTML = contPanel(); return; }
     if (many()) return drawMulti();
     const l = layer();
     if (!l) {
@@ -1032,6 +1060,8 @@ DZ.edit = async (id) => {
         <button data-act="clip" class="${clipped(l) ? 'on' : ''}" ${F().indexOf(l) ? '' : 'disabled'} title="Clip to the layer below: only shows inside it">↳<span>Clip</span></button>
         ${l.t === 'image' ? (l.ref || l.logo ? '<button data-act="toshape" title="Trace the picture into a shape you can fill">◆<span>To shape</span></button><button data-act="flatten1" title="Flatten: bake in its rotation, flips, crop and opacity, and fit the handles to what shows">▦<span>Flatten</span></button>' : '')
           : '<button data-act="flatten1" title="Flatten into a picture: its fill and outline become permanent">▦<span>Flatten</span></button>'}
+        <button data-bool="contour" title="Contour: grow or shrink the outline, or add a border round it (O)">${DZ_BOOL_ICON.contour}<span>Contour</span></button>
+        ${l.t === 'shape' && (l.subs?.length > 1 || l.shape === 'path' || l.shape === 'ring') ? `<button data-bool="separate" title="Split into its separate pieces">${DZ_BOOL_ICON.separate}<span>Separate</span></button>` : ''}
         <button data-act="cut" title="Select part of it with a box, ellipse, lasso or by colour, then delete, split or move that part">⬚<span>Select area</span></button>
         <button data-act="pick" title="Select more items">☐<span>Select</span></button>
         <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
@@ -1080,7 +1110,7 @@ DZ.edit = async (id) => {
       ${fsec('Save', `<div class="dz-combine"><button class="btn small" data-mact="refs">Save to references</button><button class="btn small" data-mact="png">Save as PNG</button>
         ${l.t !== 'image' || l.crop || l.r ? '<button class="btn small" data-mact="merge">Turn into a picture</button>' : ''}</div>`, { fold: true })}`;
   };
-  const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); endNodes(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
+  const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); endNodes(); endCont(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
   // Several: outside selection mode one item left becomes a normal selection.
   const setPicks = (ids) => {
     endCrop(); picks = new Set(ids); panel = null;
@@ -1470,6 +1500,156 @@ DZ.edit = async (id) => {
       <p class="muted" style="font-size:12px;margin:4px 0 0">Drag a node or a handle to reshape. Tap the outline to add a node; drag the outline to bend it.
         Double-tap a node to switch corner / smooth. Ctrl or Shift + tap picks several. Shift keeps to straight lines and 45°; Alt drags one handle on its own.</p>`;
   };
+  /* ---------- Shape builder ----------
+     Combines shapes the way vector drawing programs do: Add (weld), Subtract (the bottom one minus the rest),
+     Intersect, Exclude, Divide (every piece the overlaps make, each its own shape) and Separate (a shape's separate
+     pieces as shapes of their own). Contour grows or shrinks an outline by a distance; with Keep original it is
+     added as a new shape, behind when growing (a border) and in front when shrinking. Shapes give their exact
+     outline; text and pictures are traced from how they look. Results are node shapes, styled like the bottom one. */
+  const outline = async (L) => {   // closed rings in page pixels
+    if (L.t === 'shape') {
+      if (L.shape === 'line') return null;
+      const subs = dzSubs(L) || DZ_GEN[L.shape]?.(L); if (!subs) return null;
+      return subs.filter(sp => sp.closed !== false && sp.nodes.length > 2).map(sp => { const N = sp.nodes, out = [];
+        for (let i = 0; i < N.length; i++) { const a = N[i], b = N[(i + 1) % N.length], P0 = n2p(L, a.x, a.y);
+          if (!a.ox && !a.oy && !b.ix && !b.iy) { out.push([P0.x, P0.y]); continue; }
+          const P3 = n2p(L, b.x, b.y), steps = Math.max(3, Math.min(64, Math.ceil(Math.hypot(P3.x - P0.x, P3.y - P0.y) / 3)));
+          for (let t = 0; t < steps; t++) { const q = bez(a, b, t / steps), pp = n2p(L, q.x, q.y); out.push([pp.x, pp.y]); } }
+        return out; });
+    }
+    const f = await flatten([L], 1500); if (!f) return null; const tr = dzTrace(f.cv); if (!tr) return null;
+    return tr.loops.map(lp => { const r = []; for (let i = 0; i < lp.length; i += 2) r.push([f.bx + (tr.box.x + lp[i] * tr.box.w) * f.bw, f.by + (tr.box.y + lp[i + 1] * tr.box.h) * f.bh]); return r; });
+  };
+  const CL = () => window.ClipperLib;
+  const toC = (rings) => rings.map(r => r.map(([x, y]) => ({ X: Math.round(x * DZ_CS), Y: Math.round(y * DZ_CS) })));
+  const clip = (op, a, b, fill) => { const C = CL(), c = new C.Clipper(), out = new C.Paths();
+    if (a.length) c.AddPaths(a, C.PolyType.ptSubject, true); if (b?.length) c.AddPaths(b, C.PolyType.ptClip, true);
+    c.Execute(C.ClipType[op], out, fill ?? C.PolyFillType.pftNonZero, C.PolyFillType.pftNonZero); return out; };
+  const norm = (rings) => clip('ctUnion', toC(rings), null, CL().PolyFillType.pftEvenOdd);   // one shape's own rings, holes and all
+  // Separate pieces: each outer outline with its holes (islands inside holes are pieces too).
+  const pieces = (paths) => { const C = CL(), c = new C.Clipper(), tree = new C.PolyTree(); if (!paths.length) return [];
+    c.AddPaths(paths, C.PolyType.ptSubject, true); c.Execute(C.ClipType.ctUnion, tree, C.PolyFillType.pftNonZero, C.PolyFillType.pftNonZero);
+    const out = [], walk = (nd) => { for (const o of nd.Childs()) { const pc = [o.Contour()]; for (const h of o.Childs()) { pc.push(h.Contour()); walk(h); } out.push(pc); } };
+    walk(tree); return out; };
+  const styleOf = (l) => l.t === 'shape' ? { fill: l.fill, stroke: l.stroke, sw: l.sw, fm: l.fm, grad: l.grad && JSON.parse(JSON.stringify(l.grad)), tex: l.tex && { ...l.tex }, op: l.op ?? 1 }
+    : { fill: l.t === 'text' ? (l.c || '@fg') : '@accent', stroke: 'none', sw: 0, op: l.op ?? 1 };
+  // Clipper paths (page pixels x DZ_CS) as a node shape styled like `l`.
+  const vecFrom = (paths, l, nm) => {
+    const C = CL(); paths = C.Clipper.CleanPolygons(paths, 0.35 * DZ_CS).filter(pp => pp.length > 2); if (!paths.length) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const pp of paths) for (const q of pp) { x0 = Math.min(x0, q.X); y0 = Math.min(y0, q.Y); x1 = Math.max(x1, q.X); y1 = Math.max(y1, q.Y); }
+    const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
+    return { id: dzId(), t: 'shape', shape: 'vec', ...styleOf(l), x: x0 / DZ_CS, y: y0 / DZ_CS, w: w / DZ_CS, h: h / DZ_CS, rot: 0, name: nm,
+      ...(l.side ? { side: l.side } : {}), subs: paths.map(pp => ({ closed: true, nodes: pp.map(q => dzNd((q.X - x0) / w, (q.Y - y0) / h)) })) };
+  };
+  // The operands go; the results take the place of the topmost one.
+  const replaceWith = (olds, news) => {
+    const at = Math.max(...olds.map(o => doc.layers.indexOf(o))), gone = new Set(olds.map(o => o.id)), out = [];
+    doc.layers.forEach((l, i) => { if (!gone.has(l.id)) out.push(l); if (i === at) out.push(...news); });
+    doc.layers = out; picking = false; picks = new Set(news.length > 1 ? news.map(n => n.id) : []); sel = news.length === 1 ? news[0].id : null;
+    changed(true); placeSel(); drawSide();
+  };
+  const BOOL_NAME = { add: 'Add', subtract: 'Subtract', intersect: 'Intersect', xor: 'Exclude', divide: 'Divide', separate: 'Separate' };
+  const boolOp = async (op) => {
+    if (op === 'contour') return startCont();
+    const L = (many() ? picked() : [layer()]).filter(l => l && !l.hide);
+    if (L.some(l => l.lock)) return toast('Unlock them first.');
+    if (op !== 'separate' && L.length < 2) return toast('Pick at least two items to combine.');
+    if (!L.length) return;
+    try { await dzClipper(); } catch (err) { return toast('Could not combine: ' + err.message); }
+    const G = [];
+    for (const l of L) { const r = await outline(l); if (!r?.length) return toast(`"${layerName(l)}" has no outline to work with${l.shape === 'line' ? ' (lines have no inside)' : ''}.`); G.push(norm(r)); }
+    const nm = (i) => BOOL_NAME[op] + (i ? ' ' + (i + 1) : '');
+    let news = [];
+    if (op === 'separate') {
+      L.forEach((l, li) => pieces(G[li]).forEach((pc, i) => { const v = vecFrom(pc, l, (l.name || layerName(l)) + ' ' + (i + 1)); if (v) news.push(v); }));
+      if (news.length <= L.length) return toast('Already in one piece.');
+    } else if (op === 'divide') {   // every region the cuts make, each coloured like the topmost item covering it
+      let regions = [{ p: G[0], o: 0 }];
+      for (let i = 1; i < G.length; i++) {
+        const sI = G[i], next = [];
+        for (const r of regions) { const o2 = clip('ctDifference', r.p, sI); if (o2.length) next.push({ p: o2, o: r.o }); const in2 = clip('ctIntersection', r.p, sI); if (in2.length) next.push({ p: in2, o: i }); }
+        const covered = clip('ctUnion', regions.flatMap(r => r.p)), rest = clip('ctDifference', sI, covered); if (rest.length) next.push({ p: rest, o: i });
+        regions = next;
+      }
+      for (const r of regions) for (const pc of pieces(r.p)) { const v = vecFrom(pc, L[r.o], 'Piece ' + (news.length + 1)); if (v) news.push(v); }
+    } else {
+      let res;
+      if (op === 'add') res = clip('ctUnion', G.flat());
+      else if (op === 'subtract') res = clip('ctDifference', G[0], clip('ctUnion', G.slice(1).flat()));
+      else { res = G[0]; for (const g of G.slice(1)) res = clip(op === 'intersect' ? 'ctIntersection' : 'ctXor', res, g); }
+      const v = res.length && vecFrom(res, L[0], nm(0)); if (v) news = [v];
+    }
+    if (!news.length) return toast(BOOL_NAME[op] + ' left nothing behind.');
+    replaceWith(L, news);
+    toast(`${BOOL_NAME[op]}: ${news.length === 1 ? 'one shape' : news.length + ' shapes'}. Undo brings the originals back.`);
+  };
+  /* Contour: drag across the design (right grows, left shrinks; Shift for whole units) or type the width. */
+  const copt2 = (() => { try { return { d: 10, join: 'round', keep: true, ...JSON.parse(Settings.get('dz_contour', '{}')) }; } catch { return { d: 10, join: 'round', keep: true }; } })();
+  const saveC2 = () => Settings.set('dz_contour', JSON.stringify({ d: copt2.d, join: copt2.join, keep: copt2.keep }));
+  const startCont = async () => {
+    const L = (many() ? picked() : [layer()]).filter(l => l && !l.hide);
+    if (!L.length) return toast('Pick something to contour first.');
+    if (L.some(l => l.lock)) return toast('Unlock it first.');
+    try { await dzClipper(); } catch (err) { return toast('Could not contour: ' + err.message); }
+    const base = new Map();
+    for (const l of L) { const r = await outline(l); if (r?.length) base.set(l.id, norm(r)); }
+    if (!base.size) return toast('Nothing there has an outline to contour.');
+    endCrop(); endCut(); endNodes(); cont = { base, ids: L.map(l => l.id) }; contCalc(); placeSel(); drawSide();
+  };
+  function endCont() { if (!cont) return; cont = null; cdrag = null; drawCont(); placeSel(); }
+  const contCalc = () => {
+    const C = CL(), J = { round: C.JoinType.jtRound, miter: C.JoinType.jtMiter, bevel: C.JoinType.jtSquare }[copt2.join];
+    cont.res = new Map();
+    for (const [id, pp] of cont.base) { const co = new C.ClipperOffset(2, 0.25 * DZ_CS), out = new C.Paths(); co.AddPaths(pp, J, C.EndType.etClosedPolygon); co.Execute(out, copt2.d * DZ_CS); cont.res.set(id, out); }
+    drawCont();
+  };
+  function drawCont() {
+    const oc = $('#dz-contcv'); if (!oc) return;
+    const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
+    if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
+    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !cont; if (!cont?.res) return;
+    x.setLineDash([6, 4]); x.lineWidth = 1.6; x.strokeStyle = '#7ac8ff'; x.fillStyle = 'rgba(122,200,255,.12)'; x.beginPath();
+    for (const pp of cont.res.values()) for (const r of pp) { r.forEach((q, i) => i ? x.lineTo(q.X / DZ_CS * k, q.Y / DZ_CS * k) : x.moveTo(q.X / DZ_CS * k, q.Y / DZ_CS * k)); x.closePath(); }
+    x.fill('evenodd'); x.stroke();
+  }
+  const contDown = (e) => { e.dzHit = true; e.preventDefault(); page.setPointerCapture(e.pointerId); cdrag = { x0: e.clientX, d0: copt2.d }; };
+  const contMove = (e) => {
+    const px = e.clientX - cdrag.x0; if (Math.abs(px) < 3 && !cdrag.moved) return; cdrag.moved = true;
+    const unit = dzFromU(doc, 1), stepPx = e.shiftKey ? unit : unit / 10;   // Shift: whole mm (or the unit in use)
+    copt2.d = Math.round((cdrag.d0 + px / k) / stepPx) * stepPx; contCalc();
+    const i = side.querySelector('[data-contd]'); if (i) i.value = dzToU(doc, copt2.d);
+  };
+  const contApply = () => {
+    if (!cont?.res) return;
+    if (!copt2.d) return toast('Set a width first.');
+    const news = [], olds = [];
+    for (const id of cont.ids) { const l = doc.layers.find(x => x.id === id), pp = cont.res.get(id); if (!l || !pp?.length) continue;
+      const v = vecFrom(pp, l, (l.name || layerName(l)) + ' contour'); if (!v) continue;
+      if (copt2.keep) { const i = doc.layers.indexOf(l); doc.layers.splice(copt2.d > 0 ? i : i + 1, 0, v); }   // a border goes behind; a shrunk copy in front
+      else olds.push([l, v]);
+      news.push(v); }
+    if (!news.length) { toast('Shrunk that far there is nothing left: try a smaller width.'); return; }
+    for (const [l, v] of olds) doc.layers[doc.layers.indexOf(l)] = v;
+    cont = null; drawCont(); picking = false; picks = new Set(news.length > 1 ? news.map(v => v.id) : []); sel = news.length === 1 ? news[0].id : null;
+    changed(true); placeSel(); drawSide();
+    toast(`${copt2.d > 0 ? 'Grown' : 'Shrunk'} by ${Math.abs(dzToU(doc, copt2.d))} ${dzUnit(doc)}${copt2.keep ? ', original kept' : ''}.`);
+  };
+  const contAct = (a) => {
+    if (a === 'cancel') { endCont(); return drawSide(); }
+    if (a === 'apply') return contApply();
+    if (a === 'flip') { copt2.d = -copt2.d; saveC2(); contCalc(); return drawSide(); }
+    if (a === 'keep') { copt2.keep = !copt2.keep; saveC2(); return drawSide(); }
+    if (['round', 'miter', 'bevel'].includes(a)) { copt2.join = a; saveC2(); contCalc(); return drawSide(); }
+  };
+  const contPanel = () => `<div class="dz-lh"><b>Contour</b><button class="btn small" data-cont="cancel">Cancel</button></div>
+    <p class="muted" style="font-size:12px;margin:0 0 8px">Drag across the design: right grows, left shrinks (Shift for whole ${dzUnit(doc)}). Or type the width; a minus number shrinks. Holes move the other way.</p>
+    <div class="row" style="gap:6px;flex-wrap:nowrap;align-items:center"><label class="field" style="flex:1;margin:0"><span>Width (${dzUnit(doc)})</span>
+      <input class="in" type="number" step="any" inputmode="decimal" data-contd value="${dzToU(doc, copt2.d)}"></label>
+      <button class="btn small" data-cont="flip" style="align-self:flex-end" title="Swap between growing and shrinking">±</button></div>
+    <div class="seg" style="margin:8px 0">${[['round', 'Round'], ['miter', 'Sharp'], ['bevel', 'Bevel']].map(([j, nm]) => `<button data-cont="${j}" class="${copt2.join === j ? 'on' : ''}" style="flex:1">${nm}</button>`).join('')}</div>
+    <label class="toggle" style="display:inline-flex"><input type="checkbox" data-contkeep ${copt2.keep ? 'checked' : ''}><span>Keep original (add the contour as a new shape)</span></label>
+    <button class="btn primary" data-cont="apply" style="width:100%;margin-top:10px">Apply (Enter)</button>`;
   const saveRef = async (ids) => {
     const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
     const title = prompt('Name for the reference:', list.length === 1 ? layerName(list[0]) : name); if (title == null) return;
@@ -1620,6 +1800,7 @@ DZ.edit = async (id) => {
     if (pinch || pts.size > 1) return;
     if (cut) return cutDown(e);
     if (nodes) return nodeDown(e);
+    if (cont) return contDown(e);
     const h = e.target.closest('[data-h]')?.dataset.h, p = toPage(e);
     if (!h || many()) {
       const hl = hit(p);
@@ -1645,6 +1826,7 @@ DZ.edit = async (id) => {
   page.addEventListener('pointermove', (e) => {
     if (cutDrag) return cutMove(e);
     if (ndrag) return nodeMove(e);
+    if (cdrag) return contMove(e);
     if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) cancelPress();
     if (!drag || pinch) return;
     if (drag.h === 'group') {
@@ -1698,7 +1880,7 @@ DZ.edit = async (id) => {
     }
     redraw();
   });
-  const end = () => { cancelPress(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (!drag) return; const d = drag; drag = null; guides(false, false);
+  const end = () => { cancelPress(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
     if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
     changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
@@ -1706,6 +1888,15 @@ DZ.edit = async (id) => {
     if (!document.body.contains(el)) return removeEventListener('keydown', keys);
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(e.shiftKey ? 1 : -1); }
+    if (cont) {
+      if (e.key === 'Enter') { e.preventDefault(); return contApply(); }
+      if (e.key === 'Escape') { endCont(); return drawSide(); }
+    }
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !cut && !nodes && !cont) {   // tool keys, as on the drawing board
+      const k1 = e.key.toLowerCase();
+      if (k1 === 'o' && targets().length) { e.preventDefault(); return startCont(); }
+      if (k1 === 'a' && layer()?.t === 'shape' && layer().shape !== 'line') { e.preventDefault(); return startNodes(layer()); }
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); if (targets().length) merge(targets()); return; }
     if (many()) {
@@ -1738,6 +1929,8 @@ DZ.edit = async (id) => {
     const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
     if (d('tab')) { tab = d('tab'); return drawSide(); }
     if (d('mact')) return multiAct(d('mact'));
+    if (d('bool')) return boolOp(d('bool'));
+    if (d('cont')) return contAct(d('cont'));
     if (d('align')) return align(d('align'));
     const row = t.closest('[data-lid]');
     if (row && !t.closest('[data-grip]')) {
@@ -1937,6 +2130,7 @@ DZ.edit = async (id) => {
     }
     if (t.dataset.v) { doc.vals[t.dataset.v] = t.value; return changed(); }
     if (t.dataset.cpick) { const kk = t.dataset.cpick; if (kk === 'bg') doc.bg.c = t.value; else if (kk === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = t.value; } else if (l) l[kk] = t.value; return changed(); }
+    if (t.hasAttribute('data-contd') && cont) { const v = dzFromU(doc, +t.value); if (Number.isFinite(v)) { copt2.d = v; saveC2(); contCalc(); } return; }
     if (/^c:/.test(key || '')) {   // selection settings
       const kk = key.slice(2); copt[kk] = +t.value; saveCopt();
       const b = t.closest('.dz-sl')?.querySelector('b'); if (b) b.textContent = kk === 'feather' ? t.value + ' px' : t.value + '%';
@@ -1960,6 +2154,7 @@ DZ.edit = async (id) => {
   });
   side.addEventListener('change', async (e) => {
     const t = e.target, l = layer();
+    if (t.hasAttribute('data-contkeep')) { copt2.keep = t.checked; saveC2(); return; }
     if (t.dataset.cpick) return drawSide();
     if (t.id === 'dz-texfile' && l) {
       const f = t.files[0]; t.value = ''; if (!f) return;

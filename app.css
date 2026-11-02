@@ -1346,3 +1346,13 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 /* Design studio: node tool */
 #dz-nodecv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
 #dz-nodecv[hidden] { display: none; }
+
+/* Design studio: shape builder and contour */
+#dz-contcv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+#dz-contcv[hidden] { display: none; }
+.dz-bool { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 4px; }
+.dz-bool button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; font-size: 10px; }
+.dz-bool button:disabled { opacity: .35; cursor: default; }
+.dz-bi { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; }
+.dz-bi .g { opacity: .4; }
+.dz-acts .dz-bi { width: 16px; height: 16px; }
