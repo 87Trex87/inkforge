@@ -27,12 +27,12 @@ function ttLayout(nd, dia) {
       const g = []; for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) g.push({ u: (i + j / 2) * dia * gap, v: j * dia * gap * 0.866, e: 1 });
       g.sort((p, q) => Math.hypot(p.u, p.v) - Math.hypot(q.u, q.v)); out.push(...g.slice(0, n));
     }
-  } else {   // magnums: two staggered rows; the soft edge kind curves and fades towards its ends
+  } else {   // magnums: two staggered rows, flat; the soft edge kind sits the same but its outer needles hit shallower (an airbrush-like fade)
     const a = Math.ceil(n / 2), b = n - a, w = (a - 1) * dia;
     for (let i = 0; i < a; i++) out.push({ u: -w / 2 + i * dia, v: 0 });
     for (let i = 0; i < b; i++) out.push({ u: -w / 2 + dia / 2 + i * dia, v: dia * 0.55 });
     for (const p of out) { const t = w ? Math.abs(p.u) / (w / 2) : 0;
-      if (nd.kind === 'soft') { p.v += t * t * dia * 1.2; p.e = 1 - t * t * 0.7; } else p.e = 1; }
+      p.e = nd.kind === 'soft' ? 0.22 + 0.78 * Math.pow(Math.cos(t * Math.PI / 2), 1.5) : 1; }
   }
   return out;
 }
@@ -364,10 +364,10 @@ TT.open = async (el, id) => {
     const wide = lay.length > 4 && nk !== 'liner', rr = feel.size / 2 * sc * (wide ? 0.62 + depth * 0.45 : 0.45 + depth * 0.35) * sp, flow = feel.flow / 100 * cal.flow, bleed = feel.bleed / 100 * (1 + loose * 0.8);
     const hit = (1 - (feel.miss / 100) * (1 - depth)) * (1 - loose * 0.15), wob = loose * 0.12, wu = (Math.random() - 0.5) * wob, wv = (Math.random() - 0.5) * wob;
     for (const nd of lay) {
-      if (Math.random() > hit) continue;
+      if (Math.random() > hit || (nd.e < 1 && Math.random() > 0.55 + nd.e * 0.45)) continue;   // shallow edge needles skip more
       const j = 0.04 + hang * 0.06, u = (nd.u + wu + (Math.random() - 0.5) * j) * sc * sp, v = (nd.v + wv + (Math.random() - 0.5) * j) * sc;
-      const dd = Math.max(0.02, depth * (1 + (Math.random() - 0.5) * hang * 0.5));
-      const px = p.x + u * -sa + v * ca, py = p.y + u * ca + v * sa, al = Math.min(1, (0.18 + dd * 0.6) * flow * nd.e * inkC);
+      const dd = Math.max(0.02, depth * nd.e * (1 + (Math.random() - 0.5) * hang * 0.5));
+      const px = p.x + u * -sa + v * ca, py = p.y + u * ca + v * sa, al = Math.min(1, (0.18 * nd.e + dd * 0.6) * flow * inkC);
       if (al <= 0.004) continue;
       put(cx, px, py, rr, al, erase);
       if (bleed && !erase) put(cx, px, py, rr * 1.6, al * bleed * 0.25, false);
