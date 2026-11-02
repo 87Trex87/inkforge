@@ -295,6 +295,8 @@ const DZ_UI = {
   nodes: '<path d="M5 18C7 7 17 7 19 18"/><rect x="3" y="16" width="4" height="4"/><rect x="17" y="16" width="4" height="4"/><rect x="10" y="6" width="4" height="4"/>',
   toshape: '<path d="M12 3l9 9-9 9-9-9z"/>', flatten: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
   pick: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><path d="M13 7h8M17 3v8"/>',
+  svg: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M9.5 17.5c1-4 2.5-6 5-6.5"/><circle cx="9.5" cy="17.5" r="1"/><circle cx="14.5" cy="11" r="1"/>',
+  asset: '<path d="M12 3l2.5 5.2 5.5.8-4 3.9 1 5.6-5-2.7-5 2.7 1-5.6-4-3.9 5.5-.8z"/>',
   done: '<path d="M5 12.5l4.5 4.5L19 7"/>', close: '<path d="M6 6l12 12M18 6L6 18"/>', chev: '<path d="M6 9l6 6 6-6"/>',
   more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
   export: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/>', tpl: '<path d="M6 3h12v18l-6-4-6 4z"/><path d="M12 7v6M9 10h6"/>',
@@ -684,6 +686,95 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     for (const c of clips) await one(ox, c);
     x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(off, 0, 0);
   }
+}
+/* ---------- SVG ----------
+   Shapes are vector, and so are their plain colours and gradients, so they write straight into an SVG the same
+   way they draw. Text (it needs its font), pictures and texture fills are pixels: a choice with any of those
+   can't be saved as SVG (turn text into a shape first, e.g. with the shape builder). Clipped layers stay clipped
+   to their base; a crop stays a crop. */
+const dzVecOK = (l) => l.t === 'shape' && l.fm !== 'tex';
+const _sf = (v) => +(+v).toFixed(2);
+function dzSvgPath(L) {
+  const w = L.w, h = L.h || 0;
+  if (L.shape === 'ellipse') { const a = w / 2, b = h / 2; return `M${_sf(-a)} 0A${_sf(a)} ${_sf(b)} 0 1 0 ${_sf(a)} 0A${_sf(a)} ${_sf(b)} 0 1 0 ${_sf(-a)} 0Z`; }
+  if (L.shape === 'line') return `M${_sf(-w / 2)} 0L${_sf(w / 2)} 0`;
+  if (L.shape === 'path') {
+    let d = '';
+    for (const lp of L.path || []) { const n = lp.length / 2; if (n < 3) continue;
+      const P = (i) => [(lp[(i % n) * 2] - 0.5) * w, (lp[(i % n) * 2 + 1] - 0.5) * h], mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const s0 = mid(P(n - 1), P(0)); d += `M${_sf(s0[0])} ${_sf(s0[1])}`;
+      for (let i = 0; i < n; i++) { const p = P(i), q = mid(p, P(i + 1)); d += `Q${_sf(p[0])} ${_sf(p[1])} ${_sf(q[0])} ${_sf(q[1])}`; }
+      d += 'Z'; }
+    return d;
+  }
+  const subs = dzSubs(L);
+  if (subs) {
+    const X = (n, dd = 0) => _sf((n.x + dd - 0.5) * w), Y = (n, dd = 0) => _sf((n.y + dd - 0.5) * h);
+    const seg = (a, b) => `C${X(a, a.ox)} ${Y(a, a.oy)} ${X(b, b.ix)} ${Y(b, b.iy)} ${X(b)} ${Y(b)}`;
+    let d = '';
+    for (const sp of subs) { const N = sp.nodes; if (!N?.length) continue;
+      d += `M${X(N[0])} ${Y(N[0])}`; for (let i = 1; i < N.length; i++) d += seg(N[i - 1], N[i]);
+      if (sp.closed !== false) d += seg(N.at(-1), N[0]) + 'Z'; }
+    return d;
+  }
+  const r = Math.min(L.r || 0, w / 2, h / 2), x0 = -w / 2, y0 = -h / 2;
+  if (!r) return `M${_sf(x0)} ${_sf(y0)}H${_sf(-x0)}V${_sf(-y0)}H${_sf(x0)}Z`;
+  return `M${_sf(x0 + r)} ${_sf(y0)}H${_sf(-x0 - r)}A${_sf(r)} ${_sf(r)} 0 0 1 ${_sf(-x0)} ${_sf(y0 + r)}V${_sf(-y0 - r)}A${_sf(r)} ${_sf(r)} 0 0 1 ${_sf(-x0 - r)} ${_sf(-y0)}`
+    + `H${_sf(x0 + r)}A${_sf(r)} ${_sf(r)} 0 0 1 ${_sf(x0)} ${_sf(-y0 - r)}V${_sf(y0 + r)}A${_sf(r)} ${_sf(r)} 0 0 1 ${_sf(x0 + r)} ${_sf(y0)}Z`;
+}
+// The box an item covers on the page (turned corners included), grown by half its outline.
+function dzBounds(L) {
+  const t = (L.rot || 0) * Math.PI / 180, c = Math.cos(t), s2 = Math.sin(t), cx = L.x + L.w / 2, cy = L.y + (L.h || 0) / 2;
+  const g = L.t === 'shape' ? (L.shape === 'line' ? Math.max(1, L.sw || L.h) / 2 : dzCol({}, L.stroke) !== null && L.sw ? L.sw / 2 : 0) : 0;
+  const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => { const dx = u * (L.w / 2 + g), dy = v * ((L.h || 0) / 2 + g); return [cx + dx * c - dy * s2, cy + dx * s2 + dy * c]; });
+  return { x0: Math.min(...cs.map(q => q[0])), y0: Math.min(...cs.map(q => q[1])), x1: Math.max(...cs.map(q => q[0])), y1: Math.max(...cs.map(q => q[1])) };
+}
+// An SVG of these layers (page order), cut to what they cover. Every layer must pass dzVecOK.
+function dzSvg(doc, layers) {
+  const B = layers.map(dzBounds), x0 = Math.min(...B.map(b => b.x0)), y0 = Math.min(...B.map(b => b.y0)), W = Math.max(1, Math.max(...B.map(b => b.x1)) - x0), H = Math.max(1, Math.max(...B.map(b => b.y1)) - y0);
+  const defs = [], out = []; let uid = 0;
+  const esc2 = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const xf = (L) => `translate(${_sf(L.x + L.w / 2 - x0)} ${_sf(L.y + (L.h || 0) / 2 - y0)})${L.rot ? ` rotate(${_sf(L.rot)})` : ''}`;
+  const paint = (L) => {
+    if (L.fm !== 'grad' || !L.grad?.stops?.length) return null;
+    const g = L.grad, id = 'g' + (++uid), w = L.w, h = L.h || 1;
+    const stops = [...g.stops].sort((a, b) => a.p - b.p).map(st => `<stop offset="${_sf(Math.max(0, Math.min(1, st.p)))}" stop-color="${esc2(dzCol(doc, st.c) || '#000')}"/>`).join('');
+    if (g.type === 'radial') defs.push(`<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="${_sf(Math.max(1, Math.hypot(w, h) / 2 * (g.sz ?? 1)))}">${stops}</radialGradient>`);
+    else { const a = (g.ang ?? 90) * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), e = Math.abs(w / 2 * c) + Math.abs(h / 2 * sn) || 1;
+      defs.push(`<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${_sf(-c * e)}" y1="${_sf(-sn * e)}" x2="${_sf(c * e)}" y2="${_sf(sn * e)}">${stops}</linearGradient>`); }
+    return `url(#${id})`;
+  };
+  // One shape drawn in its own space: the box centred on 0, 0 (a crop draws the whole and clips to the box).
+  const body = (L) => {
+    const f = dzCol(doc, L.fill), st = dzCol(doc, L.stroke), sw = L.sw || 0, flip = L.fx || L.fy ? ` transform="scale(${L.fx ? -1 : 1} ${L.fy ? -1 : 1})"` : '';
+    const one = (S) => { const pf = paint(S), d = dzSvgPath(S);
+      if (S.shape === 'line') return `<path d="${d}" fill="none" stroke="${esc2(pf || st || f || '#000')}" stroke-width="${_sf(Math.max(1, sw || S.h))}" stroke-linecap="round"${flip}/>`;
+      const open = S.shape === 'vec' && S.subs?.every(sp => sp.closed === false), fill = !open && (pf || f);
+      return `<path d="${d}" fill="${fill ? esc2(fill) : 'none'}"${S.shape === 'path' || dzSubs(S) ? ' fill-rule="evenodd"' : ''}${st && sw ? ` stroke="${esc2(st)}" stroke-width="${_sf(sw)}"` : ''}${flip}/>`; };
+    const c = L.crop;
+    if (c && (c.w < 1 || c.h < 1)) {
+      const FW = L.w / c.w, FH = L.h / c.h, ox = (0.5 - (c.x + c.w / 2)) * FW, oy = (0.5 - (c.y + c.h / 2)) * FH, id = 'c' + (++uid);
+      defs.push(`<clipPath id="${id}"><rect x="${_sf(-L.w / 2)}" y="${_sf(-L.h / 2)}" width="${_sf(L.w)}" height="${_sf(L.h)}"/></clipPath>`);
+      return `<g clip-path="url(#${id})"><g transform="translate(${_sf(ox)} ${_sf(oy)})">${one({ ...L, w: FW, h: FH })}</g></g>`;
+    }
+    return one(L);
+  };
+  const item = (L) => `<g transform="${xf(L)}"${(L.op ?? 1) < 1 ? ` opacity="${_sf(L.op)}"` : ''}>${body(L)}</g>`;
+  for (let i = 0; i < layers.length; i++) {
+    const L = layers[i]; let j = i + 1; while (j < layers.length && layers[j].clip) j++;
+    const clips = layers.slice(i + 1, j); i = j - 1;
+    out.push(item(L));
+    if (clips.length) { const id = 'k' + (++uid);
+      defs.push(`<clipPath id="${id}"><path transform="${xf(L)}${L.fx || L.fy ? ` scale(${L.fx ? -1 : 1} ${L.fy ? -1 : 1})` : ''}" d="${dzSvgPath(L)}"${L.shape === 'path' || dzSubs(L) ? ' clip-rule="evenodd"' : ''}/></clipPath>`);
+      out.push(`<g clip-path="url(#${id})">${clips.map(item).join('')}</g>`); }
+  }
+  return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${_sf(W)} ${_sf(H)}" width="${_sf(W)}" height="${_sf(H)}">${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${out.join('')}</svg>`, x0, y0, W, H };
+}
+// The layers as they'll be kept with an asset: theme colours fixed to what they are now, placed from 0, 0.
+function dzAssetLayers(doc, layers, x0, y0) {
+  const fix = (c) => c && c[0] === '@' ? dzCol(doc, c) : c;
+  return layers.map(l => { const o = JSON.parse(JSON.stringify(l)); delete o.id; delete o.side; delete o.lock; delete o.hide; o.x -= x0; o.y -= y0;
+    o.fill = fix(o.fill); o.stroke = fix(o.stroke); if (o.grad?.stops) o.grad.stops.forEach(st => st.c = fix(st.c)); return o; });
 }
 // The layer lists drawn for a page, bottom first: f = front, b = back, m = master (only the master).
 const dzSide = (l) => l.side || 'f';
@@ -1262,13 +1353,14 @@ DZ.edit = async (id) => {
     if (a === 'select') { closePop(); endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); tab = 'edit'; return select(null); }
     if (a === 'layers' || a === 'doc') { closePop(); if (a === 'doc' && tab !== 'doc') { sel = null; picks = new Set(); picking = false; placeSel(); } tab = tab === a ? 'edit' : a; return drawSide(); }
     if (a === 'close') { tab = 'edit'; return drawSide(); }
+    if (a === 'assets') { closePop(); return addAsset(); }
     const p = pop(); if (!p) return;
     if (!p.hidden && btn?.classList.contains('open')) return closePop();
     closePop();
     p.innerHTML = a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="heading"', 'heading', 'Heading')
         + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
       : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-add="logo"', 'logo', 'Studio logo')
-      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => dzIB(`data-shape="${v}"`, 's_' + v, n)).join('')}</div>`;
+      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => dzIB(`data-shape="${v}"`, 's_' + v, n)).join('')}</div>` + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
     p.hidden = false; btn?.classList.add('open');
     const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p.offsetHeight - 8)) + 'px';
   };
@@ -1293,7 +1385,8 @@ DZ.edit = async (id) => {
           `<button data-bool="${b}" ${!n || (n < 2 && !['separate', 'contour'].includes(b)) ? 'disabled' : ''} title="${tip}">${DZ_BOOL_ICON[b]}<span>${nm}</span></button>`).join('')}</div>
 `)}
       ${fsec('Combine and save', `<div class="dz-tb">${dzIB(`data-mact="merge" ${dis}`, 'merge', 'Merge into one picture (Undo brings the layers back)')}
-        ${dzIB(`data-mact="refs" ${dis}`, 'refs', 'Save to references')}${dzIB(`data-mact="png" ${dis}`, 'png', 'Save as PNG')}</div>`)}`;
+        ${dzIB(`data-mact="refs" ${dis}`, 'refs', 'Save to references')}${dzIB(`data-mact="png" ${dis}`, 'png', 'Save as PNG')}
+        ${n && vecOnly(L.map(l => l.id)) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}</div>`)}`;
   };
   const drawEdit = () => {
     if (cont) { side.innerHTML = contPanel(); return; }
@@ -1360,7 +1453,8 @@ DZ.edit = async (id) => {
         ${l.t === 'image' && (l.ref || l.logo) ? dzIB('data-act="toshape"', 'toshape', 'To shape: trace the picture into a shape you can fill') : ''}
         ${l.t !== 'image' || l.ref || l.logo ? dzIB('data-act="flatten1"', 'flatten', l.t === 'image' ? 'Flatten: bake in rotation, flips, crop and opacity' : 'Flatten into a picture') : ''}
         ${dzIB('data-act="pick"', 'pick', 'Select more items')}
-        ${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}</div>
+        ${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
+        ${vecOnly([l.id]) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}</div>
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
         <button class="btn small" data-act="flatten">Flatten group</button></div>` : ''}
       ${l.t === 'text' ? `
@@ -2322,6 +2416,31 @@ DZ.edit = async (id) => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(await pngOf(f.cv)); a.download = fn; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     toast('Saved ' + fn);
   };
+  const vecOnly = (ids) => { const list = groupOf(ids).filter(l => !l.hide); return list.length > 0 && list.every(dzVecOK); };
+  const saveSvg = async (ids, asset) => {
+    const list = groupOf(ids).filter(l => !l.hide); if (!list.length) return toast('Nothing visible to save.');
+    if (!list.every(dzVecOK)) return toast('Only shapes with colour or gradient fills can be saved as SVG. Turn text into a shape first; pictures and textures are pixels.', 5000);
+    const r = dzSvg(doc, list), nm = (list.length === 1 ? layerName(list[0]) : name) || 'shape';
+    if (asset) {
+      const a = await assetAsk(nm); if (!a) return;
+      await assetAdd(r.svg, a.name, a.cat, dzAssetLayers(doc, list, r.x0, r.y0));
+      return toast(`Saved to Assets › ${a.cat}.`);
+    }
+    const fn = nm.replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 60) + '.svg';
+    const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' })); l.download = fn; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000);
+    toast('Saved ' + fn);
+  };
+  // An asset onto the page, in the middle: shapes saved from a design come back as editable shapes, any other SVG as a picture.
+  const addAsset = async () => {
+    const r = await assetPick(); if (!r) return;
+    const big = Math.min(doc.w, doc.h) * 0.4, s = big / Math.max(1, r.w, r.h), ox = (doc.w - r.w * s) / 2, oy = (doc.h - r.h * s) / 2;
+    const ls = r.layers ? JSON.parse(r.layers) : null;
+    if (!ls?.length) { sel = null; return add({ t: 'image', ref: r.svg_ref, name: r.name || undefined, x: ox, y: oy, w: r.w * s, h: r.h * s }); }
+    const made = ls.map(l => ({ ...l, id: dzId(), x: ox + l.x * s, y: oy + l.y * s, w: l.w * s, h: (l.h || 0) * s, ...(l.sw ? { sw: l.sw * s } : {}), ...(l.r ? { r: l.r * s } : {}),
+      ...(doc.sides && face !== 'f' ? { side: face } : {}) }));
+    doc.layers.push(...made); changed(true);
+    if (made.length === 1) { sel = made[0].id; drawSide(); } else setPicks(made.map(l => l.id));
+  };
   // Line up the selected items with each other (one item: with the page), or space three or more evenly.
   const align = (how) => {
     const L = picked().filter(l => !l.lock); if (!L.length) return toast('Unlock the items first.');
@@ -2346,6 +2465,7 @@ DZ.edit = async (id) => {
     if (a === 'merge') return merge(targets());
     if (a === 'refs') return saveRef(targets());
     if (a === 'png') return savePng(targets());
+    if (a === 'svg' || a === 'asset') return saveSvg(targets(), a === 'asset');
     if (!L.length) return;
     if (a === 'hide') { const v = !every(l => l.hide); L.forEach(l => l.hide = v); }
     if (a === 'lock') { const v = !every(l => l.lock); L.forEach(l => l.lock = v); }

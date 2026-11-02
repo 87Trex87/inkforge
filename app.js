@@ -300,7 +300,14 @@ const MIGRATIONS = [
      updated_at TEXT NOT NULL DEFAULT (datetime('now')));
    CREATE INDEX idx_ref_cat ON ref_images (category);`,
   // inventory: how far the + and - buttons move the stock (1 = whole numbers, or 0.5, 0.25, 0.1)
-  `ALTER TABLE inventory_items ADD COLUMN step REAL NOT NULL DEFAULT 1;`
+  `ALTER TABLE inventory_items ADD COLUMN step REAL NOT NULL DEFAULT 1;`,
+  // assets: vector stickers and shapes kept as SVG files, by category. `layers` holds the design studio's own
+  // copy of the shapes (when saved from a design) so they come back editable.
+  `CREATE TABLE assets (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     name TEXT, category TEXT NOT NULL DEFAULT 'Shapes', svg_ref TEXT NOT NULL, layers TEXT, w REAL, h REAL,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+   CREATE INDEX idx_assets_cat ON assets (category);`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -499,7 +506,8 @@ const Media = {
     if (!name) return '';
     if (this.urls.has(name)) return this.urls.get(name);
     try {
-      const f = await (await (await this.dir()).getFileHandle(name)).getFile();
+      let f = await (await (await this.dir()).getFileHandle(name)).getFile();
+      if (name.endsWith('.svg')) f = new Blob([f], { type: 'image/svg+xml' });
       const u = URL.createObjectURL(f); this.urls.set(name, u); return u;
     } catch { return ''; }
   },
@@ -514,6 +522,7 @@ const Media = {
       UNION ALL SELECT 1 FROM designs WHERE thumb_ref = ?1
       UNION ALL SELECT 1 FROM design_assets WHERE ref = ?1
       UNION ALL SELECT 1 FROM ref_images WHERE photo_ref = ?1 OR thumb_ref = ?1
+      UNION ALL SELECT 1 FROM assets WHERE svg_ref = ?1
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
@@ -1198,7 +1207,7 @@ const VIEWS = {
         <button class="btn primary icon-btn" id="pf-add" data-tip="Add to portfolio" aria-label="Add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="seg pf-seg" id="pf-filter">
-        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★'], ['refs', 'References']].map(([k, l]) =>
+        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★'], ['refs', 'References'], ['assets', 'Assets']].map(([k, l]) =>
           `<button data-f="${k}" class="${PF.filter === k ? 'on' : ''}" ${k === 'fav' ? 'data-tip="Favourites" aria-label="Favourites"' : ''}>${l}</button>`).join('')}
       </div>
       <div id="pf-grid"></div>`,
@@ -1207,7 +1216,7 @@ const VIEWS = {
       $('#pf-filter').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; PF.filter = b.dataset.f;
         document.querySelectorAll('#pf-filter button').forEach(x => x.classList.toggle('on', x === b)); renderPfGrid(); };
       $('#pf-print').onclick = openPortfolioPrint;
-      $('#pf-add').onclick = () => { if (PF.filter === 'refs') return refImport();
+      $('#pf-add').onclick = () => { if (PF.filter === 'refs') return refImport(); if (PF.filter === 'assets') return assetImport();
         PF.ctx = { kind: ['tattoo', 'art', 'flash'].includes(PF.filter) ? PF.filter : 'tattoo' }; location.hash = 'pf-edit/new'; };
       renderPfGrid();
     }
@@ -2693,6 +2702,7 @@ const MERGE_SECTIONS = [
   ['forms', 'Forms', 'Form templates and signed forms'],
   ['portfolio', 'Portfolio', 'Tattoos, art and flash with photos'],
   ['references', 'References', 'Pictures collected for ideas, by category'],
+  ['assets', 'Assets', 'Vector stickers and shapes (SVG), by category'],
   ['inventory', 'Inventory', 'Stock items and stock takes'],
   ['rules', 'Rule book', 'Your studio rules'],
   ['quotes', 'Saved quotes', 'Quotes saved to finish or book later'],
@@ -2717,12 +2727,13 @@ const MERGE_TABLES = {
   quotes: { section: 'quotes', fk: { booking_id: 'bookings' }, refs: ['design_ref'] },
   designs: { section: 'designs', refs: ['thumb_ref'] },
   ref_images: { section: 'references', refs: ['photo_ref', 'thumb_ref'] },
+  assets: { section: 'assets', refs: ['svg_ref'] },
   design_assets: { section: 'designs', fk: { design_id: 'designs' }, refs: ['ref'] },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
-  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images'];
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
@@ -3549,6 +3560,136 @@ async function refSheet(id) {
     await DB.run('DELETE FROM ref_images WHERE id = ?', [id]); await Media.release(r.photo_ref); await Media.release(r.thumb_ref); close();
   };
 }
+/* ---------- Assets ----------
+   Vector stickers and custom shapes, kept as SVG files and sorted into categories. Saved from the design studio
+   (only when everything chosen is vector) or added as .svg files; the design studio's Shape menu inserts them. */
+const ASSET_CATS = ['Shapes', 'Stickers', 'Frames', 'Icons', 'Lettering'];
+const PF_ASSET = { cat: 'all' };
+async function assetCats() {
+  const used = await DB.all('SELECT category AS c, COUNT(*) AS n FROM assets GROUP BY category ORDER BY category COLLATE NOCASE');
+  return { used, all: [...new Set([...used.map(r => r.c), ...ASSET_CATS])] };
+}
+const assetCat = (v) => (String(v || '').trim() || 'Shapes').replace(/^./, m => m.toUpperCase());
+// Name and category for a new asset; resolves { name, cat } or null.
+async function assetAsk(name) {
+  const { all } = await assetCats(), last = Settings.get('asset_cat', 'Shapes');
+  return new Promise((res) => {
+    const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
+    o.innerHTML = `<div class="card"><h2>Save to Assets</h2>
+      <label class="field"><span>Name</span><input class="in" id="as-n" value="${esc(name || '')}"></label>
+      <label class="field"><span>Category</span><input class="in" id="as-c" list="as-cats" value="${esc(last)}" autocapitalize="words">
+        <datalist id="as-cats">${all.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+      <div class="row"><button class="btn" id="as-x">Cancel</button><button class="btn primary" id="as-ok" style="flex:1">Save</button></div></div>`;
+    document.body.appendChild(o);
+    o.querySelector('#as-x').onclick = () => { o.remove(); res(null); };
+    o.querySelector('#as-ok').onclick = async () => { const cat = assetCat(o.querySelector('#as-c').value); await Settings.set('asset_cat', cat);
+      o.remove(); res({ name: o.querySelector('#as-n').value.trim() || 'Shape', cat }); };
+  });
+}
+// The size an SVG says it is (viewBox, else width and height), for laying it out.
+function assetSize(svg) {
+  const vb = svg.match(/viewBox\s*=\s*["']\s*[-\d.e]+[\s,]+[-\d.e]+[\s,]+([\d.e]+)[\s,]+([\d.e]+)/i);
+  if (vb) return { w: +vb[1], h: +vb[2] };
+  const w = svg.match(/<svg[^>]*\swidth\s*=\s*["']?([\d.]+)/i), h = svg.match(/<svg[^>]*\sheight\s*=\s*["']?([\d.]+)/i);
+  return { w: w ? +w[1] : 100, h: h ? +h[1] : 100 };
+}
+async function assetAdd(svg, name, cat, layers) {
+  const { w, h } = assetSize(svg), ref = await Media.save(new Blob([svg], { type: 'image/svg+xml' }), 'svg');
+  await DB.run('INSERT INTO assets (name, category, svg_ref, layers, w, h) VALUES (?, ?, ?, ?, ?, ?)', [name, cat, ref, layers ? JSON.stringify(layers) : null, w, h]);
+}
+function assetImport() {
+  const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = '.svg,image/svg+xml';
+  i.onchange = async () => {
+    const files = [...i.files]; if (!files.length) return;
+    const a = await assetAsk(files.length === 1 ? files[0].name.replace(/\.svg$/i, '').replace(/[_-]+/g, ' ') : ''); if (!a) return;
+    let ok = 0, bad = 0;
+    for (const f of files) {
+      const t = await f.text();
+      if (!/<svg[\s>]/i.test(t)) { bad++; continue; }
+      await assetAdd(t, files.length === 1 ? a.name : f.name.replace(/\.svg$/i, '').replace(/[_-]+/g, ' ').trim() || 'Shape', a.cat); ok++;
+    }
+    toast(`Added ${ok} SVG${ok === 1 ? '' : 's'}${bad ? `. ${bad} weren't SVG files` : ''}.`);
+    PF_ASSET.cat = a.cat; renderPfGrid();
+  };
+  i.click();
+}
+async function renderAssets(el) {
+  const q = PF.q.trim(), like = '%' + q + '%', { used } = await assetCats();
+  if (PF_ASSET.cat !== 'all' && !used.some(r => r.c === PF_ASSET.cat)) PF_ASSET.cat = 'all';
+  const rows = await DB.all(`SELECT id, name, category, svg_ref FROM assets WHERE (? = 'all' OR category = ?) AND (? = '' OR name LIKE ? OR category LIKE ?)
+    ORDER BY created_at DESC, id DESC`, [PF_ASSET.cat, PF_ASSET.cat, q, like, like]);
+  if ($('#pf-grid') !== el) return;
+  const total = used.reduce((t, r) => t + r.n, 0);
+  if (!total) {
+    el.innerHTML = `<div class="empty"><div class="empty-ico">${ICON.portfolio}</div><div style="font:24px var(--display)">Your assets</div>
+      <div class="muted">Vector stickers and custom shapes, kept as SVG. Save shapes from the design studio (select them, then Save to Assets), or add .svg files. They're in the design studio's Shape menu.</div>
+      <button class="btn primary" id="as-add" style="margin-top:12px">Add SVG files</button></div>`;
+    $('#as-add').onclick = assetImport; return;
+  }
+  const urls = await Promise.all(rows.map(r => Media.url(r.svg_ref)));
+  el.innerHTML = `<div class="ref-cats">${[['all', `All ${total}`], ...used.map(r => [r.c, `${r.c} ${r.n}`])].map(([k, l]) =>
+      `<button class="chip ${PF_ASSET.cat === k ? 'on' : ''}" data-ac="${esc(k)}">${esc(l)}</button>`).join('')}</div>
+    ${rows.length ? `<div class="ref-grid as-grid">${rows.map((r, i) => `<button class="ref-tile as-tile" data-as="${r.id}" title="${esc(r.name || '')}"><img src="${urls[i]}" alt="" loading="lazy"></button>`).join('')}</div>`
+      : '<div class="empty muted">Nothing here.</div>'}
+    <div class="muted count">${rows.length} asset${rows.length === 1 ? '' : 's'}</div>`;
+  el.onclick = (e) => {
+    const c = e.target.closest('[data-ac]'); if (c) { PF_ASSET.cat = c.dataset.ac; return renderAssets(el); }
+    const t = e.target.closest('[data-as]'); if (t) assetSheet(+t.dataset.as);
+  };
+}
+// One asset: rename, re-categorise, save the SVG to the device or delete.
+async function assetSheet(id) {
+  const r = await DB.one('SELECT * FROM assets WHERE id = ?', [id]); if (!r) return;
+  const { all } = await assetCats(), url = await Media.url(r.svg_ref);
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card ref-sheet">
+    <div class="ref-big as-big"><img src="${url}" alt=""></div>
+    <div class="muted" style="font-size:11px;margin:6px 0 10px">SVG · ${Math.round(r.w)} × ${Math.round(r.h)}${r.layers ? ' · made in the design studio (comes back editable)' : ''}</div>
+    <div class="two"><label class="field"><span>Name</span><input class="in" id="as-n" value="${esc(r.name || '')}"></label>
+      <label class="field"><span>Category</span><input class="in" id="as-c" list="as-cats" value="${esc(r.category)}" autocapitalize="words">
+      <datalist id="as-cats">${all.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label></div>
+    <div class="row" style="gap:6px"><button class="btn danger icon-btn" id="as-del" aria-label="Delete" data-tip="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+      <button class="btn" id="as-dl">Save SVG</button><span style="flex:1"></span><button class="btn" id="as-x">Close</button><button class="btn primary" id="as-ok">Save</button></div></div>`;
+  document.body.appendChild(o);
+  const close = () => { o.remove(); renderPfGrid(); };
+  o.querySelector('#as-x').onclick = () => o.remove();
+  o.querySelector('#as-ok').onclick = async () => {
+    await DB.run(`UPDATE assets SET name = ?, category = ?, updated_at = datetime('now') WHERE id = ?`, [o.querySelector('#as-n').value.trim() || null, assetCat(o.querySelector('#as-c').value), id]);
+    close();
+  };
+  o.querySelector('#as-dl').onclick = async () => {
+    const f = await (await (await Media.dir()).getFileHandle(r.svg_ref)).getFile();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([f], { type: 'image/svg+xml' })); a.download = (r.name || 'asset').replace(/[^\w-]+/g, '_') + '.svg'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  o.querySelector('#as-del').onclick = async () => {
+    if (!confirm(`Delete "${r.name || 'this asset'}"? Designs that already use it keep their copy.`)) return;
+    await DB.run('DELETE FROM assets WHERE id = ?', [id]); await Media.release(r.svg_ref); close();
+  };
+}
+// Choose an asset (design studio): resolves its row or null.
+async function assetPick() {
+  const { used } = await assetCats();
+  if (!used.length) { toast('No assets yet: save shapes to Assets, or add SVG files in Portfolio › Assets.', 4000); return null; }
+  let cat = Settings.get('asset_pick_cat', 'all'); if (cat !== 'all' && !used.some(r => r.c === cat)) cat = 'all';
+  return new Promise((res) => {
+    const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
+    const draw = async () => {
+      const rows = await DB.all(`SELECT * FROM assets WHERE (? = 'all' OR category = ?) ORDER BY created_at DESC, id DESC LIMIT 400`, [cat, cat]);
+      const urls = await Promise.all(rows.map(r => Media.url(r.svg_ref)));
+      o.innerHTML = `<div class="card dz-pick"><h2>Assets</h2>
+        <div class="ref-cats">${[['all', 'All'], ...used.map(r => [r.c, r.c])].map(([k, l]) => `<button class="chip ${cat === k ? 'on' : ''}" data-ac="${esc(k)}">${esc(l)}</button>`).join('')}</div>
+        <div class="dz-pf as-pick">${rows.map((r, i) => `<button data-v="${r.id}" title="${esc(r.name || '')}"><img src="${urls[i]}" alt=""></button>`).join('')}</div>
+        <button class="btn" data-v="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+      o._rows = rows;
+    };
+    o.onclick = async (e) => {
+      const c = e.target.closest('[data-ac]'); if (c) { cat = c.dataset.ac; Settings.set('asset_pick_cat', cat); return draw(); }
+      const b = e.target.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v ? o._rows.find(r => r.id === +b.dataset.v) || null : null);
+    };
+    document.body.appendChild(o); draw();
+  });
+}
+
 // Size new portfolio photos are saved at (long side in px), or the original file untouched.
 const PF_SIZES = [['540', '540'], ['720', '720'], ['1080', '1080'], ['original', 'Original']];
 const pfSizeDefault = () => Settings.get('pf_size', '1080');
@@ -3559,9 +3700,10 @@ const PF_KIND = { tattoo: 'Tattoo', art: 'Art', flash: 'Flash' };
 
 async function renderPfGrid() {
   const el = $('#pf-grid'); if (!el) return;
-  const pr = $('#pf-print'); if (pr) pr.hidden = PF.filter === 'refs';
-  $('#pf-q') && ($('#pf-q').placeholder = PF.filter === 'refs' ? 'Search title, category, tag…' : 'Search title, tag, placement…');
+  const pr = $('#pf-print'); if (pr) pr.hidden = PF.filter === 'refs' || PF.filter === 'assets';
+  $('#pf-q') && ($('#pf-q').placeholder = PF.filter === 'refs' ? 'Search title, category, tag…' : PF.filter === 'assets' ? 'Search name or category…' : 'Search title, tag, placement…');
   if (PF.filter === 'refs') return renderRefs(el);
+  if (PF.filter === 'assets') return renderAssets(el);
   const q = PF.q.trim(), like = '%' + q + '%';
   const where = PF.filter === 'fav' ? 'p.favourite = 1' : PF.filter === 'all' ? '1' : 'p.kind = ?';
   const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite, p.bg,
