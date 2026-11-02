@@ -20,7 +20,7 @@ const TT_NEEDLES = [['liner', [1, 3, 5, 7, 9, 11, 14]], ['shader', [5, 7, 9, 11]
 function ttLayout(nd, dia) {
   const n = nd.n, out = [];
   if (nd.kind === 'liner' || nd.kind === 'shader') {
-    const gap = nd.kind === 'shader' ? 1.3 : 1;   // shaders are soldered looser
+    const gap = nd.kind === 'shader' ? 1.3 : 0.78;   // shaders are soldered looser; liners tight, so the line comes out solid
     if (n === 1) out.push({ u: 0, v: 0, e: 1 });
     else if (n <= 6) { const r = (dia / 2) / Math.sin(Math.PI / n) * gap; for (let i = 0; i < n; i++) { const a = i * 2 * Math.PI / n; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } }
     else {   // bigger rounds: the n needles of a tight hexagonal bundle nearest its middle
@@ -40,7 +40,7 @@ function ttLayout(nd, dia) {
 const TT_FEEL = {
   dMin: 0.12, dMax: 1, pCurve: 0, hand: 25, speedFade: 35, tiltSpread: 60, tiltFade: 30, flow: 70, bleed: 40, size: 0.35, miss: 40, hang: 40
 };
-const TT_FEEL_LIQ = { liner: { flow: 80, miss: 25, size: 0.3, bleed: 60 }, shader: { flow: 60, miss: 40, bleed: 45 }, mag: { flow: 60, miss: 35, bleed: 45 }, soft: { flow: 55, miss: 40, bleed: 55, speedFade: 50, dMax: 0.85 } };
+const TT_FEEL_LIQ = { liner: { flow: 80, miss: 25, size: 0.3, bleed: 60 }, shader: { flow: 60, miss: 40, bleed: 45 }, mag: { flow: 60, miss: 35, bleed: 45 }, soft: { flow: 60, miss: 35, bleed: 55, speedFade: 30, dMax: 0.95 } };
 /* Voltage by grouping, as set up for a relatively slow hand (liners higher as they get bigger; shaders and
    magnums lower). Voltage sets how fast the machine hits (about 14 hits a second per volt) and how hard. */
 const TT_VOLT = { '1RL': 7.0, '3RL': 7.2, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '11RL': 7.7, '14RL': 7.9, '5RS': 6.6, '7RS': 6.7, '9RS': 6.8, '11RS': 6.9,
@@ -422,7 +422,7 @@ TT.open = async (el, id) => {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           trAdd(q, pen.foot, 0.007 * Math.pow(depth, 4) / (cal.tough || 1));   // tough skin: light passes barely work it; digging in does
-          const risk = Math.max(0, Math.min(1, (0.06 - gapMm(pen.speed)) / 0.04)) * Math.max(0, Math.min(1, (depth - 0.65) / 0.2)) * (cal.blow ?? 1);   // a normal line lands ~0.1 mm apart
+          const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - 0.8) / 0.15)) * (cal.blow ?? 1);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
@@ -1061,11 +1061,11 @@ TT.open = async (el, id) => {
     const core = maskOf(draw, false, coreW), band = maskOf(draw, false, coreW + 2.2), mid = maskOf(draw, false, Math.min(0.2, coreW * 0.4));
     let cn = 0, cin = 0, sum = 0, sum2 = 0, mn = 0, ink = 0, out = 0;
     for (let i = 3; i < core.length; i += 4) { const d = densAt(i - 3);
-      if (core[i] > 128) { cn++; if (d > 0.35) cin++; }
+      if (core[i] > 128) { cn++; if (d > 0.28) cin++; }
       if (mid[i] > 128) { mn++; sum += d; sum2 += d * d; }
       if (d > 0.2) { ink++; if (band[i] < 30) out++; } }
     const mean = sum / Math.max(1, mn), sd = Math.sqrt(Math.max(0, sum2 / Math.max(1, mn) - mean * mean));
-    const cov = cin / Math.max(1, cn), spill = out / Math.max(1, ink), cons = 1 - clamp01(sd / 0.5);
+    const cov = cin / Math.max(1, cn), spill = out / Math.max(1, ink), cons = 1 - clamp01(sd / 0.65);
     return { score: Math.round(100 * cov * (0.55 + 0.25 * (1 - spill) + 0.2 * cons)), coverage: Math.round(cov * 100), spill: Math.round(spill * 100), evenness: Math.round(cons * 100) };
   };
   const boxIdx = (b) => { const x0 = Math.round(b[0] * mm), y0 = Math.round(b[1] * mm), x1 = Math.round((b[0] + b[2]) * mm), y1 = Math.round((b[1] + b[3]) * mm); return { x0, y0, x1, y1 }; };
