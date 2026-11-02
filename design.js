@@ -2430,10 +2430,11 @@ DZ.edit = async (id) => {
     const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' })); l.download = fn; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000);
     toast('Saved ' + fn);
   };
-  // An asset onto the page, in the middle: shapes saved from a design come back as editable shapes, any other SVG as a picture.
+  // An asset onto the page, in the middle, at the size it was made (smaller only if it wouldn't fit): shapes saved
+  // from a design come back as editable shapes, any other SVG as a picture.
   const addAsset = async () => {
     const r = await assetPick(); if (!r) return;
-    const big = Math.min(doc.w, doc.h) * 0.4, s = big / Math.max(1, r.w, r.h), ox = (doc.w - r.w * s) / 2, oy = (doc.h - r.h * s) / 2;
+    const s = Math.min(1, doc.w * 0.95 / Math.max(1, r.w), doc.h * 0.95 / Math.max(1, r.h)), ox = (doc.w - r.w * s) / 2, oy = (doc.h - r.h * s) / 2;
     const ls = r.layers ? JSON.parse(r.layers) : null;
     if (!ls?.length) { sel = null; return add({ t: 'image', ref: r.svg_ref, name: r.name || undefined, x: ox, y: oy, w: r.w * s, h: r.h * s }); }
     const made = ls.map(l => ({ ...l, id: dzId(), x: ox + l.x * s, y: oy + l.y * s, w: l.w * s, h: (l.h || 0) * s, ...(l.sw ? { sw: l.sw * s } : {}), ...(l.r ? { r: l.r * s } : {}),
