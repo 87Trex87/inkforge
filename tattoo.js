@@ -47,7 +47,7 @@ const TT_VOLT = { '1RL': 7.0, '3RL': 7.2, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '
   '7M1': 6.5, '9M1': 6.55, '11M1': 6.6, '13M1': 6.7, '15M1': 6.8, '9CM': 6.5, '15CM': 6.6, '23CM': 6.7, '31CM': 6.8 };
 /* Hand speed: how fast this artist moves. Each sets a starting hand speed, how much fast strokes fade and an offset
    to every needle's voltage (faster hands run machines faster); Tune in fine tunes from there. */
-const TT_PROFILES = [['vslow', 'Very slow', 5.5, 0.6, -0.3], ['slow', 'Relatively slow', 4.5, 0.7, 0], ['medium', 'Medium', 3, 0.9, 0.4], ['fast', 'Fast', 2, 1.1, 0.8], ['vfast', 'Very fast', 1.4, 1.3, 1.2]];
+const TT_PROFILES = [['vslow', 'Very slow', 5, 0.54, -0.3], ['slow', 'Relatively slow', 4.1, 0.62, 0], ['medium', 'Medium', 2.75, 0.8, 0.4], ['fast', 'Fast', 1.8, 0.97, 0.8], ['vfast', 'Very fast', 1.27, 1.15, 1.2]];
 
 /* ---------- Ink: mixing like pigment ----------
    Each colour as absorbance per channel (-ln of reflectance); mixing averages absorbance by amount. */
@@ -68,7 +68,7 @@ const TT = {
   /* Overall calibration, for this device and hand, on top of every needle's own feel: the pen's pressure range,
      a pressure curve, hand speed (how far apart punctures land), how much fast strokes lighten, the angle the pen
      is naturally held at (tilt counts from there) and ink flow. Set by Tune in, or by hand. */
-  calDefaults: { penOnly: true, pMin: 0.12, pMax: 0.95, curve: -60, hand: 4.5, fade: 0.7, flow: 1.5, tilt0: 30, profile: 'slow', voltOff: 0 },
+  calDefaults: { penOnly: true, pMin: 0.1, pMax: 0.9, curve: -58, hand: 4.1, fade: 0.62, flow: 1.5, tilt0: 33, profile: 'slow', voltOff: 0 },
   cal() { try { return { ...TT.calDefaults, ...JSON.parse(Settings.get('tt_cal', '{}')) }; } catch { return { ...TT.calDefaults }; } },
   saveCal(c) { Settings.set('tt_cal', JSON.stringify(c)); },
   feel(id) { let o = {}; try { o = JSON.parse(Settings.get('tt_feel', '{}'))[id] || {}; } catch {} const nd = TT_NEEDLES.find(n => n.id === id);
