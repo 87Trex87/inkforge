@@ -386,12 +386,17 @@ TT.open = async (el, id) => {
     else { cx = c.getContext('2d'); cx.globalCompositeOperation = 'destination-out'; cx.fillStyle = '#000'; }   // the stencil: only the laser
     const p = toPage(e);
     if (EX?.cur) { EX.cur.strokes = (EX.cur.strokes || 0) + 1; EX.cur.t0 ||= Date.now(); EX.cur.t1 = Date.now(); }
-    pen = { cx, last: p, t: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
+    pen = { cx, last: p, t: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
     if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('The needle is dry: dip into an ink cap first.', 1800);
     return true;
   };
+  /* Pen moves are queued and inked once per frame, so the heavy pigment work never holds up the cursor, which is
+     drawn straight away on every move (at the browser's predicted point, to cancel the screen's own delay). */
   const strokeMove = (e) => {
-    const co = e.getCoalescedEvents?.(), evs = co?.length ? co : [e];
+    const co = e.getCoalescedEvents?.(); pen.q.push(...(co?.length ? co : [e]));
+    if (!pen.raf) pen.raf = requestAnimationFrame(strokeFlush);
+  };
+  const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
       const p = toPage(ev), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
       if (d < 0.01) continue;
@@ -423,7 +428,7 @@ TT.open = async (el, id) => {
     }
     flushPig(); st.dirty = true; paint(); drawNeedleInk();
   };
-  const strokeEnd = () => { pen = null; drawNeedleInk(); };
+  const strokeEnd = () => { if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush(); pen = null; drawNeedleInk(); };
 
   const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
   const drawCur = (e) => {
@@ -468,7 +473,7 @@ TT.open = async (el, id) => {
       st.rot = rot; pinTo(pinch.p, mx, my); st.dirty = true; return paint(); }
     if (pan) { vx = pan.vx + e.clientX - pan.x; vy = pan.vy + e.clientY - pan.y; return paint(); }
     if (pen && e.pointerId === pen.id) strokeMove(e);
-    if (e.pointerType !== 'touch') drawCur(e);
+    if (e.pointerType !== 'touch') { const pr = e.getPredictedEvents?.(); drawCur(pen && pr?.length ? pr[pr.length - 1] : e); }
     calLive(e);
   });
   const up = (e) => { pts.delete(e.pointerId); if (pinch && pts.size < 2) pinch = null; pan = null; if (pen && e.pointerId === pen.id) strokeEnd(); };
