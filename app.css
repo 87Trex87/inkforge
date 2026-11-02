@@ -1342,3 +1342,7 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .dz-ctools { display: grid; grid-template-columns: repeat(4, 1fr); }
 .dz-ctools button { font-size: 12px; padding-left: 2px; padding-right: 2px; }
 .btn.danger { color: #e0605a; }
+
+/* Design studio: node tool */
+#dz-nodecv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+#dz-nodecv[hidden] { display: none; }
