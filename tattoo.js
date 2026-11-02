@@ -57,6 +57,8 @@ function ttMix(a, b, t) {
   const A = (v) => -Math.log(Math.max(0.02, v));
   return a.map((v, i) => Math.exp(-(A(v) * (1 - t) + A(b[i]) * t)));
 }
+// Grey wash: black ink thinned with water, not mixed with white; the strength is how much pigment it carries.
+const TT_WASH = [['Black', 1], ['Dark', 0.55], ['Mid', 0.3], ['Light', 0.14]];
 const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b', '#6b3f22', '#f4f1ea'];
 const TT_SKINS = [['Light', '#f1d3bd'], ['Fair', '#e2b493'], ['Medium', '#c68c63'], ['Tan', '#a86b45'], ['Brown', '#7b4a2c'], ['Deep', '#4e2f1e']];
 const TT_LAYERS = [['stencil', 'Stencil'], ['line', 'Linework'], ['shadow', 'Shadow'], ['mid', 'Mid tone'], ['light', 'Light tone'], ['high', 'Highlights']];
@@ -149,7 +151,7 @@ TT.open = async (el, id) => {
     const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; }); if (im) L[k].getContext('2d').drawImage(im, 0, 0, W, H); }
   let meta = {}; try { meta = JSON.parse(row.meta || '{}'); } catch {}
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
-    ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0 }, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
+    ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1 }, wash: !!meta.wash, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? 75, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt, rot: meta.rot || 0 };
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
      saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
@@ -175,8 +177,9 @@ TT.open = async (el, id) => {
       let keep = 1, lw = 0, dw = 0;   // the ink already here, in every layer: how saturated, and how light
       for (const key of INK) { const E = imgd[key].data, d2 = E[i + 3] / 255; if (!d2) continue; keep *= 1 - d2; lw += lumOf(E, i) * d2; dw += d2; }
       const block = (1 - keep) * (dw ? Math.min(1, (lc + 0.03) / (lw / dw + 0.03)) : 0);
-      const add = a * (1 - block); if (add <= 0.0005) continue;
-      const d0 = D[i + 3] / 255;
+      let add = a * (1 - block); const d0 = D[i + 3] / 255;
+      if (T.str < 1) { add *= 0.35 + 0.65 * T.str; const sat = 1 - keep; if (sat > T.str) add *= 0.1 * T.str; }   // a thin wash builds slowly past its own tone
+      if (add <= 0.0005) continue;
       if (d0 > 0.004) { const t = add / (d0 + add); for (let c = 0; c < 3; c++) D[i + c] = 255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)); }
       else { D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; }
       D[i + 3] = Math.min(255, Math.floor(D[i + 3] + add * 255 + Math.random()));
@@ -383,7 +386,7 @@ TT.open = async (el, id) => {
     const c = L[key]; snap(key);
     let cx;
     if (INK.includes(key)) { const col = st.ink.c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
-      cx = { pig: true, key, col, lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; }
+      cx = { pig: true, key, col, str: st.tool === 'erase' ? 1 : (st.ink.s ?? 1), lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; }
     else { cx = c.getContext('2d'); cx.globalCompositeOperation = 'destination-out'; cx.fillStyle = '#000'; }   // the stencil: only the laser
     const p = toPage(e);
     if (EX?.cur) { EX.cur.strokes = (EX.cur.strokes || 0) + 1; EX.cur.t0 ||= Date.now(); EX.cur.t1 = Date.now(); }
@@ -499,31 +502,34 @@ TT.open = async (el, id) => {
   /* ---------- Ink caps: hold to dip (the longer, the more of that colour), tap the cup to rinse ---------- */
   const tray = $('#tt-tray');
   const drawTray = () => {
-    tray.innerHTML = `<button class="tt-cup" data-rinse data-tip="Rinse: clean the needle" aria-label="Rinse"></button>
-      ${st.caps.map((c, i) => `<button class="tt-cap" data-cap="${i}" style="--c:${c}" aria-label="Ink cap"><i></i></button>`).join('')}
+    tray.innerHTML = `<button class="tt-set" data-set data-tip="Switch between colour inks and grey wash" aria-label="Ink set">${st.wash ? 'Wash' : 'Inks'}</button>
+      <button class="tt-cup" data-rinse data-tip="Rinse: clean the needle" aria-label="Rinse"></button>
+      ${st.wash ? TT_WASH.map(([n, s], i) => `<button class="tt-cap tt-wcap" data-wash="${i}" style="--c:rgba(20,20,20,${s})" data-tip="${n} wash" aria-label="${n} wash"><i></i></button>`).join('')
+        : st.caps.map((c, i) => `<button class="tt-cap" data-cap="${i}" style="--c:${c}" aria-label="Ink cap"><i></i></button>`).join('')}
       <button class="tt-load" id="tt-load" data-tip="Ink on the needle" aria-label="Ink on the needle"><i></i><span></span></button>
-      <button class="dz-ib tt-capedit ${st.capEdit ? 'on' : ''}" data-capedit data-tip="Change the ink colours" aria-label="Change ink colours"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/></svg></button>`;
+      <button class="dz-ib tt-capedit ${st.capEdit ? 'on' : ''}" ${st.wash ? 'hidden' : ''} data-capedit data-tip="Change the ink colours" aria-label="Change ink colours"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/></svg></button>`;
     drawNeedleInk();
   };
-  const drawNeedleInk = () => { const b = $('#tt-load'); if (!b) return; b.querySelector('i').style.background = st.ink.v > 0.01 ? ttToHex(st.ink.c) : 'transparent';
+  const drawNeedleInk = () => { const b = $('#tt-load'); if (!b) return; b.querySelector('i').style.background = st.ink.v > 0.01 ? ttToHex(st.ink.c) : 'transparent'; b.querySelector('i').style.opacity = st.ink.s ?? 1;
     b.style.setProperty('--v', Math.round(st.ink.v * 100) + '%'); b.querySelector('span').textContent = Math.round(st.ink.v * 100) + '%'; };
   let dip = null;
   tray.addEventListener('pointerdown', (e) => {
-    const cap = e.target.closest('[data-cap]'); if (!cap) return;
-    const i = +cap.dataset.cap;
-    if (st.capEdit) { const inp = document.createElement('input'); inp.type = 'color'; inp.value = st.caps[i];
+    const cap = e.target.closest('[data-cap], [data-wash]'); if (!cap) return;
+    const i = +(cap.dataset.cap ?? cap.dataset.wash), ws = cap.dataset.wash != null ? TT_WASH[i][1] : 1;
+    if (st.capEdit && !st.wash) { const inp = document.createElement('input'); inp.type = 'color'; inp.value = st.caps[i];
       inp.oninput = () => { st.caps[i] = inp.value; st.dirty = true; drawTray(); }; inp.click(); return; }
-    e.preventDefault(); const col = ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1;
+    e.preventDefault(); const col = ws < 1 ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1;
     const step = (now) => { if (!dip) return; const dt = Math.min(0.1, (now - t0) / 1000); t0 = now;
       const a = dt * 0.9, frac = a / (st.ink.v + a);   // ink added this moment, and how much of the mix it is
-      st.ink.c = st.ink.v > 0.005 ? ttMix(st.ink.c, col, frac) : col; st.ink.v = Math.min(1, st.ink.v + a);
+      const wet = st.ink.v > 0.005; st.ink.c = wet ? ttMix(st.ink.c, col, frac) : col; st.ink.s = wet ? (st.ink.s ?? 1) * (1 - frac) + ws * frac : ws; st.ink.v = Math.min(1, st.ink.v + a);
       drawNeedleInk(); dip.raf = requestAnimationFrame(step); };
     dip = { cap, raf: requestAnimationFrame(step) }; st.dirty = true;
   });
   const dipEnd = () => { if (!dip) return; cancelAnimationFrame(dip.raf); dip.cap.classList.remove('dip'); dip = null; };
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => tray.addEventListener(t, dipEnd));
   tray.addEventListener('click', (e) => {
-    if (e.target.closest('[data-rinse]')) { st.ink = { c: [1, 1, 1], v: 0 }; drawNeedleInk(); return toast('Needle rinsed.', 1200); }
+    if (e.target.closest('[data-rinse]')) { st.ink = { c: [1, 1, 1], v: 0, s: 1 }; drawNeedleInk(); return toast('Needle rinsed.', 1200); }
+    if (e.target.closest('[data-set]')) { st.wash = !st.wash; st.capEdit = false; st.dirty = true; return drawTray(); }
     if (e.target.closest('[data-capedit]')) { st.capEdit = !st.capEdit; toast(st.capEdit ? 'Tap a cap to change its colour. Tap the pencil again when done.' : 'Done changing colours.', 2200); return drawTray(); }
   });
   tray.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -887,7 +893,7 @@ TT.open = async (el, id) => {
     const old = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [id]);
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined }), id]);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     st.dirty = false; if (!quiet) toast('Saved.');
   };
@@ -1184,7 +1190,7 @@ function ttStyle() {
 .tt-angs button.on { background: rgba(31,182,166,.25); color: var(--teal); } .tt-angs svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; }
 .tt-needle b { font: 700 10px var(--ui); letter-spacing: -.02em; color: var(--teal); }
 .dz-pop .mi.on { background: rgba(31,182,166,.15); } .tt-nb { display: inline-block; min-width: 40px; font: 700 12px var(--ui); color: var(--teal); }
-.tt-tray { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 8px; padding: 8px 10px; max-width: calc(100% - 20px); overflow-x: auto;
+.tt-tray { position: absolute; left: 66px; top: 50%; transform: translateY(-50%); z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 8px 6px; max-height: calc(100% - 20px); overflow-y: auto;
   border-radius: 18px; background: rgba(22,27,28,.92); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); touch-action: none; user-select: none; -webkit-user-select: none; }
 .tt-cap { width: 38px; height: 38px; flex: none; border-radius: 50%; border: 2px solid #c8c8c8; background: #e9e9e9; padding: 0; cursor: pointer; position: relative; box-shadow: inset 0 -3px 0 rgba(0,0,0,.15); }
 .tt-cap i { position: absolute; inset: 5px; border-radius: 50%; background: var(--c); box-shadow: inset 0 2px 4px rgba(0,0,0,.35); }
@@ -1193,7 +1199,10 @@ function ttStyle() {
 .tt-load { width: 46px; height: 46px; flex: none; border-radius: 50%; border: 0; padding: 0; position: relative; cursor: default; display: grid; place-items: center;
   background: conic-gradient(var(--teal) var(--v, 0%), rgba(255,255,255,.12) 0); }
 .tt-load i { position: absolute; inset: 5px; border-radius: 50%; border: 2px solid #222; } .tt-load span { position: relative; font: 700 9px var(--ui); color: #fff; text-shadow: 0 1px 2px #000; }
-.tt-capedit { flex: none; } .tt-zoom { left: auto !important; right: 10px !important; bottom: 76px !important; }
+.tt-capedit { flex: none; }
+.tt-set { flex: none; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--teal); font: 700 10px var(--ui); border-radius: 8px; padding: 5px 4px; width: 46px; cursor: pointer; }
+.tt-wcap { background: #fff; } .tt-tray { scrollbar-width: none; } .tt-tray::-webkit-scrollbar { display: none; } body:has(#tt-stage) #toast { top: calc(var(--safe-t, 0px) + 64px); bottom: auto; }
+@media (max-height: 700px) { .tt-tray { top: 10px; transform: none; } } .tt-zoom { left: auto !important; right: 10px !important; bottom: 76px !important; }
 .tt-layers { display: grid; gap: 4px; }
 .tt-refs { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
 .tt-ref { position: absolute; pointer-events: auto; touch-action: none; cursor: move; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
@@ -1205,7 +1214,7 @@ function ttStyle() {
 .tt-ref i[data-rh=rot] { left: 50%; top: -26px; border-radius: 50%; cursor: grab; }
 .tt-rr { grid-template-columns: 44px 1fr auto auto auto; grid-template-areas: "a n b c d" "r r r r r"; } .tt-rr img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; grid-area: a; }
 .tt-addr { display: flex; flex-wrap: wrap; gap: 4px; }
-.tt-exam { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 6; width: min(520px, calc(100% - 140px)); padding: 8px 12px; border-radius: 14px;
+.tt-exam { position: absolute; left: max(140px, calc(50% - 260px)); top: 10px; z-index: 6; width: min(520px, calc(100% - 150px)); padding: 8px 12px; border-radius: 14px;
   background: rgba(22,27,28,.95); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
 .tt-exam[hidden] { display: none; } .tt-exh { display: flex; align-items: center; gap: 8px; } .tt-exh b { font-size: 13px; flex: 1; }
 .tt-exdots { display: flex; gap: 3px; } .tt-exdots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); } .tt-exdots i.on { background: var(--teal); } .tt-exdots i.done { background: rgba(31,182,166,.45); }
