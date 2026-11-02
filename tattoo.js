@@ -68,7 +68,7 @@ const TT = {
   /* Overall calibration, for this device and hand, on top of every needle's own feel: the pen's pressure range,
      a pressure curve, hand speed (how far apart punctures land), how much fast strokes lighten, the angle the pen
      is naturally held at (tilt counts from there) and ink flow. Set by Tune in, or by hand. */
-  calDefaults: { penOnly: true, pMin: 0.1, pMax: 0.9, curve: -58, hand: 4.1, fade: 0.62, flow: 1.5, tilt0: 33, profile: 'slow', voltOff: 0 },
+  calDefaults: { penOnly: true, pMin: 0.1, pMax: 0.9, curve: -58, hand: 4.1, fade: 0.62, flow: 1.5, tilt0: 33, profile: 'slow', voltOff: 0, blow: 1, tough: 1 },
   cal() { try { return { ...TT.calDefaults, ...JSON.parse(Settings.get('tt_cal', '{}')) }; } catch { return { ...TT.calDefaults }; } },
   saveCal(c) { Settings.set('tt_cal', JSON.stringify(c)); },
   feel(id) { let o = {}; try { o = JSON.parse(Settings.get('tt_feel', '{}'))[id] || {}; } catch {} const nd = TT_NEEDLES.find(n => n.id === id);
@@ -99,7 +99,7 @@ TT.list = async (el) => {
   el.onclick = async (e) => {
     const d = e.target.closest('[data-del]');
     if (d) { e.stopPropagation(); const r = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [+d.dataset.del]); if (!r || !confirm(`Delete "${r.name || 'this piece'}"?`)) return;
-      await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]); for (const k of ['thumb_ref', ...TT_LAYERS.map(([l]) => l + '_ref')]) await Media.release(r[k]); return TT.list(el); }
+      await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]); for (const k of ['thumb_ref', 'skin_ref', 'blow_ref', ...TT_LAYERS.map(([l]) => l + '_ref')]) await Media.release(r[k]); return TT.list(el); }
     const o = e.target.closest('[data-open]'); if (o) location.hash = 'tattoo/' + o.dataset.open;
   };
 };
@@ -149,6 +149,7 @@ TT.open = async (el, id) => {
      mix like pigment (blue and yellow make green). The pixels are worked on directly and copied to the layer's
      canvas once per frame. */
   const INK = TT_LAYERS.map(([key]) => key).filter(key => key !== 'stencil');
+  const loadImg = async (ref) => { const u = ref && await Media.url(ref); return u ? new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; }) : null; };
   const imgd = {}, dirty = {};
   const syncIn = (key) => { if (INK.includes(key)) imgd[key] = L[key].getContext('2d').getImageData(0, 0, W, H); };
   INK.forEach(syncIn);
@@ -177,8 +178,62 @@ TT.open = async (el, id) => {
   // One mark: into pigment (the page), or painted on a canvas (the test pad).
   const put = (cx, x, y, r, al, erase) => { if (cx.pig) return dotPig(cx, x, y, r, al, erase);
     cx.globalAlpha = al; cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill(); };
-  const hist = [], fut = [];   // undo and redo: { key, data } snapshots of one layer
-  const snap = (key) => { hist.push({ key, data: L[key].getContext('2d').getImageData(0, 0, W, H) }); if (hist.length > 15) hist.shift(); fut.length = 0; };
+  /* The skin itself. Trauma: every puncture works the skin a little (deeper, more needles: more), on a map at a
+     quarter of the page's resolution; as it builds the skin goes red, then swollen and bumpy, then raw like
+     minced meat, and overworked skin takes ink badly (patchy). Blowouts: too deep while the punctures land very
+     close together (pressing hard and pulling slowly) pushes ink under the skin: a soft, bluish bruise that spreads
+     past the line and raises the skin. Both are kept with the piece; a healed preview drops the redness and
+     swelling but keeps the blowouts. */
+  const TS = 4, tw = Math.ceil(W / TS), th = Math.ceil(H / TS), TR = new Float32Array(tw * th);
+  const blowC = document.createElement('canvas'); blowC.width = Math.ceil(W / 2); blowC.height = Math.ceil(H / 2); const bx = blowC.getContext('2d');
+  let trDirty = true, trT = 0; const told = {};
+  const trAdd = (p, r, v) => {
+    const cx0 = p.x / TS, cy0 = p.y / TS, R2 = Math.max(1, r / TS);
+    for (let y = Math.max(0, Math.floor(cy0 - R2)); y <= Math.min(th - 1, Math.ceil(cy0 + R2)); y++)
+      for (let x2 = Math.max(0, Math.floor(cx0 - R2)); x2 <= Math.min(tw - 1, Math.ceil(cx0 + R2)); x2++) {
+        const f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (f > 0) TR[y * tw + x2] += v * f; }
+    trDirty = true;
+  };
+  const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
+  // Raw skin: a mottled, bumpy texture of red and pink lumps, made once.
+  const patty = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d');
+    g.fillStyle = '#a53a33'; g.fillRect(0, 0, 160, 160);
+    for (let i = 0; i < 520; i++) { const px = Math.random() * 160, py = Math.random() * 160, r = 2 + Math.random() * 6, gr = g.createRadialGradient(px - r * 0.35, py - r * 0.35, 0, px, py, r);
+      gr.addColorStop(0, `rgba(${226 + Math.random() * 20},${120 + Math.random() * 40},${105 + Math.random() * 30},.85)`); gr.addColorStop(0.6, 'rgba(160,52,45,.5)'); gr.addColorStop(1, 'rgba(95,24,22,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(px, py, r, 0, 7); g.fill(); }
+    for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(70,15,14,${0.25 + Math.random() * 0.35})`; g.beginPath(); g.arc(Math.random() * 160, Math.random() * 160, 0.6 + Math.random() * 1.2, 0, 7); g.fill(); }
+    return c; })();
+  const trRed = document.createElement('canvas'), trMask = document.createElement('canvas'), trTex = document.createElement('canvas');
+  trRed.width = trMask.width = tw; trRed.height = trMask.height = th; trTex.width = Math.ceil(W / 2); trTex.height = Math.ceil(H / 2);
+  const buildTrauma = () => {
+    const rg = trRed.getContext('2d'), mg = trMask.getContext('2d'), ri = rg.createImageData(tw, th), mi = mg.createImageData(tw, th);
+    for (let i = 0; i < TR.length; i++) { const t = TR[i], j = i * 4; if (!t) continue;
+      ri.data[j] = 214; ri.data[j + 1] = 64; ri.data[j + 2] = 52; ri.data[j + 3] = Math.min(150, t * 230);
+      const m = Math.max(0, Math.min(1, (t - 0.45) / 0.85)); mi.data[j] = mi.data[j + 1] = mi.data[j + 2] = 255; mi.data[j + 3] = m * m * (3 - 2 * m) * 235; }
+    rg.putImageData(ri, 0, 0); mg.putImageData(mi, 0, 0);
+    const tg = trTex.getContext('2d'); tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, trTex.width, trTex.height);
+    tg.fillStyle = tg.createPattern(patty, 'repeat'); tg.fillRect(0, 0, trTex.width, trTex.height);
+    tg.globalCompositeOperation = 'destination-in'; tg.imageSmoothingEnabled = true; tg.drawImage(trMask, 0, 0, trTex.width, trTex.height); tg.globalCompositeOperation = 'source-over';
+    trDirty = false; trT = performance.now();
+  };
+  // The skin under and over the ink: redness and blowouts beneath, the swollen, raw texture on top.
+  const skinUnder = (g, withTrauma) => { if (withTrauma) { g.globalCompositeOperation = 'multiply'; g.drawImage(trRed, 0, 0, W, H); }
+    g.globalCompositeOperation = 'multiply'; g.drawImage(blowC, 0, 0, W, H); g.globalCompositeOperation = 'source-over'; };
+  const skinOver = (g) => { g.globalAlpha = 0.85; g.drawImage(trTex, 0, 0, W, H); g.globalAlpha = 1; };
+  // Blowout: ink spread under the skin round p, bluer and softer than the line, and the skin raised over it.
+  const blowAt = (p, risk, footR) => {
+    // ink seen through the skin: bluer
+    const c = st.ink.c.map((v, j) => Math.round((v * 0.45 + [0.34, 0.42, 0.68][j] * 0.55) * 255)), R = (footR + mm * (1.1 + risk * 1.8)) / 2, gx = p.x / 2, gy = p.y / 2;
+    const gr = bx.createRadialGradient(gx, gy, 0, gx, gy, R); gr.addColorStop(0, `rgba(${c},${0.12 + risk * 0.16})`); gr.addColorStop(0.5, `rgba(${c},${0.05 + risk * 0.07})`); gr.addColorStop(1, `rgba(${c},0)`);
+    bx.fillStyle = gr; bx.beginPath(); bx.arc(gx, gy, R, 0, 7); bx.fill();
+    trAdd(p, footR * 2.2 + mm, 0.035 * risk);
+  };
+  { const bi = await loadImg(row.blow_ref); if (bi) bx.drawImage(bi, 0, 0, blowC.width, blowC.height);
+    const ti = await loadImg(row.skin_ref); if (ti) { const c = document.createElement('canvas'); c.width = tw; c.height = th; const g = c.getContext('2d'); g.drawImage(ti, 0, 0, tw, th);
+      const d = g.getImageData(0, 0, tw, th).data; for (let i = 0; i < TR.length; i++) TR[i] = d[i * 4] / 255 * 2; } }
+  const hist = [], fut = [];   // undo and redo: { key, data, tr, blow } snapshots of one layer and the skin
+  const state = (key) => ({ key, data: L[key].getContext('2d').getImageData(0, 0, W, H), tr: TR.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) });
+  const snap = (key) => { hist.push(state(key)); if (hist.length > 15) hist.shift(); fut.length = 0; };
   el.innerHTML = `<div class="dz-ed tt-ed">
     <div class="dz-top">
       <button class="dz-ib" id="tt-back" data-tip="Back to your pieces" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
@@ -225,7 +280,7 @@ TT.open = async (el, id) => {
   /* Previews: fresh = redness round the ink; healed = settled a little softer; 10 years = softer edges, faded
      and duller colour. Made at page size from the layers (without the stencil). */
   const viewOf = (mode) => {
-    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), ink = composite();
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), ink = composite(1, true, mode);
     g.drawImage(skin, 0, 0);
     if (mode === 'fresh') {
       g.drawImage(ink, 0, 0);
@@ -245,9 +300,12 @@ TT.open = async (el, id) => {
     x.setTransform(dpr * k, 0, 0, dpr * k, dpr * ox, dpr * oy);
     x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 24; x.drawImage(skin, 0, 0); x.shadowBlur = 0;
     if (st.view !== 'work') { st.viewC ||= viewOf(st.view); x.drawImage(st.viewC, 0, 0); }
-    else for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
-      x.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1); x.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply';
-      x.drawImage(L[key], 0, 0); }
+    else { if (trDirty && performance.now() - trT < 120) setTimeout(paint, 130); else if (trDirty) buildTrauma();
+      skinUnder(x, true);
+      for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
+        x.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1); x.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply';
+        x.drawImage(L[key], 0, 0); }
+      x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; skinOver(x); }
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     $('#tt-zl') && ($('#tt-zl').textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%');
   }); };
@@ -307,7 +365,7 @@ TT.open = async (el, id) => {
       cx = { pig: true, key, col, lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; }
     else { cx = c.getContext('2d'); cx.globalCompositeOperation = 'destination-out'; cx.fillStyle = '#000'; }   // the stencil: only the laser
     const p = toPage(e);
-    pen = { cx, last: p, t: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId };
+    pen = { cx, last: p, t: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
     if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('The needle is dry: dip into an ink cap first.', 1800);
     return true;
   };
@@ -324,7 +382,16 @@ TT.open = async (el, id) => {
       let t = pen.carry;
       while (t <= d) {
         const q = { x: pen.last.x + dx * t / d, y: pen.last.y + dy * t / d };
-        const inkC = st.tool === 'erase' ? 1 : Math.sqrt(Math.min(1, st.ink.v * 1.6));
+        let inkC = st.tool === 'erase' ? 1 : Math.sqrt(Math.min(1, st.ink.v * 1.6));
+        if (st.tool !== 'erase' && pen.cx.pig) {
+          const t0 = trAt(q);
+          if (t0 > 0.7) inkC *= Math.max(0.3, 1 - (t0 - 0.7) * 0.8) * (Math.random() < Math.min(0.5, (t0 - 0.9) * 0.6) ? 0 : 1);   // chewed skin: patchy
+          trAdd(q, pen.foot, 0.011 * depth * Math.sqrt(lay.length) / (cal.tough || 1));
+          const risk = Math.max(0, Math.min(1, (0.06 - gapMm(pen.speed)) / 0.04)) * Math.max(0, Math.min(1, (depth - 0.65) / 0.2)) * (cal.blow ?? 1);   // a normal line lands ~0.1 mm apart
+          if (risk > 0.04 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
+            if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
+          if (t0 > 1 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
+        }
         puncture(pen.cx, q, turnOf(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         if (st.tool !== 'erase') st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100);
         t += gap;
@@ -389,8 +456,9 @@ TT.open = async (el, id) => {
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
 
-  const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, 0, 0); syncIn(h.key); st.dirty = true; paint(); };
-  const swap = (from, to) => { const h = from.pop(); if (!h) return false; to.push({ key: h.key, data: L[h.key].getContext('2d').getImageData(0, 0, W, H) }); undoTo(h); return true; };
+  const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, 0, 0); syncIn(h.key);
+    if (h.tr) { TR.set(h.tr); trDirty = true; } if (h.blow) bx.putImageData(h.blow, 0, 0); st.dirty = true; paint(); };
+  const swap = (from, to) => { const h = from.pop(); if (!h) return false; to.push(state(h.key)); undoTo(h); return true; };
   const undo = () => swap(hist, fut) || toast('Nothing to undo.');
   const redo = () => swap(fut, hist) || toast('Nothing to redo.');
 
@@ -465,7 +533,7 @@ TT.open = async (el, id) => {
   const setProfile = (k) => { const p = TT_PROFILES.find(x => x[0] === k); if (!p) return; cal.profile = k; cal.hand = p[2]; cal.fade = p[3]; cal.voltOff = p[4]; };
   const cslider = (key, label, min, max, step, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt(val)}</b></span>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-c="${key}"></label>`;
-  const CFMT = { curve: v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even', pMin: v => Math.round(v * 100) + '%', pMax: v => Math.round(v * 100) + '%', hand: v => '× ' + v, fade: v => '× ' + v, flow: v => '× ' + v, tilt0: v => v + '°' };
+  const CFMT = { curve: v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even', pMin: v => Math.round(v * 100) + '%', pMax: v => Math.round(v * 100) + '%', hand: v => '× ' + v, fade: v => '× ' + v, flow: v => '× ' + v, tilt0: v => v + '°', blow: v => +v ? '× ' + v : 'off', tough: v => '× ' + v };
   const curveSvg = (c) => `<svg class="tt-curve" viewBox="0 0 100 100"><path d="M0 100 ${[...Array(21)].map((_, i) => `L${i * 5} ${100 - curve(i / 20, c) * 100}`).join(' ')}"/></svg>`;
   const drawSide = () => {
     sel(st.panel); side.hidden = !st.panel; if (!st.panel) return;
@@ -493,6 +561,7 @@ TT.open = async (el, id) => {
         ${cslider('pMin', 'Lightest pen reading', 0, 0.9, 0.01, cal.pMin, v => Math.round(v * 100) + '%')}${cslider('pMax', 'Hardest pen reading', 0.1, 1, 0.01, cal.pMax, v => Math.round(v * 100) + '%')}
         ${cslider('hand', 'Hand speed', 0.1, 5, 0.05, cal.hand, v => '× ' + v)}${cslider('fade', 'Fast strokes lighten', 0.1, 5, 0.05, cal.fade, v => '× ' + v)}
         ${cslider('flow', 'Ink flow', 0.3, 3, 0.05, cal.flow, v => '× ' + v)}${cslider('tilt0', 'Natural angle', 0, 50, 1, cal.tilt0, v => v + '°')}
+        ${cslider('blow', 'Blowout sensitivity', 0, 3, 0.05, cal.blow ?? 1, v => +v ? '× ' + v : 'off')}${cslider('tough', 'Skin toughness', 0.3, 3, 0.05, cal.tough ?? 1, v => '× ' + v)}
         <button class="btn small" data-calreset>Reset all needles' calibration</button>`, { fold: true })}
       <div class="lbl" style="margin-top:8px">${nd.id} only</div>
       <div class="lbl">Pressure → depth</div>
@@ -745,21 +814,28 @@ TT.open = async (el, id) => {
   };
 
   /* ---------- Saving and exporting ---------- */
-  const composite = (scale = 1, withSkin = true) => {
+  // The piece as one picture. `mode`: as worked or fresh (with the worked skin), healed or aged (blowouts stay).
+  const composite = (scale = 1, withSkin = true, mode = 'work') => {
     const c = document.createElement('canvas'); c.width = Math.round(W * scale); c.height = Math.round(H * scale); const g = c.getContext('2d'); g.scale(scale, scale);
-    if (withSkin) g.drawImage(skin, 0, 0);
+    const raw = mode === 'work' || mode === 'fresh';
+    if (withSkin) { if (raw && trDirty) buildTrauma(); g.drawImage(skin, 0, 0); skinUnder(g, raw); }
     for (const key of TT_DRAW) { if (key === 'stencil' || st.hide.has(key)) continue; g.globalAlpha = st.op[key] ?? 1; g.globalCompositeOperation = key === 'high' || !withSkin ? 'source-over' : 'multiply'; g.drawImage(L[key], 0, 0); }
+    g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; if (withSkin && raw) skinOver(g);
     return c;
   };
   const blobOf = (c) => new Promise(r => c.toBlob(r, 'image/png'));
   const save = async (quiet) => {
     const refs = {}; for (const [key] of TT_LAYERS) refs[key] = await Media.save(await blobOf(L[key]), 'png');
     const thumb = await Media.save(await blobOf(composite(Math.min(1, 420 / Math.max(W, H)))), 'png');
+    const tc = document.createElement('canvas'); tc.width = tw; tc.height = th; const tg = tc.getContext('2d'), ti = tg.createImageData(tw, th);
+    for (let i = 0; i < TR.length; i++) { const v = Math.min(255, Math.round(TR[i] / 2 * 255)); ti.data[i * 4] = ti.data[i * 4 + 1] = ti.data[i * 4 + 2] = v; ti.data[i * 4 + 3] = 255; }
+    tg.putImageData(ti, 0, 0);
+    const skinRef = TR.some(v => v > 0.004) ? await Media.save(await blobOf(tc), 'png') : null, blowRef = await Media.save(await blobOf(blowC), 'png');
     const old = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [id]);
-    await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
-      [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => refs[key]), thumb,
+    await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
+      [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => refs[key]), thumb, skinRef, blowRef,
         JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt }), id]);
-    if (old) for (const r of [old.thumb_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(refs).includes(r) && r !== thumb) await Media.release(r);
+    if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(refs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     st.dirty = false; if (!quiet) toast('Saved.');
   };
   $('#tt-save').onclick = () => save();
