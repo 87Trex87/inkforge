@@ -1073,9 +1073,13 @@ TT.open = async (el, id) => {
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
   const scoreOf = (T) => {
     if (T.kind === 'line') return lineScore(T.path, T.core);
-    if (T.kind === 'grad') { const { x0, y0, x1, y1 } = boxIdx(T.box); let err = 0, n = 0;
-      for (let x = x0; x < x1; x += 2) { let s2 = 0, m = 0; for (let y = y0; y < y1; y += 2) { s2 += densAt((y * W + x) * 4); m++; } const f = (x - x0) / (x1 - x0); err += Math.abs(s2 / m - T.prof(f) * 0.92); n++; }
-      const e = err / Math.max(1, n), sp = spillOut(inBox(T.box), 2.5); return { score: Math.round(100 * (0.8 * (1 - clamp01(e * 2.2)) + 0.2 * (1 - sp))), match: Math.round((1 - clamp01(e * 2.2)) * 100), spill: Math.round(sp * 100) }; }
+    if (T.kind === 'grad') {   // judged on its shape (scaled to your own darkest) and on getting reasonably dark
+      const { x0, y0, x1, y1 } = boxIdx(T.box), cs = [], ts = [];
+      for (let x = x0; x < x1; x += 2) { let s2 = 0, m = 0; for (let y = y0; y < y1; y += 2) { s2 += densAt((y * W + x) * 4); m++; } cs.push(s2 / m); ts.push(T.prof((x - x0) / (x1 - x0))); }
+      let ct = 0, tt = 0; cs.forEach((c, i) => { ct += c * ts[i]; tt += ts[i] * ts[i]; }); const a = ct / Math.max(1e-6, tt);
+      const shape = cs.reduce((e, c, i) => e + Math.abs(c - a * ts[i]), 0) / Math.max(1, cs.length) / Math.max(0.15, a);
+      const match = (1 - clamp01(shape * 1.6)) * (0.55 + 0.45 * clamp01(a / 0.7)), sp = spillOut(inBox(T.box), 2.5);
+      return { score: Math.round(100 * (0.8 * match + 0.2 * (1 - sp))), match: Math.round(match * 100), darkness: Math.round(clamp01(a) * 100), spill: Math.round(sp * 100) }; }
     if (T.kind === 'pack') { const { x0, y0, x1, y1 } = boxIdx(T.box); let n = 0, cov = 0, s1 = 0, s2 = 0;
       for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) { const d = densAt((y * W + x) * 4); n++; if (d > 0.75) cov++; s1 += d; s2 += d * d; }
       const mean = s1 / n, sd = Math.sqrt(Math.max(0, s2 / n - mean * mean)), ev = 1 - clamp01(sd / 0.3), sp = spillOut(inBox(T.box), 1.5);
