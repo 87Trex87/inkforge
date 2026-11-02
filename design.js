@@ -275,6 +275,42 @@ function dzClipper() {
     document.head.appendChild(sc);
   });
 }
+/* Editor icons (24 px grid, drawn as strokes). Every icon button has its name in a tooltip. */
+const DZ_UI = {
+  select: '<path d="M6 3l13 8-6 1.5L10 19z"/>', text: '<path d="M5 7V4h14v3M12 4v16M9 20h6"/>', heading: '<path d="M6 4v16M18 4v16M6 12h12"/>',
+  picture: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 8"/>',
+  shape: '<rect x="3" y="10" width="11" height="11" rx="1.5"/><circle cx="15.5" cy="8.5" r="5.5"/>',
+  pen: '<path d="M12 21v-4M12 17l-6-7 6-7 6 7z"/><circle cx="12" cy="10" r="1.3"/>', pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>',
+  field: '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>', logo: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/>',
+  device: '<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/>', portfolio: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>',
+  refs: '<path d="M6 3h12v18l-6-4-6 4z"/>', layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 17l9 5 9-5" opacity=".5"/>',
+  page: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  del: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>', unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
+  fwd: '<path d="M5 4h14M12 20V9M7 13l5-5 5 5"/>', back: '<path d="M5 20h14M12 4v11M7 11l5 5 5-5"/>',
+  fx: '<path d="M12 3v18M8 7l-5 5 5 5zM16 7l5 5-5 5z"/>', fy: '<path d="M3 12h18M7 8l5-5 5 5zM7 16l5 5 5-5z"/>',
+  clip: '<path d="M7 4v10a3 3 0 0 0 3 3h10"/><path d="M16 13l4 4-4 4"/>', crop: '<path d="M6 2v16h16M2 6h16v16"/>',
+  area: '<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 3"/>',
+  nodes: '<path d="M5 18C7 7 17 7 19 18"/><rect x="3" y="16" width="4" height="4"/><rect x="17" y="16" width="4" height="4"/><rect x="10" y="6" width="4" height="4"/>',
+  toshape: '<path d="M12 3l9 9-9 9-9-9z"/>', flatten: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
+  pick: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><path d="M13 7h8M17 3v8"/>',
+  done: '<path d="M5 12.5l4.5 4.5L19 7"/>', close: '<path d="M6 6l12 12M18 6L6 18"/>', chev: '<path d="M6 9l6 6 6-6"/>',
+  more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+  export: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/>', tpl: '<path d="M6 3h12v18l-6-4-6 4z"/><path d="M12 7v6M9 10h6"/>',
+  eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff: '<path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  all: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2.5"/><path d="M8 12l3 3 5-6"/>', none: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2.5"/><path d="M9 9l6 6M15 9l-6 6"/>',
+  merge: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M12 14v7M9 18l3 3 3-3"/>', png: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>',
+  aleft: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>', acenter: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>', aright: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>',
+  s_rect: '<rect x="4" y="4" width="16" height="16"/>', s_round: '<rect x="4" y="4" width="16" height="16" rx="5"/>', s_ellipse: '<circle cx="12" cy="12" r="8.5"/>',
+  s_tri: '<path d="M12 4l9 16H3z"/>', s_poly: '<path d="M12 3l8 5v8l-8 5-8-5V8z"/>', s_star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+  s_heart: '<path d="M12 20s-8-5-8-11a4 4 0 0 1 8-1 4 4 0 0 1 8 1c0 6-8 11-8 11z"/>', s_arrow: '<path d="M3 9h11V5l7 7-7 7v-4H3z"/>',
+  s_cross: '<path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z"/>', s_bubble: '<path d="M4 5h16v10H10l-5 4v-4H4z"/>',
+  s_ring: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/>', s_line: '<path d="M4 20L20 4"/>', s_frame: '<rect x="3" y="3" width="18" height="18"/><rect x="7.5" y="7.5" width="9" height="9"/>'
+};
+const dzIB = (attr, ic, tip, cls = '') => `<button class="dz-ib ${cls}" ${attr} data-tip="${tip}" aria-label="${tip}"><svg viewBox="0 0 24 24">${DZ_UI[ic] || ic}</svg></button>`;
+const DZ_SHAPES = [['rect', 'Square'], ['round', 'Rounded square'], ['ellipse', 'Circle'], ['tri', 'Triangle'], ['poly', 'Polygon'], ['star', 'Star'], ['heart', 'Heart'], ['arrow', 'Arrow'], ['cross', 'Cross'], ['bubble', 'Speech bubble'], ['ring', 'Ring'], ['line', 'Line'], ['frame', 'Frame']];
 const DZ_BOOL_ICON = Object.fromEntries(Object.entries({
   add: '<path d="M3 3h7v4h4v7H7v-4H3z"/>', subtract: '<path d="M3 3h10v10H3z" class="g"/><path d="M3 3h10v4H7v6H3z"/>',
   intersect: '<rect x="2" y="2" width="8" height="8" class="g"/><rect x="6" y="6" width="8" height="8" class="g"/><path d="M6 6h4v4H6z"/>',
@@ -973,23 +1009,36 @@ DZ.edit = async (id) => {
   const hist = [JSON.stringify(doc)]; let hi = 0;
   el.innerHTML = `<div class="dz-ed">
     <div class="dz-top">
-      <button class="btn icon-btn" id="dz-back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
-      <input class="in" id="dz-name" value="${esc(name)}" aria-label="Design name">
-      <button class="btn icon-btn" id="dz-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
-      <button class="btn icon-btn" id="dz-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
-      <button class="btn icon-btn" id="dz-panel" aria-label="Hide the panel" data-tip="Hide or show the side panel"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
-      <button class="btn icon-btn" id="dz-focus" aria-label="Full screen design" data-tip="Full screen: the design fills the screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
-      <button class="btn icon-btn" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg></button>
-      <button class="btn primary" id="dz-export">Export</button>
+      <button class="dz-ib" id="dz-back" aria-label="Back" data-tip="Back to your designs"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <input class="dz-name" id="dz-name" value="${esc(name)}" aria-label="Design name">
+      <span class="dz-tsp"></span>
+      <button class="dz-ib" id="dz-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+      <button class="dz-ib" id="dz-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+      <button class="dz-ib" id="dz-focus" aria-label="Full screen design" data-tip="Full screen: the design fills the screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <button class="dz-ib" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24">${DZ_UI.tpl}</svg></button>
+      <button class="dz-ib dz-go" id="dz-export" aria-label="Export" data-tip="Export: print, save or share"><svg viewBox="0 0 24 24">${DZ_UI.export}</svg></button>
     </div>
     <div class="dz-body">
-      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
+      <div class="dz-stage" id="dz-stage">
+        <div class="dz-rail" id="dz-rail">
+          ${dzIB('data-rail="select"', 'select', 'Select and move')}
+          ${dzIB('data-rail="text"', 'text', 'Text')}
+          ${dzIB('data-rail="image"', 'picture', 'Picture')}
+          ${dzIB('data-rail="shape"', 'shape', 'Shape')}
+          ${dzIB('data-add="pen"', 'pen', 'Pen (P)')}
+          ${dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
+          <i class="sep"></i>
+          ${dzIB('data-rail="layers"', 'layers', 'Layers')}
+          ${dzIB('data-rail="doc"', 'page', 'Page: theme, background, sides and details')}
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden id="dz-file"></div>
+        <div class="dz-pop" id="dz-pop" hidden></div>
+        <div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
         <div class="dz-faces" id="dz-faces"></div>
         <div id="dz-qs" class="dz-qs" hidden><span class="dz-qs-what"></span><div class="dz-qs-row"><span>Yours</span><input type="range" min="0" max="100" step="1" value="50" aria-label="Closer to what you drew, or cleaner"><span>Cleaner</span></div><div class="dz-qs-row"><button class="btn small" data-qs="no" title="Put back the shape it snapped to">Cancel</button><button class="btn small primary" data-qs="ok">Keep</button></div></div><div id="dz-marq" hidden></div><div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
-      <div class="dz-side" id="dz-side"></div>
+      <div class="dz-side" id="dz-side" hidden></div>
     </div></div>`;
   const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
   let k = 1;   // screen px per page px
@@ -1007,17 +1056,20 @@ DZ.edit = async (id) => {
   /* View: zoom (z, 1 = the whole design fits) and pan (vx, vy, screen px from centred). */
   let fitK = 1, z = 1, vx = 0, vy = 0, rs = 1, crispT = null;
   const tb = () => doc.sides ? 48 : 0;   // room above the design for the page tabs
+  // Phones: the panel is a bottom sheet (up to 48% of the stage, or just its header when folded).
+  const sheetH = (H) => innerWidth <= 700 && side && !side.hidden ? (side.classList.contains('min') ? 52 : Math.round(H * 0.48)) : 0;
+  let sheetWas = 0;
   const fit = (crisp = true) => {
     // On phones the stage hugs the design's shape, so a wide card doesn't leave empty space above and below.
-    if (innerWidth < 900 && !document.body.classList.contains('dz-focus')) { const sw = stage.clientWidth; stage.style.height = Math.round(Math.min(innerHeight * 0.58, (sw - 32) * doc.h / doc.w + 32 + tb())) + 'px'; }
-    else stage.style.height = '';
-    const r = stage.getBoundingClientRect(), pad = 16;
-    fitK = Math.min((r.width - pad * 2) / doc.w, (Math.max(260, r.height) - tb() - pad * 2) / doc.h); k = fitK * z;
+    stage.style.height = '';
+    const r = stage.getBoundingClientRect(), pad = 16, rl = 52;   // rl: the tool rail's width
+    const sh = sheetH(r.height), ah = Math.max(160, r.height - sh);   // on phones the design sits above the panel
+    fitK = Math.min((r.width - pad * 2 - rl) / doc.w, (ah - tb() - pad * 2) / doc.h); k = fitK * z;
     const w = doc.w * k, h = doc.h * k;
     // Keep some of the design on screen however far it's dragged.
     const mx = Math.max(0, (r.width + w) / 2 - 80), my = Math.max(0, (r.height + h) / 2 - 80);
     vx = Math.max(-mx, Math.min(mx, vx)); vy = Math.max(-my, Math.min(my, vy));
-    Object.assign(page.style, { width: w + 'px', height: h + 'px', left: (r.width - w) / 2 + vx + 'px', top: (r.height - h + tb()) / 2 + vy + 'px' });
+    Object.assign(page.style, { width: w + 'px', height: h + 'px', left: (r.width - w + rl) / 2 + vx + 'px', top: (ah - h + tb()) / 2 + vy + 'px' });
     cv.style.width = w + 'px'; cv.style.height = h + 'px';
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
@@ -1163,8 +1215,8 @@ DZ.edit = async (id) => {
     : ({ ellipse: 'Circle', line: 'Line', star: 'Star', path: 'Traced shape' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
   const layerIco = (l) => l.t === 'text' ? 'T' : l.t === 'image' ? (l.logo ? '◎' : '▣') : '◆';
   const drawLayers = () => {
-    side.innerHTML = `<div class="dz-lbar"><button class="btn small ${picking ? 'primary' : ''}" data-mact="${picking ? 'done' : 'pick'}">${picking ? 'Done selecting' : 'Select…'}</button>
-        ${picking || picks.size ? `<button class="btn small" data-mact="all">All</button><button class="btn small" data-mact="none" ${picks.size ? '' : 'disabled'}>None</button>` : ''}</div>
+    side.innerHTML = `<div class="dz-lh"><b>Layers <small>${F().length}</small></b><span class="dz-hb">${dzIB(`data-mact="${picking ? 'done' : 'pick'}"`, 'pick', picking ? 'Stop selecting several' : 'Select several', picking ? 'on' : '')}
+        ${picking || picks.size ? dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${picks.size ? '' : 'disabled'}`, 'none', 'Select none') : ''}${dzIB('data-rail="close"', 'close', 'Close')}</span></div>
       ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? 'Master page: shown under both sides.' : `${dzFaceNames(doc)[face]} only. The master page shows underneath.`}</p>` : ''}
       <div class="dz-ll" id="dz-ll">${[...F()].reverse().map(l => { const i = F().indexOf(l), cl = i > 0 && l.clip;
         return `<div class="dz-lr ${l.id === sel || picks.has(l.id) ? 'on' : ''} ${l.hide ? 'off' : ''} ${cl ? 'clip' : ''}" data-lid="${l.id}">
@@ -1174,62 +1226,88 @@ DZ.edit = async (id) => {
         <button data-lhide title="${l.hide ? 'Show' : 'Hide'}" aria-label="${l.hide ? 'Show' : 'Hide'}">${l.hide ? EYE_OFF : EYE}</button>
         <button data-llock class="${l.lock ? 'on' : ''}" title="${l.lock ? 'Unlock' : 'Lock'}" aria-label="Lock">${LOCK(l.lock)}</button>
         <button data-ldel title="Delete" aria-label="Delete">✕</button></div>`; }).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
-      <p class="muted" style="font-size:12px;margin:10px 2px 0">The top of the list sits in front. Drag ⠿ to change the order. Tap a name to select it; tap it again to rename.
-        Hold a layer (or Ctrl/Shift-click) to select several. ↳ clips a layer to the one below it.</p>`;
+      <p class="muted dz-hint">Top of the list is in front. Drag ⠿ to reorder; tap a name again to rename; hold a layer to select several.</p>`;
   };
+  let mini = Settings.get('dz_panel_min', '') === '1';
+  const toolOn = () => !!(penOn || pclOn || cont || cut || nodes || cropping);
   const drawSide = () => {
-    if (tab === 'layers') drawLayers(); else drawEdit();
-    drawMods();
-    side.insertAdjacentHTML('afterbegin', `<div class="seg dz-tabs"><button data-tab="edit" class="${tab === 'edit' ? 'on' : ''}">${layer() || many() ? 'Selected' : 'Design'}</button>
-      <button data-tab="layers" class="${tab === 'layers' ? 'on' : ''}">Layers <small>${F().length}</small></button></div>`);
-    drawFaces();
+    const tool = toolOn();
+    if (tool || (tab === 'doc' && (layer() || many()))) tab = 'edit';
+    const show = tool || tab !== 'edit' || !!layer() || many();
+    side.hidden = !show; side.classList.toggle('min', mini);
+    if (!show) side.innerHTML = '';
+    else {
+      if (tab === 'layers') drawLayers(); else if (tab === 'doc') drawDoc(); else drawEdit();
+      // every panel's header: Done becomes a tick, and a chevron folds the panel down to its header
+      const h = side.querySelector('.dz-lh');
+      if (h) {
+        h.querySelectorAll('button').forEach(b => { if (b.textContent.trim() === 'Done') { b.className = 'dz-ib dz-ok'; b.dataset.tip = 'Done'; b.setAttribute('aria-label', 'Done'); b.innerHTML = `<svg viewBox="0 0 24 24">${DZ_UI.done}</svg>`; } });
+        // plain help paragraphs move into one "?" tip in the header, so the panel shows only controls
+        const notes = [...side.querySelectorAll(':scope > p.muted, :scope > .fsec > p.muted')].filter(p => !p.classList.contains('dz-hint') && !p.querySelector('button, input, a'));
+        if (notes.length) { h.querySelector('b')?.insertAdjacentHTML('beforeend', ' ' + help(notes.map(p => p.textContent.trim().replace(/\s+/g, ' ')).join(' '))); notes.forEach(p => p.remove()); }
+        h.insertAdjacentHTML('beforeend', dzIB('data-collapse', 'chev', mini ? 'Show the panel' : 'Fold the panel away', 'dz-fold'));
+      }
+    }
+    drawMods(); drawFaces(); drawRail();
+    const nh = sheetH(stage.clientHeight); if (nh !== sheetWas) { sheetWas = nh; fit(); redraw(); }
+  };
+  const drawRail = () => { const r = $('#dz-rail'); if (!r) return;
+    const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc' };
+    r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); };
+  /* The tool rail. Text, Picture and Shape open a small menu beside it; the rest act straight away. */
+  const pop = () => $('#dz-pop');
+  const closePop = () => { const p = pop(); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
+  const mi = (attr, ic, label) => `<button class="mi" ${attr}><svg viewBox="0 0 24 24">${DZ_UI[ic]}</svg><span>${label}</span></button>`;
+  const railAct = (a, btn) => {
+    if (a === 'select') { closePop(); endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); tab = 'edit'; return select(null); }
+    if (a === 'layers' || a === 'doc') { closePop(); if (a === 'doc' && tab !== 'doc') { sel = null; picks = new Set(); picking = false; placeSel(); } tab = tab === a ? 'edit' : a; return drawSide(); }
+    if (a === 'close') { tab = 'edit'; return drawSide(); }
+    const p = pop(); if (!p) return;
+    if (!p.hidden && btn?.classList.contains('open')) return closePop();
+    closePop();
+    p.innerHTML = a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="heading"', 'heading', 'Heading')
+        + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
+      : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-add="logo"', 'logo', 'Studio logo')
+      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => dzIB(`data-shape="${v}"`, 's_' + v, n)).join('')}</div>`;
+    p.hidden = false; btn?.classList.add('open');
+    const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p.offsetHeight - 8)) + 'px';
   };
   const AL = [['l', 'Left', '<path d="M4 3v18M8 7h12v4H8zM8 14h7v4H8z"/>'], ['c', 'Centre', '<path d="M12 3v18M5 7h14v4H5zM8 14h8v4H8z"/>'], ['r', 'Right', '<path d="M20 3v18M4 7h12v4H4zM9 14h7v4H9z"/>'],
     ['t', 'Top', '<path d="M3 4h18M7 8v12h4V8zM14 8v7h4V8z"/>'], ['m', 'Middle', '<path d="M3 12h18M7 5v14h4V5zM14 8v8h4V8z"/>'], ['b', 'Bottom', '<path d="M3 20h18M7 4v12h4V4zM14 9v7h4V9z"/>'],
     ['dh', 'Space across', '<path d="M3 4v16M21 4v16M9 8h6v8H9z"/>'], ['dv', 'Space down', '<path d="M4 3h16M4 21h16M8 9h8v6H8z"/>']];
   const drawMulti = () => {
     const L = picked(), n = L.length, all = (f) => n && L.every(f);
-    side.innerHTML = `<div class="dz-lh"><b>${n ? `${n} selected` : 'Select items'}</b><button class="btn small" data-mact="done">Done</button></div>
-      <p class="muted" style="font-size:12px;margin:0 0 10px">${picking ? 'Tap items on the design or in Layers to add or remove them. Drag a selected item to move them all.'
-        : 'Ctrl-click adds or removes; Shift-click in Layers picks a range. Shift-drag on an empty spot draws a box: left to right picks what’s wholly inside, right to left anything it touches. On a touchscreen, hold an item for a moment, or hold an empty spot then drag for the box.'}</p>
-      <div class="row" style="gap:6px;margin-bottom:10px"><button class="btn small" data-mact="all">Select all</button><button class="btn small" data-mact="none" ${n ? '' : 'disabled'}>Clear</button></div>
-      <div class="dz-acts">
-        <button data-mact="dup" ${n ? '' : 'disabled'} title="Duplicate">⧉<span>Copy</span></button>
-        <button data-mact="hide" ${n ? '' : 'disabled'} title="Hide or show">${all(l => l.hide) ? '◌' : '◉'}<span>${all(l => l.hide) ? 'Show' : 'Hide'}</span></button>
-        <button data-mact="lock" class="${all(l => l.lock) ? 'on' : ''}" ${n ? '' : 'disabled'} title="Lock">${all(l => l.lock) ? '🔒' : '🔓'}<span>${all(l => l.lock) ? 'Locked' : 'Lock'}</span></button>
-        <button data-mact="clip" class="${all(l => l.clip) ? 'on' : ''}" ${n ? '' : 'disabled'} title="Clip to the layer below: each only shows inside it">↳<span>Clip</span></button>
-        <button data-mact="del" class="danger" ${n ? '' : 'disabled'} title="Delete">✕<span>Delete</span></button></div>
+    const dis = n ? '' : 'disabled';
+    side.innerHTML = `<div class="dz-lh"><b>${n ? `${n} selected` : 'Select items'} ${help(picking ? 'Tap items on the design or in Layers to add or remove them. Drag a selected item to move them all.'
+        : 'Ctrl-click adds or removes; Shift-click in Layers picks a range. Shift-drag on an empty spot draws a box: left to right picks what\u2019s wholly inside, right to left anything it touches. On a touchscreen, hold an item, or hold an empty spot then drag for the box.')}</b><button class="btn small" data-mact="done">Done</button></div>
+      <div class="dz-tb">${dzIB('data-mact="all"', 'all', 'Select all')}${dzIB(`data-mact="none" ${dis}`, 'none', 'Select none')}<i class="sep"></i>
+        ${dzIB(`data-mact="dup" ${dis}`, 'copy', 'Duplicate')}${dzIB(`data-mact="hide" ${dis}`, all(l => l.hide) ? 'eyeoff' : 'eye', all(l => l.hide) ? 'Show' : 'Hide')}
+        ${dzIB(`data-mact="lock" ${dis}`, all(l => l.lock) ? 'lock' : 'unlock', all(l => l.lock) ? 'Unlock' : 'Lock', all(l => l.lock) ? 'on' : '')}
+        ${dzIB(`data-mact="clip" ${dis}`, 'clip', 'Clip to the layer below: each only shows inside it', all(l => l.clip) ? 'on' : '')}
+        ${dzIB(`data-mact="del" ${dis}`, 'del', 'Delete', 'danger')}</div>
       ${fsec('Align', `<div class="dz-align">${AL.map(([a, t, ic]) => `<button data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} title="${t}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${t}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('')}</div>
-        <p class="muted" style="font-size:11px;margin:6px 0 0">${n === 1 ? 'One item lines up with the page.' : 'Items line up with each other. Spacing needs three or more.'}</p>`)}
+`)}
       ${fsec('Shape builder', `<div class="dz-bool">${[['add', 'Add', 'Weld them into one outline'], ['subtract', 'Subtract', 'The bottom one, with the rest cut out of it'],
           ['intersect', 'Intersect', 'Only where they all overlap'], ['xor', 'Exclude', 'Everything except where they overlap'], ['divide', 'Divide', 'Cut into every separate piece the overlaps make'],
           ['separate', 'Separate', 'Split each into its separate pieces'], ['contour', 'Contour', 'Grow or shrink the outline (O)']].map(([b, nm, tip]) =>
           `<button data-bool="${b}" ${!n || (n < 2 && !['separate', 'contour'].includes(b)) ? 'disabled' : ''} title="${tip}">${DZ_BOOL_ICON[b]}<span>${nm}</span></button>`).join('')}</div>
-        <p class="muted" style="font-size:11px;margin:6px 0 0">The result is a new shape you can reshape with Edit nodes. Text and pictures are traced first, so they work too.</p>`)}
-      ${fsec('Combine and save', `<div class="dz-combine">
-        <button class="btn small" data-mact="merge" ${n ? '' : 'disabled'}>Merge into one picture</button>
-        <button class="btn small" data-mact="refs" ${n ? '' : 'disabled'}>Save to references</button>
-        <button class="btn small" data-mact="png" ${n ? '' : 'disabled'}>Save as PNG</button></div>
-        <p class="muted" style="font-size:11px;margin:6px 0 0">Merging turns the selection into a single picture layer on the design (Undo brings the layers back).
-          Saving makes a see-through picture of just the selection and leaves the design as it is. Clipped layers go with the layer they're clipped to.</p>`)}`;
+`)}
+      ${fsec('Combine and save', `<div class="dz-tb">${dzIB(`data-mact="merge" ${dis}`, 'merge', 'Merge into one picture (Undo brings the layers back)')}
+        ${dzIB(`data-mact="refs" ${dis}`, 'refs', 'Save to references')}${dzIB(`data-mact="png" ${dis}`, 'png', 'Save as PNG')}</div>`)}`;
   };
   const drawEdit = () => {
     if (cont) { side.innerHTML = contPanel(); return; }
     if (penOn) { side.innerHTML = penPanel(); return; }
     if (pclOn) { side.innerHTML = pclPanel(); return; }
     if (many()) return drawMulti();
-    const l = layer();
-    if (!l) {
+    if (!layer()) return drawDoc();
+    drawItem();
+  };
+  const drawDoc = () => {
+    {
       const kinds = doc.kind === 'voucher' || doc.layers.some(x => /\{(amount|to|from|code|expires)\}/.test(x.text || ''));
       const post = DZ_KINDS[doc.kind].social || doc.layers.some(x => x.slot != null || DZ_PIECE_FIELDS.test(x.text || ''));
-      side.innerHTML = `
-        <div class="dz-add">${[['text', 'Text', 'T'], ['heading', 'Heading', 'H'], ['image', 'Picture', '▣'], ['logo', 'Logo', '◎'], ['shape', 'Shape', '◆'], ['pen', 'Pen', '✒'], ['pencil', 'Pencil', '✎'], ['field', 'Studio info', '@']]
-          .map(([a, n, i]) => `<button data-add="${a}"><i>${i}</i><span>${n}</span></button>`).join('')}</div>
-        <input type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden id="dz-file">
-        ${panel === 'image' ? `<div class="dz-shapes"><button data-pic="device">From this device</button><button data-pic="pf">From portfolio</button><button data-pic="refs">From references</button></div>` : ''}
-        ${panel === 'shape' ? `<div class="dz-shapes">${[['rect', 'Square'], ['round', 'Rounded'], ['ellipse', 'Circle'], ['tri', 'Triangle'], ['poly', 'Polygon'], ['star', 'Star'], ['heart', 'Heart'], ['arrow', 'Arrow'], ['cross', 'Cross'], ['bubble', 'Speech'], ['ring', 'Ring'], ['line', 'Line'], ['frame', 'Frame']]
-          .map(([s, n]) => `<button data-shape="${s}">${n}</button>`).join('')}</div>` : ''}
-        ${panel === 'field' ? `<div class="dz-shapes">${DZ_FIELDS.map(([f, n]) => `<button data-field="${f}">${n}</button>`).join('')}</div>` : ''}
+      side.innerHTML = `<div class="dz-lh"><b>Page</b>${dzIB('data-rail="close"', 'close', 'Close')}</div>
         ${kinds ? fsec('Voucher details', `<div class="two">
             <label class="field"><span>Amount</span><input class="in" data-v="amount" inputmode="decimal" value="${esc(doc.vals?.amount ?? '')}" placeholder="e.g. 1000"></label>
             <label class="field"><span>Valid until</span><input class="in" type="date" data-v="expires" value="${esc(doc.vals?.expires ?? '')}"></label>
@@ -1251,10 +1329,12 @@ DZ.edit = async (id) => {
         ${fsec('Background', `${swatches('bg', doc.bg?.c)}
           <div class="row" style="margin-top:8px"><label class="btn small">${doc.bg?.img ? 'Change picture' : 'Background picture'}<input type="file" accept="image/*" hidden id="dz-bgfile"></label>
           ${doc.bg?.img ? '<button class="btn small danger" id="dz-bgrm">Remove</button>' : ''}</div>
-          ${doc.bg?.img ? slider('bgop', 'Picture opacity', 0.05, 1, 0.05, doc.bg.op ?? 1, v => Math.round(v * 100) + '%') : ''}`, { fold: true })}
-        <p class="muted" style="font-size:12px;margin:10px 2px">Tap anything on the design to change it. Drag to move, corners to resize, the top dot to rotate. {Fields} like {studio} fill in from Settings.</p>`;
-      return;
+          ${doc.bg?.img ? slider('bgop', 'Picture opacity', 0.05, 1, 0.05, doc.bg.op ?? 1, v => Math.round(v * 100) + '%') : ''}`)}
+        <p class="muted dz-hint">{Fields} like {studio} fill in from Settings.</p>`;
     }
+  };
+  const drawItem = () => {
+    const l = layer();
     const kindName = l.t === 'text' ? 'Text' : l.t === 'image' ? (l.logo ? 'Logo' : 'Picture') : 'Shape';
     if (cut) { side.innerHTML = cutPanel(l); return; }
     if (nodes) { side.innerHTML = nodePanel(l); return; }
@@ -1266,45 +1346,36 @@ DZ.edit = async (id) => {
     }
     side.innerHTML = `
       <div class="dz-lh"><b>${kindName}</b><button class="btn small" data-act="done">Done</button></div>
-      <div class="dz-acts">
-        <button data-act="dup" title="Duplicate">⧉<span>Copy</span></button>
-        <button data-act="up" title="Bring forward">▲<span>Forward</span></button>
-        <button data-act="down" title="Send back">▼<span>Back</span></button>
-        <button data-act="lock" class="${l.lock ? 'on' : ''}" title="Lock">${l.lock ? '🔒' : '🔓'}<span>${l.lock ? 'Locked' : 'Lock'}</span></button>
-        ${l.t !== 'text' ? `<button data-act="crop" class="${cropping ? 'on' : ''}" title="Crop">⛶<span>Crop</span></button>` : ''}
-        <button data-act="fx" class="${l.fx ? 'on' : ''}" title="Flip left to right">⇋<span>Flip</span></button>
-        <button data-act="fy" class="${l.fy ? 'on' : ''}" title="Flip upside down">⇵<span>Flip</span></button>
-        <button data-act="clip" class="${clipped(l) ? 'on' : ''}" ${F().indexOf(l) ? '' : 'disabled'} title="Clip to the layer below: only shows inside it">↳<span>Clip</span></button>
-        ${l.t === 'image' ? (l.ref || l.logo ? '<button data-act="toshape" title="Trace the picture into a shape you can fill">◆<span>To shape</span></button><button data-act="flatten1" title="Flatten: bake in its rotation, flips, crop and opacity, and fit the handles to what shows">▦<span>Flatten</span></button>' : '')
-          : '<button data-act="flatten1" title="Flatten into a picture: its fill and outline become permanent">▦<span>Flatten</span></button>'}
-        <button data-bool="contour" title="Contour: grow or shrink the outline, or add a border round it (O)">${DZ_BOOL_ICON.contour}<span>Contour</span></button>
-        ${l.t === 'shape' && (l.subs?.length > 1 || l.shape === 'path' || l.shape === 'ring') ? `<button data-bool="separate" title="Split into its separate pieces">${DZ_BOOL_ICON.separate}<span>Separate</span></button>` : ''}
-        <button data-act="cut" title="Select part of it with a box, ellipse, lasso or by colour, then delete, split or move that part">⬚<span>Select area</span></button>
-        <button data-act="pick" title="Select more items">☐<span>Select</span></button>
-        <button data-act="del" class="danger" title="Delete">✕<span>Delete</span></button></div>
+      <div class="dz-tb">
+        ${dzIB('data-act="dup"', 'copy', 'Duplicate')}${dzIB('data-act="up"', 'fwd', 'Bring forward')}${dzIB('data-act="down"', 'back', 'Send back')}
+        ${dzIB('data-act="fx"', 'fx', 'Flip left to right', l.fx ? 'on' : '')}${dzIB('data-act="fy"', 'fy', 'Flip upside down', l.fy ? 'on' : '')}
+        ${dzIB(`data-act="clip" ${F().indexOf(l) ? '' : 'disabled'}`, 'clip', 'Clip to the layer below: only shows inside it', clipped(l) ? 'on' : '')}
+        ${dzIB('data-act="lock"', l.lock ? 'lock' : 'unlock', l.lock ? 'Unlock' : 'Lock', l.lock ? 'on' : '')}${dzIB('data-act="del"', 'del', 'Delete', 'danger')}</div>
+      <div class="dz-tb">
+        ${l.t !== 'text' ? dzIB('data-act="crop"', 'crop', 'Crop', cropping ? 'on' : '') : ''}
+        ${dzIB('data-act="cut"', 'area', 'Select area: part of it by box, ellipse, lasso or colour, to delete, split or move')}
+        ${l.t === 'shape' && l.shape !== 'line' ? dzIB('data-act="nodes"', 'nodes', l.shape === 'vec' ? 'Edit nodes' : 'Edit nodes (turns it into a free shape)') : ''}
+        <button class="dz-ib" data-bool="contour" data-tip="Contour: grow or shrink the outline, or add a border round it (O)" aria-label="Contour">${DZ_BOOL_ICON.contour}</button>
+        ${l.t === 'shape' && (l.subs?.length > 1 || l.shape === 'path' || l.shape === 'ring') ? `<button class="dz-ib" data-bool="separate" data-tip="Separate: split into its pieces" aria-label="Separate">${DZ_BOOL_ICON.separate}</button>` : ''}
+        ${l.t === 'image' && (l.ref || l.logo) ? dzIB('data-act="toshape"', 'toshape', 'To shape: trace the picture into a shape you can fill') : ''}
+        ${l.t !== 'image' || l.ref || l.logo ? dzIB('data-act="flatten1"', 'flatten', l.t === 'image' ? 'Flatten: bake in rotation, flips, crop and opacity' : 'Flatten into a picture') : ''}
+        ${dzIB('data-act="pick"', 'pick', 'Select more items')}
+        ${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}</div>
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
         <button class="btn small" data-act="flatten">Flatten group</button></div>` : ''}
-      <div class="dz-dims">
-        <label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="w" value="${dzToU(doc, l.w)}"></label>
-        <button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
-          <svg viewBox="0 0 24 24">${dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
-            : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>
-        <label><span>H</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="h" value="${dzToU(doc, l.h || 0)}" ${l.t === 'text' ? 'disabled title="Text height follows the text; use Size for the letters"' : ''}></label>
-        <select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
-      </div>
       ${l.t === 'text' ? `
-        <textarea class="in dz-text" data-k="text" rows="3">${esc(l.text)}</textarea>
-        <div class="dz-fields">${DZ_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>
-        <label class="field"><span>Font</span><select class="in" data-k="font">${fontOpts(l.font)}</select></label>
-        <div class="row" style="gap:6px;flex-wrap:nowrap">
-          <div class="seg" style="flex:1">${[['left', '⟸'], ['center', '≡'], ['right', '⟹']].map(([a, i]) => `<button data-al="${a}" class="${(l.al || 'left') === a ? 'on' : ''}" style="flex:1" aria-label="Align ${a}">${i}</button>`).join('')}</div>
-          <button class="btn small ${l.b ? 'primary' : ''}" data-tog="b" style="font-weight:800">B</button><button class="btn small ${l.it ? 'primary' : ''}" data-tog="it" style="font-style:italic">I</button></div>
-        <label class="toggle" style="display:inline-flex;margin-top:8px" data-tip="Long text gets smaller to stay on its lines instead of wrapping, e.g. a studio name or amount"><input type="checkbox" data-fit ${l.fit ? 'checked' : ''}><span>Shrink to fit</span></label>
+        <textarea class="in dz-text" data-k="text" rows="2">${esc(l.text)}</textarea>
+        <select class="in" data-k="font" style="width:100%;margin-bottom:6px" aria-label="Font">${fontOpts(l.font)}</select>
+        <div class="row" style="gap:6px;flex-wrap:nowrap;margin-bottom:8px">
+          <span class="dz-tb dz-tbi">${[['left', 'aleft'], ['center', 'acenter'], ['right', 'aright']].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')}</span>
+          <span class="dz-tb dz-tbi"><button class="dz-ib ${l.b ? 'on' : ''}" data-tog="b" data-tip="Bold" style="font-weight:800">B</button><button class="dz-ib ${l.it ? 'on' : ''}" data-tog="it" data-tip="Italic" style="font-style:italic">I</button></span></div>
         ${slider('size', 'Size', 8, Math.round(doc.h * 0.4), 1, Math.round(l.size))}
+        <div class="lbl">Colour</div>${fillUI(l, 'c')}${l.arc && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Bent text shows the plain colour.</p>' : ''}
         ${slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
         ${l.arc ? '<p class="muted" style="font-size:11px;margin:-4px 0 8px">Bent text runs on one line. <button class="link" data-act="unbend">Straighten</button></p>' : ''}
-        <div class="lbl">Colour</div>${fillUI(l, 'c')}${l.arc && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Bent text shows the plain colour.</p>' : ''}
-        ${fsec('Spacing', slider('ls', 'Letter spacing', -5, 40, 1, l.ls || 0) + slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2), { fold: true })}`
+        ${fsec('Text options', `<label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Long text gets smaller to stay on its lines instead of wrapping, e.g. a studio name or amount"><input type="checkbox" data-fit ${l.fit ? 'checked' : ''}><span>Shrink to fit</span></label>
+          ${slider('ls', 'Letter spacing', -5, 40, 1, l.ls || 0) + slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2)}
+          <div class="lbl">Insert studio info</div><div class="dz-fields">${DZ_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true })}`
       : l.t === 'shape' ? `
         <div class="lbl">${l.shape === 'line' ? 'Colour' : 'Fill'}</div>${fillUI(l, 'fill', true)}
         <div class="lbl" style="margin-top:8px">Outline</div>${swatches('stroke', l.stroke, true)}
@@ -1313,19 +1384,25 @@ DZ.edit = async (id) => {
         ${l.shape === 'poly' ? slider('n', 'Sides', 3, 16, 1, l.n || 6) : ''}
         ${l.shape === 'star' ? slider('n', 'Points', 3, 24, 1, l.n || 5) + slider('inner', 'Inner depth', 0.1, 0.95, 0.01, l.inner ?? 0.45, v => Math.round(v * 100) + '%') : ''}
         ${l.shape === 'ring' ? slider('inner', 'Hole', 0.05, 0.95, 0.01, l.inner ?? 0.6, v => Math.round(v * 100) + '%') : ''}
-        ${l.shape === 'cross' || l.shape === 'arrow' ? slider('th', 'Thickness', 0.05, 0.95, 0.01, l.th ?? (l.shape === 'cross' ? 0.34 : 0.4), v => Math.round(v * 100) + '%') : ''}
-        ${l.shape !== 'line' ? `<button class="btn small" data-act="nodes" style="margin-top:8px">${l.shape === 'vec' ? 'Edit nodes' : 'Edit nodes (turns it into a free shape)'}</button>` : ''}`
+        ${l.shape === 'cross' || l.shape === 'arrow' ? slider('th', 'Thickness', 0.05, 0.95, 0.01, l.th ?? (l.shape === 'cross' ? 0.34 : 0.4), v => Math.round(v * 100) + '%') : ''}`
       : `${l.logo ? '<p class="muted" style="font-size:12px;margin:0 0 8px">Your studio logo from Settings.</p>'
-          : `<div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap"><button class="btn small" id="dz-pfphoto">From portfolio</button><button class="btn small" id="dz-refphoto">From references</button>
-              <label class="btn small">From device<input type="file" accept="image/*" hidden id="dz-repl"></label></div>`}
+          : `<div class="dz-tb">${dzIB('id="dz-pfphoto"', 'portfolio', 'Replace from portfolio')}${dzIB('id="dz-refphoto"', 'refs', 'Replace from references')}
+              <label class="dz-ib" data-tip="Replace from this device" aria-label="Replace from this device"><svg viewBox="0 0 24 24">${DZ_UI.device}</svg><input type="file" accept="image/*" hidden id="dz-repl"></label></div>`}
         ${l.logo ? '' : `<label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Fill the whole box and crop what doesn't fit, like a photo frame. Off: the whole picture fits inside."><input type="checkbox" data-cover ${l.cover ? 'checked' : ''}><span>Fill the box (crop)</span></label>
           ${l.cover ? slider('px', 'Move photo left / right', -1, 1, 0.02, l.px || 0, v => Math.round(v * 100)) + slider('py', 'Move photo up / down', -1, 1, 0.02, l.py || 0, v => Math.round(v * 100)) : ''}
           ${slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0)}
           <div class="lbl">Outline</div>${swatches('stroke', l.stroke, true)}${slider('sw', 'Outline width', 0, 40, 1, l.sw || 0)}`}`}
       ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}
-      ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
-      ${fsec('Save', `<div class="dz-combine"><button class="btn small" data-mact="refs">Save to references</button><button class="btn small" data-mact="png">Save as PNG</button>
-        ${l.t !== 'image' || l.crop || l.r ? '<button class="btn small" data-mact="merge">Turn into a picture</button>' : ''}</div>`, { fold: true })}`;
+      ${fsec('Size and position', `<div class="dz-dims">
+        <label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="w" value="${dzToU(doc, l.w)}"></label>
+        <button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
+          <svg viewBox="0 0 24 24">${dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
+            : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>
+        <label><span>H</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="h" value="${dzToU(doc, l.h || 0)}" ${l.t === 'text' ? 'disabled title="Text height follows the text; use Size for the letters"' : ''}></label>
+        <select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
+      </div>
+      ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}`, { fold: true })}
+      ${l.t !== 'image' || l.crop || l.r ? `<button class="btn small" data-mact="merge" style="margin-top:4px">Turn into a picture</button>` : ''}`;
   };
   const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
   // Several: outside selection mode one item left becomes a normal selection.
@@ -2355,7 +2432,7 @@ DZ.edit = async (id) => {
     }
   }, true);
   stage.addEventListener('pointerdown', (e) => {
-    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs')) return;
+    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop')) return;
     // Background (around the design, or an empty part of it): drag to pan, tap to deselect. Shift-drag, or on a
     // touchscreen a moment's hold before dragging, draws a selection box instead.
     stage.setPointerCapture(e.pointerId);
@@ -2424,7 +2501,6 @@ DZ.edit = async (id) => {
     stage.style.height = ''; requestAnimationFrame(() => { fit(); redraw(); });
   };
   $('#dz-focus').onclick = () => focus(!document.body.classList.contains('dz-focus'));
-  $('#dz-panel').onclick = () => { document.body.classList.toggle('dz-noside'); requestAnimationFrame(() => { fit(); redraw(); }); };
   $('#dz-qs').oninput = (e) => { if (qs && e.target.type === 'range') qsApply(+e.target.value / 100); };
   $('#dz-qs').onclick = (e) => { const a = e.target.closest('[data-qs]')?.dataset.qs; if (a) qsDone(a === 'ok'); };
   $('#dz-mods').onclick = (e) => { const m = e.target.closest('[data-mod]')?.dataset.mod; if (!m) return; dock[m] = !dock[m]; drawMods(); };
@@ -2582,8 +2658,11 @@ DZ.edit = async (id) => {
   });
 
   /* Side panel events */
-  side.addEventListener('click', async (e) => {
+  const sideClick = async (e) => {
     const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
+    if (t.closest('[data-collapse]')) { mini = !mini; Settings.set('dz_panel_min', mini ? '1' : ''); return drawSide(); }
+    if (d('rail')) return railAct(d('rail'), t.closest('[data-rail]'));
+    if (t.closest('.dz-pop') && (d('add') || d('pic') || d('shape') || d('field'))) closePop();
     if (d('tab')) { tab = d('tab'); return drawSide(); }
     if (d('mact')) return multiAct(d('mact'));
     if (d('bool')) return boolOp(d('bool'));
@@ -2721,7 +2800,10 @@ DZ.edit = async (id) => {
       l.text = ta.value.slice(0, at) + ins + ta.value.slice(ta.selectionEnd ?? at); changed(true); drawSide();
       const nt = side.querySelector('.dz-text'); nt.focus(); nt.setSelectionRange(at + ins.length, at + ins.length);
     }
-  });
+  };
+  side.addEventListener('click', sideClick);
+  for (const x of [$('#dz-rail'), $('#dz-pop')]) { x.addEventListener('click', sideClick); x.addEventListener('change', (e) => sideChange(e)); }
+  stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dz-pop, .dz-rail')) closePop(); }, true);
   let gdrag = null;
   side.addEventListener('pointerdown', (e) => {
     const bar = e.target.closest('[data-gbar]'), l = layer(); if (!bar || !l?.grad) return;
@@ -2818,7 +2900,7 @@ DZ.edit = async (id) => {
       : key === 'arc' ? (+t.value === 0 ? 'straight' : (t.value > 0 ? 'up ' : 'down ') + Math.abs(t.value) + '°') : t.value;
     changed();
   });
-  side.addEventListener('change', async (e) => {
+  const sideChange = async (e) => {
     const t = e.target, l = layer();
     if (t.hasAttribute('data-contkeep')) { copt2.keep = t.checked; saveC2(); return; }
     if (t.hasAttribute('data-holdon')) { pcl.hold = t.checked; savePcl(); return drawSide(); }
@@ -2850,7 +2932,8 @@ DZ.edit = async (id) => {
     if (t.dataset.dim) { changed(true); return; }
     if (t.hasAttribute('data-cover') && l) { l.cover = t.checked ? 1 : 0; changed(true); return drawSide(); }
     if (t.dataset.k === 'text' || t.dataset.v) changed(true);
-  });
+  };
+  side.addEventListener('change', sideChange);
 
   /* Top bar */
   $('#dz-back').onclick = async () => { await flush(); location.hash = 'designs'; };

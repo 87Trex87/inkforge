@@ -1398,3 +1398,89 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 #dz-marq { position: absolute; z-index: 4; pointer-events: none; border: 1.5px solid var(--teal); background: rgba(31,182,166,.12); }
 #dz-marq.touch { border-style: dashed; background: rgba(46,204,113,.10); border-color: #2ecc71; }
 #dz-marq[hidden] { display: none; }
+
+/* ---------- Design studio editor: drawing-app layout ----------
+   The design fills the screen; tools sit in a floating rail on the left; the panel floats on the right (a bottom
+   sheet on phones), shows only for a selection, a tool, layers or page settings, and folds down to its header. */
+#main:has(.dz-ed) { padding: 0; overflow: hidden; }
+#main:has(.dz-ed) #topbar { display: none; }
+#view:has(.dz-ed) { max-width: none; height: 100%; animation: none; }
+#dz:has(.dz-ed) { height: 100%; }
+.dz-ed { height: 100%; gap: 0; }
+.dz-top { gap: 2px; padding: calc(env(safe-area-inset-top, 0px) + 6px) 8px 6px; background: var(--bg2); border-bottom: 1px solid var(--line); flex: none; }
+.dz-name { flex: 0 1 260px; min-width: 60px; background: none; border: 1px solid transparent; border-radius: 8px; color: var(--ink); font: 600 14px var(--ui); padding: 6px 8px; }
+.dz-name:hover, .dz-name:focus { border-color: var(--line); outline: none; background: var(--bg); }
+.dz-tsp { flex: 1; }
+.dz-body { flex: 1; min-height: 0; position: relative; display: block; }
+.dz-body > .dz-stage { position: absolute; inset: 0; height: auto; border: 0; border-radius: 0; }
+.dz-ib { width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px; background: none; color: var(--ink2); cursor: pointer; font: 600 15px var(--ui); position: relative; }
+.dz-ib svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.dz-ib:hover { background: rgba(255,255,255,.07); color: var(--ink); }
+.dz-ib.on, .dz-ib.open, .dz-ib.primary { background: rgba(31,182,166,.18); color: var(--teal); }
+.dz-ib.danger { color: #e0605a; }
+.dz-ib:disabled { opacity: .3; cursor: default; background: none; }
+.dz-ib.dz-go { background: var(--teal); color: #071413; margin-left: 4px; }
+.dz-ib.dz-ok { color: var(--teal); }
+.dz-rail { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); z-index: 6; display: flex; flex-direction: column; gap: 2px; padding: 4px;
+  border-radius: 14px; background: rgba(22,27,28,.92); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.dz-rail .sep, .dz-tb .sep { display: block; flex: none; background: var(--line); }
+.dz-rail .sep { height: 1px; margin: 3px 5px; }
+.dz-pop { position: absolute; left: 60px; z-index: 8; min-width: 190px; max-height: calc(100% - 16px); overflow-y: auto; padding: 5px; border-radius: 14px;
+  background: rgba(22,27,28,.97); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0,0,0,.55); }
+.dz-pop[hidden] { display: none; }
+.dz-pop .mi { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 9px; background: none; color: var(--ink); font: 500 13px var(--ui); text-align: left; cursor: pointer; }
+.dz-pop .mi:hover { background: rgba(255,255,255,.07); }
+.dz-pop .mi svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--ink2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.dz-pop .gh { padding: 8px 10px 3px; font: 700 10px var(--ui); letter-spacing: .07em; text-transform: uppercase; color: var(--ink2); }
+.dz-pop .sg { display: grid; grid-template-columns: repeat(4, 40px); gap: 3px; }
+.dz-pop .sg .dz-ib { width: 40px; height: 40px; }
+.dz-body > .dz-side { position: absolute; top: 10px; right: 10px; z-index: 7; width: 320px; max-height: calc(100% - 20px); overflow-y: auto; overflow-x: hidden;
+  padding: 0 12px 12px; border-radius: 16px; background: rgba(22,27,28,.95); border: 1px solid var(--line); backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.dz-body > .dz-side[hidden] { display: none; }
+.dz-side.min { padding-bottom: 0; overflow: hidden; }
+.dz-side.min > :not(.dz-lh) { display: none !important; }
+.dz-side.min .dz-fold svg { transform: rotate(180deg); }
+.dz-side .dz-lh { position: sticky; top: 0; z-index: 3; margin: 0 -12px 8px; padding: 5px 4px 5px 14px; gap: 2px; background: rgba(26,31,32,.99); border-bottom: 1px solid var(--line); }
+.dz-side.min .dz-lh { margin-bottom: 0; border-bottom: 0; }
+.dz-side .dz-lh b { flex: 1; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dz-side .dz-lh b small { color: var(--ink2); margin-left: 4px; }
+.dz-side .dz-lh .btn.small { padding: 5px 10px; }
+.dz-hb { display: flex; gap: 2px; }
+.dz-tb { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; margin: 0 0 8px; padding: 3px; border-radius: 12px; background: rgba(0,0,0,.22); }
+.dz-tb .dz-ib { width: 31px; height: 34px; }
+.dz-tb .sep { width: 1px; height: 22px; margin: 0 3px; }
+.dz-tbi { margin: 0; flex: none; }
+.dz-tbi .dz-ib { width: 30px; height: 30px; }
+.dz-hint { font-size: 11px; margin: 10px 2px 0; }
+.dz-side .dz-text { margin-bottom: 8px; }
+.dz-side .dz-dims { margin-bottom: 4px; }
+.dz-bool button span { display: none; }
+.dz-bool button { padding: 6px 2px; }
+.dz-faces { left: 50%; right: auto; transform: translateX(-50%); }
+@media (max-width: 700px) {
+  .dz-body > .dz-side { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 48%; border-radius: 16px 16px 0 0; border-bottom: 0; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  .dz-side .dz-lh::before { content: ''; position: absolute; left: 50%; top: 3px; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--line); }
+  .dz-side .dz-lh { padding-top: 9px; }
+  .dz-zoom { top: 10px; bottom: auto; }
+  .dz-mods { left: 58px; top: 10px; bottom: auto; }
+  .dz-qs { top: 56px; bottom: auto; }
+  .dz-faces { top: 56px; }
+  .dz-rail { top: 10px; transform: none; max-height: calc(100% - 20px); overflow-y: auto; }
+  .dz-top .dz-ib { width: 34px; }
+}
+.dz-side .dz-sw { gap: 5px; }
+.dz-side .dz-sw button, .dz-side .dz-sw .pick { width: 24px; height: 24px; }
+.dz-side .dz-sw button.role::after { inset: 5px; }
+.dz-side .seg button { padding-top: 6px; padding-bottom: 6px; font-size: 12px; }
+.dz-ed .dz-top { flex-wrap: nowrap; }
+.dz-ed .dz-top #dz-name { flex: 1 1 auto; order: 0; }
+.dz-side .dz-lr { padding: 1px 4px; grid-template-columns: 22px 20px 1fr 30px 30px 30px 30px; }
+.dz-side .dz-lr button { width: 30px; height: 30px; }
+.dz-side .dz-lr .nm { padding: 4px 0; }
+.dz-side .dz-align, .dz-side .dz-bool { gap: 1px; padding: 3px; border-radius: 12px; background: rgba(0,0,0,.22); }
+.dz-side .dz-align button, .dz-side .dz-bool button { height: 34px; border: 0; border-radius: 9px; background: none; color: var(--ink2); }
+.dz-side .dz-align button:hover:not(:disabled), .dz-side .dz-bool button:hover:not(:disabled) { background: rgba(255,255,255,.07); color: var(--ink); }
+.dz-ed .dz-zoom { left: 10px; right: auto; bottom: 10px; top: auto; }
+.dz-ed .dz-mods { left: 10px; bottom: 58px; top: auto; }
+@media (max-width: 700px) { .dz-ed .dz-zoom { left: auto; right: 10px; top: 10px; bottom: auto; } .dz-ed .dz-faces { left: 58px; transform: none; top: 56px; } .dz-ed .dz-mods { left: 58px; top: 102px; bottom: auto; } }
+.dz-side .toggle { border: 0; background: none; padding: 4px 0; min-height: 32px; }

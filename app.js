@@ -570,6 +570,17 @@ function toast(msg, ms = 2600) {
     else hide();
   }, true);
   addEventListener('scroll', hide, true);
+  // Touch: press and hold an icon to read its name (the press then does nothing).
+  let lp = null, held = false;
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse') return;
+    const el = e.target.closest('[data-tip]'); if (!el || el.classList.contains('help')) return;
+    const x = e.clientX, y = e.clientY; clearTimeout(lp);
+    lp = setTimeout(() => { held = true; show(el); navigator.vibrate?.(10); clearTimeout(show._t); show._t = setTimeout(hide, 1800); }, 450);
+    const stop = (ev) => { if (ev.type !== 'pointermove' || Math.hypot(ev.clientX - x, ev.clientY - y) > 8) { clearTimeout(lp); removeEventListener('pointermove', stop, true); removeEventListener('pointerup', stop, true); removeEventListener('pointercancel', stop, true); } };
+    addEventListener('pointermove', stop, true); addEventListener('pointerup', stop, true); addEventListener('pointercancel', stop, true);
+  }, true);
+  addEventListener('click', e => { if (held) { held = false; e.preventDefault(); e.stopPropagation(); } }, true);
 })();
 
 /* ---------- Views ---------- */
