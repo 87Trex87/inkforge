@@ -282,6 +282,96 @@ const DZ_BOOL_ICON = Object.fromEntries(Object.entries({
   separate: '<rect x="1.5" y="1.5" width="5" height="5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M8 3v2M8 11v2M3 8h2M11 8h2" class="g"/>',
   contour: '<rect x="4.5" y="4.5" width="7" height="7" rx="1"/><rect x="1.5" y="1.5" width="13" height="13" rx="3" class="g"/>'
 }).map(([kk, v]) => [kk, `<svg viewBox="0 0 16 16" class="dz-bi">${v}</svg>`]));
+/* ---------- Hold to snap, and fitting a drawn stroke ----------
+   dzGuess reads a rough stroke (page points) as a line, circle, ellipse, rectangle, triangle or polygon, the way
+   the drawing board's hold-to-snap does: each candidate is scored by how far the stroke strays from it (as a
+   fraction of the stroke's size), with a small charge for the fussier ones, and the best wins if it's close
+   enough. Results are page-space subpaths of nodes (handles relative to their node). */
+const dzP = (x, y, ix = 0, iy = 0, ox = 0, oy = 0, t = 'corner') => ({ x, y, ix, iy, ox, oy, t });
+function dzSample(subs, per = 40) {
+  const out = [];
+  for (const sp of subs) { const N = sp.nodes, n = N.length, last = sp.closed ? n : n - 1;
+    for (let i = 0; i < last; i++) { const a = N[i], b = N[(i + 1) % n];
+      for (let s2 = 0; s2 <= per; s2++) { const t = s2 / per, u = 1 - t;
+        out.push({ x: u * u * u * a.x + 3 * u * u * t * (a.x + a.ox) + 3 * u * t * t * (b.x + b.ix) + t * t * t * b.x, y: u * u * u * a.y + 3 * u * u * t * (a.y + a.oy) + 3 * u * t * t * (b.y + b.iy) + t * t * t * b.y }); } } }
+  return out;
+}
+function dzEllipseSubs(cx, cy, a, b, rot) {
+  const c = Math.cos(rot), s2 = Math.sin(rot), R = (x, y) => [x * c - y * s2, x * s2 + y * c], ka = a * 0.5523, kb = b * 0.5523;
+  const mk = (px, py, ix, iy, ox, oy) => { const [X, Y] = R(px, py), [IX, IY] = R(ix, iy), [OX, OY] = R(ox, oy); return dzP(cx + X, cy + Y, IX, IY, OX, OY, 'sym'); };
+  return [{ closed: true, nodes: [mk(a, 0, 0, -kb, 0, kb), mk(0, b, ka, 0, -ka, 0), mk(-a, 0, 0, kb, 0, -kb), mk(0, -b, -ka, 0, ka, 0)] }];
+}
+function dzRdp(pts, eps) {
+  if (pts.length < 3) return pts.slice();
+  const keep = new Uint8Array(pts.length); keep[0] = keep[pts.length - 1] = 1; const st = [[0, pts.length - 1]];
+  while (st.length) { const [a, b] = st.pop(); const A = pts[a], B = pts[b], L = Math.hypot(B.x - A.x, B.y - A.y); let dm = 0, im = -1;
+    for (let i = a + 1; i < b; i++) { const P = pts[i], d = L > 1e-9 ? Math.abs((B.x - A.x) * (A.y - P.y) - (A.x - P.x) * (B.y - A.y)) / L : Math.hypot(P.x - A.x, P.y - A.y); if (d > dm) { dm = d; im = i; } }
+    if (dm > eps) { keep[im] = 1; st.push([a, im], [im, b]); } }
+  return pts.filter((_, i) => keep[i]);
+}
+function dzGuess(raw) {
+  if (!raw || raw.length < 6) return null;
+  const xs = raw.map(q => q.x), ys = raw.map(q => q.y), x0 = Math.min(...xs), y0 = Math.min(...ys), W = Math.max(...xs) - x0, H = Math.max(...ys) - y0, D = Math.hypot(W, H);
+  if (D < 4) return null;
+  let len = 0; for (let i = 1; i < raw.length; i++) len += Math.hypot(raw[i].x - raw[i - 1].x, raw[i].y - raw[i - 1].y);
+  const gap = Math.hypot(raw.at(-1).x - raw[0].x, raw.at(-1).y - raw[0].y), closed = gap < D * 0.25 && len > D * 1.6;
+  const probe = raw.filter((_, i) => i % Math.max(1, Math.floor(raw.length / 120)) === 0);
+  const err = (subs) => { const S = dzSample(subs, 30); let t = 0; for (const q of probe) { let m = Infinity; for (const r of S) { const d = (r.x - q.x) ** 2 + (r.y - q.y) ** 2; if (d < m) m = d; } t += Math.sqrt(m); } return t / probe.length / D; };
+  const cands = [], push = (label, subs, pen) => cands.push({ label, subs, e: err(subs) + pen });
+  const tidy = (deg, step = 15, tol = 4) => { const n = Math.round(deg / step) * step; return Math.abs(deg - n) < tol ? n : deg; };
+  if (!closed && len < gap * 1.35) {   // a line, if the stroke went one way
+    let A = raw[0], B = raw.at(-1); const ang = Math.atan2(B.y - A.y, B.x - A.x) * 180 / Math.PI, near = tidy(ang, 15, 2.5);
+    if (near !== ang) { const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2, h = Math.hypot(B.x - A.x, B.y - A.y) / 2, a2 = near * Math.PI / 180; A = { x: mx - Math.cos(a2) * h, y: my - Math.sin(a2) * h }; B = { x: mx + Math.cos(a2) * h, y: my + Math.sin(a2) * h }; }
+    push('Line', [{ closed: false, nodes: [dzP(A.x, A.y), dzP(B.x, B.y)] }], 0);
+  }
+  if (closed) {
+    let cx = 0, cy = 0; for (const q of raw) { cx += q.x; cy += q.y; } cx /= raw.length; cy /= raw.length;
+    const r = raw.reduce((t, q) => t + Math.hypot(q.x - cx, q.y - cy), 0) / raw.length;
+    push('Circle', dzEllipseSubs(cx, cy, r, r, 0), 0.002);
+    // the stroke's own axes (principal directions) for the rectangle and the ellipse
+    let sxx = 0, syy = 0, sxy = 0; for (const q of raw) { const dx = q.x - cx, dy = q.y - cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+    let th = 0.5 * Math.atan2(2 * sxy, sxx - syy); th = tidy(th * 180 / Math.PI, 90, 6) * Math.PI / 180;
+    const c = Math.cos(th), s2 = Math.sin(th); let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const q of raw) { const u = (q.x - cx) * c + (q.y - cy) * s2, v = -(q.x - cx) * s2 + (q.y - cy) * c; u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+    const mu = (u0 + u1) / 2, mv = (v0 + v1) / 2, ecx = cx + mu * c - mv * s2, ecy = cy + mu * s2 + mv * c;
+    let a = (u1 - u0) / 2, b = (v1 - v0) / 2; if (Math.abs(a - b) / Math.max(a, b) < 0.06) a = b = (a + b) / 2;
+    const P = (u, v) => dzP(ecx + u * c - v * s2, ecy + u * s2 + v * c);
+    push(a === b ? 'Square' : 'Rectangle', [{ closed: true, nodes: [P(-a, -b), P(a, -b), P(a, b), P(-a, b)] }], 0.004);
+    push('Ellipse', dzEllipseSubs(ecx, ecy, a * 0.97, b * 0.97, th), 0.007);
+    // corners: the closed loop simplified until only its turns are left
+    const loop = dzRdp([...raw, raw[0]], D * 0.06); loop.pop();
+    const n = loop.length;
+    if (n >= 3 && n <= 8) {
+      let px = 0, py = 0; for (const q of loop) { px += q.x; py += q.y; } px /= n; py /= n;
+      const rad = loop.map(q => Math.hypot(q.x - px, q.y - py)), R = rad.reduce((t, v) => t + v, 0) / n, off = Math.max(...rad.map(v => Math.abs(v - R)));
+      if (n >= 5 && off / R < 0.1) { const a0 = Math.atan2(loop[0].y - py, loop[0].x - px);
+        push(`${n}-sided`, [{ closed: true, nodes: [...Array(n)].map((_, i) => dzP(px + R * Math.cos(a0 + i * 2 * Math.PI / n), py + R * Math.sin(a0 + i * 2 * Math.PI / n))) }], 0.003 * n); }
+      else push(n === 3 ? 'Triangle' : `${n}-sided`, [{ closed: true, nodes: loop.map(q => dzP(q.x, q.y)) }], 0.003 * n + (n === 4 ? 0.02 : 0));
+    }
+  }
+  if (!cands.length) return null;
+  cands.sort((p1, p2) => p1.e - p2.e);
+  return cands[0].e < 0.045 ? cands[0] : null;
+}
+/* A freehand stroke as nodes: thinned to within `tol` page px of what was drawn, sharp turns kept as corners,
+   the rest smooth (handles along the line through the neighbours). */
+function dzFitStroke(raw, tol, closed) {
+  let pts = []; for (const q of raw) { const l = pts.at(-1); if (!l || Math.hypot(q.x - l.x, q.y - l.y) > tol * 0.3) pts.push(q); }
+  if (closed && pts.length > 3 && Math.hypot(pts[0].x - pts.at(-1).x, pts[0].y - pts.at(-1).y) < tol * 3) pts.pop();
+  if (pts.length < 2) return null;
+  let P = dzRdp(closed ? [...pts, pts[0]] : pts, tol); if (closed) P.pop();
+  if (P.length < 2) return null;
+  const n = P.length, nodes = P.map(q => dzP(q.x, q.y));
+  for (let i = 0; i < n; i++) {
+    if (!closed && (i === 0 || i === n - 1)) continue;
+    const a = P[(i - 1 + n) % n], b = P[i], c2 = P[(i + 1) % n];
+    const t1 = Math.atan2(b.y - a.y, b.x - a.x), t2 = Math.atan2(c2.y - b.y, c2.x - b.x); let turn = Math.abs(t2 - t1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+    if (turn > 1.0) continue;   // a sharp turn stays a corner
+    const tx = c2.x - a.x, ty = c2.y - a.y, tl = Math.hypot(tx, ty) || 1, li = Math.hypot(b.x - a.x, b.y - a.y) / 3, lo = Math.hypot(c2.x - b.x, c2.y - b.y) / 3;
+    Object.assign(nodes[i], { ix: -tx / tl * li, iy: -ty / tl * li, ox: tx / tl * lo, oy: ty / tl * lo, t: 'smooth' });
+  }
+  return { closed: !!closed && n > 2, nodes };
+}
 // The subpaths a shape draws with (null for the plain kinds drawn directly: line, box, circle, old traced).
 const dzSubs = (L) => L.shape === 'vec' ? L.subs : DZ_GEN[L.shape] && !['ellipse', 'rect', 'path'].includes(L.shape) ? DZ_GEN[L.shape](L) : null;
 function dzSubsTo(x, L, subs) {
@@ -837,7 +927,8 @@ DZ.edit = async (id) => {
   let cut = null, cutDrag = null;
   let nodes = null, ndrag = null;
   let cont = null, cdrag = null;
-  let penOn = false, pen = null, spaceHeld = false;   // the pen tool (see "Pen tool" below)   // the contour tool (see "Shape builder" below)   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
+  let penOn = false, pen = null, spaceHeld = false;
+  let pclOn = false, stroke = null;   // the pencil (see "Pencil" below)   // the pen tool (see "Pen tool" below)   // the contour tool (see "Shape builder" below)   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
   const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) placeSel(); };
   // Page tabs (top right of the design): front, back and the master page under both.
   const drawFaces = () => {
@@ -845,7 +936,7 @@ DZ.edit = async (id) => {
     const nm = dzFaceNames(doc), n = (f) => doc.layers.filter(l => dzSide(l) === f).length;
     b.innerHTML = ['f', 'b', 'm'].map(f => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Backgrounds and frames shown under both sides"' : ''}>${nm[f]}${n(f) ? ` <small>${n(f)}</small>` : ''}</button>`).join('');
   };
-  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); endCont(); endPen(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
+  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
   // Leaving crop mode: an uncropped item drops its crop entirely.
   const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
@@ -1002,13 +1093,14 @@ DZ.edit = async (id) => {
   const drawEdit = () => {
     if (cont) { side.innerHTML = contPanel(); return; }
     if (penOn) { side.innerHTML = penPanel(); return; }
+    if (pclOn) { side.innerHTML = pclPanel(); return; }
     if (many()) return drawMulti();
     const l = layer();
     if (!l) {
       const kinds = doc.kind === 'voucher' || doc.layers.some(x => /\{(amount|to|from|code|expires)\}/.test(x.text || ''));
       const post = DZ_KINDS[doc.kind].social || doc.layers.some(x => x.slot != null || DZ_PIECE_FIELDS.test(x.text || ''));
       side.innerHTML = `
-        <div class="dz-add">${[['text', 'Text', 'T'], ['heading', 'Heading', 'H'], ['image', 'Picture', '▣'], ['logo', 'Logo', '◎'], ['shape', 'Shape', '◆'], ['pen', 'Pen', '✒'], ['field', 'Studio info', '@']]
+        <div class="dz-add">${[['text', 'Text', 'T'], ['heading', 'Heading', 'H'], ['image', 'Picture', '▣'], ['logo', 'Logo', '◎'], ['shape', 'Shape', '◆'], ['pen', 'Pen', '✒'], ['pencil', 'Pencil', '✎'], ['field', 'Studio info', '@']]
           .map(([a, n, i]) => `<button data-add="${a}"><i>${i}</i><span>${n}</span></button>`).join('')}</div>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden id="dz-file">
         ${panel === 'image' ? `<div class="dz-shapes"><button data-pic="device">From this device</button><button data-pic="pf">From portfolio</button><button data-pic="refs">From references</button></div>` : ''}
@@ -1112,7 +1204,7 @@ DZ.edit = async (id) => {
       ${fsec('Save', `<div class="dz-combine"><button class="btn small" data-mact="refs">Save to references</button><button class="btn small" data-mact="png">Save as PNG</button>
         ${l.t !== 'image' || l.crop || l.r ? '<button class="btn small" data-mact="merge">Turn into a picture</button>' : ''}</div>`, { fold: true })}`;
   };
-  const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); endNodes(); endCont(); endPen(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
+  const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
   // Several: outside selection mode one item left becomes a normal selection.
   const setPicks = (ids) => {
     endCrop(); picks = new Set(ids); panel = null;
@@ -1267,14 +1359,17 @@ DZ.edit = async (id) => {
     }
     if (d.pts) {   // smoothing: the line trails the pointer on a string, so wobbles don't show
       const L = copt.lazy * 0.6 / k, dx = p.x - d.lp.x, dy = p.y - d.lp.y, dist = Math.hypot(dx, dy);
+      if (d.snap) { holdScale(d.snap, p); d.pts = d.snap.cur.map(q => [q.x, q.y]); d.cur = null; return drawCut(); }
       if (dist > L) { const t = (dist - L) / dist; d.lp = { x: d.lp.x + dx * t, y: d.lp.y + dy * t };
         const last = d.pts.at(-1); if (Math.hypot(d.lp.x - last[0], d.lp.y - last[1]) * k > 1.5) d.pts.push([d.lp.x, d.lp.y]); }
       d.cur = L ? p : null;
+      holdWatch(d, p, () => { const g = dzGuess(d.pts.map(([x2, y2]) => ({ x: x2, y: y2 }))); if (!g || !g.subs[0].closed) return;
+        d.snap = holdStart(g, p); d.pts = d.snap.cur.map(q => [q.x, q.y]); d.cur = null; drawCut(); toast(g.label + ': keep holding and move to resize.', 2500); });
     } else d.p1 = p;
     drawCut();
   };
   const cutUp = () => {
-    const d = cutDrag; cutDrag = null;
+    const d = cutDrag; cutDrag = null; clearTimeout(d.ht);
     if (d.move) { drawCut(); return; }
     if (d.pts) { if (d.pts.length < 3) return drawCut();
       return applySel((x) => { x.beginPath(); d.pts.forEach((pt, i) => { const [a, b] = rp({ x: pt[0], y: pt[1] }); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.closePath(); x.fill(); }); }
@@ -1322,7 +1417,7 @@ DZ.edit = async (id) => {
       <div class="seg dz-ctools">${[['box', '▭ Box'], ['ellipse', '◯ Ellipse'], ['lasso', '✎ Lasso'], ['pen', '✒ Pen'], ['color', '◉ Colour']].map(([t, n]) => `<button data-ctool="${t}" class="${T === t ? 'on' : ''}">${n}</button>`).join('')}</div>
       <div class="seg" style="margin:6px 0">${[['new', 'New'], ['add', 'Add'], ['sub', 'Take away']].map(([m, n]) => `<button data-cmode="${m}" class="${copt.mode === m ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
       <p class="muted" style="font-size:12px;margin:0 0 6px">${copt.moving ? 'Drag on the design to move the selection outline.' : T === 'color' ? 'Tap a colour on the item: every part close to it is selected.' : T === 'lasso' ? 'Draw round the part you want.' : T === 'pen' ? 'Click for corners, drag for curves; click the first point to close and select.' : 'Drag across the part you want.'}</p>
-      ${T === 'lasso' ? slider('c:lazy', 'Smoothing', 0, 100, 1, copt.lazy, v => v + '%') : ''}
+      ${T === 'lasso' ? slider('c:lazy', 'Smoothing', 0, 100, 1, copt.lazy, v => v + '%') + holdUI() : ''}
       ${T === 'color' ? slider('c:tol', 'Colour range', 0, 100, 1, copt.tol, v => v + '%') : ''}
       ${slider('c:feather', 'Feather (soft edge)', 0, 80, 1, copt.feather, v => v + ' px')}
       <div class="dz-combine" style="margin-bottom:10px"><button class="btn small" data-cut="all">Select all</button><button class="btn small" data-cut="invert" ${cut.any ? '' : 'disabled'}>Invert</button>
@@ -1665,7 +1760,7 @@ DZ.edit = async (id) => {
   const PEN_CLOSE = 12, PEN_DEAD = 5;
   const popt = (() => { try { return { mode: 'own', ...JSON.parse(Settings.get('dz_pen_tool', '{}')) }; } catch { return { mode: 'own' }; } })();
   let penLast = null;   // the shape the pen just closed, for Add / Subtract afterwards
-  const startPen = () => { endCrop(); endCut(); endNodes(); endCont(); penOn = true; sel = null; picks = new Set(); picking = false; placeSel(); drawSide(); drawPen(); };
+  const startPen = () => { endCrop(); endCut(); endNodes(); endCont(); endPencil(); penOn = true; sel = null; picks = new Set(); picking = false; placeSel(); drawSide(); drawPen(); };
   function endPen() { if (!penOn && !pen) return; if (pen && !pen.forCut && pen.nodes.length >= 2) penFinish(true); penOn = false; pen = null; penLast = null; drawPen(); }
   const sNear = (a, b) => Math.hypot((a.x - b.x) * k, (a.y - b.y) * k);
   // Page-space nodes into a node shape (its box fitted round the curve).
@@ -1793,7 +1888,9 @@ DZ.edit = async (id) => {
     const oc = $('#dz-pencv'); if (!oc) return;
     const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
     if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
-    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !pen; if (!pen?.nodes.length) return;
+    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !pen && !stroke;
+    if (stroke) return drawStroke(x);
+    if (!pen?.nodes.length) return;
     const N = pen.nodes, S = (q) => [q.x * k, q.y * k];
     x.lineWidth = 1.6; x.strokeStyle = '#1fb6a6'; x.beginPath(); x.moveTo(...S(N[0]));
     for (let i = 1; i < N.length; i++) { const a = N[i - 1], b = N[i]; x.bezierCurveTo((a.x + a.ox) * k, (a.y + a.oy) * k, (b.x + b.ix) * k, (b.y + b.iy) * k, b.x * k, b.y * k); }
@@ -1827,6 +1924,86 @@ DZ.edit = async (id) => {
         Click the last point: the next part starts straight. Backspace: undo a point. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>`;
   };
   addEventListener('keyup', function penKeys(e) { if (!document.body.contains(el)) return removeEventListener('keyup', penKeys); if (e.key === ' ') spaceHeld = false; });
+  /* ---------- Hold to snap (pencil and lasso) ----------
+     Draw a shape roughly and hold still: after the hold time it becomes the line, circle, rectangle, triangle or
+     polygon it looks like. Keep holding and move to resize it about its middle; let go to keep it. */
+  const pcl = (() => { try { return { lazy: 20, smooth: 4, close: true, mode: 'own', hold: true, ms: 420, ...JSON.parse(Settings.get('dz_pencil', '{}')) }; } catch { return { lazy: 20, smooth: 4, close: true, mode: 'own', hold: true, ms: 420 }; } })();
+  const savePcl = () => Settings.set('dz_pencil', JSON.stringify(pcl));
+  const holdWatch = (st, p, fire) => {
+    if (!pcl.hold || st.snap) return;
+    if (st.hp && Math.hypot((p.x - st.hp.x) * k, (p.y - st.hp.y) * k) < 3) return;   // still enough: the timer keeps running
+    st.hp = p; clearTimeout(st.ht); st.ht = setTimeout(fire, pcl.ms);
+  };
+  const holdStart = (g, p) => { const S = dzSample(g.subs, 24); let cx = 0, cy = 0; for (const q of S) { cx += q.x; cy += q.y; } cx /= S.length; cy /= S.length;
+    return { g, base: JSON.parse(JSON.stringify(g.subs)), cx, cy, d0: Math.max(1, Math.hypot(p.x - cx, p.y - cy)), cur: S }; };
+  const holdScale = (sn, p) => { const f = Math.max(0.05, Math.hypot(p.x - sn.cx, p.y - sn.cy) / sn.d0);
+    sn.g.subs = sn.base.map(sp => ({ closed: sp.closed, nodes: sp.nodes.map(n => ({ ...n, x: sn.cx + (n.x - sn.cx) * f, y: sn.cy + (n.y - sn.cy) * f, ix: n.ix * f, iy: n.iy * f, ox: n.ox * f, oy: n.oy * f })) }));
+    sn.cur = dzSample(sn.g.subs, 24); };
+  const holdUI = () => `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><label class="toggle" style="display:inline-flex"><input type="checkbox" data-holdon ${pcl.hold ? 'checked' : ''}><span>Hold to snap</span></label></div>
+    ${pcl.hold ? slider('h:ms', 'Hold time', 150, 1500, 10, pcl.ms, v => v + ' ms') : ''}`;
+  /* ---------- Pencil ----------
+     Freehand drawing that becomes a node shape: Steady makes the line trail the pen on a string so wobbles don't
+     show; Smoothing sets how closely the curve follows what was drawn (higher = fewer nodes, smoother). A stroke
+     that comes back to its start closes itself. Each stroke can be its own, add to what it touches, or cut
+     what's under it (those always close). Hold still to snap to a shape. N switches it on and off. */
+  const startPencil = () => { endCrop(); endCut(); endNodes(); endCont(); endPen(); pclOn = true; sel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
+  function endPencil() { if (!pclOn) return; pclOn = false; if (stroke) clearTimeout(stroke.ht); stroke = null; drawPen(); }
+  const pclDown = (e) => {
+    if (Settings.get('dz_pen', 'any') === 'pen' && e.pointerType === 'touch') return;   // stylus only: fingers move the view
+    e.dzHit = true; e.preventDefault(); page.setPointerCapture(e.pointerId);
+    const p = toPage(e); stroke = { pts: [p], lp: p }; drawPen();
+  };
+  const pclMove = (e) => {
+    const d = stroke, p = toPage(e);
+    if (pts.size > 1) { clearTimeout(d.ht); stroke = null; return drawPen(); }
+    if (d.snap) { holdScale(d.snap, p); return drawPen(); }
+    const L = pcl.lazy * 0.6 / k, dx = p.x - d.lp.x, dy = p.y - d.lp.y, dist = Math.hypot(dx, dy);
+    if (dist > L) { const t = (dist - L) / dist; d.lp = { x: d.lp.x + dx * t, y: d.lp.y + dy * t }; const last = d.pts.at(-1); if (Math.hypot(d.lp.x - last.x, d.lp.y - last.y) * k > 1.2) d.pts.push(d.lp); }
+    d.cur = L ? p : null;
+    holdWatch(d, p, () => { if (!stroke) return; const g = dzGuess(stroke.pts); if (!g) return; stroke.snap = holdStart(g, p); drawPen(); toast(g.label + ': keep holding and move to resize.', 2500); });
+    drawPen();
+  };
+  const pclUp = async () => {
+    const d = stroke; stroke = null; clearTimeout(d.ht); drawPen();
+    let sub;
+    const forceClose = pcl.mode !== 'own';
+    if (d.snap) sub = d.snap.g.subs[0];
+    else {
+      if (d.pts.length < 2) return;
+      const D = Math.hypot(Math.max(...d.pts.map(q => q.x)) - Math.min(...d.pts.map(q => q.x)), Math.max(...d.pts.map(q => q.y)) - Math.min(...d.pts.map(q => q.y)));
+      if (D * k < 4) return;
+      let len = 0; for (let i = 1; i < d.pts.length; i++) len += Math.hypot(d.pts[i].x - d.pts[i - 1].x, d.pts[i].y - d.pts[i - 1].y);
+      const gap = Math.hypot(d.pts.at(-1).x - d.pts[0].x, d.pts.at(-1).y - d.pts[0].y), loop = pcl.close && gap < D * 0.2 && len > D * 1.5;
+      sub = dzFitStroke(d.pts, pcl.smooth / k, loop || forceClose); if (!sub) return;
+    }
+    if (forceClose && sub.nodes.length > 2) sub.closed = true;
+    const style = sub.closed ? { fill: '@accent', stroke: 'none', sw: 0 } : { fill: 'none', stroke: '@accent', sw: Math.max(2, Math.round(Math.min(doc.w, doc.h) * 0.006)) };
+    const v = vecFromPage([sub], { ...style, name: d.snap ? d.snap.g.label : 'Drawing' });
+    doc.layers.push(v); changed(true);
+    if (forceClose && sub.closed) { penLast = v.id; await penCombine(pcl.mode); penLast = null; }
+    drawSide();
+  };
+  function drawStroke(x) {
+    const d = stroke; if (!d) return;
+    const P = d.snap ? d.snap.cur : d.pts; if (!P.length) return;
+    x.lineWidth = d.snap ? 2 : 1.8; x.strokeStyle = d.snap ? '#2ecc71' : '#1fb6a6'; x.lineJoin = x.lineCap = 'round'; x.beginPath();
+    P.forEach((q, i) => i ? x.lineTo(q.x * k, q.y * k) : x.moveTo(q.x * k, q.y * k)); x.stroke();
+    if (d.cur && !d.snap) { x.setLineDash([2, 3]); x.strokeStyle = 'rgba(255,255,255,.6)'; x.beginPath(); x.moveTo(d.lp.x * k, d.lp.y * k); x.lineTo(d.cur.x * k, d.cur.y * k); x.stroke(); x.setLineDash([]); }
+  }
+  const pclAct = (a) => {
+    if (a === 'done') { endPencil(); return drawSide(); }
+    if (['own', 'add', 'sub'].includes(a)) { pcl.mode = a; savePcl(); return drawSide(); }
+  };
+  const pclPanel = () => `<div class="dz-lh"><b>Pencil</b><button class="btn small primary" data-pcl="done">Done</button></div>
+    <p class="muted" style="font-size:12px;margin:0 0 8px">Draw freehand. Hold still before lifting to snap to a line, circle, rectangle, triangle or polygon, then move to resize it.</p>
+    ${slider('p:lazy', 'Steady', 0, 100, 1, pcl.lazy, v => v + '%')}
+    ${slider('p:smooth', 'Smoothing', 1, 40, 0.5, pcl.smooth, v => v + ' px')}
+    <label class="toggle" style="display:inline-flex;margin:2px 0 6px"><input type="checkbox" data-pclclose ${pcl.close ? 'checked' : ''}><span>A loop closes itself</span></label>
+    ${holdUI()}
+    <div class="lbl" style="margin-top:6px">Each stroke</div>
+    <div class="seg" style="margin-bottom:8px">${[['own', 'Is its own'], ['add', 'Adds to what it touches'], ['sub', 'Cuts what\u2019s under it']].map(([v, nm]) =>
+      `<button data-pcl="${v}" class="${pcl.mode === v ? 'on' : ''}" style="flex:1;font-size:11px">${nm}</button>`).join('')}</div>
+    <p class="muted" style="font-size:11px;margin:0">Adding and cutting always close the stroke. Strokes are node shapes: reshape them with Edit nodes. N or Esc leaves the pencil.</p>`;
   const saveRef = async (ids) => {
     const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
     const title = prompt('Name for the reference:', list.length === 1 ? layerName(list[0]) : name); if (title == null) return;
@@ -1976,6 +2153,7 @@ DZ.edit = async (id) => {
     cancelPress();
     if (pinch || pts.size > 1) return;
     if (penOn) return penDown(e);
+    if (pclOn) return pclDown(e);
     if (cut) return cutDown(e);
     if (nodes) return nodeDown(e);
     if (cont) return contDown(e);
@@ -2003,6 +2181,7 @@ DZ.edit = async (id) => {
   });
   page.addEventListener('pointermove', (e) => {
     if (pen) return penMove(e);
+    if (stroke) return pclMove(e);
     if (cutDrag) return cutMove(e);
     if (ndrag) return nodeMove(e);
     if (cdrag) return contMove(e);
@@ -2059,7 +2238,7 @@ DZ.edit = async (id) => {
     }
     redraw();
   });
-  const end = () => { cancelPress(); if (pen?.drag) { pen.drag = null; return drawPen(); } if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
+  const end = () => { cancelPress(); if (pen?.drag) { pen.drag = null; return drawPen(); } if (stroke) return pclUp(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
     if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
     changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
@@ -2067,6 +2246,8 @@ DZ.edit = async (id) => {
     if (!document.body.contains(el)) return removeEventListener('keydown', keys);
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(e.shiftKey ? 1 : -1); }
+    if (pclOn && !stroke && e.key === 'Escape') { e.preventDefault(); endPencil(); return drawSide(); }
+    if (pclOn) { if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) { endPencil(); drawSide(); } return; }
     if (penOn || pen) {
       if (e.key === ' ') { e.preventDefault(); spaceHeld = true; return; }
       if (e.key === 'Enter') { e.preventDefault(); return penFinish(); }
@@ -2082,6 +2263,7 @@ DZ.edit = async (id) => {
       const k1 = e.key.toLowerCase();
       if (k1 === 'o' && targets().length) { e.preventDefault(); return startCont(); }
       if (k1 === 'p') { e.preventDefault(); return startPen(); }
+      if (k1 === 'n') { e.preventDefault(); return startPencil(); }
       if (k1 === 'a' && layer()?.t === 'shape' && layer().shape !== 'line') { e.preventDefault(); return startNodes(layer()); }
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
@@ -2118,6 +2300,7 @@ DZ.edit = async (id) => {
     if (d('mact')) return multiAct(d('mact'));
     if (d('bool')) return boolOp(d('bool'));
     if (d('pact')) return penAct(d('pact'));
+    if (d('pcl')) return pclAct(d('pcl'));
     if (d('cont')) return contAct(d('cont'));
     if (d('align')) return align(d('align'));
     const row = t.closest('[data-lid]');
@@ -2146,6 +2329,7 @@ DZ.edit = async (id) => {
       if (a === 'heading') return add({ t: 'text', text: 'Heading', size: Math.round(doc.h * 0.1), font: '@1', c: '@fg', al: 'center', lh: 1.1, ...center(doc.w * 0.7, doc.h * 0.11) });
       if (a === 'logo') { if (!Settings.get('studio_logo_ref')) toast('Add your logo in Settings › Profile; it shows here once added.', 5000); const s = Math.min(doc.w, doc.h) * 0.3; return add({ t: 'image', logo: true, ...center(s, s) }); }
       if (a === 'pen') return startPen();
+      if (a === 'pencil') return startPencil();
       if (a === 'image') { panel = panel === 'image' ? null : 'image'; return drawSide(); }
       panel = panel === a ? null : a; return drawSide();
     }
@@ -2320,6 +2504,11 @@ DZ.edit = async (id) => {
     if (t.dataset.v) { doc.vals[t.dataset.v] = t.value; return changed(); }
     if (t.dataset.cpick) { const kk = t.dataset.cpick; if (kk === 'bg') doc.bg.c = t.value; else if (kk === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = t.value; } else if (l) l[kk] = t.value; return changed(); }
     if (t.hasAttribute('data-contd') && cont) { const v = dzFromU(doc, +t.value); if (Number.isFinite(v)) { copt2.d = v; saveC2(); contCalc(); } return; }
+    if (/^[ph]:/.test(key || '')) {   // pencil and hold-to-snap settings
+      const kk = key.slice(2); pcl[kk] = +t.value; savePcl();
+      const b = t.closest('.dz-sl')?.querySelector('b'); if (b) b.textContent = kk === 'ms' ? t.value + ' ms' : kk === 'smooth' ? t.value + ' px' : t.value + '%';
+      return;
+    }
     if (/^c:/.test(key || '')) {   // selection settings
       const kk = key.slice(2); copt[kk] = +t.value; saveCopt();
       const b = t.closest('.dz-sl')?.querySelector('b'); if (b) b.textContent = kk === 'feather' ? t.value + ' px' : t.value + '%';
@@ -2344,6 +2533,8 @@ DZ.edit = async (id) => {
   side.addEventListener('change', async (e) => {
     const t = e.target, l = layer();
     if (t.hasAttribute('data-contkeep')) { copt2.keep = t.checked; saveC2(); return; }
+    if (t.hasAttribute('data-holdon')) { pcl.hold = t.checked; savePcl(); return drawSide(); }
+    if (t.hasAttribute('data-pclclose')) { pcl.close = t.checked; savePcl(); return; }
     if (t.dataset.cpick) return drawSide();
     if (t.id === 'dz-texfile' && l) {
       const f = t.files[0]; t.value = ''; if (!f) return;
