@@ -1,6 +1,6 @@
 /* Offline cache for the app shell. Bump VERSION whenever shipped files change. */
-const VERSION = 'inkforge-v101';
-const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'reel.js', 'design.js', 'tour.js', 'icon.svg', 'manifest.webmanifest',
+const VERSION = 'inkforge-v102';
+const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'reel.js', 'design.js', 'tour.js', 'tattoo.js', 'icon.svg', 'manifest.webmanifest',
   'lib/sqlite3.js', 'lib/sqlite3.wasm', 'lib/db-worker.js', 'lib/stencil-worker.js', 'lib/clipper.js', 'img/pain-chart.png', 'quote.html'];
 
 self.addEventListener('install', e => {

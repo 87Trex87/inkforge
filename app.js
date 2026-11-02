@@ -313,6 +313,12 @@ const MIGRATIONS = [
   `CREATE TABLE stencils (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      name TEXT, src_ref TEXT NOT NULL, stencil_ref TEXT NOT NULL, thumb_ref TEXT, w INTEGER, h INTEGER, cm REAL, params TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));`,
+  // tattoo simulator (experimental, see tattoo.js): one picture per fixed layer, the page in cm and the skin tone
+  `CREATE TABLE tattoo_pieces (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     name TEXT, w_cm REAL NOT NULL, h_cm REAL NOT NULL, skin TEXT, meta TEXT,
+     stencil_ref TEXT, line_ref TEXT, shadow_ref TEXT, mid_ref TEXT, light_ref TEXT, high_ref TEXT, thumb_ref TEXT,
      created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
@@ -530,6 +536,7 @@ const Media = {
       UNION ALL SELECT 1 FROM ref_images WHERE photo_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM assets WHERE svg_ref = ?1
       UNION ALL SELECT 1 FROM stencils WHERE src_ref = ?1 OR stencil_ref = ?1 OR thumb_ref = ?1
+      UNION ALL SELECT 1 FROM tattoo_pieces WHERE ?1 IN (stencil_ref, line_ref, shadow_ref, mid_ref, light_ref, high_ref, thumb_ref)
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
@@ -601,6 +608,7 @@ function toast(msg, ms = 2600) {
 
 /* ---------- Views ---------- */
 const ICON = {
+  needle: '<svg viewBox="0 0 24 24"><path d="M3 21l6-6"/><path d="M9 15l3-3 3 3-3 3zM12 12l7-7 2 2-7 7"/><path d="M17 3l4 4"/></svg>',
   stencil: '<svg viewBox="0 0 24 24"><path d="M4 20c4-1 6-5 8-9s5-6 8-7"/><path d="M4 4l16 16" stroke-dasharray="2 3"/></svg>',
   portfolio: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>',
   forms: '<svg viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M8 13h8M8 17h5"/></svg>',
@@ -1187,7 +1195,8 @@ const VIEWS = {
         tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel'),
         tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs'),
         tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend'),
-        tile('split', 'Split for printing', 'Big stencils over several pages to tape together', false, 'split')])
+        tile('split', 'Split for printing', 'Big stencils over several pages to tape together', false, 'split'),
+        tile('needle', 'Tattoo simulator', 'Experimental: tattoo in ink on skin with needle groupings', false, 'tattoo')])
       + tileGroup('Your work', [
         tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
         tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')])
@@ -1749,6 +1758,15 @@ const VIEWS = {
       reelCanvasBind($('#reel-cv'));
       reelTimeline(); reelPanel();
       document.fonts.ready.then(() => reelRender());
+    }
+  },
+  tattoo: {   // experimental: everything else is in tattoo.js, loaded only here
+    title: (id) => id ? 'Tattoo' : 'Tattoo simulator',
+    render: () => '<div id="tt"></div>',
+    async mount(id) {
+      if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const s = document.createElement('script'); s.src = 'tattoo.js'; s.onload = s.onerror = res; document.head.appendChild(s); });
+      if (typeof TT === 'undefined') return toast('Could not load the tattoo simulator.');
+      const el = $('#tt'); if (!el) return; id ? TT.open(el, +id) : TT.list(el);
     }
   },
   stencil: {
@@ -2713,6 +2731,7 @@ const MERGE_SECTIONS = [
   ['references', 'References', 'Pictures collected for ideas, by category'],
   ['assets', 'Assets', 'Vector stickers and shapes (SVG), by category'],
   ['stencils', 'Stencils', 'Saved stencils with the pictures they were made from'],
+  ['tattoo', 'Tattoo simulator', 'Pieces drawn in the tattoo simulator'],
   ['inventory', 'Inventory', 'Stock items and stock takes'],
   ['rules', 'Rule book', 'Your studio rules'],
   ['quotes', 'Saved quotes', 'Quotes saved to finish or book later'],
@@ -2739,12 +2758,13 @@ const MERGE_TABLES = {
   ref_images: { section: 'references', refs: ['photo_ref', 'thumb_ref'] },
   assets: { section: 'assets', refs: ['svg_ref'] },
   stencils: { section: 'stencils', refs: ['src_ref', 'stencil_ref', 'thumb_ref'] },
+  tattoo_pieces: { section: 'tattoo', refs: ['stencil_ref', 'line_ref', 'shadow_ref', 'mid_ref', 'light_ref', 'high_ref', 'thumb_ref'] },
   design_assets: { section: 'designs', fk: { design_id: 'designs' }, refs: ['ref'] },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
-  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils'];
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
@@ -7207,7 +7227,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
   quote: 'more', 'quote-cal': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
-  reel: 'studio', stencil: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
+  reel: 'studio', stencil: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
 function render() {
