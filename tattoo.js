@@ -176,11 +176,12 @@ TT.open = async (el, id) => {
       if (erase) { D[i + 3] = Math.floor(D[i + 3] * (1 - a)); continue; }
       let keep = 1, lw = 0, dw = 0;   // the ink already here, in every layer: how saturated, and how light
       for (const key of INK) { const E = imgd[key].data, d2 = E[i + 3] / 255; if (!d2) continue; keep *= 1 - d2; lw += lumOf(E, i) * d2; dw += d2; }
-      const block = (1 - keep) * (dw ? Math.min(1, (lc + 0.03) / (lw / dw + 0.03)) : 0);
-      let add = a * (1 - block); const d0 = D[i + 3] / 255;
+      // lighter ink over saturated ink: mostly held back, but never fully, and it still tints what's there a little
+      const block = Math.pow(1 - keep, 1.4) * (dw ? Math.min(1, (lc + 0.03) / (lw / dw + 0.03)) : 0) * 0.88;
+      let add = a * (1 - block); const d0 = D[i + 3] / 255, tint = add + a * block * 0.12;
       if (T.str < 1) { add *= 0.35 + 0.65 * T.str; const sat = 1 - keep; if (sat > T.str) add *= 0.1 * T.str; }   // a thin wash builds slowly past its own tone
       if (add <= 0.0005) continue;
-      if (d0 > 0.004) { const t = add / (d0 + add); for (let c = 0; c < 3; c++) D[i + c] = 255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)); }
+      if (d0 > 0.004) { const t = Math.min(0.85, tint / (d0 + tint)); for (let c = 0; c < 3; c++) D[i + c] = 255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)); }
       else { D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; }
       D[i + 3] = Math.min(255, Math.floor(D[i + 3] + add * 255 + Math.random()));
     }
