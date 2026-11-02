@@ -904,6 +904,14 @@ TT.open = async (el, id) => {
   };
   $('#tt-save').onclick = () => save();
   $('#tt-back').onclick = async () => { if (st.dirty) await save(true); location.hash = 'tattoo'; };
+  /* Autosave: leaving by any route (the device's back button too), the app going to the background, and every
+     40 s of work, so a slip never loses a piece. */
+  let saving = null;
+  const autosave = () => { if (!st.dirty || saving || pen) return; saving = save(true).catch(() => {}).finally(() => { saving = null; }); };
+  const onHash = () => { if (location.hash !== '#tattoo/' + id) { removeEventListener('hashchange', onHash); document.removeEventListener('visibilitychange', onVis); clearInterval(autoT); autosave(); } };
+  const onVis = () => { if (document.visibilityState === 'hidden') autosave(); };
+  const autoT = setInterval(() => { if (!document.body.contains(el)) return onHash(); autosave(); }, 40000);
+  addEventListener('hashchange', onHash); document.addEventListener('visibilitychange', onVis);
   $('#tt-name').onchange = () => { st.dirty = true; };
   $('#tt-undo').onclick = undo; $('#tt-redo').onclick = redo;
   const VIEWS = [['work', ''], ['fresh', 'Fresh'], ['healed', 'Healed'], ['aged', '10 yrs']];
