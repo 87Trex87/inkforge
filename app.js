@@ -298,7 +298,9 @@ const MIGRATIONS = [
      w INTEGER, h INTEGER,
      created_at TEXT NOT NULL DEFAULT (datetime('now')),
      updated_at TEXT NOT NULL DEFAULT (datetime('now')));
-   CREATE INDEX idx_ref_cat ON ref_images (category);`
+   CREATE INDEX idx_ref_cat ON ref_images (category);`,
+  // inventory: how far the + and - buttons move the stock (1 = whole numbers, or 0.5, 0.25, 0.1)
+  `ALTER TABLE inventory_items ADD COLUMN step REAL NOT NULL DEFAULT 1;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -1503,8 +1505,10 @@ const VIEWS = {
       $('#inv-list').addEventListener('click', async (e) => {
         const b = e.target.closest('[data-step]'); if (!b) return;
         e.preventDefault();
-        const id = +b.dataset.id;
-        await DB.run(`UPDATE inventory_items SET qty = max(0, qty + ?), updated_at = datetime('now') WHERE id = ?`, [+b.dataset.step, id]);
+        const id = +b.dataset.id, it = await DB.one('SELECT qty, step FROM inventory_items WHERE id = ?', [id]); if (!it) return;
+        const st = +it.step || 1, n = it.qty / st, up = +b.dataset.step > 0;
+        const q = Math.max(0, +((up ? Math.floor(n + 1e-6) + 1 : Math.ceil(n - 1e-6) - 1) * st).toFixed(4));
+        await DB.run(`UPDATE inventory_items SET qty = ?, updated_at = datetime('now') WHERE id = ?`, [q, id]);
         renderInventory();
       });
       renderInventory();
@@ -1528,7 +1532,9 @@ const VIEWS = {
           <label class="field"><span>Category</span><input class="in" name="category" list="inv-cats" value="${esc(it.category ?? '')}">
             <datalist id="inv-cats">${sugg.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
           ${inp('unit', 'Unit', 'text', 'placeholder="box, bottle, pack"')}
-        </div></section>
+        </div>
+        <label class="field"><span>Decimal ${help('How far + and − move the stock on the inventory list. Off counts in whole numbers.')}</span>
+          <select class="in" name="step">${INV_STEPS.map(([v, l]) => `<option value="${v}" ${(+it.step || 1) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></section>
         <section class="fsec"><h3>Stock</h3>
         <div class="two">
           ${inp('qty', 'In stock', 'number', 'inputmode="decimal" min="0" step="any"')}
@@ -1559,8 +1565,8 @@ const VIEWS = {
         e.preventDefault();
         const d = Object.fromEntries(new FormData(f));
         const n = (v) => v === '' ? null : +v, s = (v) => v.trim() || null;
-        const vals = [d.name.trim(), s(d.category), s(d.unit), +d.qty || 0, +d.min_qty || 0, s(d.supplier), n(d.cost), s(d.notes), d.active ? 1 : 0];
-        const cols = 'name, category, unit, qty, min_qty, supplier, cost, notes, active';
+        const vals = [d.name.trim(), s(d.category), s(d.unit), +d.qty || 0, +d.min_qty || 0, s(d.supplier), n(d.cost), s(d.notes), d.active ? 1 : 0, +d.step || 1];
+        const cols = 'name, category, unit, qty, min_qty, supplier, cost, notes, active, step';
         if (it.id) await DB.run(`UPDATE inventory_items SET ${cols.split(', ').map(c => c + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, it.id]);
         else await DB.run(`INSERT INTO inventory_items (${cols}) VALUES (${vals.map(() => '?').join(', ')})`, vals);
         Dirty.set(false); toast('Saved.'); location.replace('#inventory');
@@ -1581,7 +1587,7 @@ const VIEWS = {
           cat = i.category;
           return head + `<div class="c-row"><span class="c-main"><span class="c-n">${esc(i.name)}</span>
             <span class="muted c-sub">Expected ${fmtQty(i.qty)}${i.unit ? ' ' + esc(i.unit) : ''}</span></span>
-            <input class="in count-in" type="number" inputmode="decimal" min="0" step="any" data-id="${i.id}" value="${fmtQty(i.qty)}"></div>`;
+            <input class="in count-in" type="number" inputmode="decimal" min="0" step="${+i.step && i.step < 1 ? i.step : 'any'}" data-id="${i.id}" value="${fmtQty(i.qty)}"></div>`;
         }).join('') + `</div>
         <label class="field"><span>Notes</span><input class="in" id="stk-notes" placeholder="optional"></label>
         <div class="form-foot row" style="background:var(--bg)">
@@ -5323,6 +5329,7 @@ async function statsCsv() {
 /* ---------- Inventory & rules helpers ---------- */
 const INV = { q: '', showOff: false };
 const fmtQty = (n) => +(+n).toFixed(2);
+const INV_STEPS = [[1, 'Off (1, 2, 3)'], [0.5, 'Halves (0.5)'], [0.25, 'Quarters (0.25)'], [0.1, 'Fine (0.1)']];
 
 async function renderInventory() {
   const el = $('#inv-list'); if (!el) return;
@@ -5340,9 +5347,9 @@ async function renderInventory() {
       <span class="c-main"><span class="c-n">${esc(i.name)}</span>
         <span class="muted c-sub">${esc([i.category, i.supplier].filter(Boolean).join(' · ') || ' ')}</span></span>
       <span class="stepper">
-        <button class="mini" data-step="-1" data-id="${i.id}" aria-label="One less">−</button>
+        <button class="mini" data-step="-1" data-id="${i.id}" aria-label="Less">−</button>
         <b>${fmtQty(i.qty)}<small>${esc(i.unit || '')}</small></b>
-        <button class="mini" data-step="1" data-id="${i.id}" aria-label="One more">+</button></span></a>`;
+        <button class="mini" data-step="1" data-id="${i.id}" aria-label="More">+</button></span></a>`;
     el.innerHTML = (low.length ? `<div class="letter" style="color:var(--red)">Running low (${low.length})</div><div class="card list">${low.map(row).join('')}</div>` : '')
       + (rows.length > low.length ? `<div class="letter">In stock</div><div class="card list">${rows.filter(r => r.qty > r.min_qty).map(row).join('')}</div>` : '')
       + (off.length && INV.showOff ? `<div class="letter">Inactive (${off.length})</div><div class="card list inv-off">${off.map(i => `<a class="c-row" href="#inv-edit/${i.id}">
