@@ -141,7 +141,7 @@ TT.open = async (el, id) => {
   let meta = {}; try { meta = JSON.parse(row.meta || '{}'); } catch {}
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0 }, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
-    stretch: meta.stretch ?? 75, view: 'work', viewC: null, magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt };
+    stretch: meta.stretch ?? 75, view: 'work', viewC: null, magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt, rot: meta.rot || 0 };
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
      saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
      spot; ink lighter than what's there is held back in proportion to how saturated it is (a light value can't take
@@ -276,7 +276,13 @@ TT.open = async (el, id) => {
     cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); cv.style.width = r.width + 'px'; cv.style.height = r.height + 'px';
     fitK = Math.min((r.width - 72) / W, (r.height - 110) / H); k = fitK * z; paint();
   };
-  const org = () => { const r = stage.getBoundingClientRect(); return { ox: (r.width - W * k) / 2 + 26 + vx, oy: (r.height - 70 - H * k) / 2 + vy, r }; };
+  /* View: the page's middle sits at C on screen, turned by st.rot and scaled by k. Two fingers move, zoom and
+     turn it together (the spot under them stays put), snapping to every 90 degrees. */
+  const org = () => { const r = stage.getBoundingClientRect(); return { cx: r.width / 2 + 26 + vx, cy: (r.height - 70) / 2 + vy, r }; };
+  const toScreen = (p) => { const { cx, cy } = org(), c = Math.cos(st.rot), sn = Math.sin(st.rot), dx = (p.x - W / 2) * k, dy = (p.y - H / 2) * k; return { x: cx + dx * c - dy * sn, y: cy + dx * sn + dy * c }; };
+  const fromScreen = (sx, sy) => { const { cx, cy } = org(), c = Math.cos(st.rot), sn = Math.sin(st.rot), dx = sx - cx, dy = sy - cy; return { x: (dx * c + dy * sn) / k + W / 2, y: (-dx * sn + dy * c) / k + H / 2 }; };
+  // Put page point p under screen point (sx, sy) with the current zoom and turn.
+  const pinTo = (p, sx, sy) => { const s0 = toScreen(p); vx += sx - s0.x; vy += sy - s0.y; };
   /* Previews: fresh = redness round the ink; healed = settled a little softer; 10 years = softer edges, faded
      and duller colour. Made at page size from the layers (without the stencil). */
   const viewOf = (mode) => {
@@ -295,9 +301,9 @@ TT.open = async (el, id) => {
     return c;
   };
   const paint = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
-    const dpr = cv.width / (stage.clientWidth || 1), { ox, oy } = org();
+    const dpr = cv.width / (stage.clientWidth || 1), { cx, cy } = org();
     x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
-    x.setTransform(dpr * k, 0, 0, dpr * k, dpr * ox, dpr * oy);
+    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.translate(cx, cy); x.rotate(st.rot); x.scale(k, k); x.translate(-W / 2, -H / 2);
     x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 24; x.drawImage(skin, 0, 0); x.shadowBlur = 0;
     if (st.view !== 'work') { st.viewC ||= viewOf(st.view); x.drawImage(st.viewC, 0, 0); }
     else { if (trDirty && performance.now() - trT < 120) setTimeout(paint, 130); else if (trDirty) buildTrauma();
@@ -307,11 +313,11 @@ TT.open = async (el, id) => {
         x.drawImage(L[key], 0, 0); }
       x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; skinOver(x); }
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
-    $('#tt-zl') && ($('#tt-zl').textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%');
+    const deg = Math.round(((st.rot * 180 / Math.PI) % 360 + 360) % 360);
+    $('#tt-zl') && ($('#tt-zl').textContent = Math.abs(z - 1) < 0.01 && !vx && !vy && !deg ? 'Fit' : Math.round(z * 100) + '%' + (deg ? ' · ' + deg + '°' : ''));
   }); };
-  const zoomAt = (nz, px, py) => { const { ox, oy } = org(), pxp = (px - ox) / k, pyp = (py - oy) / k; z = Math.max(0.5, Math.min(12, nz)); k = fitK * z;
-    const n = org(); vx += px - (n.ox + pxp * k); vy += py - (n.oy + pyp * k); paint(); };
-  const toPage = (e) => { const { ox, oy, r } = org(); return { x: (e.clientX - r.left - ox) / k, y: (e.clientY - r.top - oy) / k }; };
+  const zoomAt = (nz, px, py) => { const p = fromScreen(px, py); z = Math.max(0.5, Math.min(12, nz)); k = fitK * z; pinTo(p, px, py); paint(); };
+  const toPage = (e) => { const r = stage.getBoundingClientRect(); return fromScreen(e.clientX - r.left, e.clientY - r.top); };
 
   /* ---------- Needle engine ---------- */
   let cal = TT.cal();
@@ -331,7 +337,7 @@ TT.open = async (el, id) => {
   let nk = TT_NEEDLES.find(n => n.id === st.needle)?.kind;
   const isMag = () => ['mag', 'soft'].includes(TT_NEEDLES.find(n => n.id === st.needle)?.kind);
   const rowAng = (ev) => { const tx = ev?.tiltX || 0, ty = ev?.tiltY || 0;
-    return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 : st.magAng * Math.PI / 180; };
+    return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 - st.rot : st.magAng * Math.PI / 180; };
   const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 : strokeA;
   const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); };
   /* One puncture: every needle of the grouping into the skin at p (page px, `sc` px per mm), turned to angle a.
@@ -409,7 +415,7 @@ TT.open = async (el, id) => {
     cux.setTransform(1, 0, 0, 1, 0, 0); cux.clearRect(0, 0, cur.width, cur.height);
     if (e) curAt = { x: e.clientX - r.left, y: e.clientY - r.top, ev: e };
     if (!curAt || pinch || pan || st.tool === 'erase' && false) return;
-    const s = k * mm, a = turnOf(pen?.a || 0, curAt.ev), ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
+    const s = k * mm, a = turnOf(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
     cux.setTransform(dpr, 0, 0, dpr, 0, 0); cux.lineWidth = 1;
     if (isMag()) {   // the row's line, so its angle reads even when the needles are tiny on screen
       const us = lay.map(n => n.u), u0 = Math.min(...us) * s - 6, u1 = Math.max(...us) * s + 6;
@@ -427,7 +433,8 @@ TT.open = async (el, id) => {
     closePop(); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const r = stage.getBoundingClientRect();
     if (pts.size === 2) { if (pen) { hist.length && undoTo(hist.pop()); pen = null; }   // a second finger: that was a pinch, not a stroke
-      const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top, vx, vy }; return; }
+      const [a, b] = [...pts.values()], mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z, ang: Math.atan2(b.y - a.y, b.x - a.x), rot: st.rot, p: fromScreen(mx, my), snapped: null }; return; }
     cv.setPointerCapture(e.pointerId);
     const touch = e.pointerType === 'touch';
     if (space || e.button === 1 || (touch && cal.penOnly)) { pan = { x: e.clientX, y: e.clientY, vx, vy }; return; }
@@ -437,7 +444,11 @@ TT.open = async (el, id) => {
   cv.addEventListener('pointermove', (e) => {
     if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()], r = stage.getBoundingClientRect(), mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
-      vx = pinch.vx + mx - pinch.mx; vy = pinch.vy + my - pinch.my; z = pinch.z; k = fitK * z; zoomAt(pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, mx, my); return; }
+      z = Math.max(0.5, Math.min(12, pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d)); k = fitK * z;
+      let rot = pinch.rot + Math.atan2(b.y - a.y, b.x - a.x) - pinch.ang;
+      const q90 = Math.round(rot / (Math.PI / 2)) * (Math.PI / 2), near = Math.abs(rot - q90) < 7 * Math.PI / 180;   // snap at every 90 degrees
+      if (near) { rot = q90; if (pinch.snapped !== q90) { pinch.snapped = q90; navigator.vibrate?.(12); } } else pinch.snapped = null;
+      st.rot = rot; pinTo(pinch.p, mx, my); st.dirty = true; return paint(); }
     if (pan) { vx = pan.vx + e.clientX - pan.x; vy = pan.vy + e.clientY - pan.y; return paint(); }
     if (pen && e.pointerId === pen.id) strokeMove(e);
     if (e.pointerType !== 'touch') drawCur(e);
@@ -454,7 +465,7 @@ TT.open = async (el, id) => {
     if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); } };
   addEventListener('keydown', keys); addEventListener('keyup', keys);
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
-    if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
+    if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; st.rot = 0; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
 
   const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, 0, 0); syncIn(h.key);
     if (h.tr) { TR.set(h.tr); trDirty = true; } if (h.blow) bx.putImageData(h.blow, 0, 0); st.dirty = true; paint(); };
@@ -834,7 +845,7 @@ TT.open = async (el, id) => {
     const old = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [id]);
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => refs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot }), id]);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(refs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     st.dirty = false; if (!quiet) toast('Saved.');
   };
