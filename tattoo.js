@@ -103,7 +103,7 @@ TT.list = async (el) => {
   $('#tt-exam').onclick = async () => {   // carry on with an unfinished exam, or start one
     const open = rows.find(r => r.exam === 1);
     if (open) { location.hash = 'tattoo/' + open.id; return; }
-    if (!confirm('Start the apprentice exam?\n\n10 challenges, from straight lines to a finished heart. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.')) return;
+    if (!confirm('Start the apprentice exam?\n\n11 challenges, from straight lines to a finished heart. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.')) return;
     await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Apprentice exam', 18, 13, Settings.get('tt_skin', '#e2b493'), JSON.stringify({ exam: { v: 1, i: 0, res: [], started: Date.now() } })]);
     location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
   };
@@ -186,7 +186,10 @@ TT.open = async (el, id) => {
     }
     const b = dirty[T.key] ||= { x0, y0, x1, y1 }; b.x0 = Math.min(b.x0, x0); b.y0 = Math.min(b.y0, y0); b.x1 = Math.max(b.x1, x1); b.y1 = Math.max(b.y1, y1);
   };
-  const flushPig = () => { for (const key in dirty) { const b = dirty[key]; L[key].getContext('2d').putImageData(imgd[key], 0, 0, b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1); delete dirty[key]; } };
+  const flushPig = () => { let u = null;
+    for (const key in dirty) { const b = dirty[key]; L[key].getContext('2d').putImageData(imgd[key], 0, 0, b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1); delete dirty[key];
+      u = u ? { x0: Math.min(u.x0, b.x0), y0: Math.min(u.y0, b.y0), x1: Math.max(u.x1, b.x1), y1: Math.max(u.y1, b.y1) } : { ...b }; }
+    return u; };
   // One mark: into pigment (the page), or painted on a canvas (the test pad).
   const put = (cx, x, y, r, al, erase) => { if (cx.pig) return dotPig(cx, x, y, r, al, erase);
     cx.globalAlpha = al; cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill(); };
@@ -319,18 +322,26 @@ TT.open = async (el, id) => {
     }
     return c;
   };
-  const paint = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
+  /* The skin and every layer are composed once into `comp`; while tattooing only the patch the needle touched is
+     composed again, so each frame is one picture on the screen however far it is zoomed. */
+  const comp = document.createElement('canvas'); comp.width = W; comp.height = H; const cg = comp.getContext('2d');
+  let compAll = true, compR = null, pen = null;
+  const recomp = (x0, y0, w, h) => { cg.save(); cg.beginPath(); cg.rect(x0, y0, w, h); cg.clip(); cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over';
+    cg.clearRect(x0, y0, w, h); cg.drawImage(skin, 0, 0); skinUnder(cg, true);
+    for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
+      cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; cg.drawImage(L[key], 0, 0); }
+    cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); cg.restore(); };
+  const paint = (rect) => { if (rect) compR = compR ? { x0: Math.min(compR.x0, rect.x0), y0: Math.min(compR.y0, rect.y0), x1: Math.max(compR.x1, rect.x1), y1: Math.max(compR.y1, rect.y1) } : rect; else compAll = true;
+    cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
     const dpr = cv.width / (stage.clientWidth || 1), { cx, cy } = org();
     x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
     x.setTransform(dpr, 0, 0, dpr, 0, 0); x.translate(cx, cy); x.rotate(st.rot); x.scale(k, k); x.translate(-W / 2, -H / 2);
-    x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 24; x.drawImage(skin, 0, 0); x.shadowBlur = 0;
-    if (st.view !== 'work') { st.viewC ||= viewOf(st.view); x.drawImage(st.viewC, 0, 0); }
-    else { if (trDirty && performance.now() - trT < 120) setTimeout(paint, 130); else if (trDirty) buildTrauma();
-      skinUnder(x, true);
-      for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
-        x.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1); x.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply';
-        x.drawImage(L[key], 0, 0); }
-      x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; skinOver(x); }
+    x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 24; x.fillStyle = '#000'; x.fillRect(0, 0, W, H); x.shadowBlur = 0;
+    if (st.view !== 'work') { x.drawImage(skin, 0, 0); st.viewC ||= viewOf(st.view); x.drawImage(st.viewC, 0, 0); }
+    else { if (trDirty && !pen) { buildTrauma(); compAll = true; }   // the skin's redness catches up when the needle lifts
+      if (compAll) recomp(0, 0, W, H);
+      else if (compR) { const x0 = Math.max(0, Math.floor(compR.x0)), y0 = Math.max(0, Math.floor(compR.y0)); recomp(x0, y0, Math.min(W, Math.ceil(compR.x1)) - x0 + 1, Math.min(H, Math.ceil(compR.y1)) - y0 + 1); }
+      compAll = false; compR = null; x.drawImage(comp, 0, 0); }
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     const deg = Math.round(((st.rot * 180 / Math.PI) % 360 + 360) % 360);
     $('#tt-zl') && ($('#tt-zl').textContent = Math.abs(z - 1) < 0.01 && !vx && !vy && !deg ? 'Fit' : Math.round(z * 100) + '%' + (deg ? ' · ' + deg + '°' : ''));
@@ -356,7 +367,7 @@ TT.open = async (el, id) => {
   let nk = TT_NEEDLES.find(n => n.id === st.needle)?.kind;
   const isMag = () => ['mag', 'soft'].includes(TT_NEEDLES.find(n => n.id === st.needle)?.kind);
   const rowAng = (ev) => { const tx = ev?.tiltX || 0, ty = ev?.tiltY || 0;
-    return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 : st.magAng * Math.PI / 180; };
+    return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 + st.magAng * Math.PI / 180 : st.magAng * Math.PI / 180; };   // leaning: the angle is an offset on the lean
   const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 : strokeA;
   const pageTurn = (strokeA, ev) => turnOf(strokeA, ev) - (isMag() ? st.rot : 0);   // a magnum's angle is held on the screen, whatever the page's rotation
   const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); drawVolt(); };
@@ -381,7 +392,6 @@ TT.open = async (el, id) => {
     }
     cx.globalAlpha = 1;
   };
-  let pen = null;
   const strokeStart = (e) => {
     const key = st.layer; if (st.hide.has(key)) toast('That layer is hidden: show it to see what you draw.');
     if (key === 'stencil' && st.tool !== 'erase') { toast('The stencil layer holds a picture to trace. Load one from Layers.'); return false; }
@@ -433,9 +443,10 @@ TT.open = async (el, id) => {
       }
       pen.carry = t - d; pen.last = p; pen.t = ev.timeStamp;
     }
-    flushPig(); st.dirty = true; paint(); drawNeedleInk();
+    const u = flushPig(), pad = pen.foot * 2 + 4 * mm; st.dirty = true; drawNeedleInk();
+    paint(u && pen.cx.pig ? { x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad } : undefined);
   };
-  const strokeEnd = () => { if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush(); pen = null; drawNeedleInk(); };
+  const strokeEnd = () => { if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush(); pen = null; drawNeedleInk(); if (trDirty) paint(); };
 
   const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
   const drawCur = (e) => {
@@ -480,7 +491,7 @@ TT.open = async (el, id) => {
       st.rot = rot; pinTo(pinch.p, mx, my); st.dirty = true; return paint(); }
     if (pan) { vx = pan.vx + e.clientX - pan.x; vy = pan.vy + e.clientY - pan.y; return paint(); }
     if (pen && e.pointerId === pen.id) strokeMove(e);
-    if (e.pointerType !== 'touch') { const pr = e.getPredictedEvents?.(); drawCur(pen && pr?.length ? pr[pr.length - 1] : e); }
+    if (e.pointerType !== 'touch') { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
     calLive(e);
   });
   const up = (e) => { pts.delete(e.pointerId); if (pinch && pts.size < 2) pinch = null; pan = null; if (pen && e.pointerId === pen.id) strokeEnd(); };
@@ -553,7 +564,7 @@ TT.open = async (el, id) => {
       if (!pop.hidden) return closePop();
       pop.innerHTML = `<div class="gh">Magnum angle</div><div class="tt-angs">${[0, 30, 45, 60, 90, 120, 135, 150].map(v => `<button data-ang="${v}" class="${st.magAng === v ? 'on' : ''}">
           <svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg>${v}°</button>`).join('')}</div>
-        <label class="dz-sl" style="margin:6px 6px 2px"><span>Fine<b id="tt-angv">${st.magAng}°</b></span><input type="range" min="0" max="179" step="1" value="${st.magAng}" data-angr></label>
+        <label class="dz-sl" style="margin:6px 6px 2px"><span id="tt-angn">${st.magTilt ? 'Offset on the lean' : 'Fine'}</span><span><b id="tt-angv">${st.magAng}°</b></span><input type="range" min="0" max="179" step="1" value="${st.magAng}" data-angr></label>
         <label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-angt ${st.magTilt ? 'checked' : ''}><span>Follows the way the pen leans</span></label>`;
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
@@ -566,11 +577,11 @@ TT.open = async (el, id) => {
     const b = e.target.closest('[data-nd]'); if (!b) return; setNeedle(b.dataset.nd); st.tool = 'needle'; closePop(); sel(); if (st.panel === 'feel') drawSide(); };
   pop.oninput = (e) => {
     if (e.target.matches('[data-angr]')) { setAng(+e.target.value); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', +x.dataset.ang === st.magAng)); }
-    if (e.target.matches('[data-angt]')) { st.magTilt = e.target.checked; st.dirty = true; drawAng(); }
+    if (e.target.matches('[data-angt]')) { st.magTilt = e.target.checked; st.dirty = true; const n = $('#tt-angn'); if (n) n.textContent = st.magTilt ? 'Offset on the lean' : 'Fine'; drawAng(); }
   };
   function setAng(v) { st.magAng = ((Math.round(v) % 180) + 180) % 180; st.dirty = true; const l = $('#tt-angv'); if (l) l.textContent = st.magAng + '°'; const r = pop.querySelector('[data-angr]'); if (r) r.value = st.magAng; drawAng(); drawCur(); }
   function drawAng() { const b = $('#tt-rail [data-r="angle"]'); if (!b) return; b.hidden = !isMag();
-    $('#tt-angi').setAttribute('transform', `rotate(${st.magAng} 12 12)`); $('#tt-angl').textContent = st.magTilt ? 'pen' : st.magAng + '°'; }
+    $('#tt-angi').setAttribute('transform', `rotate(${st.magAng} 12 12)`); $('#tt-angl').textContent = st.magTilt ? (st.magAng ? 'pen+' + st.magAng : 'pen') : st.magAng + '°'; }
   const slider = (key, label, min, max, step, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt ? fmt(val) : val}</b></span>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-f="${key}"></label>`;
   const setProfile = (k) => { const p = TT_PROFILES.find(x => x[0] === k); if (!p) return; cal.profile = k; cal.hand = p[2]; cal.fade = p[3]; cal.voltOff = p[4]; };
@@ -1005,8 +1016,10 @@ TT.open = async (el, id) => {
       text: 'Black ink, 7RS. Whip shade the box to match the example: dark at the left, fading out to clean skin on the right.' },
     { id: 'smooth', cat: 'shade', title: 'Smooth gradient', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'grad', box: [45, 56, 90, 18], prof: (f) => Math.pow(Math.sin(Math.PI * f), 1.2),
       text: 'Black ink, 15CM. Pendulum shade the box: soft at both ends, darkest through the middle, with no hard edges.' },
-    { id: 'pack', cat: 'pack', title: 'Solid black', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'pack', box: [75, 50, 30, 30],
-      text: 'Black ink, 15CM. Pack the box solid and even, edge to edge, with your usual technique. Watch the skin: solid, not chewed.' },
+    { id: 'pack', cat: 'pack', title: 'Solid black', needle: '15M1', layer: 'shadow', ink: 'black', kind: 'pack', box: [75, 50, 30, 30],
+      text: 'Black ink, 15M1. Pack the box solid and even, edge to edge, with your usual technique. Watch the skin: solid, not chewed.' },
+    { id: 'wash', cat: 'shade', title: 'Grey wash blend', needle: '15CM', layer: 'shadow', ink: 'wash', wash: true, kind: 'grad', box: [45, 55, 90, 20], dk: 0.45, prof: (f) => Math.pow(1 - f, 1.1),
+      text: 'Grey wash, 15CM. Blend from dark on the left to clean skin on the right with the washes: dark wash at the left, mid through the middle, light to fade it out. Smooth, no steps between the tones.' },
     { id: 'colour', cat: 'pack', title: 'Colour packing', needle: '11M1', layer: 'mid', ink: 'red', kind: 'fill', col: RED, shape: (g) => { g.arc(90, 65, 16, 0, Math.PI * 2); },
       text: 'Red ink, 11M1. Pack the circle with solid red, right up to the line and no further.' },
     { id: 'mix', cat: 'colour', title: 'Mix a colour', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: MIX, shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
@@ -1022,7 +1035,7 @@ TT.open = async (el, id) => {
     const c = document.createElement('canvas'), sc = 2; c.width = 180 * sc; c.height = 130 * sc; const g = c.getContext('2d');
     g.fillStyle = st.skin; g.fillRect(0, 0, c.width, c.height); g.scale(sc, sc);
     const dots = (x0, y0, w, h, f, col) => { g.fillStyle = col; for (let i = 0; i < w * h * 3; i++) { const px = x0 + Math.random() * w, py = y0 + Math.random() * h, a = f((px - x0) / w); if (Math.random() < a) { g.globalAlpha = 0.6 + a * 0.4; g.beginPath(); g.arc(px, py, 0.35, 0, 7); g.fill(); } } g.globalAlpha = 1; };
-    if (T.kind === 'grad') dots(...T.box, T.prof, '#141414');
+    if (T.kind === 'grad') dots(...T.box, T.wash ? (f) => T.prof(f) * 0.5 : T.prof, '#141414');
     if (T.kind === 'pack') { g.fillStyle = '#161616'; g.fillRect(...T.box); }
     if (T.kind === 'fill') { g.fillStyle = T.col; g.beginPath(); T.shape(g); g.fill(); }
     if (T.kind === 'blend') { const [x0, y0, w, h] = T.box; for (let x = 0; x < w; x += 0.5) { const f = x / w; g.fillStyle = f < 0.3 ? RED : f > 0.7 ? YEL : ttToHex(ttMix(ttHex(RED), ttHex(YEL), (f - 0.3) / 0.4)); g.fillRect(x0 + x, y0, 0.6, h); } }
@@ -1055,6 +1068,7 @@ TT.open = async (el, id) => {
     if (T.kind !== 'line') { const cr = exCrop(T), sr = stage.getBoundingClientRect(), w = Math.max(140, Math.min(280, sr.width * 0.28)), h = w * cr[3] / cr[2];
       refNew({ gen: T.id, ar: cr[3] / cr[2], w, op: 1, x: sr.width - w / 2 - 14, y: Math.min(sr.height - 90 - h / 2, Math.max(150 + h / 2, sr.height / 2)) }); }
     refSel = null;
+    st.ink = { c: [1, 1, 1], v: 0, s: 1 }; st.wash = !!T.wash;   // each challenge starts with a clean, empty needle
     setNeedle(T.needle); st.layer = T.layer; st.caps = [...TT_CAPS]; st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
     drawTray(); drawView(); drawRefs(); exBar(); paint(); st.dirty = true;
   };
@@ -1087,7 +1101,7 @@ TT.open = async (el, id) => {
       for (let x = x0; x < x1; x += 2) { let s2 = 0, m = 0; for (let y = y0; y < y1; y += 2) { s2 += densAt((y * W + x) * 4); m++; } cs.push(s2 / m); ts.push(T.prof((x - x0) / (x1 - x0))); }
       let ct = 0, tt = 0; cs.forEach((c, i) => { ct += c * ts[i]; tt += ts[i] * ts[i]; }); const a = ct / Math.max(1e-6, tt);
       const shape = cs.reduce((e, c, i) => e + Math.abs(c - a * ts[i]), 0) / Math.max(1, cs.length) / Math.max(0.15, a);
-      const match = (1 - clamp01(shape * 1.6)) * (0.55 + 0.45 * clamp01(a / 0.7)), sp = spillOut(inBox(T.box), 2.5);
+      const match = (1 - clamp01(shape * 1.6)) * (0.55 + 0.45 * clamp01(a / (T.dk || 0.7))), sp = spillOut(inBox(T.box), 2.5);
       return { score: Math.round(100 * (0.8 * match + 0.2 * (1 - sp))), match: Math.round(match * 100), darkness: Math.round(clamp01(a) * 100), spill: Math.round(sp * 100) }; }
     if (T.kind === 'pack') { const { x0, y0, x1, y1 } = boxIdx(T.box); let n = 0, cov = 0, s1 = 0, s2 = 0;
       for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) { const d = densAt((y * W + x) * 4); n++; if (d > 0.75) cov++; s1 += d; s2 += d * d; }
