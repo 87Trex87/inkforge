@@ -866,7 +866,8 @@ DZ.edit = async (id) => {
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
-        <div class="dz-faces" id="dz-faces"></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
+        <div class="dz-faces" id="dz-faces"></div>
+        <div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
       <div class="dz-side" id="dz-side"></div>
     </div></div>`;
   const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
@@ -1057,6 +1058,7 @@ DZ.edit = async (id) => {
   };
   const drawSide = () => {
     if (tab === 'layers') drawLayers(); else drawEdit();
+    drawMods();
     side.insertAdjacentHTML('afterbegin', `<div class="seg dz-tabs"><button data-tab="edit" class="${tab === 'edit' ? 'on' : ''}">${layer() || many() ? 'Selected' : 'Design'}</button>
       <button data-tab="layers" class="${tab === 'layers' ? 'on' : ''}">Layers <small>${F().length}</small></button></div>`);
     drawFaces();
@@ -1351,7 +1353,7 @@ DZ.edit = async (id) => {
     cutDrag = copt.tool === 'lasso' ? { pts: [[p.x, p.y]], lp: p } : { p0: p, p1: null };
   };
   const cutMove = (e) => {
-    if (pts.size > 1) { cutDrag = null; return drawCut(); }   // a second finger: zoom instead
+    if (pinch) { cutDrag = null; return drawCut(); }   // zooming instead
     const p = toPage(e), d = cutDrag;
     if (d.move) {
       const x = cut.mask.getContext('2d'); x.clearRect(0, 0, cut.mask.width, cut.mask.height);
@@ -1519,22 +1521,26 @@ DZ.edit = async (id) => {
     const p = toPage(e), h = nodeHit(L, p), add = e.ctrlKey || e.metaKey || e.shiftKey;
     const base = JSON.parse(JSON.stringify(L.subs));
     if (!h) { if (!add) nodes.sel = []; drawNodes(); drawSide(); return; }
-    if (h.kind === 'h') { ndrag = { kind: 'h', h, p0: p, base, alt: e.altKey }; return; }
+    if (h.kind === 'h') { ndrag = { kind: 'h', h, p0: p, base, alt: e.altKey };
+      if (e.pointerType !== 'mouse') { const dd = ndrag; dd.holdT = setTimeout(() => { if (ndrag === dd && !dd.moved) { dd.alt = true; navigator.vibrate?.(25); toast('This handle now moves on its own.', 1800); } }, 500); }
+      return; }
     if (h.kind === 'n') {
       const now = Date.now();
       if (now - lastTap.t < 320 && lastTap.s === h.s && lastTap.i === h.i) { lastTap = { t: 0 }; nodes.sel = [[h.s, h.i]]; return nodeOp(L.subs[h.s].nodes[h.i].t === 'corner' ? 'smooth' : 'corner'); }
       lastTap = { t: now, s: h.s, i: h.i };
       if (add) nodes.sel = isSel(h.s, h.i) ? nodes.sel.filter(q => !(q[0] === h.s && q[1] === h.i)) : [...nodes.sel, [h.s, h.i]];
       else if (!isSel(h.s, h.i)) nodes.sel = [[h.s, h.i]];
-      ndrag = { kind: 'n', p0: p, base }; drawNodes(); drawSide(); return;
+      ndrag = { kind: 'n', p0: p, base }; drawNodes(); drawSide();
+      { const dd = ndrag; dd.holdT = setTimeout(() => { if (ndrag === dd && !dd.moved) { ndrag = null; navigator.vibrate?.(25); openNodeMenu(L, h); } }, 650); }
+      return;
     }
     ndrag = { kind: 'seg', h, p0: p, base, moved: false };
   };
   const nodeMove = (e) => {
     const L = nodeLayer(), d = ndrag; if (!L || !d) return;
-    if (pts.size > 1) { L.subs = d.base; ndrag = null; redraw(); return drawNodes(); }   // a second finger: zoom instead
+    if (pinch) { L.subs = d.base; ndrag = null; redraw(); return drawNodes(); }   // zooming instead
     const p = toPage(e), q0 = p2n(L, d.p0), q1 = p2n(L, p); let du = q1.u - q0.u, dv = q1.v - q0.v;
-    if (!d.moved && Math.hypot(p.x - d.p0.x, p.y - d.p0.y) * k < 3) return; d.moved = true;
+    if (!d.moved && Math.hypot(p.x - d.p0.x, p.y - d.p0.y) * k < 3) return; d.moved = true; clearTimeout(d.holdT);
     L.subs = JSON.parse(JSON.stringify(d.base));
     if (d.kind === 'n') {
       if (e.shiftKey) { const px = du * L.w, py = du * 0 + dv * L.h; if (Math.abs(px) > Math.abs(py)) dv = 0; else du = 0; }
@@ -1553,7 +1559,7 @@ DZ.edit = async (id) => {
     redraw(); drawNodes();
   };
   const nodeUp = () => {
-    const L = nodeLayer(), d = ndrag; ndrag = null; if (!L || !d) return;
+    const L = nodeLayer(), d = ndrag; ndrag = null; if (!L || !d) return; clearTimeout(d.holdT);
     if (d.kind === 'seg' && !d.moved) { const i = splitAt(L, d.h.s, d.h.i, d.h.j, d.h.t); nodes.sel = [[d.h.s, i]]; }   // a tap on the outline adds a node
     else if (!d.moved) return drawNodes();
     refit(L); changed(true); drawNodes(); drawSide();
@@ -1584,6 +1590,28 @@ DZ.edit = async (id) => {
     if (a === 'del') nodes.sel = [];
     refit(L); changed(true); drawNodes(); drawSide();
   };
+  // Holding a node: corner, smooth, even, straight or delete, next to it.
+  function closeNodeMenu() { $('#dz-nmenu')?.remove(); }
+  const openNodeMenu = (L, h) => {
+    closeNodeMenu(); nodes.sel = [[h.s, h.i]]; drawNodes(); drawSide();
+    const n = L.subs[h.s].nodes[h.i], q = n2p(L, n.x, n.y), m = document.createElement('div');
+    m.id = 'dz-nmenu'; m.className = 'dz-nmenu'; m.style.left = q.x * k + 'px'; m.style.top = q.y * k + 'px';
+    m.innerHTML = [['corner', 'Corner'], ['smooth', 'Smooth'], ['sym', 'Even'], ['line', 'Straight'], ['del', 'Delete']].map(([a, nm]) => `<button data-nm="${a}" class="${a === 'del' ? 'danger' : ''}">${nm}</button>`).join('');
+    m.onpointerdown = (ev) => ev.stopPropagation();
+    m.onclick = (ev) => { const a = ev.target.closest('[data-nm]')?.dataset.nm; if (!a) return; closeNodeMenu(); nodeOp(a); };
+    page.appendChild(m);
+    // kept on screen: nudged in from the stage's edges, and below the node if there's no room above
+    const r = m.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    if (r.right > sr.right - 6) m.style.left = q.x * k - (r.right - sr.right + 6) + 'px';
+    if (r.left < sr.left + 6) m.style.left = q.x * k + (sr.left + 6 - r.left) + 'px';
+    if (r.top < sr.top + 6) m.style.transform = 'translate(-50%, 14px)';
+  };
+  const touchHelp = () => touchy ? `<details class="dz-touch"><summary>On a touchscreen</summary><ul>
+      <li>Rest a finger anywhere while dragging = <b>Shift</b> (45°, straight lines, keep proportions). Two fingers = <b>Ctrl</b> (no snapping).</li>
+      <li>Hold a handle still for a moment, then drag = <b>Alt</b>: it moves on its own.</li>
+      <li>Hold a node still: a menu (corner, smooth, even, straight, delete). Double-tap a node: corner / smooth.</li>
+      <li>Pen: hold still after placing a point, then slide = move the point.</li>
+      <li>Or tap the Shift / Alt / Ctrl buttons on the design: they stay on until tapped again.</li></ul></details>` : '';
   const nodePanel = (l) => {
     const n = nodes.sel.length, one = n === 1 ? l.subs[nodes.sel[0][0]]?.nodes[nodes.sel[0][1]] : null;
     return `<div class="dz-lh"><b>Edit nodes</b><button class="btn small primary" data-nop="done">Done</button></div>
@@ -1596,7 +1624,8 @@ DZ.edit = async (id) => {
         <button data-nop="all" title="Pick every node">▣<span>All</span></button>
         <button data-nop="del" class="danger" ${n ? '' : 'disabled'} title="Delete the picked nodes">✕<span>Delete</span></button></div>
       <p class="muted" style="font-size:12px;margin:4px 0 0">Drag a node or a handle to reshape. Tap the outline to add a node; drag the outline to bend it.
-        Double-tap a node to switch corner / smooth. Ctrl or Shift + tap picks several. Shift keeps to straight lines and 45°; Alt drags one handle on its own.</p>`;
+        Double-tap a node to switch corner / smooth. Ctrl or Shift + tap picks several. Shift keeps to straight lines and 45°; Alt drags one handle on its own.</p>
+      ${touchHelp()}`;
   };
   /* ---------- Shape builder ----------
      Combines shapes the way vector drawing programs do: Add (weld), Subtract (the bottom one minus the rest),
@@ -1803,14 +1832,16 @@ DZ.edit = async (id) => {
     }
     pen.nodes.push({ x: p.x, y: p.y, ix: 0, iy: 0, ox: 0, oy: 0, t: 'corner' });
     pen.drag = { i: pen.nodes.length - 1, anchor: { ...p }, curve: false, at: null, alt: e.altKey };
+    if (e.pointerType !== 'mouse') { const dd = pen.drag; dd.holdT = setTimeout(() => { if (pen?.drag === dd && !dd.curve) { dd.space = true; navigator.vibrate?.(25); toast('Moving the point: slide it, then let go.', 1800); } }, 500); }
     drawPen(); drawSide();
   };
   const penMove = (e) => {
     const p = toPage(e); pen.hover = p;
     const d = pen.drag; if (!d) return drawPen();
-    if (pts.size > 1) { pen.drag = null; return drawPen(); }
+    if (pinch) { pen.drag = null; return drawPen(); }
     const nd = pen.nodes[d.i];
-    if (spaceHeld) {   // Space: move the node itself, then carry on pulling its handles from where it lands
+    if (!d.space && sNear(d.anchor, p) > PEN_DEAD) clearTimeout(d.holdT);
+    if (spaceHeld || d.space) {   // Space: move the node itself, then carry on pulling its handles from where it lands
       if (d.at) { nd.x += p.x - d.at.x; nd.y += p.y - d.at.y; d.anchor.x += p.x - d.at.x; d.anchor.y += p.y - d.at.y; }
       d.at = p; return drawPen();
     }
@@ -1921,7 +1952,8 @@ DZ.edit = async (id) => {
       <div class="seg" style="margin-bottom:8px">${[['own', 'Is its own'], ['add2', 'Adds to what it touches'], ['sub2', 'Cuts what\u2019s under it']].map(([v, nm]) =>
         `<button data-pact="${v}" class="${popt.mode === { own: 'own', add2: 'add', sub2: 'sub' }[v] ? 'on' : ''}" style="flex:1;font-size:11px">${nm}</button>`).join('')}</div>
       <p class="muted" style="font-size:11px;margin:0">Shift: 45° steps. Alt while dragging: a sharp turn (only the outgoing handle follows). Space while dragging: move the point.
-        Click the last point: the next part starts straight. Backspace: undo a point. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>`;
+        Click the last point: the next part starts straight. Backspace: undo a point. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>
+      ${touchHelp()}`;
   };
   addEventListener('keyup', function penKeys(e) { if (!document.body.contains(el)) return removeEventListener('keyup', penKeys); if (e.key === ' ') spaceHeld = false; });
   /* ---------- Hold to snap (pencil and lasso) ----------
@@ -1955,7 +1987,7 @@ DZ.edit = async (id) => {
   };
   const pclMove = (e) => {
     const d = stroke, p = toPage(e);
-    if (pts.size > 1) { clearTimeout(d.ht); stroke = null; return drawPen(); }
+    if (pinch) { clearTimeout(d.ht); stroke = null; return drawPen(); }
     if (d.snap) { holdScale(d.snap, p); return drawPen(); }
     const L = pcl.lazy * 0.6 / k, dx = p.x - d.lp.x, dy = p.y - d.lp.y, dist = Math.hypot(dx, dy);
     if (dist > L) { const t = (dist - L) / dist; d.lp = { x: d.lp.x + dx * t, y: d.lp.y + dy * t }; const last = d.pts.at(-1); if (Math.hypot(d.lp.x - last.x, d.lp.y - last.y) * k > 1.2) d.pts.push(d.lp); }
@@ -2085,7 +2117,7 @@ DZ.edit = async (id) => {
   // Snapping while moving: the moved items' edges and centres line up with the page's edges and centre and with
   // every other item on the page (the master page's too). Hold Alt to move freely.
   const snapTo = (list, e) => {
-    if (e.altKey || !list.length) return guides(false, false);
+    if (e.altKey || e.ctrlKey || !list.length) return guides(false, false);
     const ids = new Set(list.map(m => m.id)), bs = list.map(box);
     const B = { x0: Math.min(...bs.map(b => b.x0)), x1: Math.max(...bs.map(b => b.x1)), y0: Math.min(...bs.map(b => b.y0)), y1: Math.max(...bs.map(b => b.y1)) };
     const tx = [0, doc.w / 2, doc.w], ty = [0, doc.h / 2, doc.h];
@@ -2097,8 +2129,30 @@ DZ.edit = async (id) => {
   };
   let drag = null;
   const pts = new Map(); let pinch = null, bg = null;
+  /* Shift, Alt and Ctrl without a keyboard. While something is being dragged (an item, a node or handle, the
+     pen, the pencil, a selection), a finger resting on the screen is Shift and two resting fingers are Ctrl,
+     instead of zooming. The Shift / Alt / Ctrl buttons (shown on touchscreens while a tool is in use) stay on
+     until tapped again. Every pointer event on the design reads them through modEv, as if the keys were held. */
+  const rest = new Set(), dock = { shift: false, alt: false, ctrl: false };
+  const busy = () => !!(drag || ndrag || pen?.drag || stroke || cutDrag || cdrag);
+  const modEv = (e) => new Proxy(e, {
+    get(t, kk) {
+      if (kk === 'shiftKey') return t.shiftKey || dock.shift || rest.size === 1;
+      if (kk === 'altKey') return t.altKey || dock.alt;
+      if (kk === 'ctrlKey') return t.ctrlKey || dock.ctrl || rest.size >= 2;
+      const v = t[kk]; return typeof v === 'function' ? v.bind(t) : v;
+    },
+    set(t, kk, v) { t[kk] = v; return true; }
+  });
+  const touchy = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+  const drawMods = () => {
+    const b = $('#dz-mods'); if (!b) return;
+    b.hidden = !(touchy && (nodes || penOn || pclOn || cut || cont || layer() || many()));
+    b.querySelectorAll('[data-mod]').forEach(x => x.classList.toggle('on', !!dock[x.dataset.mod]));
+  };
   stage.addEventListener('pointerdown', (e) => {
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size >= 2 && busy() && e.pointerType === 'touch') { rest.add(e.pointerId); return; }   // a resting finger: a modifier, not a zoom
     if (pts.size === 2) {
       // A second finger: stop moving the item (put it back) and pinch the view instead.
       if (drag) { const l = layer(); if (l) Object.assign(l, drag.l0); drag = null; guides(false, false); redraw(); }
@@ -2107,7 +2161,7 @@ DZ.edit = async (id) => {
     }
   }, true);
   stage.addEventListener('pointerdown', (e) => {
-    if (pinch || e.dzHit || e.target.closest('.dz-zoom, .dz-faces')) return;
+    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu')) return;
     // Background (around the design, or an empty part of it): drag to pan, tap to deselect.
     bg = { x: e.clientX, y: e.clientY, vx, vy, moved: false }; stage.setPointerCapture(e.pointerId);
   });
@@ -2123,7 +2177,7 @@ DZ.edit = async (id) => {
       if (bg.moved) { vx = bg.vx + dx; vy = bg.vy + dy; fit(false); } }
   });
   const ptUp = (e) => {
-    pts.delete(e.pointerId);
+    pts.delete(e.pointerId); if (rest.delete(e.pointerId)) return;
     if (pinch && pts.size < 2) { pinch = null; bg = null; return; }
     if (bg) { if (!bg.moved && (sel || (picks.size && !picking))) select(null); bg = null; }
   };
@@ -2144,12 +2198,15 @@ DZ.edit = async (id) => {
   };
   $('#dz-focus').onclick = () => focus(!document.body.classList.contains('dz-focus'));
   $('#dz-panel').onclick = () => { document.body.classList.toggle('dz-noside'); requestAnimationFrame(() => { fit(); redraw(); }); };
+  $('#dz-mods').onclick = (e) => { const m = e.target.closest('[data-mod]')?.dataset.mod; if (!m) return; dock[m] = !dock[m]; drawMods(); };
   $('#dz-faces').onclick = (e) => { const f = e.target.closest('[data-face]')?.dataset.face; if (f) setFace(f); };
   stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') return frame(); zoomTo(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4)); };
   let press = null;   // long press: hold still on an item to start selecting several
   const cancelPress = () => { if (press) clearTimeout(press.t); press = null; };
   page.addEventListener('pointerdown', (e) => {
+    if (rest.has(e.pointerId)) return;
+    e = modEv(e); closeNodeMenu();
     cancelPress();
     if (pinch || pts.size > 1) return;
     if (penOn) return penDown(e);
@@ -2180,6 +2237,8 @@ DZ.edit = async (id) => {
     drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, l0: { ...l, crop: l.crop ? { ...l.crop } : null } };
   });
   page.addEventListener('pointermove', (e) => {
+    if (rest.has(e.pointerId)) return;
+    e = modEv(e);
     if (pen) return penMove(e);
     if (stroke) return pclMove(e);
     if (cutDrag) return cutMove(e);
