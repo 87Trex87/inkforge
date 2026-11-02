@@ -421,7 +421,7 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          trAdd(q, pen.foot, 0.007 * Math.pow(depth, 4) / (cal.tough || 1));   // tough skin: light passes barely work it; digging in does
+          trAdd(q, pen.foot, 0.012 * Math.pow(depth, 4) / (cal.tough || 1));   // tough skin: light passes barely work it; digging in does
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - 0.8) / 0.15)) * (cal.blow ?? 1);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
@@ -1066,6 +1066,7 @@ TT.open = async (el, id) => {
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 441;
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
   const lineScore = (draw, coreW) => {
+    coreW = Math.min(coreW, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35));   // never wider than the needle in use can make
     const core = maskOf(draw, false, coreW), band = maskOf(draw, false, coreW + 2.2), mid = maskOf(draw, false, Math.min(0.2, coreW * 0.4));
     let cn = 0, cin = 0, sum = 0, sum2 = 0, mn = 0, ink = 0, out = 0;
     for (let i = 3; i < core.length; i += 4) { const d = densAt(i - 3);
@@ -1073,7 +1074,7 @@ TT.open = async (el, id) => {
       if (mid[i] > 128) { mn++; sum += d; sum2 += d * d; }
       if (d > 0.2) { ink++; if (band[i] < 30) out++; } }
     const mean = sum / Math.max(1, mn), sd = Math.sqrt(Math.max(0, sum2 / Math.max(1, mn) - mean * mean));
-    const cov = cin / Math.max(1, cn), spill = out / Math.max(1, ink), cons = 1 - clamp01(sd / 0.65);
+    const cov = cin / Math.max(1, cn), spill = out / Math.max(1, ink), cons = 1 - clamp01(sd / 0.8);
     return { score: Math.round(100 * cov * (0.55 + 0.25 * (1 - spill) + 0.2 * cons)), coverage: Math.round(cov * 100), spill: Math.round(spill * 100), evenness: Math.round(cons * 100) };
   };
   const boxIdx = (b) => { const x0 = Math.round(b[0] * mm), y0 = Math.round(b[1] * mm), x1 = Math.round((b[0] + b[2]) * mm), y1 = Math.round((b[1] + b[3]) * mm); return { x0, y0, x1, y1 }; };
