@@ -122,7 +122,7 @@ TT.open = async (el, id) => {
   let meta = {}; try { meta = JSON.parse(row.meta || '{}'); } catch {}
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0 }, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
-    stretch: meta.stretch ?? 75, view: 'work', viewC: null };
+    stretch: meta.stretch ?? 75, view: 'work', viewC: null, magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt };
   const hist = [], fut = [];   // undo and redo: { key, data } snapshots of one layer
   const snap = (key) => { hist.push({ key, data: L[key].getContext('2d').getImageData(0, 0, W, H) }); if (hist.length > 15) hist.shift(); fut.length = 0; };
   el.innerHTML = `<div class="dz-ed tt-ed">
@@ -136,9 +136,10 @@ TT.open = async (el, id) => {
       <button class="dz-ib" id="tt-png" data-tip="Save as PNG" aria-label="Save as PNG"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></button>
       <button class="dz-ib dz-go" id="tt-save" data-tip="Save" aria-label="Save"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>
     </div>
-    <div class="dz-body"><div class="dz-stage tt-stage" id="tt-stage"><canvas id="tt-cv"></canvas>
+    <div class="dz-body"><div class="dz-stage tt-stage" id="tt-stage"><canvas id="tt-cv"></canvas><canvas id="tt-cur"></canvas>
       <div class="dz-rail" id="tt-rail">
         <button class="dz-ib tt-needle" data-r="needles" data-tip="Needle grouping" aria-label="Needle"><b id="tt-nl"></b></button>
+        <button class="dz-ib tt-angb" data-r="angle" data-tip="Magnum angle ([ and ] turn it)" aria-label="Magnum angle" hidden><svg viewBox="0 0 24 24"><g id="tt-angi"><path d="M4 12h16" stroke-width="3"/></g></svg><b id="tt-angl"></b></button>
         <button class="dz-ib" data-r="needle" data-tip="Tattoo" aria-label="Tattoo"><svg viewBox="0 0 24 24"><path d="M4 20l5-5M9 15l8-8 2 2-8 8zM14 6l4 4"/></svg></button>
         <button class="dz-ib" data-r="erase" data-tip="Laser (erase)" aria-label="Erase"><svg viewBox="0 0 24 24"><path d="M7 21h10M5 15l9-9 5 5-9 9H8z"/></svg></button>
         <i class="sep"></i>
@@ -204,7 +205,14 @@ TT.open = async (el, id) => {
   const cal = TT.cal();
   let feel = TT.feel(st.needle), lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size);
   const curve = (p, c) => Math.pow(Math.max(0, Math.min(1, p)), Math.pow(2, c / 50));   // c -100..100: soft (light presses go deep) .. firm (press harder)
-  const setNeedle = (id) => { st.needle = id; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; };
+  /* Magnums hold their angle like a calligraphy nib: the row of needles stays at magAng whatever way the stroke
+     goes (pulled along the row it lines; across it, it shades). With "follows the pen" the row sits across the
+     way the pen leans, when it leans enough to tell. Rounds have no direction, so they follow the stroke. */
+  const isMag = () => ['mag', 'soft'].includes(TT_NEEDLES.find(n => n.id === st.needle)?.kind);
+  const rowAng = (ev) => { const tx = ev?.tiltX || 0, ty = ev?.tiltY || 0;
+    return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 : st.magAng * Math.PI / 180; };
+  const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 : strokeA;
+  const setNeedle = (id) => { st.needle = id; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); };
   /* One puncture: every needle of the grouping into the skin at p (page px, `sc` px per mm), turned to angle a.
      Needle hang: a longer hang is softer (each needle lands a little off and at its own depth, and tilt spreads
      it more). Skin stretch: loose skin moves under the needles (a wobble shared by the whole puncture), takes
@@ -256,7 +264,7 @@ TT.open = async (el, id) => {
       while (t <= d) {
         const q = { x: pen.last.x + dx * t / d, y: pen.last.y + dy * t / d };
         const inkC = st.tool === 'erase' ? 1 : Math.sqrt(Math.min(1, st.ink.v * 1.6));
-        puncture(pen.cx, q, pen.a, st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
+        puncture(pen.cx, q, turnOf(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         if (st.tool !== 'erase') st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100);
         t += gap;
       }
@@ -265,6 +273,25 @@ TT.open = async (el, id) => {
     st.dirty = true; paint(); drawNeedleInk();
   };
   const strokeEnd = () => { pen = null; drawNeedleInk(); };
+
+  const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
+  const drawCur = (e) => {
+    const r = stage.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
+    if (cur.width !== Math.round(r.width * dpr)) { cur.width = Math.round(r.width * dpr); cur.height = Math.round(r.height * dpr); cur.style.width = r.width + 'px'; cur.style.height = r.height + 'px'; }
+    cux.setTransform(1, 0, 0, 1, 0, 0); cux.clearRect(0, 0, cur.width, cur.height);
+    if (e) curAt = { x: e.clientX - r.left, y: e.clientY - r.top, ev: e };
+    if (!curAt || pinch || pan || st.tool === 'erase' && false) return;
+    const s = k * mm, a = turnOf(pen?.a || 0, curAt.ev), ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
+    cux.setTransform(dpr, 0, 0, dpr, 0, 0); cux.lineWidth = 1;
+    if (isMag()) {   // the row's line, so its angle reads even when the needles are tiny on screen
+      const us = lay.map(n => n.u), u0 = Math.min(...us) * s - 6, u1 = Math.max(...us) * s + 6;
+      cux.strokeStyle = 'rgba(31,182,166,.9)'; cux.lineWidth = 2; cux.beginPath();
+      cux.moveTo(curAt.x + u0 * -sa, curAt.y + u0 * ca); cux.lineTo(curAt.x + u1 * -sa, curAt.y + u1 * ca); cux.stroke(); cux.lineWidth = 1;
+    }
+    for (const nd of lay) { const px = curAt.x + nd.u * s * -sa + nd.v * s * ca, py = curAt.y + nd.u * s * ca + nd.v * s * sa;
+      cux.beginPath(); cux.arc(px, py, rr, 0, 7); cux.fillStyle = 'rgba(255,255,255,.35)'; cux.fill(); cux.strokeStyle = 'rgba(0,0,0,.55)'; cux.stroke(); }
+  };
+  cv.addEventListener('pointerleave', () => { curAt = null; drawCur(); });
 
   /* ---------- Pointer: pen draws; fingers move the page (or draw too, when allowed) ---------- */
   const pts = new Map(); let pinch = null, pan = null, space = false;
@@ -285,6 +312,7 @@ TT.open = async (el, id) => {
       vx = pinch.vx + mx - pinch.mx; vy = pinch.vy + my - pinch.my; z = pinch.z; k = fitK * z; zoomAt(pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, mx, my); return; }
     if (pan) { vx = pan.vx + e.clientX - pan.x; vy = pan.vy + e.clientY - pan.y; return paint(); }
     if (pen && e.pointerId === pen.id) strokeMove(e);
+    if (e.pointerType !== 'touch') drawCur(e);
     calLive(e);
   });
   const up = (e) => { pts.delete(e.pointerId); if (pinch && pts.size < 2) pinch = null; pan = null; if (pen && e.pointerId === pen.id) strokeEnd(); };
@@ -293,6 +321,7 @@ TT.open = async (el, id) => {
   const keys = (e) => { if (!document.body.contains(el)) { removeEventListener('keydown', keys); removeEventListener('keyup', keys); return; }
     if (e.target.matches?.('input, textarea')) return;
     if (e.key === ' ') { space = e.type === 'keydown'; e.preventDefault(); }
+    if (e.type === 'keydown' && (e.key === '[' || e.key === ']') && isMag()) { setAng(st.magAng + (e.key === ']' ? 15 : -15)); }
     if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); } };
   addEventListener('keydown', keys); addEventListener('keyup', keys);
@@ -348,11 +377,28 @@ TT.open = async (el, id) => {
         .map(n => `<button class="${n.id === st.needle ? 'on' : ''}" data-nd="${n.id}" data-tip="${n.name}">${n.id}</button>`).join('')}</div>`).join('');
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
+    if (r === 'angle') {
+      if (!pop.hidden) return closePop();
+      pop.innerHTML = `<div class="gh">Magnum angle</div><div class="tt-angs">${[0, 30, 45, 60, 90, 120, 135, 150].map(v => `<button data-ang="${v}" class="${st.magAng === v ? 'on' : ''}">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg>${v}°</button>`).join('')}</div>
+        <label class="dz-sl" style="margin:6px 6px 2px"><span>Fine<b id="tt-angv">${st.magAng}°</b></span><input type="range" min="0" max="179" step="1" value="${st.magAng}" data-angr></label>
+        <label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-angt ${st.magTilt ? 'checked' : ''}><span>Follows the way the pen leans</span></label>`;
+      pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
+    }
     closePop();
     if (r === 'needle' || r === 'erase') { st.tool = r === 'erase' ? 'erase' : 'needle'; return sel(); }
     st.panel = st.panel === r ? null : r; drawSide();
   };
-  pop.onclick = (e) => { const b = e.target.closest('[data-nd]'); if (!b) return; setNeedle(b.dataset.nd); st.tool = 'needle'; closePop(); sel(); if (st.panel === 'feel') drawSide(); };
+  pop.onclick = (e) => {
+    const g = e.target.closest('[data-ang]'); if (g) { setAng(+g.dataset.ang); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', x === g)); return; }
+    const b = e.target.closest('[data-nd]'); if (!b) return; setNeedle(b.dataset.nd); st.tool = 'needle'; closePop(); sel(); if (st.panel === 'feel') drawSide(); };
+  pop.oninput = (e) => {
+    if (e.target.matches('[data-angr]')) { setAng(+e.target.value); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', +x.dataset.ang === st.magAng)); }
+    if (e.target.matches('[data-angt]')) { st.magTilt = e.target.checked; st.dirty = true; drawAng(); }
+  };
+  function setAng(v) { st.magAng = ((Math.round(v) % 180) + 180) % 180; st.dirty = true; const l = $('#tt-angv'); if (l) l.textContent = st.magAng + '°'; const r = pop.querySelector('[data-angr]'); if (r) r.value = st.magAng; drawAng(); drawCur(); }
+  function drawAng() { const b = $('#tt-rail [data-r="angle"]'); if (!b) return; b.hidden = !isMag();
+    $('#tt-angi').setAttribute('transform', `rotate(${st.magAng} 12 12)`); $('#tt-angl').textContent = st.magTilt ? 'pen' : st.magAng + '°'; }
   const slider = (key, label, min, max, step, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt ? fmt(val) : val}</b></span>
     <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-f="${key}"></label>`;
   const curveSvg = (c) => `<svg class="tt-curve" viewBox="0 0 100 100"><path d="M0 100 ${[...Array(21)].map((_, i) => `L${i * 5} ${100 - curve(i / 20, c) * 100}`).join(' ')}"/></svg>`;
@@ -448,7 +494,7 @@ TT.open = async (el, id) => {
         const pr = ev.pointerType === 'mouse' ? 0.6 : (ev.pressure || 0.5) / Math.max(0.05, cal.pMax), tilt = Math.min(1, Math.hypot(ev.tiltX || 0, ev.tiltY || 0) / 60);
         let depth = feel.dMin + (feel.dMax - feel.dMin) * curve(pr, feel.pCurve);
         depth = Math.max(0.02, Math.min(1, depth * (1 - Math.min(0.9, sp / 200 * feel.speedFade / 100) - tilt * feel.tiltFade / 100 * 0.6)));
-        const gap = Math.max(0.03, sp * (feel.hand / 100) / feel.hz) * pm, a = Math.atan2(dy, dx), mmWas = mm;
+        const gap = Math.max(0.03, sp * (feel.hand / 100) / feel.hz) * pm, a = turnOf(Math.atan2(dy, dx), ev);
         let tt = carry;
         while (tt <= d) { puncture(p, { x: last.x + dx * tt / d, y: last.y + dy * tt / d }, a, depth, tilt, 1, false, pm); tt += gap; }
         carry = tt - d; last = q; t = ev.timeStamp;
@@ -510,7 +556,7 @@ TT.open = async (el, id) => {
     const old = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [id]);
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => refs[key]), thumb,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, caps: st.caps, stretch: st.stretch }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt }), id]);
     if (old) for (const r of [old.thumb_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(refs).includes(r) && r !== thumb) await Media.release(r);
     st.dirty = false; if (!quiet) toast('Saved.');
   };
@@ -542,7 +588,12 @@ function ttStyle() {
   const s = document.createElement('style'); s.id = 'tt-css';
   s.textContent = `
 #main:has(.tt-ed) { padding: 0; overflow: hidden; } #main:has(.tt-ed) #topbar { display: none; } #view:has(.tt-ed) { max-width: none; height: 100%; animation: none; } #tt:has(.tt-ed) { height: 100%; }
-.tt-stage { background: #1b1e1f; touch-action: none; } .tt-stage canvas#tt-cv { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+.tt-stage { background: #1b1e1f; touch-action: none; } .tt-stage canvas#tt-cv { position: absolute; inset: 0; touch-action: none; cursor: none; }
+#tt-cur { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.tt-angb { flex-direction: column; height: 44px !important; gap: 0; } .tt-angb b { font: 700 9px var(--ui); color: var(--teal); } .tt-angb svg { width: 18px; height: 18px; }
+.tt-angs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 0 4px; }
+.tt-angs button { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); font: 600 11px var(--ui); padding: 6px 2px; cursor: pointer; }
+.tt-angs button.on { background: rgba(31,182,166,.25); color: var(--teal); } .tt-angs svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; }
 .tt-needle b { font: 700 10px var(--ui); letter-spacing: -.02em; color: var(--teal); }
 .dz-pop .mi.on { background: rgba(31,182,166,.15); } .tt-nb { display: inline-block; min-width: 40px; font: 700 12px var(--ui); color: var(--teal); }
 .tt-tray { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 8px; padding: 8px 10px; max-width: calc(100% - 20px); overflow-x: auto;
