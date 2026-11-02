@@ -407,7 +407,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
         else x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, Math.min(L.r || 0, L.w / 2, L.h / 2));
         const pf = dzPaint(x, doc, L, tex);
         if (L.shape === 'line') { x.strokeStyle = pf || st || f || '#000'; x.lineWidth = Math.max(1, sw || L.h); x.lineCap = 'round'; x.stroke(); }
-        else { if (pf || f) { x.fillStyle = pf || f; x.fill(L.shape === 'path' || dzSubs(L) ? 'evenodd' : 'nonzero'); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
+        else { if ((pf || f) && !(L.shape === 'vec' && L.subs?.every(sp => sp.closed === false))) { x.fillStyle = pf || f; x.fill(L.shape === 'path' || dzSubs(L) ? 'evenodd' : 'nonzero'); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
         }
         x.restore();
       };
@@ -772,7 +772,7 @@ DZ.edit = async (id) => {
       <button class="btn primary" id="dz-export">Export</button>
     </div>
     <div class="dz-body">
-      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><div id="dz-sel" hidden>
+      <div class="dz-stage" id="dz-stage"><div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
@@ -810,7 +810,7 @@ DZ.edit = async (id) => {
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
     const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
-    drawFolds(); drawCut(); drawNodes(); drawCont(); placeSel();
+    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel();
   };
   // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
   // drawing is stretched; it's redrawn sharp a moment after zooming stops.
@@ -836,7 +836,8 @@ DZ.edit = async (id) => {
   let cropping = false;
   let cut = null, cutDrag = null;
   let nodes = null, ndrag = null;
-  let cont = null, cdrag = null;   // the contour tool (see "Shape builder" below)   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
+  let cont = null, cdrag = null;
+  let penOn = false, pen = null, spaceHeld = false;   // the pen tool (see "Pen tool" below)   // the contour tool (see "Shape builder" below)   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
   const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) placeSel(); };
   // Page tabs (top right of the design): front, back and the master page under both.
   const drawFaces = () => {
@@ -844,7 +845,7 @@ DZ.edit = async (id) => {
     const nm = dzFaceNames(doc), n = (f) => doc.layers.filter(l => dzSide(l) === f).length;
     b.innerHTML = ['f', 'b', 'm'].map(f => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Backgrounds and frames shown under both sides"' : ''}>${nm[f]}${n(f) ? ` <small>${n(f)}</small>` : ''}</button>`).join('');
   };
-  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); endCont(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
+  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); endCont(); endPen(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
   // Leaving crop mode: an uncropped item drops its crop entirely.
   const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
@@ -890,7 +891,7 @@ DZ.edit = async (id) => {
     const push = () => { const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
     if (now) push(); else histT = setTimeout(push, 450);
   };
-  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); if (!layer()) sel = null;
+  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; drawPen(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
@@ -1000,13 +1001,14 @@ DZ.edit = async (id) => {
   };
   const drawEdit = () => {
     if (cont) { side.innerHTML = contPanel(); return; }
+    if (penOn) { side.innerHTML = penPanel(); return; }
     if (many()) return drawMulti();
     const l = layer();
     if (!l) {
       const kinds = doc.kind === 'voucher' || doc.layers.some(x => /\{(amount|to|from|code|expires)\}/.test(x.text || ''));
       const post = DZ_KINDS[doc.kind].social || doc.layers.some(x => x.slot != null || DZ_PIECE_FIELDS.test(x.text || ''));
       side.innerHTML = `
-        <div class="dz-add">${[['text', 'Text', 'T'], ['heading', 'Heading', 'H'], ['image', 'Picture', '▣'], ['logo', 'Logo', '◎'], ['shape', 'Shape', '◆'], ['field', 'Studio info', '@']]
+        <div class="dz-add">${[['text', 'Text', 'T'], ['heading', 'Heading', 'H'], ['image', 'Picture', '▣'], ['logo', 'Logo', '◎'], ['shape', 'Shape', '◆'], ['pen', 'Pen', '✒'], ['field', 'Studio info', '@']]
           .map(([a, n, i]) => `<button data-add="${a}"><i>${i}</i><span>${n}</span></button>`).join('')}</div>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden id="dz-file">
         ${panel === 'image' ? `<div class="dz-shapes"><button data-pic="device">From this device</button><button data-pic="pf">From portfolio</button><button data-pic="refs">From references</button></div>` : ''}
@@ -1110,7 +1112,7 @@ DZ.edit = async (id) => {
       ${fsec('Save', `<div class="dz-combine"><button class="btn small" data-mact="refs">Save to references</button><button class="btn small" data-mact="png">Save as PNG</button>
         ${l.t !== 'image' || l.crop || l.r ? '<button class="btn small" data-mact="merge">Turn into a picture</button>' : ''}</div>`, { fold: true })}`;
   };
-  const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); endNodes(); endCont(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
+  const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); endNodes(); endCont(); endPen(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
   // Several: outside selection mode one item left becomes a normal selection.
   const setPicks = (ids) => {
     endCrop(); picks = new Set(ids); panel = null;
@@ -1242,6 +1244,7 @@ DZ.edit = async (id) => {
     e.dzHit = true; e.preventDefault(); page.setPointerCapture(e.pointerId);
     const p = toPage(e);
     if (copt.moving) { cutDrag = { move: true, p0: p, m0: (() => { const c = blank(cut.mask.width, cut.mask.height); c.getContext('2d').drawImage(cut.mask, 0, 0); return c; })() }; return; }
+    if (copt.tool === 'pen') return penDown(e, true);
     if (copt.tool === 'color') {   // every pixel close to the tapped colour
       const c = cut.cv, W = c.width, H = c.height, [ix, iy] = rp(p).map(Math.floor); if (ix < 0 || iy < 0 || ix >= W || iy >= H) return;
       cut.data ||= c.getContext('2d').getImageData(0, 0, W, H).data;
@@ -1316,9 +1319,9 @@ DZ.edit = async (id) => {
   const cutPanel = (l) => {
     const pen = Settings.get('dz_pen', 'any'), T = copt.tool;
     return `<div class="dz-lh"><b>Select an area</b><button class="btn small primary" data-cut="done">Done</button></div>
-      <div class="seg dz-ctools">${[['box', '▭ Box'], ['ellipse', '◯ Ellipse'], ['lasso', '✎ Lasso'], ['color', '◉ Colour']].map(([t, n]) => `<button data-ctool="${t}" class="${T === t ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="seg dz-ctools">${[['box', '▭ Box'], ['ellipse', '◯ Ellipse'], ['lasso', '✎ Lasso'], ['pen', '✒ Pen'], ['color', '◉ Colour']].map(([t, n]) => `<button data-ctool="${t}" class="${T === t ? 'on' : ''}">${n}</button>`).join('')}</div>
       <div class="seg" style="margin:6px 0">${[['new', 'New'], ['add', 'Add'], ['sub', 'Take away']].map(([m, n]) => `<button data-cmode="${m}" class="${copt.mode === m ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
-      <p class="muted" style="font-size:12px;margin:0 0 6px">${copt.moving ? 'Drag on the design to move the selection outline.' : T === 'color' ? 'Tap a colour on the item: every part close to it is selected.' : T === 'lasso' ? 'Draw round the part you want.' : 'Drag across the part you want.'}</p>
+      <p class="muted" style="font-size:12px;margin:0 0 6px">${copt.moving ? 'Drag on the design to move the selection outline.' : T === 'color' ? 'Tap a colour on the item: every part close to it is selected.' : T === 'lasso' ? 'Draw round the part you want.' : T === 'pen' ? 'Click for corners, drag for curves; click the first point to close and select.' : 'Drag across the part you want.'}</p>
       ${T === 'lasso' ? slider('c:lazy', 'Smoothing', 0, 100, 1, copt.lazy, v => v + '%') : ''}
       ${T === 'color' ? slider('c:tol', 'Colour range', 0, 100, 1, copt.tol, v => v + '%') : ''}
       ${slider('c:feather', 'Feather (soft edge)', 0, 80, 1, copt.feather, v => v + ' px')}
@@ -1650,6 +1653,180 @@ DZ.edit = async (id) => {
     <div class="seg" style="margin:8px 0">${[['round', 'Round'], ['miter', 'Sharp'], ['bevel', 'Bevel']].map(([j, nm]) => `<button data-cont="${j}" class="${copt2.join === j ? 'on' : ''}" style="flex:1">${nm}</button>`).join('')}</div>
     <label class="toggle" style="display:inline-flex"><input type="checkbox" data-contkeep ${copt2.keep ? 'checked' : ''}><span>Keep original (add the contour as a new shape)</span></label>
     <button class="btn primary" data-cont="apply" style="width:100%;margin-top:10px">Apply (Enter)</button>`;
+  /* ---------- Pen tool ----------
+     As on the drawing board: click for a corner, drag to pull out curve handles (a symmetric node). Shift keeps
+     to 45 degrees; Alt while dragging breaks the pair so only the outgoing handle follows (a sharp turn); Space
+     held while dragging moves the node itself. Clicking the node just laid drops its outgoing handle, so the next
+     segment starts straight. Clicking the first node closes the shape; Enter leaves the path open; Backspace takes
+     the last node back; Esc throws the path away. Starting on the end of an open path carries it on. A closed
+     shape can be added to, or cut from, what it overlaps (the Each shape setting, or the buttons after closing).
+     Points are kept in page pixels while drawing; the finished path becomes a node shape. In Select area the pen
+     draws a selection instead. */
+  const PEN_CLOSE = 12, PEN_DEAD = 5;
+  const popt = (() => { try { return { mode: 'own', ...JSON.parse(Settings.get('dz_pen_tool', '{}')) }; } catch { return { mode: 'own' }; } })();
+  let penLast = null;   // the shape the pen just closed, for Add / Subtract afterwards
+  const startPen = () => { endCrop(); endCut(); endNodes(); endCont(); penOn = true; sel = null; picks = new Set(); picking = false; placeSel(); drawSide(); drawPen(); };
+  function endPen() { if (!penOn && !pen) return; if (pen && !pen.forCut && pen.nodes.length >= 2) penFinish(true); penOn = false; pen = null; penLast = null; drawPen(); }
+  const sNear = (a, b) => Math.hypot((a.x - b.x) * k, (a.y - b.y) * k);
+  // Page-space nodes into a node shape (its box fitted round the curve).
+  const vecFromPage = (subs, extra) => {
+    const xs = [], ys = [];
+    for (const sp of subs) { const N = sp.nodes; N.forEach(n => { xs.push(n.x); ys.push(n.y); });
+      for (const [i, j] of segs(sp)) for (let t = 0.1; t < 1; t += 0.1) { const q = bez(N[i], N[j], t); xs.push(q.x); ys.push(q.y); } }
+    const x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(1, Math.max(...xs) - x0), h = Math.max(1, Math.max(...ys) - y0);
+    return { id: dzId(), t: 'shape', shape: 'vec', x: x0, y: y0, w, h, rot: 0, op: 1, ...extra, ...(doc.sides && face !== 'f' ? { side: face } : {}),
+      subs: subs.map(sp => ({ closed: sp.closed, nodes: sp.nodes.map(n => ({ x: (n.x - x0) / w, y: (n.y - y0) / h, ix: n.ix / w, iy: n.iy / h, ox: n.ox / w, oy: n.oy / h, t: n.t })) })) };
+  };
+  // A node shape's subpath in page pixels (to carry on from its end).
+  const subToPage = (L, sp) => ({ closed: sp.closed, nodes: sp.nodes.map(n => { const c = n2p(L, n.x, n.y), hi = n2p(L, n.x + n.ix, n.y + n.iy), ho = n2p(L, n.x + n.ox, n.y + n.oy);
+    return { x: c.x, y: c.y, ix: hi.x - c.x, iy: hi.y - c.y, ox: ho.x - c.x, oy: ho.y - c.y, t: n.t }; }) });
+  const snap45 = (from, p) => { const dx = p.x - from.x, dy = p.y - from.y, a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, r = Math.hypot(dx, dy) * Math.cos(Math.atan2(dy, dx) - a);
+    return { x: from.x + r * Math.cos(a), y: from.y + r * Math.sin(a) }; };
+  const penDown = (e, forCut) => {
+    if (forCut && Settings.get('dz_pen', 'any') === 'pen' && e.pointerType === 'touch') return;
+    e.dzHit = true; e.preventDefault(); page.setPointerCapture(e.pointerId);
+    let p = toPage(e);
+    if (!pen) {
+      pen = { nodes: [], forCut: !!forCut, from: null };
+      if (!forCut) {   // the end of an open path on this page: carry it on
+        for (const L of F()) { if (L.t !== 'shape' || L.shape !== 'vec' || L.lock || L.hide) continue;
+          const si = L.subs.findIndex(sp => sp.closed === false); if (si < 0) continue;
+          const sp = subToPage(L, L.subs[si]), a = sp.nodes[0], b = sp.nodes.at(-1);
+          for (const [nd, atStart] of [[b, false], [a, true]]) if (sNear(nd, p) < PEN_CLOSE) {
+            if (atStart) sp.nodes = sp.nodes.reverse().map(n => ({ ...n, ix: n.ox, iy: n.oy, ox: n.ix, oy: n.iy }));
+            pen.nodes = sp.nodes; pen.from = { id: L.id, si, style: { fill: L.fill, stroke: L.stroke, sw: L.sw, fm: L.fm, grad: L.grad, tex: L.tex, op: L.op, name: L.name } };
+            L.hide = true; redraw(); toast('Carrying on from that end.'); drawPen(); drawSide(); return;
+          }
+        }
+      }
+    } else {
+      const N = pen.nodes;
+      if (N.length >= 3 && sNear(N[0], p) < PEN_CLOSE) return penClose();
+      const ln = N.at(-1);
+      if (ln && sNear(ln, p) < PEN_CLOSE) { ln.ox = ln.oy = 0; ln.t = 'corner'; toast('Handle dropped: the next part starts straight.'); return drawPen(); }
+      if (e.shiftKey && ln) p = snap45(ln, p);
+    }
+    pen.nodes.push({ x: p.x, y: p.y, ix: 0, iy: 0, ox: 0, oy: 0, t: 'corner' });
+    pen.drag = { i: pen.nodes.length - 1, anchor: { ...p }, curve: false, at: null, alt: e.altKey };
+    drawPen(); drawSide();
+  };
+  const penMove = (e) => {
+    const p = toPage(e); pen.hover = p;
+    const d = pen.drag; if (!d) return drawPen();
+    if (pts.size > 1) { pen.drag = null; return drawPen(); }
+    const nd = pen.nodes[d.i];
+    if (spaceHeld) {   // Space: move the node itself, then carry on pulling its handles from where it lands
+      if (d.at) { nd.x += p.x - d.at.x; nd.y += p.y - d.at.y; d.anchor.x += p.x - d.at.x; d.anchor.y += p.y - d.at.y; }
+      d.at = p; return drawPen();
+    }
+    d.at = null;
+    if (!d.curve) { if (sNear(d.anchor, p) <= PEN_DEAD) { nd.t = 'corner'; nd.ix = nd.iy = nd.ox = nd.oy = 0; return drawPen(); } d.curve = true; }
+    let q = e.shiftKey ? snap45(d.anchor, p) : p; const dx = q.x - d.anchor.x, dy = q.y - d.anchor.y;
+    if (e.altKey || d.alt) { nd.t = 'corner'; nd.ox = dx; nd.oy = dy; }
+    else { nd.t = 'sym'; nd.ox = dx; nd.oy = dy; nd.ix = -dx; nd.iy = -dy; }
+    drawPen();
+  };
+  const penBack = () => {
+    if (!pen) return;
+    pen.nodes.pop(); if (!pen.nodes.length) { if (pen.from) penRestore(); pen = null; }
+    drawPen(); drawSide();
+  };
+  const penRestore = () => { const L = doc.layers.find(x => x.id === pen?.from?.id); if (L) { delete L.hide; redraw(); } };
+  // Lays the finished path down as a shape (replacing the open path it carried on, if any).
+  const penLay = (closed) => {
+    const sp = { closed, nodes: pen.nodes.map(n => ({ ...n })) };
+    const style = pen.from?.style || (closed ? { fill: '@accent', stroke: 'none', sw: 0 } : { fill: 'none', stroke: '@accent', sw: Math.max(2, Math.round(Math.min(doc.w, doc.h) * 0.006)) });
+    if (closed && pen.from && style.fill === 'none') style.fill = '@accent';
+    const v = vecFromPage([sp], { ...style, name: style.name });
+    if (pen.from) {
+      const L = doc.layers.find(x => x.id === pen.from.id);
+      if (L) { const others = L.subs.filter((_, i) => i !== pen.from.si).map(s2 => subToPage(L, s2)); const v2 = vecFromPage([...others, sp], { ...style, side: L.side });
+        v2.id = L.id; doc.layers[doc.layers.indexOf(L)] = v2; pen = null; changed(true); return v2; }
+    }
+    doc.layers.push(v); pen = null; changed(true); return v;
+  };
+  const penFinish = (quiet) => {
+    if (!pen) return;
+    if (pen.forCut) { pen = null; return drawPen(); }
+    if (pen.nodes.length < 2) { if (pen.from) penRestore(); pen = null; drawPen(); return drawSide(); }
+    penLay(false); penLast = null; drawPen(); drawSide(); if (!quiet) toast('Path left open.');
+  };
+  const penClose = async () => {
+    if (pen.forCut) {   // a selection in the shape the pen drew
+      const N = pen.nodes; pen = null; drawPen();
+      return applySel((x) => { x.beginPath(); const P = (q) => rp(q);
+        const [sx, sy] = P(N[0]); x.moveTo(sx, sy);
+        for (let i = 0; i < N.length; i++) { const a = N[i], b = N[(i + 1) % N.length], c1 = P({ x: a.x + a.ox, y: a.y + a.oy }), c2 = P({ x: b.x + b.ix, y: b.y + b.iy }), e2 = P(b);
+          x.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], e2[0], e2[1]); }
+        x.closePath(); x.fill(); });
+    }
+    const v = penLay(true); penLast = v.id; drawPen(); drawSide();
+    if (popt.mode !== 'own') await penCombine(popt.mode); else toast('Shape closed. Add it to or cut it from what it overlaps, or keep drawing.');
+  };
+  // The shape just closed, added to (welded with) or cut out of whatever it overlaps on this page.
+  const penCombine = async (mode) => {
+    const v = doc.layers.find(x => x.id === penLast); if (!v) return;
+    try { await dzClipper(); } catch (err) { return toast('Could not combine: ' + err.message); }
+    const nv = norm(await outline(v)), hit = [];
+    for (const L of F()) { if (L === v || L.hide || L.lock || L.t !== 'shape' || L.shape === 'line') continue;
+      const r = await outline(L); if (!r?.length) continue; const g = norm(r), ov = clip('ctIntersection', g, nv); if (ov.length) hit.push({ L, g }); }
+    if (!hit.length) return toast('It doesn\'t overlap any shape, so it stays as its own.');
+    if (mode === 'add') {
+      const res = clip('ctUnion', [...hit.flatMap(h => h.g), ...nv]), top = hit.at(-1).L, w2 = vecFrom(res, top, top.name || layerName(top));
+      if (w2) replaceWith([...hit.map(h => h.L), v], [w2]);
+    } else {
+      for (const h of hit) { const res = clip('ctDifference', h.g, nv), i = doc.layers.indexOf(h.L);
+        if (res.length) { const w2 = vecFrom(res, h.L, h.L.name || layerName(h.L)); if (w2) { w2.id = h.L.id; doc.layers[i] = w2; } } else doc.layers.splice(i, 1); }
+      doc.layers = doc.layers.filter(x => x !== v); sel = null; changed(true); placeSel(); drawSide();
+    }
+    penLast = null; drawSide(); toast(mode === 'add' ? 'Added to what it overlapped.' : 'Cut out of what was under it.');
+  };
+  const penAct = async (a) => {
+    if (a === 'done') { endPen(); return drawSide(); }
+    if (a === 'finish') return penFinish();
+    if (a === 'back') return penBack();
+    if (a === 'cancel') { if (pen?.from) penRestore(); pen = null; drawPen(); return drawSide(); }
+    if (a === 'add' || a === 'sub') return penCombine(a);
+    if (['own', 'add2', 'sub2'].includes(a)) { popt.mode = { own: 'own', add2: 'add', sub2: 'sub' }[a]; Settings.set('dz_pen_tool', JSON.stringify(popt)); return drawSide(); }
+  };
+  function drawPen() {
+    const oc = $('#dz-pencv'); if (!oc) return;
+    const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
+    if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
+    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !pen; if (!pen?.nodes.length) return;
+    const N = pen.nodes, S = (q) => [q.x * k, q.y * k];
+    x.lineWidth = 1.6; x.strokeStyle = '#1fb6a6'; x.beginPath(); x.moveTo(...S(N[0]));
+    for (let i = 1; i < N.length; i++) { const a = N[i - 1], b = N[i]; x.bezierCurveTo((a.x + a.ox) * k, (a.y + a.oy) * k, (b.x + b.ix) * k, (b.y + b.iy) * k, b.x * k, b.y * k); }
+    x.stroke();
+    const ln = N.at(-1);
+    if (pen.hover && !pen.drag) {   // where the next segment would go
+      x.setLineDash([4, 4]); x.strokeStyle = 'rgba(255,255,255,.6)'; x.beginPath(); x.moveTo(...S(ln));
+      x.bezierCurveTo((ln.x + ln.ox) * k, (ln.y + ln.oy) * k, pen.hover.x * k, pen.hover.y * k, pen.hover.x * k, pen.hover.y * k); x.stroke(); x.setLineDash([]); }
+    for (const [hx, hy] of [[ln.ix, ln.iy], [ln.ox, ln.oy]]) if (hx || hy) { x.strokeStyle = 'rgba(255,255,255,.7)'; x.beginPath(); x.moveTo(...S(ln)); x.lineTo((ln.x + hx) * k, (ln.y + hy) * k); x.stroke();
+      x.fillStyle = '#fff'; x.beginPath(); x.arc((ln.x + hx) * k, (ln.y + hy) * k, 4, 0, Math.PI * 2); x.fill(); }
+    const near = N.length >= 3 && pen.hover && sNear(N[0], pen.hover) < PEN_CLOSE;
+    N.forEach((n, i) => { const [cx, cy] = S(n), first = i === 0;
+      if (first && near) { x.fillStyle = 'rgba(46,204,113,.35)'; x.strokeStyle = '#2ecc71'; x.lineWidth = 2; x.beginPath(); x.arc(cx, cy, 10, 0, Math.PI * 2); x.fill(); x.stroke(); }
+      x.lineWidth = 1.5; x.fillStyle = i === N.length - 1 ? '#1fb6a6' : '#fff'; x.strokeStyle = '#1fb6a6'; x.beginPath();
+      if (n.t === 'corner') x.rect(cx - 4, cy - 4, 8, 8); else x.arc(cx, cy, 4.5, 0, Math.PI * 2); x.fill(); x.stroke(); });
+  }
+  const penPanel = () => {
+    const n = pen?.nodes.length || 0;
+    return `<div class="dz-lh"><b>Pen</b><button class="btn small primary" data-pact="done">Done</button></div>
+      <p class="muted" style="font-size:12px;margin:0 0 8px">Click for a corner; drag to pull out a curve. Click the first point to close the shape.
+        ${n ? `${n} point${n === 1 ? '' : 's'} so far.` : 'Start on the end of an open path to carry it on.'}</p>
+      <div class="dz-combine" style="margin-bottom:10px">
+        <button class="btn small" data-pact="finish" ${n >= 2 ? '' : 'disabled'}>Leave open (Enter)</button>
+        <button class="btn small" data-pact="back" ${n ? '' : 'disabled'}>Undo last point</button>
+        <button class="btn small" data-pact="cancel" ${n ? '' : 'disabled'}>Throw away</button></div>
+      ${penLast ? `<div class="dz-note" style="margin:0 0 10px">Shape closed. <span style="display:flex;gap:6px"><button class="btn small" data-pact="add">Add to</button><button class="btn small" data-pact="sub">Cut out</button></span></div>` : ''}
+      <div class="lbl">Each closed shape</div>
+      <div class="seg" style="margin-bottom:8px">${[['own', 'Is its own'], ['add2', 'Adds to what it touches'], ['sub2', 'Cuts what\u2019s under it']].map(([v, nm]) =>
+        `<button data-pact="${v}" class="${popt.mode === { own: 'own', add2: 'add', sub2: 'sub' }[v] ? 'on' : ''}" style="flex:1;font-size:11px">${nm}</button>`).join('')}</div>
+      <p class="muted" style="font-size:11px;margin:0">Shift: 45° steps. Alt while dragging: a sharp turn (only the outgoing handle follows). Space while dragging: move the point.
+        Click the last point: the next part starts straight. Backspace: undo a point. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>`;
+  };
+  addEventListener('keyup', function penKeys(e) { if (!document.body.contains(el)) return removeEventListener('keyup', penKeys); if (e.key === ' ') spaceHeld = false; });
   const saveRef = async (ids) => {
     const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
     const title = prompt('Name for the reference:', list.length === 1 ? layerName(list[0]) : name); if (title == null) return;
@@ -1798,6 +1975,7 @@ DZ.edit = async (id) => {
   page.addEventListener('pointerdown', (e) => {
     cancelPress();
     if (pinch || pts.size > 1) return;
+    if (penOn) return penDown(e);
     if (cut) return cutDown(e);
     if (nodes) return nodeDown(e);
     if (cont) return contDown(e);
@@ -1824,6 +2002,7 @@ DZ.edit = async (id) => {
     drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, l0: { ...l, crop: l.crop ? { ...l.crop } : null } };
   });
   page.addEventListener('pointermove', (e) => {
+    if (pen) return penMove(e);
     if (cutDrag) return cutMove(e);
     if (ndrag) return nodeMove(e);
     if (cdrag) return contMove(e);
@@ -1880,7 +2059,7 @@ DZ.edit = async (id) => {
     }
     redraw();
   });
-  const end = () => { cancelPress(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
+  const end = () => { cancelPress(); if (pen?.drag) { pen.drag = null; return drawPen(); } if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
     if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
     changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
@@ -1888,6 +2067,13 @@ DZ.edit = async (id) => {
     if (!document.body.contains(el)) return removeEventListener('keydown', keys);
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(e.shiftKey ? 1 : -1); }
+    if (penOn || pen) {
+      if (e.key === ' ') { e.preventDefault(); spaceHeld = true; return; }
+      if (e.key === 'Enter') { e.preventDefault(); return penFinish(); }
+      if (e.key === 'Escape') { e.preventDefault(); if (pen) { pen = null; drawPen(); drawSide(); } else { endPen(); drawSide(); } return; }
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); return penBack(); }
+      if (penOn) return;
+    }
     if (cont) {
       if (e.key === 'Enter') { e.preventDefault(); return contApply(); }
       if (e.key === 'Escape') { endCont(); return drawSide(); }
@@ -1895,6 +2081,7 @@ DZ.edit = async (id) => {
     if (!e.ctrlKey && !e.metaKey && !e.altKey && !cut && !nodes && !cont) {   // tool keys, as on the drawing board
       const k1 = e.key.toLowerCase();
       if (k1 === 'o' && targets().length) { e.preventDefault(); return startCont(); }
+      if (k1 === 'p') { e.preventDefault(); return startPen(); }
       if (k1 === 'a' && layer()?.t === 'shape' && layer().shape !== 'line') { e.preventDefault(); return startNodes(layer()); }
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
@@ -1930,6 +2117,7 @@ DZ.edit = async (id) => {
     if (d('tab')) { tab = d('tab'); return drawSide(); }
     if (d('mact')) return multiAct(d('mact'));
     if (d('bool')) return boolOp(d('bool'));
+    if (d('pact')) return penAct(d('pact'));
     if (d('cont')) return contAct(d('cont'));
     if (d('align')) return align(d('align'));
     const row = t.closest('[data-lid]');
@@ -1957,6 +2145,7 @@ DZ.edit = async (id) => {
       if (a === 'text') return add({ t: 'text', text: 'Your text', size: Math.round(doc.h * 0.05), font: '@2', c: '@fg', al: 'center', lh: 1.2, ...center(doc.w * 0.6, doc.h * 0.06) });
       if (a === 'heading') return add({ t: 'text', text: 'Heading', size: Math.round(doc.h * 0.1), font: '@1', c: '@fg', al: 'center', lh: 1.1, ...center(doc.w * 0.7, doc.h * 0.11) });
       if (a === 'logo') { if (!Settings.get('studio_logo_ref')) toast('Add your logo in Settings › Profile; it shows here once added.', 5000); const s = Math.min(doc.w, doc.h) * 0.3; return add({ t: 'image', logo: true, ...center(s, s) }); }
+      if (a === 'pen') return startPen();
       if (a === 'image') { panel = panel === 'image' ? null : 'image'; return drawSide(); }
       panel = panel === a ? null : a; return drawSide();
     }
