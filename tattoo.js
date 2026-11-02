@@ -270,6 +270,8 @@ TT.open = async (el, id) => {
         <button class="dz-ib" data-r="layers" data-tip="Layers" aria-label="Layers"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/></svg></button>
         <button class="dz-ib" data-r="refs" data-tip="References: pictures that float over the skin to follow" aria-label="References"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/></svg></button>
         <button class="dz-ib" data-r="feel" data-tip="Needle feel and pen calibration" aria-label="Calibration"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
+        <i class="sep"></i>
+        <div class="tt-volt" data-tip="Machine voltage for this needle: higher hits harder"><b id="tt-vl"></b><input type="range" id="tt-vs" min="5" max="10" step="0.05" aria-label="Voltage"></div>
       </div>
       <div class="dz-pop" id="tt-pop" hidden></div><div class="tt-refs" id="tt-refs"></div><div class="tt-exam" id="tt-exbar" hidden></div>
       <div class="tt-tray" id="tt-tray"></div>
@@ -290,11 +292,11 @@ TT.open = async (el, id) => {
   const fit = () => {
     const r = stage.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
     cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); cv.style.width = r.width + 'px'; cv.style.height = r.height + 'px';
-    fitK = Math.min((r.width - 72) / W, (r.height - 110 - (EX ? 120 : 0)) / H); k = fitK * z; paint();   // an exam keeps room for its bar
+    fitK = Math.min((r.width - 72) / W, (r.height - 110) / H); k = fitK * z; paint();
   };
   /* View: the page's middle sits at C on screen, turned by st.rot and scaled by k. Two fingers move, zoom and
      turn it together (the spot under them stays put), snapping to every 90 degrees. */
-  const org = () => { const r = stage.getBoundingClientRect(); return { cx: r.width / 2 + 26 + vx, cy: (r.height - 70) / 2 + (EX ? 60 : 0) + vy, r }; };
+  const org = () => { const r = stage.getBoundingClientRect(); return { cx: r.width / 2 + 26 + vx, cy: (r.height - 70) / 2 + vy, r }; };
   const toScreen = (p) => { const { cx, cy } = org(), c = Math.cos(st.rot), sn = Math.sin(st.rot), dx = (p.x - W / 2) * k, dy = (p.y - H / 2) * k; return { x: cx + dx * c - dy * sn, y: cy + dx * sn + dy * c }; };
   const fromScreen = (sx, sy) => { const { cx, cy } = org(), c = Math.cos(st.rot), sn = Math.sin(st.rot), dx = sx - cx, dy = sy - cy; return { x: (dx * c + dy * sn) / k + W / 2, y: (-dx * sn + dy * c) / k + H / 2 }; };
   // Put page point p under screen point (sx, sy) with the current zoom and turn.
@@ -357,7 +359,8 @@ TT.open = async (el, id) => {
     return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 : st.magAng * Math.PI / 180; };
   const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 : strokeA;
   const pageTurn = (strokeA, ev) => turnOf(strokeA, ev) - (isMag() ? st.rot : 0);   // a magnum's angle is held on the screen, whatever the page's rotation
-  const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); };
+  const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); drawVolt(); };
+  const drawVolt = () => { const v = feel.volt ?? 7; $('#tt-vs').value = v; $('#tt-vl').textContent = v.toFixed(1) + 'V'; };
   /* One puncture: every needle of the grouping into the skin at p (page px, `sc` px per mm), turned to angle a.
      Needle hang: a longer hang is softer (each needle lands a little off and at its own depth, and tilt spreads
      it more). Skin stretch: loose skin moves under the needles (a wobble shared by the whole puncture), takes
@@ -662,6 +665,8 @@ TT.open = async (el, id) => {
     if (t.closest('[data-calreset]')) { if (!confirm('Put the calibration for all needles back to the defaults?')) return; cal = { ...TT.calDefaults, penOnly: cal.penOnly }; TT.saveCal(cal); return drawSide(); }
     if (t.matches('[data-penonly]')) { cal.penOnly = t.checked; TT.saveCal(cal); }
   });
+  $('#tt-vs').addEventListener('input', (e) => { feel.volt = +e.target.value; TT.setFeel(st.needle, feel); drawVolt();
+    const s2 = side.querySelector('[data-f="volt"]'); if (s2) { s2.value = feel.volt; s2.closest('.dz-sl').querySelector('b').textContent = feel.volt.toFixed(2) + ' V'; } });
   side.addEventListener('input', (e) => {
     const t = e.target;
     if (t.matches('[data-rop]')) { const r = refs.find(x => x.id === t.closest('[data-rid]').dataset.rid); if (r) { r.op = +t.value; st.dirty = true; drawRefs(); } return; }
@@ -669,7 +674,7 @@ TT.open = async (el, id) => {
     if (t.dataset.c) { cal[t.dataset.c] = +t.value; TT.saveCal(cal); t.closest('.dz-sl').querySelector('b').textContent = CFMT[t.dataset.c](+t.value); return; }
     if (t.matches('[data-stretch]')) { st.stretch = +t.value; st.dirty = true; t.closest('.dz-sl').querySelector('b').textContent = t.value + '%'; return; }
     const fk = t.dataset.f; if (!fk) return;
-    feel[fk] = +t.value; TT.setFeel(st.needle, feel);
+    feel[fk] = +t.value; TT.setFeel(st.needle, feel); if (fk === 'volt') drawVolt();
     const v = +t.value, b = t.closest('.dz-sl')?.querySelector('b');
     if (b) b.textContent = fk === 'pCurve' ? (v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even') : fk === 'dMin' || fk === 'dMax' ? Math.round(v * 100) + '%' : fk === 'volt' ? v.toFixed(2) + ' V' : v + '%';
     if (fk === 'pCurve') side.querySelector('.tt-curve').outerHTML = curveSvg(feel.pCurve);
@@ -721,7 +726,7 @@ TT.open = async (el, id) => {
   const pct = (a, q) => { const b = [...a].sort((m, n) => m - n); return b.length ? b[Math.min(b.length - 1, Math.max(0, Math.floor(q * (b.length - 1))))] : 0; };
   const speeds = (pad) => pad.strokes.flatMap(S => S.slice(1).map((q, i) => { const p = S[i], dt = Math.max(1, q.t - p.t) / 1000; return Math.hypot(q.x - p.x, q.y - p.y) / q.s / (96 / 25.4) / dt; })).filter(v => v > 1 && v < 3000);
   const penPress = (pad) => pad.strokes.flat().filter(q => q.pointerType === 'pen' && q.pressure > 0).map(q => q.pressure);
-  const box = { x: 560, y: 80, w: 360, h: 240 }, exBox = { x: 40, y: 80, w: 360, h: 240 };
+  const box = { x: 560, y: 145, w: 360, h: 110 }, exBox = { x: 40, y: 145, w: 360, h: 110 };
   const pbox = { x: 600, y: 110, w: 250, h: 180 }, pex = { x: 110, y: 110, w: 250, h: 180 };   // packing: 25 x 18 mm at 10 px/mm
   const sat = (pad) => { const d = pad.ink.getContext('2d').getImageData(pbox.x, pbox.y, pbox.w, pbox.h).data; let s2 = 0; for (let i = 3; i < d.length; i += 4) s2 += d[i]; return s2 / (d.length / 4) / 255; };
   const fades = {};
@@ -755,8 +760,8 @@ TT.open = async (el, id) => {
         cal.fade = +Math.max(0.1, Math.min(10, want / feel.speedFade)).toFixed(3); fades.whip = cal.fade;
         return `Your flicks reach about ${Math.round(v)} mm/s; at that speed the needle now fades out like whip shading.`; } },
     { id: 'pend', title: 'Pendulum shading', needle: '7RS', text: 'Swing back and forth across the band like a pendulum: a soft entry, press in through the middle, feather out at the end, and reverse. Keep a steady rhythm for several swings.',
-      under: (g) => { const gr = g.createLinearGradient(80, 0, 880, 0); [[0, 0], [0.5, 0.5], [1, 0]].forEach(([p, a]) => gr.addColorStop(p, `rgba(20,20,20,${a})`)); g.fillStyle = gr; g.fillRect(80, 140, 800, 120);
-        g.strokeStyle = 'rgba(70,40,120,.5)'; g.setLineDash([6, 6]); g.strokeRect(80, 140, 800, 120); g.setLineDash([]); label(g, 'feather', 80, 300); label(g, 'press in', 440, 300); label(g, 'feather', 800, 300); },
+      under: (g) => { const gr = g.createLinearGradient(160, 0, 800, 0); [[0, 0], [0.5, 0.5], [1, 0]].forEach(([p, a]) => gr.addColorStop(p, `rgba(20,20,20,${a})`)); g.fillStyle = gr; g.fillRect(160, 160, 640, 80);
+        g.strokeStyle = 'rgba(70,40,120,.5)'; g.setLineDash([6, 6]); g.strokeRect(160, 160, 640, 80); g.setLineDash([]); label(g, 'feather', 160, 270); label(g, 'press in', 440, 270); label(g, 'feather', 740, 270); },
       fit(pad) {
         // one long back-and-forth stroke or several: each swing's middle speed, averaged
         const mids = [];
@@ -988,17 +993,17 @@ TT.open = async (el, id) => {
     { id: 'bold', cat: 'line', title: 'Bold line', needle: '9RL', layer: 'line', ink: 'black', kind: 'line', core: 1.1,
       text: 'Black ink, 9RL. Pull the bold arc solid in one pass, no gaps and no wobble.',
       path: (g) => { g.moveTo(30, 95); g.quadraticCurveTo(90, 10, 150, 95); } },
-    { id: 'whip', cat: 'shade', title: 'Whip shading', needle: '7RS', layer: 'shadow', ink: 'black', kind: 'grad', box: [50, 35, 80, 60], prof: (f) => Math.pow(1 - f, 1.4),
+    { id: 'whip', cat: 'shade', title: 'Whip shading', needle: '7RS', layer: 'shadow', ink: 'black', kind: 'grad', box: [55, 56, 70, 18], prof: (f) => Math.pow(1 - f, 1.4),
       text: 'Black ink, 7RS. Whip shade the box to match the example: dark at the left, fading out to clean skin on the right.' },
-    { id: 'smooth', cat: 'shade', title: 'Smooth gradient', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'grad', box: [40, 35, 100, 60], prof: (f) => Math.pow(Math.sin(Math.PI * f), 1.2),
+    { id: 'smooth', cat: 'shade', title: 'Smooth gradient', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'grad', box: [45, 56, 90, 18], prof: (f) => Math.pow(Math.sin(Math.PI * f), 1.2),
       text: 'Black ink, 15CM. Pendulum shade the box: soft at both ends, darkest through the middle, with no hard edges.' },
-    { id: 'pack', cat: 'pack', title: 'Solid black', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'pack', box: [60, 35, 60, 60],
+    { id: 'pack', cat: 'pack', title: 'Solid black', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'pack', box: [75, 50, 30, 30],
       text: 'Black ink, 15CM. Pack the box solid and even, edge to edge, with your usual technique. Watch the skin: solid, not chewed.' },
-    { id: 'colour', cat: 'pack', title: 'Colour packing', needle: '11M1', layer: 'mid', ink: 'red', kind: 'fill', col: RED, shape: (g) => { g.arc(90, 65, 26, 0, Math.PI * 2); },
+    { id: 'colour', cat: 'pack', title: 'Colour packing', needle: '11M1', layer: 'mid', ink: 'red', kind: 'fill', col: RED, shape: (g) => { g.arc(90, 65, 16, 0, Math.PI * 2); },
       text: 'Red ink, 11M1. Pack the circle with solid red, right up to the line and no further.' },
-    { id: 'mix', cat: 'colour', title: 'Mix a colour', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: MIX, shape: (g) => { g.rect(70, 45, 40, 40); }, colW: 0.75,
+    { id: 'mix', cat: 'colour', title: 'Mix a colour', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: MIX, shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
       text: 'Mix the colour in the example from the red and yellow caps (dip in one, then the other: the longer the dip, the more of it), then pack the square with it.' },
-    { id: 'blend', cat: 'colour', title: 'Colour blend', needle: '15CM', layer: 'mid', ink: 'red, yellow', kind: 'blend', box: [40, 40, 100, 50],
+    { id: 'blend', cat: 'colour', title: 'Colour blend', needle: '15CM', layer: 'mid', ink: 'red, yellow', kind: 'blend', box: [45, 55, 90, 20],
       text: 'Red feathered into yellow, like the example: solid red on the left, feather it out, then saturate yellow into the feathered part and across to the right.' },
     { id: 'final', cat: 'final', title: 'Final piece: traditional heart', needle: '3RL', layer: 'line', ink: 'all', kind: 'final',
       text: 'Tattoo the heart like the reference: line it (black), shade the lower right of the heart (black), pack the heart red and the banner yellow, and put a white highlight in the shine. Use any needles and layers you like.' }
@@ -1025,7 +1030,7 @@ TT.open = async (el, id) => {
     return o.toDataURL('image/png');
   }
   // The part of the page an example shows (mm): its box or shape, with a margin of skin.
-  const exCrop = (T) => T.kind === 'final' ? [34, 20, 112, 88] : T.box ? [T.box[0] - 8, T.box[1] - 8, T.box[2] + 16, T.box[3] + 16] : T.id === 'colour' ? [56, 31, 68, 68] : T.id === 'mix' ? [62, 37, 56, 56] : [0, 0, 180, 130];
+  const exCrop = (T) => T.kind === 'final' ? [34, 20, 112, 88] : T.box ? [T.box[0] - 8, T.box[1] - 8, T.box[2] + 16, T.box[3] + 16] : T.id === 'colour' ? [66, 41, 48, 48] : T.id === 'mix' ? [70, 45, 40, 40] : [0, 0, 180, 130];
   const exStencil = (T) => {
     const g = L.stencil.getContext('2d'); g.clearRect(0, 0, W, H); g.strokeStyle = 'rgba(78,40,150,.9)'; g.lineWidth = 0.32 * mm; g.lineJoin = g.lineCap = 'round';
     if (T.kind === 'line') { Mm(g, T.path); g.stroke(); }
@@ -1201,7 +1206,9 @@ function ttStyle() {
 .tt-load i { position: absolute; inset: 5px; border-radius: 50%; border: 2px solid #222; } .tt-load span { position: relative; font: 700 9px var(--ui); color: #fff; text-shadow: 0 1px 2px #000; }
 .tt-capedit { flex: none; }
 .tt-set { flex: none; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--teal); font: 700 10px var(--ui); border-radius: 8px; padding: 5px 4px; width: 46px; cursor: pointer; }
-.tt-wcap { background: #fff; } .tt-tray { scrollbar-width: none; } .tt-tray::-webkit-scrollbar { display: none; } body:has(#tt-stage) #toast { top: calc(var(--safe-t, 0px) + 64px); bottom: auto; }
+.tt-wcap { background: #fff; }
+.tt-volt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0 2px; } .tt-volt b { font: 700 10px var(--ui); color: var(--teal); }
+.tt-volt input { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 110px; margin: 0; accent-color: var(--teal); touch-action: none; } .tt-tray { scrollbar-width: none; } .tt-tray::-webkit-scrollbar { display: none; } body:has(#tt-stage) #toast { top: calc(var(--safe-t, 0px) + 64px); bottom: auto; }
 @media (max-height: 700px) { .tt-tray { top: 10px; transform: none; } } .tt-zoom { left: auto !important; right: 10px !important; bottom: 76px !important; }
 .tt-layers { display: grid; gap: 4px; }
 .tt-refs { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
@@ -1214,11 +1221,12 @@ function ttStyle() {
 .tt-ref i[data-rh=rot] { left: 50%; top: -26px; border-radius: 50%; cursor: grab; }
 .tt-rr { grid-template-columns: 44px 1fr auto auto auto; grid-template-areas: "a n b c d" "r r r r r"; } .tt-rr img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; grid-area: a; }
 .tt-addr { display: flex; flex-wrap: wrap; gap: 4px; }
-.tt-exam { position: absolute; left: max(140px, calc(50% - 260px)); top: 10px; z-index: 6; width: min(520px, calc(100% - 150px)); padding: 8px 12px; border-radius: 14px;
+.tt-exam { position: absolute; right: 10px; top: 10px; z-index: 6; width: min(290px, calc(100% - 150px)); padding: 6px 10px; border-radius: 12px;
   background: rgba(22,27,28,.95); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
 .tt-exam[hidden] { display: none; } .tt-exh { display: flex; align-items: center; gap: 8px; } .tt-exh b { font-size: 13px; flex: 1; }
 .tt-exdots { display: flex; gap: 3px; } .tt-exdots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); } .tt-exdots i.on { background: var(--teal); } .tt-exdots i.done { background: rgba(31,182,166,.45); }
-.tt-ext { font-size: 12.5px; margin: 4px 0 8px; color: var(--ink2); } .tt-exres { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
+.tt-exam .tt-exdots { display: none; } .tt-exam .btn.small { padding: 5px 10px; font-size: 12px; } .tt-exres b { font-size: 20px !important; }
+.tt-ext { font-size: 11.5px; line-height: 1.35; margin: 3px 0 6px; color: var(--ink2); } .tt-exres { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
 .tt-exres b { font: 700 26px var(--ui); color: var(--teal); } .tt-exres span { font-size: 11.5px; color: var(--ink2); }
 .tt-grade { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; } .tt-grade > b { font: 800 40px var(--ui); color: var(--teal); width: 64px; height: 64px; display: grid; place-items: center; border: 2px solid var(--teal); border-radius: 16px; }
 .tt-cats { display: grid; gap: 6px; margin-bottom: 10px; } .tt-cats div { display: grid; grid-template-columns: 90px 1fr 34px; gap: 8px; align-items: center; font-size: 13px; }
