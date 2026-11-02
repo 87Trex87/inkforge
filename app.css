@@ -1393,3 +1393,8 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .st-crop-box i[data-h=w] { left: 0; top: 50%; cursor: ew-resize; } .st-crop-box i[data-h=e] { right: 0; top: 50%; cursor: ew-resize; }
 .st-crop-box i[data-h=n], .st-crop-box i[data-h=s] { margin-left: -11px; } .st-crop-box i[data-h=w], .st-crop-box i[data-h=e] { margin-top: -11px; }
 .st-crop-bar { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; gap: 6px; padding: 5px; border-radius: 10px; background: rgba(15,18,19,.9); border: 1px solid var(--line); }
+
+/* Design studio: selection box (solid = wholly inside, dashed = anything it touches) */
+#dz-marq { position: absolute; z-index: 4; pointer-events: none; border: 1.5px solid var(--teal); background: rgba(31,182,166,.12); }
+#dz-marq.touch { border-style: dashed; background: rgba(46,204,113,.10); border-color: #2ecc71; }
+#dz-marq[hidden] { display: none; }

@@ -988,7 +988,7 @@ DZ.edit = async (id) => {
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
         <div class="dz-faces" id="dz-faces"></div>
-        <div id="dz-qs" class="dz-qs" hidden><span class="dz-qs-what"></span><div class="dz-qs-row"><span>Yours</span><input type="range" min="0" max="100" step="1" value="50" aria-label="Closer to what you drew, or cleaner"><span>Cleaner</span></div><div class="dz-qs-row"><button class="btn small" data-qs="no" title="Put back the shape it snapped to">Cancel</button><button class="btn small primary" data-qs="ok">Keep</button></div></div><div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
+        <div id="dz-qs" class="dz-qs" hidden><span class="dz-qs-what"></span><div class="dz-qs-row"><span>Yours</span><input type="range" min="0" max="100" step="1" value="50" aria-label="Closer to what you drew, or cleaner"><span>Cleaner</span></div><div class="dz-qs-row"><button class="btn small" data-qs="no" title="Put back the shape it snapped to">Cancel</button><button class="btn small primary" data-qs="ok">Keep</button></div></div><div id="dz-marq" hidden></div><div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
       <div class="dz-side" id="dz-side"></div>
     </div></div>`;
   const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
@@ -1191,7 +1191,7 @@ DZ.edit = async (id) => {
     const L = picked(), n = L.length, all = (f) => n && L.every(f);
     side.innerHTML = `<div class="dz-lh"><b>${n ? `${n} selected` : 'Select items'}</b><button class="btn small" data-mact="done">Done</button></div>
       <p class="muted" style="font-size:12px;margin:0 0 10px">${picking ? 'Tap items on the design or in Layers to add or remove them. Drag a selected item to move them all.'
-        : 'Ctrl-click adds or removes; Shift-click in Layers picks a range. On a touchscreen, hold an item for a moment.'}</p>
+        : 'Ctrl-click adds or removes; Shift-click in Layers picks a range. Shift-drag on an empty spot draws a box: left to right picks what's wholly inside, right to left anything it touches. On a touchscreen, hold an item for a moment, or hold an empty spot then drag for the box.'}</p>
       <div class="row" style="gap:6px;margin-bottom:10px"><button class="btn small" data-mact="all">Select all</button><button class="btn small" data-mact="none" ${n ? '' : 'disabled'}>Clear</button></div>
       <div class="dz-acts">
         <button data-mact="dup" ${n ? '' : 'disabled'} title="Duplicate">⧉<span>Copy</span></button>
@@ -2350,15 +2350,46 @@ DZ.edit = async (id) => {
     if (pts.size === 2) {
       // A second finger: stop moving the item (put it back) and pinch the view instead.
       if (drag) { const l = layer(); if (l) Object.assign(l, drag.l0); drag = null; guides(false, false); redraw(); }
-      bg = null; const [a, b] = [...pts.values()], r = stage.getBoundingClientRect();
+      if (bg) clearTimeout(bg.ht); bg = null; marq = null; marqDraw(); const [a, b] = [...pts.values()], r = stage.getBoundingClientRect();
       pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top, vx, vy };
     }
   }, true);
   stage.addEventListener('pointerdown', (e) => {
     if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs')) return;
-    // Background (around the design, or an empty part of it): drag to pan, tap to deselect.
-    bg = { x: e.clientX, y: e.clientY, vx, vy, moved: false }; stage.setPointerCapture(e.pointerId);
+    // Background (around the design, or an empty part of it): drag to pan, tap to deselect. Shift-drag, or on a
+    // touchscreen a moment's hold before dragging, draws a selection box instead.
+    stage.setPointerCapture(e.pointerId);
+    const free = !(penOn || pclOn || cut || nodes || cont || cropping);
+    if (free && modEv(e).shiftKey) return marqStart(e, true);
+    bg = { x: e.clientX, y: e.clientY, vx, vy, moved: false };
+    if (free && e.pointerType !== 'mouse') { const b0 = bg; bg.ht = setTimeout(() => { if (bg === b0 && !b0.moved && !pinch) { bg = null; navigator.vibrate?.(25); marqStart(e, false); } }, 500); }
   });
+  /* Selection box: dragged left to right it picks what lies wholly inside; right to left, anything it touches. */
+  let marq = null;
+  const marqStart = (e, add) => { marq = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, add }; marqDraw(); };
+  const marqDraw = () => {
+    const b = $('#dz-marq'); if (!b) return; b.hidden = !marq; if (!marq) return;
+    const r = stage.getBoundingClientRect(), x = Math.min(marq.x0, marq.x1), y = Math.min(marq.y0, marq.y1);
+    Object.assign(b.style, { left: x - r.left + 'px', top: y - r.top + 'px', width: Math.abs(marq.x1 - marq.x0) + 'px', height: Math.abs(marq.y1 - marq.y0) + 'px' });
+    b.classList.toggle('touch', marq.x1 < marq.x0);
+  };
+  const marqEnd = () => {
+    const m = marq; marq = null; marqDraw(); if (!m) return;
+    const pr = page.getBoundingClientRect(), P = (cx, cy) => ({ x: (cx - pr.left) / k, y: (cy - pr.top) / k });
+    const a = P(Math.min(m.x0, m.x1), Math.min(m.y0, m.y1)), b = P(Math.max(m.x0, m.x1), Math.max(m.y0, m.y1)), touch = m.x1 < m.x0;
+    if (Math.abs(m.x1 - m.x0) + Math.abs(m.y1 - m.y0) < 6) { if (!m.add && (sel || picks.size) && !picking) select(null); return; }
+    const ids = F().filter(l => !l.hide && !l.lock).filter(l => {
+      const t = (l.rot || 0) * Math.PI / 180, c = Math.cos(t), s2 = Math.sin(t), cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2;
+      const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => { const dx = u * l.w / 2, dy = v * (l.h || 0) / 2; return { x: cx + dx * c - dy * s2, y: cy + dx * s2 + dy * c }; });
+      const x0 = Math.min(...cs.map(q => q.x)), x1 = Math.max(...cs.map(q => q.x)), y0 = Math.min(...cs.map(q => q.y)), y1 = Math.max(...cs.map(q => q.y));
+      return touch ? x1 >= a.x && x0 <= b.x && y1 >= a.y && y0 <= b.y : x0 >= a.x && x1 <= b.x && y0 >= a.y && y1 <= b.y;
+    }).map(l => l.id);
+    const base = m.add || picking ? new Set([...picks, ...(sel ? [sel] : [])]) : new Set();
+    ids.forEach(id => base.add(id));
+    if (!base.size) return select(null);
+    setPicks(base);
+    if (ids.length) toast(`${ids.length} selected.`, 1200);
+  };
   stage.addEventListener('pointermove', (e) => {
     if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && pts.size >= 2) {
@@ -2367,13 +2398,15 @@ DZ.edit = async (id) => {
       fit(false); zoomTo(pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, mx, my);
       return;
     }
+    if (marq) { marq.x1 = e.clientX; marq.y1 = e.clientY; return marqDraw(); }
     if (bg) { const dx = e.clientX - bg.x, dy = e.clientY - bg.y; if (Math.abs(dx) + Math.abs(dy) > 5) bg.moved = true;
       if (bg.moved) { vx = bg.vx + dx; vy = bg.vy + dy; fit(false); } }
   });
   const ptUp = (e) => {
     pts.delete(e.pointerId); if (rest.delete(e.pointerId)) return;
+    if (marq) return marqEnd();
     if (pinch && pts.size < 2) { pinch = null; bg = null; return; }
-    if (bg) { if (!bg.moved && (sel || (picks.size && !picking))) select(null); bg = null; }
+    if (bg) { clearTimeout(bg.ht); if (!bg.moved && (sel || (picks.size && !picking))) select(null); bg = null; }
   };
   stage.addEventListener('pointerup', ptUp); stage.addEventListener('pointercancel', ptUp);
   stage.addEventListener('wheel', (e) => { e.preventDefault(); const r = stage.getBoundingClientRect();
