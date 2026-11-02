@@ -351,8 +351,9 @@ TT.open = async (el, id) => {
   let nk = TT_NEEDLES.find(n => n.id === st.needle)?.kind;
   const isMag = () => ['mag', 'soft'].includes(TT_NEEDLES.find(n => n.id === st.needle)?.kind);
   const rowAng = (ev) => { const tx = ev?.tiltX || 0, ty = ev?.tiltY || 0;
-    return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 - st.rot : st.magAng * Math.PI / 180; };
+    return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 : st.magAng * Math.PI / 180; };
   const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 : strokeA;
+  const pageTurn = (strokeA, ev) => turnOf(strokeA, ev) - (isMag() ? st.rot : 0);   // a magnum's angle is held on the screen, whatever the page's rotation
   const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); };
   /* One puncture: every needle of the grouping into the skin at p (page px, `sc` px per mm), turned to angle a.
      Needle hang: a longer hang is softer (each needle lands a little off and at its own depth, and tilt spreads
@@ -420,7 +421,7 @@ TT.open = async (el, id) => {
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
         }
-        puncture(pen.cx, q, turnOf(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
+        puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         if (st.tool !== 'erase') st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100);
         t += gap;
       }
@@ -437,7 +438,7 @@ TT.open = async (el, id) => {
     cux.setTransform(1, 0, 0, 1, 0, 0); cux.clearRect(0, 0, cur.width, cur.height);
     if (e) curAt = { x: e.clientX - r.left, y: e.clientY - r.top, ev: e };
     if (!curAt || pinch || pan || st.tool === 'erase' && false) return;
-    const s = k * mm, a = turnOf(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
+    const s = k * mm, a = pageTurn(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
     cux.setTransform(dpr, 0, 0, dpr, 0, 0); cux.lineWidth = 1;
     if (isMag()) {   // the row's line, so its angle reads even when the needles are tiny on screen
       const us = lay.map(n => n.u), u0 = Math.min(...us) * s - 6, u1 = Math.max(...us) * s + 6;
