@@ -1372,3 +1372,11 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .dz-touch { margin-top: 8px; font-size: 12px; color: var(--ink2); }
 .dz-touch summary { cursor: pointer; color: var(--teal); font-weight: 600; }
 .dz-touch ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* Design studio: after a snap, Yours ... Cleaner */
+.dz-qs { position: absolute; left: 50%; bottom: 62px; transform: translateX(-50%); z-index: 4; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 12px; background: rgba(15,18,19,.92); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0,0,0,.5); min-width: 240px; max-width: calc(100% - 20px); }
+.dz-qs[hidden] { display: none; }
+.dz-qs-what { font: 600 12px var(--ui); color: var(--ink); text-align: center; }
+.dz-qs-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink2); }
+.dz-qs-row input { flex: 1; accent-color: var(--teal); }
+.dz-qs-row .btn { flex: 1; }

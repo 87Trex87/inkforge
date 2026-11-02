@@ -318,7 +318,7 @@ function dzGuess(raw) {
   const gap = Math.hypot(raw.at(-1).x - raw[0].x, raw.at(-1).y - raw[0].y), closed = gap < D * 0.25 && len > D * 1.6;
   const probe = raw.filter((_, i) => i % Math.max(1, Math.floor(raw.length / 120)) === 0);
   const err = (subs) => { const S = dzSample(subs, 30); let t = 0; for (const q of probe) { let m = Infinity; for (const r of S) { const d = (r.x - q.x) ** 2 + (r.y - q.y) ** 2; if (d < m) m = d; } t += Math.sqrt(m); } return t / probe.length / D; };
-  const cands = [], push = (label, subs, pen) => cands.push({ label, subs, e: err(subs) + pen });
+  const cands = [], push = (label, subs, pen, gen) => cands.push({ label, subs, gen, e: err(subs) + pen });
   const tidy = (deg, step = 15, tol = 4) => { const n = Math.round(deg / step) * step; return Math.abs(deg - n) < tol ? n : deg; };
   if (!closed && len < gap * 1.35) {   // a line, if the stroke went one way
     let A = raw[0], B = raw.at(-1); const ang = Math.atan2(B.y - A.y, B.x - A.x) * 180 / Math.PI, near = tidy(ang, 15, 2.5);
@@ -337,8 +337,8 @@ function dzGuess(raw) {
     const mu = (u0 + u1) / 2, mv = (v0 + v1) / 2, ecx = cx + mu * c - mv * s2, ecy = cy + mu * s2 + mv * c;
     let a = (u1 - u0) / 2, b = (v1 - v0) / 2; if (Math.abs(a - b) / Math.max(a, b) < 0.06) a = b = (a + b) / 2;
     const P = (u, v) => dzP(ecx + u * c - v * s2, ecy + u * s2 + v * c);
-    push(a === b ? 'Square' : 'Rectangle', [{ closed: true, nodes: [P(-a, -b), P(a, -b), P(a, b), P(-a, b)] }], 0.004);
-    push('Ellipse', dzEllipseSubs(ecx, ecy, a * 0.97, b * 0.97, th), 0.007);
+    push(a === b ? 'Square' : 'Rectangle', [{ closed: true, nodes: [P(-a, -b), P(a, -b), P(a, b), P(-a, b)] }], 0.004, { k: 'rect', cx: ecx, cy: ecy, a, b, th });
+    push('Ellipse', dzEllipseSubs(ecx, ecy, a * 0.97, b * 0.97, th), 0.007, { k: 'ell', cx: ecx, cy: ecy, a: a * 0.97, b: b * 0.97, th });
     // corners: the closed loop simplified until only its turns are left
     const loop = dzRdp([...raw, raw[0]], D * 0.06); loop.pop();
     const n = loop.length;
@@ -347,12 +347,29 @@ function dzGuess(raw) {
       const rad = loop.map(q => Math.hypot(q.x - px, q.y - py)), R = rad.reduce((t, v) => t + v, 0) / n, off = Math.max(...rad.map(v => Math.abs(v - R)));
       if (n >= 5 && off / R < 0.1) { const a0 = Math.atan2(loop[0].y - py, loop[0].x - px);
         push(`${n}-sided`, [{ closed: true, nodes: [...Array(n)].map((_, i) => dzP(px + R * Math.cos(a0 + i * 2 * Math.PI / n), py + R * Math.sin(a0 + i * 2 * Math.PI / n))) }], 0.003 * n); }
-      else push(n === 3 ? 'Triangle' : `${n}-sided`, [{ closed: true, nodes: loop.map(q => dzP(q.x, q.y)) }], 0.003 * n + (n === 4 ? 0.02 : 0));
+      else push(n === 3 ? 'Triangle' : `${n}-sided`, [{ closed: true, nodes: loop.map(q => dzP(q.x, q.y)) }], 0.003 * n + (n === 4 ? 0.02 : 0), { k: 'poly' });
     }
   }
   if (!cands.length) return null;
   cands.sort((p1, p2) => p1.e - p2.e);
   return cands[0].e < 0.045 ? cands[0] : null;
+}
+/* A snapped shape made plainer by a fraction u (0..1): an ellipse toward a circle, a rectangle toward a square, a
+   free polygon toward its regular form. Blended rather than switched, so the slider moves smoothly. */
+function dzPlainer(g, u) {
+  const G = g.gen; if (!G || !(u > 0)) return g; u = Math.min(1, u);
+  if (G.k === 'rect' || G.k === 'ell') {
+    const m = (G.a + G.b) / 2, a = G.a + (m - G.a) * u, b = G.b + (m - G.b) * u, even = Math.abs(a - b) < Math.max(a, b) * 0.004;
+    if (G.k === 'ell') return { label: even ? 'Circle' : 'Ellipse', subs: dzEllipseSubs(G.cx, G.cy, a, b, G.th) };
+    const c = Math.cos(G.th), s2 = Math.sin(G.th), P = (x, y) => dzP(G.cx + x * c - y * s2, G.cy + x * s2 + y * c);
+    return { label: even ? 'Square' : 'Rectangle', subs: [{ closed: true, nodes: [P(-a, -b), P(a, -b), P(a, b), P(-a, b)] }] };
+  }
+  const n = g.subs[0].nodes; if (!g.subs[0].closed || n.length < 3) return g;
+  let cx = 0, cy = 0; for (const q of n) { cx += q.x; cy += q.y; } cx /= n.length; cy /= n.length;
+  let R = 0; for (const q of n) R += Math.hypot(q.x - cx, q.y - cy); R /= n.length;
+  let ar = 0; for (let i = 0; i < n.length; i++) { const p = n[i], q = n[(i + 1) % n.length]; ar += p.x * q.y - q.x * p.y; }   // which way round, or it folds through itself
+  const st = (ar < 0 ? -1 : 1) * 2 * Math.PI / n.length, a0 = Math.atan2(n[0].y - cy, n[0].x - cx);
+  return { label: u > 0.98 ? `Regular ${n.length}-sided` : g.label, subs: [{ closed: true, nodes: n.map((q, i) => dzP(q.x + (cx + Math.cos(a0 + st * i) * R - q.x) * u, q.y + (cy + Math.sin(a0 + st * i) * R - q.y) * u)) }] };
 }
 /* A freehand stroke as nodes: thinned to within `tol` page px of what was drawn, sharp turns kept as corners,
    the rest smooth (handles along the line through the neighbours). */
@@ -971,7 +988,7 @@ DZ.edit = async (id) => {
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
         <div class="dz-faces" id="dz-faces"></div>
-        <div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
+        <div id="dz-qs" class="dz-qs" hidden><span class="dz-qs-what"></span><div class="dz-qs-row"><span>Yours</span><input type="range" min="0" max="100" step="1" value="50" aria-label="Closer to what you drew, or cleaner"><span>Cleaner</span></div><div class="dz-qs-row"><button class="btn small" data-qs="no" title="Put back the shape it snapped to">Cancel</button><button class="btn small primary" data-qs="ok">Keep</button></div></div><div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
       <div class="dz-side" id="dz-side"></div>
     </div></div>`;
   const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
@@ -1087,7 +1104,7 @@ DZ.edit = async (id) => {
     const push = () => { const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
     if (now) push(); else histT = setTimeout(push, 450);
   };
-  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; drawPen(); if (!layer()) sel = null;
+  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; qsHide(); drawPen(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
@@ -2097,7 +2114,7 @@ DZ.edit = async (id) => {
   /* ---------- Hold to snap (pencil and lasso) ----------
      Draw a shape roughly and hold still: after the hold time it becomes the line, circle, rectangle, triangle or
      polygon it looks like. Keep holding and move to resize it about its middle; let go to keep it. */
-  const pcl = (() => { try { return { lazy: 20, smooth: 4, close: true, mode: 'own', hold: true, ms: 420, ...JSON.parse(Settings.get('dz_pencil', '{}')) }; } catch { return { lazy: 20, smooth: 4, close: true, mode: 'own', hold: true, ms: 420 }; } })();
+  const pcl = (() => { const o = { lazy: 20, smooth: 4, close: true, mode: 'own', hold: true, ms: 800, v: 2 }; try { const sv = JSON.parse(Settings.get('dz_pencil', '{}')); if (!sv.v && sv.ms === 420) delete sv.ms; return { ...o, ...sv, v: 2 }; } catch { return o; } })();
   const savePcl = () => Settings.set('dz_pencil', JSON.stringify(pcl));
   const holdWatch = (st, p, fire) => {
     if (!pcl.hold || st.snap) return;
@@ -2105,8 +2122,45 @@ DZ.edit = async (id) => {
     st.hp = p; clearTimeout(st.ht); st.ht = setTimeout(fire, pcl.ms);
   };
   const holdStart = (g, p) => { const S = dzSample(g.subs, 24); let cx = 0, cy = 0; for (const q of S) { cx += q.x; cy += q.y; } cx /= S.length; cy /= S.length;
-    return { g, base: JSON.parse(JSON.stringify(g.subs)), cx, cy, d0: Math.max(1, Math.hypot(p.x - cx, p.y - cy)), cur: S }; };
-  const holdScale = (sn, p) => { const f = Math.max(0.05, Math.hypot(p.x - sn.cx, p.y - sn.cy) / sn.d0);
+    return { g, base: JSON.parse(JSON.stringify(g.subs)), cx, cy, d0: Math.max(1, Math.hypot(p.x - cx, p.y - cy)), f: 1, g0: { ...g, subs: JSON.parse(JSON.stringify(g.subs)) }, cur: S }; };
+  /* ---------- After a snap: Yours ... Cleaner ----------
+     A bar under the drawing. The middle is the shape it snapped to. Left keeps the stroke as drawn, following the
+     hand more closely the further it goes; right makes the shape plainer (an ellipse rounder, a rectangle squarer,
+     a polygon more regular). Keep accepts it (and adds or cuts, if the pencil is set to); Cancel puts back the
+     shape it snapped to. Starting another stroke or leaving the pencil keeps it as it is. */
+  let qs = null;
+  const qsScale = (subs, sn) => { const f = sn.f, c = sn.cx, d = sn.cy;
+    return subs.map(sp => ({ closed: sp.closed, nodes: sp.nodes.map(n => ({ ...n, x: c + (n.x - c) * f, y: d + (n.y - d) * f, ix: n.ix * f, iy: n.iy * f, ox: n.ox * f, oy: n.oy * f })) })); };
+  const qsAt = (t) => {
+    const sn = qs.sn; if (Math.abs(t - 0.5) < 1e-9) return { label: sn.g.label, subs: sn.g.subs };
+    const g0 = sn.g0, tol = pcl.smooth / k * Math.exp((t - 0.5) * 4.4);
+    if (t < 0.5 || !g0.gen) {
+      const sub = dzFitStroke(qs.raw.map(q => ({ x: sn.cx + (q.x - sn.cx) * sn.f, y: sn.cy + (q.y - sn.cy) * sn.f })), tol, g0.subs[0].closed);
+      return sub ? { label: 'Drawing', subs: [sub] } : null;
+    }
+    const g = dzPlainer(g0, (t - 0.5) * 2); return { label: g.label, subs: qsScale(g.subs, sn) };
+  };
+  const qsApply = (t) => {
+    const L = qs && doc.layers.find(x => x.id === qs.id); if (!L) return qsHide();
+    const g = qsAt(t); if (!g) return; qs.t = t;
+    const v = vecFromPage(g.subs, {}); Object.assign(L, { x: v.x, y: v.y, w: v.w, h: v.h, rot: 0, subs: v.subs, name: g.label }); changed();
+    qsSay(g, L);
+  };
+  const qsSay = (g, L) => { const w = $('#dz-qs .dz-qs-what'); if (w) { const n = L.subs.reduce((a, sp) => a + sp.nodes.length, 0); w.textContent = `${g.label} \u00b7 ${n} node${n === 1 ? '' : 's'}`; } };
+  const qsShow = (v, raw, sn, pend) => {
+    qs = { id: v.id, raw: raw.slice(), sn, t: 0.5, pend }; const b = $('#dz-qs'); if (!b) return;
+    b.querySelector('input').value = 50; b.querySelector('[data-qs="ok"]').textContent = pend === 'add' ? 'Add' : pend === 'sub' ? 'Cut' : 'Keep';
+    b.hidden = false; qsSay(sn.g, v);
+  };
+  function qsHide() { qs = null; const b = $('#dz-qs'); if (b) b.hidden = true; }
+  const qsDone = async (keep) => {
+    if (!qs) return; const q = qs;
+    if (!keep && Math.abs(q.t - 0.5) > 1e-9) qsApply(0.5);
+    qsHide(); changed(true);
+    if (keep && q.pend && doc.layers.some(x => x.id === q.id)) { penLast = q.id; await penCombine(q.pend); penLast = null; }
+    drawSide();
+  };
+  const holdScale = (sn, p) => { const f = Math.max(0.05, Math.hypot(p.x - sn.cx, p.y - sn.cy) / sn.d0); sn.f = f;
     sn.g.subs = sn.base.map(sp => ({ closed: sp.closed, nodes: sp.nodes.map(n => ({ ...n, x: sn.cx + (n.x - sn.cx) * f, y: sn.cy + (n.y - sn.cy) * f, ix: n.ix * f, iy: n.iy * f, ox: n.ox * f, oy: n.oy * f })) }));
     sn.cur = dzSample(sn.g.subs, 24); };
   const holdUI = () => `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><label class="toggle" style="display:inline-flex"><input type="checkbox" data-holdon ${pcl.hold ? 'checked' : ''}><span>Hold to snap</span></label></div>
@@ -2117,10 +2171,11 @@ DZ.edit = async (id) => {
      that comes back to its start closes itself. Each stroke can be its own, add to what it touches, or cut
      what's under it (those always close). Hold still to snap to a shape. N switches it on and off. */
   const startPencil = () => { endCrop(); endCut(); endNodes(); endCont(); endPen(); pclOn = true; sel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
-  function endPencil() { if (!pclOn) return; pclOn = false; if (stroke) clearTimeout(stroke.ht); stroke = null; drawPen(); }
+  function endPencil() { if (!pclOn) return; if (qs) qsDone(true); pclOn = false; if (stroke) clearTimeout(stroke.ht); stroke = null; drawPen(); }
   const pclDown = (e) => {
     if (Settings.get('dz_pen', 'any') === 'pen' && e.pointerType === 'touch') return;   // stylus only: fingers move the view
     e.dzHit = true; e.preventDefault(); page.setPointerCapture(e.pointerId);
+    if (qs) qsDone(true);
     const p = toPage(e); stroke = { pts: [p], lp: p }; drawPen();
   };
   const pclMove = (e) => {
@@ -2150,6 +2205,7 @@ DZ.edit = async (id) => {
     const style = sub.closed ? { fill: '@accent', stroke: 'none', sw: 0 } : { fill: 'none', stroke: '@accent', sw: Math.max(2, Math.round(Math.min(doc.w, doc.h) * 0.006)) };
     const v = vecFromPage([sub], { ...style, name: d.snap ? d.snap.g.label : 'Drawing' });
     doc.layers.push(v); changed(true);
+    if (d.snap) { qsShow(v, d.pts, d.snap, forceClose && sub.closed ? pcl.mode : null); return drawSide(); }   // tune it first, combine on Keep
     if (forceClose && sub.closed) { penLast = v.id; await penCombine(pcl.mode); penLast = null; }
     drawSide();
   };
@@ -2165,7 +2221,7 @@ DZ.edit = async (id) => {
     if (['own', 'add', 'sub'].includes(a)) { pcl.mode = a; savePcl(); return drawSide(); }
   };
   const pclPanel = () => `<div class="dz-lh"><b>Pencil</b><button class="btn small primary" data-pcl="done">Done</button></div>
-    <p class="muted" style="font-size:12px;margin:0 0 8px">Draw freehand. Hold still before lifting to snap to a line, circle, rectangle, triangle or polygon, then move to resize it.</p>
+    <p class="muted" style="font-size:12px;margin:0 0 8px">Draw freehand. Hold still before lifting to snap to a line, circle, rectangle, triangle or polygon, then move to resize it. After you let go, slide between Yours and Cleaner and press Keep.</p>
     ${slider('p:lazy', 'Steady', 0, 100, 1, pcl.lazy, v => v + '%')}
     ${slider('p:smooth', 'Smoothing', 1, 40, 0.5, pcl.smooth, v => v + ' px')}
     <label class="toggle" style="display:inline-flex;margin:2px 0 6px"><input type="checkbox" data-pclclose ${pcl.close ? 'checked' : ''}><span>A loop closes itself</span></label>
@@ -2299,7 +2355,7 @@ DZ.edit = async (id) => {
     }
   }, true);
   stage.addEventListener('pointerdown', (e) => {
-    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu')) return;
+    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs')) return;
     // Background (around the design, or an empty part of it): drag to pan, tap to deselect.
     bg = { x: e.clientX, y: e.clientY, vx, vy, moved: false }; stage.setPointerCapture(e.pointerId);
   });
@@ -2336,6 +2392,8 @@ DZ.edit = async (id) => {
   };
   $('#dz-focus').onclick = () => focus(!document.body.classList.contains('dz-focus'));
   $('#dz-panel').onclick = () => { document.body.classList.toggle('dz-noside'); requestAnimationFrame(() => { fit(); redraw(); }); };
+  $('#dz-qs').oninput = (e) => { if (qs && e.target.type === 'range') qsApply(+e.target.value / 100); };
+  $('#dz-qs').onclick = (e) => { const a = e.target.closest('[data-qs]')?.dataset.qs; if (a) qsDone(a === 'ok'); };
   $('#dz-mods').onclick = (e) => { const m = e.target.closest('[data-mod]')?.dataset.mod; if (!m) return; dock[m] = !dock[m]; drawMods(); };
   $('#dz-faces').onclick = (e) => { const f = e.target.closest('[data-face]')?.dataset.face; if (f) setFace(f); };
   stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
