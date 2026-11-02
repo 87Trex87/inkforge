@@ -307,7 +307,13 @@ const MIGRATIONS = [
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      name TEXT, category TEXT NOT NULL DEFAULT 'Shapes', svg_ref TEXT NOT NULL, layers TEXT, w REAL, h REAL,
      created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
-   CREATE INDEX idx_assets_cat ON assets (category);`
+   CREATE INDEX idx_assets_cat ON assets (category);`,
+  // stencils kept in the portfolio: the picture they were made from (as cropped and turned), the stencil, a small
+  // copy for the grid, the print width and the stencil settings (to open it again in the stencil maker)
+  `CREATE TABLE stencils (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     name TEXT, src_ref TEXT NOT NULL, stencil_ref TEXT NOT NULL, thumb_ref TEXT, w INTEGER, h INTEGER, cm REAL, params TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -523,6 +529,7 @@ const Media = {
       UNION ALL SELECT 1 FROM design_assets WHERE ref = ?1
       UNION ALL SELECT 1 FROM ref_images WHERE photo_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM assets WHERE svg_ref = ?1
+      UNION ALL SELECT 1 FROM stencils WHERE src_ref = ?1 OR stencil_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
@@ -1207,7 +1214,7 @@ const VIEWS = {
         <button class="btn primary icon-btn" id="pf-add" data-tip="Add to portfolio" aria-label="Add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="seg pf-seg" id="pf-filter">
-        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★'], ['refs', 'References'], ['assets', 'Assets']].map(([k, l]) =>
+        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★'], ['refs', 'References'], ['assets', 'Assets'], ['stencils', 'Stencils']].map(([k, l]) =>
           `<button data-f="${k}" class="${PF.filter === k ? 'on' : ''}" ${k === 'fav' ? 'data-tip="Favourites" aria-label="Favourites"' : ''}>${l}</button>`).join('')}
       </div>
       <div id="pf-grid"></div>`,
@@ -1216,7 +1223,7 @@ const VIEWS = {
       $('#pf-filter').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; PF.filter = b.dataset.f;
         document.querySelectorAll('#pf-filter button').forEach(x => x.classList.toggle('on', x === b)); renderPfGrid(); };
       $('#pf-print').onclick = openPortfolioPrint;
-      $('#pf-add').onclick = () => { if (PF.filter === 'refs') return refImport(); if (PF.filter === 'assets') return assetImport();
+      $('#pf-add').onclick = () => { if (PF.filter === 'refs') return refImport(); if (PF.filter === 'assets') return assetImport(); if (PF.filter === 'stencils') { ST.src = null; location.hash = 'stencil'; return; }
         PF.ctx = { kind: ['tattoo', 'art', 'flash'].includes(PF.filter) ? PF.filter : 'tattoo' }; location.hash = 'pf-edit/new'; };
       renderPfGrid();
     }
@@ -1772,6 +1779,7 @@ const VIEWS = {
             <input class="in" id="st-cm" type="number" inputmode="decimal" min="1" max="300" step="0.5" value="${ST.cm}"></label>
           <button class="btn" id="st-print" style="align-self:flex-end">Print</button>
           <button class="btn" id="st-split" style="align-self:flex-end" data-tip="Too big for one sheet? Split it over several pages to tape together">Split</button>
+          <button class="btn" id="st-keep" style="align-self:flex-end" data-tip="Keep the stencil and the picture it was made from in Portfolio › Stencils">Keep</button>
           <button class="btn primary" id="st-save" style="align-self:flex-end;flex:1">Save / share</button>
         </div>
       </div>` : `
@@ -1805,6 +1813,7 @@ const VIEWS = {
       stCropWire();
       $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(300, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); });
       $('#st-save').onclick = stExport;
+      $('#st-keep').onclick = stKeep;
       $('#st-print').onclick = stPrint;
       $('#st-split').onclick = async () => { if (!ST.mask) return; await SP.open(await stBlob(), `stencil-${ymd(new Date())}`, ST.cm); };
       stPrepare(); stRun();
@@ -2703,6 +2712,7 @@ const MERGE_SECTIONS = [
   ['portfolio', 'Portfolio', 'Tattoos, art and flash with photos'],
   ['references', 'References', 'Pictures collected for ideas, by category'],
   ['assets', 'Assets', 'Vector stickers and shapes (SVG), by category'],
+  ['stencils', 'Stencils', 'Saved stencils with the pictures they were made from'],
   ['inventory', 'Inventory', 'Stock items and stock takes'],
   ['rules', 'Rule book', 'Your studio rules'],
   ['quotes', 'Saved quotes', 'Quotes saved to finish or book later'],
@@ -2728,12 +2738,13 @@ const MERGE_TABLES = {
   designs: { section: 'designs', refs: ['thumb_ref'] },
   ref_images: { section: 'references', refs: ['photo_ref', 'thumb_ref'] },
   assets: { section: 'assets', refs: ['svg_ref'] },
+  stencils: { section: 'stencils', refs: ['src_ref', 'stencil_ref', 'thumb_ref'] },
   design_assets: { section: 'designs', fk: { design_id: 'designs' }, refs: ['ref'] },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
-  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets'];
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
@@ -3560,6 +3571,78 @@ async function refSheet(id) {
     await DB.run('DELETE FROM ref_images WHERE id = ?', [id]); await Media.release(r.photo_ref); await Media.release(r.thumb_ref); close();
   };
 }
+/* ---------- Stencils (portfolio) ----------
+   Each keeps the picture it was made from (as cropped and turned in the stencil maker), the stencil itself, its
+   print width and the stencil settings, so it can be printed again or opened in the stencil maker to change. */
+async function stKeep() {
+  if (!ST.mask) return toast('Wait a moment for the stencil to finish.');
+  const nm = prompt('Name for this stencil:', ST.from || `Stencil ${ymd(new Date())}`); if (nm == null) return;
+  const stencil = await stBlob(), src = await ST.orig.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+  const s = Math.min(1, 420 / Math.max(ST.w, ST.h)), th = new OffscreenCanvas(Math.max(1, Math.round(ST.w * s)), Math.max(1, Math.round(ST.h * s)));
+  th.getContext('2d').drawImage(await createImageBitmap(stencil), 0, 0, th.width, th.height);
+  const { flip, ...p } = ST.p;
+  await DB.run('INSERT INTO stencils (name, src_ref, stencil_ref, thumb_ref, w, h, cm, params) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [nm.trim() || 'Stencil', await Media.save(src, 'jpg'), await Media.save(stencil, 'png'), await Media.save(await th.convertToBlob({ type: 'image/png' }), 'png'), ST.w, ST.h, ST.cm, JSON.stringify(p)]);
+  toast('Kept in Portfolio › Stencils.');
+}
+async function renderStencils(el) {
+  const q = PF.q.trim(), like = '%' + q + '%';
+  const rows = await DB.all(`SELECT id, name, thumb_ref, cm FROM stencils WHERE (? = '' OR name LIKE ?) ORDER BY created_at DESC, id DESC`, [q, like]);
+  if ($('#pf-grid') !== el) return;
+  if (!rows.length && !q) {
+    el.innerHTML = `<div class="empty"><div class="empty-ico">${ICON.stencil}</div><div style="font:24px var(--display)">Your stencils</div>
+      <div class="muted">Stencils you keep from the stencil maker, each with the picture it was made from. In the design studio, select something and choose Make a stencil.</div>
+      <button class="btn primary" id="sn-add" style="margin-top:12px">Make a stencil</button></div>`;
+    $('#sn-add').onclick = () => { ST.src = null; location.hash = 'stencil'; }; return;
+  }
+  const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+  el.innerHTML = `${rows.length ? `<div class="ref-grid">${rows.map((r, i) => `<button class="ref-tile sn-tile" data-sn="${r.id}" title="${esc(r.name || '')}"><img src="${urls[i]}" alt="" loading="lazy"><span>${esc(r.name || '')}</span></button>`).join('')}</div>`
+      : '<div class="empty muted">No matches.</div>'}
+    <div class="muted count">${rows.length} stencil${rows.length === 1 ? '' : 's'}</div>`;
+  el.onclick = (e) => { const t = e.target.closest('[data-sn]'); if (t) stencilSheet(+t.dataset.sn); };
+}
+// One stencil: the stencil or its original, name and print width; print, save, open in the stencil maker, delete.
+async function stencilSheet(id) {
+  const r = await DB.one('SELECT * FROM stencils WHERE id = ?', [id]); if (!r) return;
+  const [su, ou] = await Promise.all([Media.url(r.stencil_ref), Media.url(r.src_ref)]);
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card ref-sheet">
+    <div class="seg" id="sn-seg" style="margin-bottom:8px"><button data-v="s" class="on" style="flex:1">Stencil</button><button data-v="o" style="flex:1">Original</button></div>
+    <button class="ref-big sn-big" id="sn-view" data-tip="View full screen"><img src="${su}" alt=""></button>
+    <div class="muted" style="font-size:11px;margin:6px 0 10px">${r.w} × ${r.h} px</div>
+    <div class="two"><label class="field"><span>Name</span><input class="in" id="sn-n" value="${esc(r.name || '')}"></label>
+      <label class="field"><span>Print width (cm)</span><input class="in" id="sn-cm" type="number" inputmode="decimal" min="1" max="300" step="0.5" value="${r.cm || 10}"></label></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn danger icon-btn" id="sn-del" aria-label="Delete" data-tip="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+      <button class="btn" id="sn-print">Print</button><button class="btn" id="sn-dl">Save PNG</button><button class="btn" id="sn-edit" data-tip="Open the original in the stencil maker with these settings">Open in stencil maker</button>
+      <span style="flex:1"></span><button class="btn" id="sn-x">Close</button><button class="btn primary" id="sn-ok">Save</button></div></div>`;
+  document.body.appendChild(o);
+  let showing = 's';
+  const cm = () => Math.min(300, Math.max(1, +o.querySelector('#sn-cm').value || r.cm || 10));
+  o.querySelector('#sn-seg').onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; showing = b.dataset.v;
+    o.querySelectorAll('#sn-seg button').forEach(x => x.classList.toggle('on', x === b)); o.querySelector('#sn-view img').src = showing === 's' ? su : ou; };
+  o.querySelector('#sn-view').onclick = () => openGallery([su, ou], showing === 's' ? 0 : 1);
+  o.querySelector('#sn-x').onclick = () => o.remove();
+  const keep = () => DB.run(`UPDATE stencils SET name = ?, cm = ?, updated_at = datetime('now') WHERE id = ?`, [o.querySelector('#sn-n').value.trim() || null, cm(), id]);
+  o.querySelector('#sn-ok').onclick = async () => { await keep(); o.remove(); renderPfGrid(); };
+  o.querySelector('#sn-print').onclick = () => printAtWidth(su, cm());
+  o.querySelector('#sn-dl').onclick = async () => {
+    const f = await (await (await Media.dir()).getFileHandle(r.stencil_ref)).getFile();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = (r.name || 'stencil').replace(/[^\w-]+/g, '_') + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  o.querySelector('#sn-edit').onclick = async () => {
+    await keep();
+    const f = await (await (await Media.dir()).getFileHandle(r.src_ref)).getFile();
+    await stLoad(f); try { Object.assign(ST.p, JSON.parse(r.params || '{}')); } catch {}
+    ST.cm = cm(); ST.from = r.name || ''; o.remove(); location.hash = 'stencil';
+  };
+  o.querySelector('#sn-del').onclick = async () => {
+    if (!confirm(`Delete "${r.name || 'this stencil'}" and its original?`)) return;
+    await DB.run('DELETE FROM stencils WHERE id = ?', [id]);
+    for (const ref of [r.src_ref, r.stencil_ref, r.thumb_ref]) await Media.release(ref);
+    o.remove(); renderPfGrid();
+  };
+}
+
 /* ---------- Assets ----------
    Vector stickers and custom shapes, kept as SVG files and sorted into categories. Saved from the design studio
    (only when everything chosen is vector) or added as .svg files; the design studio's Shape menu inserts them. */
@@ -3700,10 +3783,11 @@ const PF_KIND = { tattoo: 'Tattoo', art: 'Art', flash: 'Flash' };
 
 async function renderPfGrid() {
   const el = $('#pf-grid'); if (!el) return;
-  const pr = $('#pf-print'); if (pr) pr.hidden = PF.filter === 'refs' || PF.filter === 'assets';
+  const pr = $('#pf-print'); if (pr) pr.hidden = ['refs', 'assets', 'stencils'].includes(PF.filter);
   $('#pf-q') && ($('#pf-q').placeholder = PF.filter === 'refs' ? 'Search title, category, tag…' : PF.filter === 'assets' ? 'Search name or category…' : 'Search title, tag, placement…');
   if (PF.filter === 'refs') return renderRefs(el);
   if (PF.filter === 'assets') return renderAssets(el);
+  if (PF.filter === 'stencils') return renderStencils(el);
   const q = PF.q.trim(), like = '%' + q + '%';
   const where = PF.filter === 'fav' ? 'p.favourite = 1' : PF.filter === 'all' ? '1' : 'p.kind = ?';
   const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite, p.bg,
@@ -6505,7 +6589,7 @@ const ST = {
 async function stLoad(file) {
   try { ST.src = await createImageBitmap(file); }
   catch { toast('Could not read that image.'); return; }
-  ST.rot = 0; ST.mask = null; ST.crop = null; ST.cropping = null;
+  ST.rot = 0; ST.mask = null; ST.crop = null; ST.cropping = null; ST.from = '';
   try { Object.assign(ST.p, JSON.parse(Settings.get('st_params', '{}'))); } catch {}
   ST.p.flip = false;
   ST.cm = +Settings.get('st_cm', '10') || 10;
@@ -6739,13 +6823,16 @@ async function printBlankForm(id) {
 
 async function stPrint() {
   if (!ST.mask) return;
-  const url = URL.createObjectURL(await stBlob());
+  return printAtWidth(URL.createObjectURL(await stBlob()), ST.cm, true);
+}
+// Prints a picture at a real width (cm) on a blank page; `own` = the url is ours to revoke afterwards.
+async function printAtWidth(url, cm, own) {
   let p = $('#print-area');
   if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
-  p.innerHTML = `<img src="${url}" style="width:${ST.cm}cm" alt="">`;
+  p.innerHTML = `<img src="${url}" style="width:${cm}cm" alt="">`;
   await p.querySelector('img').decode();
   document.body.classList.add('printing');
-  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; URL.revokeObjectURL(url); removeEventListener('afterprint', done); };
+  const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; if (own) URL.revokeObjectURL(url); removeEventListener('afterprint', done); };
   addEventListener('afterprint', done);
   window.print();
 }

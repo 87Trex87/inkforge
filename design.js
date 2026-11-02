@@ -296,6 +296,7 @@ const DZ_UI = {
   toshape: '<path d="M12 3l9 9-9 9-9-9z"/>', flatten: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
   pick: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><path d="M13 7h8M17 3v8"/>',
   svg: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M9.5 17.5c1-4 2.5-6 5-6.5"/><circle cx="9.5" cy="17.5" r="1"/><circle cx="14.5" cy="11" r="1"/>',
+  stencil: '<path d="M4 20c4-1 6-5 8-9s5-6 8-7"/><path d="M4 4l16 16" stroke-dasharray="2 3"/>',
   asset: '<path d="M12 3l2.5 5.2 5.5.8-4 3.9 1 5.6-5-2.7-5 2.7 1-5.6-4-3.9 5.5-.8z"/>',
   done: '<path d="M5 12.5l4.5 4.5L19 7"/>', close: '<path d="M6 6l12 12M18 6L6 18"/>', chev: '<path d="M6 9l6 6 6-6"/>',
   more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
@@ -1386,7 +1387,7 @@ DZ.edit = async (id) => {
 `)}
       ${fsec('Combine and save', `<div class="dz-tb">${dzIB(`data-mact="merge" ${dis}`, 'merge', 'Merge into one picture (Undo brings the layers back)')}
         ${dzIB(`data-mact="refs" ${dis}`, 'refs', 'Save to references')}${dzIB(`data-mact="png" ${dis}`, 'png', 'Save as PNG')}
-        ${n && vecOnly(L.map(l => l.id)) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}</div>`)}`;
+        ${n && vecOnly(L.map(l => l.id)) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}${dzIB(`data-mact="stencil" ${dis}`, 'stencil', 'Make a stencil')}</div>`)}`;
   };
   const drawEdit = () => {
     if (cont) { side.innerHTML = contPanel(); return; }
@@ -1454,7 +1455,7 @@ DZ.edit = async (id) => {
         ${l.t !== 'image' || l.ref || l.logo ? dzIB('data-act="flatten1"', 'flatten', l.t === 'image' ? 'Flatten: bake in rotation, flips, crop and opacity' : 'Flatten into a picture') : ''}
         ${dzIB('data-act="pick"', 'pick', 'Select more items')}
         ${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
-        ${vecOnly([l.id]) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}</div>
+        ${vecOnly([l.id]) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}${dzIB('data-mact="stencil"', 'stencil', 'Make a stencil')}</div>
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
         <button class="btn small" data-act="flatten">Flatten group</button></div>` : ''}
       ${l.t === 'text' ? `
@@ -2430,6 +2431,21 @@ DZ.edit = async (id) => {
     const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' })); l.download = fn; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000);
     toast('Saved ' + fn);
   };
+  // Make a stencil: the selection as one picture (text, pictures and shapes alike) into the stencil maker, at its real width.
+  const toStencil = async (ids) => {
+    const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list, 2400); if (!f) return toast('Nothing visible to make a stencil from.');
+    // On the design's own background, as it looks; a dark background is turned light (and everything with it), so
+    // pale text on a dark card still comes out as dark lines on paper.
+    const c = document.createElement('canvas'); c.width = f.cv.width; c.height = f.cv.height; const x = c.getContext('2d');
+    const bg = dzCol(doc, doc.bg?.c) || '#ffffff'; x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height); x.drawImage(f.cv, 0, 0);
+    x.fillStyle = bg; x.fillRect(0, 0, 1, 1); const [r0, g0, b0] = x.getImageData(0, 0, 1, 1).data; x.drawImage(f.cv, 0, 0, 1, 1, 0, 0, 1, 1);
+    if (r0 * 0.299 + g0 * 0.587 + b0 * 0.114 < 128) { x.globalCompositeOperation = 'difference'; x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); }
+    const blob = await pngOf(c); await flush();
+    await stLoad(new File([blob], 'design.png', { type: 'image/png' })); if (!ST.src) return;
+    if (!DZ_KINDS[doc.kind].social) ST.cm = Math.min(300, Math.max(1, Math.round(f.bw / (doc.dpi || 300) * 25.4) / 10));
+    ST.from = list.length === 1 ? layerName(list[0]) : name;
+    location.hash = 'stencil';
+  };
   // An asset onto the page, in the middle, at the size it was made (smaller only if it wouldn't fit): shapes saved
   // from a design come back as editable shapes, any other SVG as a picture.
   const addAsset = async () => {
@@ -2467,6 +2483,7 @@ DZ.edit = async (id) => {
     if (a === 'refs') return saveRef(targets());
     if (a === 'png') return savePng(targets());
     if (a === 'svg' || a === 'asset') return saveSvg(targets(), a === 'asset');
+    if (a === 'stencil') return toStencil(targets());
     if (!L.length) return;
     if (a === 'hide') { const v = !every(l => l.hide); L.forEach(l => l.hide = v); }
     if (a === 'lock') { const v = !every(l => l.lock); L.forEach(l => l.lock = v); }

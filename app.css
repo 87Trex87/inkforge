@@ -1492,3 +1492,9 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .as-big img { max-width: 100%; max-height: 50vh; }
 .dz-pick .ref-cats { margin-bottom: 10px; }
 .dz-pop .mi.as { border-top: 1px solid var(--line); border-radius: 0 0 9px 9px; margin-top: 4px; }
+
+/* Stencils (portfolio) */
+.sn-tile { background: #fff; position: relative; }
+.sn-tile img { object-fit: contain !important; }
+.sn-tile span { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; font-size: 11px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.7)); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sn-big { background: #fff; }
