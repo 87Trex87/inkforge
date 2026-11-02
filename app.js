@@ -540,6 +540,7 @@ const Media = {
       UNION ALL SELECT 1 FROM assets WHERE svg_ref = ?1
       UNION ALL SELECT 1 FROM stencils WHERE src_ref = ?1 OR stencil_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM tattoo_pieces WHERE ?1 IN (stencil_ref, line_ref, shadow_ref, mid_ref, light_ref, high_ref, thumb_ref, skin_ref, blow_ref)
+      UNION ALL SELECT 1 FROM tattoo_pieces WHERE instr(meta, ?1) > 0
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
