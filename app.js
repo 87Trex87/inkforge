@@ -1723,10 +1723,14 @@ const VIEWS = {
     render: () => ST.src ? `
       <div class="st-stage">
         <div class="st-view" id="st-view"><canvas id="st-canvas"></canvas>
-          <button class="btn small st-fit" id="st-fit" hidden data-tip="Back to the whole image (or double-tap)">Fit</button></div>
+          <button class="btn small st-fit" id="st-fit" hidden data-tip="Back to the whole image (or double-tap)">Fit</button>
+          <div class="st-crop" id="st-crop" hidden><div class="st-crop-box" id="st-crop-box">${['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'].map(h => `<i data-h="${h}"></i>`).join('')}</div>
+            <div class="st-crop-bar"><button class="btn small" data-cr="auto" data-tip="Crop to where the stencil starts">Auto</button><button class="btn small" data-cr="all">Whole</button><button class="btn small" data-cr="no">Cancel</button><button class="btn small primary" data-cr="ok">Done</button></div></div></div>
         <div class="st-tools">
           <button class="btn icon-btn" id="st-orig" data-tip="Hold to see the original photo" aria-label="Hold for original"><svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
           <button class="btn icon-btn" id="st-rot" data-tip="Rotate 90°" aria-label="Rotate"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
+          <button class="btn icon-btn ${ST.crop ? 'on' : ''}" id="st-cropbtn" data-tip="Crop" aria-label="Crop"><svg viewBox="0 0 24 24"><path d="M6 2v16h16M2 6h16v16"/></svg></button>
+          <button class="btn icon-btn" id="st-autocrop" data-tip="Auto crop: trim to where the stencil starts" aria-label="Auto crop"><svg viewBox="0 0 24 24"><path d="M6 2v16h16M2 6h16v16"/><path d="M10 10l4 4M14 10l-4 4" stroke-width="1.6"/></svg></button>
           <button class="btn icon-btn ${ST.p.flip ? 'on' : ''}" id="st-flip" data-tip="Mirror (for hand transfers)" aria-label="Mirror"><svg viewBox="0 0 24 24"><path d="M12 3v18M8 7l-5 5 5 5V7zM16 7l5 5-5 5V7z"/></svg></button>
           <span class="ink-dots" id="st-ink">${ST_INKS.map(([c, n]) => `<button class="ink ${ST.p.ink === c ? 'on' : ''}" data-c="${c}" style="background:${c}" data-tip="${n} ink" aria-label="${n}"></button>`).join('')}</span>
           <button class="btn icon-btn" id="st-new" data-tip="Start with a new photo" aria-label="New photo" style="margin-left:auto"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
@@ -1763,12 +1767,16 @@ const VIEWS = {
       const orig = $('#st-orig');
       orig.addEventListener('pointerdown', (e) => { e.preventDefault(); stDraw(true); });
       ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => orig.addEventListener(t, () => stDraw(false)));
-      $('#st-rot').onclick = () => { ST.rot = (ST.rot + 90) % 360; stPrepare(); stRun(); ST.zoom?.reset(); };
+      $('#st-rot').onclick = () => { const c = ST.crop; if (c) ST.crop = ST.p.flip ? { x: c.y, y: 1 - c.x - c.w, w: c.h, h: c.w } : { x: 1 - c.y - c.h, y: c.x, w: c.h, h: c.w };
+        ST.rot = (ST.rot + 90) % 360; stPrepare(); stRun(); ST.zoom?.reset(); };
       ST.zoom = stZoom($('#st-view'), $('#st-canvas'), $('#st-fit'));
-      $('#st-flip').onclick = (e) => { ST.p.flip = !ST.p.flip; e.currentTarget.classList.toggle('on', ST.p.flip); stPrepare(); stRun(); };
+      $('#st-flip').onclick = (e) => { if (ST.crop) ST.crop.x = 1 - ST.crop.x - ST.crop.w; ST.p.flip = !ST.p.flip; e.currentTarget.classList.toggle('on', ST.p.flip); stPrepare(); stRun(); };
       $('#st-ink').onclick = (e) => { const b = e.target.closest('.ink'); if (!b) return; ST.p.ink = b.dataset.c;
         $('#st-ink').querySelectorAll('.ink').forEach(x => x.classList.toggle('on', x === b)); stDraw(false); stSave(); };
       $('#st-new').onclick = () => { ST.src = null; render(); };
+      $('#st-cropbtn').onclick = () => stCropOpen();
+      $('#st-autocrop').onclick = () => stAutoCrop();
+      stCropWire();
       $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(300, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); });
       $('#st-save').onclick = stExport;
       $('#st-print').onclick = stPrint;
@@ -6337,7 +6345,7 @@ const ST = {
 async function stLoad(file) {
   try { ST.src = await createImageBitmap(file); }
   catch { toast('Could not read that image.'); return; }
-  ST.rot = 0; ST.mask = null;
+  ST.rot = 0; ST.mask = null; ST.crop = null; ST.cropping = null;
   try { Object.assign(ST.p, JSON.parse(Settings.get('st_params', '{}'))); } catch {}
   ST.p.flip = false;
   ST.cm = +Settings.get('st_cm', '10') || 10;
@@ -6347,14 +6355,19 @@ async function stLoad(file) {
 function stPrepare() {
   const s = Math.min(1, ST_MAX / Math.max(ST.src.width, ST.src.height));
   const sw = Math.round(ST.src.width * s), sh = Math.round(ST.src.height * s);
-  const side = ST.rot % 180 !== 0;
-  ST.w = side ? sh : sw; ST.h = side ? sw : sh;
-  const c = new OffscreenCanvas(ST.w, ST.h), x = c.getContext('2d');
-  x.fillStyle = '#fff'; x.fillRect(0, 0, ST.w, ST.h);
-  x.translate(ST.w / 2, ST.h / 2);
+  const side = ST.rot % 180 !== 0, W = side ? sh : sw, H = side ? sw : sh;
+  let c = new OffscreenCanvas(W, H), x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  x.translate(W / 2, H / 2);
   if (ST.p.flip) x.scale(-1, 1);
   x.rotate(ST.rot * Math.PI / 180);
   x.drawImage(ST.src, -sw / 2, -sh / 2, sw, sh);
+  ST.w = W; ST.h = H;
+  const r = !ST.cropping && ST.crop;   // while cropping, the whole picture shows
+  if (r) {
+    const cx = Math.round(r.x * W), cy = Math.round(r.y * H); ST.w = Math.max(1, Math.round(r.w * W)); ST.h = Math.max(1, Math.round(r.h * H));
+    const c2 = new OffscreenCanvas(ST.w, ST.h); c2.getContext('2d').drawImage(c, -cx, -cy); c = c2; x = c2.getContext('2d');
+  }
   ST.orig = c;
   ST.rgba = x.getImageData(0, 0, ST.w, ST.h).data;
   const cv = $('#st-canvas'); if (cv) { cv.width = ST.w; cv.height = ST.h; }
@@ -6365,7 +6378,7 @@ function stRun() {
   ST._t = setTimeout(() => {
     if (!ST.worker) {
       ST.worker = new Worker('lib/stencil-worker.js');
-      ST.worker.onmessage = (e) => { if (e.data.id !== ST.seq) return; ST.mask = e.data.mask; stDraw(false); $('#st-canvas')?.classList.remove('busy'); };
+      ST.worker.onmessage = (e) => { if (e.data.id !== ST.seq) return; ST.mask = e.data.mask; stDraw(false); $('#st-canvas')?.classList.remove('busy'); if (ST.autoNext) { ST.autoNext = false; stAutoCrop(); } };
     }
     $('#st-canvas')?.classList.add('busy');
     ST.worker.postMessage({ id: ++ST.seq, w: ST.w, h: ST.h, rgba: ST.rgba.slice(), p: ST.p });
@@ -6425,6 +6438,68 @@ function stZoom(view, cv, fitBtn) {
   const reset = () => { s = 1; tx = ty = 0; apply(); };
   fitBtn.onclick = reset;
   return { reset };
+}
+
+/* ---------- Crop ----------
+   ST.crop is the kept part as fractions of the whole (rotated, mirrored) picture, or null for all of it. The crop
+   tool shows the whole picture with a box to drag; Auto trims to the stencil's ink plus a small margin. */
+const stInkBox = (mask, w, h) => {
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) { const o = y * w; for (let x = 0; x < w; x++) if (mask[o + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+  if (x1 < 0) return null;
+  const m = Math.round(Math.max(w, h) * 0.02);
+  x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(w - 1, x1 + m); y1 = Math.min(h - 1, y1 + m);
+  return { x: x0 / w, y: y0 / h, w: (x1 - x0 + 1) / w, h: (y1 - y0 + 1) / h };
+};
+function stAutoCrop() {
+  if (!ST.mask || $('#st-canvas')?.classList.contains('busy')) { ST.autoNext = true; return; }
+  const b = stInkBox(ST.mask, ST.w, ST.h); if (!b) return toast('No stencil lines to crop to yet.');
+  if (ST.cropping) { ST.cropping = b; return stCropShow(); }
+  const c = ST.crop || { x: 0, y: 0, w: 1, h: 1 };
+  if (b.x < 0.001 && b.y < 0.001 && b.w > 0.998 && b.h > 0.998) return toast('Already cropped to the stencil.');
+  ST.crop = { x: c.x + b.x * c.w, y: c.y + b.y * c.h, w: b.w * c.w, h: b.h * c.h };
+  $('#st-cropbtn')?.classList.add('on'); stPrepare(); stRun(); ST.zoom?.reset(); toast('Cropped to the stencil.');
+}
+function stCropOpen() {
+  ST.zoom?.reset(); ST.cropping = { ...(ST.crop || { x: 0, y: 0, w: 1, h: 1 }) };
+  stPrepare(); stRun(); $('#st-crop').hidden = false; requestAnimationFrame(stCropShow);
+}
+function stCropShow() {
+  const v = $('#st-view'), cv = $('#st-canvas'), b = $('#st-crop-box'); if (!v || !ST.cropping) return;
+  const vr = v.getBoundingClientRect(), r = cv.getBoundingClientRect(), c = ST.cropping;
+  Object.assign(b.style, { left: r.left - vr.left + c.x * r.width + 'px', top: r.top - vr.top + c.y * r.height + 'px', width: c.w * r.width + 'px', height: c.h * r.height + 'px' });
+}
+function stCropClose(keep) {
+  const c = ST.cropping; if (!c) return; ST.cropping = null; $('#st-crop').hidden = true;
+  if (keep) ST.crop = c.x < 0.002 && c.y < 0.002 && c.w > 0.996 && c.h > 0.996 ? null : c;
+  $('#st-cropbtn')?.classList.toggle('on', !!ST.crop); stPrepare(); stRun();
+}
+function stCropWire() {
+  const o = $('#st-crop'); let d = null;
+  o.addEventListener('pointerdown', (e) => {
+    e.stopPropagation(); if (e.target.closest('.st-crop-bar')) return;
+    const h = e.target.dataset.h || (e.target.closest('#st-crop-box') ? 'move' : null); if (!h) return;
+    e.preventDefault(); try { o.setPointerCapture(e.pointerId); } catch {}
+    d = { h, x: e.clientX, y: e.clientY, c: { ...ST.cropping }, r: $('#st-canvas').getBoundingClientRect() };
+  });
+  o.addEventListener('pointermove', (e) => {
+    if (!d) return; const dx = (e.clientX - d.x) / d.r.width, dy = (e.clientY - d.y) / d.r.height, c0 = d.c, mn = 0.03;
+    let { x, y, w, h } = c0;
+    if (d.h === 'move') { x = Math.min(1 - w, Math.max(0, x + dx)); y = Math.min(1 - h, Math.max(0, y + dy)); }
+    else {
+      if (d.h.includes('w')) { x = Math.min(c0.x + c0.w - mn, Math.max(0, c0.x + dx)); w = c0.x + c0.w - x; }
+      if (d.h.includes('e')) w = Math.min(1 - c0.x, Math.max(mn, c0.w + dx));
+      if (d.h.includes('n')) { y = Math.min(c0.y + c0.h - mn, Math.max(0, c0.y + dy)); h = c0.y + c0.h - y; }
+      if (d.h.includes('s')) h = Math.min(1 - c0.y, Math.max(mn, c0.h + dy));
+    }
+    ST.cropping = { x, y, w, h }; stCropShow();
+  });
+  const up = () => { d = null; }; o.addEventListener('pointerup', up); o.addEventListener('pointercancel', up);
+  o.addEventListener('wheel', (e) => e.stopPropagation());
+  o.addEventListener('dblclick', (e) => e.stopPropagation());
+  o.querySelector('.st-crop-bar').onclick = (e) => { const a = e.target.closest('[data-cr]')?.dataset.cr; if (!a) return;
+    if (a === 'auto') stAutoCrop(); else if (a === 'all') { ST.cropping = { x: 0, y: 0, w: 1, h: 1 }; stCropShow(); } else stCropClose(a === 'ok'); };
+  addEventListener('resize', () => ST.cropping && stCropShow());
 }
 
 function stDraw(original) {

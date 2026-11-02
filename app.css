@@ -1380,3 +1380,16 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .dz-qs-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink2); }
 .dz-qs-row input { flex: 1; accent-color: var(--teal); }
 .dz-qs-row .btn { flex: 1; }
+
+/* Stencil maker: crop */
+.st-crop { position: absolute; inset: 0; z-index: 3; overflow: hidden; cursor: default; touch-action: none; }
+.st-crop[hidden] { display: none; }
+.st-crop-box { position: absolute; border: 2px solid var(--teal); box-shadow: 0 0 0 9999px rgba(0,0,0,.55); cursor: move; }
+.st-crop-box i { position: absolute; width: 22px; height: 22px; margin: -11px; }
+.st-crop-box i::after { content: ''; position: absolute; inset: 6px; background: var(--teal); border-radius: 3px; }
+.st-crop-box i[data-h=nw] { left: 0; top: 0; cursor: nwse-resize; } .st-crop-box i[data-h=ne] { right: 0; top: 0; cursor: nesw-resize; }
+.st-crop-box i[data-h=sw] { left: 0; bottom: 0; cursor: nesw-resize; } .st-crop-box i[data-h=se] { right: 0; bottom: 0; cursor: nwse-resize; }
+.st-crop-box i[data-h=n] { left: 50%; top: 0; cursor: ns-resize; } .st-crop-box i[data-h=s] { left: 50%; bottom: 0; cursor: ns-resize; }
+.st-crop-box i[data-h=w] { left: 0; top: 50%; cursor: ew-resize; } .st-crop-box i[data-h=e] { right: 0; top: 50%; cursor: ew-resize; }
+.st-crop-box i[data-h=n], .st-crop-box i[data-h=s] { margin-left: -11px; } .st-crop-box i[data-h=w], .st-crop-box i[data-h=e] { margin-top: -11px; }
+.st-crop-bar { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); display: flex; gap: 6px; padding: 5px; border-radius: 10px; background: rgba(15,18,19,.9); border: 1px solid var(--line); }
