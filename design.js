@@ -796,6 +796,16 @@ let dzN = 0; const dzId = () => 'L' + Date.now().toString(36) + (dzN++);
 const dzT = (text, x, y, w, size, o = {}) => ({ id: dzId(), t: 'text', text, x, y, w, h: size * 1.2, size, font: '@2', c: '@fg', al: 'left', lh: 1.2, ...o });
 const dzLogo = (x, y, w, h, o = {}) => ({ id: dzId(), t: 'image', logo: true, x, y, w, h, ...o });
 const dzS = (shape, x, y, w, h, o = {}) => ({ id: dzId(), t: 'shape', shape, x, y, w, h, fill: '@accent', ...o });
+// A gradient fill (shapes and text): stops as [colour, position 0..1]; angle 90 runs top to bottom.
+const dzG = (stops, ang = 90, type = 'linear') => ({ fm: 'grad', grad: { type, ang, stops: stops.map(([c, p]) => ({ c, p })) } });
+const DZ_CLEAR = 'rgba(0,0,0,0)';
+// A band whose top edge waves (n waves, `amp` deep as a fraction of the band), square below: a node shape.
+const dzWave = (x, y, w, h, n = 3, amp = 0.4, o = {}) => {
+  const k = 2 * n, dx = 1 / k, top = [];
+  for (let i = 0; i <= k; i++) top.push(dzNd(i * dx, i % 2 ? amp : 0, i ? -dx / 2.2 : 0, 0, i < k ? dx / 2.2 : 0, 0, 'smooth'));
+  return dzS('vec', x, y, w, h, { subs: [{ closed: true, nodes: [dzNd(0, 1), ...top, dzNd(1, 1)] }], ...o });
+};
+const dzBurst = (x, y, d, o = {}) => dzS('star', x, y, d, d, { n: 18, inner: 0.84, ...o });   // a starburst sticker
 const DZ_TEMPLATES = {
   voucher: [
     ['Classic', (W, H) => [dzS('rect', 0, 0, W * 0.36, H), dzLogo(W * 0.07, H * 0.12, W * 0.22, H * 0.4),
@@ -816,7 +826,24 @@ const DZ_TEMPLATES = {
       dzT('No. {code}', W * 0.73, H * 0.56, W * 0.26, H * 0.045, { c: '@bg', al: 'center' }),
       dzLogo(W * 0.05, H * 0.1, W * 0.14, H * 0.28), dzT('{studio}', W * 0.21, H * 0.15, W * 0.48, H * 0.09, { font: '@1', fit: 1 }),
       dzT('A gift for {to}', W * 0.05, H * 0.47, W * 0.64, H * 0.08, { font: '@1', c: '@accent' }),
-      dzT('From {from}. Valid until {expires}. Book on {phone} or {instagram}.', W * 0.05, H * 0.62, W * 0.62, H * 0.045, { c: '@soft' })]]
+      dzT('From {from}. Valid until {expires}. Book on {phone} or {instagram}.', W * 0.05, H * 0.62, W * 0.62, H * 0.045, { c: '@soft' })]],
+    ['Starburst', (W, H) => [dzS('rect', 0, 0, W, H, dzG([['@bg', 0], ['@bg', 0.5], ['@accent', 1.6]], 20)),
+      dzWave(0, H * 0.8, W, H * 0.2, 4, 0.4), dzBurst(W * 0.64, H * 0.08, H * 0.66, { fill: '@fg' }),
+      dzT('{amount}', W * 0.64, H * 0.35, H * 0.66, H * 0.13, { font: '@1', c: '@bg', al: 'center', fit: 1 }),
+      dzLogo(W * 0.05, H * 0.08, H * 0.26, H * 0.26),
+      dzT('GIFT VOUCHER', W * 0.05, H * 0.4, W * 0.55, H * 0.11, { font: '@1', ls: 4, ...dzG([['@fg', 0], ['@accent', 1]], 0) }),
+      dzT('For: {to}', W * 0.05, H * 0.56, W * 0.5, H * 0.05), dzT('From: {from}', W * 0.05, H * 0.64, W * 0.5, H * 0.05),
+      dzT('{studio}  ·  Code {code}  ·  Valid until {expires}', W * 0.05, H * 0.89, W * 0.9, H * 0.04, { c: '@bg', al: 'center' })]],
+    ['Seal', (W, H) => { const d = H * 0.7, sx = W * 0.05, sy = H * 0.15;
+      return [dzS('rect', 0, 0, W * 0.4, H, dzG([['@accent', 0], ['@bg', 1]], 0)),
+        dzS('ring', sx + W * 0.03, sy, d, d, { inner: 0.88, fill: '@fg' }), dzLogo(sx + W * 0.03 + d * 0.22, sy + d * 0.22, d * 0.56, d * 0.56),
+        dzT('{studio}', sx, H * 0.03, d + W * 0.06, H * 0.075, { font: '@1', al: 'center', arc: 70, fit: 1 }),
+        dzT('Gift voucher', W * 0.45, H * 0.12, W * 0.5, H * 0.12, { font: '@1', ...dzG([['@accent', 0], ['@fg', 1]], 0) }),
+        dzT('{amount}', W * 0.45, H * 0.3, W * 0.5, H * 0.18, { font: '@1', fit: 1 }),
+        dzS('line', W * 0.45, H * 0.55, W * 0.48, 5, dzG([['@accent', 0], [DZ_CLEAR, 1]], 0)),
+        dzT('For {to}  ·  From {from}', W * 0.45, H * 0.6, W * 0.5, H * 0.05),
+        dzT('Code {code}  ·  Valid until {expires}', W * 0.45, H * 0.72, W * 0.5, H * 0.04, { c: '@soft' }),
+        dzT('{phone}  ·  {instagram}', W * 0.45, H * 0.82, W * 0.5, H * 0.04, { c: '@soft' })]; }]
   ],
   card: [
     ['Logo left', (W, H) => [dzLogo(W * 0.06, H * 0.2, W * 0.28, H * 0.6), dzS('rect', W * 0.375, H * 0.19, 5, H * 0.62),
@@ -826,7 +853,22 @@ const DZ_TEMPLATES = {
       dzS('line', W * 0.4, H * 0.66, W * 0.2, 3), dzT('{phone}  ·  {instagram}', W * 0.06, H * 0.74, W * 0.88, H * 0.06, { al: 'center', c: '@soft' })]],
     ['Bold band', (W, H) => [dzS('rect', 0, H * 0.62, W, H * 0.38), dzT('{studio}', W * 0.07, H * 0.14, W * 0.62, H * 0.16, { font: '@1', fit: 1 }),
       dzT('{artist}', W * 0.07, H * 0.36, W * 0.62, H * 0.075, { c: '@soft' }), dzLogo(W * 0.72, H * 0.08, W * 0.22, H * 0.46),
-      dzT('{phone}   {instagram}', W * 0.07, H * 0.73, W * 0.86, H * 0.07, { c: '@bg' })]]
+      dzT('{phone}   {instagram}', W * 0.07, H * 0.73, W * 0.86, H * 0.07, { c: '@bg' })]],
+    ['Gradient', (W, H) => [dzS('rect', 0, 0, W, H, dzG([['@accent', 0], ['@bg', 0.8]], 135)),
+      dzLogo(W * 0.07, H * 0.1, W * 0.2, H * 0.32), dzT('{studio}', W * 0.07, H * 0.52, W * 0.86, H * 0.14, { font: '@1', fit: 1 }),
+      dzT('{artist}', W * 0.07, H * 0.69, W * 0.5, H * 0.065, { c: '@soft' }),
+      dzT('{phone}\n{instagram}', W * 0.45, H * 0.69, W * 0.48, H * 0.06, { al: 'right', lh: 1.4 })]],
+    ['Badge', (W, H) => { const d = H * 0.5, bx = (W - d) / 2;
+      return [dzS('ring', bx, H * 0.16, d, d, { inner: 0.86 }), dzLogo(bx + d * 0.2, H * 0.16 + d * 0.2, d * 0.6, d * 0.6),
+        dzT('{studio}', W * 0.2, H * 0.03, W * 0.6, H * 0.08, { font: '@1', al: 'center', arc: 60, fit: 1 }),
+        dzT('{artist}', W * 0.06, H * 0.71, W * 0.88, H * 0.065, { al: 'center', c: '@accent' }),
+        dzT('{phone}  ·  {instagram}', W * 0.06, H * 0.83, W * 0.88, H * 0.055, { al: 'center', c: '@soft' })]; }],
+    ['Front & back', (W, H) => [dzS('rect', 0, 0, W, H, dzG([['@accent', 0], ['@bg', 1]], 135)), dzLogo(W * 0.35, H * 0.14, W * 0.3, H * 0.46),
+      dzT('{studio}', W * 0.08, H * 0.68, W * 0.84, H * 0.12, { font: '@1', al: 'center', fit: 1 }),
+      dzT('{studio}', W * 0.08, H * 0.12, W * 0.84, H * 0.12, { font: '@1', fit: 1, side: 'b' }),
+      dzT('{artist}', W * 0.08, H * 0.29, W * 0.84, H * 0.065, { c: '@accent', side: 'b' }),
+      dzT('{phone}\n{instagram}\n{facebook}', W * 0.08, H * 0.44, W * 0.84, H * 0.06, { lh: 1.5, side: 'b' }),
+      dzWave(0, H * 0.82, W, H * 0.18, 3, 0.45, { side: 'b' })]]
   ],
   flyer: [
     ['Promo', (W, H) => [dzS('rect', 0, 0, W, H * 0.06), dzLogo(W * 0.35, H * 0.1, W * 0.3, H * 0.16),
@@ -843,7 +885,41 @@ const DZ_TEMPLATES = {
       dzS('rect', 0, H * 0.86, W, H * 0.14), dzT('{phone}  ·  {instagram}', W * 0.08, H * 0.91, W * 0.84, H * 0.026, { c: '@bg', al: 'center' })]],
     ['Aftercare', (W, H) => [dzT('Aftercare', W * 0.08, H * 0.06, W * 0.84, H * 0.07, { font: '@1', al: 'center' }),
       dzT('1. Leave the wrap on for the time you were told.\n2. Wash gently with clean hands and mild soap.\n3. Pat dry and apply a thin layer of aftercare.\n4. No swimming, sun or scratching while it heals.\n5. Questions? Get in touch.', W * 0.1, H * 0.2, W * 0.8, H * 0.024, { lh: 1.8 }),
-      dzLogo(W * 0.4, H * 0.7, W * 0.2, H * 0.1), dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.83, W * 0.84, H * 0.024, { al: 'center', lh: 1.6, c: '@soft' })]]
+      dzLogo(W * 0.4, H * 0.7, W * 0.2, H * 0.1), dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.83, W * 0.84, H * 0.024, { al: 'center', lh: 1.6, c: '@soft' })]],
+    ['Flash burst', (W, H) => [dzS('rect', 0, 0, W, H * 0.5, dzG([['@accent', 0], ['@bg', 1]], 90)),
+      dzBurst(W * 0.15, H * 0.06, W * 0.7, { fill: '@bg', n: 22, inner: 0.86 }),
+      dzT('FLASH\nDAY', W * 0.2, H * 0.14, W * 0.6, H * 0.09, { font: '@1', al: 'center', lh: 1, c: '@accent' }),
+      dzT('walk-ins welcome', W * 0.2, H * 0.36, W * 0.6, H * 0.03, { al: 'center', arc: -40 }),
+      dzT('Pick a design from the wall and get tattooed on the day. Small pieces from a set price, first come first served.', W * 0.12, H * 0.56, W * 0.76, H * 0.024, { al: 'center', lh: 1.5 }),
+      dzLogo(W * 0.4, H * 0.67, W * 0.2, H * 0.09),
+      dzWave(0, H * 0.82, W, H * 0.18, 3, 0.35), dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.89, W * 0.84, H * 0.026, { al: 'center', lh: 1.6, c: '@bg' })]],
+    ['Guest spot', (W, H) => { const d = W * 0.56, hx = (W - d) / 2;
+      return [dzT('GUEST SPOT', W * 0.1, H * 0.05, W * 0.8, H * 0.05, { font: '@1', al: 'center', arc: 50, ls: 6 }),
+        dzS('poly', hx, H * 0.14, d, d, { n: 6, fill: 'none', stroke: '@accent', sw: 10 }),
+        dzS('poly', hx + d * 0.08, H * 0.14 + d * 0.08, d * 0.84, d * 0.84, { n: 6, ...dzG([['@accent', 0], ['@bg', 1]], 90), op: 0.35 }),
+        dzLogo(hx + d * 0.25, H * 0.14 + d * 0.25, d * 0.5, d * 0.5),
+        dzT('{artist}', W * 0.08, H * 0.56, W * 0.84, H * 0.05, { font: '@1', al: 'center', fit: 1 }),
+        dzT('Dates · City', W * 0.08, H * 0.63, W * 0.84, H * 0.03, { al: 'center', c: '@accent' }),
+        dzT('A few days only. Message to book a spot or ask about flash.', W * 0.12, H * 0.69, W * 0.76, H * 0.022, { al: 'center', lh: 1.5, c: '@soft' }),
+        dzS('rect', 0, H * 0.86, W, H * 0.14, dzG([['@bg', 0], ['@accent', 1]], 0)),
+        dzT('{studio}  ·  {phone}  ·  {instagram}', W * 0.06, H * 0.915, W * 0.88, H * 0.024, { al: 'center' })]; }]
+  ],
+  page: [
+    ['Poster', (W, H) => [dzS('rect', 0, 0, W, H, dzG([['@bg', 0], ['@bg', 0.45], ['@accent', 1.4]], 90)),
+      dzLogo(W * 0.38, H * 0.06, W * 0.24, W * 0.24),
+      dzT('YOUR HEADLINE', W * 0.08, H * 0.27, W * 0.84, H * 0.07, { font: '@1', al: 'center', fit: 1, ...dzG([['@fg', 0], ['@accent', 1]], 0) }),
+      dzT('A line about the event, offer or news', W * 0.1, H * 0.37, W * 0.8, H * 0.025, { al: 'center', c: '@soft' }),
+      dzBurst(W * 0.62, H * 0.45, W * 0.28, { fill: '@accent', rot: 12 }), dzT('NEW', W * 0.62, H * 0.45 + W * 0.11, W * 0.28, W * 0.06, { font: '@1', al: 'center', c: '@bg', rot: 12 }),
+      dzT('Details go here: dates, times, prices or anything people need to know.', W * 0.1, H * 0.5, W * 0.5, H * 0.022, { lh: 1.6 }),
+      dzWave(0, H * 0.84, W, H * 0.16, 4, 0.35), dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.9, W * 0.84, H * 0.02, { al: 'center', lh: 1.6, c: '@bg' })]],
+    ['Price list', (W, H) => [dzS('rect', 0, 0, W, H * 0.16, dzG([['@accent', 0], ['@bg', 1]], 0)), dzLogo(W * 0.07, H * 0.03, W * 0.14, H * 0.1),
+      dzT('{studio}', W * 0.25, H * 0.055, W * 0.68, H * 0.045, { font: '@1', fit: 1 }),
+      dzT('Prices', W * 0.07, H * 0.21, W * 0.86, H * 0.05, { font: '@1', c: '@accent' }),
+      dzT('Small (up to 5 cm)\nMedium (palm size)\nLarge (half sleeve)\nFull day session\nTouch-ups', W * 0.07, H * 0.29, W * 0.55, H * 0.022, { lh: 2 }),
+      dzT('from …\nfrom …\nfrom …\n…\n…', W * 0.6, H * 0.29, W * 0.33, H * 0.022, { lh: 2, al: 'right' }),
+      dzS('line', W * 0.07, H * 0.55, W * 0.86, 4, dzG([['@accent', 0], [DZ_CLEAR, 1]], 0)),
+      dzT('A deposit secures your booking. Prices depend on size, detail and placement.', W * 0.07, H * 0.58, W * 0.86, H * 0.018, { c: '@soft', lh: 1.5 }),
+      dzWave(0, H * 0.88, W, H * 0.12, 3, 0.4), dzT('{phone}  ·  {instagram}', W * 0.07, H * 0.94, W * 0.86, H * 0.02, { c: '@bg', al: 'center' })]]
   ],
   post: [
     ['Announcement', (W, H) => [dzS('rect', W * 0.05, H * 0.05, W * 0.9, H * 0.9, { fill: 'none', stroke: '@accent', sw: 6, r: 20 }),
@@ -853,7 +929,21 @@ const DZ_TEMPLATES = {
     ['Flash', (W, H) => [dzT('Available flash', W * 0.07, H * 0.06, W * 0.86, H * 0.08, { font: '@1', al: 'center' }),
       dzS('rect', W * 0.12, H * 0.2, W * 0.76, H * 0.6, { fill: 'none', stroke: '@soft', sw: 3, r: 16 }),
       dzT('Add your design here', W * 0.12, H * 0.47, W * 0.76, H * 0.035, { al: 'center', c: '@soft' }),
-      dzT('{studio}  ·  {instagram}', W * 0.07, H * 0.87, W * 0.86, H * 0.035, { al: 'center', c: '@accent' })]]
+      dzT('{studio}  ·  {instagram}', W * 0.07, H * 0.87, W * 0.86, H * 0.035, { al: 'center', c: '@accent' })]],
+    ['Speech bubble', (W, H) => { const bw = W * 0.82, bh = Math.min(H * 0.42, bw * 0.62), bx = (W - bw) / 2, by = H * 0.14;
+      return [dzS('rect', 0, 0, W, H, dzG([['@bg', 0], ['@accent', 1.5]], 90)),
+        dzS('bubble', bx, by, bw, bh, { fill: '@fg' }),
+        dzT('BOOKS\nOPEN!', bx, by + bh * 0.16, bw, bh * 0.24, { font: '@1', al: 'center', c: '@bg', lh: 1 }),
+        dzLogo(W * 0.4, by + bh + H * 0.08, W * 0.2, W * 0.2),
+        dzT('Message me to book your spot', W * 0.1, H * 0.8, W * 0.8, Math.min(W * 0.045, H * 0.035), { al: 'center' }),
+        dzT('{instagram}', W * 0.1, H * 0.87, W * 0.8, Math.min(W * 0.035, H * 0.028), { al: 'center', c: '@soft' })]; }],
+    ['Flash sale', (W, H) => { const d = Math.min(W * 0.78, H * 0.5);
+      return [dzS('rect', 0, 0, W, H, dzG([['@accent', 0], ['@bg', 0.7]], 160, 'radial')),
+        dzBurst((W - d) / 2, H * 0.12, d, { fill: '@fg', n: 20, rot: -8 }),
+        dzT('FLASH\nSALE', (W - d) / 2, H * 0.12 + d * 0.3, d, d * 0.17, { font: '@1', al: 'center', c: '@bg', lh: 1, rot: -8 }),
+        dzT('This weekend only', W * 0.1, H * 0.12 + d + H * 0.04, W * 0.8, Math.min(W * 0.05, H * 0.04), { al: 'center', font: '@1' }),
+        dzT('Pick from the flash sheet, first come first served', W * 0.1, H * 0.12 + d + H * 0.1, W * 0.8, Math.min(W * 0.032, H * 0.025), { al: 'center', c: '@soft' }),
+        dzWave(0, H * 0.88, W, H * 0.12, 3, 0.4), dzT('{studio}  ·  {instagram}', W * 0.06, H * 0.935, W * 0.88, Math.min(W * 0.03, H * 0.024), { al: 'center', c: '@bg' })]; }]
   ]
 };
 // Photo spots: `slot` n takes the piece's n-th photo; cover crops to fill the spot.
@@ -889,7 +979,21 @@ const DZ_TATTOO = [
     return [dzT('{title}', m, H * 0.035, W - 2 * m, Math.min(W * 0.06, H * 0.05), { font: '@1', al: 'center', fit: 1 }),
       ...[0, 1, 2, 3].map(i => dzPh(i, m + (i % 2) * (cw + g), top + Math.floor(i / 2) * (ch + g), cw, ch, { r: W * 0.015 })),
       dzT('{tags}', m, top + 2 * ch + g + H * 0.03, W - 2 * m, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }),
-      dzT('{studio}  ·  {instagram}', m, H - H * 0.06, W - 2 * m, Math.min(W * 0.028, H * 0.021), { al: 'center', c: '@accent' })]; }]
+      dzT('{studio}  ·  {instagram}', m, H - H * 0.06, W - 2 * m, Math.min(W * 0.028, H * 0.021), { al: 'center', c: '@accent' })]; }],
+  ['Fade', (W, H) => [dzPh(0, 0, 0, W, H), dzS('rect', 0, H * 0.5, W, H * 0.5, dzG([[DZ_CLEAR, 0], ['@bg', 0.75]], 90)),
+    dzT('{title}', W * 0.06, H * 0.8, W * 0.88, Math.min(W * 0.075, H * 0.055), { font: '@1', fit: 1 }),
+    dzT('{placement}  ·  {tags}', W * 0.06, H * 0.89, W * 0.88, Math.min(W * 0.03, H * 0.022), { c: '@soft' }), dzMark(W, H)]],
+  ['Circle', (W, H) => { const d = Math.min(W * 0.78, H * 0.6), cx = (W - d) / 2, cy = (H - d) / 2 - H * 0.02;
+    return [dzS('rect', 0, 0, W, H, dzG([['@accent', 0], ['@bg', 0.65]], 0, 'radial')),
+      dzS('ellipse', cx, cy, d, d, { fill: '@soft' }), dzPh(0, cx, cy, d, d, { clip: 1 }),
+      dzS('ring', cx - d * 0.04, cy - d * 0.04, d * 1.08, d * 1.08, { inner: 0.93 }),
+      dzT('{title}', W * 0.1, cy - Math.min(W * 0.12, H * 0.09), W * 0.8, Math.min(W * 0.06, H * 0.045), { font: '@1', al: 'center', arc: 40, fit: 1 }),
+      dzT('{tags}', W * 0.08, cy + d + H * 0.05, W * 0.84, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }), dzMark(W, H, { y: H - W * 0.16 })]; }],
+  ['Heart', (W, H) => { const d = Math.min(W * 0.8, H * 0.62), hx = (W - d) / 2, hy = H * 0.16;
+    return [dzT('{title}', W * 0.06, H * 0.04, W * 0.88, Math.min(W * 0.065, H * 0.05), { font: '@1', al: 'center', fit: 1, ...dzG([['@fg', 0], ['@accent', 1]], 0) }),
+      dzS('heart', hx, hy, d, d * 0.92, { fill: '@soft' }), dzPh(0, hx, hy, d, d * 0.92, { clip: 1 }),
+      dzT('{placement}', W * 0.08, hy + d * 0.92 + H * 0.03, W * 0.84, Math.min(W * 0.04, H * 0.03), { al: 'center', c: '@accent' }),
+      dzT('{tags}', W * 0.08, H * 0.92, W * 0.84, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }), dzMark(W, H, { y: H - W * 0.16 })]; }]
 ];
 // Layout choices for a type: built-in ones, your saved templates, then a blank page.
 const dzCustom = () => { try { return JSON.parse(Settings.get('dz_tpls', '[]')); } catch { return []; } };
@@ -921,6 +1025,7 @@ function dzNew(kind, opt, theme, piece, size, sides) {
   doc.kind = kind; doc.w = k.w; doc.h = k.h;
   delete doc.dpi; delete doc.paper; delete doc.fold;
   if (k.social) delete doc.sides; else if (sides || size?.fold) doc.sides = 2; else if (!opt?.custom) delete doc.sides;
+  if (opt?.make && !doc.sides) { doc.layers = doc.layers.filter(l => l.side !== 'b'); doc.layers.forEach(l => delete l.side); }
   if (size) { doc.w = size.w; doc.h = size.h; doc.dpi = size.dpi;
     doc.paper = size.fold ? `${size.label}, ${size.sheet} sheet (${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm)` : `${size.label}, ${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm`;
     if (size.fold) doc.fold = size.fold; }
