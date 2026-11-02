@@ -280,7 +280,8 @@ const DZ_BOOL_ICON = Object.fromEntries(Object.entries({
   intersect: '<rect x="2" y="2" width="8" height="8" class="g"/><rect x="6" y="6" width="8" height="8" class="g"/><path d="M6 6h4v4H6z"/>',
   xor: '<path d="M2 2h8v4H6v4H2z"/><path d="M14 14H6v-4h4V6h4z"/>', divide: '<rect x="2" y="2" width="8" height="8"/><rect x="6" y="6" width="8" height="8"/>',
   separate: '<rect x="1.5" y="1.5" width="5" height="5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M8 3v2M8 11v2M3 8h2M11 8h2" class="g"/>',
-  contour: '<rect x="4.5" y="4.5" width="7" height="7" rx="1"/><rect x="1.5" y="1.5" width="13" height="13" rx="3" class="g"/>'
+  contour: '<rect x="4.5" y="4.5" width="7" height="7" rx="1"/><rect x="1.5" y="1.5" width="13" height="13" rx="3" class="g"/>',
+  simp: '<path class="g" d="M1.5 12l2-4 1.5 2 2-5 1.5 3 2-4 1.5 3 2.5-4"/><path d="M1.5 12C5 3 11 3 14.5 9"/>'
 }).map(([kk, v]) => [kk, `<svg viewBox="0 0 16 16" class="dz-bi">${v}</svg>`]));
 /* ---------- Hold to snap, and fitting a drawn stroke ----------
    dzGuess reads a rough stroke (page points) as a line, circle, ellipse, rectangle, triangle or polygon, the way
@@ -371,6 +372,109 @@ function dzFitStroke(raw, tol, closed) {
     Object.assign(nodes[i], { ix: -tx / tl * li, iy: -ty / tl * li, ox: tx / tl * lo, oy: ty / tl * lo, t: 'smooth' });
   }
   return { closed: !!closed && n > 2, nodes };
+}
+/* ---------- Fitting curves to outlines ----------
+   Ported from the drawing board this is modelled on. A dense outline (what combining, contouring and tracing
+   give back) becomes a few smooth curves: corners and straight runs are found first, then each span between them
+   gets one cubic, its handles solved by least squares and its timing corrected (Newton steps), and it is only
+   split where it still strays further than the tolerance. Tolerances are in page pixels. */
+const DZ_FIT_TOL = 0.5, DZ_CHORD = 0.3, DZ_FIT_CORNER = Math.cos(28 * Math.PI / 180), DZ_RUN_PX = 20;
+const _fs = (a, b) => ({ x: a.x - b.x, y: a.y - b.y }), _fa = (a, b) => ({ x: a.x + b.x, y: a.y + b.y }), _fm = (a, k2) => ({ x: a.x * k2, y: a.y * k2 }), _fd = (a, b) => a.x * b.x + a.y * b.y;
+const _fn = (v) => { const l = Math.hypot(v.x, v.y); return l < 1e-12 ? { x: 0, y: 0 } : { x: v.x / l, y: v.y / l }; };
+const _fAt = (bz, t) => { const m = 1 - t; return { x: m * m * m * bz[0].x + 3 * m * m * t * bz[1].x + 3 * m * t * t * bz[2].x + t * t * t * bz[3].x, y: m * m * m * bz[0].y + 3 * m * m * t * bz[1].y + 3 * m * t * t * bz[2].y + t * t * t * bz[3].y }; };
+function _fBez(pts, u, t1, t2) {
+  const n = pts.length; let c00 = 0, c01 = 0, c11 = 0, x0 = 0, x1 = 0;
+  for (let i = 0; i < n; i++) { const t = u[i], m = 1 - t, b0 = m * m * m, b1 = 3 * m * m * t, b2 = 3 * m * t * t, b3 = t * t * t, a1 = _fm(t1, b1), a2 = _fm(t2, b2);
+    c00 += _fd(a1, a1); c01 += _fd(a1, a2); c11 += _fd(a2, a2);
+    const tmp = _fs(pts[i], { x: pts[0].x * (b0 + b1) + pts[n - 1].x * (b2 + b3), y: pts[0].y * (b0 + b1) + pts[n - 1].y * (b2 + b3) }); x0 += _fd(a1, tmp); x1 += _fd(a2, tmp); }
+  const det = c00 * c11 - c01 * c01; let a = 0, b = 0;
+  if (Math.abs(det) > 1e-12) { a = (x0 * c11 - x1 * c01) / det; b = (c00 * x1 - c01 * x0) / det; }
+  const chord = Math.hypot(pts[n - 1].x - pts[0].x, pts[n - 1].y - pts[0].y);
+  if (!(a > 1e-9) || !(b > 1e-9)) a = b = chord / 3;
+  a = Math.min(a, chord); b = Math.min(b, chord);   // a handle longer than the chord lets the curve balloon between samples
+  return [pts[0], _fa(pts[0], _fm(t1, a)), _fa(pts[n - 1], _fm(t2, b)), pts[n - 1]];
+}
+const _fParam = (pts) => { const u = [0]; for (let i = 1; i < pts.length; i++) u.push(u[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)); const L = u.at(-1) || 1; return u.map(v => v / L); };
+function _fGap(pts, bz, n) {   // walks the curve itself, to catch a bulge or sag between the sample points
+  let worst = 0;
+  for (let k2 = 1; k2 < n; k2++) { const q = _fAt(bz, k2 / n); let best = Infinity;
+    for (let i = 0; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1], vx = b.x - a.x, vy = b.y - a.y, L = vx * vx + vy * vy; let t = L < 1e-12 ? 0 : ((q.x - a.x) * vx + (q.y - a.y) * vy) / L; t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(q.x - (a.x + vx * t), q.y - (a.y + vy * t)); if (d < best) best = d; }
+    if (best > worst) worst = best; }
+  return worst;
+}
+function _fErr(pts, u, bz) {
+  let worst = 0, at = Math.floor(pts.length / 2);
+  for (let i = 1; i < pts.length - 1; i++) { const q = _fAt(bz, u[i]), d = Math.hypot(q.x - pts[i].x, q.y - pts[i].y); if (d > worst) { worst = d; at = i; } }
+  const sag = _fGap(pts, bz, Math.max(24, Math.min(96, pts.length * 2))) - DZ_CHORD; if (sag > worst) worst = sag;
+  return { err: worst, at };
+}
+const _fRe = (pts, u, bz) => u.map((t, i) => { const m = 1 - t;
+  const d1 = { x: 3 * ((bz[1].x - bz[0].x) * m * m + 2 * (bz[2].x - bz[1].x) * m * t + (bz[3].x - bz[2].x) * t * t), y: 3 * ((bz[1].y - bz[0].y) * m * m + 2 * (bz[2].y - bz[1].y) * m * t + (bz[3].y - bz[2].y) * t * t) };
+  const d2 = { x: 6 * ((bz[2].x - 2 * bz[1].x + bz[0].x) * m + (bz[3].x - 2 * bz[2].x + bz[1].x) * t), y: 6 * ((bz[2].y - 2 * bz[1].y + bz[0].y) * m + (bz[3].y - 2 * bz[2].y + bz[1].y) * t) };
+  const q = _fAt(bz, t), df = { x: q.x - pts[i].x, y: q.y - pts[i].y }, den = d1.x * d1.x + d1.y * d1.y + df.x * d2.x + df.y * d2.y;
+  return Math.abs(den) < 1e-12 ? t : Math.max(0, Math.min(1, t - (df.x * d1.x + df.y * d1.y) / den)); });
+function _fFit(pts, t1, t2, tol, out, depth) {
+  if (pts.length < 2) return;
+  if (pts.length === 2) { const d = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) / 3; out.push([pts[0], _fa(pts[0], _fm(t1, d)), _fa(pts[1], _fm(t2, d)), pts[1]]); return; }
+  let u = _fParam(pts), bz = _fBez(pts, u, t1, t2), { err, at } = _fErr(pts, u, bz);
+  for (let k2 = 0; k2 < 4 && err > tol; k2++) { const u2 = _fRe(pts, u, bz), bz2 = _fBez(pts, u2, t1, t2), e2 = _fErr(pts, u2, bz2); if (e2.err >= err) break; u = u2; bz = bz2; err = e2.err; at = e2.at; }
+  if (err <= tol || depth > 18) { out.push(bz); return; }
+  const tc = _fn(_fs(pts[Math.min(at + 1, pts.length - 1)], pts[Math.max(at - 1, 0)]));
+  _fFit(pts.slice(0, at + 1), t1, _fm(tc, -1), tol, out, depth + 1); _fFit(pts.slice(at), tc, t2, tol, out, depth + 1);
+}
+const _fStraight = (pts, tol) => { const a = pts[0], b = pts.at(-1), vx = b.x - a.x, vy = b.y - a.y, L = vx * vx + vy * vy;
+  return pts.every(q => { let t = L < 1e-12 ? 0 : ((q.x - a.x) * vx + (q.y - a.y) * vy) / L; t = Math.max(0, Math.min(1, t)); return Math.hypot(q.x - (a.x + vx * t), q.y - (a.y + vy * t)) <= tol; }); };
+// One closed ring of points -> one subpath of nodes (absolute positions, handles relative), curves and all.
+function dzFitRing(ring, tol = DZ_FIT_TOL) {
+  let pts = []; for (const q of ring) { const l = pts.at(-1); if (!l || Math.hypot(q.x - l.x, q.y - l.y) > 1e-7) pts.push({ x: q.x, y: q.y }); }
+  if (pts.length > 2 && Math.hypot(pts[0].x - pts.at(-1).x, pts[0].y - pts.at(-1).y) < 1e-7) pts.pop();
+  if (pts.length < 3) return { closed: true, nodes: pts.map(q => dzP(q.x, q.y)) };
+  const n = pts.length, turn = new Array(n);
+  for (let i = 0; i < n; i++) turn[i] = _fd(_fn(_fs(pts[i], pts[(i - 1 + n) % n])), _fn(_fs(pts[(i + 1) % n], pts[i])));
+  const cuts = new Set(); for (let i = 0; i < n; i++) if (turn[i] < DZ_FIT_CORNER) cuts.add(i);
+  // straight runs, judged as runs (several segments, the same way, long enough) so jitter can't fake one
+  const ang = [], segLen = []; for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; ang[i] = Math.atan2(b.y - a.y, b.x - a.x); segLen[i] = Math.hypot(b.x - a.x, b.y - a.y); }
+  const dA = (p1, q1) => { let d = p1 - q1; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d); };
+  for (let i = 0; i < n;) { let j = i, len = 0;
+    while (j - i < n) { const nx = (j + 1) % n; if (turn[nx] < DZ_FIT_CORNER || dA(ang[nx], ang[i]) > 0.5 * Math.PI / 180) break; len += segLen[j % n]; j++; }
+    len += segLen[j % n]; if (j > i + 1 && len > DZ_RUN_PX) { cuts.add(i % n); cuts.add((j + 1) % n); } i = Math.max(j, i) + 1; }
+  let corners = [...cuts].sort((a, b) => a - b);
+  if (corners.length < 2) { const base = corners[0] || 0; corners = [0, 1, 2].map(k2 => (base + Math.round(k2 * n / 3)) % n).sort((a, b) => a - b); }
+  const segs = [];
+  for (let c = 0; c < corners.length; c++) {
+    const i0 = corners[c], i1 = corners[(c + 1) % corners.length]; let span = [];
+    for (let i = i0; ; i = (i + 1) % n) { span.push(pts[i]); if (i === i1) break; }
+    if (span.length < 2) continue;
+    const out = [];
+    if (_fStraight(span, tol)) out.push([span[0], null, null, span.at(-1)]);
+    else { if (span.length > 4) span = dzRdp(span, tol * 0.25); _fFit(span, _fn(_fs(span[1], span[0])), _fn(_fs(span.at(-2), span.at(-1))), tol, out, 0); }
+    out.forEach((bz, k2) => segs.push({ bz, corner: k2 === 0 && turn[i0] < DZ_FIT_CORNER }));
+  }
+  if (!segs.length) return { closed: true, nodes: pts.map(q => dzP(q.x, q.y)) };
+  const nodes = segs.map(sg => dzP(sg.bz[0].x, sg.bz[0].y, 0, 0, 0, 0, sg.corner ? 'corner' : 'smooth'));
+  segs.forEach((sg, i) => { const a = nodes[i], b = nodes[(i + 1) % segs.length]; if (sg.bz[1]) { a.ox = sg.bz[1].x - a.x; a.oy = sg.bz[1].y - a.y; } if (sg.bz[2]) { b.ix = sg.bz[2].x - b.x; b.iy = sg.bz[2].y - b.y; } });
+  return { closed: true, nodes };
+}
+// Points along a subpath (absolute nodes) from node a to node b, finely.
+function dzSpanPts(sp, a, b, per = 24) {
+  const N = sp.nodes, n = N.length, out = [{ x: N[a].x, y: N[a].y }];
+  const cnt = sp.closed ? ((b - a + n) % n || n) : b - a;   // a === b on a closed ring: all the way round
+  for (let c = 0, i = a; c < cnt; c++, i = (i + 1) % n) { const p0 = N[i], p1 = N[(i + 1) % n], bz = [p0, { x: p0.x + p0.ox, y: p0.y + p0.oy }, { x: p1.x + p1.ix, y: p1.y + p1.iy }, p1];
+    for (let s2 = 1; s2 <= per; s2++) out.push(_fAt(bz, s2 / per)); }
+  return out;
+}
+// Refits the nodes a..b (inclusive) between their fixed neighbours at a looser tolerance; returns how many went.
+function dzSimplifyRun(sp, a, b, tol) {
+  const n = sp.nodes.length; if (n < 3) return 0;
+  const prev = sp.closed ? (a - 1 + n) % n : Math.max(0, a - 1), next = sp.closed ? (b + 1) % n : Math.min(n - 1, b + 1); if (prev === next) return 0;
+  const pts = dzSpanPts(sp, prev, next); if (pts.length < 4) return 0;
+  const segs = []; _fFit(pts, _fn(_fs(pts[1], pts[0])), _fn(_fs(pts.at(-2), pts.at(-1))), tol, segs, 0); if (!segs.length) return 0;
+  const made = []; for (let q = 0; q < segs.length - 1; q++) { const P = segs[q][3], nd = dzP(P.x, P.y, segs[q][2].x - P.x, segs[q][2].y - P.y, segs[q + 1][1].x - P.x, segs[q + 1][1].y - P.y, 'smooth'); made.push(nd); }
+  const old = b >= a ? b - a + 1 : 0; if (!old || made.length >= old) return 0;
+  const pn = sp.nodes[prev], nn = sp.nodes[next];
+  pn.ox = segs[0][1].x - pn.x; pn.oy = segs[0][1].y - pn.y; nn.ix = segs.at(-1)[2].x - nn.x; nn.iy = segs.at(-1)[2].y - nn.y;
+  sp.nodes.splice(a, old, ...made); return old - made.length;
 }
 // The subpaths a shape draws with (null for the plain kinds drawn directly: line, box, circle, old traced).
 const dzSubs = (L) => L.shape === 'vec' ? L.subs : DZ_GEN[L.shape] && !['ellipse', 'rect', 'path'].includes(L.shape) ? DZ_GEN[L.shape](L) : null;
@@ -1568,6 +1672,7 @@ DZ.edit = async (id) => {
     const L = nodeLayer(); if (!L) return endNodes();
     if (a === 'done') { endNodes(); return drawSide(); }
     if (a === 'all') { nodes.sel = L.subs.flatMap((sp, s2) => sp.nodes.map((_, i) => [s2, i])); drawNodes(); return drawSide(); }
+    if (a === 'simp') return simplify(L);
     if (!nodes.sel.length) return toast('Pick a node first: tap it.');
     if (a === 'del') {
       const gone = new Set(nodes.sel.map(q => q.join(':')));
@@ -1612,6 +1717,39 @@ DZ.edit = async (id) => {
       <li>Hold a node still: a menu (corner, smooth, even, straight, delete). Double-tap a node: corner / smooth.</li>
       <li>Pen: hold still after placing a point, then slide = move the point.</li>
       <li>Or tap the Shift / Alt / Ctrl buttons on the design: they stay on until tapped again.</li></ul></details>` : '';
+  /* Simplify: the outline is walked out into points and fitted again at a looser tolerance, which drops nodes
+     without moving the line. Pressing again (with nothing else changed) loosens further; it reports how far the
+     outline moved. Works in the shape's own pixels (its box), so a stretched box doesn't skew it. */
+  let simpKey = '', simpStep = 0;
+  const simplify = (L) => {
+    const key = L.id + ':' + hi; if (key !== simpKey) simpStep = 0;
+    const W = L.w, H = L.h, toPx = (sp) => ({ closed: sp.closed !== false, nodes: sp.nodes.map(n => ({ ...n, x: n.x * W, y: n.y * H, ix: n.ix * W, iy: n.iy * H, ox: n.ox * W, oy: n.oy * H })) });
+    const base = Math.max(0.4, Math.hypot(W, H) * 0.0006), before = L.subs.reduce((t, sp) => t + sp.nodes.length, 0), was = L.subs.map(sp => dzSpanPts(toPx(sp), 0, sp.closed === false ? sp.nodes.length - 1 : 0, 12));
+    let subs, dropped = 0;
+    while (simpStep < 9) {
+      simpStep++; const tol = base * Math.pow(1.9, simpStep); dropped = 0;
+      subs = L.subs.map((sp0, s2) => {
+        const sp = toPx(sp0), n = sp.nodes.length, picked = [...new Set(nodes.sel.filter(q => q[0] === s2).map(q => q[1]))].sort((x, y) => x - y);
+        if (!nodes.sel.length || picked.length >= n - 1) {
+          if (sp.closed && n >= 3) { const f = dzFitRing(dzSpanPts(sp, 0, 0, 16), tol); if (f.nodes.length > 2 && f.nodes.length < n) { dropped += n - f.nodes.length; return f; } }
+          else if (n >= 3) dropped += dzSimplifyRun(sp, 1, n - 2, tol);
+          return sp;
+        }
+        const runs = []; for (const i of picked) { const r = runs.at(-1); if (r && i === r[1] + 1) r[1] = i; else runs.push([i, i]); }
+        for (let r = runs.length - 1; r >= 0; r--) { let [a, b] = runs[r]; if (!sp.closed) { a = Math.max(a, 1); b = Math.min(b, sp.nodes.length - 2); } if (b >= a) dropped += dzSimplifyRun(sp, a, b, tol); }
+        return sp;
+      });
+      if (dropped) break;
+    }
+    if (!dropped) { simpStep = 0; return toast('That\'s as simple as it goes without losing the shape.'); }
+    // how far the outline moved, each ring against its own
+    let worst = 0;
+    subs.forEach((sp, s2) => { const now = dzSpanPts(sp, 0, sp.closed ? 0 : sp.nodes.length - 1, 12), old = was[s2] || [];
+      for (let i = 0; i < old.length; i += Math.max(1, Math.floor(old.length / 200))) { const q = old[i]; let m = Infinity; for (const r of now) { const d = (r.x - q.x) ** 2 + (r.y - q.y) ** 2; if (d < m) m = d; } worst = Math.max(worst, Math.sqrt(m)); } });
+    L.subs = subs.map(sp => ({ closed: sp.closed, nodes: sp.nodes.map(n => ({ ...n, x: n.x / W, y: n.y / H, ix: n.ix / W, iy: n.iy / H, ox: n.ox / W, oy: n.oy / H })) }));
+    nodes.sel = []; refit(L); changed(true); simpKey = L.id + ':' + hi; drawNodes(); drawSide();
+    toast(`${dropped} node${dropped === 1 ? '' : 's'} gone (${before} to ${before - dropped}), within ${Math.max(0.01, dzToU(doc, worst))} ${dzUnit(doc)}. Press again to go further.`, 5000);
+  };
   const nodePanel = (l) => {
     const n = nodes.sel.length, one = n === 1 ? l.subs[nodes.sel[0][0]]?.nodes[nodes.sel[0][1]] : null;
     return `<div class="dz-lh"><b>Edit nodes</b><button class="btn small primary" data-nop="done">Done</button></div>
@@ -1622,6 +1760,7 @@ DZ.edit = async (id) => {
         <button data-nop="sym" ${n ? '' : 'disabled'} title="Symmetric: in line and the same length">◎<span>Even</span></button>
         <button data-nop="line" ${n ? '' : 'disabled'} title="Straight: remove the handles">／<span>Straight</span></button>
         <button data-nop="all" title="Pick every node">▣<span>All</span></button>
+        <button data-nop="simp" title="Simplify: fewer nodes, the same shape. Press again to go further. Works on the picked nodes, or the whole shape if none are picked.">${DZ_BOOL_ICON.simp}<span>Simplify</span></button>
         <button data-nop="del" class="danger" ${n ? '' : 'disabled'} title="Delete the picked nodes">✕<span>Delete</span></button></div>
       <p class="muted" style="font-size:12px;margin:4px 0 0">Drag a node or a handle to reshape. Tap the outline to add a node; drag the outline to bend it.
         Double-tap a node to switch corner / smooth. Ctrl or Shift + tap picks several. Shift keeps to straight lines and 45°; Alt drags one handle on its own.</p>
@@ -1661,13 +1800,12 @@ DZ.edit = async (id) => {
   const styleOf = (l) => l.t === 'shape' ? { fill: l.fill, stroke: l.stroke, sw: l.sw, fm: l.fm, grad: l.grad && JSON.parse(JSON.stringify(l.grad)), tex: l.tex && { ...l.tex }, op: l.op ?? 1 }
     : { fill: l.t === 'text' ? (l.c || '@fg') : '@accent', stroke: 'none', sw: 0, op: l.op ?? 1 };
   // Clipper paths (page pixels x DZ_CS) as a node shape styled like `l`.
-  const vecFrom = (paths, l, nm) => {
-    const C = CL(); paths = C.Clipper.CleanPolygons(paths, 0.35 * DZ_CS).filter(pp => pp.length > 2); if (!paths.length) return null;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const pp of paths) for (const q of pp) { x0 = Math.min(x0, q.X); y0 = Math.min(y0, q.Y); x1 = Math.max(x1, q.X); y1 = Math.max(y1, q.Y); }
-    const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
-    return { id: dzId(), t: 'shape', shape: 'vec', ...styleOf(l), x: x0 / DZ_CS, y: y0 / DZ_CS, w: w / DZ_CS, h: h / DZ_CS, rot: 0, name: nm,
-      ...(l.side ? { side: l.side } : {}), subs: paths.map(pp => ({ closed: true, nodes: pp.map(q => dzNd((q.X - x0) / w, (q.Y - y0) / h)) })) };
+  const vecFrom = (paths, l, nm) => {   // fitted back into smooth curves, so a circle stays a few nodes, not hundreds
+    const C = CL(); paths = C.Clipper.CleanPolygons(paths, 0.2 * DZ_CS).filter(pp => pp.length > 2); if (!paths.length) return null;
+    const subs = paths.map(pp => dzFitRing(pp.map(q => ({ x: q.X / DZ_CS, y: q.Y / DZ_CS })))).filter(sp => sp.nodes.length > 2);
+    if (!subs.length) return null;
+    const v = vecFromPage(subs, { ...styleOf(l), name: nm }); if (l.side) v.side = l.side; else delete v.side;
+    return v;
   };
   // The operands go; the results take the place of the topmost one.
   const replaceWith = (olds, news) => {
