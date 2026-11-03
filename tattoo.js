@@ -657,7 +657,7 @@ TT.open = async (el, id) => {
   const pageTurn = (strokeA, ev) => turnOf(strokeA, ev) - (isMag() ? st.rot : 0);   // a magnum's angle is held on the screen, whatever the page's rotation
   const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); drawVolt(); drawSz(); };
   // Quick needle size (#08, #10, #12) under the grouping: kept with this needle's feel, the selected one lit.
-  function drawSz() { $('#tt-szq')?.querySelectorAll('[data-szq]').forEach(b => b.classList.toggle('on', +b.dataset.szq === feel.size)); }
+  function drawSz() { try { meterBuild(); meter(lastM); } catch { /* the meter isn't built yet on the first call */ } $('#tt-szq')?.querySelectorAll('[data-szq]').forEach(b => b.classList.toggle('on', +b.dataset.szq === feel.size)); }
   $('#tt-szq').onclick = (e) => { const b = e.target.closest('[data-szq]'); if (!b) return; feel.size = +b.dataset.szq; TT.setFeel(st.needle, feel);
     lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); st.dirty = true; drawSz(); drawCur(); if (st.panel === 'feel') drawSide(); };
   const drawVolt = () => { const v = feel.volt ?? 7; $('#tt-vs').value = v; $('#tt-vl').textContent = v.toFixed(1) + 'V'; };
@@ -722,7 +722,7 @@ TT.open = async (el, id) => {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           trAdd(q, pen.foot, 0.012 * Math.pow(depth, 4) / (cal.tough || 1));   // tough skin: light passes barely work it; digging in does
-          const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - 0.8) / 0.15)) * (cal.blow ?? 1);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
+          const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
@@ -736,7 +736,7 @@ TT.open = async (el, id) => {
       }
       pen.carry = t - d; pen.last = p; pen.t = ev.timeStamp;
     }
-    if (pen.mt) meter(pen.mt);
+    if (pen.mt) meter(lastM = pen.mt);
     const u = flushPig(), pad = pen.foot * 2 + 4 * mm; st.dirty = true; drawNeedleInk();
     paint(u && pen.cx.pig ? { x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad } : undefined);
   };
@@ -750,19 +750,23 @@ TT.open = async (el, id) => {
      while the needle is up. Bands follow the skin model: blowouts start at depth 0.8 when the punctures land under
      0.035 mm apart; the skin reddens from 0.3, swells from 1, gets patchy past 1.4. */
   const MTR = [
-    ['depth', 'Depth', 0, 1.1, 0.45, 0.8, 0.95, (v) => v.toFixed(2)],
+    ['depth', 'Depth', 0, 1.1, 0.45, 0.8, 0.95, (v) => v.toFixed(2)],   // the green edge and red start follow the needle size (meterBands)
     ['gap', 'Speed', 0, 0.3, 0.05, 0.2, 0.035, (v) => v.toFixed(3) + ' mm', true],
     ['skin', 'Skin', 0, 2.2, 0, 0.8, 1.4, (v) => v < 0.3 ? 'fresh' : v < 0.8 ? 'red' : v < 1.4 ? 'swollen' : 'overworked'],
   ];
   const meterEl = $('#tt-meter');
-  meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
+  // Thinner needles cut deeper for the same push: #08 starts blowing out sooner (and more often) than #12.
+  function blowD() { return 0.8 - (0.3 - (feel.size || 0.3)) * 1.2; }
+  const meterBands = () => { const d = blowD(); MTR[0][5] = d; MTR[0][6] = d + 0.12; };
+  const meterBuild = () => { meterBands(); meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
     const badZ = low ? `left:0;width:${P(bad)}%` : `left:${P(bad)}%;right:0`;
-    return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('');
+    return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join(''); };
+  meterBuild();
   const meter = (m) => { for (const [key, , lo, hi, g0, g1, bad, fmt, low] of MTR) { const v = m[key], row = meterEl.querySelector(`[data-m="${key}"]`);
     let z = v >= g0 && v <= g1 ? 'ok' : (low ? v < bad : v > bad) ? 'bad' : 'warn';
-    if (key === 'gap' && z === 'bad' && m.depth < 0.8) z = 'warn';   // slow is only a danger while digging in
+    if (key === 'gap' && z === 'bad' && m.depth < blowD()) z = 'warn';   // slow is only a danger while digging in
     row.querySelector('b').style.left = Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)) + '%'; row.className = 'tt-mr ' + z; row.querySelector('em').textContent = fmt(v); } };
-  meter({ depth: 0, gap: 0.1, skin: 0 });
+  let lastM = { depth: 0, gap: 0.1, skin: 0 }; meter(lastM);
 
   /* Challenge rules: a few free undos (in case the app got it wrong), then each costs points; the laser costs
      points from its first beam on the skin. Each is flagged on screen as it happens and listed in the result.
