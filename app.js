@@ -1753,7 +1753,9 @@ const VIEWS = {
     title: () => 'Reel',
     render: () => `
       <div class="reel-top"><button class="btn icon-btn" data-go="reels" aria-label="All reels" data-tip="All reels"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
-        <input class="in" id="reel-name" aria-label="Reel name" placeholder="Reel name"></div>
+        <input class="in" id="reel-name" aria-label="Reel name" placeholder="Reel name">
+        <button class="btn icon-btn" id="reel-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+        <button class="btn icon-btn" id="reel-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button></div>
       <div class="reel-wrap">
         <div class="reel-stage">
           <canvas id="reel-cv" width="${PREVIEW_W}" height="${PREVIEW_H}"></canvas>
@@ -1780,6 +1782,7 @@ const VIEWS = {
       if (!(await reelOpen(+id)) || !$('#reel-cv')) return;
       v.style.opacity = ''; v.style.pointerEvents = '';
       const nm = $('#reel-name'); nm.value = RS.name; nm.oninput = () => { RS.name = nm.value; };
+      $('#reel-undo').onclick = () => reelUndo(-1); $('#reel-redo').onclick = () => reelUndo(1); reelUndoBtns();
       reelPlayBtn(); reelRender();
       $('#reel-play').onclick = () => R.playing ? reelPause() : reelPlay();
       $('#reel-restart').onclick = () => { reelShow(0); reelPlay(); };
@@ -5836,9 +5839,47 @@ function reelKeep(obj, file) {
     .catch(err => toast(`Could not keep ${file.name}: ${err.message}`, 5000));
   RS.pend.push(p); return p;
 }
-const reelDocJSON = () => JSON.stringify({ v: 1,
-  clips: R.clips.map(c => { const o = {}; for (const [k, v] of Object.entries(c)) if (!['el', 'url', 'thumb', 'gain'].includes(k) && (v == null || typeof v !== 'object' || Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) o[k] = v; return o; }),
-  trans: R.trans, music: R.music ? { ref: R.music.ref, name: R.music.name, offset: R.music.offset, vol: R.music.vol } : null, style: reelStyle() });
+// The edit as JSON. `hist`: for undo, without the media file names (they arrive in the background and are no edit).
+const reelDocJSON = (hist) => JSON.stringify({ v: 1,
+  clips: R.clips.map(c => { const o = {}; for (const [k, v] of Object.entries(c)) if (!['el', 'url', 'thumb', 'gain'].includes(k) && !(hist && k === 'ref') && (v == null || typeof v !== 'object' || Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) o[k] = v; return o; }),
+  trans: R.trans, music: R.music ? { ref: hist ? undefined : R.music.ref, name: R.music.name, offset: R.music.offset, vol: R.music.vol } : null, style: reelStyle() });
+
+/* Undo and redo: a copy of the edit once it has held still for a moment (checked twice a second; never mid-drag),
+   up to 60 steps. Going back rebuilds the clip list from the copy, reusing each clip's loaded video or photo (kept
+   by clip id, removed clips too), so nothing is loaded again. */
+const RH = { list: [], i: -1, last: '', live: new Map(), songs: new Map() };
+function reelHistReset() { RH.list = [reelDocJSON(true)]; RH.i = 0; RH.last = RH.list[0]; RH.live = new Map(); RH.songs = new Map(); reelHistKeep(); reelUndoBtns(); }
+function reelHistKeep() {
+  for (const c of R.clips) RH.live.set(c.id, { el: c.el, url: c.url, thumb: c.thumb, gain: c.gain, ref: c.ref, w: c.w, h: c.h, srcDur: c.srcDur });
+  if (R.music) RH.songs.set(R.music.name, { buffer: R.music.buffer, ref: R.music.ref });
+}
+function reelUndoBtns() { const u = $('#reel-undo'), r = $('#reel-redo'); if (u) u.disabled = RH.i <= 0; if (r) r.disabled = RH.i >= RH.list.length - 1; }
+setInterval(() => {
+  if (!location.hash.startsWith('#reel/') || !RS.loaded || R.dragging || R.quickDrag || R.recording) return;
+  reelHistKeep();
+  const j = reelDocJSON(true), still = j === RH.last; RH.last = j;
+  if (!still || j === RH.list[RH.i]) return;
+  RH.list.splice(RH.i + 1); RH.list.push(j); if (RH.list.length > 61) RH.list.shift(); RH.i = RH.list.length - 1; reelUndoBtns();
+}, 500);
+function reelUndo(d) {
+  const n = RH.i + d; if (n < 0 || n >= RH.list.length) return toast(d < 0 ? 'Nothing to undo.' : 'Nothing to redo.');
+  reelHistKeep();
+  const cur = reelDocJSON(true);
+  if (cur !== RH.list[RH.i]) { RH.list.splice(RH.i + 1); RH.list.push(cur); RH.i = RH.list.length - 1; if (d > 0) return reelUndoBtns(); return reelUndo(-1); }   // an edit not kept yet: keep it, then step back from it
+  RH.i = n; const doc = JSON.parse(RH.list[n]);
+  if (R.playing) reelPause();
+  for (const c of R.clips) if (c.type === 'video') c.el.pause();
+  R.clips = doc.clips.filter(sv => RH.live.has(sv.id)).map(sv => ({ ...sv, ...RH.live.get(sv.id) }));
+  R.trans = doc.trans || {};
+  const song = doc.music && RH.songs.get(doc.music.name);
+  R.music = song ? { ...doc.music, ...song } : null;
+  Settings.set('reel_style', JSON.stringify(doc.style));
+  RH.last = RH.list[n];
+  R.sel = Math.min(R.sel, R.clips.length - 1);
+  if (R.pick?.kind === 'clip' && !R.clips.some(c => c.id === R.pick.key)) R.pick = null;
+  R.t = Math.min(R.t, reelSegments().total);
+  R.layer = null; reelSyncVideos(R.t, false); reelChanged(); reelPanel(); reelUndoBtns();
+}
 async function reelSave() {
   if (!RS.id || !RS.loaded || R.recording) return;
   if (RS.busy) return RS.busy;
@@ -5858,6 +5899,11 @@ async function reelSave() {
   } catch (err) { console.warn('Reel save failed:', err); toast('Could not save the reel: ' + err.message, 5000); } finally { RS.busy = null; } })());
 }
 setInterval(() => { if (location.hash.startsWith('#reel/')) reelSave(); }, 2000);
+addEventListener('keydown', (e) => {
+  if (!location.hash.startsWith('#reel/') || !(e.ctrlKey || e.metaKey) || e.target.matches?.('input:not([type=range]), textarea')) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z') { e.preventDefault(); reelUndo(e.shiftKey ? 1 : -1); } else if (k === 'y') { e.preventDefault(); reelUndo(1); }
+});
 addEventListener('hashchange', () => { if (RS.id && !location.hash.startsWith('#reel/')) reelSave(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) reelSave(); });
 // Loads a saved reel into the editor (a reel already open stays as it is in memory).
@@ -5885,7 +5931,7 @@ async function reelOpen(id) {
     try { if (!u) throw 0; R.music = { ...doc.music, buffer: await reelAudio().decodeAudioData(await (await fetch(u)).arrayBuffer()) }; } catch { missing++; }
   }
   if (missing) toast(`${missing} file${missing > 1 ? 's' : ''} of this reel could not be found.`, 5000);
-  RS.loaded = true; RS.saved = RS.name + reelDocJSON();
+  RS.loaded = true; RS.saved = RS.name + reelDocJSON(); reelHistReset();
   return true;
 }
 // The list of saved reels, like the designs and the simulator's pieces.
@@ -6371,8 +6417,7 @@ function reelClipBind(ed, c) {
 function reelRemoveClip(i) {
   const [gone] = R.clips.splice(i, 1); if (!gone) return;
   // Split/duplicated clips share the media; only release it when no clip uses it any more.
-  if (gone.type === 'video') gone.el.pause();
-  if (!R.clips.some(x => x.url === gone.url)) URL.revokeObjectURL(gone.url);
+  if (gone.type === 'video') gone.el.pause();   // its file stays open, so undo can bring the clip back
   delete R.trans[gone.id];
   R.sel = Math.min(i, R.clips.length - 1);
   R.t = Math.min(R.t, reelSegments().total);
