@@ -707,7 +707,7 @@ TT.open = async (el, id) => {
     for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
       cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; cg.drawImage(L[key], 0, 0);
       if (key === 'high') cg.drawImage(L[key], 0, 0); }   // white laid twice: fresh white ink reads bright, not grey
-    cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); cg.restore(); };
+    cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); if (CHEAT && st.letters?.length && !st.hide.has('stencil')) cg.drawImage(LT, 0, 0); cg.restore(); };
   const paint = (rect) => { if (rect) compR = compR ? { x0: Math.min(compR.x0, rect.x0), y0: Math.min(compR.y0, rect.y0), x1: Math.max(compR.x1, rect.x1), y1: Math.max(compR.y1, rect.y1) } : rect; else compAll = true;
     cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
     const dpr = cv.width / (stage.clientWidth || 1), { cx, cy } = org();
@@ -895,6 +895,9 @@ TT.open = async (el, id) => {
       sh = `<div data-gh="sbody" class="tt-selb" style="left:${c.x}px;top:${c.y}px;width:${w}px;height:${h2}px;transform:translate(-50%,-50%) rotate(${ang}rad)"></div>`
         + cs.map((q, i) => `<i data-gh="sk${i}" class="lsel" style="left:${q.x}px;top:${q.y}px"></i>`).join('') + `<i data-gh="srot" class="lsel rot" style="left:${top.x + up.x}px;top:${top.y + up.y}px"></i>`
         + `<div class="tt-selbar"><button data-sa="fx">Flip ↔</button><button data-sa="fy">Flip ↕</button><button data-sa="del">Delete</button><button data-sa="undo">Cancel</button><button data-sa="ok" class="ok">Done</button></div>`; }
+    const Lc = st.tool === 'text' && letCur(); if (Lc) { const Y = letLayout(ltg, Lc), c = toScreen(Lc), ang = (Lc.rot || 0) + st.rot, w = Y.w * k, h2 = Y.h * k, ca = Math.cos(ang), sa = Math.sin(ang);
+      const cr = { x: c.x + (w / 2) * ca - (h2 / 2) * sa, y: c.y + (w / 2) * sa + (h2 / 2) * ca }, tp = { x: c.x + (h2 / 2 + 26) * sa, y: c.y - (h2 / 2 + 26) * ca };
+      sh += `<div data-gh="lbody" class="tt-selb let" style="left:${c.x}px;top:${c.y}px;width:${w}px;height:${h2}px;transform:translate(-50%,-50%) rotate(${ang}rad)"></div><i data-gh="lsize" class="lsel" style="left:${cr.x}px;top:${cr.y}px"></i><i data-gh="lrot" class="lsel rot" style="left:${tp.x}px;top:${tp.y}px"></i>`; }
     if (snapE?.live) sh += snapE.anchors.map((a, i) => { const q = toScreen(a); return `<i data-gh="an${i}" class="anc ${a.c ? 'corner' : ''}" style="left:${q.x}px;top:${q.y}px"></i>`; }).join('')
       + `<div class="tt-selbar"><span class="tt-anhint">Drag an anchor to reshape · tap it for curve or corner</span><button data-sa="snapok" class="ok">Done</button></div>`;
     guides.innerHTML = sh + hs.map(([k2, p]) => { const s = toScreen(p); return `<i data-gh="${k2}" class="${k2 === 'sc' ? 'sym' : ''}" style="left:${s.x}px;top:${s.y}px"></i>`; }).join('');
@@ -913,12 +916,18 @@ TT.open = async (el, id) => {
       cux.setLineDash([]); } };
   let gDrag = null;
   guides.addEventListener('pointerdown', (e) => { const h = e.target.closest('[data-gh]'); if (!h) return; e.stopPropagation(); e.preventDefault(); try { guides.setPointerCapture(e.pointerId); } catch {} gDrag = h.dataset.gh;
+    if (/^l(body|size|rot)$/.test(gDrag) && letCur()) { const r = stage.getBoundingClientRect(), Lc = letCur(); gDrag = { k: gDrag, p0: fromScreen(e.clientX - r.left, e.clientY - r.top), x: Lc.x, y: Lc.y, mm: Lc.mm, rot: Lc.rot || 0 }; return; }
     if (snapE?.live && /^an\d+$/.test(gDrag)) { gDrag = { k: 'an', i: +gDrag.slice(2), x: e.clientX, y: e.clientY, moved: false }; return; }
     if (lsel && /^s(body|k|rot)/.test(gDrag)) { const r = stage.getBoundingClientRect(); gDrag = { k: gDrag, p0: fromScreen(e.clientX - r.left, e.clientY - r.top), tx: lsel.tx, ty: lsel.ty, s: lsel.s, rot: lsel.rot, c: selCentre() }; } });
   guides.addEventListener('click', (e) => { const a = e.target.closest('[data-sa]')?.dataset.sa; if (a === 'snapok') return snapFinish(); if (!a || !lsel) return;
     if (a === 'fx') lsel.fx *= -1; if (a === 'fy') lsel.fy *= -1; if (a === 'ok') return selCommit(); if (a === 'del') return selCommit(true); if (a === 'undo') return selCancel();
     selApply(); placeGuides(); });
   guides.addEventListener('pointermove', (e) => { if (!gDrag) return; const r = stage.getBoundingClientRect(), p = fromScreen(e.clientX - r.left, e.clientY - r.top), cl = { x: Math.max(0, Math.min(W, p.x)), y: Math.max(0, Math.min(H, p.y)) };
+    if (gDrag?.k?.[0] === 'l' && gDrag.k !== 'lsel') { const Lc = letCur(); if (!Lc) return; const g = gDrag;
+      if (g.k === 'lbody') { Lc.x = g.x + p.x - g.p0.x; Lc.y = g.y + p.y - g.p0.y; }
+      else if (g.k === 'lsize') Lc.mm = Math.max(2, Math.round(g.mm * Math.hypot(p.x - g.x, p.y - g.y) / Math.max(1, Math.hypot(g.p0.x - g.x, g.p0.y - g.y)) * 2) / 2);
+      else { let a = g.rot + Math.atan2(p.y - g.y, p.x - g.x) - Math.atan2(g.p0.y - g.y, g.p0.x - g.x); const q = Math.round(a / (Math.PI / 4)) * (Math.PI / 4); if (Math.abs(a - q) < 0.05) a = q; Lc.rot = a; }
+      st.dirty = true; letDraw(); return placeGuides(); }
     if (gDrag?.k === 'an') { if (!snapE) return; if (!gDrag.moved && Math.hypot(e.clientX - gDrag.x, e.clientY - gDrag.y) < 5) return;
       gDrag.moved = true; snapE.moved = true; snapE.anchors[gDrag.i] = { ...snapE.anchors[gDrag.i], x: cl.x, y: cl.y };
       if (!snapRaf) snapRaf = requestAnimationFrame(() => { snapRaf = 0; renderSnap(); }); return placeGuides(); }
@@ -950,7 +959,9 @@ TT.open = async (el, id) => {
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   /* ---------- Cheat tools: blend, fill and shapes ----------
      All work on the current layer with the ink on the needle, and undo like a stroke. */
-  st.liq = meta.liq || { r: 8, s: 0.5, all: true }; st.txt = meta.txt || { s: 'Mum', f: 0, mm: 15 };
+  st.liq = meta.liq || { r: 8, s: 0.5, all: true };
+  st.letters = meta.letters || []; st.letSel = null;
+  st.letDef = meta.letDef || { s: 'Mum', font: "'Pirata One', serif", mm: 12, sp: 0, lh: 1.15, curve: 0, bold: false, ital: false, align: 'center', mode: 'outline', ow: 0.35 };
   st.lassoAll = !!meta.lassoAll; st.grid = meta.grid || { on: false, mm: 10 }; st.blend = meta.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || { sten: true }; st.shape = meta.shape || { kind: 'rect', fill: false };
   function toolPop(b) {
     const T = st.tool, sl = (o, f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:4px 6px"><span>${lab}<b>${fmt(st[o][f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${st[o][f]}" data-tl="${o}.${f}"></label>`;
@@ -958,9 +969,7 @@ TT.open = async (el, id) => {
     pop.innerHTML = T === 'blend' ? `<div class="gh">Blend</div>${sl('blend', 'r', 'Size', 1, 15, 0.5, v => v + ' mm')}${sl('blend', 'i', 'Intensity', 0.05, 1, 0.05, v => Math.round(v * 100) + '%')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag over ink to smudge and soften it, on the current layer.</p>`
       : T === 'fill' ? `<div class="gh">Fill</div>${tg('fillo', 'sten', 'Stencil lines count as edges')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap inside an outline: it packs solid with the ink on the needle, on the current layer.</p>`
       : T === 'liquify' ? `<div class="gh">Liquify</div>${sl('liq', 'r', 'Size', 2, 30, 0.5, v => v + ' mm')}${sl('liq', 's', 'Strength', 0.1, 1, 0.05, v => Math.round(v * 100) + '%')}${tg('liq', 'all', 'Every ink layer, not just the current one')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag to push the ink along like wet paint.</p>`
-      : T === 'text' ? `<div class="gh">Lettering</div><input class="in" data-txt value="${esc(st.txt.s)}" placeholder="Text" style="margin:2px 6px 6px;width:calc(100% - 12px)">
-        <div class="tt-symm">${TT_FONTS.map(([f, n2], i) => `<button data-font="${i}" class="${st.txt.f === i ? 'on' : ''}" style="font-family:${f}">${n2}</button>`).join('')}</div>${sl('txt', 'mm', 'Height', 3, 60, 1, v => v + ' mm')}
-        <p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap the page to place it on the stencil layer, then trace it. The lasso (on the stencil layer) moves and sizes it.</p>`
+      : T === 'text' ? `<div class="gh">Lettering</div><p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap the page to add text, or tap a text to change it. It stays editable on its own lettering layer until you bake it.</p>`
       : T === 'lasso' ? `<div class="gh">Lasso</div><label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-lassoall ${st.lassoAll ? 'checked' : ''}><span>Every ink layer, not just the current one</span></label><p class="muted" style="font-size:11px;margin:2px 6px 6px">Draw round the part to move. Drag it, size it from a corner, turn it from the top dot, flip it, then Done.</p>`
       : `<div class="gh">Shapes</div><div class="tt-symm">${[['line', 'Line'], ['rect', 'Box'], ['ellipse', 'Ellipse'], ['tri', 'Triangle'], ['star', 'Star'], ['heart', 'Heart']].map(([k2, n]) => `<button data-shp="${k2}" class="${st.shape.kind === k2 ? 'on' : ''}">${n}</button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
@@ -987,6 +996,79 @@ TT.open = async (el, id) => {
       if (sa > 0) { const pr = (D[i] * ca) * (1 - f) + (sr / 5) * f, pg = (D[i + 1] * ca) * (1 - f) + (sg / 5) * f, pb = (D[i + 2] * ca) * (1 - f) + (sb / 5) * f; D[i] = pr / na; D[i + 1] = pg / na; D[i + 2] = pb / na; }
       D[i + 3] = na; }
     markDirty(td.key, x0, y0, x1, y1); const B = td.box; B.x0 = Math.min(B.x0, x0); B.y0 = Math.min(B.y0, y0); B.x1 = Math.max(B.x1, x1); B.y1 = Math.max(B.y1, y1); };
+  /* ---------- Lettering ----------
+     Each text is an object on the lettering layer (drawn over the work, never inked) that can be changed at any time:
+     words, font (built in, the design studio's, or an imported one), size, letter spacing, line height, curve, bold,
+     italic, alignment, and how it will end up: a stencil outline or solid stencil to trace, or tattooed solid or as
+     an outline in the needle's ink. Bake lays it into the stencil or the current ink layer, after which it's just
+     ink (one undo step). */
+  const LT = document.createElement('canvas'); LT.width = W; LT.height = H; const ltg = LT.getContext('2d');
+  const famCss = (f) => /[,'"]/.test(f) ? f : `"${f}"`;
+  const letFont = (Lt) => `${Lt.ital ? 'italic ' : ''}${Lt.bold ? 700 : 400} ${Lt.mm * mm}px ${famCss(Lt.font)}`;
+  // Each line's letters with their offsets, and the block's size (page px, before turning).
+  const letLayout = (g, Lt) => { g.font = letFont(Lt); const fs = Lt.mm * mm, sp = Lt.sp * fs, lines = String(Lt.s || '').split('\n'), lh = fs * Lt.lh;
+    const L2 = lines.map(line => { const ch = [...line], ws = ch.map(c => g.measureText(c).width); return { ch, ws, w: ws.reduce((a, b) => a + b, 0) + sp * Math.max(0, ch.length - 1) }; });
+    const mw = Math.max(1, ...L2.map(l => l.w)), th = lh * lines.length, th0 = Lt.curve ? Math.abs(Lt.curve) / 100 * Math.PI : 0, sag = th0 ? mw / th0 * (1 - Math.cos(th0 / 2)) : 0;
+    return { fs, sp, lh, lines: L2, w: mw + fs * 0.2, h: th + sag + fs * 0.2, sag }; };
+  // Draws one text at its place, in its own colour (or ink: the needle's colour it was given).
+  const letPaint = (g, Lt, style) => { const Y = letLayout(g, Lt), purple = 'rgba(78,40,150,.92)', ink = Lt.mode === 'ink' || Lt.mode === 'inkline';
+    const col = style?.col || (ink ? Lt.col : purple), outline = Lt.mode === 'outline' || Lt.mode === 'inkline';
+    g.save(); g.translate(Lt.x, Lt.y); g.rotate(Lt.rot || 0); g.font = letFont(Lt); g.textBaseline = 'middle'; g.fillStyle = col; g.strokeStyle = col; g.lineWidth = Lt.ow * mm; g.lineJoin = 'round';
+    const y0 = -Y.lh * (Y.lines.length - 1) / 2 - (Lt.curve > 0 ? Y.sag / 2 : Lt.curve < 0 ? -Y.sag / 2 : 0);
+    Y.lines.forEach((ln, li) => { const by = y0 + li * Y.lh, x0 = Lt.align === 'left' ? -Y.w / 2 + Y.fs * 0.1 : Lt.align === 'right' ? Y.w / 2 - Y.fs * 0.1 - ln.w : -ln.w / 2;
+      const th0 = Lt.curve / 100 * Math.PI, R = Math.abs(th0) > 0.01 ? ln.w / th0 : 0; let s = 0;
+      ln.ch.forEach((c, i) => { const cw = ln.ws[i], mid = x0 + s + cw / 2; g.save();
+        if (R) { const phi = (mid - (x0 + ln.w / 2)) / R; g.translate(x0 + ln.w / 2 + R * Math.sin(phi), by + R - R * Math.cos(phi)); g.rotate(phi); } else g.translate(mid, by);
+        g.textAlign = 'center'; outline ? g.strokeText(c, 0, 0) : g.fillText(c, 0, 0); g.restore(); s += cw + Y.sp; }); });
+    g.restore(); return Y; };
+  const letDraw = () => { ltg.clearRect(0, 0, W, H); for (const Lt of st.letters) letPaint(ltg, Lt); compAll = true; paint(); };
+  const letHit = (Lt, p) => { const Y = letLayout(ltg, Lt), c = Math.cos(-(Lt.rot || 0)), s = Math.sin(-(Lt.rot || 0)), dx = p.x - Lt.x, dy = p.y - Lt.y;
+    return Math.abs(dx * c - dy * s) < Y.w / 2 && Math.abs(dx * s + dy * c) < Y.h / 2; };
+  const letCur = () => st.letters.find(l => l.id === st.letSel);
+  const letFonts = () => { const out = [...TT_FONTS.map(([f, n2]) => [f, n2])];
+    if (typeof DZ_FONTS !== 'undefined') for (const [n2] of DZ_FONTS) if (!out.some(o => o[1] === n2)) out.push([n2, n2]);
+    if (typeof DZF !== 'undefined') for (const c of DZF.custom()) out.push([c.name, c.name + ' (yours)']); return out; };
+  const letLoadFont = async (f) => { if (typeof DZF !== 'undefined' && !/[,'"]/.test(f)) await DZF.load(f); else await document.fonts.load(`400 40px ${f}`).catch(() => {}); };
+  function letPanel() { const Lt = letCur(); if (!Lt) return; const b = $('#tt-rail [data-r="tools"]');
+    const sl = (f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:3px 6px"><span>${lab}<b>${fmt(Lt[f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${Lt[f]}" data-lt="${f}"></label>`;
+    const seg = (f, opts) => `<div class="tt-lseg">${opts.map(([v, n2]) => `<button data-lv="${f}:${v}" class="${String(Lt[f]) === String(v) ? 'on' : ''}">${n2}</button>`).join('')}</div>`;
+    pop.innerHTML = `<div class="tt-letp"><div class="gh">Lettering</div>
+      <textarea class="in" data-lt="s" rows="2" style="margin:2px 6px 6px;width:calc(100% - 12px);font-family:${Lt.font.replace(/"/g, "'")}">${esc(Lt.s)}</textarea>
+      <div class="row" style="gap:4px;margin:0 6px 6px"><select class="in" data-lt="font" style="flex:1">${letFonts().map(([f, n2]) => `<option value="${esc(f)}" ${f === Lt.font ? 'selected' : ''}>${esc(n2)}</option>`).join('')}</select>
+        ${typeof dzImportFont === 'function' ? '<button class="btn small" data-la="font">Import</button>' : ''}</div>
+      ${seg('mode', [['outline', 'Stencil line'], ['solid', 'Stencil solid'], ['ink', 'Tattoo solid'], ['inkline', 'Tattoo line']])}
+      ${sl('mm', 'Size', 3, 80, 0.5, v => v + ' mm')}${sl('sp', 'Letter spacing', -0.2, 1, 0.01, v => Math.round(v * 100) + '%')}${sl('lh', 'Line height', 0.7, 2.5, 0.05, v => '× ' + v)}
+      ${sl('curve', 'Curve', -100, 100, 1, v => v ? (v > 0 ? 'arch ' : 'dip ') + Math.abs(v) : 'straight')}${Lt.mode === 'outline' || Lt.mode === 'inkline' ? sl('ow', 'Line width', 0.1, 2, 0.05, v => v + ' mm') : ''}
+      ${seg('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']])}
+      <div class="tt-lseg"><button data-lv="bold:${!Lt.bold}" class="${Lt.bold ? 'on' : ''}" style="font-weight:800">Bold</button><button data-lv="ital:${!Lt.ital}" class="${Lt.ital ? 'on' : ''}" style="font-style:italic">Italic</button><button data-la="ink">Needle ink</button></div>
+      <div class="row" style="gap:4px;margin:8px 6px 6px"><button class="btn small" data-la="del">Delete</button><button class="btn small" data-la="dup">Copy</button><span style="flex:1"></span>
+        <button class="btn small primary" data-la="bake" data-tip="Lay it into the ${Lt.mode === 'outline' || Lt.mode === 'solid' ? 'stencil' : 'current ink'} layer. After this it can't be edited as text.">Bake</button></div></div>`;
+    pop.hidden = false; pop.style.top = Math.max(8, (b?.getBoundingClientRect().top || 0) - stage.getBoundingClientRect().top - 6) + 'px'; }
+  // Bake: the text becomes stencil or ink for good.
+  const letBake = (Lt) => { const toSten = Lt.mode === 'outline' || Lt.mode === 'solid', key = toSten ? 'stencil' : st.layer;
+    if (!toSten && !INK.includes(key)) return toast('Pick an ink layer in Layers to bake tattooed lettering into.');
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); const Y = letPaint(g, Lt, { col: toSten ? undefined : '#000' });
+    snap(key); touched.add(key);
+    if (toSten) { L.stencil.getContext('2d').drawImage(c, 0, 0); st.hide.delete('stencil'); }
+    else { const M = g.getImageData(0, 0, W, H).data, D = imgd[key].data, col = ttHex(Lt.col).map(v => Math.round(v * 255)); let x0 = W, y0 = H, x1 = 0, y1 = 0;
+      for (let i = 3; i < M.length; i += 4) if (M[i] > 10) { layInk(D, i - 3, col, 0.92 * M[i] / 255); const px = (i >> 2) % W, py = (i >> 2) / W | 0; if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py; }
+      if (x1 >= x0) markDirty(key, x0, y0, x1, y1); flushPig(); }
+    const r = Math.hypot(Y.w, Y.h) / 2 + 4; cropTop({ x0: Lt.x - r, y0: Lt.y - r, x1: Lt.x + r, y1: Lt.y + r });
+    st.letters = st.letters.filter(l => l !== Lt); st.letSel = null; st.dirty = true; closePop(); letDraw(); placeGuides(); TL.changed = true; tlGrab();
+    toast(toSten ? 'Baked into the stencil layer: trace it.' : 'Baked into the ink layer.', 1800); };
+  pop.addEventListener('input', (e) => { const f = e.target.dataset?.lt, Lt = letCur(); if (!f || !Lt) return;
+    Lt[f] = e.target.type === 'range' ? +e.target.value : e.target.value; if (f !== 's') st.letDef = { ...st.letDef, [f]: Lt[f] }; st.dirty = true;
+    const v = e.target.closest('label')?.querySelector('b'); if (v) v.textContent = f === 'mm' || f === 'ow' ? Lt[f] + ' mm' : f === 'sp' ? Math.round(Lt[f] * 100) + '%' : f === 'lh' ? '× ' + Lt[f] : f === 'curve' ? (Lt.curve ? (Lt.curve > 0 ? 'arch ' : 'dip ') + Math.abs(Lt.curve) : 'straight') : '';
+    if (f === 'font') { e.target.closest('.tt-letp').querySelector('textarea').style.fontFamily = Lt.font.replace(/"/g, "'"); letLoadFont(Lt.font).then(() => { letDraw(); placeGuides(); }); return; }
+    letDraw(); placeGuides(); });
+  pop.addEventListener('click', async (e) => { const Lt = letCur(); if (!Lt) return; const lv = e.target.closest('[data-lv]')?.dataset.lv, la = e.target.closest('[data-la]')?.dataset.la;
+    if (lv) { const [f, v] = lv.split(':'); Lt[f] = v === 'true' ? true : v === 'false' ? false : v; st.letDef = { ...st.letDef, [f]: Lt[f] }; st.dirty = true; letDraw(); placeGuides(); return letPanel(); }
+    if (la === 'del') { st.letters = st.letters.filter(l => l !== Lt); st.letSel = null; st.dirty = true; closePop(); letDraw(); return placeGuides(); }
+    if (la === 'dup') { const c2 = { ...Lt, id: 'l' + Date.now().toString(36), x: Lt.x + 6 * mm, y: Lt.y + 6 * mm }; st.letters.push(c2); st.letSel = c2.id; st.dirty = true; letDraw(); placeGuides(); return letPanel(); }
+    if (la === 'ink') { Lt.col = ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]); st.dirty = true; letDraw(); return toast('The text takes the ink on the needle.', 1400); }
+    if (la === 'bake') return letBake(Lt);
+    if (la === 'font') { const n2 = await dzImportFont(); if (n2) { Lt.font = n2; st.letDef = { ...st.letDef, font: n2 }; st.dirty = true; await letLoadFont(n2); letDraw(); placeGuides(); letPanel(); } } });
+  Promise.all(st.letters.map(l => letLoadFont(l.font))).then(() => letDraw());
   // Liquify: inside the brush, each pixel takes the ink from a little behind the brush's movement, strongest at the
   // centre, so the ink is pushed along with it (every chosen layer together).
   const liqStep = (a, b) => { const R = st.liq.r * mm, S = st.liq.s, dx = b.x - a.x, dy = b.y - a.y;
@@ -1047,11 +1129,9 @@ TT.open = async (el, id) => {
         const BB = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; BB.x0 = Math.min(BB.x0, q.x - bp); BB.y0 = Math.min(BB.y0, q.y - bp); BB.x1 = Math.max(BB.x1, q.x + bp); BB.y1 = Math.max(BB.y1, q.y + bp); } }
     const u = flushPig(); cropTop(pen.box); pen = null; st.dirty = true; paint(u ? { x0: u.x0 - 4 * mm, y0: u.y0 - 4 * mm, x1: u.x1 + 4 * mm, y1: u.y1 + 4 * mm } : undefined); TL.changed = true; tlGrab(); };
   const toolDown = (e) => { const p = toPage(e);
-    if (st.tool === 'text') { const s2 = (st.txt.s || '').trim(); if (!s2) return toast('Type the text in the Lettering options first.', 1800);
-      const g = L.stencil.getContext('2d'); snap('stencil'); touched.add('stencil'); st.hide.delete('stencil');
-      g.save(); g.font = `${st.txt.mm * mm}px ${TT_FONTS[st.txt.f][0]}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(78,40,150,.9)'; const w = g.measureText(s2).width;
-      g.fillText(s2, p.x, p.y); for (const q of symPts(p)) g.fillText(s2, q.x, q.y); g.restore();
-      const hh = st.txt.mm * mm; cropTop(symPts(p).length ? { x0: 0, y0: 0, x1: W, y1: H } : { x0: p.x - w / 2 - 4, y0: p.y - hh, x1: p.x + w / 2 + 4, y1: p.y + hh }); st.dirty = true; paint(); return; }
+    if (st.tool === 'text') { const hit = [...st.letters].reverse().find(Lt => letHit(Lt, p));
+      if (hit) { st.letSel = hit.id; } else { const Lt = { id: 'l' + Date.now().toString(36), ...st.letDef, x: p.x, y: p.y, rot: 0, col: ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]) }; st.letters.push(Lt); st.letSel = Lt.id; }
+      st.dirty = true; letDraw(); placeGuides(); return letPanel(); }
     if (st.tool === 'liquify') { const keys = st.liq.all ? INK.filter(k2 => !st.hide.has(k2)) : [toolLayer()]; if (!keys[0]) return;
       const h = state(keys[0]); h.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(h); if (hist.length > 15) hist.shift(); fut.length = 0;
       keys.forEach(k2 => touched.add(k2)); td = { kind: 'liq', keys, id: e.pointerId, last: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y } }; return; }
@@ -1287,8 +1367,7 @@ TT.open = async (el, id) => {
     const s = k * mm, a = pageTurn(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
     cux.setTransform(dpr, 0, 0, dpr, 0, 0); cux.lineWidth = 1;
     if (CHEAT && st.tool === 'liquify') { cux.beginPath(); cux.arc(curAt.x, curAt.y, st.liq.r * s, 0, 7); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.45)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = '#b58ae8'; cux.stroke(); return; }
-    if (CHEAT && st.tool === 'text') { const s2 = st.txt.s || ''; cux.save(); cux.translate(curAt.x, curAt.y); cux.rotate(st.rot); cux.font = `${st.txt.mm * s}px ${TT_FONTS[st.txt.f][0]}`; cux.textAlign = 'center'; cux.textBaseline = 'middle';
-      cux.lineWidth = 1; cux.strokeStyle = 'rgba(181,138,232,.9)'; cux.strokeText(s2, 0, 0); cux.restore(); return; }
+    if (CHEAT && st.tool === 'text') { cux.lineWidth = 1.5; cux.strokeStyle = '#b58ae8'; cux.beginPath(); cux.moveTo(curAt.x - 8, curAt.y); cux.lineTo(curAt.x + 8, curAt.y); cux.moveTo(curAt.x, curAt.y - 10); cux.lineTo(curAt.x, curAt.y + 10); cux.stroke(); return; }
     if (CHEAT && st.tool === 'blend') { cux.beginPath(); cux.arc(curAt.x, curAt.y, st.blend.r * s, 0, 7); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.45)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); return; }
     if (CHEAT && (st.tool === 'fill' || st.tool === 'shape' || st.tool === 'lasso' || st.tool === 'pick')) {
       if (td?.kind === 'lasso') { const P = td.pts.map(toScreen); cux.setLineDash([5, 4]); cux.beginPath(); P.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.closePath(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); cux.setLineDash([]); }
@@ -1451,12 +1530,12 @@ TT.open = async (el, id) => {
     }
     closePop();
     if (r === 'needle' || r === 'erase') { st.tool = r === 'erase' ? 'erase' : 'needle'; if (CHEAT) placeGuides(); return sel(); }
+    if (r === 'text' && st.letSel) { st.tool = 'text'; sel(); return letPanel(); }
     if (r === 'blend' || r === 'fill' || r === 'shape' || r === 'lasso' || r === 'liquify' || r === 'text') { if (st.tool === r && !pop.hidden) return closePop(); if (lsel && r !== 'lasso') selCommit(); st.tool = r; sel(); drawCur(); return toolPop(b); }
     st.panel = st.panel === r ? null : r; drawSide();
   };
   pop.onclick = (e) => {
     const tb = e.target.closest('.tt-tb'); if (tb) { const top = pop.style.top; pop.hidden = true; $('#tt-rail').onclick({ target: tb }); pop.style.top = top; return placeGuides(); }
-    const fb = e.target.closest('[data-font]'); if (fb) { st.txt.f = +fb.dataset.font; st.dirty = true; pop.querySelectorAll('[data-font]').forEach(x => x.classList.toggle('on', x === fb)); return; }
     const shb = e.target.closest('[data-shp]'); if (shb) { st.shape.kind = shb.dataset.shp; st.dirty = true; pop.querySelectorAll('[data-shp]').forEach(x => x.classList.toggle('on', x === shb)); return; }
     const sy = e.target.closest('[data-sym]'); if (sy) { st.sym.mode = sy.dataset.sym; st.dirty = true; pop.querySelectorAll('[data-sym]').forEach(x => x.classList.toggle('on', x === sy));
       pop.querySelector('[data-symn]').hidden = pop.querySelector('[data-symm]').hidden = st.sym.mode !== 'mandala'; $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off'); return placeGuides(); }
@@ -1470,7 +1549,6 @@ TT.open = async (el, id) => {
     if (e.target.matches('[data-fast]')) { st.fast = e.target.checked; st.dirty = true; return toast(st.fast ? 'Fast lines on: pull lines as quick as you like.' : 'Fast lines off.', 1600); }
     if (e.target.matches('[data-tl]')) { const [o, f] = e.target.dataset.tl.split('.'); st[o][f] = e.target.type === 'checkbox' ? e.target.checked : +e.target.value; st.dirty = true;
       const v = e.target.closest('label').querySelector('b'); if (v) v.textContent = f === 'r' || f === 'mm' ? st[o][f] + ' mm' : Math.round(st[o][f] * 100) + '%'; return drawCur(); }
-    if (e.target.matches('[data-txt]')) { st.txt.s = e.target.value; st.dirty = true; return; }
     if (e.target.matches('[data-symr]')) { st.sym.n = +e.target.value; $('#tt-symnv').textContent = st.sym.n; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-symmir]')) { st.sym.mir = e.target.checked; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-angr]')) { setAng(+e.target.value); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', +x.dataset.ang === st.magAng)); }
@@ -1811,7 +1889,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, txt: CHEAT ? st.txt : undefined, endless: CHEAT && st.endless || undefined }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined }), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -2320,6 +2398,8 @@ function ttStyle() {
 .tt-selb { position: absolute; border: 1.5px dashed #ff8a7a; pointer-events: auto; touch-action: none; cursor: move; background: rgba(255,111,97,.04); }
 .tt-selbar { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: flex; gap: 4px; padding: 5px; border-radius: 12px; background: rgba(15,18,19,.9); pointer-events: auto; z-index: 2; }
 .tt-selbar button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 700 12px var(--ui); border-radius: 8px; padding: 6px 10px; cursor: pointer; } .tt-selbar button.ok { background: var(--teal); color: #071312; border-color: var(--teal); }
+.tt-letp { max-height: min(70vh, 560px); overflow-y: auto; } .tt-lseg { display: flex; gap: 3px; margin: 4px 6px; } .tt-lseg button { flex: 1; border: 0; border-radius: 7px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 11px var(--ui); padding: 7px 2px; cursor: pointer; }
+.tt-lseg button.on { background: rgba(181,138,232,.28); color: #d6bdf7; } .tt-selb.let { border-color: #b58ae8; }
 .tt-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 0 6px; }
 .tt-tb { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); padding: 8px 2px 6px; cursor: pointer; font: 600 10px var(--ui); }
 .tt-tb svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .tt-tb.on { background: rgba(255,111,97,.2); color: #ff8a7a; }
