@@ -3409,7 +3409,7 @@ BT.mount = () => {
     const x = w.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w.width, w.height); x.drawImage(b, 0, 0);
     await stLoad(await new Promise(r => w.toBlob(r, 'image/png'))); location.hash = 'stencil';
   };
-  new ResizeObserver(show).observe(stage);
+  BT.ro?.disconnect(); BT.ro = new ResizeObserver(show); BT.ro.observe(stage);
   show();
 };
 
@@ -3479,7 +3479,8 @@ SP.mount = () => {
           <div><span class="lbl">Rows</span><div class="sp-step"><button data-ny="-1">−</button><b>${SP.ys.length + 1}</b><button data-ny="1">+</button></div></div>
         </div>
         <p class="muted" style="font-size:12px;margin:8px 0">${pages} page${pages > 1 ? 's' : ''} on ${SP.paper} ${SP.land ? 'landscape' : 'portrait'} (up to ${mw.toFixed(1)} × ${mh.toFixed(1)} cm each).
-          Drag the dashed cut lines to move a cut, for example away from a face or fine detail. <button class="link" id="sp-even">Space evenly</button></p>
+          Drag the dashed cut lines to move a cut, for example away from a face or fine detail. <button class="link" id="sp-even">Space evenly</button>
+          ${SP.src.width / SP.wcm * 2.54 < 120 ? `<br><b style="color:var(--amber, #f0c75e)">At ${SP.wcm} cm this picture prints at about ${Math.round(SP.src.width / SP.wcm * 2.54)} dpi, so lines may look soft or stepped.</b> A larger picture prints sharper.` : ''}</p>
         <div class="row" style="gap:6px"><button class="btn" id="sp-save" data-tip="Save every piece as a PNG to this device">Save pieces</button><button class="btn" id="sp-share">Share</button><button class="btn primary" id="sp-print" style="flex:1">Print ${pages} page${pages > 1 ? 's' : ''}</button></div>
         <label class="btn small" style="margin-top:10px">Another image<input type="file" accept="image/*" id="sp-file" hidden></label>
       </div></div>`;
@@ -3583,5 +3584,5 @@ SP.mount = () => {
     } catch (err) { if (err.name !== 'AbortError') { if (share) return spSave(false); toast('Could not save: ' + err.message); } }
   };
   draw();
-  new ResizeObserver(() => { if ($('#sp-stage')) lay(); }).observe($('#sp-stage'));
+  SP.ro?.disconnect(); SP.ro = new ResizeObserver(() => { if ($('#sp-stage')) lay(); }); SP.ro.observe($('#sp-stage'));
 };

@@ -3678,7 +3678,7 @@ async function stencilSheet(id) {
     <div class="two"><label class="field"><span>Name</span><input class="in" id="sn-n" value="${esc(r.name || '')}"></label>
       <label class="field"><span>Print width (cm)</span><input class="in" id="sn-cm" type="number" inputmode="decimal" min="1" max="300" step="0.5" value="${r.cm || 10}"></label></div>
     <div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn danger icon-btn" id="sn-del" aria-label="Delete" data-tip="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-      <button class="btn" id="sn-print">Print</button><button class="btn" id="sn-dl">Save PNG</button><button class="btn" id="sn-edit" data-tip="Open the original in the stencil maker with these settings">Open in stencil maker</button>
+      <button class="btn" id="sn-print">Print</button><button class="btn" id="sn-dl">Save PNG</button><button class="btn" id="sn-sh">Share</button><button class="btn" id="sn-edit" data-tip="Open the original in the stencil maker with these settings">Open in stencil maker</button>
       <span style="flex:1"></span><button class="btn" id="sn-x">Close</button><button class="btn primary" id="sn-ok">Save</button></div></div>`;
   document.body.appendChild(o);
   let showing = 's';
@@ -3693,6 +3693,11 @@ async function stencilSheet(id) {
   o.querySelector('#sn-dl').onclick = async () => {
     const f = await (await (await Media.dir()).getFileHandle(r.stencil_ref)).getFile();
     const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = (r.name || 'stencil').replace(/[^\w-]+/g, '_') + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  o.querySelector('#sn-sh').onclick = async () => {
+    const f = new File([await (await (await Media.dir()).getFileHandle(r.stencil_ref)).getFile()], (r.name || 'stencil').replace(/[^\w-]+/g, '_') + '.png', { type: 'image/png' });
+    const dl = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+    try { if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: r.name || 'Stencil' }); else dl(); } catch (err) { if (err.name !== 'AbortError') dl(); }
   };
   o.querySelector('#sn-edit').onclick = async () => {
     await keep();
@@ -6829,6 +6834,7 @@ function stPrepare() {
   }
   ST.orig = c;
   ST.rgba = x.getImageData(0, 0, ST.w, ST.h).data;
+  ST.mask = null; ST.seq++;   // the last stencil belongs to the old picture or size: never export it, and ignore it if it arrives
   const cv = $('#st-canvas'); if (cv) { cv.width = ST.w; cv.height = ST.h; }
 }
 
@@ -6958,7 +6964,7 @@ function stCropWire() {
   o.addEventListener('dblclick', (e) => e.stopPropagation());
   o.querySelector('.st-crop-bar').onclick = (e) => { const a = e.target.closest('[data-cr]')?.dataset.cr; if (!a) return;
     if (a === 'auto') stAutoCrop(); else if (a === 'all') { ST.cropping = { x: 0, y: 0, w: 1, h: 1 }; stCropShow(); } else stCropClose(a === 'ok'); };
-  addEventListener('resize', () => ST.cropping && stCropShow());
+  if (!ST.cropResize) { ST.cropResize = true; addEventListener('resize', () => ST.cropping && stCropShow()); }
 }
 
 function stDraw(original) {
