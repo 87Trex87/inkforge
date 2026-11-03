@@ -549,6 +549,7 @@ TT.open = async (el, id) => {
     <div class="dz-body"><div class="dz-stage tt-stage" id="tt-stage"><canvas id="tt-cv"></canvas><canvas id="tt-cur"></canvas>
       <div class="dz-rail" id="tt-rail">
         <button class="dz-ib tt-needle" data-r="needles" data-tip="Needle grouping" aria-label="Needle"><b id="tt-nl"></b></button>
+        <div class="tt-szq" id="tt-szq">${[[0.25, '08'], [0.3, '10'], [0.35, '12']].map(([v, n]) => `<button data-szq="${v}" data-tip="Needle size #${n} (${v} mm)" aria-label="Needle size ${n}">#${n}</button>`).join('')}</div>
         <button class="dz-ib tt-angb" data-r="angle" data-tip="Magnum angle ([ and ] turn it)" aria-label="Magnum angle" hidden><svg viewBox="0 0 24 24"><g id="tt-angi"><path d="M4 12h16" stroke-width="3"/></g></svg><b id="tt-angl"></b></button>
         <button class="dz-ib" data-r="needle" data-tip="Tattoo" aria-label="Tattoo"><svg viewBox="0 0 24 24"><path d="M4 20l5-5M9 15l8-8 2 2-8 8zM14 6l4 4"/></svg></button>
         <button class="dz-ib" data-r="erase" data-tip="Laser (erase)" aria-label="Erase"><svg viewBox="0 0 24 24"><path d="M7 21h10M5 15l9-9 5 5-9 9H8z"/></svg></button>
@@ -654,7 +655,11 @@ TT.open = async (el, id) => {
     return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 + st.magAng * Math.PI / 180 : st.magAng * Math.PI / 180; };   // leaning: the angle is an offset on the lean
   const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 : strokeA;
   const pageTurn = (strokeA, ev) => turnOf(strokeA, ev) - (isMag() ? st.rot : 0);   // a magnum's angle is held on the screen, whatever the page's rotation
-  const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); drawVolt(); };
+  const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); drawVolt(); drawSz(); };
+  // Quick needle size (#08, #10, #12) under the grouping: kept with this needle's feel, the selected one lit.
+  function drawSz() { $('#tt-szq')?.querySelectorAll('[data-szq]').forEach(b => b.classList.toggle('on', +b.dataset.szq === feel.size)); }
+  $('#tt-szq').onclick = (e) => { const b = e.target.closest('[data-szq]'); if (!b) return; feel.size = +b.dataset.szq; TT.setFeel(st.needle, feel);
+    lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); st.dirty = true; drawSz(); drawCur(); if (st.panel === 'feel') drawSide(); };
   const drawVolt = () => { const v = feel.volt ?? 7; $('#tt-vs').value = v; $('#tt-vl').textContent = v.toFixed(1) + 'V'; };
   /* One puncture: every needle of the grouping into the skin at p (page px, `sc` px per mm), turned to angle a.
      Needle hang: a longer hang is softer (each needle lands a little off and at its own depth, and tilt spreads
@@ -1010,7 +1015,7 @@ TT.open = async (el, id) => {
       if (t.matches('input')) return;
       st.layer = ly; st.dirty = true; return drawSide();
     }
-    if (t.closest('[data-sz]')) { feel.size = +t.closest('[data-sz]').dataset.sz; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawCur(); return drawSide(); }
+    if (t.closest('[data-sz]')) { feel.size = +t.closest('[data-sz]').dataset.sz; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawCur(); drawSz(); return drawSide(); }
     if (t.closest('[data-feelreset]')) { TT.setFeel(st.needle, null); setNeedle(st.needle); return drawSide(); }
     if (t.closest('[data-padclear]')) return padInit();
     if (t.closest('[data-tune]')) return tuneIn();
@@ -1736,6 +1741,8 @@ function ttStyle() {
 .tt-capedit { flex: none; }
 .tt-set { flex: none; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--teal); font: 700 10px var(--ui); border-radius: 8px; padding: 5px 4px; width: 46px; cursor: pointer; }
 .tt-wcap { background: #fff; }
+.tt-szq { display: flex; flex-direction: column; gap: 2px; padding: 2px 0; } .tt-szq button { border: 0; border-radius: 6px; background: rgba(255,255,255,.05); color: var(--ink2); font: 700 10px var(--ui); padding: 4px 0; width: 38px; cursor: pointer; }
+.tt-szq button.on { background: rgba(31,182,166,.25); color: var(--teal); }
 .tt-volt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0 2px; } .tt-volt b { font: 700 10px var(--ui); color: var(--teal); }
 .tt-volt input { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 110px; margin: 0; accent-color: var(--teal); touch-action: none; } .tt-tray { scrollbar-width: none; } .tt-tray::-webkit-scrollbar { display: none; } body:has(#tt-stage) #toast { top: calc(var(--safe-t, 0px) + 64px); bottom: auto; }
 @media (max-height: 700px) { .tt-tray { top: 10px; transform: none; } } .tt-zoom { left: auto !important; right: 10px !important; bottom: 76px !important; }
