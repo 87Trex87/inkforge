@@ -7298,12 +7298,26 @@ addEventListener('hashchange', () => { if (booted) render(); });
   try { sessionStorage.removeItem('if-reload'); } catch {}
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
   try { await WS.load(); } catch (err) { console.error(err); }
+  await storageProtect();
   let openId = '', forceStart = false;
   try { openId = sessionStorage.getItem('ws-open') || ''; forceStart = sessionStorage.getItem('ws-start') === '1';
     sessionStorage.removeItem('ws-open'); sessionStorage.removeItem('ws-start'); } catch {}
   const w = WS.get(openId) || (!forceStart && WS.auto && WS.get(WS.last));
   if (w) startWorkspace(w); else showStart();
 })();
+
+/* Ask the browser to keep this site's storage. Without it Android Chrome may clear all of it (every workspace and
+   snapshot) when space runs low or after a crash. Installed apps are usually granted this without a prompt. */
+let storageSafe = null;   // true, false, or null when the browser can't say
+async function storageProtect() {
+  if (!navigator.storage?.persist) return storageSafe;
+  try { storageSafe = (await navigator.storage.persisted()) || (await navigator.storage.persist()); } catch {}
+  return storageSafe;
+}
+const storageWarn = () => storageSafe === false ? `<div class="card start-warn" style="border-color:var(--red);margin-top:12px">
+  <b>Storage not protected</b><p class="muted" style="margin:4px 0 8px;font-size:13px">This browser may clear everything stored here, every workspace included, when the device runs low on space.
+  Installing InkForge to your home screen usually allows protection. Until then, save workspace files or keep workspaces in Google Drive.</p>
+  <button class="btn small" id="st-protect">Protect storage</button></div>` : '';
 
 /* Start screen: like a desktop app's welcome window. New, open a workspace file, or pick a recent one. */
 function showStart() {
@@ -7329,6 +7343,7 @@ function showStart() {
               : w.test ? '' : `<button class="btn small" data-wsup="${w.id}" data-tip="Keep this workspace in your Google Drive so your other devices can open it">Move to Google Drive</button>`}
             <button class="btn small danger" data-wsdel="${w.id}" style="margin-left:auto">Delete</button></div>` : ''}
         </div>`).join('')}</div>
+      ${storageWarn()}
       <label class="toggle" style="display:inline-flex;margin-top:12px" data-tip="Skip this screen and go straight to the last workspace. Switch any time by tapping the workspace name at the top.">
         <input type="checkbox" id="st-auto" ${WS.auto ? 'checked' : ''}><span>Open my last workspace automatically</span></label>
       <p class="muted" style="font-size:12px;margin-top:16px">Workspaces are stored on this device. Save a workspace file to move it to another device or keep a copy safe: keeping that file safe is up to you.
@@ -7340,6 +7355,7 @@ function showStart() {
   document.body.appendChild(o); draw();
   o.addEventListener('click', async (e) => {
     const t = e.target, id = (a) => t.closest(`[${a}]`)?.getAttribute(a);
+    if (t.id === 'st-protect') { await storageProtect(); toast(storageSafe ? 'Storage protected.' : 'The browser declined. Installing the app to your home screen usually allows it.', 5000); return draw(); }
     if (id('data-ws')) { o.remove(); return startWorkspace(WS.get(id('data-ws'))); }
     if (id('data-wsmenu')) { menu = menu === id('data-wsmenu') ? null : id('data-wsmenu'); return draw(); }
     const w = WS.get(id('data-wsren') || id('data-wssave') || id('data-wsdel') || id('data-wsup') || id('data-wsunlink'));
@@ -7443,6 +7459,7 @@ async function startWorkspace(w, fileBytes) {
     const info = await DB.info();
     // The badge names the open workspace; tapping it goes back to the start screen to switch.
     badge.textContent = (w.test ? 'PRACTICE · ' : '') + (w.cloud ? '☁ ' : '') + w.name;
+    if (storageSafe === false && !w.cloud) setTimeout(() => toast('Storage is not protected: the browser could clear it. Protect it in Settings › Storage, or save a workspace file.', 6000), 1500);
     badge.className = 'badge ws-badge ' + (info.mode === 'opfs' ? 'ok' : 'warn');
     badge.dataset.tip = info.mode === 'opfs'
       ? w.cloud ? `Workspace "${w.name}" in Google Drive, ${Cloud.editing ? 'editing on this device' : 'view only on this device'}. Tap to switch workspace.`
