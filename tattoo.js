@@ -405,13 +405,13 @@ TT.list = async (el) => {
     const open = rows.find(r => r.exam === 1);
     if (open) { location.hash = 'tattoo/' + open.id; return; }
     const si = ttChSkin(), list = ttExamList(si);
-    if (!confirm(`Start the apprentice exam on ${TT_SKINS[si][0].toLowerCase()} skin?\n\n11 challenges, from straight lines to ${list ? 'a heart in grey wash (this skin takes no colour)' : 'a finished heart'}. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.\n\nThe skin is chosen in Challenges.`)) return;
+    if (!await ask(`Start the apprentice exam on ${TT_SKINS[si][0].toLowerCase()} skin?\n\n11 challenges, from straight lines to ${list ? 'a heart in grey wash (this skin takes no colour)' : 'a finished heart'}. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.\n\nThe skin is chosen in Challenges.`)) return;
     await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Apprentice exam', 18, 13, TT_SKINS[si][1], JSON.stringify({ exam: { v: 1, i: 0, res: [], started: Date.now(), ...(list ? { list } : {}) } })]);
     location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
   };
   el.onclick = async (e) => {
     const d = e.target.closest('[data-del]');
-    if (d) { e.stopPropagation(); const r = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [+d.dataset.del]); if (!r || !confirm(`Delete "${r.name || 'this piece'}"?`)) return;
+    if (d) { e.stopPropagation(); const r = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [+d.dataset.del]); if (!r || !await ask(`Delete "${r.name || 'this piece'}"?`)) return;
       await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]); for (const k of ['thumb_ref', 'skin_ref', 'blow_ref', ...TT_LAYERS.map(([l]) => l + '_ref')]) await Media.release(r[k]);
       let tl = []; try { tl = JSON.parse(r.meta || '{}').tl || []; } catch {} for (const f of tl) await Media.release(f); return TT.list(el); }
     const o = e.target.closest('[data-open]'); if (o) location.hash = 'tattoo/' + o.dataset.open;
@@ -1088,7 +1088,7 @@ TT.open = async (el, id) => {
     const B = td.box; B.x0 = Math.min(B.x0, x0); B.y0 = Math.min(B.y0, y0); B.x1 = Math.max(B.x1, x1); B.y1 = Math.max(B.y1, y1); };
   // Fill: everything joined to the tapped spot that isn't inside ink (or a stencil line), packed with the needle's ink.
   // ps: the tapped point, plus its symmetry copies.
-  const fillAt = (ps, key) => { if (st.ink.v <= 0.02) return toast('The needle is dry: dip into an ink cap first.', 1800);
+  const fillAt = async (ps, key) => { if (st.ink.v <= 0.02) return toast('The needle is dry: dip into an ink cap first.', 1800);
     if (st.hide.has(key)) toast('That layer is hidden: show it to see the fill.');
     const SD = st.fillo.sten ? L.stencil.getContext('2d').getImageData(0, 0, W, H).data : null, Ds = INK.map(k2 => imgd[k2].data);
     const wall = (i) => { let keep = 1; for (const E of Ds) keep *= 1 - E[i * 4 + 3] / 255; return 1 - keep > 0.35 || (SD && SD[i * 4 + 3] > 60); };
@@ -1097,7 +1097,7 @@ TT.open = async (el, id) => {
     if (!stack.length) return toast('Tap inside an outline, not on a line.', 1800);
     while (stack.length) { const i = stack.pop(), x = i % W, y = (i - x) / W; n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
       for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && !seen[j]) { seen[j] = 1; if (wall(j)) seen[j] = 2; else stack.push(j); } }
-    if (n > W * H * 0.85 && !confirm('That fills nearly the whole page (the outline may have a gap). Fill anyway?')) return;
+    if (n > W * H * 0.85 && !await ask('That fills nearly the whole page (the outline may have a gap). Fill anyway?')) return;
     snap(key); touched.add(key); const D = imgd[key].data, col = inkCx(key).col, a = 0.92 * (st.ink.s ?? 1);
     for (let i = 0; i < seen.length; i++) if (seen[i]) layInk(D, i * 4, col, seen[i] === 2 ? a * 0.6 : a);   // the edge pixels too, so no skin shows along the line
     markDirty(key, Math.max(0, x0 - 1), Math.max(0, y0 - 1), Math.min(W - 1, x1 + 1), Math.min(H - 1, y1 + 1)); const u = flushPig(); cropTop({ x0: x0 - 2, y0: y0 - 2, x1: x1 + 2, y1: y1 + 2 });
@@ -1302,10 +1302,10 @@ TT.open = async (el, id) => {
       <label class="dz-sl" style="margin:4px 6px"><span>Tip<b>${M.r} mm</b></span><input type="range" min="0.2" max="4" step="0.1" value="${M.r}" data-mkr></label>
       <div class="row" style="gap:4px;margin:4px 6px 6px"><button class="btn small" data-mk="clear">Wipe it all</button></div>`;
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
-  pop.addEventListener('click', (e) => { const m = e.target.closest('[data-mk]')?.dataset.mk, c = e.target.closest('[data-mkc]')?.dataset.mkc;
+  pop.addEventListener('click', async (e) => { const m = e.target.closest('[data-mk]')?.dataset.mk, c = e.target.closest('[data-mkc]')?.dataset.mkc;
     if (c) { st.mk.col = c; st.mk.wipe = false; st.dirty = true; return markerPop($('#tt-rail [data-r="marker"]')); }
     if (m === 'draw' || m === 'wipe') { st.mk.wipe = m === 'wipe'; st.dirty = true; drawCur(); return markerPop($('#tt-rail [data-r="marker"]')); }
-    if (m === 'clear') { if (!confirm('Wipe all the marker off the skin?')) return; snap('marker'); L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); st.dirty = true; paint(); } });
+    if (m === 'clear') { if (!await ask('Wipe all the marker off the skin?')) return; snap('marker'); L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); st.dirty = true; paint(); } });
   pop.addEventListener('input', (e) => { if (e.target.matches('[data-mkr]')) { st.mk.r = +e.target.value; e.target.closest('label').querySelector('b').textContent = st.mk.r + ' mm'; st.dirty = true; return drawCur(); }
     if (e.target.matches('[data-mkcu]')) { st.mk.col = e.target.value; st.mk.wipe = false; st.dirty = true; } });
   let mk = null;
@@ -1679,7 +1679,7 @@ TT.open = async (el, id) => {
     const ly = t.closest('[data-ly]')?.dataset.ly;
     if (ly) {
       if (t.closest('[data-hide]')) { st.hide.has(ly) ? st.hide.delete(ly) : st.hide.add(ly); st.dirty = true; paint(); return drawSide(); }
-      if (t.closest('[data-clear]')) { if (!confirm('Clear everything on this layer? Undo brings it back.')) return;
+      if (t.closest('[data-clear]')) { if (!await ask('Clear everything on this layer? Undo brings it back.')) return;
         const c = L[ly]; snap(ly); c.getContext('2d').clearRect(0, 0, W, H); syncIn(ly); touched.add(ly); st.dirty = true; st.viewC = null; paint(); return; }
       if (t.closest('[data-stl]')) return loadStencil();
       if (t.matches('input')) return;
@@ -1690,7 +1690,7 @@ TT.open = async (el, id) => {
     if (t.closest('[data-padclear]')) return padInit();
     if (t.closest('[data-tune]')) return tuneIn();
     if (t.closest('[data-prof]')) { setProfile(t.closest('[data-prof]').dataset.prof); TT.saveCal(cal); return drawSide(); }
-    if (t.closest('[data-calreset]')) { if (!confirm('Put the calibration for all needles back to the defaults?')) return; cal = { ...TT.calDefaults, penOnly: cal.penOnly }; TT.saveCal(cal); return drawSide(); }
+    if (t.closest('[data-calreset]')) { if (!await ask('Put the calibration for all needles back to the defaults?')) return; cal = { ...TT.calDefaults, penOnly: cal.penOnly }; TT.saveCal(cal); return drawSide(); }
     if (t.matches('[data-penonly]')) { cal.penOnly = t.checked; TT.saveCal(cal); }
   });
   $('#tt-vs').addEventListener('input', (e) => { feel.volt = +e.target.value; TT.setFeel(st.needle, feel); drawVolt();
@@ -1867,7 +1867,7 @@ TT.open = async (el, id) => {
       if (a === 'save') { TT.saveCal(cal); Settings.set('tt_tuned', '1'); toast('Saved: every needle now uses your calibration.'); return finish(); }
       if (a === 'copy') {
         const txt = JSON.stringify({ inkforge_tattoo_tune: 1, cal: { ...cal }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio }, feel: JSON.parse(Settings.get('tt_feel', '{}')) });
-        try { await navigator.clipboard.writeText(txt); toast('Settings copied. Paste them into a message to send on.'); } catch { prompt('Copy these settings:', txt); }
+        try { await navigator.clipboard.writeText(txt); toast('Settings copied. Paste them into a message to send on.'); } catch { await askText('Copy these settings:', txt); }
       }
     };
     draw();
@@ -2036,7 +2036,7 @@ TT.open = async (el, id) => {
       const t = e.target;
       if (t.closest('[data-len]')) { len = +t.closest('[data-len]').dataset.len; Settings.set('tt_tl_len', String(len)); return draw(); }
       if (t.id === 'tl-x' || t === o) return o.remove();
-      if (t.id === 'tl-reset') { if (!confirm('Reset the stats and delete the timelapse frames for this piece?\n\nThe piece itself is not changed.')) return;
+      if (t.id === 'tl-reset') { if (!await ask('Reset the stats and delete the timelapse frames for this piece?\n\nThe piece itself is not changed.')) return;
         const drop = TL.refs.splice(0); TL.fresh.length = 0; Object.assign(SS, { strokes: 0, mm: 0, ms: 0, dips: 0, punct: 0, blow: 0, erase: 0, needles: {}, layers: {}, since: Date.now() });
         st.dirty = true; await save(true); for (const r of drop) await Media.release(r); return draw(); }
       if (t.id === 'tl-go') { o.remove(); tlExport(len); }
@@ -2318,10 +2318,10 @@ TT.open = async (el, id) => {
   // Undos left and points lost so far, under the instructions while a challenge is on.
   function penLine() { if (!EX?.cur) return ''; const free = freeUndos(), left = Math.max(0, free - usedUndos()), p = exPen();
     return `<div class="tt-expen"><span>Free undos ${left} / ${free}${EX.mode === 'ch' ? '' : ' (whole exam)'}</span>${p.pts ? `<b>−${p.pts} points</b>` : ''}</div>`; }
-  $('#tt-exbar').addEventListener('click', (e) => { const a = e.target.closest('[data-ex]')?.dataset.ex; if (!a) return;
+  $('#tt-exbar').addEventListener('click', async (e) => { const a = e.target.closest('[data-ex]')?.dataset.ex; if (!a) return;
     if (a === 'fold') { EX.fold = !EX.fold; return exBar(); }
     if (a === 'done') return exDone();
-    if (a === 'retry') { if (!confirm('Start this challenge again on clean skin?')) return; return exStart(true); }
+    if (a === 'retry') { if (!await ask('Start this challenge again on clean skin?')) return; return exStart(true); }
     if (a === 'next') return exNext();
     if (a === 'report') return exReport();
     if (a === 'hub') return location.hash = 'tattoo/challenges';
@@ -2403,10 +2403,10 @@ TT.open = async (el, id) => {
       <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-rp="copy" data-tip="Temporary: copy every result and setting, to send on for tuning">Copy results</button><button class="btn" data-rp="again">Retake the exam</button><span style="flex:1"></span><button class="btn primary" data-rp="close">Close</button></div></div>`;
     o.onclick = async (e) => { const a = e.target.closest('[data-rp]')?.dataset.rp; if (!a) return;
       if (a === 'close') return o.remove();
-      if (a === 'again') { if (!confirm('Retake the whole exam? This report is replaced when you finish again.')) return; o.remove(); EX.i = 0; EX.done = false; EX.res = []; EX.undos = 0; EX.started = Date.now(); exStart(true); return save(true); }
+      if (a === 'again') { if (!await ask('Retake the whole exam? This report is replaced when you finish again.')) return; o.remove(); EX.i = 0; EX.done = false; EX.res = []; EX.undos = 0; EX.started = Date.now(); exStart(true); return save(true); }
       if (a === 'copy') { const txt = JSON.stringify({ inkforge_exam: 1, when: new Date().toISOString(), overall, grade, categories: C,
           challenges: R.map(({ thumb, ...r }) => r), cal: { ...cal }, feel: JSON.parse(Settings.get('tt_feel', '{}')), device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } });
-        try { await navigator.clipboard.writeText(txt); toast('Results copied. Paste them into a message to send on.'); } catch { prompt('Copy these results:', txt); } } };
+        try { await navigator.clipboard.writeText(txt); toast('Results copied. Paste them into a message to send on.'); } catch { await askText('Copy these results:', txt); } } };
     document.body.appendChild(o);
   }
 
@@ -2440,8 +2440,8 @@ function ttStyle() {
 .tt-selb { position: absolute; border: 1.5px dashed #ff8a7a; pointer-events: auto; touch-action: none; cursor: move; background: rgba(255,111,97,.04); }
 .tt-selbar { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: flex; gap: 4px; padding: 5px; border-radius: 12px; background: rgba(15,18,19,.9); pointer-events: auto; z-index: 2; }
 .tt-selbar button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 700 12px var(--ui); border-radius: 8px; padding: 6px 10px; cursor: pointer; } .tt-selbar button.ok { background: var(--teal); color: #071312; border-color: var(--teal); }
-.tt-mkc { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 6px; } .tt-mkc button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); cursor: pointer; padding: 0; }
-.tt-mkc button.on { outline: 2px solid var(--teal); outline-offset: 2px; } .tt-mkcu { position: relative; width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+.tt-mkc { display: flex; flex-wrap: wrap; gap: 5px; padding: 4px 6px; max-width: 100%; box-sizing: border-box; } .tt-mkc button { width: 24px; height: 24px; flex: none; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); cursor: pointer; padding: 0; }
+.tt-mkc button.on { outline: 2px solid var(--teal); outline-offset: 2px; } .tt-mkcu { position: relative; flex: none; width: 24px; height: 24px; border-radius: 50%; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
 .tt-mkcu input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .tt-letp { max-height: min(70vh, 560px); overflow-y: auto; } .tt-lseg { display: flex; gap: 3px; margin: 4px 6px; } .tt-lseg button { flex: 1; border: 0; border-radius: 7px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 11px var(--ui); padding: 7px 2px; cursor: pointer; }
 .tt-lseg button.on { background: rgba(181,138,232,.28); color: #d6bdf7; } .tt-selb.let { border-color: #b58ae8; }

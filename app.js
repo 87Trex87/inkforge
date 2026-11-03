@@ -593,6 +593,27 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<'
 const help = (text) => `<button class="help" data-tip="${esc(text)}" aria-label="Help">?</button>`;
 const fmtBytes = (n) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB';
 
+/* In-app confirm and text prompt. The browser's own boxes take the app out of full screen, so these are used
+   everywhere instead (await ask(...) → true or false; await askText(...) → the text, or null if cancelled).
+   A message's first paragraph is the question, the rest the details; a destructive action gets a red button
+   named after it. */
+function ask(msg, def) {
+  return new Promise((res) => {
+    const parts = String(msg).split('\n\n'), q = parts.shift(), text = def !== undefined;
+    const verb = !text && /^(Delete|Remove|Wipe|Clear|Reset|Restore|Overwrite|Disconnect|Discard|Retake|Stop)\b/.exec(q)?.[1];
+    const o = document.createElement('div'); o.className = 'ask-dlg';
+    o.innerHTML = `<div class="card" role="dialog" aria-modal="true"><p class="ask-q">${esc(q)}</p>${parts.length ? `<p class="muted ask-d">${esc(parts.join('\n\n'))}</p>` : ''}
+      ${text ? `<input class="in" id="ask-in" value="${esc(def ?? '')}">` : ''}
+      <div class="row" style="gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn" data-ask="0">Cancel</button><button class="btn primary ${verb ? 'danger' : ''}" data-ask="1">${verb || 'OK'}</button></div></div>`;
+    const done = (v) => { removeEventListener('keydown', key, true); o.remove(); res(text ? (v ? $('#ask-in', o)?.value ?? '' : null) : v); };
+    const key = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); } };
+    o.onclick = (e) => { const b = e.target.closest('[data-ask]'); if (b) done(b.dataset.ask === '1'); else if (e.target === o) done(false); };
+    addEventListener('keydown', key, true); document.body.appendChild(o);
+    setTimeout(() => (text ? $('#ask-in', o) : $('[data-ask="1"]', o))?.focus(), 30);
+  });
+}
+const askText = (msg, def = '') => ask(msg, def);
+
 function toast(msg, ms = 2600) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, ms);
@@ -822,7 +843,7 @@ const VIEWS = {
         }
       }
       $('#c-del').onclick = async () => {
-        if (!confirm(`Delete ${fullName(c)}?\n\nThis permanently removes the client and their photo. Their bookings stay on the calendar without a client.`)) return;
+        if (!await ask(`Delete ${fullName(c)}?\n\nThis permanently removes the client and their photo. Their bookings stay on the calendar without a client.`)) return;
         await DB.run('UPDATE bookings SET gcal_synced_at = NULL WHERE client_id = ?', [c.id]);
         await DB.run('DELETE FROM clients WHERE id = ?', [c.id]);
         Gcal.soon();
@@ -1151,7 +1172,7 @@ const VIEWS = {
       };
       const del = $('#b-del');
       if (del) del.onclick = async () => {
-        if (!confirm('Delete this booking and its reference photos?')) return;
+        if (!await ask('Delete this booking and its reference photos?')) return;
         await DB.tx([
           ...(b.gcal_id ? [{ sql: 'INSERT OR IGNORE INTO gcal_deletes VALUES (?)', params: [b.gcal_id] }] : []),
           { sql: 'DELETE FROM bookings WHERE id = ?', params: [b.id] }]);
@@ -1196,7 +1217,7 @@ const VIEWS = {
         e.preventDefault();
         // Ask once: when the booking is new or moved onto a day off, not on every later save.
         if (BOOKING_KINDS[kind].ink && isDayOff(f.date.value) && (!b.id || f.date.value !== b.start_at.slice(0, 10))
-          && !confirm(`${new Date(f.date.value + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} is your day off.\n\nBook it anyway?`)) return;
+          && !await ask(`${new Date(f.date.value + 'T00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} is your day off.\n\nBook it anyway?`)) return;
         if (!(await save())) return;
         toast('Booking saved.'); location.replace('#book');
       });
@@ -1209,7 +1230,7 @@ const VIEWS = {
       fuInfo();
       $('#b-followup').onclick = async () => {
         const had = b.id && await DB.one('SELECT start_at FROM bookings WHERE followup_of = ? LIMIT 1', [b.id]);
-        if (had && !confirm(`A follow-up is already booked for ${fmtDay(had.start_at)}.\n\nBook another one?`)) return;
+        if (had && !await ask(`A follow-up is already booked for ${fmtDay(had.start_at)}.\n\nBook another one?`)) return;
         const bid = await save(); if (!bid) return;
         const weeks = Math.max(1, +$('#b-fu-w').value || 6);
         await Settings.set('followup_weeks', String(weeks));
@@ -1348,7 +1369,7 @@ const VIEWS = {
       $('#pf-share').onclick = async () => shareFiles([await photoFile()], it.title);
       $('#pf-save').onclick = async () => { const file = await photoFile(); download(file); toast(`Saved ${file.name}`); };
       $('#pf-del').onclick = async () => {
-        if (!confirm(`Delete "${it.title || PF_KIND[it.kind]}" and its ${photos.length} photo${photos.length === 1 ? '' : 's'}?`)) return;
+        if (!await ask(`Delete "${it.title || PF_KIND[it.kind]}" and its ${photos.length} photo${photos.length === 1 ? '' : 's'}?`)) return;
         await DB.run('DELETE FROM portfolio_items WHERE id = ?', [it.id]);
         for (const p of photos) { await Media.release(p.photo_ref); await Media.release(p.thumb_ref); }
         toast('Deleted.'); history.back();
@@ -1625,7 +1646,7 @@ const VIEWS = {
       $('#inv-cancel').onclick = () => history.back();
       const del = $('#inv-del');
       if (del) del.onclick = async () => {
-        if (!confirm(`Delete "${it.name}" from inventory?`)) return;
+        if (!await ask(`Delete "${it.name}" from inventory?`)) return;
         await DB.run('DELETE FROM inventory_items WHERE id = ?', [it.id]);
         Dirty.set(false); toast('Item deleted.'); location.replace('#inventory');
       };
@@ -1672,7 +1693,7 @@ const VIEWS = {
         const diffs = counts.filter(c => c.counted !== c.item.qty).length;
         if (counts.some(c => c.counted < 0)) return toast('Counts can’t be below 0.');
         if ($('#stk-save').disabled) return;
-        if (!confirm(`Save stock take?\n\n${diffs} item${diffs === 1 ? '' : 's'} will be updated to the counted amount.`)) return;
+        if (!await ask(`Save stock take?\n\n${diffs} item${diffs === 1 ? '' : 's'} will be updated to the counted amount.`)) return;
         $('#stk-save').disabled = true;   // one stock take per tap
         await DB.run('INSERT INTO stock_takes (notes) VALUES (?)', [$('#stk-notes').value.trim() || null]);
         const tid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
@@ -1741,7 +1762,7 @@ const VIEWS = {
       $('#r-cancel').onclick = () => history.back();
       const del = $('#r-del');
       if (del) del.onclick = async () => {
-        if (!confirm(`Delete the rule "${r.title}"?`)) return;
+        if (!await ask(`Delete the rule "${r.title}"?`)) return;
         await DB.run('DELETE FROM rules WHERE id = ?', [r.id]);
         Dirty.set(false); toast('Rule deleted.'); location.replace('#rules');
       };
@@ -1978,7 +1999,7 @@ const VIEWS = {
         $('#fe-cancel').onclick = () => history.back();
         const del = $('#fe-del');
         if (del) del.onclick = async () => {
-          if (!confirm(`Delete the "${t.title}" template?\n\nForms already signed with it are kept.`)) return;
+          if (!await ask(`Delete the "${t.title}" template?\n\nForms already signed with it are kept.`)) return;
           await DB.run('DELETE FROM form_templates WHERE id = ?', [t.id]);
           Dirty.set(false); toast('Template deleted.'); location.replace('#forms');
         };
@@ -2141,7 +2162,7 @@ const VIEWS = {
           <button class="btn primary" style="flex:1" onclick="window.print()" data-tip="Choose 'Save as PDF' in the print dialog to keep or email a copy.">Print / PDF</button>
         </div>`;
       $('#sf-del').onclick = async () => {
-        if (!confirm(`Delete this ${s.kind === 'consent' ? 'signed consent form' : 'aftercare record'}?\n\nThis cannot be undone.`)) return;
+        if (!await ask(`Delete this ${s.kind === 'consent' ? 'signed consent form' : 'aftercare record'}?\n\nThis cannot be undone.`)) return;
         await DB.run('DELETE FROM signed_forms WHERE id = ?', [s.id]);
         await Media.release(s.signature_ref);
         toast('Deleted.'); history.back();
@@ -2260,7 +2281,7 @@ const VIEWS = {
         e.target.value = '';
       });
       $('#s-logo-rm').onclick = async () => {
-        if (!confirm('Remove the studio logo?')) return;
+        if (!await ask('Remove the studio logo?')) return;
         const old = Settings.get('studio_logo_ref');
         await Settings.set('studio_logo_ref', ''); await Media.release(old); drawLogo();
       };
@@ -2286,7 +2307,7 @@ const VIEWS = {
       };
       $('#g-sync').onclick = gsync;
       $('#g-off').onclick = async () => {
-        if (!confirm('Disconnect Google Calendar?\n\nBookings stay in InkForge and in Google; they just stop syncing.')) return;
+        if (!await ask('Disconnect Google Calendar?\n\nBookings stay in InkForge and in Google; they just stop syncing.')) return;
         await Gcal.disconnect(); renderGcalStatus();
       };
       renderGcalStatus();
@@ -2476,7 +2497,7 @@ function renderDaysOff() {
       if (o.dates.includes(k)) return toast('That day is already off.');
       return put({ ...o, dates: [...o.dates, k] });
     }
-    if (e.target.id === 'off-reset' && confirm('Clear all your days off?\n\nYou can set them again straight away.')) return put({ weekly: [], until: '', dates: [] });
+    if (e.target.id === 'off-reset' && await ask('Clear all your days off?\n\nYou can set them again straight away.')) return put({ weekly: [], until: '', dates: [] });
   };
   $('#off-until').onchange = (e) => put({ ...o, until: e.target.value });
 }
@@ -2719,7 +2740,7 @@ function cloudBar(state, lk) {
     if (e.target.id === 'cb-save') { try { await exportBackup(w); } catch (err) { toast('Could not save: ' + err.message, 5000); } }
     if (e.target.id === 'cb-ref') WS.switchTo(w.id);
     if (e.target.id === 'cb-take') {
-      if (!confirm('Take over editing on this device? The other device switches to view only.')) return;
+      if (!await ask('Take over editing on this device? The other device switches to view only.')) return;
       try { await Cloud.auth(); await Cloud.setLock(w, true); } catch (err) { return toast(err.message, 5000); }
       Cloud.pending = false; WS.switchTo(w.id);
     }
@@ -3016,7 +3037,7 @@ $('#import-file').addEventListener('change', async (e) => {
   if (!f) return;
   const magic = new TextDecoder().decode(new Uint8Array(await f.slice(0, 15).arrayBuffer()));
   if (magic !== 'SQLite format 3' && !magic.startsWith(BACKUP_MAGIC)) return toast('That file is not an InkForge backup.');
-  if (!confirm(`Restore "${f.name}"?\n\nEverything currently on this device will be replaced. This cannot be undone.`)) return;
+  if (!await ask(`Restore "${f.name}"?\n\nEverything currently on this device will be replaced. This cannot be undone.`)) return;
   try {
     await restoreBackup(f);
     await migrate(); Settings.cache = {}; await Settings.load();
@@ -3652,7 +3673,7 @@ async function refSheet(id) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = (r.title || 'reference').replace(/[^\w-]+/g, '_') + '.' + ext; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   };
   o.querySelector('#rs-del').onclick = async () => {
-    if (!confirm(`Delete "${r.title || 'this reference'}"? Designs that already use it keep their copy.`)) return;
+    if (!await ask(`Delete "${r.title || 'this reference'}"? Designs that already use it keep their copy.`)) return;
     await DB.run('DELETE FROM ref_images WHERE id = ?', [id]); await Media.release(r.photo_ref); await Media.release(r.thumb_ref); close();
   };
 }
@@ -3661,7 +3682,7 @@ async function refSheet(id) {
    print width and the stencil settings, so it can be printed again or opened in the stencil maker to change. */
 async function stKeep() {
   if (!ST.mask) return toast('Wait a moment for the stencil to finish.');
-  const nm = prompt('Name for this stencil:', ST.from || `Stencil ${ymd(new Date())}`); if (nm == null) return;
+  const nm = await askText('Name for this stencil:', ST.from || `Stencil ${ymd(new Date())}`); if (nm == null) return;
   const stencil = await stBlob(), src = await ST.orig.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
   const s = Math.min(1, 420 / Math.max(ST.w, ST.h)), th = new OffscreenCanvas(Math.max(1, Math.round(ST.w * s)), Math.max(1, Math.round(ST.h * s)));
   th.getContext('2d').drawImage(await createImageBitmap(stencil), 0, 0, th.width, th.height);
@@ -3726,7 +3747,7 @@ async function stencilSheet(id) {
     ST.cm = cm(); ST.from = r.name || ''; o.remove(); location.hash = 'stencil';
   };
   o.querySelector('#sn-del').onclick = async () => {
-    if (!confirm(`Delete "${r.name || 'this stencil'}" and its original?`)) return;
+    if (!await ask(`Delete "${r.name || 'this stencil'}" and its original?`)) return;
     await DB.run('DELETE FROM stencils WHERE id = ?', [id]);
     for (const ref of [r.src_ref, r.stencil_ref, r.thumb_ref]) await Media.release(ref);
     o.remove(); renderPfGrid();
@@ -3835,7 +3856,7 @@ async function assetSheet(id) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([f], { type: 'image/svg+xml' })); a.download = (r.name || 'asset').replace(/[^\w-]+/g, '_') + '.svg'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   };
   o.querySelector('#as-del').onclick = async () => {
-    if (!confirm(`Delete "${r.name || 'this asset'}"? Designs that already use it keep their copy.`)) return;
+    if (!await ask(`Delete "${r.name || 'this asset'}"? Designs that already use it keep their copy.`)) return;
     await DB.run('DELETE FROM assets WHERE id = ?', [id]); await Media.release(r.svg_ref); close();
   };
 }
@@ -4270,7 +4291,7 @@ function qzBind(el) {
   const next = $('#qz-next'), back = $('#qz-back');
   if (next) next.onclick = () => qzGo(QZ.step + 1);
   if (back) back.onclick = () => qzGo(QZ.step - 1);
-  el.onclick = (e) => {
+  el.onclick = async (e) => {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (d('step') != null && !t.closest('[data-step]').disabled) return qzGo(+d('step'));
     if (['place', 'side', 'job', 'preset', 'colour', 'detail', 'style', 'font', 'dt', 'dq'].some(k => d(k) != null) || t.closest('#qz-reset')) qzTouch();
@@ -4285,7 +4306,7 @@ function qzBind(el) {
     }
     if (d('pr') != null) {
       const all = qzPieces(), j = +d('pr'); if (all.length < 2) return;
-      if (!confirm(`Remove tattoo ${j + 1} (${qzPlacement(all[j]) || 'tattoo'}) from this quote?`)) return;
+      if (!await ask(`Remove tattoo ${j + 1} (${qzPlacement(all[j]) || 'tattoo'}) from this quote?`)) return;
       qzTouch();
       all.splice(j, 1);
       const k = Math.min(j === QZ.pos ? j : (j < QZ.pos ? QZ.pos - 1 : QZ.pos), all.length - 1);
@@ -4473,7 +4494,7 @@ async function qlDraw() {
     if (t.closest('#ql-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url); Object.assign(QZ, QZ_RESET); location.hash = 'quote'; return; }
     if (d('qd')) {
       const q = await DB.one('SELECT client_name, design_ref FROM quotes WHERE id = ?', [+d('qd')]);
-      if (!q || !confirm(`Delete the quote${q.client_name ? ' for ' + q.client_name : ''}? This can't be undone.`)) return;
+      if (!q || !await ask(`Delete the quote${q.client_name ? ' for ' + q.client_name : ''}? This can't be undone.`)) return;
       await DB.run('DELETE FROM quotes WHERE id = ?', [+d('qd')]); await Media.release(q.design_ref);
       if (QZ.id === +d('qd')) QZ.id = null;
       return qlDraw();
@@ -4953,7 +4974,7 @@ function qcDraw() {
     const del = e.target.closest('[data-del]');
     if (del) {
       const [list, i] = del.dataset.del.split('.'), name = cfg[list][+i][0];
-      if (!confirm(`Remove "${name}"?`)) return;
+      if (!await ask(`Remove "${name}"?`)) return;
       cfg[list].splice(+i, 1); await qSave(cfg); return qcDraw();
     }
     if (e.target.closest('#qc-pl-add')) {
@@ -4969,7 +4990,7 @@ function qcDraw() {
     if (e.target.closest('#qc-add')) { const last = cfg.anchors[cfg.anchors.length - 1] || [1, 500]; cfg.anchors.push([last[0] + 2, last[1] + 1000]); await qSave(cfg); return qcDraw(); }
     const rm = e.target.closest('[data-rm]');
     if (rm) { cfg.anchors.splice(+rm.dataset.rm, 1); await qSave(cfg); return qcDraw(); }
-    if (e.target.closest('#qc-reset') && confirm('Reset every quote setting to the defaults?')) { await Settings.set('quote_v2', ''); qcDraw(); toast('Defaults restored.'); }
+    if (e.target.closest('#qc-reset') && await ask('Reset every quote setting to the defaults?')) { await Settings.set('quote_v2', ''); qcDraw(); toast('Defaults restored.'); }
   };
 }
 
@@ -5121,7 +5142,7 @@ async function printCanvas(...cvs) {
 // Text to the share sheet, or copied when there is no share sheet or it can't open.
 async function shareText(text, copied = 'Copied.') {
   try { if (navigator.share) return await navigator.share({ text }); } catch (e) { if (e.name === 'AbortError') return; }
-  try { await navigator.clipboard.writeText(text); toast(copied + ' Paste it into any message.'); } catch { prompt('Copy this:', text); }
+  try { await navigator.clipboard.writeText(text); toast(copied + ' Paste it into any message.'); } catch { await askText('Copy this:', text); }
 }
 async function saveFiles(files) {
   for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); await new Promise(r => setTimeout(r, 250)); }
@@ -6004,7 +6025,7 @@ async function reelList() {
     }
     if (d('del')) {
       const r = await DB.one('SELECT * FROM reels WHERE id = ?', [+d('del')]);
-      if (!r || !confirm(`Delete "${r.name || 'this reel'}"? Its photos, videos and music are removed from the app too (not from your device). This can't be undone.`)) return;
+      if (!r || !await ask(`Delete "${r.name || 'this reel'}"? Its photos, videos and music are removed from the app too (not from your device). This can't be undone.`)) return;
       await DB.run('DELETE FROM reels WHERE id = ?', [r.id]);
       if (RS.id === r.id) { RS.id = null; RS.loaded = false; }
       for (const ref of new Set([r.thumb_ref, ...(String(r.doc || '').match(MEDIA_REF_RE) || [])])) await Media.release(ref);
@@ -6732,20 +6753,20 @@ async function reelTplClick(e) {
   const id = (a) => t.closest(`[${a}]`)?.getAttribute(a);
   if (id('data-tpl-apply')) return reelTplApply(list.find(x => x.id === id('data-tpl-apply')));
   if (t.closest('[data-tpl-new]')) {
-    const name = prompt('Template name (e.g. an artist or a type of post):', `Template ${list.length + 1}`);
+    const name = await askText('Template name (e.g. an artist or a type of post):', `Template ${list.length + 1}`);
     if (!name?.trim()) return;
     const tpl = reelTplCapture(name.trim());
     await reelSaveTemplates([...list, tpl]); R.tplId = tpl.id; toast('Template saved.'); return reelPanel();
   }
   if (id('data-tpl-update')) {
     const i = list.findIndex(x => x.id === id('data-tpl-update'));
-    if (!confirm(`Overwrite "${list[i].name}" with the current settings?`)) return;
+    if (!await ask(`Overwrite "${list[i].name}" with the current settings?`)) return;
     list[i] = reelTplCapture(list[i].name, list[i].id); await reelSaveTemplates(list); toast('Template updated.'); return reelPanel();
   }
   if (id('data-tpl-menu')) { R.tplMenu = R.tplMenu === id('data-tpl-menu') ? null : id('data-tpl-menu'); return reelPanel(); }
   const tp = list.find(x => x.id === (id('data-tpl-rename') || id('data-tpl-dup') || id('data-tpl-del')));
   if (tp && id('data-tpl-rename')) {
-    const n = prompt('New name:', tp.name); if (!n?.trim()) return;
+    const n = await askText('New name:', tp.name); if (!n?.trim()) return;
     tp.name = n.trim(); await reelSaveTemplates(list); return reelPanel();
   }
   if (tp && id('data-tpl-dup')) {
@@ -6753,7 +6774,7 @@ async function reelTplClick(e) {
     R.tplMenu = null; return reelPanel();
   }
   if (tp && id('data-tpl-del')) {
-    if (!confirm(`Delete the template "${tp.name}"?\n\nThis cannot be undone.`)) return;
+    if (!await ask(`Delete the template "${tp.name}"?\n\nThis cannot be undone.`)) return;
     const rest = list.filter(x => x !== tp);
     await reelSaveTemplates(rest); if (R.tplId === tp.id) R.tplId = null; R.tplMenu = null;
     for (const ref of reelTplRefs([tp])) await Media.release(ref);   // release() keeps any still in use
@@ -7484,7 +7505,7 @@ async function bookingsCsv(cols) {
 const Dirty = {
   on: false,
   set(v) { this.on = v; },
-  ok() { return !this.on || confirm('Discard unsaved changes?'); }
+  ok() { return !this.on || window.confirm('Discard unsaved changes?'); }
 };
 addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
@@ -7613,20 +7634,20 @@ function showStart() {
     const w = WS.get(id('data-wsren') || id('data-wssave') || id('data-wsdel') || id('data-wsup') || id('data-wsunlink'));
     if (w && id('data-wsup')) {
       if (!WS.gid && !(await cloudSetup())) return;
-      if (!confirm(`Move "${w.name}" to your Google Drive?\n\nIt stays on this device too. Your other devices can then link to it from this screen.`)) return;
+      if (!await ask(`Move "${w.name}" to your Google Drive?\n\nIt stays on this device too. Your other devices can then link to it from this screen.`)) return;
       toast('Uploading to Google Drive…', 60000);
       try { await Cloud.moveUp(w); toast(`"${w.name}" is now in your Google Drive.`); } catch (err) { toast('Could not upload: ' + (err.message === 'setup' ? 'Google Drive is not set up.' : err.message), 6000); }
       menu = null; return draw();
     }
     if (w && id('data-wsunlink')) {
-      if (!confirm(`Stop using Google Drive for "${w.name}" on this device?\n\nThis device keeps its copy as a normal workspace. The copy in your Drive is left as it is.`)) return;
+      if (!await ask(`Stop using Google Drive for "${w.name}" on this device?\n\nThis device keeps its copy as a normal workspace. The copy in your Drive is left as it is.`)) return;
       if (w.cloud.lastHolder === Cloud.device().id) { try { await Cloud.auth(); await Cloud.setLock(w, false); } catch {} }
       delete w.cloud; await WS.save(); menu = null; return draw();
     }
-    if (w && id('data-wsren')) { const n = prompt('Workspace name:', w.name); if (n?.trim()) { w.name = n.trim(); await WS.save(); draw(); } return; }
+    if (w && id('data-wsren')) { const n = await askText('Workspace name:', w.name); if (n?.trim()) { w.name = n.trim(); await WS.save(); draw(); } return; }
     if (w && id('data-wssave')) { try { await exportBackup(w); } catch (err) { toast('Could not save: ' + err.message, 5000); } return; }
     if (w && id('data-wsdel')) {
-      if (!confirm(`Delete the workspace "${w.name}" and everything in it from this device?\n\nSave its file first if you might need it. This cannot be undone.`)) return;
+      if (!await ask(`Delete the workspace "${w.name}" and everything in it from this device?\n\nSave its file first if you might need it. This cannot be undone.`)) return;
       try { await WS.remove(w); toast('Workspace deleted.'); } catch (err) { toast(err.message, 5000); }
       if (!WS.list.length) await WS.create('My workspace');
       menu = null; return draw();
@@ -7654,7 +7675,7 @@ function showStart() {
       } catch (err) { return toast('Google Drive: ' + err.message, 6000); }
     }
     if (t.closest('#st-new')) {
-      const n = prompt('Name for the new workspace (e.g. the artist\'s name):', '');
+      const n = await askText('Name for the new workspace (e.g. the artist\'s name):', '');
       if (!n?.trim()) return;
       const nw = await WS.create(n.trim()); nw.fresh = true; await WS.save(); o.remove(); return startWorkspace(nw);
     }

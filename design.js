@@ -1082,7 +1082,7 @@ DZ.list = async () => {
     if (t.closest('#dz-new')) return dzPicker();
     if (d('del')) {
       const r = await DB.one('SELECT name, thumb_ref FROM designs WHERE id = ?', [+d('del')]);
-      if (!r || !confirm(`Delete "${r.name}"? This can't be undone.`)) return;
+      if (!r || !await ask(`Delete "${r.name}"? This can't be undone.`)) return;
       const refs = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [+d('del')])).map(x => x.ref);
       await DB.run('DELETE FROM designs WHERE id = ?', [+d('del')]);
       for (const ref of [r.thumb_ref, ...refs]) await Media.release(ref);
@@ -1165,7 +1165,7 @@ async function dzPicker(opts = {}) {
     if (d('two') != null) { st.two = d('two') === '1'; return draw(); }
     if (t.closest('[data-back]')) { st.kind = null; return draw(); }
     if (d('tdel')) { e.stopPropagation();
-      if (!confirm('Delete this template? Designs made from it are not affected.')) return;
+      if (!await ask('Delete this template? Designs made from it are not affected.')) return;
       await Settings.set('dz_tpls', JSON.stringify(dzCustom().filter(c => c.id !== d('tdel')))); st.li = 0; return draw(); }
     if (t.closest('[data-piece]')) { const id = await dzPortfolioPick(false); if (id) { st.piece = await dzPiece(id); draw(); } return; }
     if (d('li') != null) { st.li = +d('li'); o.querySelectorAll('[data-li]').forEach(b => b.classList.toggle('on', +b.dataset.li === st.li)); return; }
@@ -1657,7 +1657,7 @@ DZ.edit = async (id) => {
     if (!list.length) return toast('Nothing visible to merge.');
     if (list.some(l => l.lock)) return toast('Unlock the selected layers first.');
     const txt = list.some(l => l.t === 'text');
-    if (!confirm(`${list.length === 1 ? (list[0].t === 'image' ? 'Flatten this picture? Its rotation, flips, crop and opacity become part of it, and its handles fit what shows.' : 'Flatten this layer into a picture? Its fill and outline become part of the picture.') : `Merge ${list.length} layers into one picture?`}${txt ? '\n\nText becomes part of the picture and can no longer be edited.' : ''}\n\nUndo brings the layers back.`)) return;
+    if (!await ask(`${list.length === 1 ? (list[0].t === 'image' ? 'Flatten this picture? Its rotation, flips, crop and opacity become part of it, and its handles fit what shows.' : 'Flatten this layer into a picture? Its fill and outline become part of the picture.') : `Merge ${list.length} layers into one picture?`}${txt ? '\n\nText becomes part of the picture and can no longer be edited.' : ''}\n\nUndo brings the layers back.`)) return;
     const f = await flatten(list); if (!f) return;
     const ref = await Media.save(await pngOf(f.cv), 'png'); made.add(ref);
     const gone = new Set(list.map(l => l.id)), top = Math.max(...list.map(l => doc.layers.indexOf(l)));
@@ -2515,7 +2515,7 @@ DZ.edit = async (id) => {
     <p class="muted" style="font-size:11px;margin:0">Adding and cutting always close the stroke. Strokes are node shapes: reshape them with Edit nodes. N or Esc leaves the pencil.</p>`;
   const saveRef = async (ids) => {
     const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
-    const title = prompt('Name for the reference:', list.length === 1 ? layerName(list[0]) : name); if (title == null) return;
+    const title = await askText('Name for the reference:', list.length === 1 ? layerName(list[0]) : name); if (title == null) return;
     const s = Math.min(1, 420 / Math.max(f.cv.width, f.cv.height)), th = document.createElement('canvas');
     th.width = Math.max(1, Math.round(f.cv.width * s)); th.height = Math.max(1, Math.round(f.cv.height * s)); th.getContext('2d').drawImage(f.cv, 0, 0, th.width, th.height);
     await DB.run('INSERT INTO ref_images (title, category, photo_ref, thumb_ref, w, h) VALUES (?, ?, ?, ?, ?, ?)',
@@ -2934,7 +2934,7 @@ DZ.edit = async (id) => {
       }
       if ((picking || e.ctrlKey || e.metaKey) && !t.closest('button')) return togglePick(ly.id);
       if (t.closest('[data-lname]') && sel === ly.id) {
-        const n = prompt('Layer name:', layerName(ly)); if (n == null) return;
+        const n = await askText('Layer name:', layerName(ly)); if (n == null) return;
         ly.name = n.trim() || undefined; changed(true); return drawSide();
       }
       anchor = ly.id; return select(ly.id);
@@ -2962,7 +2962,7 @@ DZ.edit = async (id) => {
       if (two) doc.sides = 2;
       else {   // back to one side: the master's items go under the front; the back's are removed (Undo brings them back)
         const back = doc.layers.filter(l => l.side === 'b');
-        if (back.length && !confirm(`Remove the back page and its ${back.length} item${back.length === 1 ? '' : 's'}?\n\nThe master page's items stay, under the front. Undo brings the back page back.`)) return;
+        if (back.length && !await ask(`Remove the back page and its ${back.length} item${back.length === 1 ? '' : 's'}?\n\nThe master page's items stay, under the front. Undo brings the back page back.`)) return;
         doc.layers = [...doc.layers.filter(l => l.side === 'm'), ...doc.layers.filter(l => dzSide(l) === 'f')]; doc.layers.forEach(l => delete l.side); delete doc.sides;
       }
       face = 'f'; sel = null; changed(true); fit(); return drawSide();
@@ -3187,7 +3187,7 @@ DZ.edit = async (id) => {
   /* Top bar */
   $('#dz-back').onclick = async () => { await flush(); location.hash = 'designs'; };
   $('#dz-tpl').onclick = async () => {
-    const n = prompt('Name for this template:', name); if (!n?.trim()) return;
+    const n = await askText('Name for this template:', name); if (!n?.trim()) return;
     const tdoc = JSON.parse(JSON.stringify(doc));
     // Photos from a portfolio piece become empty photo spots, ready for the next piece.
     for (const l of tdoc.layers) if (l.slot != null) l.ref = null;
@@ -3239,7 +3239,7 @@ async function dzDeviceFont() {
       });
     } catch {}
   }
-  const n = prompt('Type the name of a font installed on this device (exactly as it appears in your other apps).\n\nOn phones and tablets, "Import a font file" works more reliably.');
+  const n = await askText('Type the name of a font installed on this device (exactly as it appears in your other apps).\n\nOn phones and tablets, "Import a font file" works more reliably.');
   return n?.trim() || null;
 }
 
