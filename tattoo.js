@@ -1374,26 +1374,59 @@ TT.open = async (el, id) => {
     const u = await Media.url(ref), im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; });
     refNew({ ref, ar: im ? im.naturalHeight / im.naturalWidth : 1 }); drawSide();
   };
-  let refDrag = null, refTap = null;
+  /* Gestures on a reference, like Infinite Painter's: one finger moves it, two fingers move, size and turn it together
+     (the second finger can land anywhere on the skin), a handle sizes or turns it, a quick double tap flips it.
+     The picture is moved in place while the fingers are down, never rebuilt, so the touch is never lost. */
+  let refG = null, refTap = null;
+  const refPts = new Map(), refPos = (e) => { const sr = stage.getBoundingClientRect(); return { x: e.clientX - sr.left, y: e.clientY - sr.top }; };
+  const refPlace = (r) => { const el = refLay.querySelector(`[data-rf="${r.id}"]`); if (!el) return;
+    el.style.left = r.x + 'px'; el.style.top = r.y + 'px'; el.style.width = r.w + 'px'; el.style.height = r.w * r.ar + 'px'; el.style.transform = `translate(-50%,-50%) rotate(${r.rot || 0}deg)`; };
+  const refStart = () => { const r = refG.r, p = [...refPts.values()];
+    Object.assign(refG, { x0: r.x, y0: r.y, w0: r.w, rot0: r.rot || 0, p0: p.map(q => ({ ...q })), moved: refG.moved });
+    if (refG.h && p.length === 1) { refG.d0 = Math.max(1, Math.hypot(p[0].x - r.x, p[0].y - r.y)); refG.a0 = Math.atan2(p[0].y - r.y, p[0].x - r.x) - (r.rot || 0) * Math.PI / 180; } };
+  const refDown = (e, r, h) => {
+    e.stopPropagation(); e.preventDefault(); try { refLay.setPointerCapture(e.pointerId); } catch {}
+    refPts.set(e.pointerId, refPos(e));
+    if (!refG) refG = { r, h, t: Date.now(), moved: false }; else refG.h = null;   // a second finger turns a handle drag into a pinch
+    refStart();
+  };
   refLay.addEventListener('pointerdown', (e) => {
     const el = e.target.closest('[data-rf]'); if (!el) return; const r = refs.find(x => x.id === el.dataset.rf); if (!r || r.lock) return;
-    e.stopPropagation(); e.preventDefault(); refLay.setPointerCapture(e.pointerId);
-    const sr = stage.getBoundingClientRect(), px = e.clientX - sr.left, py = e.clientY - sr.top, h = e.target.dataset.rh;
-    const now = Date.now(); if (!h && refTap && refTap.id === r.id && now - refTap.t < 320) { r.flip = !r.flip; refTap = null; st.dirty = true; return drawRefs(); }
-    refTap = { id: r.id, t: now };
+    if (refG && refG.r !== r) return;
     if (refSel !== r.id) { refSel = r.id; drawRefs(); }
-    refDrag = { r, h, px, py, x0: r.x, y0: r.y, w0: r.w, d0: Math.max(1, Math.hypot(px - r.x, py - r.y)), a0: Math.atan2(py - r.y, px - r.x) - (r.rot || 0) * Math.PI / 180 };
+    refDown(e, r, e.target.dataset.rh);
   });
-  refLay.addEventListener('pointermove', (e) => {
-    const d = refDrag; if (!d) return; const sr = stage.getBoundingClientRect(), px = e.clientX - sr.left, py = e.clientY - sr.top, r = d.r;
-    if (!d.h) { r.x = d.x0 + px - d.px; r.y = d.y0 + py - d.py; }
-    else if (d.h === 'rot') { let a = (Math.atan2(py - r.y, px - r.x) - d.a0) * 180 / Math.PI; const q = Math.round(a / 90) * 90; if (Math.abs(a - q) < 5) a = q; r.rot = Math.round(a); }
-    else r.w = Math.max(40, d.w0 * Math.hypot(px - r.x, py - r.y) / d.d0);
-    st.dirty = true; drawRefs();
-  });
-  const refUp = () => { if (refDrag) { refDrag = null; if (st.panel === 'refs') drawSide(); } };
-  refLay.addEventListener('pointerup', refUp); refLay.addEventListener('pointercancel', refUp);
-  cv.addEventListener('pointerdown', () => { if (refSel) { refSel = null; drawRefs(); } }, true);
+  // While one finger holds a reference, a second finger anywhere on the stage joins the gesture instead of drawing.
+  stage.addEventListener('pointerdown', (e) => { if (refG && refPts.size === 1 && e.pointerType === 'touch' && !e.target.closest('[data-rf]')) refDown(e, refG.r, null); }, true);
+  const refMove = (e) => {
+    if (!refG || !refPts.has(e.pointerId)) return; refPts.set(e.pointerId, refPos(e));
+    const g = refG, r = g.r, p = [...refPts.values()];
+    if (Math.hypot(p[0].x - g.p0[0].x, p[0].y - g.p0[0].y) > 6) g.moved = true;
+    if (p.length >= 2 && g.p0.length >= 2) {
+      const [a0, b0] = g.p0, [a, b] = p, m0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 }, m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const s = Math.hypot(b.x - a.x, b.y - a.y) / Math.max(1, Math.hypot(b0.x - a0.x, b0.y - a0.y));
+      const da = Math.atan2(b.y - a.y, b.x - a.x) - Math.atan2(b0.y - a0.y, b0.x - a0.x), c = Math.cos(da), sn = Math.sin(da);
+      const ox = (g.x0 - m0.x) * s, oy = (g.y0 - m0.y) * s;   // the picture turns and sizes about the point between the fingers
+      r.w = Math.max(40, g.w0 * s); r.x = m.x + ox * c - oy * sn; r.y = m.y + ox * sn + oy * c;
+      let deg = g.rot0 + da * 180 / Math.PI; const q = Math.round(deg / 90) * 90; if (Math.abs(deg - q) < 3) deg = q; r.rot = Math.round(deg * 10) / 10; g.moved = true;
+    } else if (!g.h) { r.x = g.x0 + p[0].x - g.p0[0].x; r.y = g.y0 + p[0].y - g.p0[0].y; }
+    else if (g.h === 'rot') { let a = (Math.atan2(p[0].y - r.y, p[0].x - r.x) - g.a0) * 180 / Math.PI; const q = Math.round(a / 90) * 90; if (Math.abs(a - q) < 5) a = q; r.rot = Math.round(a); }
+    else r.w = Math.max(40, g.w0 * Math.hypot(p[0].x - r.x, p[0].y - r.y) / g.d0);
+    st.dirty = true; refPlace(r);
+  };
+  const refUp = (e) => {
+    if (!refG || !refPts.has(e.pointerId)) return; refPts.delete(e.pointerId);
+    if (refPts.size) { refG.h = null; return refStart(); }   // one finger lifted: the other carries on moving it
+    const g = refG; refG = null; const now = Date.now();
+    if (!g.moved && !g.h && now - g.t < 300) {   // a tap: two in a row flip it
+      if (refTap && refTap.id === g.r.id && now - refTap.t < 350) { g.r.flip = !g.r.flip; refTap = null; st.dirty = true; }
+      else refTap = { id: g.r.id, t: now };
+    } else refTap = null;
+    drawRefs(); if (st.panel === 'refs') drawSide();
+  };
+  for (const n of ['pointermove']) { refLay.addEventListener(n, refMove); stage.addEventListener(n, (e) => { if (refG && !refLay.hasPointerCapture?.(e.pointerId)) refMove(e); }, true); }
+  for (const n of ['pointerup', 'pointercancel']) { refLay.addEventListener(n, refUp); stage.addEventListener(n, (e) => { if (refG && refPts.has(e.pointerId) && !refLay.hasPointerCapture?.(e.pointerId)) refUp(e); }, true); }
+  cv.addEventListener('pointerdown', () => { if (refSel && !refG) { refSel = null; drawRefs(); } }, true);
 
   /* ---------- Apprentice exam ----------
      Challenges one at a time on a clean patch of skin, each with its stencil, an example floating beside it and
