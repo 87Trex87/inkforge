@@ -573,10 +573,23 @@ async function reelExport() {
   if (R.cancel) return toast('Export cancelled.');
   const type = (mime || 'video/webm').split(';')[0];
   const file = new File([new Blob(chunks, { type })], `reel-${ymd(new Date())}.${type.includes('mp4') ? 'mp4' : 'webm'}`, { type });
-  try {
-    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Reel' });
-    else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); }
-    toast(`Reel saved (${fmtBytes(file.size)}).`);
-  } catch (e) { if (e.name !== 'AbortError') toast('Could not save: ' + e.message); }
+  // Sharing needs a fresh tap: the one that started the export expired while recording, so ask for one.
+  const download = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); };
+  const ready = document.createElement('div');
+  ready.id = 'reel-rec';
+  ready.innerHTML = `<div class="card"><h2>Reel ready</h2><p class="muted">${fmtBytes(file.size)}</p>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" id="reel-save">Save or share</button><button class="btn" id="reel-close">Close</button></div></div>`;
+  document.body.appendChild(ready);
+  document.getElementById('reel-close').onclick = () => ready.remove();
+  document.getElementById('reel-save').onclick = async () => {
+    try {
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Reel' });
+      else download();
+      ready.remove(); toast('Reel saved.');
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      download(); ready.remove(); toast('Reel downloaded.');
+    }
+  };
   return file;
 }
