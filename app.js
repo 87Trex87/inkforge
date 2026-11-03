@@ -1155,8 +1155,11 @@ const VIEWS = {
         Dirty.set(false); toast('Booking deleted.'); Gcal.soon(); history.back();
       };
       // Saves the form and returns the booking id (null if something needs fixing first).
-      const save = async () => {
+      let saving = null;
+      const save = () => saving || (saving = saveNow().finally(() => { saving = null; }));   // a double tap, or Save with Follow-up, saves once
+      const saveNow = async () => {
         const d = Object.fromEntries(new FormData(f));
+        if (!d.date || !d.time) { toast('Set the date and start time first.'); return null; }
         const gName = !clientId ? ci.value.trim() || null : null;
         const gPhone = gName ? intlPhone(d.guest_phone) : '';
         if (gPhone === null) { toast(phoneBad()); return null; }
@@ -1201,6 +1204,8 @@ const VIEWS = {
       };
       fuInfo();
       $('#b-followup').onclick = async () => {
+        const had = b.id && await DB.one('SELECT start_at FROM bookings WHERE followup_of = ? LIMIT 1', [b.id]);
+        if (had && !confirm(`A follow-up is already booked for ${fmtDay(had.start_at)}.\n\nBook another one?`)) return;
         const bid = await save(); if (!bid) return;
         const weeks = Math.max(1, +$('#b-fu-w').value || 6);
         await Settings.set('followup_weeks', String(weeks));
@@ -5654,18 +5659,11 @@ async function renderStats() {
 async function statsCsv() {
   const rows = await statsRows();
   if (!rows.length) return toast('Nothing to export in this period.');
-  const q = (v) => v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
   const head = ['Date', 'Start', 'Client', 'Type', 'Tattoo', 'Placement', 'Size', 'Quote', 'Paid', 'Paid by', 'Hours tattooed', 'Deposit', 'Promotion', 'Promotion until'];
-  const lines = rows.map(r => [r.start_at.slice(0, 10), r.start_at.slice(11, 16), bName(r), kindLabel(r), r.description, r.placement, r.size, r.quote, r.paid, r.pay_method,
-    r.time_min != null ? +(r.time_min / 60).toFixed(2) : '', r.deposit, r.promo_kind ? (r.promo_kind === 'pct' ? r.promo_value + '%' : r.promo_value) : '', r.promo_until].map(q).join(','));
-  // BOM so Excel reads the file as UTF-8.
-  const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\r\n')], { type: 'text/csv' });
-  const [a, z] = statsRange(), name = `InkForge-tattoos-${STATS.period === 'all' ? 'all' : a + '_to_' + z}.csv`;
-  const file = new File([blob], name, { type: 'text/csv' });
-  try {
-    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Tattoo stats' });
-    else { const el = document.createElement('a'); el.href = URL.createObjectURL(file); el.download = name; el.click(); setTimeout(() => URL.revokeObjectURL(el.href), 5000); toast('Spreadsheet saved.'); }
-  } catch (e) { if (e.name !== 'AbortError') toast('Could not export: ' + e.message); }
+  const [a, z] = statsRange();
+  return saveCsv(`InkForge-tattoos-${STATS.period === 'all' ? 'all' : a + '_to_' + z}.csv`, head,
+    rows.map(r => [r.start_at.slice(0, 10), r.start_at.slice(11, 16), bName(r), kindLabel(r), r.description, r.placement, r.size, r.quote, r.paid, r.pay_method,
+      r.time_min != null ? +(r.time_min / 60).toFixed(2) : '', r.deposit, r.promo_kind ? (r.promo_kind === 'pct' ? r.promo_value + '%' : r.promo_value) : '', r.promo_until]));
 }
 
 /* ---------- Inventory & rules helpers ---------- */
@@ -7345,13 +7343,11 @@ async function openPhonebookPrint() {
 }
 // Spreadsheet export shared by the phonebook, bookings and stats. BOM so Excel reads UTF-8.
 async function saveCsv(name, head, rows) {
-  const q = (v) => v == null ? '' : /[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  // Text starting with = + - @ is kept as text, so a spreadsheet never runs it as a formula.
+  const q = (v) => { if (v == null) return ''; let t = String(v); if (typeof v === 'string' && /^[=+\-@]/.test(t)) t = "'" + t;
+    return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
   const blob = new Blob(['\ufeff' + [head, ...rows].map(r => r.map(q).join(',')).join('\r\n')], { type: 'text/csv' });
-  const file = new File([blob], name, { type: 'text/csv' });
-  try {
-    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: name });
-    else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Spreadsheet saved.'); }
-  } catch (e) { if (e.name !== 'AbortError') toast('Could not export: ' + e.message); }
+  return saveFiles([new File([blob], name, { type: 'text/csv' })]);   // saved to the device; any app can share it from there
 }
 async function phonebookCsv(cats, cols) {
   const rows = await DB.all(`SELECT * FROM clients WHERE category IN (${cats.map(() => '?').join(',')}) ORDER BY category COLLATE NOCASE, first_name COLLATE NOCASE, last_name COLLATE NOCASE`, cats);
