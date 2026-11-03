@@ -60,6 +60,8 @@ function ttMix(a, b, t) {
 // Grey wash: black ink thinned with water, not mixed with white; the strength is how much pigment it carries.
 const TT_WASH = [['Black', 1], ['Dark', 0.55], ['Mid', 0.3], ['Light', 0.14]];
 const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b', '#6b3f22', '#fbfbf8'];
+// Lettering fonts (the first is the app's own blackletter-style display face).
+const TT_FONTS = [["'Pirata One', serif", 'Old English'], ["'Brush Script MT', 'Segoe Script', cursive", 'Script'], ["Georgia, 'Times New Roman', serif", 'Serif'], ["Impact, 'Arial Black', sans-serif", 'Bold'], ["'Courier New', monospace", 'Type'], ["Arial, sans-serif", 'Plain']];
 const TT_SKINS = [['Light', '#f1d3bd'], ['Fair', '#e2b493'], ['Medium', '#c68c63'], ['Tan', '#a86b45'], ['Brown', '#7b4a2c'], ['Deep', '#4e2f1e']];
 const TT_LAYERS = [['stencil', 'Stencil'], ['line', 'Linework'], ['shadow', 'Shadow'], ['mid', 'Mid tone'], ['light', 'Light tone'], ['high', 'Highlights']];
 const TT_DRAW = ['stencil', 'light', 'mid', 'shadow', 'line', 'high'];   // bottom to top
@@ -387,14 +389,14 @@ TT.sheet = async () => {
 TT.list = async (el) => {
   ttStyle();
   const rows = (await DB.all('SELECT id, name, w_cm, h_cm, thumb_ref, updated_at, meta FROM tattoo_pieces ORDER BY updated_at DESC, id DESC'))
-    .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} return { ...r, ch: ex?.mode === 'ch', exam: ex ? (ex.done ? 2 : 1) : 0 }; }).filter(r => !r.ch);
+    .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} let m2 = {}; try { m2 = JSON.parse(r.meta || '{}'); } catch {} return { ...r, ch: ex?.mode === 'ch', cheat: !!m2.cheat, exam: ex ? (ex.done ? 2 : 1) : 0 }; }).filter(r => !r.ch);
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Experimental: draw with needle groupings in ink on skin. Works best with a pressure pen (like an S Pen).</p>
       <button class="btn" id="tt-chal" data-go="tattoo/challenges" data-tip="Single challenges in every style and flash pieces to tattoo: medals, personal bests and trophies">Challenges</button>
       <button class="btn" id="tt-exam" data-tip="A set of challenges, from lines to a finished piece, with a report card">Apprentice exam</button>
       <button class="btn primary" id="tt-new">+ New piece</button></div>
     ${rows.length ? `<div class="dz-grid">${rows.map((r, i) => `<div class="dz-item" data-open="${r.id}"><div class="dz-thumb">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</div>
-      <div class="dz-meta"><b>${esc(r.name || 'Piece')}</b><span class="muted">${r.exam ? (r.exam === 2 ? 'Exam · finished' : 'Exam · in progress') : `${+r.w_cm} × ${+r.h_cm} cm`}</span></div>
+      <div class="dz-meta"><b>${esc(r.name || 'Piece')}</b><span class="muted">${r.exam ? (r.exam === 2 ? 'Exam · finished' : 'Exam · in progress') : `${+r.w_cm} × ${+r.h_cm} cm`}${r.cheat ? ' <span class="tt-cheat" style="display:inline-block;margin-left:4px">Cheat</span>' : ''}</span></div>
       <button class="mini" data-del="${r.id}" aria-label="Delete" data-tip="Delete">✕</button></div>`).join('')}</div>`
       : `<div class="empty"><div class="empty-ico">${ICON.needle}</div><div style="font:24px var(--display)">Tattoo simulator</div>
         <div class="muted">Pick a page size and skin tone, load a stencil to trace, dip into the ink caps and tattoo in layers: linework, shadow, mid and light tones, highlights.</div></div>`}`;
@@ -457,6 +459,7 @@ TT.open = async (el, id) => {
      blowouts, bumps or crashes), strokes are smoothed, holding the pen still snaps a stroke to a line or circle, and
      drawing helpers are on hand. Anything saved from it is stamped as a cheat. */
   const CHEAT = !!meta.cheat && !meta.exam;
+  let lastVk = '';   // the view the guides were last placed for
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? 75, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt, rot: meta.rot || 0 };
@@ -719,7 +722,7 @@ TT.open = async (el, id) => {
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     const deg = Math.round(((st.rot * 180 / Math.PI) % 360 + 360) % 360);
     $('#tt-zl') && ($('#tt-zl').textContent = Math.abs(z - 1) < 0.01 && !vx && !vy && !deg ? 'Fit' : Math.round(z * 100) + '%' + (deg ? ' · ' + deg + '°' : ''));
-    if (CHEAT) placeGuides();
+    if (CHEAT) { const vk = k + ',' + vx + ',' + vy + ',' + st.rot; if (vk !== lastVk) { lastVk = vk; placeGuides(); } }
   }); };
   const zoomAt = (nz, px, py) => { const p = fromScreen(px, py); z = Math.max(0.5, Math.min(12, nz)); k = fitK * z; pinTo(p, px, py); paint(); };
   const toPage = (e) => { const r = stage.getBoundingClientRect(); return fromScreen(e.clientX - r.left, e.clientY - r.top); };
@@ -873,6 +876,7 @@ TT.open = async (el, id) => {
     if (S.mode === 'quad') out.push([-1, 0, 0, 1], [1, 0, 0, -1], [-1, 0, 0, -1]);
     if (S.mode === 'mandala') for (let i = 0; i < S.n; i++) { const R = rot(Math.PI * 2 * i / S.n); if (i) out.push(R); if (S.mir) out.push([R[0] * -1, R[1], R[2] * -1, R[3]]); }
     return out.length ? out : null; };
+  const symPts = (q) => { const M2 = CHEAT ? symMats() : null, c = st.sym.c; return M2 ? M2.map(M => ({ x: c.x + M[0] * (q.x - c.x) + M[1] * (q.y - c.y), y: c.y + M[2] * (q.x - c.x) + M[3] * (q.y - c.y) })) : []; };
   const symPunc = (q, a, depth, tilt, ink, erase) => { const c = st.sym.c, bp = pen.foot * 2 + 6 * mm;
     for (const M of pen.sym) { const dx = q.x - c.x, dy = q.y - c.y, q2 = { x: c.x + M[0] * dx + M[1] * dy, y: c.y + M[2] * dx + M[3] * dy };
       const ca = Math.cos(a), sa = Math.sin(a), a2 = Math.atan2(M[2] * ca + M[3] * sa, M[0] * ca + M[1] * sa);
@@ -881,7 +885,7 @@ TT.open = async (el, id) => {
   /* On screen: the ruler's line with a handle at each end, and the symmetry centre (draggable) with its axes. */
   const guides = $('#tt-guides');
   function placeGuides() { if (!CHEAT) return; const hs = [];
-    $('#tt-rail [data-r="tools"]')?.classList.toggle('on', ['blend', 'fill', 'shape', 'lasso', 'pick'].includes(st.tool) || st.grid.on || st.ruler.on || st.sym.mode !== 'off' || !!st.fast);
+    $('#tt-rail [data-r="tools"]')?.classList.toggle('on', ['blend', 'fill', 'shape', 'lasso', 'pick', 'liquify', 'text'].includes(st.tool) || st.grid.on || st.ruler.on || st.sym.mode !== 'off' || !!st.fast);
     $('#tt-rail [data-r="ruler"]')?.classList.toggle('on', st.ruler.on); $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off');
     if (st.ruler.on) hs.push(['ra', st.ruler.a], ['rb', st.ruler.b]);
     if (st.sym.mode !== 'off') hs.push(['sc', st.sym.c]);
@@ -927,14 +931,15 @@ TT.open = async (el, id) => {
   for (const n of ['pointerup', 'pointercancel']) guides.addEventListener(n, (e) => { const g = gDrag; gDrag = null;
     if (g?.k === 'an' && !g.moved && e.type === 'pointerup' && snapE) { const a = snapE.anchors[g.i]; a.c = !a.c; snapE.moved = true; renderSnap(); placeGuides(); } });
   /* The Tools menu: every cheat tool in one place (the rail stays short), each button named under its icon. */
-  const TOOL_BTNS = `<button class="tt-tb" data-r="pick" data-tip="Colour pick: tap ink in the skin to load that exact colour on the needle" aria-label="Colour pick"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-2 2-6-6z"/><path d="M15 9l-9 9H4v-2l9-9"/></svg></button>
+  const TOOL_BTNS = `<button class="tt-tb" data-r="liquify" data-tip="Liquify: push the ink around like wet paint, to nudge shapes and curves" aria-label="Liquify"><svg viewBox="0 0 24 24"><path d="M4 12c3-6 6 6 9 0s5-4 7-2"/><path d="M4 18c3-4 6 2 9-1s5-2 7-1"/><circle cx="17" cy="6" r="2"/></svg></button>
+        <button class="tt-tb" data-r="text" data-tip="Lettering: tap to place text on the stencil layer, to trace" aria-label="Lettering"><svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button><button class="tt-tb" data-r="pick" data-tip="Colour pick: tap ink in the skin to load that exact colour on the needle" aria-label="Colour pick"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-2 2-6-6z"/><path d="M15 9l-9 9H4v-2l9-9"/></svg></button>
         <button class="tt-tb" data-r="grid" data-tip="Grid over the page, for lining things up" aria-label="Grid"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></button><button class="tt-tb" data-r="ruler" data-tip="Ruler: strokes run straight along it. Drag its ends to place it." aria-label="Ruler"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
         <button class="tt-tb" data-r="blend" data-tip="Blend: smudge and soften ink on the current layer" aria-label="Blend"><svg viewBox="0 0 24 24"><path d="M14 3l7 7-8 8a3 3 0 0 1-4 0l-3-3a3 3 0 0 1 0-4z"/><path d="M4 21c2 0 3-1 3-3"/></svg></button>
         <button class="tt-tb" data-r="fill" data-tip="Fill: tap inside an outline to pack it with the ink on the needle" aria-label="Fill"><svg viewBox="0 0 24 24"><path d="M5 11l7-7 7 7-7 7z"/><path d="M5 11h14"/><path d="M20 15s2 2.5 2 4a2 2 0 0 1-4 0c0-1.5 2-4 2-4z"/></svg></button>
         <button class="tt-tb" data-r="shape" data-tip="Shapes: drag out a line, box, ellipse, triangle or star" aria-label="Shapes"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="9" height="9" rx="1"/><circle cx="16.5" cy="7.5" r="4.5"/></svg></button>
         <button class="tt-tb" data-r="sym" data-tip="Symmetry and mandala" aria-label="Symmetry"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M18.4 5.6l-4.2 4.2M9.8 14.2l-4.2 4.2"/></svg></button>
         <button class="tt-tb" data-r="lasso" data-tip="Lasso: draw round part of the work to move, size, turn or flip it" aria-label="Lasso"><svg viewBox="0 0 24 24"><path d="M4 9c0-3 3.6-5 8-5s8 2 8 5-3.6 5-8 5c-1.4 0-2.7-.2-3.8-.6"/><path d="M6 13c-1.5 1-1.5 3 0 4s3 0 3-2-2-2-3-2zM6 17c0 2 1 3 2 4"/></svg></button>`;
-  const TOOL_NAMES = { pick: 'Colour pick', grid: 'Grid', ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
+  const TOOL_NAMES = { liquify: 'Liquify', text: 'Lettering', pick: 'Colour pick', grid: 'Grid', ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
   function toolsPop(b) {
     pop.innerHTML = `<div class="gh">Cheat tools</div><div class="tt-tools">${TOOL_BTNS}</div>
       <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
@@ -945,12 +950,17 @@ TT.open = async (el, id) => {
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   /* ---------- Cheat tools: blend, fill and shapes ----------
      All work on the current layer with the ink on the needle, and undo like a stroke. */
+  st.liq = meta.liq || { r: 8, s: 0.5, all: true }; st.txt = meta.txt || { s: 'Mum', f: 0, mm: 15 };
   st.lassoAll = !!meta.lassoAll; st.grid = meta.grid || { on: false, mm: 10 }; st.blend = meta.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || { sten: true }; st.shape = meta.shape || { kind: 'rect', fill: false };
   function toolPop(b) {
     const T = st.tool, sl = (o, f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:4px 6px"><span>${lab}<b>${fmt(st[o][f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${st[o][f]}" data-tl="${o}.${f}"></label>`;
     const tg = (o, f, lab) => `<label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-tl="${o}.${f}" ${st[o][f] ? 'checked' : ''}><span>${lab}</span></label>`;
     pop.innerHTML = T === 'blend' ? `<div class="gh">Blend</div>${sl('blend', 'r', 'Size', 1, 15, 0.5, v => v + ' mm')}${sl('blend', 'i', 'Intensity', 0.05, 1, 0.05, v => Math.round(v * 100) + '%')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag over ink to smudge and soften it, on the current layer.</p>`
       : T === 'fill' ? `<div class="gh">Fill</div>${tg('fillo', 'sten', 'Stencil lines count as edges')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap inside an outline: it packs solid with the ink on the needle, on the current layer.</p>`
+      : T === 'liquify' ? `<div class="gh">Liquify</div>${sl('liq', 'r', 'Size', 2, 30, 0.5, v => v + ' mm')}${sl('liq', 's', 'Strength', 0.1, 1, 0.05, v => Math.round(v * 100) + '%')}${tg('liq', 'all', 'Every ink layer, not just the current one')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag to push the ink along like wet paint.</p>`
+      : T === 'text' ? `<div class="gh">Lettering</div><input class="in" data-txt value="${esc(st.txt.s)}" placeholder="Text" style="margin:2px 6px 6px;width:calc(100% - 12px)">
+        <div class="tt-symm">${TT_FONTS.map(([f, n2], i) => `<button data-font="${i}" class="${st.txt.f === i ? 'on' : ''}" style="font-family:${f}">${n2}</button>`).join('')}</div>${sl('txt', 'mm', 'Height', 3, 60, 1, v => v + ' mm')}
+        <p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap the page to place it on the stencil layer, then trace it. The lasso (on the stencil layer) moves and sizes it.</p>`
       : T === 'lasso' ? `<div class="gh">Lasso</div><label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-lassoall ${st.lassoAll ? 'checked' : ''}><span>Every ink layer, not just the current one</span></label><p class="muted" style="font-size:11px;margin:2px 6px 6px">Draw round the part to move. Drag it, size it from a corner, turn it from the top dot, flip it, then Done.</p>`
       : `<div class="gh">Shapes</div><div class="tt-symm">${[['line', 'Line'], ['rect', 'Box'], ['ellipse', 'Ellipse'], ['tri', 'Triangle'], ['star', 'Star'], ['heart', 'Heart']].map(([k2, n]) => `<button data-shp="${k2}" class="${st.shape.kind === k2 ? 'on' : ''}">${n}</button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
@@ -977,13 +987,30 @@ TT.open = async (el, id) => {
       if (sa > 0) { const pr = (D[i] * ca) * (1 - f) + (sr / 5) * f, pg = (D[i + 1] * ca) * (1 - f) + (sg / 5) * f, pb = (D[i + 2] * ca) * (1 - f) + (sb / 5) * f; D[i] = pr / na; D[i + 1] = pg / na; D[i + 2] = pb / na; }
       D[i + 3] = na; }
     markDirty(td.key, x0, y0, x1, y1); const B = td.box; B.x0 = Math.min(B.x0, x0); B.y0 = Math.min(B.y0, y0); B.x1 = Math.max(B.x1, x1); B.y1 = Math.max(B.y1, y1); };
+  // Liquify: inside the brush, each pixel takes the ink from a little behind the brush's movement, strongest at the
+  // centre, so the ink is pushed along with it (every chosen layer together).
+  const liqStep = (a, b) => { const R = st.liq.r * mm, S = st.liq.s, dx = b.x - a.x, dy = b.y - a.y;
+    const x0 = Math.max(0, Math.floor(b.x - R)), x1 = Math.min(W - 1, Math.ceil(b.x + R)), y0 = Math.max(0, Math.floor(b.y - R)), y1 = Math.min(H - 1, Math.ceil(b.y + R)); if (x0 > x1 || y0 > y1) return;
+    const m = Math.ceil(Math.abs(dx) + Math.abs(dy)) + 2, cx0 = Math.max(0, x0 - m), cy0 = Math.max(0, y0 - m), cx1 = Math.min(W - 1, x1 + m), cy1 = Math.min(H - 1, y1 + m), cw = cx1 - cx0 + 1;
+    for (const key of td.keys) { const D = imgd[key].data, C = new Uint8ClampedArray(cw * (cy1 - cy0 + 1) * 4);
+      for (let y = cy0; y <= cy1; y++) C.set(D.subarray((y * W + cx0) * 4, (y * W + cx1 + 1) * 4), (y - cy0) * cw * 4);
+      const smp = (fx, fy, c) => { fx = Math.max(cx0, Math.min(cx1, fx)); fy = Math.max(cy0, Math.min(cy1, fy)); const ix = Math.min(cx1 - 1, Math.floor(fx)), iy = Math.min(cy1 - 1, Math.floor(fy)), u = fx - ix, v = fy - iy;
+        const o = (yy, xx) => ((yy - cy0) * cw + (xx - cx0)) * 4 + c; return C[o(iy, ix)] * (1 - u) * (1 - v) + C[o(iy, ix + 1)] * u * (1 - v) + C[o(iy + 1, ix)] * (1 - u) * v + C[o(iy + 1, ix + 1)] * u * v; };
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const dd = Math.hypot(x + 0.5 - b.x, y + 0.5 - b.y) / R; if (dd >= 1) continue;
+        const f = S * (1 - dd * dd) ** 2, sx = x - dx * f * 1.6, sy = y - dy * f * 1.6, i = (y * W + x) * 4, A = smp(sx, sy, 3);
+        if (A > 0.5) { D[i] = smp(sx, sy, 0); D[i + 1] = smp(sx, sy, 1); D[i + 2] = smp(sx, sy, 2); }
+        D[i + 3] = A; }
+      markDirty(key, x0, y0, x1, y1); }
+    const B = td.box; B.x0 = Math.min(B.x0, x0); B.y0 = Math.min(B.y0, y0); B.x1 = Math.max(B.x1, x1); B.y1 = Math.max(B.y1, y1); };
   // Fill: everything joined to the tapped spot that isn't inside ink (or a stencil line), packed with the needle's ink.
-  const fillAt = (p, key) => { if (st.ink.v <= 0.02) return toast('The needle is dry: dip into an ink cap first.', 1800);
-    const sx = Math.round(p.x), sy = Math.round(p.y); if (sx < 0 || sy < 0 || sx >= W || sy >= H) return;
+  // ps: the tapped point, plus its symmetry copies.
+  const fillAt = (ps, key) => { if (st.ink.v <= 0.02) return toast('The needle is dry: dip into an ink cap first.', 1800);
+    if (st.hide.has(key)) toast('That layer is hidden: show it to see the fill.');
     const SD = st.fillo.sten ? L.stencil.getContext('2d').getImageData(0, 0, W, H).data : null, Ds = INK.map(k2 => imgd[k2].data);
     const wall = (i) => { let keep = 1; for (const E of Ds) keep *= 1 - E[i * 4 + 3] / 255; return 1 - keep > 0.35 || (SD && SD[i * 4 + 3] > 60); };
-    if (wall(sy * W + sx)) return toast('Tap inside an outline, not on a line.', 1800);
-    const seen = new Uint8Array(W * H), stack = [sy * W + sx]; let n = 0, x0 = sx, x1 = sx, y0 = sy, y1 = sy; seen[sy * W + sx] = 1;
+    const seen = new Uint8Array(W * H), stack = []; let n = 0, x0 = W, x1 = 0, y0 = H, y1 = 0;
+    for (const p of ps) { const sx = Math.round(p.x), sy = Math.round(p.y); if (sx < 0 || sy < 0 || sx >= W || sy >= H) continue; const i = sy * W + sx; if (seen[i] || wall(i)) continue; seen[i] = 1; stack.push(i); }
+    if (!stack.length) return toast('Tap inside an outline, not on a line.', 1800);
     while (stack.length) { const i = stack.pop(), x = i % W, y = (i - x) / W; n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
       for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && !seen[j]) { seen[j] = 1; if (wall(j)) seen[j] = 2; else stack.push(j); } }
     if (n > W * H * 0.85 && !confirm('That fills nearly the whole page (the outline may have a gap). Fill anyway?')) return;
@@ -1020,6 +1047,14 @@ TT.open = async (el, id) => {
         const BB = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; BB.x0 = Math.min(BB.x0, q.x - bp); BB.y0 = Math.min(BB.y0, q.y - bp); BB.x1 = Math.max(BB.x1, q.x + bp); BB.y1 = Math.max(BB.y1, q.y + bp); } }
     const u = flushPig(); cropTop(pen.box); pen = null; st.dirty = true; paint(u ? { x0: u.x0 - 4 * mm, y0: u.y0 - 4 * mm, x1: u.x1 + 4 * mm, y1: u.y1 + 4 * mm } : undefined); TL.changed = true; tlGrab(); };
   const toolDown = (e) => { const p = toPage(e);
+    if (st.tool === 'text') { const s2 = (st.txt.s || '').trim(); if (!s2) return toast('Type the text in the Lettering options first.', 1800);
+      const g = L.stencil.getContext('2d'); snap('stencil'); touched.add('stencil'); st.hide.delete('stencil');
+      g.save(); g.font = `${st.txt.mm * mm}px ${TT_FONTS[st.txt.f][0]}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(78,40,150,.9)'; const w = g.measureText(s2).width;
+      g.fillText(s2, p.x, p.y); for (const q of symPts(p)) g.fillText(s2, q.x, q.y); g.restore();
+      const hh = st.txt.mm * mm; cropTop(symPts(p).length ? { x0: 0, y0: 0, x1: W, y1: H } : { x0: p.x - w / 2 - 4, y0: p.y - hh, x1: p.x + w / 2 + 4, y1: p.y + hh }); st.dirty = true; paint(); return; }
+    if (st.tool === 'liquify') { const keys = st.liq.all ? INK.filter(k2 => !st.hide.has(k2)) : [toolLayer()]; if (!keys[0]) return;
+      const h = state(keys[0]); h.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(h); if (hist.length > 15) hist.shift(); fut.length = 0;
+      keys.forEach(k2 => touched.add(k2)); td = { kind: 'liq', keys, id: e.pointerId, last: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y } }; return; }
     if (st.tool === 'pick') {   // the ink at that spot, all layers mixed as they show
       const x = Math.round(p.x), y = Math.round(p.y); if (x < 0 || y < 0 || x >= W || y >= H) return; const i = (y * W + x) * 4; let r = 0, g = 0, b = 0, w = 0, keep = 1;
       for (const key of INK) { const D = imgd[key].data, a = D[i + 3] / 255; if (!a) continue; r += D[i] * a; g += D[i + 1] * a; b += D[i + 2] * a; w += a; keep *= 1 - a; }
@@ -1027,18 +1062,23 @@ TT.open = async (el, id) => {
       const c = [r / w / 255, g / w / 255, b / w / 255]; st.ink = { c, v: 1, s: Math.max(0.15, Math.min(1, (1 - keep) * 1.1)), w: Math.min(...c) > 0.85 ? 1 : 0 }; st.dirty = true; drawNeedleInk();
       st.tool = 'needle'; sel(); placeGuides(); return toast('Picked up that colour: the needle is loaded.', 1600); }
     if (st.tool === 'lasso') { if (lsel) selCommit(); td = { kind: 'lasso', id: e.pointerId, pts: [p] }; return; }
-    if (st.tool === 'fill') { const key = toolLayer(); if (key) fillAt(p, key); return; }
+    if (st.tool === 'fill') { const key = toolLayer(); if (key) fillAt([p, ...symPts(p)], key); return; }
     if (st.tool === 'shape') { td = { kind: 'shape', id: e.pointerId, a: p, b: p }; return drawCur(e); }
     const key = toolLayer(); if (!key) return; snap(key); touched.add(key); td = { kind: 'blend', key, id: e.pointerId, last: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y } }; };
   const toolMove = (e) => { const p = toPage(e);
     if (td.kind === 'lasso') { const l = td.pts[td.pts.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) > 2) td.pts.push(p); return drawCur(e); }
     if (td.kind === 'shape') { td.b = p; return; }
+    if (td.kind === 'liq') { const d = Math.hypot(p.x - td.last.x, p.y - td.last.y), stp = Math.max(1, st.liq.r * mm / 5), n = Math.ceil(d / stp);
+      for (let i = 1; i <= n; i++) { const a = { x: td.last.x + (p.x - td.last.x) * (i - 1) / n, y: td.last.y + (p.y - td.last.y) * (i - 1) / n }, b = { x: td.last.x + (p.x - td.last.x) * i / n, y: td.last.y + (p.y - td.last.y) * i / n };
+        liqStep(a, b); const sa = symPts(a), sb = symPts(b); sa.forEach((q, j) => liqStep(q, sb[j])); }
+      td.last = p; const u = flushPig(); st.dirty = true; if (u) paint({ x0: u.x0 - 2, y0: u.y0 - 2, x1: u.x1 + 2, y1: u.y1 + 2 }); return; }
     const d = Math.hypot(p.x - td.last.x, p.y - td.last.y), stp = Math.max(1, st.blend.r * mm / 3), n = Math.ceil(d / stp);
-    for (let i = 1; i <= n; i++) { const a = { x: td.last.x + (p.x - td.last.x) * (i - 1) / n, y: td.last.y + (p.y - td.last.y) * (i - 1) / n }, b = { x: td.last.x + (p.x - td.last.x) * i / n, y: td.last.y + (p.y - td.last.y) * i / n }; blendStep(a, b); }
+    for (let i = 1; i <= n; i++) { const a = { x: td.last.x + (p.x - td.last.x) * (i - 1) / n, y: td.last.y + (p.y - td.last.y) * (i - 1) / n }, b = { x: td.last.x + (p.x - td.last.x) * i / n, y: td.last.y + (p.y - td.last.y) * i / n }; blendStep(a, b); const sa = symPts(a), sb = symPts(b); sa.forEach((q, j) => blendStep(q, sb[j])); }
     td.last = p; const u = flushPig(); st.dirty = true; if (u) paint({ x0: u.x0 - 2, y0: u.y0 - 2, x1: u.x1 + 2, y1: u.y1 + 2 }); };
   const toolUp = () => { const t0 = td; td = null; if (!t0) return;
     if (t0.kind === 'lasso') { if (t0.pts.length > 6) liftSel(t0.pts); return drawCur(); }
     if (t0.kind === 'shape') { shapeCommit(t0.a, t0.b); return drawCur(); }
+    if (t0.kind === 'liq') { const B = t0.box, pad = st.liq.r * mm + 4; cropTop({ x0: B.x0 - pad, y0: B.y0 - pad, x1: B.x1 + pad, y1: B.y1 + pad }); TL.changed = true; tlGrab(); return; }
     const B = t0.box, pad = st.blend.r * mm + 2; cropTop({ x0: B.x0 - pad, y0: B.y0 - pad, x1: B.x1 + pad, y1: B.y1 + pad }); TL.changed = true; tlGrab(); };
   /* Lasso: draw round part of the work; it lifts off its layer (or every ink layer) and floats, to drag, size from a
      corner, turn from the top dot or flip, then Done puts it down (one undo step). Tapping elsewhere also puts it down. */
@@ -1048,19 +1088,22 @@ TT.open = async (el, id) => {
     return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([u, v]) => ({ x: c.x + u * ca - v * sa, y: c.y + u * sa + v * ca })); };
   let selRaf = 0;
   const selApply = () => { if (selRaf) return; selRaf = requestAnimationFrame(() => { selRaf = 0; if (!lsel) return; const c = selCentre();
-    for (const key of lsel.keys) { const g = L[key].getContext('2d'); g.putImageData(lsel.base[key], 0, 0); g.save(); g.translate(c.x, c.y); g.rotate(lsel.rot); g.scale(lsel.s * lsel.fx, lsel.s * lsel.fy);
+    let x0 = W, y0 = H, x1 = 0, y1 = 0; for (const q of selCorners()) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+    const now = { x0: Math.max(0, Math.floor(x0) - 2), y0: Math.max(0, Math.floor(y0) - 2), x1: Math.min(W, Math.ceil(x1) + 2), y1: Math.min(H, Math.ceil(y1) + 2) }, was = lsel.last || now;
+    const R = { x0: Math.min(now.x0, was.x0), y0: Math.min(now.y0, was.y0), x1: Math.max(now.x1, was.x1), y1: Math.max(now.y1, was.y1) }; lsel.last = now;
+    for (const key of lsel.keys) { const g = L[key].getContext('2d'); g.putImageData(lsel.base[key], 0, 0, R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0);   // only where it was and is g.save(); g.translate(c.x, c.y); g.rotate(lsel.rot); g.scale(lsel.s * lsel.fx, lsel.s * lsel.fy);
       g.imageSmoothingQuality = 'high'; g.drawImage(lsel.fl[key], -lsel.b.w / 2, -lsel.b.h / 2); g.restore(); }
-    st.dirty = true; paint(); }); };
+    st.dirty = true; paint(R); }); };
   const liftSel = (poly) => {
     let x0 = W, y0 = H, x1 = 0, y1 = 0; for (const q of poly) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
     x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1)); const bw = x1 - x0, bh = y1 - y0;
     if (bw < 4 || bh < 4) return;
-    const keys = st.lassoAll ? INK.filter(k2 => !st.hide.has(k2)) : [st.layer]; if (!keys.every(k2 => INK.includes(k2))) return toast('Pick an ink layer in Layers first (not the stencil).');
+    const keys = st.lassoAll ? INK.filter(k2 => !st.hide.has(k2)) : [st.layer];   // the stencil layer works too (e.g. lettering)
     const m = document.createElement('canvas'); m.width = bw; m.height = bh; const mg = m.getContext('2d'); mg.beginPath(); poly.forEach((q, i) => i ? mg.lineTo(q.x - x0, q.y - y0) : mg.moveTo(q.x - x0, q.y - y0)); mg.closePath(); mg.fill();
     const M = mg.getImageData(0, 0, bw, bh).data; let any = false;
     const h = state(keys[0]); h.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(h); if (hist.length > 15) hist.shift(); fut.length = 0;
     const base = {}, fl = {};
-    for (const key of keys) { const D = imgd[key].data, f = new ImageData(bw, bh), F = f.data;
+    for (const key of keys) { const D = INK.includes(key) ? imgd[key].data : L[key].getContext('2d').getImageData(0, 0, W, H).data, f = new ImageData(bw, bh), F = f.data;
       for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const mi = (y * bw + x) * 4 + 3, a = M[mi] / 255; if (!a) continue; const i = ((y + y0) * W + x + x0) * 4, o = (y * bw + x) * 4;
         if (D[i + 3]) any = true; F[o] = D[i]; F[o + 1] = D[i + 1]; F[o + 2] = D[i + 2]; F[o + 3] = D[i + 3] * a; D[i + 3] = D[i + 3] * (1 - a); }
       const c = document.createElement('canvas'); c.width = bw; c.height = bh; c.getContext('2d').putImageData(f, 0, 0); fl[key] = c;
@@ -1136,7 +1179,7 @@ TT.open = async (el, id) => {
       const B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp); }
     S.box = { ...pen.box }; S.pts = pts; if (own) pen = null; flushPig(); st.dirty = true; paint(); };
   const snapNow = () => { if (!CHEAT || !pen || pen.snapped || !pen.cx.pig || st.tool === 'erase') return;
-    const fit = fitPath(pen.raw || []); if (!fit) return toast('Hold to snap: draw a little more, then hold still.', 2000);
+    const fit = fitPath(pen.raw || []); if (!fit) { if ((pen.raw || []).length > 12) toast('Hold to snap: draw a little more, then hold still.', 2000); return; }
     const h = hist[hist.length - 1]; if (!h || h.rc) return;
     snapE = { key: h.key, base: h.data, baseHi: h.hi, anchors: fit.anchors, closed: fit.closed, kind: fit.kind, depth: pen.dn ? pen.dsum / pen.dn : 0.6,
       ink: Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(), cx: pen.cx, sym: pen.sym, foot: pen.foot, live: false };
@@ -1243,6 +1286,9 @@ TT.open = async (el, id) => {
     if (!curAt || pinch || pan) return;
     const s = k * mm, a = pageTurn(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
     cux.setTransform(dpr, 0, 0, dpr, 0, 0); cux.lineWidth = 1;
+    if (CHEAT && st.tool === 'liquify') { cux.beginPath(); cux.arc(curAt.x, curAt.y, st.liq.r * s, 0, 7); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.45)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = '#b58ae8'; cux.stroke(); return; }
+    if (CHEAT && st.tool === 'text') { const s2 = st.txt.s || ''; cux.save(); cux.translate(curAt.x, curAt.y); cux.rotate(st.rot); cux.font = `${st.txt.mm * s}px ${TT_FONTS[st.txt.f][0]}`; cux.textAlign = 'center'; cux.textBaseline = 'middle';
+      cux.lineWidth = 1; cux.strokeStyle = 'rgba(181,138,232,.9)'; cux.strokeText(s2, 0, 0); cux.restore(); return; }
     if (CHEAT && st.tool === 'blend') { cux.beginPath(); cux.arc(curAt.x, curAt.y, st.blend.r * s, 0, 7); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.45)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); return; }
     if (CHEAT && (st.tool === 'fill' || st.tool === 'shape' || st.tool === 'lasso' || st.tool === 'pick')) {
       if (td?.kind === 'lasso') { const P = td.pts.map(toScreen); cux.setLineDash([5, 4]); cux.beginPath(); P.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.closePath(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); cux.setLineDash([]); }
@@ -1287,7 +1333,7 @@ TT.open = async (el, id) => {
     if (st.check) return drawCur(e);   // checking the skin, not tattooing
     if (lsel && st.tool !== 'lasso') selCommit();
     if (snapE) { if (!snapE.live && st.tool === 'needle' && nearSnap(e)) { snapE.live = true; placeGuides(); return; } snapFinish(); }
-    if (CHEAT && ['blend', 'fill', 'shape', 'lasso', 'pick'].includes(st.tool)) return toolDown(e);
+    if (CHEAT && ['blend', 'fill', 'shape', 'lasso', 'pick', 'liquify', 'text'].includes(st.tool)) return toolDown(e);
     if (strokeStart(e)) strokeMove(e);
   });
   cv.addEventListener('pointermove', (e) => {
@@ -1313,7 +1359,11 @@ TT.open = async (el, id) => {
     if (e.key === ' ') { space = e.type === 'keydown'; e.preventDefault(); }
     if (e.type === 'keydown' && (e.key === '[' || e.key === ']') && isMag()) { setAng(st.magAng + (e.key === ']' ? 15 : -15)); }
     if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
-    if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); } };
+    if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    if (e.type === 'keydown' && CHEAT) {   // Enter puts a lasso down or finishes adjusting a snap; Escape cancels; Delete removes the lassoed part
+      if (e.key === 'Enter') { if (lsel) selCommit(); else if (snapE) snapFinish(); }
+      if (e.key === 'Escape') { if (lsel) selCancel(); else if (snapE) snapFinish(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && lsel) { e.preventDefault(); selCommit(true); } } };
   addEventListener('keydown', keys); addEventListener('keyup', keys);
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; st.rot = 0; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
@@ -1400,12 +1450,13 @@ TT.open = async (el, id) => {
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
     closePop();
-    if (r === 'needle' || r === 'erase') { st.tool = r === 'erase' ? 'erase' : 'needle'; return sel(); }
-    if (r === 'blend' || r === 'fill' || r === 'shape' || r === 'lasso') { if (st.tool === r && !pop.hidden) return closePop(); if (lsel && r !== 'lasso') selCommit(); st.tool = r; sel(); drawCur(); return toolPop(b); }
+    if (r === 'needle' || r === 'erase') { st.tool = r === 'erase' ? 'erase' : 'needle'; if (CHEAT) placeGuides(); return sel(); }
+    if (r === 'blend' || r === 'fill' || r === 'shape' || r === 'lasso' || r === 'liquify' || r === 'text') { if (st.tool === r && !pop.hidden) return closePop(); if (lsel && r !== 'lasso') selCommit(); st.tool = r; sel(); drawCur(); return toolPop(b); }
     st.panel = st.panel === r ? null : r; drawSide();
   };
   pop.onclick = (e) => {
     const tb = e.target.closest('.tt-tb'); if (tb) { const top = pop.style.top; pop.hidden = true; $('#tt-rail').onclick({ target: tb }); pop.style.top = top; return placeGuides(); }
+    const fb = e.target.closest('[data-font]'); if (fb) { st.txt.f = +fb.dataset.font; st.dirty = true; pop.querySelectorAll('[data-font]').forEach(x => x.classList.toggle('on', x === fb)); return; }
     const shb = e.target.closest('[data-shp]'); if (shb) { st.shape.kind = shb.dataset.shp; st.dirty = true; pop.querySelectorAll('[data-shp]').forEach(x => x.classList.toggle('on', x === shb)); return; }
     const sy = e.target.closest('[data-sym]'); if (sy) { st.sym.mode = sy.dataset.sym; st.dirty = true; pop.querySelectorAll('[data-sym]').forEach(x => x.classList.toggle('on', x === sy));
       pop.querySelector('[data-symn]').hidden = pop.querySelector('[data-symm]').hidden = st.sym.mode !== 'mandala'; $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off'); return placeGuides(); }
@@ -1418,7 +1469,8 @@ TT.open = async (el, id) => {
     if (e.target.matches('[data-endless]')) { st.endless = e.target.checked; st.dirty = true; return toast(st.endless ? 'Endless ink: the needle stays loaded.' : 'Ink runs out again as you work.', 1600); }
     if (e.target.matches('[data-fast]')) { st.fast = e.target.checked; st.dirty = true; return toast(st.fast ? 'Fast lines on: pull lines as quick as you like.' : 'Fast lines off.', 1600); }
     if (e.target.matches('[data-tl]')) { const [o, f] = e.target.dataset.tl.split('.'); st[o][f] = e.target.type === 'checkbox' ? e.target.checked : +e.target.value; st.dirty = true;
-      const v = e.target.closest('label').querySelector('b'); if (v) v.textContent = f === 'r' ? st[o][f] + ' mm' : Math.round(st[o][f] * 100) + '%'; return drawCur(); }
+      const v = e.target.closest('label').querySelector('b'); if (v) v.textContent = f === 'r' || f === 'mm' ? st[o][f] + ' mm' : Math.round(st[o][f] * 100) + '%'; return drawCur(); }
+    if (e.target.matches('[data-txt]')) { st.txt.s = e.target.value; st.dirty = true; return; }
     if (e.target.matches('[data-symr]')) { st.sym.n = +e.target.value; $('#tt-symnv').textContent = st.sym.n; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-symmir]')) { st.sym.mir = e.target.checked; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-angr]')) { setAng(+e.target.value); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', +x.dataset.ang === st.magAng)); }
@@ -1759,7 +1811,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, endless: CHEAT && st.endless || undefined }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, txt: CHEAT ? st.txt : undefined, endless: CHEAT && st.endless || undefined }), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -1833,7 +1885,7 @@ TT.open = async (el, id) => {
     const pid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
     await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [pid, photo, thumb, 'Fresh, healed and 10 years']);
     toast('Saved to Portfolio › Simulator.', 2500); };
-  $('#tt-pf').onclick = async () => { const b = $('#tt-pf'); if (b.disabled) return; b.disabled = true;
+  $('#tt-pf').onclick = async () => { const b = $('#tt-pf'); if (b.disabled) return; b.disabled = true; if (lsel) selCommit(); if (snapE) snapFinish();
     try { const r = EX?.res?.[EX.res.length - 1], T = r && TT_CH.find(c => c.id === r.id); await toPortfolio(r && T ? await cardOf(T, r, EX.info) : null, T?.title); }
     catch (err) { toast('Could not save: ' + err.message, 4000); } finally { b.disabled = false; } };
   $('#tt-tl').onclick = () => {
@@ -2262,7 +2314,7 @@ function ttStyle() {
 .tt-cheat { flex: none; font: 800 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: #ff8a7a; border: 1.5px solid #ff6f61; border-radius: 6px; padding: 2px 6px; transform: rotate(-3deg); }
 .tt-guides { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 .tt-guides i { position: absolute; width: 22px; height: 22px; margin: -11px; border-radius: 50%; background: rgba(255,111,97,.25); border: 2px solid #ff6f61; pointer-events: auto; touch-action: none; cursor: grab; }
-.tt-guides i.anc { width: 16px; height: 16px; margin: -8px; border-radius: 50%; background: #fff; border: 2px solid #ff6f61; } .tt-guides i.anc.corner { border-radius: 3px; background: #ff6f61; }
+.tt-guides i.anc { width: 22px; height: 22px; margin: -11px; border-radius: 50%; background: #fff; border: 2px solid #ff6f61; } .tt-guides i.anc.corner { border-radius: 3px; background: #ff6f61; }
 .tt-anhint { font: 600 11px var(--ui); color: var(--ink2); align-self: center; padding: 0 6px; }
 .tt-guides i.lsel { width: 18px; height: 18px; margin: -9px; border-radius: 4px; background: #1a1410; border-color: #ff8a7a; } .tt-guides i.lsel.rot { border-radius: 50%; }
 .tt-selb { position: absolute; border: 1.5px dashed #ff8a7a; pointer-events: auto; touch-action: none; cursor: move; background: rgba(255,111,97,.04); }
