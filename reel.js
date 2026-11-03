@@ -578,14 +578,15 @@ async function reelExport() {
   const ready = document.createElement('div');
   ready.id = 'reel-rec';
   ready.innerHTML = `<div class="card"><h2>Reel ready</h2><p class="muted">${fmtBytes(file.size)}</p>
-    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" id="reel-save">Save or share</button><button class="btn" id="reel-close">Close</button></div></div>`;
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" id="reel-dl">Save to device</button><button class="btn" id="reel-save">Share</button><button class="btn" id="reel-close">Close</button></div></div>`;
   document.body.appendChild(ready);
   document.getElementById('reel-close').onclick = () => ready.remove();
+  document.getElementById('reel-dl').onclick = () => { download(); ready.remove(); toast('Reel saved to Downloads.'); };
   document.getElementById('reel-save').onclick = async () => {
     try {
       if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Reel' });
       else download();
-      ready.remove(); toast('Reel saved.');
+      ready.remove(); toast('Reel shared.');
     } catch (e) {
       if (e.name === 'AbortError') return;
       download(); ready.remove(); toast('Reel downloaded.');
