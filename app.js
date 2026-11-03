@@ -7332,7 +7332,8 @@ function showStart() {
         <label class="start-big"><b>Open file…</b><span>A workspace or backup file (.inkforge)</span><input type="file" accept=".inkforge,.sqlite,.db" hidden id="st-file"></label>
         <button class="start-big" id="st-drive"><b>☁ Link from Google Drive</b><span>A workspace you keep in your Drive, to use on this device too</span></button>
       </div>
-      <div class="letter">Recent</div>
+      <div class="row" style="align-items:center"><div class="letter" style="flex:1">Recent</div>
+        <button class="btn small" id="st-saveall" data-tip="Save every workspace as a file in your Downloads folder">Save all</button></div>
       <div class="card list">${list.map(w => `<div class="c-row ws-row">
           <button class="c-main ws-open" data-ws="${w.id}"><span class="c-n">${w.cloud ? '<span class="ws-cloud" data-tip="Kept in Google Drive">☁</span> ' : ''}${esc(w.name)}${w.test ? ' <span class="ws-practice">practice</span>' : ''}</span><span class="muted c-sub">${w.cloud ? 'Google Drive · ' : ''}${ago(w.opened)}</span></button>
           <button class="btn small icon-btn ${menu === w.id ? 'on' : ''}" data-wsmenu="${w.id}" aria-label="More">⋯</button>
@@ -7355,6 +7356,19 @@ function showStart() {
   document.body.appendChild(o); draw();
   o.addEventListener('click', async (e) => {
     const t = e.target, id = (a) => t.closest(`[${a}]`)?.getAttribute(a);
+    if (t.id === 'st-saveall') {
+      // Plain downloads (not the share sheet) so the files land in Downloads; the browser may ask once to allow several.
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-'); let n = 0;
+      t.disabled = true; toast('Saving workspaces…');
+      for (const w of WS.list) {
+        try {
+          const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([await buildBackup(w)], { type: 'application/octet-stream' }));
+          a.download = `${w.name.replace(/[^\w-]+/g, '_')}-${stamp}.inkforge`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 20000); n++;
+          await new Promise(r => setTimeout(r, 400));
+        } catch (err) { if (!/no data/.test(err.message)) toast(`Could not save "${w.name}": ${err.message}`, 5000); }   // never-opened ones have nothing to save
+      }
+      t.disabled = false; toast(n ? `${n} workspace file${n > 1 ? 's' : ''} saved to Downloads.` : 'No workspaces with data to save yet.', 4000); return;
+    }
     if (t.id === 'st-protect') { await storageProtect(); toast(storageSafe ? 'Storage protected.' : 'The browser declined. Installing the app to your home screen usually allows it.', 5000); return draw(); }
     if (id('data-ws')) { o.remove(); return startWorkspace(WS.get(id('data-ws'))); }
     if (id('data-wsmenu')) { menu = menu === id('data-wsmenu') ? null : id('data-wsmenu'); return draw(); }
