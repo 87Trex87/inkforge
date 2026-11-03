@@ -5951,6 +5951,9 @@ async function reelOpen(id) {
   if (RS.id) await reelSave();
   const row = await DB.one('SELECT * FROM reels WHERE id = ?', [id]); if (!row) { location.replace('#reels'); return false; }
   reelPause();
+  // The last reel's players and file links go, removed clips kept for undo too.
+  for (const c of [...R.clips, ...RH.live.values()]) { if (c.el?.pause) { c.el.pause(); c.el.removeAttribute('src'); c.el.load?.(); } if (c.url?.startsWith('blob:')) URL.revokeObjectURL(c.url); }
+  RH.live = new Map(); RH.songs = new Map();
   Object.assign(R, { clips: [], sel: -1, pick: null, trans: {}, music: null, t: 0, tplId: null });
   RS.id = id; RS.loaded = false; RS.name = row.name || 'Reel'; RS.pend = [];
   let doc = {}; try { doc = JSON.parse(row.doc || '{}'); } catch {}
@@ -5958,10 +5961,11 @@ async function reelOpen(id) {
   R.trans = doc.trans || {};
   let missing = 0;
   for (const sv of doc.clips || []) {
-    const u = sv.ref && await Media.url(sv.ref); if (!u) { missing++; continue; }
+    // The stored file itself (read from storage as it plays), not a copy of a whole video in memory.
+    let f = null; try { f = sv.ref && await (await (await Media.dir()).getFileHandle(sv.ref)).getFile(); } catch {}
+    if (!f) { missing++; continue; }
     try {
-      const blob = await (await fetch(u)).blob();
-      const c = await reelAddFile(new File([blob], sv.name || 'clip', { type: blob.type || (sv.type === 'video' ? 'video/mp4' : 'image/jpeg') }), false);
+      const c = await reelAddFile(new File([f], sv.name || 'clip', { type: f.type || (sv.type === 'video' ? 'video/mp4' : 'image/jpeg') }), false);
       const { id: sid, ...rest } = sv; Object.assign(c, rest); if (sid != null) c.id = sid; R.seq = Math.max(R.seq, c.id);
     } catch { missing++; }
   }

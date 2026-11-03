@@ -1347,7 +1347,9 @@ DZ.edit = async (id) => {
   document.addEventListener('visibilitychange', onHide);
   const dropped = new Set(), made = new Set();   // pictures taken out (or made) while editing; tidied when leaving
   const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref), ...doc.layers.map(l => l.tex?.ref)].filter(Boolean);
+  let dzKeys = null, dzPenKeys = null, dzRO = null;   // let go of when leaving, so the editor can be freed
   addEventListener('hashchange', function away() { removeEventListener('hashchange', away); document.removeEventListener('visibilitychange', onHide); focus(false);
+    removeEventListener('keydown', dzKeys); removeEventListener('keyup', dzPenKeys); dzRO?.disconnect();
     flush().then(async () => { const keep = docRefs(); for (const r of new Set([...dropped, ...made])) if (!keep.includes(r)) await Media.release(r); }); });
   // A change: redraw, remember for undo, save.
   let histT = null;
@@ -2391,7 +2393,7 @@ DZ.edit = async (id) => {
         Click the last point: the next part starts straight. Backspace: undo a point. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>
       ${touchHelp()}`;
   };
-  addEventListener('keyup', function penKeys(e) { if (!document.body.contains(el)) return removeEventListener('keyup', penKeys); if (e.key === ' ') spaceHeld = false; });
+  addEventListener('keyup', dzPenKeys = function penKeys(e) { if (!document.body.contains(el)) return removeEventListener('keyup', penKeys); if (e.key === ' ') spaceHeld = false; });
   /* ---------- Hold to snap (pencil and lasso) ----------
      Draw a shape roughly and hold still: after the hold time it becomes the line, circle, rectangle, triangle or
      polygon it looks like. Keep holding and move to resize it about its middle; let go to keep it. */
@@ -2853,7 +2855,7 @@ DZ.edit = async (id) => {
     if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
     changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
-  addEventListener('keydown', function keys(e) {
+  addEventListener('keydown', dzKeys = function keys(e) {
     if (!document.body.contains(el)) return removeEventListener('keydown', keys);
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(e.shiftKey ? 1 : -1); }
@@ -3197,7 +3199,7 @@ DZ.edit = async (id) => {
   $('#dz-name').onchange = (e) => { name = e.target.value.trim() || name; save(); };
   $('#dz-undo').onclick = () => undo(-1); $('#dz-redo').onclick = () => undo(1);
   $('#dz-export').onclick = () => { select(null); dzExport(doc, name); };
-  new ResizeObserver(() => { fit(); redraw(); }).observe(stage);
+  dzRO = new ResizeObserver(() => { fit(); redraw(); }); dzRO.observe(stage);
   fit(); drawSide(); await redraw();
   if (!row.thumb_ref) { dirty = true; flush(); }
 };

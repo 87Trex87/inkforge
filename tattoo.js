@@ -1216,7 +1216,10 @@ TT.open = async (el, id) => {
      40 s of work, so a slip never loses a piece. */
   let saving = null;
   const autosave = () => { if (!st.dirty || saving || pen) return; saving = save(true).catch(() => {}).finally(() => { saving = null; }); };
-  const onHash = () => { if (location.hash !== '#tattoo/' + id) { removeEventListener('hashchange', onHash); document.removeEventListener('visibilitychange', onVis); clearInterval(autoT); autosave(); } };
+  // Leaving lets go of everything that pointed back into this page (keys, full screen, the resize watcher), so its
+  // canvases and undo steps can be freed; a tablet has no keyboard to trip the old "remove on next key" check.
+  const onHash = () => { if (location.hash !== '#tattoo/' + id) { removeEventListener('hashchange', onHash); document.removeEventListener('visibilitychange', onVis); clearInterval(autoT);
+    removeEventListener('keydown', keys); removeEventListener('keyup', keys); document.removeEventListener('fullscreenchange', fsShow); ttRO.disconnect(); autosave(); } };
   const onVis = () => { if (document.visibilityState === 'hidden') autosave(); };
   const autoT = setInterval(() => { if (!document.body.contains(el)) return onHash(); autosave(); }, 40000);
   addEventListener('hashchange', onHash); document.addEventListener('visibilitychange', onVis);
@@ -1596,7 +1599,7 @@ TT.open = async (el, id) => {
   if (!Settings.get('tt_tuned')) setTimeout(() => toast(migrated ? 'The needle defaults were updated (voltages and a hand speed setting). Run Tune in again under the sliders icon to set them to your hand.'
     : 'New here? Under the sliders icon, Tune in sets the needles to your pen and hand in a few short tasks.', 7000), 800);
   setNeedle(st.needle); st.dirty = false; drawTray(); sel(); drawView();
-  new ResizeObserver(() => { fit(); drawRefs(); }).observe(stage); fit(); drawRefs();
+  const ttRO = new ResizeObserver(() => { fit(); drawRefs(); }); ttRO.observe(stage); fit(); drawRefs();
   if (EX) { if (EX.done) { exBar(); exReport(); } else exStart(!EX.cur); st.dirty = false; }
 };
 
