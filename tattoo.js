@@ -416,7 +416,7 @@ TT.list = async (el) => {
   };
 };
 function ttNewDlg() {
-  const st = { size: 1, skin: Settings.get('tt_skin', '#e2b493'), cw: 15, ch: 20 };
+  const st = { size: 1, skin: Settings.get('tt_skin', '#e2b493'), cw: 15, ch: 20, cheat: false };
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const draw = () => { o.innerHTML = `<div class="card"><h2>New piece</h2>
     <div class="lbl">Page</div><div class="seg" style="flex-wrap:wrap;margin-bottom:8px">${[...TT_SIZES, ['Custom']].map(([n], i) => `<button data-s="${i}" class="${st.size === i ? 'on' : ''}">${n}</button>`).join('')}</div>
@@ -424,7 +424,9 @@ function ttNewDlg() {
       <label class="field"><span>Height (cm)</span><input class="in" id="tn-h" type="number" min="3" max="60" value="${st.ch}"></label></div>` : ''}
     <div class="lbl">Skin</div><div class="tt-skins">${TT_SKINS.map(([n, c]) => `<button data-k="${c}" class="${st.skin === c ? 'on' : ''}" style="background:${c}" data-tip="${n}" aria-label="${n}"></button>`).join('')}
       <label class="tt-skinpick" data-tip="Any skin tone"><input type="color" id="tn-k" value="${st.skin}"></label></div>
-    <label class="field"><span>Name</span><input class="in" id="tn-n" value="Piece ${ymd(new Date())}"></label>
+    <label class="field"><span>Name</span><input class="in" id="tn-n" value="${esc(st.name ?? 'Piece ' + ymd(new Date()))}"></label>
+    <label class="toggle tt-cheatpick" data-tip="Design freely: no skin damage, smoother lines, hold to snap, and drawing helpers. Not for challenges, and anything saved from it is marked as a cheat.">
+      <input type="checkbox" id="tn-cheat" ${st.cheat ? 'checked' : ''}><span><b>Cheat mode</b> · no skin damage, drawing helpers. Handy for designing for clients.</span></label>
     <div class="row"><button class="btn" id="tn-x">Cancel</button><button class="btn primary" id="tn-go" style="flex:1">Start</button></div></div>`; };
   o.onclick = async (e) => {
     const t = e.target;
@@ -434,11 +436,11 @@ function ttNewDlg() {
     if (t.id === 'tn-go') {
       const [, w, h] = st.size < TT_SIZES.length ? TT_SIZES[st.size] : [0, Math.min(60, Math.max(3, +$('#tn-w').value || 15)), Math.min(60, Math.max(3, +$('#tn-h').value || 20))];
       await Settings.set('tt_skin', st.skin);
-      await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin) VALUES (?, ?, ?, ?)', [$('#tn-n').value.trim() || 'Piece', w, h, st.skin]);
+      await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', [$('#tn-n').value.trim() || 'Piece', w, h, st.skin, st.cheat ? JSON.stringify({ cheat: true }) : null]);
       const id = (await DB.one('SELECT last_insert_rowid() AS id')).id; o.remove(); location.hash = 'tattoo/' + id;
     }
   };
-  o.oninput = (e) => { if (e.target.id === 'tn-k') { st.skin = e.target.value; } if (e.target.id === 'tn-w') st.cw = +e.target.value; if (e.target.id === 'tn-h') st.ch = +e.target.value; };
+  o.oninput = (e) => { if (e.target.id === 'tn-cheat') st.cheat = e.target.checked; if (e.target.id === 'tn-n') st.name = e.target.value; if (e.target.id === 'tn-k') { st.skin = e.target.value; } if (e.target.id === 'tn-w') st.cw = +e.target.value; if (e.target.id === 'tn-h') st.ch = +e.target.value; };
   document.body.appendChild(o); draw();
 }
 
@@ -451,6 +453,10 @@ TT.open = async (el, id) => {
   for (const [k] of TT_LAYERS) { const ref = row[k + '_ref']; if (!ref) continue; const u = await Media.url(ref); if (!u) continue;
     const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; }); if (im) L[k].getContext('2d').drawImage(im, 0, 0, W, H); }
   let meta = {}; try { meta = JSON.parse(row.meta || '{}'); } catch {}
+  /* Cheat mode (chosen for a new piece, never in challenges): the skin takes no damage (no redness, swelling,
+     blowouts, bumps or crashes), strokes are smoothed, holding the pen still snaps a stroke to a line or circle, and
+     drawing helpers are on hand. Anything saved from it is stamped as a cheat. */
+  const CHEAT = !!meta.cheat && !meta.exam;
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? 75, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt, rot: meta.rot || 0 };
@@ -504,10 +510,10 @@ TT.open = async (el, id) => {
   const TS = 4, tw = Math.ceil(W / TS), th = Math.ceil(H / TS), TR = new Float32Array(tw * th);
   // Bumps: little red pimples where the needle went too deep or the machine ran too hard (fresh skin only).
   const BU = new Float32Array(tw * th);
-  const buAdd = (p, v) => { const i = Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS))); BU[i] = Math.min(1, BU[i] + v); trDirty = true; };
+  const buAdd = (p, v) => { if (CHEAT) return; const i = Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS))); BU[i] = Math.min(1, BU[i] + v); trDirty = true; };
   const blowC = document.createElement('canvas'); blowC.width = Math.ceil(W / 2); blowC.height = Math.ceil(H / 2); const bx = blowC.getContext('2d');
   let trDirty = true, trT = 0; const told = {};
-  const trAdd = (p, r, v) => {
+  const trAdd = (p, r, v) => { if (CHEAT) return;
     const cx0 = p.x / TS, cy0 = p.y / TS, R2 = Math.max(1, r / TS);
     for (let y = Math.max(0, Math.floor(cy0 - R2)); y <= Math.min(th - 1, Math.ceil(cy0 + R2)); y++)
       for (let x2 = Math.max(0, Math.floor(cx0 - R2)); x2 <= Math.min(tw - 1, Math.ceil(cx0 + R2)); x2++) {
@@ -547,7 +553,7 @@ TT.open = async (el, id) => {
     g.globalCompositeOperation = 'multiply'; g.drawImage(blowC, 0, 0, W, H); g.globalCompositeOperation = 'source-over'; };
   const skinOver = (g) => { g.globalAlpha = 0.85; g.drawImage(trTex, 0, 0, W, H); g.globalAlpha = 1; };
   // Blowout: ink spread under the skin round p, bluer and softer than the line, and the skin raised over it.
-  const blowAt = (p, risk, footR) => {
+  const blowAt = (p, risk, footR) => { if (CHEAT) return;
     if (EX?.cur) EX.cur.blow = (EX.cur.blow || 0) + 1; SS.blow++;
     // ink seen through the skin: bluer
     const c = st.ink.c.map((v, j) => Math.round((v * 0.45 + [0.34, 0.42, 0.68][j] * 0.55) * 255)), R = (footR + mm * (1.1 + risk * 1.8)) / 2, gx = p.x / 2, gy = p.y / 2;
@@ -585,7 +591,7 @@ TT.open = async (el, id) => {
   el.innerHTML = `<div class="dz-ed tt-ed">
     <div class="dz-top">
       <button class="dz-ib" id="tt-back" data-tip="Back to your pieces" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
-      <input class="dz-name" id="tt-name" value="${esc(row.name || 'Piece')}" aria-label="Name"><span class="dz-tsp"></span>
+      <input class="dz-name" id="tt-name" value="${esc(row.name || 'Piece')}" aria-label="Name">${CHEAT ? '<span class="tt-cheat" data-tip="Cheat mode: no skin damage, drawing helpers. Saved pictures say so.">Cheat mode</span>' : ''}<span class="dz-tsp"></span>
       <button class="dz-ib" id="tt-undo" data-tip="Undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
       <button class="dz-ib" id="tt-redo" data-tip="Redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
       <button class="dz-ib tt-viewb" id="tt-view" data-tip="Preview: as worked, fresh, healed or after 10 years" aria-label="Preview"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><b></b></button>
@@ -792,11 +798,13 @@ TT.open = async (el, id) => {
   };
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
-      const p = toPage(ev), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
+      if (pen.snapped) continue;
+      const p = smoothPt(toPage(ev)), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
       if (d < 0.01) continue;
       const v = d * k / (96 / 25.4) / dt;   // the hand's speed on the screen, mm per second (zoom doesn't change it)
       pen.speed = pen.speed ? pen.speed * 0.7 + v * 0.3 : v; pen.a = Math.atan2(dy, dx); pen.trav = (pen.trav || 0) + d / mm;
       const tilt = tiltOf(ev), depth = depthOf(pNorm(ev), pen.speed, tilt);
+      if (CHEAT) { pen.dsum = (pen.dsum || 0) + depth; pen.dn = (pen.dn || 0) + 1; }
       if (st.tool !== 'erase' && pen.cx.pig && ev.pointerType !== 'mouse') {   // a mouse has no pressure to land with
         /* Landing like a plane: the needle should come in on the move and sink in gradually. Over the first mm the
            deepest point is watched; already deep while moving fast is a crash (a dark spot and sore skin there).
@@ -822,7 +830,7 @@ TT.open = async (el, id) => {
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
         }
-        if (st.tool !== 'erase' && pen.cx.pig) {   // too deep or too much voltage raises little red bumps
+        if (st.tool !== 'erase' && pen.cx.pig && !CHEAT) {   // too deep or too much voltage raises little red bumps
           const bump = Math.max(0, Math.min(1, (depth - 0.85) / 0.2)) + Math.max(0, Math.min(1, (volt() - 8.2) / 1.8));
           if (bump > 0 && Math.random() < 0.12 * bump) { buAdd({ x: q.x + (Math.random() - 0.5) * pen.foot * 2, y: q.y + (Math.random() - 0.5) * pen.foot * 2 }, 0.3 * bump); SS.bumps = (SS.bumps || 0) + 1;
             if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or the machine running too hard irritates the skin.', 3500); } } }
@@ -842,14 +850,40 @@ TT.open = async (el, id) => {
   };
   // A crash landing or take-off at p: the needle slams in, leaving a darker spot (a line of them along a shaded edge)
   // and working the skin hard there.
-  const crash = (p, d, ev) => { if (!pen) return; const sev = Math.max(0.2, Math.min(1, (d - 0.55) / 0.35));
+  /* Cheat mode: the stroke follows a point that trails the pen (more smoothing, more trail), so wobbles even out.
+     The raw points are kept for hold to snap. */
+  st.smooth ??= meta.smooth ?? 45;
+  const smoothPt = (p) => { if (!CHEAT) return p; const rw = pen.raw ||= [], lr = rw[rw.length - 1]; if (!lr || Math.hypot(p.x - lr.x, p.y - lr.y) > 0.5) rw.push(p);   // holding still adds nothing
+    const f = 1 - Math.min(0.9, st.smooth / 100); pen.sp = pen.sp ? { x: pen.sp.x + (p.x - pen.sp.x) * f, y: pen.sp.y + (p.y - pen.sp.y) * f } : p; return pen.sp; };
+  // What a rough stroke was meant to be: a straight line, or a circle. Null when it's neither.
+  const shapeOf = (P) => { if (P.length < 6) return null; const a = P[0], b = P[P.length - 1], L = Math.hypot(b.x - a.x, b.y - a.y);
+    let len = 0; for (let i = 1; i < P.length; i++) len += Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y);
+    if (L > 3 * mm) { let dev = 0; for (const q of P) dev = Math.max(dev, Math.abs((b.x - a.x) * (a.y - q.y) - (a.x - q.x) * (b.y - a.y)) / L); if (dev / L < 0.07 && len < L * 1.6) return { kind: 'line', a, b }; }
+    const c = { x: P.reduce((s, q) => s + q.x, 0) / P.length, y: P.reduce((s, q) => s + q.y, 0) / P.length }, rs = P.map(q => Math.hypot(q.x - c.x, q.y - c.y)), R = rs.reduce((s, v) => s + v, 0) / rs.length;
+    const sd = Math.sqrt(rs.reduce((s, v) => s + (v - R) ** 2, 0) / rs.length);
+    if (R > 1.5 * mm && sd / R < 0.14 && len > Math.PI * 2 * R * 0.8 && L < R * 0.9) return { kind: 'circle', c, R, a0: Math.atan2(a.y - c.y, a.x - c.x) };
+    return null; };
+  // Hold the pen still mid-stroke: the stroke is redone as the clean shape, at the stroke's own depth.
+  const snapNow = () => { if (!CHEAT || !pen || pen.snapped || !pen.cx.pig || st.tool === 'erase') return;
+    const sh = shapeOf(pen.raw || []); if (!sh) return toast('Hold to snap: draw a rough line or circle, then hold still.', 2200);
+    const h = hist[hist.length - 1]; if (!h || h.rc) return;
+    for (const key of [h.key, ...(h.hi ? ['high'] : [])]) { delete dirty[key]; L[key].getContext('2d').putImageData(key === 'high' ? h.hi : h.data, 0, 0); syncIn(key); }
+    const pts = [], step = 0.08 * mm;
+    if (sh.kind === 'line') { const n = Math.max(2, Math.ceil(Math.hypot(sh.b.x - sh.a.x, sh.b.y - sh.a.y) / step)); for (let i = 0; i <= n; i++) pts.push({ x: sh.a.x + (sh.b.x - sh.a.x) * i / n, y: sh.a.y + (sh.b.y - sh.a.y) * i / n }); }
+    else { const n = Math.ceil(Math.PI * 2 * sh.R / step); for (let i = 0; i <= n; i++) { const t2 = sh.a0 + Math.PI * 2 * i / n; pts.push({ x: sh.c.x + Math.cos(t2) * sh.R, y: sh.c.y + Math.sin(t2) * sh.R }); } }
+    const depth = pen.dn ? pen.dsum / pen.dn : 0.6, ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(), bp = pen.foot * 2 + 6 * mm;
+    for (let i = 0; i < pts.length; i++) { const q = pts[i], n2 = pts[Math.min(pts.length - 1, i + 1)], pv = pts[Math.max(0, i - 1)], a = Math.atan2(n2.y - pv.y, n2.x - pv.x) + 0;
+      puncture(pen.cx, q, a, depth, 0, ink, false); if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, a, depth, 0, ink * pen.cx.alsoHi.w, false);
+      const B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp); }
+    pen.snapped = true; pen.q = []; flushPig(); st.dirty = true; paint(); navigator.vibrate?.(15); toast(sh.kind === 'line' ? 'Snapped to a straight line.' : 'Snapped to a circle.', 1400); };
+  const crash = (p, d, ev) => { if (!pen || CHEAT) return; const sev = Math.max(0.2, Math.min(1, (d - 0.55) / 0.35));
     trAdd(p, pen.foot * 1.4, 0.15 * sev / (cal.tough || 1));
     const ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(); for (let i = 0; i < 3; i++) puncture(pen.cx, p, pen.a, Math.min(1.1, d + 0.25), tiltOf(ev), ink, false);
     const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     B.x0 = Math.min(B.x0, p.x - bp); B.y0 = Math.min(B.y0, p.y - bp); B.x1 = Math.max(B.x1, p.x + bp); B.y1 = Math.max(B.y1, p.y + bp);
     SS.crash = (SS.crash || 0) + 1; if (EX?.cur) EX.cur.crash = (EX.cur.crash || 0) + 1;
     if (!told.crash) { told.crash = 1; toast('Crash: come in and out of the skin like a plane landing and taking off, not straight down.', 4000); } };
-  const strokeEnd = () => { if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
+  const strokeEnd = () => { clearTimeout(pen?.hold?.t); if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
     if (pen?.landed && pen.dEnd > 0.55 && pen.speed > 40 && pen.cx.pig && st.tool !== 'erase') {   // the take-off: still deep as it left at speed
       crash(pen.last, pen.dEnd, pen.evEnd); const u = flushPig(), pad = pen.foot * 2 + 4 * mm; if (u) paint({ x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad }); }
     if (pen) { if (pen.box) { cropTop(pen.box); if (st.tool === 'erase' && pen.cx.pig) exLaser(); } else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
@@ -876,9 +910,10 @@ TT.open = async (el, id) => {
      and how worked the worst spot is) instead of tattooing; the slider sets the circle's size in mm. */
   st.checkR ??= 6;
   const chkRow = () => `<div class="tt-chkrow"><button class="${st.check ? 'on' : ''}" data-chk data-tip="Check the skin: the cursor reads the skin inside its circle instead of tattooing">Check</button>
-    <input type="range" min="2" max="30" step="1" value="${st.checkR}" data-chkr aria-label="Check circle size" ${st.check ? '' : 'hidden'}><em>${st.check ? st.checkR + ' mm' : ''}</em></div>`;
+    <input type="range" min="2" max="30" step="1" value="${st.checkR}" data-chkr aria-label="Check circle size" ${st.check ? '' : 'hidden'}><em>${st.check ? st.checkR + ' mm' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
   meterEl.addEventListener('click', (e) => { if (!e.target.closest('[data-chk]')) return; st.check = !st.check; meterBuild(); meter(lastM); drawCur(); });
-  meterEl.addEventListener('input', (e) => { if (!e.target.matches('[data-chkr]')) return; st.checkR = +e.target.value; e.target.nextElementSibling.textContent = st.checkR + ' mm'; drawCur(); });
+  meterEl.addEventListener('input', (e) => { if (e.target.matches('[data-smooth]')) { st.smooth = +e.target.value; st.dirty = true; e.target.nextElementSibling.textContent = st.smooth + '%'; return; }
+    if (!e.target.matches('[data-chkr]')) return; st.checkR = +e.target.value; e.target.nextElementSibling.textContent = st.checkR + ' mm'; drawCur(); });
   // Skin inside a circle round page point p (radius in page px): average wear, the worst spot, and a score.
   const skinCheck = (p, R) => { let sum = 0, n = 0, mx = 0; const r2 = (R / TS) ** 2, cx0 = p.x / TS, cy0 = p.y / TS;
     for (let y = Math.max(0, Math.floor(cy0 - R / TS)); y <= Math.min(th - 1, Math.ceil(cy0 + R / TS)); y++)
@@ -890,7 +925,7 @@ TT.open = async (el, id) => {
   const meterBuild = () => { meterBands(); meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
     const badZ = low ? `left:0;width:${P(bad)}%` : `left:${P(bad)}%;right:0`;
     return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('') + chkRow(); };
-  meterBuild();
+  meterBuild(); if (CHEAT) meterEl.classList.add('cheat');   // no skin damage to show
   const WHIP_GAP = 0.7;
   const meter = (m) => {
     const gr = meterEl.querySelector('[data-m="gap"]');
@@ -981,7 +1016,8 @@ TT.open = async (el, id) => {
       if (near) { rot = q90; if (pinch.snapped !== q90) { pinch.snapped = q90; navigator.vibrate?.(12); } } else pinch.snapped = null;
       st.rot = rot; pinTo(pinch.p, mx, my); st.dirty = true; return paint(); }
     if (pan) { vx = pan.vx + e.clientX - pan.x; vy = pan.vy + e.clientY - pan.y; return paint(); }
-    if (pen && e.pointerId === pen.id) strokeMove(e);
+    if (pen && e.pointerId === pen.id) { strokeMove(e);
+      if (CHEAT && !pen.snapped) { const h0 = pen.hold; if (!h0 || Math.hypot(e.clientX - h0.x, e.clientY - h0.y) > 4) { clearTimeout(h0?.t); pen.hold = { x: e.clientX, y: e.clientY, t: setTimeout(snapNow, 550) }; } } }
     if (e.pointerType !== 'touch' || (st.check && !pan)) { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
     calLive(e);
   });
@@ -1411,7 +1447,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined }), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -1466,6 +1502,11 @@ TT.open = async (el, id) => {
     g.fillStyle = '#121617'; g.fillRect(0, 0, cw, chH);
     g.fillStyle = '#e9e3d6'; g.font = "60px 'Pirata One', serif"; g.fillText($('#tt-name')?.value.trim() || st.name || 'Piece', M, 95);
     g.fillStyle = '#9aa5a6'; g.font = '600 26px Inter, sans-serif'; g.fillText(`Tattoo simulator · ${new Date().toLocaleDateString()}`, M, 132);
+    if (CHEAT) {   // the cheat stamp, in the header beside the title (never on the work itself)
+      g.save(); g.translate(cw - M - 250, 82); g.rotate(-0.06); g.strokeStyle = '#ff6f61'; g.lineWidth = 5; g.fillStyle = 'rgba(255,111,97,.12)';
+      g.beginPath(); g.roundRect?.(-250, -56, 500, 104, 14) ?? g.rect(-250, -56, 500, 104); g.fill(); g.stroke();
+      g.fillStyle = '#ff6f61'; g.textAlign = 'center'; g.font = '900 46px Inter, sans-serif'; g.fillText('CHEAT MODE', 0, 6);
+      g.font = '600 20px Inter, sans-serif'; g.fillText('No skin was harmed. Neither were any rules. Probably.', 0, 36); g.restore(); }
     panels.forEach(([label, pc], i) => { const x = M + i * (pw + gap); g.drawImage(pc, b.x, b.y, b.w, b.h, x, 160, pw, ph);
       g.fillStyle = '#e9e3d6'; g.font = '700 26px Inter, sans-serif'; g.fillText(label, x, 160 + ph + 42); });
     if (card) g.drawImage(card, (cw - cardW) / 2, 160 + ph + 80, cardW, cardH);   // the score card, centred under the stages
@@ -1476,7 +1517,7 @@ TT.open = async (el, id) => {
     const tc = document.createElement('canvas'), ts = Math.min(1, 520 / sh.width); tc.width = Math.round(sh.width * ts); tc.height = Math.round(sh.height * ts); tc.getContext('2d').drawImage(sh, 0, 0, tc.width, tc.height);
     const tb = await new Promise(r => tc.toBlob(r, 'image/jpeg', 0.85)), photo = await Media.save(blob, 'jpg'), thumb = await Media.save(tb, 'jpg');
     await DB.run(`INSERT INTO portfolio_items (kind, title, description, tags, made_on) VALUES ('art', ?, ?, 'simulator', date('now'))`,
-      [title || $('#tt-name')?.value.trim() || st.name || 'Simulator piece', card ? 'Challenge piece from the tattoo simulator, with its score card.' : 'From the tattoo simulator: fresh, healed and 10 years.']);
+      [title || $('#tt-name')?.value.trim() || st.name || 'Simulator piece', CHEAT ? 'Designed in cheat mode in the tattoo simulator (no skin was harmed).' : card ? 'Challenge piece from the tattoo simulator, with its score card.' : 'From the tattoo simulator: fresh, healed and 10 years.']);
     const pid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
     await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [pid, photo, thumb, 'Fresh, healed and 10 years']);
     toast('Saved to Portfolio › Simulator.', 2500); };
@@ -1906,6 +1947,9 @@ function ttStyle() {
 .tt-cup.gold, .tt-medal.gold { stroke: #e2b34a; } .tt-cup.silver, .tt-medal.silver { stroke: #c9d1d6; } .tt-cup.bronze, .tt-medal.bronze { stroke: #c88a55; } .tt-cup.locked { stroke: var(--ink2); }
 .tt-chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
 .tt-chc { display: flex; flex-direction: column; text-align: left; padding: 0; border-radius: 12px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: inherit; }
+.tt-cheat { flex: none; font: 800 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: #ff8a7a; border: 1.5px solid #ff6f61; border-radius: 6px; padding: 2px 6px; transform: rotate(-3deg); }
+.tt-meter.cheat [data-m="skin"] { display: none; } .tt-smlbl { font: 700 11px var(--ui); color: #ff8a7a; padding: 0 4px; }
+.tt-cheatpick { display: flex; margin: 4px 0 10px; } .tt-cheatpick b { color: #ff8a7a; }
 .tt-pfask { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--teal); background: rgba(31,182,166,.08); font-size: 13px; }
 .tt-pfask span { flex: 1; }
 .tt-chc:hover { border-color: var(--teal); } .tt-chc.off { opacity: .4; filter: grayscale(1); }
