@@ -611,12 +611,14 @@ TT.open = async (el, id) => {
         <button class="dz-ib" data-r="erase" data-tip="Laser (erase)" aria-label="Erase"><svg viewBox="0 0 24 24"><path d="M7 21h10M5 15l9-9 5 5-9 9H8z"/></svg></button>
         <i class="sep"></i>
         <button class="dz-ib" data-r="layers" data-tip="Layers" aria-label="Layers"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/></svg></button>
+        ${CHEAT ? `<button class="dz-ib tt-cheatb" data-r="ruler" data-tip="Ruler: strokes run straight along it. Drag its ends to place it." aria-label="Ruler"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
+        <button class="dz-ib tt-cheatb" data-r="sym" data-tip="Symmetry and mandala" aria-label="Symmetry"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M18.4 5.6l-4.2 4.2M9.8 14.2l-4.2 4.2"/></svg></button>` : ''}
         <button class="dz-ib" data-r="refs" data-tip="References: pictures that float over the skin to follow" aria-label="References"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/></svg></button>
         <button class="dz-ib" data-r="feel" data-tip="Needle feel and pen calibration" aria-label="Calibration"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
         <i class="sep"></i>
         <div class="tt-volt" data-tip="Machine voltage for this needle: higher hits harder"><b id="tt-vl"></b><input type="range" id="tt-vs" min="5" max="10" step="0.05" aria-label="Voltage"></div>
       </div>
-      <div class="dz-pop" id="tt-pop" hidden></div><div class="tt-refs" id="tt-refs"></div><div class="tt-exam" id="tt-exbar" hidden></div>
+      <div class="dz-pop" id="tt-pop" hidden></div><div class="tt-refs" id="tt-refs"></div><div class="tt-guides" id="tt-guides"></div><div class="tt-exam" id="tt-exbar" hidden></div>
       <div class="tt-tray" id="tt-tray"></div>
       <div class="tt-meter" id="tt-meter" data-tip="How the needle is going in: keep each marker in the green. Too deep blows out; too slow while deep blows out; skin past the green is getting overworked."></div>
       <div class="dz-zoom tt-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="tt-zl">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div>
@@ -718,6 +720,7 @@ TT.open = async (el, id) => {
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     const deg = Math.round(((st.rot * 180 / Math.PI) % 360 + 360) % 360);
     $('#tt-zl') && ($('#tt-zl').textContent = Math.abs(z - 1) < 0.01 && !vx && !vy && !deg ? 'Fit' : Math.round(z * 100) + '%' + (deg ? ' · ' + deg + '°' : ''));
+    if (CHEAT) placeGuides();
   }); };
   const zoomAt = (nz, px, py) => { const p = fromScreen(px, py); z = Math.max(0.5, Math.min(12, nz)); k = fitK * z; pinTo(p, px, py); paint(); };
   const toPage = (e) => { const r = stage.getBoundingClientRect(); return fromScreen(e.clientX - r.left, e.clientY - r.top); };
@@ -788,6 +791,7 @@ TT.open = async (el, id) => {
     if (wsh > 0.04 && cx.pig) cx.alsoHi = { ...cx, key: 'high', w: wsh };
     pen = { cx, last: p, t: e.timeStamp, t0: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
     if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('The needle is dry: dip into an ink cap first.', 1800);
+    if (CHEAT) pen.sym = symMats();
     return true;
   };
   /* Pen moves are queued and inked once per frame, so the heavy pigment work never holds up the cursor, which is
@@ -799,7 +803,7 @@ TT.open = async (el, id) => {
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
       if (pen.snapped) continue;
-      const p = smoothPt(toPage(ev)), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
+      const p = rulerPt(smoothPt(toPage(ev))), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
       if (d < 0.01) continue;
       const v = d * k / (96 / 25.4) / dt;   // the hand's speed on the screen, mm per second (zoom doesn't change it)
       pen.speed = pen.speed ? pen.speed * 0.7 + v * 0.3 : v; pen.a = Math.atan2(dy, dx); pen.trav = (pen.trav || 0) + d / mm;
@@ -837,6 +841,7 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, pageTurn(pen.a, ev), depth, tilt, inkC * pen.cx.alsoHi.w, false);
+        if (pen.sym) symPunc(q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y };
         B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp);
         if (st.tool !== 'erase') { st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100); SS.punct++; }
@@ -853,8 +858,48 @@ TT.open = async (el, id) => {
   /* Cheat mode: the stroke follows a point that trails the pen (more smoothing, more trail), so wobbles even out.
      The raw points are kept for hold to snap. */
   st.smooth ??= meta.smooth ?? 45;
+  st.ruler = meta.ruler || { on: false, a: { x: W * 0.2, y: H * 0.5 }, b: { x: W * 0.8, y: H * 0.5 } };
+  st.sym = meta.sym || { mode: 'off', n: 8, mir: false, c: { x: W / 2, y: H / 2 } };
   const smoothPt = (p) => { if (!CHEAT) return p; const rw = pen.raw ||= [], lr = rw[rw.length - 1]; if (!lr || Math.hypot(p.x - lr.x, p.y - lr.y) > 0.5) rw.push(p);   // holding still adds nothing
     const f = 1 - Math.min(0.9, st.smooth / 100); pen.sp = pen.sp ? { x: pen.sp.x + (p.x - pen.sp.x) * f, y: pen.sp.y + (p.y - pen.sp.y) * f } : p; return pen.sp; };
+  const rulerPt = (p) => { if (!CHEAT || !st.ruler.on) return p; const { a, b } = st.ruler, L = Math.hypot(b.x - a.x, b.y - a.y); if (L < 1) return p;
+    const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L, t2 = (p.x - a.x) * ux + (p.y - a.y) * uy, q = { x: a.x + ux * t2, y: a.y + uy * t2 };
+    if (!pen.rOff) { const ox = p.x - q.x, oy = p.y - q.y; pen.rOff = Math.hypot(ox, oy) < 8 * mm ? { x: 0, y: 0 } : { x: ox, y: oy }; }   // close to it: right on its edge
+    return { x: q.x + pen.rOff.x, y: q.y + pen.rOff.y }; };
+  /* Symmetry: every puncture is repeated at its mirrored or turned copies round the centre (mandala: n sections,
+     optionally mirrored within each), with the needle turned to match. */
+  const symMats = () => { const S = st.sym, out = [], rot = (t2) => [Math.cos(t2), -Math.sin(t2), Math.sin(t2), Math.cos(t2)];
+    if (S.mode === 'mirror') out.push([-1, 0, 0, 1]);
+    if (S.mode === 'quad') out.push([-1, 0, 0, 1], [1, 0, 0, -1], [-1, 0, 0, -1]);
+    if (S.mode === 'mandala') for (let i = 0; i < S.n; i++) { const R = rot(Math.PI * 2 * i / S.n); if (i) out.push(R); if (S.mir) out.push([R[0] * -1, R[1], R[2] * -1, R[3]]); }
+    return out.length ? out : null; };
+  const symPunc = (q, a, depth, tilt, ink, erase) => { const c = st.sym.c, bp = pen.foot * 2 + 6 * mm;
+    for (const M of pen.sym) { const dx = q.x - c.x, dy = q.y - c.y, q2 = { x: c.x + M[0] * dx + M[1] * dy, y: c.y + M[2] * dx + M[3] * dy };
+      const ca = Math.cos(a), sa = Math.sin(a), a2 = Math.atan2(M[2] * ca + M[3] * sa, M[0] * ca + M[1] * sa);
+      puncture(pen.cx, q2, a2, depth, tilt, ink, erase); if (pen.cx.alsoHi && !erase) puncture(pen.cx.alsoHi, q2, a2, depth, tilt, ink * pen.cx.alsoHi.w, false);
+      const B = pen.box ||= { x0: q2.x, y0: q2.y, x1: q2.x, y1: q2.y }; B.x0 = Math.min(B.x0, q2.x - bp); B.y0 = Math.min(B.y0, q2.y - bp); B.x1 = Math.max(B.x1, q2.x + bp); B.y1 = Math.max(B.y1, q2.y + bp); } };
+  /* On screen: the ruler's line with a handle at each end, and the symmetry centre (draggable) with its axes. */
+  const guides = $('#tt-guides');
+  function placeGuides() { if (!CHEAT) return; const hs = [];
+    $('#tt-rail [data-r="ruler"]')?.classList.toggle('on', st.ruler.on); $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off');
+    if (st.ruler.on) hs.push(['ra', st.ruler.a], ['rb', st.ruler.b]);
+    if (st.sym.mode !== 'off') hs.push(['sc', st.sym.c]);
+    guides.innerHTML = hs.map(([k2, p]) => { const s = toScreen(p); return `<i data-gh="${k2}" class="${k2 === 'sc' ? 'sym' : ''}" style="left:${s.x}px;top:${s.y}px"></i>`; }).join('');
+    drawCur(); }
+  const drawGuides = () => { if (!CHEAT) return; const dpr = cur.width / (stage.clientWidth || 1); cux.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (st.ruler.on) { const a = toScreen(st.ruler.a), b = toScreen(st.ruler.b), L = Math.hypot(b.x - a.x, b.y - a.y) || 1, ex = (b.x - a.x) / L * 4000, ey = (b.y - a.y) / L * 4000;
+      cux.lineWidth = 6; cux.strokeStyle = 'rgba(255,111,97,.18)'; cux.beginPath(); cux.moveTo(a.x - ex, a.y - ey); cux.lineTo(b.x + ex, b.y + ey); cux.stroke();
+      cux.lineWidth = 1.5; cux.strokeStyle = 'rgba(255,111,97,.9)'; cux.beginPath(); cux.moveTo(a.x - ex, a.y - ey); cux.lineTo(b.x + ex, b.y + ey); cux.stroke(); }
+    const S = st.sym; if (S.mode !== 'off') { const c = toScreen(S.c), R = 3000; cux.setLineDash([6, 6]); cux.lineWidth = 1; cux.strokeStyle = 'rgba(181,138,232,.75)';
+      const ray = (ang, both) => { const dx = Math.cos(ang + st.rot) * R, dy = Math.sin(ang + st.rot) * R; cux.beginPath(); cux.moveTo(both ? c.x - dx : c.x, both ? c.y - dy : c.y); cux.lineTo(c.x + dx, c.y + dy); cux.stroke(); };
+      if (S.mode === 'mirror') ray(Math.PI / 2, true); else if (S.mode === 'quad') { ray(Math.PI / 2, true); ray(0, true); }
+      else for (let i = 0; i < S.n; i++) ray(-Math.PI / 2 + Math.PI * 2 * i / S.n, false);
+      cux.setLineDash([]); } };
+  let gDrag = null;
+  guides.addEventListener('pointerdown', (e) => { const h = e.target.closest('[data-gh]'); if (!h) return; e.stopPropagation(); e.preventDefault(); try { guides.setPointerCapture(e.pointerId); } catch {} gDrag = h.dataset.gh; });
+  guides.addEventListener('pointermove', (e) => { if (!gDrag) return; const r = stage.getBoundingClientRect(), p = fromScreen(e.clientX - r.left, e.clientY - r.top), cl = { x: Math.max(0, Math.min(W, p.x)), y: Math.max(0, Math.min(H, p.y)) };
+    if (gDrag === 'ra') st.ruler.a = cl; else if (gDrag === 'rb') st.ruler.b = cl; else st.sym.c = cl; st.dirty = true; placeGuides(); });
+  for (const n of ['pointerup', 'pointercancel']) guides.addEventListener(n, () => { gDrag = null; });
   // What a rough stroke was meant to be: a straight line, or a circle. Null when it's neither.
   const shapeOf = (P) => { if (P.length < 6) return null; const a = P[0], b = P[P.length - 1], L = Math.hypot(b.x - a.x, b.y - a.y);
     let len = 0; for (let i = 1; i < P.length; i++) len += Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y);
@@ -873,7 +918,7 @@ TT.open = async (el, id) => {
     else { const n = Math.ceil(Math.PI * 2 * sh.R / step); for (let i = 0; i <= n; i++) { const t2 = sh.a0 + Math.PI * 2 * i / n; pts.push({ x: sh.c.x + Math.cos(t2) * sh.R, y: sh.c.y + Math.sin(t2) * sh.R }); } }
     const depth = pen.dn ? pen.dsum / pen.dn : 0.6, ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(), bp = pen.foot * 2 + 6 * mm;
     for (let i = 0; i < pts.length; i++) { const q = pts[i], n2 = pts[Math.min(pts.length - 1, i + 1)], pv = pts[Math.max(0, i - 1)], a = Math.atan2(n2.y - pv.y, n2.x - pv.x) + 0;
-      puncture(pen.cx, q, a, depth, 0, ink, false); if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, a, depth, 0, ink * pen.cx.alsoHi.w, false);
+      puncture(pen.cx, q, a, depth, 0, ink, false); if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, a, depth, 0, ink * pen.cx.alsoHi.w, false); if (pen.sym) symPunc(q, a, depth, 0, ink, false);
       const B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp); }
     pen.snapped = true; pen.q = []; flushPig(); st.dirty = true; paint(); navigator.vibrate?.(15); toast(sh.kind === 'line' ? 'Snapped to a straight line.' : 'Snapped to a circle.', 1400); };
   const crash = (p, d, ev) => { if (!pen || CHEAT) return; const sev = Math.max(0.2, Math.min(1, (d - 0.55) / 0.35));
@@ -963,7 +1008,7 @@ TT.open = async (el, id) => {
   const drawCur = (e) => {
     const r = stage.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
     if (cur.width !== Math.round(r.width * dpr)) { cur.width = Math.round(r.width * dpr); cur.height = Math.round(r.height * dpr); cur.style.width = r.width + 'px'; cur.style.height = r.height + 'px'; }
-    cux.setTransform(1, 0, 0, 1, 0, 0); cux.clearRect(0, 0, cur.width, cur.height);
+    cux.setTransform(1, 0, 0, 1, 0, 0); cux.clearRect(0, 0, cur.width, cur.height); drawGuides();
     if (e) curAt = { x: e.clientX - r.left, y: e.clientY - r.top, ev: e };
     if (!curAt || pinch || pan) return;
     const s = k * mm, a = pageTurn(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
@@ -1093,6 +1138,15 @@ TT.open = async (el, id) => {
         .map(n => `<button class="${n.id === st.needle ? 'on' : ''}" data-nd="${n.id}" data-tip="${n.name}">${n.id}</button>`).join('')}</div>`).join('');
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
+    if (r === 'ruler') { closePop(); st.ruler.on = !st.ruler.on; st.dirty = true; b.classList.toggle('on', st.ruler.on); placeGuides(); return toast(st.ruler.on ? 'Ruler on: drag its ends to place it. Strokes close to it run along its edge.' : 'Ruler off.', 2200); }
+    if (r === 'sym') {
+      if (!pop.hidden) return closePop();
+      const S = st.sym; pop.innerHTML = `<div class="gh">Symmetry</div><div class="tt-symm">${[['off', 'Off'], ['mirror', 'Mirror'], ['quad', 'Four ways'], ['mandala', 'Mandala']].map(([k2, n]) => `<button data-sym="${k2}" class="${S.mode === k2 ? 'on' : ''}">${n}</button>`).join('')}</div>
+        <label class="dz-sl" style="margin:6px 6px 2px" ${S.mode === 'mandala' ? '' : 'hidden'} data-symn><span>Sections<b id="tt-symnv">${S.n}</b></span><input type="range" min="2" max="24" step="1" value="${S.n}" data-symr></label>
+        <label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0" ${S.mode === 'mandala' ? '' : 'hidden'} data-symm><input type="checkbox" data-symmir ${S.mir ? 'checked' : ''}><span>Mirror each section</span></label>
+        <button class="btn small" style="margin:2px 6px 6px" data-symc>Centre on the page</button>`;
+      pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
+    }
     if (r === 'angle') {
       if (!pop.hidden) return closePop();
       pop.innerHTML = `<div class="gh">Magnum angle</div><div class="tt-angs">${[0, 30, 45, 60, 90, 120, 135, 150].map(v => `<button data-ang="${v}" class="${st.magAng === v ? 'on' : ''}">
@@ -1106,9 +1160,14 @@ TT.open = async (el, id) => {
     st.panel = st.panel === r ? null : r; drawSide();
   };
   pop.onclick = (e) => {
+    const sy = e.target.closest('[data-sym]'); if (sy) { st.sym.mode = sy.dataset.sym; st.dirty = true; pop.querySelectorAll('[data-sym]').forEach(x => x.classList.toggle('on', x === sy));
+      pop.querySelector('[data-symn]').hidden = pop.querySelector('[data-symm]').hidden = st.sym.mode !== 'mandala'; $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off'); return placeGuides(); }
+    if (e.target.closest('[data-symc]')) { st.sym.c = { x: W / 2, y: H / 2 }; st.dirty = true; return placeGuides(); }
     const g = e.target.closest('[data-ang]'); if (g) { setAng(+g.dataset.ang); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', x === g)); return; }
     const b = e.target.closest('[data-nd]'); if (!b) return; setNeedle(b.dataset.nd); st.tool = 'needle'; closePop(); sel(); if (st.panel === 'feel') drawSide(); };
   pop.oninput = (e) => {
+    if (e.target.matches('[data-symr]')) { st.sym.n = +e.target.value; $('#tt-symnv').textContent = st.sym.n; st.dirty = true; return placeGuides(); }
+    if (e.target.matches('[data-symmir]')) { st.sym.mir = e.target.checked; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-angr]')) { setAng(+e.target.value); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', +x.dataset.ang === st.magAng)); }
     if (e.target.matches('[data-angt]')) { st.magTilt = e.target.checked; st.dirty = true; const n = $('#tt-angn'); if (n) n.textContent = st.magTilt ? 'Offset on the lean' : 'Fine'; drawAng(); }
   };
@@ -1447,7 +1506,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined }), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -1948,6 +2007,12 @@ function ttStyle() {
 .tt-chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
 .tt-chc { display: flex; flex-direction: column; text-align: left; padding: 0; border-radius: 12px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: inherit; }
 .tt-cheat { flex: none; font: 800 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: #ff8a7a; border: 1.5px solid #ff6f61; border-radius: 6px; padding: 2px 6px; transform: rotate(-3deg); }
+.tt-guides { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.tt-guides i { position: absolute; width: 22px; height: 22px; margin: -11px; border-radius: 50%; background: rgba(255,111,97,.25); border: 2px solid #ff6f61; pointer-events: auto; touch-action: none; cursor: grab; }
+.tt-guides i.sym { background: rgba(181,138,232,.3); border-color: #b58ae8; }
+.tt-cheatb.on { color: #ff8a7a !important; background: rgba(255,111,97,.18) !important; }
+.tt-symm { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 0 6px; } .tt-symm button { border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 12px var(--ui); padding: 8px 4px; cursor: pointer; }
+.tt-symm button.on { background: rgba(181,138,232,.28); color: #d6bdf7; }
 .tt-meter.cheat [data-m="skin"] { display: none; } .tt-smlbl { font: 700 11px var(--ui); color: #ff8a7a; padding: 0 4px; }
 .tt-cheatpick { display: flex; margin: 4px 0 10px; } .tt-cheatpick b { color: #ff8a7a; }
 .tt-pfask { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--teal); background: rgba(31,182,166,.08); font-size: 13px; }
