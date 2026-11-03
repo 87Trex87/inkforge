@@ -1555,18 +1555,21 @@ const VIEWS = {
         const low = await DB.all('SELECT name, qty, min_qty, unit, supplier FROM inventory_items WHERE active = 1 AND qty <= min_qty ORDER BY supplier, name COLLATE NOCASE');
         if (!low.length) return toast('Nothing is running low.');
         const text = 'Shopping list\n\n' + low.map(i => `• ${i.name} (have ${fmtQty(i.qty)}${i.unit ? ' ' + i.unit : ''}, min ${fmtQty(i.min_qty)})${i.supplier ? ' – ' + i.supplier : ''}`).join('\n');
-        try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('List copied.'); } }
-        catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
+        await shareText(text, 'List copied.');
       };
-      $('#inv-list').addEventListener('click', async (e) => {
+      let stepQ = Promise.resolve();   // + and - taps are applied one after another, so quick taps all count
+      $('#inv-list').addEventListener('click', (e) => {
         const b = e.target.closest('[data-step]'); if (!b) return;
         e.preventDefault();
-        const id = +b.dataset.id, it = await DB.one('SELECT qty, step FROM inventory_items WHERE id = ?', [id]); if (!it) return;
-        const st = +it.step || 1, n = it.qty / st, up = +b.dataset.step > 0;
+        stepQ = stepQ.then(() => invStep(+b.dataset.id, +b.dataset.step > 0)).catch(() => {});
+      });
+      const invStep = async (id, up) => {
+        const it = await DB.one('SELECT qty, step FROM inventory_items WHERE id = ?', [id]); if (!it) return;
+        const st = +it.step || 1, n = it.qty / st;
         const q = Math.max(0, +((up ? Math.floor(n + 1e-6) + 1 : Math.ceil(n - 1e-6) - 1) * st).toFixed(4));
         await DB.run(`UPDATE inventory_items SET qty = ?, updated_at = datetime('now') WHERE id = ?`, [q, id]);
-        renderInventory();
-      });
+        await renderInventory();
+      };
       renderInventory();
     }
   },
@@ -1619,9 +1622,10 @@ const VIEWS = {
       };
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (f.dataset.saving) return; f.dataset.saving = '1';   // a double tap must not add the item twice
         const d = Object.fromEntries(new FormData(f));
         const n = (v) => v === '' ? null : +v, s = (v) => v.trim() || null;
-        const vals = [d.name.trim(), s(d.category), s(d.unit), +d.qty || 0, +d.min_qty || 0, s(d.supplier), n(d.cost), s(d.notes), d.active ? 1 : 0, +d.step || 1];
+        const vals = [d.name.trim(), s(d.category), s(d.unit), Math.max(0, +d.qty || 0), Math.max(0, +d.min_qty || 0), s(d.supplier), n(d.cost), s(d.notes), d.active ? 1 : 0, +d.step || 1];
         const cols = 'name, category, unit, qty, min_qty, supplier, cost, notes, active, step';
         if (it.id) await DB.run(`UPDATE inventory_items SET ${cols.split(', ').map(c => c + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, it.id]);
         else await DB.run(`INSERT INTO inventory_items (${cols}) VALUES (${vals.map(() => '?').join(', ')})`, vals);
@@ -1657,7 +1661,10 @@ const VIEWS = {
         const counts = [...el.querySelectorAll('.count-in')].map(x => ({ item: items.find(i => i.id === +x.dataset.id), counted: x.value === '' ? null : +x.value }));
         if (counts.some(c => c.counted == null)) return toast('Fill in every count (0 if none).');
         const diffs = counts.filter(c => c.counted !== c.item.qty).length;
+        if (counts.some(c => c.counted < 0)) return toast('Counts can’t be below 0.');
+        if ($('#stk-save').disabled) return;
         if (!confirm(`Save stock take?\n\n${diffs} item${diffs === 1 ? '' : 's'} will be updated to the counted amount.`)) return;
+        $('#stk-save').disabled = true;   // one stock take per tap
         await DB.run('INSERT INTO stock_takes (notes) VALUES (?)', [$('#stk-notes').value.trim() || null]);
         const tid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
         await DB.tx(counts.flatMap(c => [
@@ -1682,11 +1689,10 @@ const VIEWS = {
       $('#r-print').onclick = openRulesPrint;
       $('#r-cats').onclick = (e) => { const b = e.target.closest('[data-cat]'); if (!b) return; RULES.cat = b.dataset.cat; renderRules(); };
       $('#r-share').onclick = async () => {
-        const rs = await DB.all(`SELECT title, body, category FROM rules WHERE ?1 = 'all' OR category = ?1 ORDER BY category COLLATE NOCASE, sort, id`, [RULES.cat]);
+        const rs = await DB.all(`SELECT title, body, category FROM rules WHERE ?1 = 'all' OR category = ?1 ORDER BY (category = 'Client rules') DESC, category COLLATE NOCASE, sort, id`, [RULES.cat]);
         if (!rs.length) return toast('No rules yet.');
         const text = `${Settings.get('studio_name') || 'Studio'} ${RULES.cat === 'all' ? 'rules' : RULES.cat.toLowerCase()}\n\n` + rulesText(rs, RULES.cat === 'all');
-        try { if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('Rules copied.'); } }
-        catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
+        await shareText(text, 'Rules copied.');
       };
       $('#r-list').addEventListener('click', async (e) => {
         const b = e.target.closest('[data-mv]'); if (!b) return;
@@ -1732,6 +1738,7 @@ const VIEWS = {
       };
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (f.dataset.saving) return; f.dataset.saving = '1';   // a double tap must not add the rule twice
         const d = Object.fromEntries(new FormData(f));
         const cat = (d.category || 'Client rules').trim().replace(/\s+/g, ' ').replace(/^./, m => m.toUpperCase());
         if (r.id) await DB.run('UPDATE rules SET title = ?, body = ?, category = ? WHERE id = ?', [d.title.trim(), d.body.trim() || null, cat, r.id]);
@@ -5108,6 +5115,11 @@ async function printCanvas(...cvs) {
 
 // Files to the device (plain downloads), or to the share sheet; sharing falls back to saving when it can't open
 // (e.g. the tap that asked for it expired while the files were made).
+// Text to the share sheet, or copied when there is no share sheet or it can't open.
+async function shareText(text, copied = 'Copied.') {
+  try { if (navigator.share) return await navigator.share({ text }); } catch (e) { if (e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(text); toast(copied + ' Paste it into any message.'); } catch { prompt('Copy this:', text); }
+}
 async function saveFiles(files) {
   for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); await new Promise(r => setTimeout(r, 250)); }
   toast(files.length > 1 ? `Saved ${files.length} files.` : `Saved ${files[0].name}`);
