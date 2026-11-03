@@ -5053,7 +5053,7 @@ async function printCanvas(...cvs) {
   await Promise.all([...p.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
   document.body.classList.add('printing');
   const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
-  addEventListener('afterprint', done);
+  afterPrint(done);
   window.print();
 }
 
@@ -5396,7 +5396,7 @@ async function openPortfolioPrint() {
       await Promise.all([...p.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
       document.body.classList.add('printing');
       const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
-      addEventListener('afterprint', done);
+      afterPrint(done);
       window.print();
     } catch (err) { toast('Could not make the pages: ' + err.message, 5000); btn.disabled = false; btn.textContent = 'Print / PDF'; }
   });
@@ -5703,7 +5703,7 @@ async function printStock(st, rs) {
     <table><thead><tr>${cols.map(c => `<th class="${['Expected', 'Counted', 'In stock', 'Min', 'Cost', 'Value'].includes(c) ? 'num' : ''}">${c}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
   document.body.classList.add('printing');
   const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
-  addEventListener('afterprint', done);
+  afterPrint(done);
   window.print();
 }
 
@@ -5776,7 +5776,7 @@ async function openRulesPrint() {
     p.innerHTML = `<div class="pbook rbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>${esc(st.cats.size === 1 ? [...st.cats][0] : 'Rule book')}</b><br>${esc(fmtDay(ymd(new Date())))}</div></div>${body}</ol></div>`;
     document.body.classList.add('printing');
     const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
-    addEventListener('afterprint', done);
+    afterPrint(done);
     window.print();
   });
 }
@@ -6858,7 +6858,7 @@ async function printBlankForm(id) {
   if (logo) await p.querySelector('.sheet-logo').decode().catch(() => {});
   document.body.classList.add('printing');
   const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
-  addEventListener('afterprint', done);
+  afterPrint(done);
   window.print();
 }
 
@@ -6867,6 +6867,13 @@ async function stPrint() {
   return printAtWidth(URL.createObjectURL(await stBlob()), ST.cm, true);
 }
 // Prints a picture at a real width (cm) on a blank page; `own` = the url is ours to revoke afterwards.
+/* Undo a print-only layout once printing is really over. Android fires afterprint as soon as the print dialog
+   opens, before the page is captured, so wait for the next touch, key or page change after it instead. */
+function afterPrint(done) {
+  const fin = () => { ['pointerdown', 'keydown', 'hashchange'].forEach(t => removeEventListener(t, fin, true)); done(); };
+  addEventListener('afterprint', () => setTimeout(() => ['pointerdown', 'keydown', 'hashchange'].forEach(t => addEventListener(t, fin, true)), 300), { once: true });
+}
+
 async function printAtWidth(url, cm, own) {
   let p = $('#print-area');
   if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
@@ -6874,7 +6881,7 @@ async function printAtWidth(url, cm, own) {
   await p.querySelector('img').decode();
   document.body.classList.add('printing');
   const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; if (own) URL.revokeObjectURL(url); removeEventListener('afterprint', done); };
-  addEventListener('afterprint', done);
+  afterPrint(done);
   window.print();
 }
 
@@ -7139,7 +7146,7 @@ async function printPhonebook(cats, cols, group) {
     <table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
   document.body.classList.add('printing');
   const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
-  addEventListener('afterprint', done);
+  afterPrint(done);
   window.print();
 }
 
@@ -7225,7 +7232,7 @@ async function printBookings(cols) {
     <table><thead><tr><th>Time</th><th title="Completed">✓</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>`;
   document.body.classList.add('printing');
   const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
-  addEventListener('afterprint', done);
+  afterPrint(done);
   window.print();
 }
 async function bookingsCsv(cols) {
