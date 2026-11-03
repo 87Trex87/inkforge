@@ -561,6 +561,7 @@ TT.open = async (el, id) => {
       </div>
       <div class="dz-pop" id="tt-pop" hidden></div><div class="tt-refs" id="tt-refs"></div><div class="tt-exam" id="tt-exbar" hidden></div>
       <div class="tt-tray" id="tt-tray"></div>
+      <div class="tt-meter" id="tt-meter" data-tip="How the needle is going in: keep each marker in the green. Too deep blows out; too slow while deep blows out; skin past the green is getting overworked."></div>
       <div class="dz-zoom tt-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="tt-zl">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div>
     </div><div class="dz-side" id="tt-side" hidden></div></div></div>`;
   const stage = $('#tt-stage'), cv = $('#tt-cv'), side = $('#tt-side'), pop = $('#tt-pop');
@@ -721,6 +722,7 @@ TT.open = async (el, id) => {
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
         }
+        if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { depth, gap: gapMm(pen.speed), skin: trAt(q) };
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y };
         B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp);
@@ -729,13 +731,55 @@ TT.open = async (el, id) => {
       }
       pen.carry = t - d; pen.last = p; pen.t = ev.timeStamp;
     }
+    if (pen.mt) meter(pen.mt);
     const u = flushPig(), pad = pen.foot * 2 + 4 * mm; st.dirty = true; drawNeedleInk();
     paint(u && pen.cx.pig ? { x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad } : undefined);
   };
   const strokeEnd = () => { if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
-    if (pen) { if (pen.box) cropTop(pen.box); else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
+    if (pen) { if (pen.box) { cropTop(pen.box); if (st.tool === 'erase' && pen.cx.pig) exLaser(); } else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
       const mmD = pen.trav || 0; SS.mm += mmD; SS.ms += Math.max(0, pen.t - pen.t0); if (st.tool !== 'erase') SS.needles[st.needle] = (SS.needles[st.needle] || 0) + mmD; }
     pen = null; drawNeedleInk(); if (trDirty) paint(); TL.changed = true; tlGrab(); };
+
+  /* Skin meter: depth, speed (how close the punctures land) and how worked the skin under the needle is, each a
+     bar with its safe band in green, so a stroke going wrong shows before the damage does. Shows the last values
+     while the needle is up. Bands follow the skin model: blowouts start at depth 0.8 when the punctures land under
+     0.035 mm apart; the skin reddens from 0.3, swells from 1, gets patchy past 1.4. */
+  const MTR = [
+    ['depth', 'Depth', 0, 1.1, 0.45, 0.8, 0.95, (v) => v.toFixed(2)],
+    ['gap', 'Speed', 0, 0.3, 0.05, 0.2, 0.035, (v) => v.toFixed(3) + ' mm', true],
+    ['skin', 'Skin', 0, 2.2, 0, 0.8, 1.4, (v) => v < 0.3 ? 'fresh' : v < 0.8 ? 'red' : v < 1.4 ? 'swollen' : 'overworked'],
+  ];
+  const meterEl = $('#tt-meter');
+  meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
+    const badZ = low ? `left:0;width:${P(bad)}%` : `left:${P(bad)}%;right:0`;
+    return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('');
+  const meter = (m) => { for (const [key, , lo, hi, g0, g1, bad, fmt, low] of MTR) { const v = m[key], row = meterEl.querySelector(`[data-m="${key}"]`);
+    let z = v >= g0 && v <= g1 ? 'ok' : (low ? v < bad : v > bad) ? 'bad' : 'warn';
+    if (key === 'gap' && z === 'bad' && m.depth < 0.8) z = 'warn';   // slow is only a danger while digging in
+    row.querySelector('b').style.left = Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)) + '%'; row.className = 'tt-mr ' + z; row.querySelector('em').textContent = fmt(v); } };
+  meter({ depth: 0, gap: 0.1, skin: 0 });
+
+  /* Challenge rules: a few free undos (in case the app got it wrong), then each costs points; the laser costs
+     points from its first beam on the skin. Each is flagged on screen as it happens and listed in the result.
+     Singles: 1 free undo (2 on three-star ones); the exam: 3 shared over the whole exam. */
+  const UNDO_PTS = 3, LASER_PTS = [4, 2];   // per undo past the free ones; the first beam, then each one after
+  const exLive = () => !!(EX && !EX.done && EX.cur && !EX.cur.scored);
+  const freeUndos = () => EX.mode === 'ch' ? (exList()[EX.i]?.diff >= 3 ? 2 : 1) : 3;
+  const usedUndos = () => EX.mode === 'ch' ? (EX.cur?.undos || 0) : (EX.undos || 0);
+  const exPen = (c = EX?.cur) => { if (!c) return { pts: 0 };
+    const over = Math.max(0, (c.undos || 0) - (c.free ?? 0)), l = c.laser || 0, lp = l ? LASER_PTS[0] + (l - 1) * LASER_PTS[1] : 0;
+    return { pts: Math.min(40, over * UNDO_PTS + lp) }; };
+  const flag = (msg, bad) => { const f = document.createElement('div'); f.className = 'tt-flag' + (bad ? ' bad' : ''); f.textContent = msg; stage.append(f); setTimeout(() => f.remove(), 2600); };
+  function exUndo() { if (!exLive()) return; const free = freeUndos();
+    // what the allowance still held when this challenge's first undo came (the exam's three are shared)
+    EX.cur.free ??= Math.max(0, free - (EX.mode === 'ch' ? 0 : (EX.undos || 0)));
+    EX.cur.undos = (EX.cur.undos || 0) + 1; if (EX.mode !== 'ch') EX.undos = (EX.undos || 0) + 1;
+    const left = Math.max(0, free - usedUndos());
+    if (EX.cur.undos <= EX.cur.free) flag(left ? `Free undo used: ${left} left` : 'Last free undo used', false);
+    else flag(`Undo: −${UNDO_PTS} points`, true);
+    st.dirty = true; exBar(); }
+  function exLaser() { if (!exLive()) return; EX.cur.laser = (EX.cur.laser || 0) + 1;
+    flag(`Laser on the skin: −${EX.cur.laser === 1 ? LASER_PTS[0] : LASER_PTS[1]} points`, true); st.dirty = true; exBar(); }
 
   const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
   const drawCur = (e) => {
@@ -805,7 +849,7 @@ TT.open = async (el, id) => {
   const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, h.rc?.x || 0, h.rc?.y || 0); syncIn(h.key); touched.add(h.key);
     if (h.tr) { TR.set(h.tr); trDirty = true; } if (h.blow) bx.putImageData(h.blow, h.rc ? h.rc.x >> 1 : 0, h.rc ? h.rc.y >> 1 : 0); st.dirty = true; st.viewC = null; paint(); };
   const swap = (from, to) => { if (pen) return true; const h = from.pop(); if (!h) return false; to.push(state(h.key, h.rc)); undoTo(h); return true; };
-  const undo = () => swap(hist, fut) || toast('Nothing to undo.');
+  const undo = () => { if (!swap(hist, fut)) return toast('Nothing to undo.'); exUndo(); };
   const redo = () => swap(fut, hist) || toast('Nothing to redo.');
 
   /* ---------- Ink caps: hold to dip (the longer, the more of that colour), tap the cup to rinse ---------- */
@@ -925,7 +969,7 @@ TT.open = async (el, id) => {
         ${cslider('pMin', 'Lightest pen reading', 0, 0.9, 0.01, cal.pMin, v => Math.round(v * 100) + '%')}${cslider('pMax', 'Hardest pen reading', 0.1, 1, 0.01, cal.pMax, v => Math.round(v * 100) + '%')}
         ${cslider('hand', 'Hand speed', 0.1, 5, 0.05, cal.hand, v => '× ' + v)}${cslider('fade', 'Fast strokes lighten', 0.1, 5, 0.05, cal.fade, v => '× ' + v)}
         ${cslider('flow', 'Ink flow', 0.3, 3, 0.05, cal.flow, v => '× ' + v)}${cslider('tilt0', 'Natural angle', 0, 50, 1, cal.tilt0, v => v + '°')}
-        ${cslider('blow', 'Blowout sensitivity', 0, 3, 0.05, cal.blow ?? 1, v => +v ? '× ' + v : 'off')}${cslider('tough', 'Skin toughness', 0.3, 3, 0.05, cal.tough ?? 1, v => '× ' + v)}
+        ${cslider('blow', 'Blowout sensitivity', 0, 3, 0.05, cal.blow ?? 1, v => +v ? '× ' + v : 'off')}${cslider('tough', 'Skin toughness', 0.1, 3, 0.05, cal.tough ?? 1, v => '× ' + v)}
         <button class="btn small" data-calreset>Reset all needles' calibration</button>`, { fold: true })}
       <div class="lbl" style="margin-top:8px">${nd.id} only</div>
       <div class="lbl">Pressure → depth</div>
@@ -1526,10 +1570,12 @@ TT.open = async (el, id) => {
     const T = exList()[EX.i], empty = !EX.cur?.strokes, sc = empty ? { score: 0 } : scoreOf(T);
     let mx = 0, sum = 0, n = 0; for (const v of TR) if (v > 0.02) { mx = Math.max(mx, v); sum += v; n++; }
     const skin = Math.round(100 * (1 - clamp01((mx - 0.6) / 1.4))), blow = EX.cur?.blow || 0;
-    const total = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5)));
+    const pen = exPen();
+    const total = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5) - pen.pts));
     const th = composite(Math.min(1, 220 / W)).toDataURL('image/jpeg', 0.7), c = EX.cur || {};
-    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, thumb: th,
+    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
+    if (EX.cur) EX.cur.scored = true;
     EX.res = EX.res.filter(r => r.id !== T.id); EX.res.push(res); st.dirty = true; exBar(res);
     if (EX.mode === 'ch') { const info = empty ? null : TT.aw.record(T, res); EX.info = info; save(true); chReport(T, res, info); }
   };
@@ -1544,14 +1590,17 @@ TT.open = async (el, id) => {
         <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
         ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${ttMedal(res.total)?.[2] || 'No medal'}</span></div>
           <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">Challenges</button><span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
-        : `<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">Challenges</button><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
+        : `${penLine()}<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">Challenges</button><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
       return; }
     b.innerHTML = `<div class="tt-exh"><b>${EX.i + 1} / ${exList().length} · ${T.title}</b><span class="tt-exdots">${exList().map((c, j) => `<i class="${j < EX.i ? 'done' : j === EX.i ? 'on' : ''}"></i>`).join('')}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
       <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
-      ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number').map(([kk, v]) => `${kk} ${v}%`).join(' · ')} · skin ${res.skin}%${res.blowouts ? ` · ${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}` : ''}</span></div>
+      ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number').map(([kk, v]) => `${kk} ${v}%`).join(' · ')} · skin ${res.skin}%${res.blowouts ? ` · ${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}` : ''}${res.penalty ? ` · −${res.penalty} undo/laser` : ''}</span></div>
         <div class="row" style="gap:6px"><button class="btn small" data-ex="retry">Try again</button><span style="flex:1"></span><button class="btn small primary" data-ex="next">${EX.i === exList().length - 1 ? 'Finish' : 'Next challenge'}</button></div>`
-      : `<div class="row" style="gap:6px"><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
+      : `${penLine()}<div class="row" style="gap:6px"><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
   }
+  // Undos left and points lost so far, under the instructions while a challenge is on.
+  function penLine() { if (!EX?.cur) return ''; const free = freeUndos(), left = Math.max(0, free - usedUndos()), p = exPen();
+    return `<div class="tt-expen"><span>Free undos ${left} / ${free}${EX.mode === 'ch' ? '' : ' (whole exam)'}</span>${p.pts ? `<b>−${p.pts} points</b>` : ''}</div>`; }
   $('#tt-exbar').addEventListener('click', (e) => { const a = e.target.closest('[data-ex]')?.dataset.ex; if (!a) return;
     if (a === 'fold') { EX.fold = !EX.fold; return exBar(); }
     if (a === 'done') return exDone();
@@ -1572,6 +1621,7 @@ TT.open = async (el, id) => {
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}
         ${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${res.skin >= 80 ? 'var(--teal)' : res.skin >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${res.skin}</b></div>` : ''}</div>
       ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}</p>` : ''}
+      ${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points: ${[res.undos ? `${res.undos} undo${res.undos === 1 ? '' : 's'}` : '', res.lasers ? `laser ${res.lasers} time${res.lasers === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ')}</p>` : ''}
       <img class="tt-chshot" src="${res.thumb}" alt="">
       ${info?.gained?.length ? `<div class="lbl">Trophies won</div><div class="tt-cabinet">${info.gained.map(t => `<div class="tt-trophy won">${ttCup(t.tier, 30)}<b>${esc(t.name)}</b><span>${esc(t.desc)}</span></div>`).join('')}</div>` : ''}
       <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-cr="hub">Challenges</button><button class="btn" data-cr="save">Save card</button><span style="flex:1"></span>
@@ -1629,7 +1679,7 @@ TT.open = async (el, id) => {
       <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-rp="copy" data-tip="Temporary: copy every result and setting, to send on for tuning">Copy results</button><button class="btn" data-rp="again">Retake the exam</button><span style="flex:1"></span><button class="btn primary" data-rp="close">Close</button></div></div>`;
     o.onclick = async (e) => { const a = e.target.closest('[data-rp]')?.dataset.rp; if (!a) return;
       if (a === 'close') return o.remove();
-      if (a === 'again') { if (!confirm('Retake the whole exam? This report is replaced when you finish again.')) return; o.remove(); EX.i = 0; EX.done = false; EX.res = []; EX.started = Date.now(); exStart(true); return save(true); }
+      if (a === 'again') { if (!confirm('Retake the whole exam? This report is replaced when you finish again.')) return; o.remove(); EX.i = 0; EX.done = false; EX.res = []; EX.undos = 0; EX.started = Date.now(); exStart(true); return save(true); }
       if (a === 'copy') { const txt = JSON.stringify({ inkforge_exam: 1, when: new Date().toISOString(), overall, grade, categories: C,
           challenges: R.map(({ thumb, ...r }) => r), cal: { ...cal }, feel: JSON.parse(Settings.get('tt_feel', '{}')), device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } });
         try { await navigator.clipboard.writeText(txt); toast('Results copied. Paste them into a message to send on.'); } catch { prompt('Copy these results:', txt); } } };
@@ -1702,6 +1752,18 @@ function ttStyle() {
 .tt-addr { display: flex; flex-wrap: wrap; gap: 4px; }
 .tt-exam { position: absolute; right: 10px; top: 10px; z-index: 6; width: min(290px, calc(100% - 150px)); padding: 6px 10px; border-radius: 12px;
   background: rgba(22,27,28,.95); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.tt-expen { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink2); margin: 2px 0 6px; } .tt-expen b { color: #ff8a7a; }
+.tt-flag { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); z-index: 8; pointer-events: none; padding: 10px 18px; border-radius: 12px; font: 700 15px var(--ui);
+  background: rgba(20,30,30,.92); color: #9ff0e4; border: 1.5px solid var(--teal); box-shadow: 0 8px 24px rgba(0,0,0,.4); animation: ttFlag 2.6s ease forwards; }
+.tt-flag.bad { color: #ffd2cb; border-color: #e0604c; background: rgba(60,20,16,.94); }
+@keyframes ttFlag { 0% { opacity: 0; transform: translate(-50%, 8px); } 8%, 80% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+.tt-meter { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5; width: min(300px, calc(100% - 220px)); min-width: 180px; padding: 6px 10px; border-radius: 12px;
+  background: rgba(15,18,19,.82); display: grid; gap: 3px; }
+.tt-mr { display: grid; grid-template-columns: 38px 1fr 66px; align-items: center; gap: 6px; font: 600 10px var(--ui); color: var(--ink2); }
+.tt-mr em { font-style: normal; text-align: right; } .tt-mr.ok em { color: #6fe39a; } .tt-mr.warn em { color: #f2c14e; } .tt-mr.bad em { color: #ff7a66; }
+.tt-mb { position: relative; height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
+.tt-mb i { position: absolute; top: 0; bottom: 0; } .tt-mb i.ok { background: rgba(80,200,120,.55); } .tt-mb i.bad { background: rgba(224,96,76,.45); }
+.tt-mb b { position: absolute; top: -1px; bottom: -1px; width: 3px; margin-left: -1.5px; background: #fff; border-radius: 2px; box-shadow: 0 0 3px #000; transition: left .08s linear; }
 .tt-exam[hidden] { display: none; } .tt-exh { display: flex; align-items: center; gap: 8px; } .tt-exh b { font-size: 13px; flex: 1; }
 .tt-exdots { display: flex; gap: 3px; } .tt-exdots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); } .tt-exdots i.on { background: var(--teal); } .tt-exdots i.done { background: rgba(31,182,166,.45); }
 .tt-exam .tt-exdots { display: none; } .tt-exam .btn.small { padding: 5px 10px; font-size: 12px; } .tt-exres b { font-size: 20px !important; }
