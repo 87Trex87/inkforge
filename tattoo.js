@@ -212,6 +212,14 @@ const TT_CH = [
     lines: (g) => { heart(g); banner(g); shine(g); }, regions: [{ shape: heart, col: RED, tol: 2.2 }, { shape: banner, col: YEL }], hi: [shine], shade: { in: heart, light: [40, 20, 42, 38], dark: [98, 58, 50, 50] },
     text: 'Tattoo the heart like the reference: line it (black), shade the lower right of the heart (black), pack the heart red and the banner yellow, and put a white highlight in the shine. Use any needles and layers you like.' }
 ];
+/* Grey wash flash: every colour flash piece again in black and grey, for any skin (and the only way to do them on
+   skin that takes no colour). Each colour becomes a wash tone by how dark it reads; highlights are left as bare skin.
+   Scored on the tones (how dark each part is), the line and the shading, not on colour. */
+TT_CH.push(...TT_CH.filter(c => c.hub === 'flash' && c.kind === 'piece').map(c => ({ ...c, id: 'g' + c.id, title: 'Grey wash: ' + c.title.replace(/^(Flash|Final piece): /, ''),
+  ink: 'wash', wash: true, bare: true,
+  regions: c.regions.map(r => { const v = ttHex(r.col), tone = Math.max(0.15, Math.min(0.65, (1 - (v[0] * 0.3 + v[1] * 0.59 + v[2] * 0.11)) * 0.8)), g = 1 - tone * 0.92;
+    return { shape: r.shape, tone, col: ttToHex([g, g, g]) }; }),
+  text: 'Line it in black, then build it up in grey wash like the example: each part its own tone, blended smooth, ' + (c.shade ? 'darker where it\u2019s shaded, ' : '') + (c.hi ? 'with the highlights left as bare skin. ' : '') + 'Use the grey wash set, or dilute black in the dilute cup.' })));
 const TT_EXAM = ['straight', 'curves', 'bold', 'whip', 'smooth', 'pack', 'wash', 'colour', 'mix', 'blend', 'final'];
 const TT_HUB = [['line', 'Lining'], ['shade', 'Shading'], ['pack', 'Packing'], ['colour', 'Colour'], ['flash', 'Flash']];
 const ttHubOf = (c) => c.hub || c.cat;
@@ -242,7 +250,7 @@ function ttExGen(T, skin) {
     if (T.shade) { const [lx, ly, lw, lh] = T.shade.light, [dx, dy, dw, dh] = T.shade.dark, sh = g.createLinearGradient(lx + lw / 2, ly + lh / 2, dx + Math.min(dw, 20) / 2, dy + Math.min(dh, 20) / 2);
       sh.addColorStop(0.35, 'rgba(20,20,20,0)'); sh.addColorStop(1, 'rgba(20,20,20,.8)');
       g.save(); g.beginPath(); T.shade.in(g); g.clip(); g.fillStyle = sh; g.fillRect(0, 0, 180, 130); g.restore(); }
-    for (const h of T.hi || []) { g.fillStyle = '#fff'; g.beginPath(); h(g); g.fill(); hg.fillStyle = WHT; hg.beginPath(); h(hg); hg.fill(); }
+    for (const h of T.hi || []) { g.fillStyle = '#fff'; g.beginPath(); h(g); g.fill(); if (!T.bare) { hg.fillStyle = WHT; hg.beginPath(); h(hg); hg.fill(); } }
     g.strokeStyle = '#141414'; g.lineWidth = 0.9; g.beginPath(); T.lines(g); g.stroke();
   }
   g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'multiply'; g.fillStyle = skin; g.fillRect(0, 0, c.width, c.height);
@@ -299,10 +307,10 @@ const ttMedalIco = (m, size = 22) => m ? `<svg class="tt-medal ${m[1]}" viewBox=
    (as in the studio), so their challenges are black and grey only, and black takes a little less too. */
 const ttChSkin = () => { const i = +Settings.get('tt_chskin', 1); return i >= 0 && i < TT_SKINS.length ? i : 1; };
 const ttNoColour = (i = ttChSkin()) => i >= 4;
-const ttIsColour = (T) => !/^(black|wash)$/.test(T.ink || 'black');
+const ttIsColour = (T) => !/^(black|wash)$/.test(T.ink || 'black');   // grey wash flash counts as black and grey
 const TT_SKIN_NOTE = ['', '', '', 'Hardest for colour: colour inks take less', 'Black and grey only: no colour on this skin', 'Black and grey only: no colour on this skin'];
 // The exam on skin that takes no colour: the colour challenges swapped for black and grey ones.
-const TT_EXAM_BG = { colour: 'bigpack', mix: 'steps', blend: 'longfade', final: 'fanchor' };
+const TT_EXAM_BG = { colour: 'bigpack', mix: 'steps', blend: 'longfade', final: 'gfinal' };
 const ttExamList = (i = ttChSkin()) => ttNoColour(i) ? TT_EXAM.map(id => TT_EXAM_BG[id] || id) : null;
 
 // Starts (or restarts) a challenge on its own piece of skin; each challenge keeps one piece.
@@ -393,7 +401,7 @@ TT.list = async (el) => {
     const open = rows.find(r => r.exam === 1);
     if (open) { location.hash = 'tattoo/' + open.id; return; }
     const si = ttChSkin(), list = ttExamList(si);
-    if (!confirm(`Start the apprentice exam on ${TT_SKINS[si][0].toLowerCase()} skin?\n\n11 challenges, from straight lines to ${list ? 'a black and grey anchor (this skin takes no colour)' : 'a finished heart'}. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.\n\nThe skin is chosen in Challenges.`)) return;
+    if (!confirm(`Start the apprentice exam on ${TT_SKINS[si][0].toLowerCase()} skin?\n\n11 challenges, from straight lines to ${list ? 'a heart in grey wash (this skin takes no colour)' : 'a finished heart'}. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.\n\nThe skin is chosen in Challenges.`)) return;
     await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Apprentice exam', 18, 13, TT_SKINS[si][1], JSON.stringify({ exam: { v: 1, i: 0, res: [], started: Date.now(), ...(list ? { list } : {}) } })]);
     location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
   };
@@ -1594,8 +1602,9 @@ TT.open = async (el, id) => {
       const his = (T.hi || []).map(h => maskOf(h, true)), shIn = T.shade && maskOf(T.shade.in, true), inR = (b, X, Y) => X >= b[0] && X <= b[0] + b[2] && Y >= b[1] && Y <= b[1] + b[3];
       let sn = 0, sl = 0, lumL = 0, nL = 0, lumD = 0, nD = 0;
       for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const i = (y * W + x) * 4, j = i + 3, d = densAt(i), c = colAt(i);
-        if (his.some(m => m[j] > 128)) { sn++; const hi = imgd.high.data[i + 3] / 255; if (hi > 0.4 || (c && (c[0] + c[1] + c[2]) / 765 > 0.75 && d > 0.3)) sl++; continue; }
+        if (his.some(m => m[j] > 128)) { sn++; const hi = imgd.high.data[i + 3] / 255; if (T.bare ? d < 0.2 : (hi > 0.4 || (c && (c[0] + c[1] + c[2]) / 765 > 0.75 && d > 0.3))) sl++; continue; }
         for (let k = regs.length - 1; k >= 0; k--) { const r = regs[k]; if (r.m[j] <= 128) continue;   // later regions sit on top
+          if (r.tone != null) { r.n++; if (d > r.tone * 0.5) { r.c++; r.d += 1 - clamp01((Math.abs(d - r.tone) - 0.06) * 3); } break; }   // grey wash: how dark, not what colour
           r.n++; if (d > 0.55) { r.c++; if (c) r.d += 1 - clamp01(dist(c, r.want) * (r.tol || 2.6)); } break; }
         if (shIn && shIn[j] > 128) { const X = x / mm, Y = y / mm, lum = c ? (1 - d) + d * (c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11) / 255 : 1;
           if (inR(T.shade.light, X, Y)) { lumL += lum; nL++; } if (inR(T.shade.dark, X, Y)) { lumD += lum; nD++; } } }
@@ -1603,7 +1612,7 @@ TT.open = async (el, id) => {
       const hiS = his.length ? sl / Math.max(1, sn) : null, shade = T.shade ? clamp01(((lumL / Math.max(1, nL)) - (lumD / Math.max(1, nD))) / 0.12) : null;
       const parts = [[0.35, ln.score / 100], [0.45, fill], [0.1, hiS], [0.1, shade]].filter(([, v]) => v != null), wsum = parts.reduce((t, [w]) => t + w, 0);
       const out = { score: Math.round(100 * parts.reduce((t, [w, v]) => t + w * v, 0) / wsum), lines: ln.score };
-      if (fill != null) out.colour = Math.round(fill * 100); if (hiS != null) out.highlight = Math.round(hiS * 100); if (shade != null) out.shading = Math.round(shade * 100);
+      if (fill != null) out[T.bare ? 'tones' : 'colour'] = Math.round(fill * 100); if (hiS != null) out.highlight = Math.round(hiS * 100); if (shade != null) out.shading = Math.round(shade * 100);
       return out;
     }
     return { score: 0 };
