@@ -110,7 +110,8 @@ TT.list = async (el) => {
   el.onclick = async (e) => {
     const d = e.target.closest('[data-del]');
     if (d) { e.stopPropagation(); const r = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [+d.dataset.del]); if (!r || !confirm(`Delete "${r.name || 'this piece'}"?`)) return;
-      await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]); for (const k of ['thumb_ref', 'skin_ref', 'blow_ref', ...TT_LAYERS.map(([l]) => l + '_ref')]) await Media.release(r[k]); return TT.list(el); }
+      await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]); for (const k of ['thumb_ref', 'skin_ref', 'blow_ref', ...TT_LAYERS.map(([l]) => l + '_ref')]) await Media.release(r[k]);
+      let tl = []; try { tl = JSON.parse(r.meta || '{}').tl || []; } catch {} for (const f of tl) await Media.release(f); return TT.list(el); }
     const o = e.target.closest('[data-open]'); if (o) location.hash = 'tattoo/' + o.dataset.open;
   };
 };
@@ -238,7 +239,7 @@ TT.open = async (el, id) => {
   const skinOver = (g) => { g.globalAlpha = 0.85; g.drawImage(trTex, 0, 0, W, H); g.globalAlpha = 1; };
   // Blowout: ink spread under the skin round p, bluer and softer than the line, and the skin raised over it.
   const blowAt = (p, risk, footR) => {
-    if (EX?.cur) EX.cur.blow = (EX.cur.blow || 0) + 1;
+    if (EX?.cur) EX.cur.blow = (EX.cur.blow || 0) + 1; SS.blow++;
     // ink seen through the skin: bluer
     const c = st.ink.c.map((v, j) => Math.round((v * 0.45 + [0.34, 0.42, 0.68][j] * 0.55) * 255)), R = (footR + mm * (1.1 + risk * 1.8)) / 2, gx = p.x / 2, gy = p.y / 2;
     const gr = bx.createRadialGradient(gx, gy, 0, gx, gy, R); gr.addColorStop(0, `rgba(${c},${0.12 + risk * 0.16})`); gr.addColorStop(0.5, `rgba(${c},${0.05 + risk * 0.07})`); gr.addColorStop(1, `rgba(${c},0)`);
@@ -250,6 +251,14 @@ TT.open = async (el, id) => {
       const d = g.getImageData(0, 0, tw, th).data; for (let i = 0; i < TR.length; i++) TR[i] = d[i * 4] / 255 * 2; } }
   let refs = (meta.refs || []).filter(Boolean), refSel = null;
   const EX = meta.exam || null;
+  /* Timelapse and stats. A small picture of the piece is kept after each stroke (at most one every 1.2 s) and the
+     work is counted. New frames go to the media folder when the piece is saved; their refs and the counts live in
+     meta. Past TL_MAX frames every other older frame is dropped, so a long piece still covers the whole session. */
+  const TL_MAX = 900, TL_LONG = 720;
+  const TL = { refs: (meta.tl || []).slice(), fresh: [], last: 0, busy: false };
+  const SS = Object.assign({ strokes: 0, mm: 0, ms: 0, dips: 0, punct: 0, blow: 0, erase: 0, needles: {}, layers: {}, since: Date.now() }, meta.stats || {});
+  const tlGrab = (force) => { if (TL.busy || (!force && Date.now() - TL.last < 1200)) return; TL.last = Date.now(); TL.busy = true;
+    composite(Math.min(1, TL_LONG / Math.max(W, H))).toBlob(b => { TL.busy = false; if (b) { TL.fresh.push(b); TL.changed = false; st.dirty = true; } }, 'image/jpeg', 0.8); };
   const hist = [], fut = [];   // undo and redo: { key, data, tr, blow } snapshots of one layer and the skin
   const state = (key) => ({ key, data: L[key].getContext('2d').getImageData(0, 0, W, H), tr: TR.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) });
   const snap = (key) => { hist.push(state(key)); if (hist.length > 15) hist.shift(); fut.length = 0; };
@@ -261,6 +270,7 @@ TT.open = async (el, id) => {
       <button class="dz-ib" id="tt-redo" data-tip="Redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
       <button class="dz-ib tt-viewb" id="tt-view" data-tip="Preview: as worked, fresh, healed or after 10 years" aria-label="Preview"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><b></b></button>
       <button class="dz-ib" id="tt-stencilmk" data-tip="Send to the stencil maker" aria-label="Stencil maker">${ICON.stencil}</button>
+      <button class="dz-ib" id="tt-tl" data-tip="Timelapse and stats" aria-label="Timelapse and stats"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5z"/></svg></button>
       <button class="dz-ib" id="tt-png" data-tip="Save as PNG" aria-label="Save as PNG"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></button>
       <button class="dz-ib dz-go" id="tt-save" data-tip="Save" aria-label="Save"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>
     </div>
@@ -404,7 +414,8 @@ TT.open = async (el, id) => {
     else { cx = c.getContext('2d'); cx.globalCompositeOperation = 'destination-out'; cx.fillStyle = '#000'; }   // the stencil: only the laser
     const p = toPage(e);
     if (EX?.cur) { EX.cur.strokes = (EX.cur.strokes || 0) + 1; EX.cur.t0 ||= Date.now(); EX.cur.t1 = Date.now(); }
-    pen = { cx, last: p, t: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
+    SS.strokes++; if (st.tool === 'erase') SS.erase++; else SS.layers[key] = (SS.layers[key] || 0) + 1;
+    pen = { cx, last: p, t: e.timeStamp, t0: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
     if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('The needle is dry: dip into an ink cap first.', 1800);
     return true;
   };
@@ -439,7 +450,7 @@ TT.open = async (el, id) => {
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
         }
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
-        if (st.tool !== 'erase') st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100);
+        if (st.tool !== 'erase') { st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100); SS.punct++; }
         t += gap;
       }
       pen.carry = t - d; pen.last = p; pen.t = ev.timeStamp;
@@ -447,7 +458,9 @@ TT.open = async (el, id) => {
     const u = flushPig(), pad = pen.foot * 2 + 4 * mm; st.dirty = true; drawNeedleInk();
     paint(u && pen.cx.pig ? { x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad } : undefined);
   };
-  const strokeEnd = () => { if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush(); pen = null; drawNeedleInk(); if (trDirty) paint(); };
+  const strokeEnd = () => { if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
+    if (pen) { const mmD = pen.trav || 0; SS.mm += mmD; SS.ms += Math.max(0, pen.t - pen.t0); if (st.tool !== 'erase') SS.needles[st.needle] = (SS.needles[st.needle] || 0) + mmD; }
+    pen = null; drawNeedleInk(); if (trDirty) paint(); TL.changed = true; tlGrab(); };
 
   const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
   const drawCur = (e) => {
@@ -533,7 +546,7 @@ TT.open = async (el, id) => {
     const i = +(cap.dataset.cap ?? cap.dataset.wash), ws = cap.dataset.wash != null ? TT_WASH[i][1] : 1;
     if (st.capEdit && !st.wash) { const inp = document.createElement('input'); inp.type = 'color'; inp.value = st.caps[i];
       inp.oninput = () => { st.caps[i] = inp.value; st.dirty = true; drawTray(); }; inp.click(); return; }
-    e.preventDefault(); const col = ws < 1 ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1;
+    e.preventDefault(); const col = ws < 1 ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1; SS.dips++;
     const step = (now) => { if (!dip) return; const dt = Math.min(0.1, (now - t0) / 1000); t0 = now;
       const a = dt * 0.9, frac = a / (st.ink.v + a);   // ink added this moment, and how much of the mix it is
       const wet = st.ink.v > 0.005; st.ink.c = wet ? ttMix(st.ink.c, col, frac) : col; st.ink.s = wet ? (st.ink.s ?? 1) * (1 - frac) + ws * frac : ws; st.ink.v = Math.min(1, st.ink.v + a);
@@ -908,9 +921,13 @@ TT.open = async (el, id) => {
     tg.putImageData(ti, 0, 0);
     const skinRef = TR.some(v => v > 0.004) ? await Media.save(await blobOf(tc), 'png') : null, blowRef = await Media.save(await blobOf(blowC), 'png');
     const old = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [id]);
+    const tlDrop = [];
+    if (TL.fresh.length) { for (const b of TL.fresh.splice(0)) TL.refs.push(await Media.save(b, 'jpg'));
+      while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS }), id]);
+    for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     st.dirty = false; if (!quiet) toast('Saved.');
   };
@@ -931,6 +948,98 @@ TT.open = async (el, id) => {
   $('#tt-view').onclick = () => { const i = VIEWS.findIndex(v => v[0] === st.view); st.view = VIEWS[(i + 1) % VIEWS.length][0]; st.viewC = null; drawView(); paint();
     toast({ work: 'As you worked it', fresh: 'Fresh: just tattooed, the skin around it red and raised', healed: 'Healed: settled into the skin, a touch softer', aged: 'After about 10 years: softer edges and faded colour' }[st.view], 2400); };
   $('#tt-png').onclick = async () => { const a = document.createElement('a'); a.href = URL.createObjectURL(await blobOf(composite())); a.download = (($('#tt-name').value || 'tattoo').replace(/[^\w-]+/g, '_')) + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+  /* ---------- Timelapse and stats ----------
+     The kept frames played back over a chosen length and recorded in real time with MediaRecorder (like the reel
+     maker), ending on the piece as it is now. Frames are decoded a little ahead of the recording. */
+  const tlFmt = (ms) => { const s = Math.round(ms / 1000); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+  const tlDist = (mm) => mm >= 1000 ? (mm / 1000).toFixed(2) + ' m' : mm >= 100 ? (mm / 10).toFixed(1) + ' cm' : Math.round(mm) + ' mm';
+  $('#tt-tl').onclick = () => {
+    const o = document.createElement('div'); o.id = 'merge-dlg'; let len = +Settings.get('tt_tl_len', '30');
+    const LAYN = Object.fromEntries(TT_LAYERS);
+    const draw = () => {
+      const n = TL.refs.length + TL.fresh.length, ndl = Object.entries(SS.needles).sort((a, b) => b[1] - a[1]);
+      const stat = (l, v) => `<div class="stat"><span>${l}</span><span>${v}</span></div>`;
+      o.innerHTML = `<div class="card" style="max-height:90dvh;overflow:auto"><h2>Timelapse and stats</h2>
+        ${stat('Strokes', SS.strokes.toLocaleString())}
+        ${stat('Needle travelled', tlDist(SS.mm))}
+        ${stat('Needle-down time', tlFmt(SS.ms))}
+        ${stat('Average hand speed', SS.ms > 0 ? Math.round(SS.mm / (SS.ms / 1000)) + ' mm/s' : '-')}
+        ${stat('Punctures', SS.punct.toLocaleString())}
+        ${stat('Dips', SS.dips.toLocaleString())}
+        ${stat('Laser passes', SS.erase.toLocaleString())}
+        ${stat('Blowouts', SS.blow.toLocaleString())}
+        ${ndl.length ? `<div class="lbl" style="margin-top:10px">Needles</div>${ndl.map(([k, v]) => stat(k, tlDist(v))).join('')}` : ''}
+        ${Object.keys(SS.layers).length ? `<div class="lbl" style="margin-top:10px">Strokes per layer</div>${Object.entries(SS.layers).map(([k, v]) => stat(LAYN[k] || k, v)).join('')}` : ''}
+        <p class="muted" style="font-size:12px">Counting since ${new Date(SS.since).toLocaleDateString()}.</p>
+        <div class="lbl" style="margin-top:6px">Timelapse <span class="muted">(${n} frame${n === 1 ? '' : 's'})</span></div>
+        <div class="seg" style="margin-bottom:10px">${[[15, '15 s'], [30, '30 s'], [60, '1 min'], [120, '2 min']].map(([v, l]) => `<button data-len="${v}" class="${len === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+        <div class="row" style="flex-wrap:wrap"><button class="btn danger" id="tl-reset">Reset</button><button class="btn" id="tl-x">Close</button>
+          <button class="btn primary" id="tl-go" style="flex:1" ${n < 2 ? 'disabled' : ''}>Export timelapse</button></div>
+        ${n < 2 ? '<p class="muted" style="font-size:12px">Frames are kept as you tattoo: a few strokes and there is a timelapse to export.</p>' : ''}</div>`;
+    };
+    o.onclick = async (e) => {
+      const t = e.target;
+      if (t.closest('[data-len]')) { len = +t.closest('[data-len]').dataset.len; Settings.set('tt_tl_len', String(len)); return draw(); }
+      if (t.id === 'tl-x' || t === o) return o.remove();
+      if (t.id === 'tl-reset') { if (!confirm('Reset the stats and delete the timelapse frames for this piece?\n\nThe piece itself is not changed.')) return;
+        const drop = TL.refs.splice(0); TL.fresh.length = 0; Object.assign(SS, { strokes: 0, mm: 0, ms: 0, dips: 0, punct: 0, blow: 0, erase: 0, needles: {}, layers: {}, since: Date.now() });
+        st.dirty = true; await save(true); for (const r of drop) await Media.release(r); return draw(); }
+      if (t.id === 'tl-go') { o.remove(); tlExport(len); }
+    };
+    document.body.appendChild(o); draw();
+  };
+  const tlExport = async (secs) => {
+    if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return toast('This browser cannot record video.');
+    if (pen) return;
+    if (TL.changed) { tlGrab(true); await new Promise(r => setTimeout(r, 400)); }   // end on the piece as it is now
+    const srcs = [...TL.refs, ...TL.fresh];
+    const s = 1080 / Math.max(W, H), VW = Math.round(W * s / 2) * 2, VH = Math.round(H * s / 2) * 2;
+    const FPS = 30, ticks = secs * FPS, seq = Array.from({ length: ticks }, (_, i) => Math.min(srcs.length - 1, Math.floor(i / ticks * srcs.length)));
+    for (let i = 0; i < FPS * 2; i++) seq.push(srcs.length - 1);   // hold the finished piece for 2 s
+    const cache = new Map();
+    const load = (i) => { if (cache.has(i)) return cache.get(i);
+      const pr = (async () => { const f = srcs[i]; const blob = f instanceof Blob ? f : await (await fetch(await Media.url(f))).blob(); return createImageBitmap(blob); })().catch(() => null);
+      cache.set(i, pr); return pr; };
+    const ahead = (from) => { const want = new Set(); for (let j = from; j < seq.length && want.size < 12; j++) want.add(seq[j]);
+      want.forEach(load); for (const [i, p] of cache) if (i < seq[from] - 2) { cache.delete(i); p.then(b => b?.close()); } };
+    const c = document.createElement('canvas'); c.width = VW; c.height = VH; const g = c.getContext('2d');
+    g.fillStyle = st.skin; g.fillRect(0, 0, VW, VH);
+    ahead(0); const first = await load(seq[0]); if (first) g.drawImage(first, 0, 0, VW, VH);
+    const mime = typeof reelMime === 'function' ? reelMime() : '';
+    const rec = new MediaRecorder(c.captureStream(FPS), { mimeType: mime || undefined, videoBitsPerSecond: 8e6 });
+    const chunks = []; rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    const ov = document.createElement('div'); ov.id = 'reel-rec';
+    ov.innerHTML = `<div class="card"><h2>Recording timelapse</h2><p class="muted">Keep this screen open until it finishes (about ${secs + 2}s).</p>
+      <div class="meter"><i id="tl-prog" style="width:0"></i></div><button class="btn" id="tl-cancel" style="margin-top:14px">Cancel</button></div>`;
+    document.body.appendChild(ov);
+    let cancel = false, raf = 0; $('#tl-cancel').onclick = () => { cancel = true; cancelAnimationFrame(raf); if (rec.state !== 'inactive') rec.stop(); };
+    const done = new Promise(r => rec.onstop = r);
+    await Promise.all([...cache.values()]);
+    rec.start(250); const t0 = performance.now(); let shown = -1, curB = first;
+    const step = async () => {
+      const tick = Math.floor((performance.now() - t0) / 1000 * FPS);
+      if (tick >= seq.length) { setTimeout(() => rec.state !== 'inactive' && rec.stop(), 150); return; }
+      raf = requestAnimationFrame(step);
+      const p = $('#tl-prog'); if (p) p.style.width = Math.min(100, tick / seq.length * 100) + '%';
+      if (curB) try { g.drawImage(curB, 0, 0, VW, VH); } catch {}   // every frame, even unchanged: the stream only sends a frame when the canvas is drawn
+      if (seq[tick] !== shown) { const want = seq[tick]; ahead(tick); const b = await load(want); if (b && want >= shown) { shown = want; curB = b; } }
+    };
+    raf = requestAnimationFrame(step);
+    await done; ov.remove(); for (const p of cache.values()) p.then(b => b?.close());
+    if (cancel) return toast('Timelapse cancelled.');
+    const type = (mime || 'video/webm').split(';')[0];
+    const file = new File([new Blob(chunks, { type })], `${($('#tt-name')?.value || 'tattoo').replace(/[^\w-]+/g, '_')}-timelapse.${type.includes('mp4') ? 'mp4' : 'webm'}`, { type });
+    // Sharing needs a fresh tap (the one that started it expired while recording), so finish on a card.
+    const download = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); };
+    const ready = document.createElement('div'); ready.id = 'reel-rec';
+    ready.innerHTML = `<div class="card"><h2>Timelapse ready</h2><p class="muted">${fmtBytes(file.size)}</p>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" id="tl-dl">Save to device</button><button class="btn" id="tl-sh">Share</button><button class="btn" id="tl-cl">Close</button></div></div>`;
+    document.body.appendChild(ready);
+    $('#tl-cl').onclick = () => ready.remove();
+    $('#tl-dl').onclick = () => { download(); ready.remove(); toast('Timelapse saved to Downloads.'); };
+    $('#tl-sh').onclick = async () => { try { if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Timelapse' }); else download(); ready.remove(); }
+      catch (e) { if (e.name !== 'AbortError') { download(); ready.remove(); } } };
+  };
   $('#tt-stencilmk').onclick = async () => {
     if (typeof stLoad !== 'function') return;
     const c = composite(1, false), w = document.createElement('canvas'); w.width = c.width; w.height = c.height; const g = w.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w.width, w.height); g.drawImage(c, 0, 0);
