@@ -988,7 +988,8 @@ TT.open = async (el, id) => {
     if (g?.k === 'pa' && !g.moved && e.type === 'pointerup') { const a = pth.a[g.i]; if (g.i === 0 && pth.a.length > 2 && !pth.closed) pth.closed = true; else if (a) a.c = !a.c; return placeGuides(); }
     if (g?.k === 'an' && !g.moved && e.type === 'pointerup' && snapE) { const a = snapE.anchors[g.i]; a.c = !a.c; snapE.moved = true; renderSnap(); placeGuides(); } });
   /* The Tools menu: every cheat tool in one place (the rail stays short), each button named under its icon. */
-  const TOOL_BTNS = `<button class="tt-tb" data-r="path" data-tip="Path: tap to place points (curves through them), tap a point for a sharp corner, then Apply to tattoo it with the needle" aria-label="Path"><svg viewBox="0 0 24 24"><path d="M4 18C8 6 16 18 20 6"/><circle cx="4" cy="18" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="20" cy="6" r="1.8"/></svg></button>
+  const TOOL_BTNS = `<button class="tt-tb" data-r="adjust" data-tip="Adjust colour: brightness, contrast, hue and more, on the whole piece or on what the lasso holds" aria-label="Adjust colour"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M12 4a8 8 0 0 1 0 16"/></svg></button>
+        <button class="tt-tb" data-r="path" data-tip="Path: tap to place points (curves through them), tap a point for a sharp corner, then Apply to tattoo it with the needle" aria-label="Path"><svg viewBox="0 0 24 24"><path d="M4 18C8 6 16 18 20 6"/><circle cx="4" cy="18" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="20" cy="6" r="1.8"/></svg></button>
         <button class="tt-tb" data-r="place" data-tip="Place a tattoo saved to your portfolio (or any picture) into this piece, then move, size, turn and flip it" aria-label="Place tattoo"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg></button>
         <button class="tt-tb" data-r="liquify" data-tip="Liquify: push the ink around like wet paint, to nudge shapes and curves" aria-label="Liquify"><svg viewBox="0 0 24 24"><path d="M4 12c3-6 6 6 9 0s5-4 7-2"/><path d="M4 18c3-4 6 2 9-1s5-2 7-1"/><circle cx="17" cy="6" r="2"/></svg></button>
         <button class="tt-tb" data-r="text" data-tip="Lettering: tap to place text on the stencil layer, to trace" aria-label="Lettering"><svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button><button class="tt-tb" data-r="pick" data-tip="Colour pick: tap ink in the skin to load that exact colour on the needle" aria-label="Colour pick"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-2 2-6-6z"/><path d="M15 9l-9 9H4v-2l9-9"/></svg></button>
@@ -998,7 +999,7 @@ TT.open = async (el, id) => {
         <button class="tt-tb" data-r="shape" data-tip="Shapes: drag out a line, box, ellipse, triangle or star" aria-label="Shapes"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="9" height="9" rx="1"/><circle cx="16.5" cy="7.5" r="4.5"/></svg></button>
         <button class="tt-tb" data-r="sym" data-tip="Symmetry and mandala" aria-label="Symmetry"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M18.4 5.6l-4.2 4.2M9.8 14.2l-4.2 4.2"/></svg></button>
         <button class="tt-tb" data-r="lasso" data-tip="Lasso: draw round part of the work to move, size, turn or flip it" aria-label="Lasso"><svg viewBox="0 0 24 24"><path d="M4 9c0-3 3.6-5 8-5s8 2 8 5-3.6 5-8 5c-1.4 0-2.7-.2-3.8-.6"/><path d="M6 13c-1.5 1-1.5 3 0 4s3 0 3-2-2-2-3-2zM6 17c0 2 1 3 2 4"/></svg></button>`;
-  const TOOL_NAMES = { path: 'Path', place: 'Place tattoo', liquify: 'Liquify', text: 'Lettering', pick: 'Colour pick', grid: 'Grid', ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
+  const TOOL_NAMES = { adjust: 'Adjust colour', path: 'Path', place: 'Place tattoo', liquify: 'Liquify', text: 'Lettering', pick: 'Colour pick', grid: 'Grid', ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
   function toolsPop(b) {
     pop.innerHTML = `<div class="gh">Cheat tools</div><div class="tt-tools">${TOOL_BTNS}</div>
       <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
@@ -1245,6 +1246,63 @@ TT.open = async (el, id) => {
     if (!any) { hist.pop(); for (const key of keys) syncIn(key); return toast('Nothing inside that lasso on ' + (st.lassoAll ? 'the ink layers.' : 'this layer.'), 1800); }
     lsel = { keys, base, fl, b: { x: x0, y: y0, w: bw, h: bh }, tx: 0, ty: 0, s: 1, rot: 0, fx: 1, fy: 1, poly };
     selApply(); placeGuides(); };
+  /* ---------- Adjust colour ----------
+     Exposure, brightness, contrast, gamma, saturation, vibrance, temperature, tint and hue on the ink: the whole
+     piece (every shown ink layer), or only what the lasso is holding. Only the colour of ink already in the skin
+     changes, never where it is or how much is there, and colours are kept to what inks can be (no glowing,
+     over-saturated or skin-lighter-than-skin results), so it stays a tattoo. Previewed live; Apply is one undo step. */
+  let adjS = null;
+  const ADJ = [['exp', 'Exposure', -2, 2, 0.05, v => (v > 0 ? '+' : '') + (+v).toFixed(2)], ['bri', 'Brightness', -1, 1, 0.02], ['con', 'Contrast', -1, 1, 0.02], ['gam', 'Gamma', 0.3, 3, 0.05, v => (+v).toFixed(2)],
+    ['sat', 'Saturation', -1, 1, 0.02], ['vib', 'Vibrance', -1, 1, 0.02], ['tmp', 'Temperature', -1, 1, 0.02], ['tin', 'Tint', -1, 1, 0.02], ['hue', 'Hue', -180, 180, 1, v => Math.round(v) + '°']];
+  const ADJ0 = { exp: 0, bri: 0, con: 0, gam: 1, sat: 0, vib: 0, tmp: 0, tin: 0, hue: 0 };
+  function adjOpen(b) {
+    if (adjS) adjEnd(false);
+    const sel = !!lsel, keys = sel ? lsel.keys : INK.filter(k2 => !st.hide.has(k2)), T = [];
+    let x0 = W, y0 = H, x1 = 0, y1 = 0;
+    for (const key of keys) { const id = sel ? lsel.fl[key].getContext('2d').getImageData(0, 0, lsel.fl[key].width, lsel.fl[key].height) : imgd[key], D = id.data, ix = [];
+      for (let i = 3; i < D.length; i += 4) if (D[i]) { ix.push(i - 3); if (!sel) { const p = (i - 3) >> 2, x = p % W, y = (p - x) / W; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+      if (ix.length) T.push({ key, id, orig: new Uint8ClampedArray(D), ix: Uint32Array.from(ix) }); }
+    if (!T.length) return toast(sel ? 'Nothing in the lasso to adjust.' : 'No ink to adjust yet.');
+    let h = null; if (!sel) { h = state(T[0].key); h.more = T.slice(1).map(o => ({ key: o.key, data: L[o.key].getContext('2d').getImageData(0, 0, W, H) })); }
+    adjS = { sel, T, h, v: { ...ADJ0 }, box: { x0, y0, x1, y1 }, raf: 0 };
+    const f2 = (v) => Math.round(v * 100) + '%';
+    pop.innerHTML = `<div class="tt-letp"><div class="gh">Adjust colour · ${sel ? 'the lasso' : 'whole piece'}</div>
+      ${ADJ.map(([k2, n2, mn, mx, s2, fm]) => `<label class="dz-sl" style="margin:3px 6px"><span>${n2}<b>${(fm || f2)(ADJ0[k2])}</b></span><input type="range" min="${mn}" max="${mx}" step="${s2}" value="${ADJ0[k2]}" data-adj="${k2}"></label>`).join('')}
+      <div class="row" style="gap:4px;margin:8px 6px 6px"><button class="btn small" data-adja="reset">Reset</button><button class="btn small" data-adja="cancel">Cancel</button><span style="flex:1"></span><button class="btn small primary" data-adja="apply">Apply</button></div>
+      <p class="muted" style="font-size:11px;margin:2px 6px 6px">${sel ? 'Only the lassoed part changes.' : 'For one area, lasso it first, then open this.'} Ink only changes colour: nothing spreads or appears.</p></div>`;
+    pop.hidden = false; pop.style.top = '8px'; }   // a tall panel: from the top, so the piece shows beside it
+  // One colour through every adjustment, then held to what ink can look like.
+  const adjCol = (r, g, b, V, hc, hs) => {
+    const ex = Math.pow(2, V.exp); r *= ex; g *= ex; b *= ex;
+    r += V.bri * 0.5; g += V.bri * 0.5; b += V.bri * 0.5;
+    const ck = 1 + V.con; r = (r - 0.5) * ck + 0.5; g = (g - 0.5) * ck + 0.5; b = (b - 0.5) * ck + 0.5;
+    r = Math.max(0, r); g = Math.max(0, g); b = Math.max(0, b); if (V.gam !== 1) { const gi = 1 / V.gam; r = r ** gi; g = g ** gi; b = b ** gi; }
+    if (V.hue) { const y = 0.299 * r + 0.587 * g + 0.114 * b, i = 0.596 * r - 0.274 * g - 0.322 * b, q = 0.211 * r - 0.523 * g + 0.312 * b, i2 = i * hc - q * hs, q2 = i * hs + q * hc;
+      r = y + 0.956 * i2 + 0.621 * q2; g = y - 0.272 * i2 - 0.647 * q2; b = y - 1.106 * i2 + 1.703 * q2; }
+    let l = 0.299 * r + 0.587 * g + 0.114 * b; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), s0 = mx > 0 ? (mx - mn) / mx : 0;
+    const sk = (1 + V.sat) * (1 + V.vib * (1 - s0)); r = l + (r - l) * sk; g = l + (g - l) * sk; b = l + (b - l) * sk;
+    r += V.tmp * 0.12; b -= V.tmp * 0.12; g -= V.tin * 0.1; r += V.tin * 0.04; b += V.tin * 0.04;
+    // within what ink can be: no channel past the brightest ink, saturation no higher than the strongest ink's
+    r = Math.min(0.98, Math.max(0.02, r)); g = Math.min(0.98, Math.max(0.02, g)); b = Math.min(0.98, Math.max(0.02, b));
+    const M = Math.max(r, g, b), m = Math.min(r, g, b); if (M - m > 0.9 * M) { l = 0.299 * r + 0.587 * g + 0.114 * b; const k2 = 0.9 * M / (M - m); r = l + (r - l) * k2; g = l + (g - l) * k2; b = l + (b - l) * k2; }
+    return [r, g, b]; };
+  const adjRun = () => { const S = adjS; if (!S) return; S.raf = 0; const V = S.v, hc = Math.cos(V.hue * Math.PI / 180), hs = Math.sin(V.hue * Math.PI / 180);
+    for (const o of S.T) { const D = o.id.data, O = o.orig;
+      for (const i of o.ix) { const c = adjCol(O[i] / 255, O[i + 1] / 255, O[i + 2] / 255, V, hc, hs); D[i] = c[0] * 255; D[i + 1] = c[1] * 255; D[i + 2] = c[2] * 255; }
+      if (S.sel) lsel.fl[o.key].getContext('2d').putImageData(o.id, 0, 0); else markDirty(o.key, S.box.x0, S.box.y0, S.box.x1, S.box.y1); }
+    if (S.sel) selApply(); else { flushPig(); paint({ x0: S.box.x0 - 2, y0: S.box.y0 - 2, x1: S.box.x1 + 2, y1: S.box.y1 + 2 }); } st.dirty = true; };
+  function adjEnd(apply) { const S = adjS; if (!S) return; adjS = null; cancelAnimationFrame(S.raf);
+    if (!apply) { for (const o of S.T) o.id.data.set(o.orig); for (const o of S.T) { if (S.sel) lsel?.fl[o.key].getContext('2d').putImageData(o.id, 0, 0); else markDirty(o.key, S.box.x0, S.box.y0, S.box.x1, S.box.y1); }
+      if (S.sel) { if (lsel) selApply(); } else { flushPig(); paint(); } return; }
+    if (!S.sel && S.h) { hist.push(S.h); if (hist.length > 15) hist.shift(); fut.length = 0; cropTop({ x0: S.box.x0 - 2, y0: S.box.y0 - 2, x1: S.box.x1 + 2, y1: S.box.y1 + 2 }); TL.changed = true; tlGrab(); }
+    toast('Colour adjusted.', 1200); }
+  pop.addEventListener('input', (e) => { const k2 = e.target.dataset?.adj; if (!k2 || !adjS) return; adjS.v[k2] = +e.target.value;
+    const d = ADJ.find(a => a[0] === k2); e.target.closest('label').querySelector('b').textContent = (d[5] || ((v) => Math.round(v * 100) + '%'))(adjS.v[k2]);
+    if (!adjS.raf) adjS.raf = requestAnimationFrame(adjRun); });
+  pop.addEventListener('click', (e) => { const a = e.target.closest('[data-adja]')?.dataset.adja; if (!a || !adjS) return;
+    if (a === 'reset') { adjS.v = { ...ADJ0 }; pop.querySelectorAll('[data-adj]').forEach(x => { x.value = ADJ0[x.dataset.adj]; x.dispatchEvent(new Event('input', { bubbles: true })); }); return; }
+    if (a === 'apply') { adjEnd(true); pop.hidden = true; return; }
+    if (a === 'cancel') { adjEnd(false); pop.hidden = true; } });
   /* Place: a picture becomes a floating piece on the current ink layer (white parts on the highlights layer, so they
      stay white), handled like a lasso selection: drag, size, turn, flip, Done. */
   async function placePick() {
@@ -1644,7 +1702,7 @@ TT.open = async (el, id) => {
   tray.addEventListener('contextmenu', (e) => e.preventDefault());
 
   /* ---------- Rail, needles menu and the side panel ---------- */
-  const closePop = () => { pop.hidden = true; };
+  const closePop = () => { pop.hidden = true; if (adjS) adjEnd(false); };   // leaving colour adjustments unapplied puts them back
   const sel = (r) => $('#tt-rail').querySelectorAll('[data-r]').forEach(b => b.classList.toggle('on', b.dataset.r === r || (b.dataset.r === st.tool && !['layers', 'feel', 'refs'].includes(r))
     || (b.dataset.r === st.panel)));
   $('#tt-rail').onclick = (e) => {
@@ -1657,6 +1715,7 @@ TT.open = async (el, id) => {
     }
     if (r === 'tools') { if (!pop.hidden) return closePop(); return toolsPop(b); }
     if (r === 'place') { closePop(); return placePick(); }
+    if (r === 'adjust') { if (snapE) snapFinish(); return adjOpen(b); }
     if (r === 'grid') { closePop(); st.grid.on = !st.grid.on; st.dirty = true; return placeGuides(); }
     if (r === 'pick') { closePop(); if (lsel) selCommit(); st.tool = 'pick'; sel(); placeGuides(); return toast('Tap ink in the skin to load that colour.', 1800); }
     if (r === 'ruler') { closePop(); st.ruler.on = !st.ruler.on; st.dirty = true; b.classList.toggle('on', st.ruler.on); placeGuides(); return toast(st.ruler.on ? 'Ruler on: drag its ends to place it. Strokes close to it run along its edge.' : 'Ruler off.', 2200); }
