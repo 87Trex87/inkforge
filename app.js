@@ -7068,7 +7068,9 @@ async function stToSim() {
   const w = Math.min(60, Math.max(3, Math.ceil(sw + pad * 2))), h = Math.min(60, Math.max(3, Math.ceil(sh + pad * 2)));
   const R = Math.min(80, 2400 / Math.max(w, h)), W = Math.round(w * R), H = Math.round(h * R);   // the simulator's page px per cm
   const k = Math.min(1, w / (sw + pad * 2), h / (sh + pad * 2)), dw = sw * R * k, dh = sh * R * k;   // shrink only past the 60 cm page limit
-  const src = new OffscreenCanvas(ST.w, ST.h); src.getContext('2d').putImageData(stImage(ST.mask), 0, 0);
+  // The stencil in the simulator's transfer purple on clear, like the challenges' stencils.
+  const img = new ImageData(ST.w, ST.h); for (let i = 0; i < ST.mask.length; i++) if (ST.mask[i]) img.data.set([78, 40, 150, 230], i * 4);
+  const src = new OffscreenCanvas(ST.w, ST.h); src.getContext('2d').putImageData(img, 0, 0);
   const c = new OffscreenCanvas(W, H), g = c.getContext('2d'); g.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh);
   const ref = await Media.save(await c.convertToBlob({ type: 'image/png' }), 'png');
   await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, stencil_ref) VALUES (?, ?, ?, ?, ?)',

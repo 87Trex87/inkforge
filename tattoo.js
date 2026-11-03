@@ -215,13 +215,21 @@ const TT_CH = [
 const TT_EXAM = ['straight', 'curves', 'bold', 'whip', 'smooth', 'pack', 'wash', 'colour', 'mix', 'blend', 'final'];
 const TT_HUB = [['line', 'Lining'], ['shade', 'Shading'], ['pack', 'Packing'], ['colour', 'Colour'], ['flash', 'Flash']];
 const ttHubOf = (c) => c.hub || c.cat;
+// A stencil picture recoloured to the transfer purple the challenges use: the darker the line, the stronger.
+function ttPurple(g, w, h) { const im = g.getImageData(0, 0, w, h), d = im.data;
+  for (let i = 0; i < d.length; i += 4) { const a = (1 - (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11) / 255) * d[i + 3] / 255;
+    d[i] = 78; d[i + 1] = 40; d[i + 2] = 150; d[i + 3] = Math.round(Math.min(1, a * 1.1) * 230); }
+  g.putImageData(im, 0, 0); }
 const ttShort = (t) => { t = t.replace(/^Flash: /, ''); return t[0].toUpperCase() + t.slice(1); };
 // The part of the page an example shows (mm): its crop, its box with a margin, or the whole patch.
 const ttCrop = (T) => T.crop || (T.box ? [T.box[0] - 8, T.box[1] - 8, T.box[2] + 16, T.box[3] + 16] : [0, 0, 180, 130]);
 // A challenge's example on skin (line challenges: the stencil to follow), as a picture of its crop.
 function ttExGen(T, skin) {
+  // Painted on white, then laid into the skin by multiplying, the way the simulator shows ink, so colours dull
+  // and darken with the skin just as they will when tattooed; white highlights go on top.
   const c = document.createElement('canvas'), sc = 2; c.width = 180 * sc; c.height = 130 * sc; const g = c.getContext('2d');
-  g.fillStyle = skin; g.fillRect(0, 0, c.width, c.height); g.scale(sc, sc); g.lineCap = g.lineJoin = 'round';
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.scale(sc, sc); g.lineCap = g.lineJoin = 'round';
+  const hiC = document.createElement('canvas'); hiC.width = c.width; hiC.height = c.height; const hg = hiC.getContext('2d'); hg.scale(sc, sc);
   const dots = (x0, y0, w, h, f, col) => { g.fillStyle = col; for (let i = 0; i < w * h * 3; i++) { const px = x0 + Math.random() * w, py = y0 + Math.random() * h, a = f((px - x0) / w); if (Math.random() < a) { g.globalAlpha = 0.6 + a * 0.4; g.beginPath(); g.arc(px, py, 0.35, 0, 7); g.fill(); } } g.globalAlpha = 1; };
   if (T.kind === 'line') { g.strokeStyle = '#141414'; g.lineWidth = Math.max(0.5, T.core); g.beginPath(); T.path(g); g.stroke(); }
   if (T.kind === 'grad') dots(...T.box, T.wash ? (f) => T.prof(f) * 0.5 : T.prof, '#141414');
@@ -234,9 +242,12 @@ function ttExGen(T, skin) {
     if (T.shade) { const [lx, ly, lw, lh] = T.shade.light, [dx, dy, dw, dh] = T.shade.dark, sh = g.createLinearGradient(lx + lw / 2, ly + lh / 2, dx + Math.min(dw, 20) / 2, dy + Math.min(dh, 20) / 2);
       sh.addColorStop(0.35, 'rgba(20,20,20,0)'); sh.addColorStop(1, 'rgba(20,20,20,.8)');
       g.save(); g.beginPath(); T.shade.in(g); g.clip(); g.fillStyle = sh; g.fillRect(0, 0, 180, 130); g.restore(); }
-    for (const h of T.hi || []) { g.fillStyle = WHT; g.beginPath(); h(g); g.fill(); }
+    for (const h of T.hi || []) { g.fillStyle = '#fff'; g.beginPath(); h(g); g.fill(); hg.fillStyle = WHT; hg.beginPath(); h(hg); hg.fill(); }
     g.strokeStyle = '#141414'; g.lineWidth = 0.9; g.beginPath(); T.lines(g); g.stroke();
   }
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'multiply'; g.fillStyle = skin; g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 0.8; g.drawImage(hiC, 0, 0); g.globalAlpha = 1;
+  if (T.kind === 'piece') { g.scale(sc, sc); g.strokeStyle = '#141414'; g.lineWidth = 0.9; g.lineCap = g.lineJoin = 'round'; g.beginPath(); T.lines(g); g.stroke(); g.setTransform(1, 0, 0, 1, 0, 0); }
   const [x0, y0, w, h] = ttCrop(T), o = document.createElement('canvas'); o.width = w * sc; o.height = h * sc;
   o.getContext('2d').drawImage(c, x0 * sc, y0 * sc, w * sc, h * sc, 0, 0, w * sc, h * sc);
   return o.toDataURL('image/png');
@@ -283,14 +294,27 @@ const ttStars = (n) => '<span class="tt-stars">' + [1, 2, 3].map(i => `<i class=
 const ttCup = (tier, size = 28) => `<svg class="tt-cup ${tier}" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M9.5 17h5"/></svg>`;
 const ttMedalIco = (m, size = 22) => m ? `<svg class="tt-medal ${m[1]}" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="M8 2l4 7 4-7"/><circle cx="12" cy="15" r="6"/></svg>` : '';
 
+/* Skin for challenges and the exam (setting tt_chskin, an index into TT_SKINS). The three lightest play the same;
+   Tan is the hardest for colour (colour inks take less and read duller); Brown and Deep take no colour at all
+   (as in the studio), so their challenges are black and grey only, and black takes a little less too. */
+const ttChSkin = () => { const i = +Settings.get('tt_chskin', 1); return i >= 0 && i < TT_SKINS.length ? i : 1; };
+const ttNoColour = (i = ttChSkin()) => i >= 4;
+const ttIsColour = (T) => !/^(black|wash)$/.test(T.ink || 'black');
+const TT_SKIN_NOTE = ['', '', '', 'Hardest for colour: colour inks take less', 'Black and grey only: no colour on this skin', 'Black and grey only: no colour on this skin'];
+// The exam on skin that takes no colour: the colour challenges swapped for black and grey ones.
+const TT_EXAM_BG = { colour: 'bigpack', mix: 'steps', blend: 'longfade', final: 'fanchor' };
+const ttExamList = (i = ttChSkin()) => ttNoColour(i) ? TT_EXAM.map(id => TT_EXAM_BG[id] || id) : null;
+
 // Starts (or restarts) a challenge on its own piece of skin; each challenge keeps one piece.
 async function ttChStart(id) {
   const T = TT_CH.find(c => c.id === id); if (!T) return;
+  if (ttNoColour() && ttIsColour(T)) { location.hash = 'tattoo/challenges'; return toast(`${TT_SKINS[ttChSkin()][0]} skin takes no colour: pick a black and grey challenge, or a lighter skin.`, 3500); }
+  const chSkin = TT_SKINS[ttChSkin()][1];
   const exam = { v: 1, mode: 'ch', list: [id], i: 0, res: [], started: Date.now() };
   const rows = await DB.all(`SELECT id, meta FROM tattoo_pieces WHERE meta LIKE '%"mode":"ch"%'`);
   const hit = rows.find(r => { try { return JSON.parse(r.meta).exam?.list?.[0] === id; } catch { return false; } });
-  if (hit) { let m = {}; try { m = JSON.parse(hit.meta); } catch {} await DB.run(`UPDATE tattoo_pieces SET meta = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...m, exam }), hit.id]); location.hash = 'tattoo/' + hit.id; return; }
-  await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Challenge: ' + T.title, 18, 13, Settings.get('tt_skin', '#e2b493'), JSON.stringify({ exam })]);
+  if (hit) { let m = {}; try { m = JSON.parse(hit.meta); } catch {} await DB.run(`UPDATE tattoo_pieces SET meta = ?, skin = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...m, exam }), chSkin, hit.id]); location.hash = 'tattoo/' + hit.id; return; }
+  await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Challenge: ' + T.title, 18, 13, chSkin, JSON.stringify({ exam })]);
   location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
 }
 
@@ -299,20 +323,25 @@ async function ttChStart(id) {
    print, save or share for comparing over time. */
 TT.hub = async (el) => {
   ttStyle();
-  const a = TT.aw.get(), skin = Settings.get('tt_skin', '#e2b493');
+  const a = TT.aw.get(), si = ttChSkin(), skin = TT_SKINS[si][1], noCol = ttNoColour(si);
   const done = TT_CH.filter(c => a.pb[c.id]).length, golds = TT_CH.filter(c => ttBest(a, c.id) >= 90).length, cups = Object.keys(a.trophies).length;
   el.innerHTML = `<div class="tt-hub">
     <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
       <div class="tt-hubsum"><span><b>${done}</b> / ${TT_CH.length} done</span><span>${ttMedalIco(TT_MEDALS[0], 18)}<b>${golds}</b> gold</span><span>${ttCup('gold', 18)}<b>${cups}</b> / ${TT_TROPHIES.length} trophies</span></div>
       <span style="flex:1"></span><button class="btn" id="tt-sheet">Results sheet</button></div>
+    <div class="tt-chskin"><span class="lbl" style="margin:0">Skin for challenges and the exam</span>
+      <div class="tt-skins" style="margin:0">${TT_SKINS.map(([n, c], i) => `<button data-chskin="${i}" class="${i === si ? 'on' : ''}" style="background:${c}" data-tip="${n}${TT_SKIN_NOTE[i] ? ': ' + TT_SKIN_NOTE[i] : ''}" aria-label="${n}"></button>`).join('')}</div>
+      <span class="muted" style="font-size:12px">${TT_SKINS[si][0]}${TT_SKIN_NOTE[si] ? ' · ' + TT_SKIN_NOTE[si] : ''}</span></div>
     <div class="letter">Trophy cabinet</div>
     <div class="tt-cabinet">${TT_TROPHIES.map(t => `<div class="tt-trophy ${a.trophies[t.id] ? 'won' : ''}" data-tip="${esc(t.desc)}">${ttCup(a.trophies[t.id] ? t.tier : 'locked', 30)}<b>${esc(t.name)}</b><span>${a.trophies[t.id] ? new Date(a.trophies[t.id]).toLocaleDateString() : esc(t.desc)}</span></div>`).join('')}</div>
     ${TT_HUB.map(([k, n]) => `<div class="letter">${n}</div><div class="tt-chgrid">${ttHubCh(k).sort((x, y) => x.diff - y.diff).map(c => { const p = a.pb[c.id], m = ttMedal(p?.best);
-      return `<button class="tt-chc" data-ch="${c.id}"><div class="tt-chimg"><img src="${ttExGen(c, skin)}" alt=""></div>
+      const off = noCol && ttIsColour(c);
+      return `<button class="tt-chc ${off ? 'off' : ''}" data-ch="${c.id}" ${off ? 'data-tip="No colour on this skin"' : ''}><div class="tt-chimg"><img src="${ttExGen(c, skin)}" alt=""></div>
         <div class="tt-chmeta"><b>${esc(ttShort(c.title))}</b><span>${ttStars(c.diff)} ${c.needle}</span>
         <span class="tt-chpb">${p ? `${ttMedalIco(m)} Best ${p.best}` : '<i class="muted">Not tried yet</i>'}</span></div></button>`; }).join('')}</div>`).join('')}
   </div>`;
-  el.onclick = (e) => { const c = e.target.closest('[data-ch]'); if (c) return ttChStart(c.dataset.ch); if (e.target.closest('#tt-sheet')) return TT.sheet(); };
+  el.onclick = async (e) => { const k = e.target.closest('[data-chskin]'); if (k) { await Settings.set('tt_chskin', +k.dataset.chskin); return TT.hub(el); }
+    const c = e.target.closest('[data-ch]'); if (c) return ttChStart(c.dataset.ch); if (e.target.closest('#tt-sheet')) return TT.sheet(); };
 };
 
 // The results sheet: every challenge with its stars, best, medal and tries, the trophies and exam grades, on an A4 page.
@@ -363,8 +392,9 @@ TT.list = async (el) => {
   $('#tt-exam').onclick = async () => {   // carry on with an unfinished exam, or start one
     const open = rows.find(r => r.exam === 1);
     if (open) { location.hash = 'tattoo/' + open.id; return; }
-    if (!confirm('Start the apprentice exam?\n\n11 challenges, from straight lines to a finished heart. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.')) return;
-    await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Apprentice exam', 18, 13, Settings.get('tt_skin', '#e2b493'), JSON.stringify({ exam: { v: 1, i: 0, res: [], started: Date.now() } })]);
+    const si = ttChSkin(), list = ttExamList(si);
+    if (!confirm(`Start the apprentice exam on ${TT_SKINS[si][0].toLowerCase()} skin?\n\n11 challenges, from straight lines to ${list ? 'a black and grey anchor (this skin takes no colour)' : 'a finished heart'}. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.\n\nThe skin is chosen in Challenges.`)) return;
+    await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Apprentice exam', 18, 13, TT_SKINS[si][1], JSON.stringify({ exam: { v: 1, i: 0, res: [], started: Date.now(), ...(list ? { list } : {}) } })]);
     location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
   };
   el.onclick = async (e) => {
@@ -717,7 +747,7 @@ TT.open = async (el, id) => {
       let t = pen.carry;
       while (t <= d) {
         const q = { x: pen.last.x + dx * t / d, y: pen.last.y + dy * t / d };
-        let inkC = st.tool === 'erase' ? 1 : Math.sqrt(Math.min(1, st.ink.v * 1.6));
+        let inkC = st.tool === 'erase' ? 1 : Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake();
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
@@ -754,6 +784,10 @@ TT.open = async (el, id) => {
     ['gap', 'Speed', 0, 0.3, 0.05, 0.2, 0.035, (v) => v.toFixed(3) + ' mm', true],
     ['skin', 'Skin', 0, 2.2, 0, 0.8, 1.4, (v) => v < 0.3 ? 'fresh' : v < 0.8 ? 'red' : v < 1.4 ? 'swollen' : 'overworked'],
   ];
+  // How well ink takes in a challenge's skin: Tan takes colour poorly, Brown and Deep take a little less black.
+  const skinI = TT_SKINS.findIndex(([, c]) => c.toLowerCase() === (st.skin || '').toLowerCase());
+  const skinTake = () => { if (!EX || skinI < 3) return 1; const col = st.ink.c, grey = Math.max(...col) - Math.min(...col) < 0.08;
+    return skinI === 3 ? (grey ? 1 : 0.72) : 0.88; };
   const meterEl = $('#tt-meter');
   // Thinner needles cut deeper for the same push: #08 starts blowing out sooner (and more often) than #12.
   function blowD() { return 0.8 - (0.3 - (feel.size || 0.3)) * 1.2; }
@@ -1236,7 +1270,7 @@ TT.open = async (el, id) => {
     const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }); if (!im) return toast('Could not read that picture.');
     const c = L.stencil, cx = c.getContext('2d'); snap('stencil'); touched.add('stencil');
     cx.clearRect(0, 0, W, H); const s = Math.min(W * 0.9 / im.naturalWidth, H * 0.9 / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
-    cx.drawImage(im, (W - w) / 2, (H - h) / 2, w, h); st.hide.delete('stencil'); st.dirty = true; paint(); drawSide();
+    cx.drawImage(im, (W - w) / 2, (H - h) / 2, w, h); ttPurple(cx, W, H); st.hide.delete('stencil'); st.dirty = true; paint(); drawSide();
   };
 
   /* ---------- Saving and exporting ---------- */
@@ -1716,7 +1750,9 @@ function ttStyle() {
 .tt-cup.gold, .tt-medal.gold { stroke: #e2b34a; } .tt-cup.silver, .tt-medal.silver { stroke: #c9d1d6; } .tt-cup.bronze, .tt-medal.bronze { stroke: #c88a55; } .tt-cup.locked { stroke: var(--ink2); }
 .tt-chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
 .tt-chc { display: flex; flex-direction: column; text-align: left; padding: 0; border-radius: 12px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: inherit; }
-.tt-chc:hover { border-color: var(--teal); } .tt-chimg { aspect-ratio: 4 / 3; overflow: hidden; background: #1b1e1f; } .tt-chimg img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tt-chc:hover { border-color: var(--teal); } .tt-chc.off { opacity: .4; filter: grayscale(1); }
+.tt-chskin { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 12px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); }
+.tt-chskin .tt-skins button.on { outline: 2px solid var(--teal); outline-offset: 2px; } .tt-chimg { aspect-ratio: 4 / 3; overflow: hidden; background: #1b1e1f; } .tt-chimg img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .tt-chmeta { display: flex; flex-direction: column; gap: 2px; padding: 8px; font-size: 12px; } .tt-chmeta b { font-size: 13px; } .tt-chpb { display: inline-flex; gap: 4px; align-items: center; }
 .tt-stars { display: inline-flex; gap: 2px; margin-right: 4px; vertical-align: middle; } .tt-stars i { width: 8px; height: 8px; transform: rotate(45deg); background: var(--line); display: inline-block; } .tt-stars i.on { background: #e2b34a; }
 .tt-chrep .tt-grade.gold b { color: #e2b34a; } .tt-chrep .tt-grade.silver b { color: #c9d1d6; } .tt-chrep .tt-grade.bronze b { color: #c88a55; } .tt-chrep .tt-grade { align-items: center; }
