@@ -459,10 +459,13 @@ TT.open = async (el, id) => {
      blowouts, bumps or crashes), strokes are smoothed, holding the pen still snaps a stroke to a line or circle, and
      drawing helpers are on hand. Anything saved from it is stamped as a cheat. */
   const CHEAT = !!meta.cheat && !meta.exam;
+  // Tool settings last used (cheat tools, for new cheat pieces; the marker, for every piece). A piece's own come first.
+  const CP = (() => { try { return CHEAT ? JSON.parse(Settings.get('tt_cheat_prefs', '{}')) : {}; } catch { return {}; } })();
+  const MKP = (() => { try { return JSON.parse(Settings.get('tt_mk', 'null')); } catch { return null; } })();
   let lastVk = '';   // the view the guides were last placed for
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
-    stretch: meta.stretch ?? 75, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt, rot: meta.rot || 0 };
+    stretch: meta.stretch ?? 75, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 75, magTilt: meta.magTilt ?? true, rot: meta.rot || 0 };
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
      saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
      spot; ink lighter than what's there is held back in proportion to how saturated it is (a light value can't take
@@ -747,7 +750,9 @@ TT.open = async (el, id) => {
   const isMag = () => ['mag', 'soft'].includes(TT_NEEDLES.find(n => n.id === st.needle)?.kind);
   const rowAng = (ev) => { const tx = ev?.tiltX || 0, ty = ev?.tiltY || 0;
     return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 + st.magAng * Math.PI / 180 : st.magAng * Math.PI / 180; };   // leaning: the angle is an offset on the lean
-  const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 : strokeA;
+  // magFlip: the short row of a magnum leads (the rows swapped end for end), the way most artists hold one
+  st.magFlip = Settings.get('tt_magflip', '1') === '1';
+  const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 + (st.magFlip ? Math.PI : 0) : strokeA;
   const pageTurn = (strokeA, ev) => turnOf(strokeA, ev) - (isMag() ? st.rot : 0);   // a magnum's angle is held on the screen, whatever the page's rotation
   const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); drawVolt(); drawSz(); };
   // Quick needle size (#08, #10, #12) under the grouping: kept with this needle's feel, the selected one lit.
@@ -862,9 +867,9 @@ TT.open = async (el, id) => {
   // and working the skin hard there.
   /* Cheat mode: the stroke follows a point that trails the pen (more smoothing, more trail), so wobbles even out.
      The raw points are kept for hold to snap. */
-  st.smooth ??= meta.smooth ?? 45; st.fast = !!meta.fast; st.endless = !!meta.endless;
-  st.ruler = meta.ruler || { on: false, a: { x: W * 0.2, y: H * 0.5 }, b: { x: W * 0.8, y: H * 0.5 } };
-  st.sym = meta.sym || { mode: 'off', n: 8, mir: false, c: { x: W / 2, y: H / 2 } };
+  st.smooth ??= meta.smooth ?? CP.smooth ?? 45; st.fast = !!(meta.fast ?? CP.fast); st.endless = !!(meta.endless ?? CP.endless);
+  st.ruler = meta.ruler || { on: !!CP.rulerOn, a: { x: W * 0.2, y: H * 0.5 }, b: { x: W * 0.8, y: H * 0.5 } };
+  st.sym = meta.sym || { mode: CP.sym?.mode || 'off', n: CP.sym?.n || 8, mir: !!CP.sym?.mir, c: { x: W / 2, y: H / 2 } };
   const smoothPt = (p) => { if (!CHEAT) return p; const rw = pen.raw ||= [], lr = rw[rw.length - 1]; if (!lr || Math.hypot(p.x - lr.x, p.y - lr.y) > 0.5) rw.push(p);   // holding still adds nothing
     const f = 1 - Math.min(0.9, st.smooth / 100); pen.sp = pen.sp ? { x: pen.sp.x + (p.x - pen.sp.x) * f, y: pen.sp.y + (p.y - pen.sp.y) * f } : p; return pen.sp; };
   const rulerPt = (p) => { if (!CHEAT || !st.ruler.on) return p; const { a, b } = st.ruler, L = Math.hypot(b.x - a.x, b.y - a.y); if (L < 1) return p;
@@ -1003,6 +1008,7 @@ TT.open = async (el, id) => {
   function toolsPop(b) {
     pop.innerHTML = `<div class="gh">Cheat tools</div><div class="tt-tools">${TOOL_BTNS}</div>
       <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
+      <button class="btn small" data-toolreset style="margin:2px 6px 6px">Reset tool settings</button>
       <label class="toggle" style="display:flex;margin:0 6px 6px;border:0;min-height:30px;padding:0" data-tip="The needle never runs dry. Dipping still mixes colours as usual."><input type="checkbox" data-endless ${st.endless ? 'checked' : ''}><span>Ink never runs out</span></label>
       <div class="tt-lseg" style="flex-wrap:wrap">${GRID_TYPES.map(([k2, n2]) => `<button data-gt="${k2}" class="${(st.grid.type || 'square') === k2 && st.grid.on ? 'on' : ''}" style="flex:1 1 30%">${n2}</button>`).join('')}</div>
       <label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="A line drawn with the grid on runs exactly along the nearest grid direction (towards a vanishing point in perspective)."><input type="checkbox" data-gsnap ${st.grid.snap ? 'checked' : ''}><span>Lines follow the grid</span></label>
@@ -1012,10 +1018,10 @@ TT.open = async (el, id) => {
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   /* ---------- Cheat tools: blend, fill and shapes ----------
      All work on the current layer with the ink on the needle, and undo like a stroke. */
-  st.liq = meta.liq || { r: 8, s: 0.5, all: true };
+  st.liq = meta.liq || CP.liq || { r: 8, s: 0.5, all: true };
   st.letters = meta.letters || []; st.letSel = null;
-  st.letDef = meta.letDef || { s: 'Mum', font: "'Pirata One', serif", mm: 12, sp: 0, lh: 1.15, curve: 0, bold: false, ital: false, align: 'center', mode: 'outline', ow: 0.35 };
-  st.lassoAll = !!meta.lassoAll; st.grid = meta.grid || { on: false, mm: 10 }; st.blend = meta.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || { sten: true }; st.shape = meta.shape || { kind: 'rect', fill: false };
+  st.letDef = meta.letDef || CP.letDef || { s: 'Mum', font: "'Pirata One', serif", mm: 12, sp: 0, lh: 1.15, curve: 0, bold: false, ital: false, align: 'center', mode: 'outline', ow: 0.35 };
+  st.lassoAll = !!(meta.lassoAll ?? CP.lassoAll); st.grid = meta.grid || { on: false, mm: 10, ...(CP.grid || {}) }; st.blend = meta.blend || CP.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || CP.fillo || { sten: true }; st.shape = meta.shape || CP.shape || { kind: 'rect', fill: false };
   function toolPop(b) {
     const T = st.tool, sl = (o, f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:4px 6px"><span>${lab}<b>${fmt(st[o][f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${st[o][f]}" data-tl="${o}.${f}"></label>`;
     const tg = (o, f, lab) => `<label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-tl="${o}.${f}" ${st[o][f] ? 'checked' : ''}><span>${lab}</span></label>`;
@@ -1246,6 +1252,16 @@ TT.open = async (el, id) => {
     if (!any) { hist.pop(); for (const key of keys) syncIn(key); return toast('Nothing inside that lasso on ' + (st.lassoAll ? 'the ink layers.' : 'this layer.'), 1800); }
     lsel = { keys, base, fl, b: { x: x0, y: y0, w: bw, h: bh }, tx: 0, ty: 0, s: 1, rot: 0, fx: 1, fy: 1, poly };
     selApply(); placeGuides(); };
+  function keepPrefs() {
+    Settings.set('tt_mk', JSON.stringify({ col: st.mk.col, r: st.mk.r }));
+    if (CHEAT) Settings.set('tt_cheat_prefs', JSON.stringify({ smooth: st.smooth, fast: st.fast, endless: st.endless, rulerOn: st.ruler.on, sym: { mode: st.sym.mode, n: st.sym.n, mir: st.sym.mir },
+      grid: { on: st.grid.on, mm: st.grid.mm, type: st.grid.type, snap: st.grid.snap }, liq: st.liq, letDef: st.letDef, lassoAll: st.lassoAll, blend: st.blend, fillo: st.fillo, shape: st.shape, pathP: st.pathP })); }
+  // Back to the defaults: the marker and magnum settings, and (in cheat mode) every cheat tool, here and for new pieces.
+  async function resetTools() { if (!await ask('Put the tool settings back to the defaults?\n\nThe marker, the magnum angle' + (CHEAT ? ' and every cheat tool (smoothing, fast lines, endless ink, grid, symmetry, ruler and the rest)' : '') + '. Your work is not changed.')) return;
+    await Settings.set('tt_mk', ''); await Settings.set('tt_magflip', '1'); st.mk = { col: MK_COLS[0], r: 0.6, wipe: false }; st.magAng = 75; st.magTilt = true; st.magFlip = true;
+    if (CHEAT) { await Settings.set('tt_cheat_prefs', '{}'); Object.assign(st, { smooth: 45, fast: false, endless: false, lassoAll: false, pathP: 0.6, blend: { r: 3, i: 0.5 }, fillo: { sten: true }, shape: { kind: 'rect', fill: false }, liq: { r: 8, s: 0.5, all: true } });
+      st.ruler.on = false; Object.assign(st.sym, { mode: 'off', n: 8, mir: false, c: { x: W / 2, y: H / 2 } }); st.grid = { on: false, mm: 10 }; }
+    st.dirty = true; closePop(); drawAng(); meterBuild(); meter(lastM); placeGuides(); drawCur(); toast('Tool settings are back to the defaults.', 1800); }
   /* ---------- Adjust colour ----------
      Exposure, brightness, contrast, gamma, saturation, vibrance, temperature, tint and hue on the ink: the whole
      piece (every shown ink layer), or only what the lasso is holding. Only the colour of ink already in the skin
@@ -1410,7 +1426,7 @@ TT.open = async (el, id) => {
      tap the first to close the shape). Apply tattoos it with the current needle at the chosen pressure, as one
      stroke, and leaves it adjustable like a snapped line until Done. */
   const pth = { a: [], closed: false };
-  st.pathP = meta.pathP ?? 0.6;
+  st.pathP = meta.pathP ?? CP.pathP ?? 0.6;
   const pathApply = () => { if (pth.a.length < 2) return toast('Place at least two points first.');
     const key = toolLayer(); if (!key) return; if (st.ink.v <= 0.02 && !st.endless) return toast('The needle is dry: dip into an ink cap first.', 1800);
     const wsh = key !== 'high' ? (st.ink.w || 0) : 0, cx = inkCx(key); if (wsh > 0.04) cx.alsoHi = { ...cx, key: 'high', w: wsh };
@@ -1447,7 +1463,7 @@ TT.open = async (el, id) => {
      little smoothing. Colours for sketching light and refining dark; the spirit wipe takes it off. Nothing here
      touches the skin itself. */
   const MK_COLS = ['#7b4bc9', '#3a6fd8', '#d23b3b', '#2f9a52', '#1c1c1c', '#8fc7f0', '#f08bbd', '#f39a33'];
-  st.mk = meta.mk || { col: MK_COLS[0], r: 0.6, wipe: false };
+  st.mk = meta.mk || (MKP && { ...MKP, wipe: false }) || { col: MK_COLS[0], r: 0.6, wipe: false };
   function markerPop(b) { const M = st.mk;
     pop.innerHTML = `<div class="gh">Skin marker</div><div class="tt-lseg"><button data-mk="draw" class="${M.wipe ? '' : 'on'}">Marker</button><button data-mk="wipe" class="${M.wipe ? 'on' : ''}">Spirit wipe</button></div>
       <div class="tt-mkc">${MK_COLS.map(c => `<button data-mkc="${c}" style="background:${c}" class="${M.col === c ? 'on' : ''}" aria-label="Marker colour"></button>`).join('')}<label class="tt-mkcu" data-tip="Any colour"><input type="color" data-mkcu value="${M.col}"></label></div>
@@ -1602,6 +1618,7 @@ TT.open = async (el, id) => {
   const pts = new Map(); let pinch = null, pan = null, space = false;
   cv.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch' && cal.penOnly && pen) return;   // a resting palm while the pen draws
+    if (CHEAT && e.pointerType === 'touch') { if (!ftap || !pts.size) ftap = { t0: performance.now(), max: 0, moved: false, at: new Map() }; ftap.at.set(e.pointerId, { x: e.clientX, y: e.clientY }); ftap.max = Math.max(ftap.max, pts.size + 1); }
     closePop(); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const r = stage.getBoundingClientRect();
     if (pts.size === 2) { if (pen) { cancelAnimationFrame(pen.raf); hist.length && undoTo(hist.pop()); SS.strokes--; pen = null; }   // a second finger: that was a pinch, not a stroke
@@ -1621,6 +1638,7 @@ TT.open = async (el, id) => {
   });
   cv.addEventListener('pointermove', (e) => {
     if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ftap?.at.has(e.pointerId)) { const s = ftap.at.get(e.pointerId); if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > 12) ftap.moved = true; }
     if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()], r = stage.getBoundingClientRect(), mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
       z = Math.max(0.5, Math.min(12, pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d)); k = fitK * z;
       let rot = pinch.rot + Math.atan2(b.y - a.y, b.x - a.x) - pinch.ang;
@@ -1635,7 +1653,10 @@ TT.open = async (el, id) => {
     if (e.pointerType !== 'touch' || ((st.check || td || mk) && !pan)) { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
     calLive(e);
   });
-  const up = (e) => { pts.delete(e.pointerId); if (pinch && pts.size < 2) pinch = null; pan = null; if (pen && e.pointerId === pen.id) strokeEnd(); if (td && e.pointerId === td.id) toolUp(); if (mk && e.pointerId === mk.id) mkUp(); };
+  // a quick tap of two fingers (undo) or three (redo) that didn't move: cheat mode only
+  let ftap = null;
+  const up = (e) => { pts.delete(e.pointerId);
+    if (ftap && !pts.size) { const f = ftap; ftap = null; if (!f.moved && f.max >= 2 && performance.now() - f.t0 < 400) { f.max === 2 ? undo() : redo(); navigator.vibrate?.(10); } } if (pinch && pts.size < 2) pinch = null; pan = null; if (pen && e.pointerId === pen.id) strokeEnd(); if (td && e.pointerId === td.id) toolUp(); if (mk && e.pointerId === mk.id) mkUp(); };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   cv.addEventListener('wheel', (e) => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomAt(z * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   const keys = (e) => { if (!document.body.contains(el)) { removeEventListener('keydown', keys); removeEventListener('keyup', keys); return; }
@@ -1702,6 +1723,8 @@ TT.open = async (el, id) => {
   tray.addEventListener('contextmenu', (e) => e.preventDefault());
 
   /* ---------- Rail, needles menu and the side panel ---------- */
+  new MutationObserver(() => { if (pop.hidden) return; const sh = stage.clientHeight; pop.style.maxHeight = (sh - 16) + 'px'; pop.style.overflowY = 'auto';
+    if (pop.offsetTop + pop.offsetHeight > sh - 8) pop.style.top = Math.max(8, sh - pop.offsetHeight - 8) + 'px'; }).observe(pop, { childList: true, attributes: true, attributeFilter: ['hidden'] });
   const closePop = () => { pop.hidden = true; if (adjS) adjEnd(false); };   // leaving colour adjustments unapplied puts them back
   const sel = (r) => $('#tt-rail').querySelectorAll('[data-r]').forEach(b => b.classList.toggle('on', b.dataset.r === r || (b.dataset.r === st.tool && !['layers', 'feel', 'refs'].includes(r))
     || (b.dataset.r === st.panel)));
@@ -1732,7 +1755,8 @@ TT.open = async (el, id) => {
       pop.innerHTML = `<div class="gh">Magnum angle</div><div class="tt-angs">${[0, 30, 45, 60, 90, 120, 135, 150].map(v => `<button data-ang="${v}" class="${st.magAng === v ? 'on' : ''}">
           <svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg>${v}°</button>`).join('')}</div>
         <label class="dz-sl" style="margin:6px 6px 2px"><span id="tt-angn">${st.magTilt ? 'Offset on the lean' : 'Fine'}</span><span><b id="tt-angv">${st.magAng}°</b></span><input type="range" min="0" max="179" step="1" value="${st.magAng}" data-angr></label>
-        <label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-angt ${st.magTilt ? 'checked' : ''}><span>Follows the way the pen leans</span></label>`;
+        <label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-angt ${st.magTilt ? 'checked' : ''}><span>Follows the way the pen leans</span></label>
+        <label class="toggle" style="display:flex;margin:0 6px 6px;border:0;min-height:30px;padding:0" data-tip="Which of the magnum's two rows leads: the shorter row in front, or the longer. Kept for every piece."><input type="checkbox" data-angf ${st.magFlip ? 'checked' : ''}><span>Short row in front</span></label>`;
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
     closePop();
@@ -1744,6 +1768,7 @@ TT.open = async (el, id) => {
     st.panel = st.panel === r ? null : r; drawSide();
   };
   pop.onclick = (e) => {
+    if (e.target.closest('[data-toolreset]')) return resetTools();
     const gt = e.target.closest('[data-gt]'); if (gt) { st.grid.on = true; st.grid.type = gt.dataset.gt; st.dirty = true; pop.querySelectorAll('[data-gt]').forEach(x => x.classList.toggle('on', x === gt)); return placeGuides(); }
     const tb = e.target.closest('.tt-tb'); if (tb) { const top = pop.style.top; pop.hidden = true; $('#tt-rail').onclick({ target: tb }); pop.style.top = top; return placeGuides(); }
     const shb = e.target.closest('[data-shp]'); if (shb) { st.shape.kind = shb.dataset.shp; st.dirty = true; pop.querySelectorAll('[data-shp]').forEach(x => x.classList.toggle('on', x === shb)); return; }
@@ -1763,6 +1788,7 @@ TT.open = async (el, id) => {
     if (e.target.matches('[data-symr]')) { st.sym.n = +e.target.value; $('#tt-symnv').textContent = st.sym.n; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-symmir]')) { st.sym.mir = e.target.checked; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-angr]')) { setAng(+e.target.value); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', +x.dataset.ang === st.magAng)); }
+    if (e.target.matches('[data-angf]')) { st.magFlip = e.target.checked; Settings.set('tt_magflip', st.magFlip ? '1' : '0'); return drawCur(); }
     if (e.target.matches('[data-angt]')) { st.magTilt = e.target.checked; st.dirty = true; const n = $('#tt-angn'); if (n) n.textContent = st.magTilt ? 'Offset on the lean' : 'Fine'; drawAng(); }
   };
   function setAng(v) { st.magAng = ((Math.round(v) % 180) + 180) % 180; st.dirty = true; const l = $('#tt-angv'); if (l) l.textContent = st.magAng + '°'; const r = pop.querySelector('[data-angr]'); if (r) r.value = st.magAng; drawAng(); drawCur(); }
@@ -1814,7 +1840,7 @@ TT.open = async (el, id) => {
         ${cslider('hand', 'Hand speed', 0.1, 5, 0.05, cal.hand, v => '× ' + v)}${cslider('fade', 'Fast strokes lighten', 0.1, 5, 0.05, cal.fade, v => '× ' + v)}
         ${cslider('flow', 'Ink flow', 0.3, 3, 0.05, cal.flow, v => '× ' + v)}${cslider('tilt0', 'Natural angle', 0, 50, 1, cal.tilt0, v => v + '°')}
         ${cslider('blow', 'Blowout sensitivity', 0, 3, 0.05, cal.blow ?? 1, v => +v ? '× ' + v : 'off')}${cslider('tough', 'Skin toughness', 0.1, 3, 0.05, cal.tough ?? 1, v => '× ' + v)}
-        <button class="btn small" data-calreset>Reset all needles' calibration</button>`, { fold: true })}
+        <button class="btn small" data-calreset>Reset all needles' calibration</button> <button class="btn small" data-toolreset>Reset tool settings</button>`, { fold: true })}
       <div class="lbl" style="margin-top:8px">${nd.id} only</div>
       <div class="lbl">Pressure → depth</div>
       <div class="tt-crow">${curveSvg(f.pCurve)}<div style="flex:1">${slider('pCurve', 'Curve', -100, 100, 1, f.pCurve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
@@ -1859,6 +1885,7 @@ TT.open = async (el, id) => {
     if (t.closest('[data-padclear]')) return padInit();
     if (t.closest('[data-tune]')) return tuneIn();
     if (t.closest('[data-prof]')) { setProfile(t.closest('[data-prof]').dataset.prof); TT.saveCal(cal); return drawSide(); }
+    if (t.closest('[data-toolreset]')) return resetTools();
     if (t.closest('[data-calreset]')) { if (!await ask('Put the calibration for all needles back to the defaults?')) return; cal = { ...TT.calDefaults, penOnly: cal.penOnly }; TT.saveCal(cal); return drawSide(); }
     if (t.matches('[data-penonly]')) { cal.penOnly = t.checked; TT.saveCal(cal); }
   });
@@ -2100,7 +2127,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined }), id]);
+        (keepPrefs(), JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
