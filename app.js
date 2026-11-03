@@ -1254,7 +1254,7 @@ const VIEWS = {
         <button class="btn primary icon-btn" id="pf-add" data-tip="Add to portfolio" aria-label="Add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="seg pf-seg" id="pf-filter">
-        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['fav', '★'], ['refs', 'References'], ['assets', 'Assets'], ['stencils', 'Stencils']].map(([k, l]) =>
+        ${[['all', 'All'], ['tattoo', 'Tattoos'], ['art', 'Art'], ['flash', 'Flash'], ['sim', 'Simulator'], ['fav', '★'], ['refs', 'References'], ['assets', 'Assets'], ['stencils', 'Stencils']].map(([k, l]) =>
           `<button data-f="${k}" class="${PF.filter === k ? 'on' : ''}" ${k === 'fav' ? 'data-tip="Favourites" aria-label="Favourites"' : ''}>${l}</button>`).join('')}
       </div>
       <div id="pf-grid"></div>`,
@@ -1263,7 +1263,7 @@ const VIEWS = {
       $('#pf-filter').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; PF.filter = b.dataset.f;
         document.querySelectorAll('#pf-filter button').forEach(x => x.classList.toggle('on', x === b)); renderPfGrid(); };
       $('#pf-print').onclick = openPortfolioPrint;
-      $('#pf-add').onclick = () => { if (PF.filter === 'refs') return refImport(); if (PF.filter === 'assets') return assetImport(); if (PF.filter === 'stencils') { ST.src = null; location.hash = 'stencil'; return; }
+      $('#pf-add').onclick = () => { if (PF.filter === 'refs') return refImport(); if (PF.filter === 'assets') return assetImport(); if (PF.filter === 'stencils') { ST.src = null; location.hash = 'stencil'; return; } if (PF.filter === 'sim') { location.hash = 'tattoo'; return; }
         PF.ctx = { kind: ['tattoo', 'art', 'flash'].includes(PF.filter) ? PF.filter : 'tattoo' }; location.hash = 'pf-edit/new'; };
       renderPfGrid();
     }
@@ -3877,7 +3877,8 @@ async function renderPfGrid() {
   if (PF.filter === 'assets') return renderAssets(el);
   if (PF.filter === 'stencils') return renderStencils(el);
   const q = PF.q.trim(), like = '%' + q + '%';
-  const where = PF.filter === 'fav' ? 'p.favourite = 1' : PF.filter === 'all' ? '1' : 'p.kind = ?';
+  // Simulator: pieces saved from the tattoo simulator (art tagged "simulator")
+  const where = PF.filter === 'fav' ? 'p.favourite = 1' : PF.filter === 'all' ? '1' : PF.filter === 'sim' ? "p.tags LIKE '%simulator%'" : 'p.kind = ?';
   const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite, p.bg,
       (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS thumb,
       (SELECT count(*) FROM portfolio_photos x WHERE x.item_id = p.id) AS n

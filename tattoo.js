@@ -591,6 +591,7 @@ TT.open = async (el, id) => {
       <button class="dz-ib tt-viewb" id="tt-view" data-tip="Preview: as worked, fresh, healed or after 10 years" aria-label="Preview"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><b></b></button>
       <button class="dz-ib" id="tt-stencilmk" data-tip="Send to the stencil maker" aria-label="Stencil maker">${ICON.stencil}</button>
       <button class="dz-ib" id="tt-fs" data-tip="Full screen" aria-label="Full screen" ${typeof FS !== 'undefined' && FS.can() ? '' : 'hidden'}></button>
+      <button class="dz-ib" id="tt-pf" data-tip="Save to portfolio: fresh, healed and 10 years, with the stencil" aria-label="Save to portfolio"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><path d="M12 2v6M9 5l3 3 3-3"/></svg></button>
       <button class="dz-ib" id="tt-tl" data-tip="Timelapse and stats" aria-label="Timelapse and stats"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5z"/></svg></button>
       <button class="dz-ib" id="tt-png" data-tip="Save as PNG" aria-label="Save as PNG"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></button>
       <button class="dz-ib dz-go" id="tt-save" data-tip="Save" aria-label="Save"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>
@@ -1446,6 +1447,42 @@ TT.open = async (el, id) => {
     fsBtn.innerHTML = on ? '<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
     fsBtn.dataset.tip = on ? 'Exit full screen' : 'Full screen'; setTimeout(fit, 120); };
   fsBtn.onclick = () => FS.set(!FS.on()); document.addEventListener('fullscreenchange', fsShow); fsShow();
+  /* ---------- Save to portfolio ----------
+     One picture of the piece: the stencil (if there is one), fresh, healed and 10 years side by side, cropped to the
+     work, and for a challenge its score card underneath. Kept in Portfolio › Simulator (art tagged "simulator"). */
+  const workBox = () => { let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (const key of [...INK, 'stencil']) { const D = key === 'stencil' ? L.stencil.getContext('2d').getImageData(0, 0, W, H).data : imgd[key].data;
+      for (let y = 0; y < H; y += 3) for (let x = 0; x < W; x += 3) if (D[(y * W + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+    if (x1 < 0) return { x: 0, y: 0, w: W, h: H }; const pad = 6 * mm;
+    x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W, x1 + pad); y1 = Math.min(H, y1 + pad); return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; };
+  const sheetOf = async (card) => {
+    const b = workBox(), hasSten = (() => { const D = L.stencil.getContext('2d').getImageData(b.x, b.y, b.w, b.h).data; for (let i = 3; i < D.length; i += 16) if (D[i] > 8) return true; return false; })();
+    const panels = [];
+    if (hasSten) { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.fillStyle = '#f6f3ee'; g.fillRect(0, 0, W, H); g.drawImage(L.stencil, 0, 0); panels.push(['Stencil', c]); }
+    for (const [mode, label] of [['fresh', 'Fresh'], ['healed', 'Healed'], ['aged', '10 years']]) panels.push([label, viewOf(mode)]);
+    const pw = 720, ph = Math.round(pw * b.h / b.w), gap = 36, M = 60, cw = M * 2 + panels.length * pw + (panels.length - 1) * gap;
+    const cardW = card ? Math.min(cw - M * 2, 900) : 0, cardH = card ? Math.round(cardW / card.width * card.height) : 0, chH = 150 + ph + 70 + (card ? cardH + 40 : 0);
+    const c = document.createElement('canvas'); c.width = cw; c.height = chH; const g = c.getContext('2d');
+    g.fillStyle = '#121617'; g.fillRect(0, 0, cw, chH);
+    g.fillStyle = '#e9e3d6'; g.font = "60px 'Pirata One', serif"; g.fillText($('#tt-name')?.value.trim() || st.name || 'Piece', M, 95);
+    g.fillStyle = '#9aa5a6'; g.font = '600 26px Inter, sans-serif'; g.fillText(`Tattoo simulator · ${new Date().toLocaleDateString()}`, M, 132);
+    panels.forEach(([label, pc], i) => { const x = M + i * (pw + gap); g.drawImage(pc, b.x, b.y, b.w, b.h, x, 160, pw, ph);
+      g.fillStyle = '#e9e3d6'; g.font = '700 26px Inter, sans-serif'; g.fillText(label, x, 160 + ph + 42); });
+    if (card) g.drawImage(card, (cw - cardW) / 2, 160 + ph + 80, cardW, cardH);   // the score card, centred under the stages
+    return c; };
+  const toPortfolio = async (card, title) => {
+    toast('Saving to portfolio…', 1500);
+    const sh = await sheetOf(card), blob = await new Promise(r => sh.toBlob(r, 'image/jpeg', 0.9));
+    const tc = document.createElement('canvas'), ts = Math.min(1, 520 / sh.width); tc.width = Math.round(sh.width * ts); tc.height = Math.round(sh.height * ts); tc.getContext('2d').drawImage(sh, 0, 0, tc.width, tc.height);
+    const tb = await new Promise(r => tc.toBlob(r, 'image/jpeg', 0.85)), photo = await Media.save(blob, 'jpg'), thumb = await Media.save(tb, 'jpg');
+    await DB.run(`INSERT INTO portfolio_items (kind, title, description, tags, made_on) VALUES ('art', ?, ?, 'simulator', date('now'))`,
+      [title || $('#tt-name')?.value.trim() || st.name || 'Simulator piece', card ? 'Challenge piece from the tattoo simulator, with its score card.' : 'From the tattoo simulator: fresh, healed and 10 years.']);
+    const pid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+    await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [pid, photo, thumb, 'Fresh, healed and 10 years']);
+    toast('Saved to Portfolio › Simulator.', 2500); };
+  $('#tt-pf').onclick = async () => { const b = $('#tt-pf'); if (b.disabled) return; b.disabled = true;
+    try { const r = EX?.res?.[EX.res.length - 1], T = r && TT_CH.find(c => c.id === r.id); await toPortfolio(r && T ? await cardOf(T, r, EX.info) : null, T?.title); }
+    catch (err) { toast('Could not save: ' + err.message, 4000); } finally { b.disabled = false; } };
   $('#tt-tl').onclick = () => {
     const o = document.createElement('div'); o.id = 'merge-dlg'; let len = +Settings.get('tt_tl_len', '30');
     const LAYN = Object.fromEntries(TT_LAYERS);
@@ -1779,6 +1816,7 @@ TT.open = async (el, id) => {
       ${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points: ${[res.undos ? `${res.undos} undo${res.undos === 1 ? '' : 's'}` : '', res.lasers ? `laser ${res.lasers} time${res.lasers === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ')}</p>` : ''}
       <img class="tt-chshot" src="${res.thumb}" alt="">
       ${info?.gained?.length ? `<div class="lbl">Trophies won</div><div class="tt-cabinet">${info.gained.map(t => `<div class="tt-trophy won">${ttCup(t.tier, 30)}<b>${esc(t.name)}</b><span>${esc(t.desc)}</span></div>`).join('')}</div>` : ''}
+      ${ttHubOf(T) === 'flash' && !res.empty ? `<div class="tt-pfask"><span>Keep this flash piece? It goes to Portfolio › Simulator with fresh, healed and 10 year views and this score card.</span><button class="btn primary small" data-cr="pf">Save to portfolio</button></div>` : ''}
       <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-cr="hub">Challenges</button><button class="btn" data-cr="save">Save card</button><span style="flex:1"></span>
         ${next ? '<button class="btn" data-cr="next">Next challenge</button>' : ''}<button class="btn" data-cr="close">Close</button><button class="btn primary" data-cr="again">Try again</button></div></div>`;
     o.onclick = async (e) => { const a = e.target.closest('[data-cr]')?.dataset.cr; if (!a) return;
@@ -1786,20 +1824,26 @@ TT.open = async (el, id) => {
       if (a === 'hub') { o.remove(); location.hash = 'tattoo/challenges'; return; }
       if (a === 'next') { o.remove(); if (st.dirty) await save(true); return ttChStart(next.id); }
       if (a === 'again') { o.remove(); EX.res = []; EX.info = null; return exStart(true); }
-      if (a === 'save') {   // a picture of the card: the attempt, the score, medal and best, for comparing later
-        const c = document.createElement('canvas'); c.width = 1080; c.height = 1350; const g = c.getContext('2d');
-        g.fillStyle = '#121617'; g.fillRect(0, 0, 1080, 1350);
-        const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = res.thumb; });
-        const s2 = Math.min(1000 / im.width, 700 / im.height); g.drawImage(im, (1080 - im.width * s2) / 2, 300, im.width * s2, im.height * s2);
-        g.fillStyle = '#e9e3d6'; g.font = "64px 'Pirata One', serif"; g.fillText(T.title, 50, 110);
-        g.font = '600 30px Inter, sans-serif'; g.fillStyle = '#9aa5a6'; g.fillText(`${'★'.repeat(T.diff)}  ·  ${new Date().toLocaleDateString()}${info ? '  ·  best ' + info.best : ''}`, 50, 165);
-        g.fillStyle = m ? { gold: '#e2b34a', silver: '#c9d1d6', bronze: '#c88a55' }[m[1]] : '#1fb5a8'; g.font = '800 120px Inter, sans-serif'; g.textAlign = 'right'; g.fillText(String(res.total), 1030, 140);
-        g.font = '700 30px Inter, sans-serif'; g.fillText(m ? m[2].toUpperCase() : 'NO MEDAL', 1030, 190); g.textAlign = 'left';
-        g.font = '500 28px Inter, sans-serif'; g.fillStyle = '#e9e3d6';
-        [...parts, ...(res.skin != null ? [['skin', res.skin]] : [])].forEach(([kk, v], n) => g.fillText(`${kk[0].toUpperCase() + kk.slice(1)}  ${v}`, 50 + (n % 2) * 520, 1080 + Math.floor(n / 2) * 50));
-        return saveFiles([await canvasFile(c, `${T.id}-${res.total}-${ymd(new Date())}.png`)]);
-      } };
+      if (a === 'pf') { const bt = e.target.closest('[data-cr]'); if (bt.disabled) return; bt.disabled = true;
+        try { await toPortfolio(await cardOf(T, res, info), T.title); bt.textContent = 'Saved'; } catch (err) { bt.disabled = false; toast('Could not save: ' + err.message, 4000); } return; }
+      if (a === 'save') return saveFiles([await canvasFile(await cardOf(T, res, info), `${T.id}-${res.total}-${ymd(new Date())}.png`)]);
+    };
     document.body.appendChild(o);
+  }
+  // The score card as a picture: the attempt, the score, medal and best, for comparing later.
+  async function cardOf(T, res, info) {
+    const m = ttMedal(res.total), parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
+    const c = document.createElement('canvas'); c.width = 1080; c.height = 1350; const g = c.getContext('2d');
+    g.fillStyle = '#121617'; g.fillRect(0, 0, 1080, 1350);
+    const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = res.thumb; });
+    const s2 = Math.min(1000 / im.width, 700 / im.height); g.drawImage(im, (1080 - im.width * s2) / 2, 300, im.width * s2, im.height * s2);
+    g.fillStyle = '#e9e3d6'; g.font = "64px 'Pirata One', serif"; g.fillText(T.title, 50, 110);
+    g.font = '600 30px Inter, sans-serif'; g.fillStyle = '#9aa5a6'; g.fillText(`${'★'.repeat(T.diff)}  ·  ${new Date().toLocaleDateString()}${info ? '  ·  best ' + info.best : ''}`, 50, 165);
+    g.fillStyle = m ? { gold: '#e2b34a', silver: '#c9d1d6', bronze: '#c88a55' }[m[1]] : '#1fb5a8'; g.font = '800 120px Inter, sans-serif'; g.textAlign = 'right'; g.fillText(String(res.total), 1030, 140);
+    g.font = '700 30px Inter, sans-serif'; g.fillText(m ? m[2].toUpperCase() : 'NO MEDAL', 1030, 190); g.textAlign = 'left';
+    g.font = '500 28px Inter, sans-serif'; g.fillStyle = '#e9e3d6';
+    [...parts, ...(res.skin != null ? [['skin', res.skin]] : [])].forEach(([kk, v], n) => g.fillText(`${kk[0].toUpperCase() + kk.slice(1)}  ${v}`, 50 + (n % 2) * 520, 1080 + Math.floor(n / 2) * 50));
+    return c;
   }
   const CATS = [['line', 'Linework', 'Pull lines in one steady motion at your lining speed, with the same depth all the way; follow the stencil rather than going back over it.'],
     ['shade', 'Shading', 'Let speed do the fading: slow and pressed in where it should be dark, faster and lighter as it fades; keep a steady rhythm on a pendulum.'],
@@ -1862,6 +1906,8 @@ function ttStyle() {
 .tt-cup.gold, .tt-medal.gold { stroke: #e2b34a; } .tt-cup.silver, .tt-medal.silver { stroke: #c9d1d6; } .tt-cup.bronze, .tt-medal.bronze { stroke: #c88a55; } .tt-cup.locked { stroke: var(--ink2); }
 .tt-chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
 .tt-chc { display: flex; flex-direction: column; text-align: left; padding: 0; border-radius: 12px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: inherit; }
+.tt-pfask { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--teal); background: rgba(31,182,166,.08); font-size: 13px; }
+.tt-pfask span { flex: 1; }
 .tt-chc:hover { border-color: var(--teal); } .tt-chc.off { opacity: .4; filter: grayscale(1); }
 .tt-chskin { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 12px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); }
 .tt-chskin .tt-skins button.on { outline: 2px solid var(--teal); outline-offset: 2px; } .tt-chimg { aspect-ratio: 4 / 3; overflow: hidden; background: #1b1e1f; } .tt-chimg img { width: 100%; height: 100%; object-fit: contain; display: block; }
