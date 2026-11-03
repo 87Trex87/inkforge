@@ -314,7 +314,8 @@ select.in { appearance: none; padding-right: 30px; cursor: pointer;
 .mini-sel { min-height: 32px; font-size: 12px !important; padding: 0 22px 0 8px; border-radius: 8px; background-position: right 4px center; background-size: 12px; }
 
 /* Quote / inventory / rules */
-.quote-print { display: block; width: 190mm; height: auto; }
+/* One image per printed page, as large as fits the page either way (a tall design never spills onto a second page). */
+.quote-print { display: block; width: auto; height: auto; max-width: 100%; max-height: 98vh; margin: 0 auto; }
 a.btn { color: var(--ink); text-decoration: none; }
 a.btn.primary { color: #061211; }
 /* Quote wizard */

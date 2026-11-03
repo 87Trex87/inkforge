@@ -1328,7 +1328,9 @@ DZ.edit = async (id) => {
   let saveT = null, saving = null, dirty = false;
   const save = () => { dirty = true; clearTimeout(saveT); saveT = setTimeout(flush, 900); };
   // Writes now (also when leaving the editor, so the list always has the latest thumbnail).
-  const flush = () => { clearTimeout(saveT); if (!dirty) return saving || Promise.resolve(); dirty = false; return (saving = (async () => {
+  const flush = () => { clearTimeout(saveT); if (!dirty) return saving || Promise.resolve(); dirty = false;
+    // one save at a time: a change made while one runs is written after it; a failed save leaves the design unsaved
+    return (saving = (saving || Promise.resolve()).catch(() => {}).then(async () => { try {
     const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
     const ref = await Media.save(await new Promise(r => th.toBlob(r, 'image/jpeg', 0.8)), 'jpg');
     const old = (await DB.one('SELECT thumb_ref FROM designs WHERE id = ?', [id]))?.thumb_ref;
@@ -1340,20 +1342,22 @@ DZ.edit = async (id) => {
     if (old && old !== ref) await Media.release(old);
     for (const r of before) if (!refs.includes(r)) dropped.add(r);
     if ($('#dz-list')) DZ.list();
-  })()); };
+    } catch (err) { dirty = true; console.warn('Design save failed:', err); toast('Could not save the design: ' + err.message, 5000); } })); };
+  const onHide = () => { if (document.hidden) flush(); };
+  document.addEventListener('visibilitychange', onHide);
   const dropped = new Set(), made = new Set();   // pictures taken out (or made) while editing; tidied when leaving
   const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref), ...doc.layers.map(l => l.tex?.ref)].filter(Boolean);
-  addEventListener('hashchange', function away() { removeEventListener('hashchange', away); focus(false);
+  addEventListener('hashchange', function away() { removeEventListener('hashchange', away); document.removeEventListener('visibilitychange', onHide); focus(false);
     flush().then(async () => { const keep = docRefs(); for (const r of new Set([...dropped, ...made])) if (!keep.includes(r)) await Media.release(r); }); });
   // A change: redraw, remember for undo, save.
   let histT = null;
+  const push = () => { histT = null; const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
   const changed = (now) => {
     redraw(); save();
     clearTimeout(histT);
-    const push = () => { const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
     if (now) push(); else histT = setTimeout(push, 450);
   };
-  const undo = (d) => { const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; qsHide(); drawPen(); if (!layer()) sel = null;
+  const undo = (d) => { if (histT) { clearTimeout(histT); push(); } const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; qsHide(); drawPen(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
@@ -3277,8 +3281,9 @@ function dzExport(doc, name) {
     const f = new File([blob], file() + '.png', { type: 'image/png' });
     if (a === 'png') { const l = document.createElement('a'); l.href = URL.createObjectURL(f); l.download = f.name; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000); return toast('Saved ' + f.name); }
     if (a === 'share') {
-      try { if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: name }); else { const l = document.createElement('a'); l.href = URL.createObjectURL(f); l.download = f.name; l.click(); } }
-      catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); }
+      const dl = () => { const l = document.createElement('a'); l.href = URL.createObjectURL(f); l.download = f.name; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000); toast('Saved ' + f.name); };
+      try { if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: name }); else dl(); }
+      catch (err) { if (err.name !== 'AbortError') dl(); }   // e.g. the tap expired while the picture was made
       return;
     }
     if (a === 'print') { o.remove(); return printCanvas(kind.page ? cv : await dzSheet(cv, doc.kind, st.sheet)); }
@@ -3395,9 +3400,9 @@ BT.mount = () => {
   const result = async () => { toast('Bending…'); await new Promise(r => setTimeout(r, 30));
     const b = btWarp(BT.src, BT.deg, 3000); return new File([await new Promise(r => b.toBlob(r, 'image/png'))], `${BT.name}-bent.png`, { type: 'image/png' }); };
   $('#bt-png').onclick = async () => { const f = await result(); const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); };
-  $('#bt-share').onclick = async () => { const f = await result();
-    try { if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: f.name }); else { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); } }
-    catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); } };
+  $('#bt-share').onclick = async () => { const f = await result(), dl = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); };
+    try { if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: f.name }); else dl(); }
+    catch (err) { if (err.name !== 'AbortError') dl(); } };
   $('#bt-st').onclick = async () => {
     toast('Opening in the stencil maker…'); await new Promise(r => setTimeout(r, 30));
     const b = btWarp(BT.src, BT.deg, 2400), w = document.createElement('canvas'); w.width = b.width; w.height = b.height;
@@ -3475,7 +3480,7 @@ SP.mount = () => {
         </div>
         <p class="muted" style="font-size:12px;margin:8px 0">${pages} page${pages > 1 ? 's' : ''} on ${SP.paper} ${SP.land ? 'landscape' : 'portrait'} (up to ${mw.toFixed(1)} × ${mh.toFixed(1)} cm each).
           Drag the dashed cut lines to move a cut, for example away from a face or fine detail. <button class="link" id="sp-even">Space evenly</button></p>
-        <div class="row" style="gap:6px"><button class="btn" id="sp-save">Save pieces</button><button class="btn primary" id="sp-print" style="flex:1">Print ${pages} page${pages > 1 ? 's' : ''}</button></div>
+        <div class="row" style="gap:6px"><button class="btn" id="sp-save" data-tip="Save every piece as a PNG to this device">Save pieces</button><button class="btn" id="sp-share">Share</button><button class="btn primary" id="sp-print" style="flex:1">Print ${pages} page${pages > 1 ? 's' : ''}</button></div>
         <label class="btn small" style="margin-top:10px">Another image<input type="file" accept="image/*" id="sp-file" hidden></label>
       </div></div>`;
     lay(); bind();
@@ -3513,7 +3518,8 @@ SP.mount = () => {
       }
       if (t.closest('#sp-even')) { SP.xs = spEven(SP.wcm, SP.xs.length + 1); SP.ys = spEven(spHcm(), SP.ys.length + 1); return overlay(); }
       if (t.closest('#sp-print')) return spPrint();
-      if (t.closest('#sp-save')) return spSave();
+      if (t.closest('#sp-save')) return spSave(false);
+      if (t.closest('#sp-share')) return spSave(true);
     };
     $('#sp-w').onchange = (e) => { SP.wcm = Math.max(5, Math.min(300, +e.target.value || SP.wcm)); spReset(); draw(); };
     ctl.querySelector('#sp-file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
@@ -3563,18 +3569,18 @@ SP.mount = () => {
     }).join('');
     await Promise.all([...pa.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
     document.body.classList.add('printing');
-    const done = () => { document.body.classList.remove('printing'); pa.innerHTML = ''; removeEventListener('afterprint', done); };
-    addEventListener('afterprint', done);
+    const done = () => { document.body.classList.remove('printing'); pa.innerHTML = ''; };
+    afterPrint(done);
     window.print();
   };
-  const spSave = async () => {
+  const spSave = async (share) => {
     const files = [];
     for (const p of spPieces()) { const cv = pieceCanvas(p); files.push(new File([await new Promise(r => cv.toBlob(r, 'image/png'))], `${SP.name}-${p.label}.png`, { type: 'image/png' })); }
     try {
-      if (navigator.canShare?.({ files })) return await navigator.share({ files, title: SP.name });
+      if (share && navigator.canShare?.({ files })) return await navigator.share({ files, title: SP.name });
       for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); await new Promise(r => setTimeout(r, 250)); }
       toast(`Saved ${files.length} pieces.`);
-    } catch (err) { if (err.name !== 'AbortError') toast('Could not save: ' + err.message); }
+    } catch (err) { if (err.name !== 'AbortError') { if (share) return spSave(false); toast('Could not save: ' + err.message); } }
   };
   draw();
   new ResizeObserver(() => { if ($('#sp-stage')) lay(); }).observe($('#sp-stage'));
