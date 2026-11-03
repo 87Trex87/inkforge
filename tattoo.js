@@ -807,7 +807,7 @@ TT.open = async (el, id) => {
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
       if (pen.snapped) continue;
-      const p = rulerPt(smoothPt(toPage(ev))), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
+      const p = gridPt(rulerPt(smoothPt(toPage(ev)))), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
       if (d < 0.01) continue;
       const v = d * k / (96 / 25.4) / dt;   // the hand's speed on the screen, mm per second (zoom doesn't change it)
       pen.speed = pen.speed ? pen.speed * 0.7 + v * 0.3 : v; pen.a = Math.atan2(dy, dx); pen.trav = (pen.trav || 0) + d / mm;
@@ -890,6 +890,7 @@ TT.open = async (el, id) => {
     $('#tt-rail [data-r="tools"]')?.classList.toggle('on', ['blend', 'fill', 'shape', 'lasso', 'pick', 'liquify', 'text'].includes(st.tool) || st.grid.on || st.ruler.on || st.sym.mode !== 'off' || !!st.fast);
     $('#tt-rail [data-r="ruler"]')?.classList.toggle('on', st.ruler.on); $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off');
     if (st.ruler.on) hs.push(['ra', st.ruler.a], ['rb', st.ruler.b]);
+    if (st.grid.on) gridVps().forEach((v, i) => hs.push(['gv' + i, v]));
     if (st.sym.mode !== 'off') hs.push(['sc', st.sym.c]);
     let sh = '';
     if (lsel) { const cs = selCorners().map(toScreen), c = toScreen(selCentre()), ang = lsel.rot + st.rot, w = lsel.b.w * lsel.s * k, h2 = lsel.b.h * lsel.s * k, top = toScreen({ x: (selCorners()[0].x + selCorners()[1].x) / 2, y: (selCorners()[0].y + selCorners()[1].y) / 2 });
@@ -902,12 +903,45 @@ TT.open = async (el, id) => {
       sh += `<div data-gh="lbody" class="tt-selb let" style="left:${c.x}px;top:${c.y}px;width:${w}px;height:${h2}px;transform:translate(-50%,-50%) rotate(${ang}rad)"></div><i data-gh="lsize" class="lsel" style="left:${cr.x}px;top:${cr.y}px"></i><i data-gh="lrot" class="lsel rot" style="left:${tp.x}px;top:${tp.y}px"></i>`; }
     if (snapE?.live) sh += snapE.anchors.map((a, i) => { const q = toScreen(a); return `<i data-gh="an${i}" class="anc ${a.c ? 'corner' : ''}" style="left:${q.x}px;top:${q.y}px"></i>`; }).join('')
       + `<div class="tt-selbar"><span class="tt-anhint">Drag an anchor to reshape · tap it for curve or corner</span><button data-sa="snapok" class="ok">Done</button></div>`;
-    guides.innerHTML = sh + hs.map(([k2, p]) => { const s = toScreen(p); return `<i data-gh="${k2}" class="${k2 === 'sc' ? 'sym' : ''}" style="left:${s.x}px;top:${s.y}px"></i>`; }).join('');
+    guides.innerHTML = sh + hs.map(([k2, p]) => { const s = toScreen(p); return `<i data-gh="${k2}" class="${k2 === 'sc' ? 'sym' : k2[0] === 'g' ? 'vp' : ''}" style="left:${s.x}px;top:${s.y}px"></i>`; }).join('');
     drawCur(); }
+  /* Grids: square, isometric, one, two and three point perspective (vanishing points draggable), and radial. In
+     perspective the lines fan out from each vanishing point across the page, closer together as the grid size drops. */
+  const GRID_TYPES = [['square', 'Square'], ['iso', 'Isometric'], ['p1', '1-point'], ['p2', '2-point'], ['p3', '3-point'], ['radial', 'Radial']];
+  const gridVps = () => { const G = st.grid; G.vp ||= [{ x: W / 2, y: H * 0.4 }, { x: W * 0.06, y: H * 0.4 }, { x: W * 0.94, y: H * 0.4 }, { x: W / 2, y: H * 0.96 }];
+    return G.type === 'p1' || G.type === 'radial' ? [G.vp[0]] : G.type === 'p2' ? [G.vp[1], G.vp[2]] : G.type === 'p3' ? [G.vp[1], G.vp[2], G.vp[3]] : []; };
+  const drawGrid = () => { const G = st.grid, g = G.mm * mm, T = G.type || 'square', line = (a, b) => { const A = toScreen(a), B = toScreen(b); cux.moveTo(A.x, A.y); cux.lineTo(B.x, B.y); };
+    cux.save(); { const C = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => toScreen({ x, y })); cux.beginPath(); C.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.closePath(); cux.clip(); }   // only on the page
+    cux.lineWidth = 1; cux.strokeStyle = 'rgba(255,255,255,.2)'; cux.beginPath();
+    const span = Math.hypot(W, H) * 2;
+    if (T === 'square' || T === 'p1') { for (let x = g; x < W; x += g) line({ x, y: 0 }, { x, y: H }); if (T === 'square') for (let y = g; y < H; y += g) line({ x: 0, y }, { x: W, y }); }
+    if (T === 'iso') { const t30 = Math.tan(Math.PI / 6), step = g / Math.cos(Math.PI / 6);
+      for (let c = -W * t30 - H; c < H + W * t30; c += step) { line({ x: 0, y: c }, { x: W, y: c + W * t30 }); line({ x: 0, y: c + W * t30 }, { x: W, y: c }); }
+      for (let x = 0; x < W; x += g * Math.cos(Math.PI / 6)) line({ x, y: 0 }, { x, y: H }); }
+    if (T === 'p2') for (let x = g; x < W; x += g) line({ x, y: 0 }, { x, y: H });   // uprights
+    const vps = gridVps(), rays = Math.max(8, Math.min(72, Math.round(300 / G.mm)));
+    if (T === 'radial') { const c = vps[0]; for (let r = g; r < span / 2; r += g) { const C = toScreen(c); cux.moveTo(C.x + r * k, C.y); cux.arc(C.x, C.y, r * k, 0, Math.PI * 2); }
+      for (let i = 0; i < rays; i++) { const a = Math.PI * 2 * i / rays; line(c, { x: c.x + Math.cos(a) * span, y: c.y + Math.sin(a) * span }); } }
+    else for (const v of vps) {   // a fan across the page from each vanishing point
+      const ang = [[0, 0], [W, 0], [0, H], [W, H]].map(([x, y]) => Math.atan2(y - v.y, x - v.x)); let a0 = Math.min(...ang), a1 = Math.max(...ang);
+      if (v.x > 0 && v.x < W && v.y > 0 && v.y < H) { a0 = -Math.PI; a1 = Math.PI; } else if (a1 - a0 > Math.PI) { const s = ang.map(a => a < 0 ? a + Math.PI * 2 : a); a0 = Math.min(...s); a1 = Math.max(...s); }
+      for (let i = 0; i <= rays; i++) { const a = a0 + (a1 - a0) * i / rays; line(v, { x: v.x + Math.cos(a) * span, y: v.y + Math.sin(a) * span }); } }
+    cux.stroke();
+    if (T === 'p1' || T === 'p2') { const y = vps[0].y; cux.strokeStyle = 'rgba(255,111,97,.6)'; cux.lineWidth = 1.5; cux.beginPath(); line({ x: -W, y }, { x: W * 2, y }); cux.stroke(); }   // horizon
+    cux.restore(); };
+  // Lines follow the grid: once a stroke shows its direction, it runs exactly along the nearest grid direction.
+  const gridPt = (p) => { const G = st.grid; if (!CHEAT || !G.on || !G.snap || !pen) return p;
+    if (!pen.gs) { pen.gs = p; return p; } const s = pen.gs;
+    if (!pen.gd) { if (Math.hypot(p.x - s.x, p.y - s.y) < 2.5 * mm) return p;
+      const T = G.type || 'square', mv = Math.atan2(p.y - s.y, p.x - s.x), dirs = [];
+      if (T === 'square' || T === 'p1') dirs.push(0, Math.PI / 2); if (T === 'p2') dirs.push(Math.PI / 2); if (T === 'iso') dirs.push(Math.PI / 6, -Math.PI / 6, Math.PI / 2);
+      if (T === 'radial') { const c = gridVps()[0]; dirs.push(Math.atan2(s.y - c.y, s.x - c.x)); }
+      else for (const v of gridVps()) dirs.push(Math.atan2(v.y - s.y, v.x - s.x));
+      const diff = (a) => { let d = Math.abs(((mv - a) % Math.PI + Math.PI * 1.5) % Math.PI - Math.PI / 2); return d; };
+      const best = dirs.reduce((b, a) => diff(a) < diff(b) ? a : b, dirs[0]); pen.gd = { x: Math.cos(best), y: Math.sin(best) }; }
+    const u = pen.gd, t2 = (p.x - s.x) * u.x + (p.y - s.y) * u.y; return { x: s.x + u.x * t2, y: s.y + u.y * t2 }; };
   const drawGuides = () => { if (!CHEAT) return; const dpr = cur.width / (stage.clientWidth || 1); cux.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (st.grid.on) { const g = st.grid.mm * mm; cux.lineWidth = 1; cux.strokeStyle = 'rgba(255,255,255,.18)'; cux.beginPath();
-      for (let x = g; x < W; x += g) { const a = toScreen({ x, y: 0 }), b = toScreen({ x, y: H }); cux.moveTo(a.x, a.y); cux.lineTo(b.x, b.y); }
-      for (let y = g; y < H; y += g) { const a = toScreen({ x: 0, y }), b = toScreen({ x: W, y }); cux.moveTo(a.x, a.y); cux.lineTo(b.x, b.y); } cux.stroke(); }
+    if (st.grid.on) drawGrid();
     if (st.ruler.on) { const a = toScreen(st.ruler.a), b = toScreen(st.ruler.b), L = Math.hypot(b.x - a.x, b.y - a.y) || 1, ex = (b.x - a.x) / L * 4000, ey = (b.y - a.y) / L * 4000;
       cux.lineWidth = 6; cux.strokeStyle = 'rgba(255,111,97,.18)'; cux.beginPath(); cux.moveTo(a.x - ex, a.y - ey); cux.lineTo(b.x + ex, b.y + ey); cux.stroke();
       cux.lineWidth = 1.5; cux.strokeStyle = 'rgba(255,111,97,.9)'; cux.beginPath(); cux.moveTo(a.x - ex, a.y - ey); cux.lineTo(b.x + ex, b.y + ey); cux.stroke(); }
@@ -938,7 +972,8 @@ TT.open = async (el, id) => {
       else if (g.k === 'srot') { let a = g.rot + Math.atan2(p.y - c.y, p.x - c.x) - Math.atan2(g.p0.y - c.y, g.p0.x - c.x); const q = Math.round(a / (Math.PI / 4)) * (Math.PI / 4); if (Math.abs(a - q) < 0.05) a = q; lsel.rot = a; }
       else lsel.s = Math.max(0.05, g.s * Math.hypot(p.x - c.x, p.y - c.y) / Math.max(1, Math.hypot(g.p0.x - c.x, g.p0.y - c.y)));
       selApply(); return placeGuides(); }
-    if (gDrag === 'ra') st.ruler.a = cl; else if (gDrag === 'rb') st.ruler.b = cl; else st.sym.c = cl; st.dirty = true; placeGuides(); });
+    if (/^gv\d$/.test(gDrag)) { const v = gridVps()[+gDrag[2]]; if (v) { v.x = p.x; v.y = p.y; if (st.grid.type === 'p2') gridVps().forEach(o => { o.y = p.y; }); } }   // two-point: both stay on the horizon
+    else if (gDrag === 'ra') st.ruler.a = cl; else if (gDrag === 'rb') st.ruler.b = cl; else st.sym.c = cl; st.dirty = true; placeGuides(); });
   for (const n of ['pointerup', 'pointercancel']) guides.addEventListener(n, (e) => { const g = gDrag; gDrag = null;
     if (g?.k === 'an' && !g.moved && e.type === 'pointerup' && snapE) { const a = snapE.anchors[g.i]; a.c = !a.c; snapE.moved = true; renderSnap(); placeGuides(); } });
   /* The Tools menu: every cheat tool in one place (the rail stays short), each button named under its icon. */
@@ -955,6 +990,8 @@ TT.open = async (el, id) => {
     pop.innerHTML = `<div class="gh">Cheat tools</div><div class="tt-tools">${TOOL_BTNS}</div>
       <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
       <label class="toggle" style="display:flex;margin:0 6px 6px;border:0;min-height:30px;padding:0" data-tip="The needle never runs dry. Dipping still mixes colours as usual."><input type="checkbox" data-endless ${st.endless ? 'checked' : ''}><span>Ink never runs out</span></label>
+      <div class="tt-lseg" style="flex-wrap:wrap">${GRID_TYPES.map(([k2, n2]) => `<button data-gt="${k2}" class="${(st.grid.type || 'square') === k2 && st.grid.on ? 'on' : ''}" style="flex:1 1 30%">${n2}</button>`).join('')}</div>
+      <label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="A line drawn with the grid on runs exactly along the nearest grid direction (towards a vanishing point in perspective)."><input type="checkbox" data-gsnap ${st.grid.snap ? 'checked' : ''}><span>Lines follow the grid</span></label>
       <label class="dz-sl" style="margin:2px 6px 6px"><span>Grid size<b id="tt-gridv">${st.grid.mm} mm</b></span><input type="range" min="2" max="30" step="1" value="${st.grid.mm}" data-gridmm></label>`;
     pop.querySelectorAll('.tt-tb').forEach(x => { const r = x.dataset.r; x.insertAdjacentHTML('beforeend', `<span>${TOOL_NAMES[r]}</span>`);
       x.classList.toggle('on', r === st.tool || (r === 'grid' && st.grid.on) || (r === 'ruler' && st.ruler.on) || (r === 'sym' && st.sym.mode !== 'off')); });
@@ -1579,6 +1616,7 @@ TT.open = async (el, id) => {
     st.panel = st.panel === r ? null : r; drawSide();
   };
   pop.onclick = (e) => {
+    const gt = e.target.closest('[data-gt]'); if (gt) { st.grid.on = true; st.grid.type = gt.dataset.gt; st.dirty = true; pop.querySelectorAll('[data-gt]').forEach(x => x.classList.toggle('on', x === gt)); return placeGuides(); }
     const tb = e.target.closest('.tt-tb'); if (tb) { const top = pop.style.top; pop.hidden = true; $('#tt-rail').onclick({ target: tb }); pop.style.top = top; return placeGuides(); }
     const shb = e.target.closest('[data-shp]'); if (shb) { st.shape.kind = shb.dataset.shp; st.dirty = true; pop.querySelectorAll('[data-shp]').forEach(x => x.classList.toggle('on', x === shb)); return; }
     const sy = e.target.closest('[data-sym]'); if (sy) { st.sym.mode = sy.dataset.sym; st.dirty = true; pop.querySelectorAll('[data-sym]').forEach(x => x.classList.toggle('on', x === sy));
@@ -1588,6 +1626,7 @@ TT.open = async (el, id) => {
     const b = e.target.closest('[data-nd]'); if (!b) return; setNeedle(b.dataset.nd); st.tool = 'needle'; closePop(); sel(); if (st.panel === 'feel') drawSide(); };
   pop.oninput = (e) => {
     if (e.target.matches('[data-lassoall]')) { st.lassoAll = e.target.checked; st.dirty = true; return; }
+    if (e.target.matches('[data-gsnap]')) { st.grid.snap = e.target.checked; st.dirty = true; return toast(st.grid.snap ? 'Lines follow the grid.' : 'Lines are free again.', 1400); }
     if (e.target.matches('[data-gridmm]')) { st.grid.mm = +e.target.value; $('#tt-gridv').textContent = st.grid.mm + ' mm'; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-endless]')) { st.endless = e.target.checked; st.dirty = true; return toast(st.endless ? 'Endless ink: the needle stays loaded.' : 'Ink runs out again as you work.', 1600); }
     if (e.target.matches('[data-fast]')) { st.fast = e.target.checked; st.dirty = true; return toast(st.fast ? 'Fast lines on: pull lines as quick as you like.' : 'Fast lines off.', 1600); }
@@ -2450,6 +2489,7 @@ function ttStyle() {
 .tt-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 0 6px; }
 .tt-tb { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); padding: 8px 2px 6px; cursor: pointer; font: 600 10px var(--ui); }
 .tt-tb svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .tt-tb.on { background: rgba(255,111,97,.2); color: #ff8a7a; }
+.tt-guides i.vp { background: rgba(255,255,255,.25); border-color: #fff; border-radius: 3px; transform: rotate(45deg); }
 .tt-guides i.sym { background: rgba(181,138,232,.3); border-color: #b58ae8; }
 .tt-cheatb.on { color: #ff8a7a !important; background: rgba(255,111,97,.18) !important; }
 .tt-symm { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 0 6px; } .tt-symm button { border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 12px var(--ui); padding: 8px 4px; cursor: pointer; }
