@@ -63,8 +63,8 @@ const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b
 // Lettering fonts (the first is the app's own blackletter-style display face).
 const TT_FONTS = [["'Pirata One', serif", 'Old English'], ["'Brush Script MT', 'Segoe Script', cursive", 'Script'], ["Georgia, 'Times New Roman', serif", 'Serif'], ["Impact, 'Arial Black', sans-serif", 'Bold'], ["'Courier New', monospace", 'Type'], ["Arial, sans-serif", 'Plain']];
 const TT_SKINS = [['Light', '#f1d3bd'], ['Fair', '#e2b493'], ['Medium', '#c68c63'], ['Tan', '#a86b45'], ['Brown', '#7b4a2c'], ['Deep', '#4e2f1e']];
-const TT_LAYERS = [['stencil', 'Stencil'], ['line', 'Linework'], ['shadow', 'Shadow'], ['mid', 'Mid tone'], ['light', 'Light tone'], ['high', 'Highlights']];
-const TT_DRAW = ['stencil', 'light', 'mid', 'shadow', 'line', 'high'];   // bottom to top
+const TT_LAYERS = [['stencil', 'Stencil'], ['marker', 'Skin marker'], ['line', 'Linework'], ['shadow', 'Shadow'], ['mid', 'Mid tone'], ['light', 'Light tone'], ['high', 'Highlights']];
+const TT_DRAW = ['stencil', 'marker', 'light', 'mid', 'shadow', 'line', 'high'];   // bottom to top
 const TT_SIZES = [['A4', 21, 29.7], ['A5', 14.8, 21], ['A6', 10.5, 14.8], ['Square 15 cm', 15, 15], ['Forearm 10 × 25 cm', 10, 25]];
 
 const TT = {
@@ -469,7 +469,7 @@ TT.open = async (el, id) => {
      over a dark one, but fills a feathered edge), while darker ink still goes in. Where two inks share a spot they
      mix like pigment (blue and yellow make green). The pixels are worked on directly and copied to the layer's
      canvas once per frame. */
-  const INK = TT_LAYERS.map(([key]) => key).filter(key => key !== 'stencil');
+  const INK = TT_LAYERS.map(([key]) => key).filter(key => key !== 'stencil' && key !== 'marker');   // the stencil and marker sit on the skin, not in it
   const loadImg = async (ref) => { const u = ref && await Media.url(ref); return u ? new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; }) : null; };
   const imgd = {}, dirty = {}, touched = new Set();   // touched: layers changed since the last save
   const syncIn = (key) => { if (INK.includes(key)) imgd[key] = L[key].getContext('2d').getImageData(0, 0, W, H); };
@@ -611,6 +611,7 @@ TT.open = async (el, id) => {
         <div class="tt-szq" id="tt-szq">${[[0.25, '08'], [0.3, '10'], [0.35, '12']].map(([v, n]) => `<button data-szq="${v}" data-tip="Needle size #${n} (${v} mm)" aria-label="Needle size ${n}">#${n}</button>`).join('')}</div>
         <button class="dz-ib tt-angb" data-r="angle" data-tip="Magnum angle ([ and ] turn it)" aria-label="Magnum angle" hidden><svg viewBox="0 0 24 24"><g id="tt-angi"><path d="M4 12h16" stroke-width="3"/></g></svg><b id="tt-angl"></b></button>
         <button class="dz-ib" data-r="needle" data-tip="Tattoo" aria-label="Tattoo"><svg viewBox="0 0 24 24"><path d="M4 20l5-5M9 15l8-8 2 2-8 8zM14 6l4 4"/></svg></button>
+        <button class="dz-ib" data-r="marker" data-tip="Skin marker: draw freehand on the skin (its own layer). Tap again for colours, size and the spirit wipe." aria-label="Skin marker"><svg viewBox="0 0 24 24"><path d="M15 4l5 5-9 9H6v-5z"/><path d="M13 6l5 5M4 21h7"/></svg></button>
         <button class="dz-ib" data-r="erase" data-tip="Laser (erase)" aria-label="Erase"><svg viewBox="0 0 24 24"><path d="M7 21h10M5 15l9-9 5 5-9 9H8z"/></svg></button>
         <i class="sep"></i>
         <button class="dz-ib" data-r="layers" data-tip="Layers" aria-label="Layers"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/></svg></button>
@@ -670,7 +671,7 @@ TT.open = async (el, id) => {
       g.filter = `blur(${Math.max(1, mm * (aged ? 0.9 : 0.5))}px)`; g.drawImage(blowC, 0, 0, W, H);   // blowouts: softened, never faded
       g.filter = `blur(${Math.max(1.5, mm * (aged ? 1.8 : 1.1))}px)`; g.globalAlpha = 0.6; g.drawImage(blowC, 0, 0, W, H); g.globalAlpha = 1;
       const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const tg = tmp.getContext('2d');
-      for (const key of TT_DRAW) { if (key === 'stencil' || st.hide.has(key)) continue;
+      for (const key of TT_DRAW) { if (key === 'stencil' || key === 'marker' || st.hide.has(key)) continue;
         tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, W, H); tg.drawImage(L[key], 0, 0);
         if (loss) { tg.globalCompositeOperation = 'destination-out'; tg.drawImage(loss, 0, 0, W, H); }
         // white settles to a faint version of itself (still readable if packed in well); on dark skin it disappears
@@ -705,7 +706,7 @@ TT.open = async (el, id) => {
   const recomp = (x0, y0, w, h) => { cg.save(); cg.beginPath(); cg.rect(x0, y0, w, h); cg.clip(); cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over';
     cg.clearRect(x0, y0, w, h); cg.drawImage(skin, 0, 0); skinUnder(cg, true);
     for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
-      cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; cg.drawImage(L[key], 0, 0);
+      cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? (key === 'marker' ? 0.9 : 1)); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; cg.drawImage(L[key], 0, 0);
       if (key === 'high') cg.drawImage(L[key], 0, 0); }   // white laid twice: fresh white ink reads bright, not grey
     cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); if (CHEAT && st.letters?.length && !st.hide.has('stencil')) cg.drawImage(LT, 0, 0); cg.restore(); };
   const paint = (rect) => { if (rect) compR = compR ? { x0: Math.min(compR.x0, rect.x0), y0: Math.min(compR.y0, rect.y0), x1: Math.max(compR.x1, rect.x1), y1: Math.max(compR.y1, rect.y1) } : rect; else compAll = true;
@@ -777,6 +778,7 @@ TT.open = async (el, id) => {
   const strokeStart = (e) => {
     const key = st.layer; if (st.hide.has(key)) toast('That layer is hidden: show it to see what you draw.');
     if (key === 'stencil' && st.tool !== 'erase') { toast('The stencil layer holds a picture to trace. Load one from Layers.'); return false; }
+    if (key === 'marker') { toast('The marker layer is for the skin marker: pick it on the left, or choose an ink layer in Layers.'); return false; }
     if (st.view !== 'work') { st.view = 'work'; st.viewC = null; drawView(); }
     /* White is opaque: ink with white in it (white, or a colour mixed with white) also covers the skin in the
        highlights layer as much as it is white, so a pastel is solid and bright, not a thin, see-through tint the way
@@ -1288,6 +1290,41 @@ TT.open = async (el, id) => {
       const mmD = pen.trav || 0; SS.mm += mmD; SS.ms += Math.max(0, pen.t - pen.t0); if (st.tool !== 'erase') SS.needles[st.needle] = (SS.needles[st.needle] || 0) + mmD; }
     pen = null; drawNeedleInk(); if (trDirty) paint(); TL.changed = true; tlGrab(); };
 
+  /* ---------- Skin marker ----------
+     Freehand on the skin, on its own layer, like a felt-tip: solid at any speed, a touch wider with pressure, a
+     little smoothing. Colours for sketching light and refining dark; the spirit wipe takes it off. Nothing here
+     touches the skin itself. */
+  const MK_COLS = ['#7b4bc9', '#3a6fd8', '#d23b3b', '#2f9a52', '#1c1c1c', '#8fc7f0', '#f08bbd', '#f39a33'];
+  st.mk = meta.mk || { col: MK_COLS[0], r: 0.6, wipe: false };
+  function markerPop(b) { const M = st.mk;
+    pop.innerHTML = `<div class="gh">Skin marker</div><div class="tt-lseg"><button data-mk="draw" class="${M.wipe ? '' : 'on'}">Marker</button><button data-mk="wipe" class="${M.wipe ? 'on' : ''}">Spirit wipe</button></div>
+      <div class="tt-mkc">${MK_COLS.map(c => `<button data-mkc="${c}" style="background:${c}" class="${M.col === c ? 'on' : ''}" aria-label="Marker colour"></button>`).join('')}<label class="tt-mkcu" data-tip="Any colour"><input type="color" data-mkcu value="${M.col}"></label></div>
+      <label class="dz-sl" style="margin:4px 6px"><span>Tip<b>${M.r} mm</b></span><input type="range" min="0.2" max="4" step="0.1" value="${M.r}" data-mkr></label>
+      <div class="row" style="gap:4px;margin:4px 6px 6px"><button class="btn small" data-mk="clear">Wipe it all</button></div>`;
+    pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
+  pop.addEventListener('click', (e) => { const m = e.target.closest('[data-mk]')?.dataset.mk, c = e.target.closest('[data-mkc]')?.dataset.mkc;
+    if (c) { st.mk.col = c; st.mk.wipe = false; st.dirty = true; return markerPop($('#tt-rail [data-r="marker"]')); }
+    if (m === 'draw' || m === 'wipe') { st.mk.wipe = m === 'wipe'; st.dirty = true; drawCur(); return markerPop($('#tt-rail [data-r="marker"]')); }
+    if (m === 'clear') { if (!confirm('Wipe all the marker off the skin?')) return; snap('marker'); L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); st.dirty = true; paint(); } });
+  pop.addEventListener('input', (e) => { if (e.target.matches('[data-mkr]')) { st.mk.r = +e.target.value; e.target.closest('label').querySelector('b').textContent = st.mk.r + ' mm'; st.dirty = true; return drawCur(); }
+    if (e.target.matches('[data-mkcu]')) { st.mk.col = e.target.value; st.mk.wipe = false; st.dirty = true; } });
+  let mk = null;
+  const mkDot = (g, p, r) => { g.beginPath(); g.arc(p.x, p.y, r, 0, 7); g.fill(); };
+  const mkDown = (e) => { const p = toPage(e); if (st.view !== 'work') { st.view = 'work'; st.viewC = null; drawView(); } st.hide.delete('marker');
+    snap('marker'); touched.add('marker'); const g = L.marker.getContext('2d');
+    mk = { id: e.pointerId, g, last: p, sp: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y } };
+    g.fillStyle = st.mk.col; g.globalCompositeOperation = st.mk.wipe ? 'destination-out' : 'source-over'; mkTo(p, e); };
+  // the spirit wipe is a cloth, much wider than the marker's tip
+  const mkTo = (p, e) => { const M = st.mk, pr = e.pointerType === 'mouse' ? 0.6 : Math.max(0.15, e.pressure || 0.5);
+    mk.sp = { x: mk.sp.x + (p.x - mk.sp.x) * 0.55, y: mk.sp.y + (p.y - mk.sp.y) * 0.55 };   // a little smoothing
+    const r = (M.wipe ? Math.max(3, M.r * 5) : M.r) * mm / 2 * (0.6 + 0.6 * pr), a = mk.last, b = mk.sp, d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(1, Math.ceil(d / Math.max(0.5, r * 0.3)));
+    mk.g.globalAlpha = M.wipe ? 0.35 : 1;
+    for (let i = 1; i <= n; i++) mkDot(mk.g, { x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }, r);
+    const B = mk.box; B.x0 = Math.min(B.x0, b.x - r - 2); B.y0 = Math.min(B.y0, b.y - r - 2); B.x1 = Math.max(B.x1, b.x + r + 2); B.y1 = Math.max(B.y1, b.y + r + 2);
+    mk.last = b; st.dirty = true; paint({ x0: Math.min(a.x, b.x) - r - 2, y0: Math.min(a.y, b.y) - r - 2, x1: Math.max(a.x, b.x) + r + 2, y1: Math.max(a.y, b.y) + r + 2 }); };
+  const mkMove = (e) => { for (const ev of (e.getCoalescedEvents?.().length ? e.getCoalescedEvents() : [e])) mkTo(toPage(ev), ev); };
+  const mkUp = () => { if (!mk) return; mk.g.globalAlpha = 1; mk.g.globalCompositeOperation = 'source-over'; cropTop(mk.box); mk = null; TL.changed = true; tlGrab(); };
+
   /* Skin meter: depth, speed (how close the punctures land) and how worked the skin under the needle is, each a
      bar with its safe band in green, so a stroke going wrong shows before the damage does. Shows the last values
      while the needle is up. Bands follow the skin model: blowouts start at depth 0.8 when the punctures land under
@@ -1373,6 +1410,8 @@ TT.open = async (el, id) => {
       if (td?.kind === 'lasso') { const P = td.pts.map(toScreen); cux.setLineDash([5, 4]); cux.beginPath(); P.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.closePath(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); cux.setLineDash([]); }
       if (td?.kind === 'shape') { const P = shapePts(st.shape.kind, td.a, td.b).map(toScreen); cux.beginPath(); P.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.4)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); }
       cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.beginPath(); cux.moveTo(curAt.x - 8, curAt.y); cux.lineTo(curAt.x + 8, curAt.y); cux.moveTo(curAt.x, curAt.y - 8); cux.lineTo(curAt.x, curAt.y + 8); cux.stroke(); return; }
+    if (st.tool === 'marker') { const r = (st.mk.wipe ? Math.max(3, st.mk.r * 5) : st.mk.r) * s / 2; cux.beginPath(); cux.arc(curAt.x, curAt.y, Math.max(2, r), 0, 7); cux.lineWidth = 2.5; cux.strokeStyle = 'rgba(0,0,0,.4)'; cux.stroke();
+      cux.lineWidth = 1.5; cux.strokeStyle = st.mk.wipe ? '#9fd3e0' : st.mk.col; cux.stroke(); return; }
     if (st.check) { const R = st.checkR * s, c = skinCheck(fromScreen(curAt.x, curAt.y), st.checkR * mm), col = c.score >= 80 ? '#6fe39a' : c.score >= 55 ? '#f2c14e' : '#ff7a66';
       cux.beginPath(); cux.arc(curAt.x, curAt.y, R, 0, 7); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.5)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = col; cux.stroke();
       cux.beginPath(); cux.arc(curAt.x, curAt.y, 1.5, 0, 7); cux.fillStyle = col; cux.fill();
@@ -1410,6 +1449,7 @@ TT.open = async (el, id) => {
     if (space || e.button === 1 || (touch && cal.penOnly)) { pan = { x: e.clientX, y: e.clientY, vx, vy }; return; }
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     if (st.check) return drawCur(e);   // checking the skin, not tattooing
+    if (st.tool === 'marker') return mkDown(e);
     if (lsel && st.tool !== 'lasso') selCommit();
     if (snapE) { if (!snapE.live && st.tool === 'needle' && nearSnap(e)) { snapE.live = true; placeGuides(); return; } snapFinish(); }
     if (CHEAT && ['blend', 'fill', 'shape', 'lasso', 'pick', 'liquify', 'text'].includes(st.tool)) return toolDown(e);
@@ -1425,12 +1465,13 @@ TT.open = async (el, id) => {
       st.rot = rot; pinTo(pinch.p, mx, my); st.dirty = true; return paint(); }
     if (pan) { vx = pan.vx + e.clientX - pan.x; vy = pan.vy + e.clientY - pan.y; return paint(); }
     if (td && e.pointerId === td.id) toolMove(e);
+    if (mk && e.pointerId === mk.id) mkMove(e);
     if (pen && e.pointerId === pen.id) { strokeMove(e);
       if (CHEAT && !pen.snapped) { const h0 = pen.hold; if (!h0 || Math.hypot(e.clientX - h0.x, e.clientY - h0.y) > 4) { clearTimeout(h0?.t); pen.hold = { x: e.clientX, y: e.clientY, t: setTimeout(snapNow, 550) }; } } }
-    if (e.pointerType !== 'touch' || ((st.check || td) && !pan)) { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
+    if (e.pointerType !== 'touch' || ((st.check || td || mk) && !pan)) { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
     calLive(e);
   });
-  const up = (e) => { pts.delete(e.pointerId); if (pinch && pts.size < 2) pinch = null; pan = null; if (pen && e.pointerId === pen.id) strokeEnd(); if (td && e.pointerId === td.id) toolUp(); };
+  const up = (e) => { pts.delete(e.pointerId); if (pinch && pts.size < 2) pinch = null; pan = null; if (pen && e.pointerId === pen.id) strokeEnd(); if (td && e.pointerId === td.id) toolUp(); if (mk && e.pointerId === mk.id) mkUp(); };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   cv.addEventListener('wheel', (e) => { e.preventDefault(); const r = stage.getBoundingClientRect(); zoomAt(z * Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   const keys = (e) => { if (!document.body.contains(el)) { removeEventListener('keydown', keys); removeEventListener('keyup', keys); return; }
@@ -1529,6 +1570,7 @@ TT.open = async (el, id) => {
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
     closePop();
+    if (r === 'marker') { if (st.tool === 'marker' && !pop.hidden) return closePop(); if (typeof lsel !== 'undefined' && lsel) selCommit(); st.tool = 'marker'; sel(); drawCur(); return markerPop(b); }
     if (r === 'needle' || r === 'erase') { st.tool = r === 'erase' ? 'erase' : 'needle'; if (CHEAT) placeGuides(); return sel(); }
     if (r === 'text' && st.letSel) { st.tool = 'text'; sel(); return letPanel(); }
     if (r === 'blend' || r === 'fill' || r === 'shape' || r === 'lasso' || r === 'liquify' || r === 'text') { if (st.tool === r && !pop.hidden) return closePop(); if (lsel && r !== 'lasso') selCommit(); st.tool = r; sel(); drawCur(); return toolPop(b); }
@@ -1869,7 +1911,7 @@ TT.open = async (el, id) => {
     const c = document.createElement('canvas'); c.width = Math.round(W * scale); c.height = Math.round(H * scale); const g = c.getContext('2d'); g.scale(scale, scale);
     const raw = mode === 'work' || mode === 'fresh';
     if (withSkin) { if (raw && trDirty) buildTrauma(); g.drawImage(skin, 0, 0); skinUnder(g, raw); }
-    for (const key of TT_DRAW) { if (key === 'stencil' || st.hide.has(key)) continue; g.globalAlpha = st.op[key] ?? 1; g.globalCompositeOperation = key === 'high' || !withSkin ? 'source-over' : 'multiply'; g.drawImage(L[key], 0, 0); if (key === 'high' && raw) g.drawImage(L[key], 0, 0); }
+    for (const key of TT_DRAW) { if (key === 'stencil' || key === 'marker' || st.hide.has(key)) continue; g.globalAlpha = st.op[key] ?? 1; g.globalCompositeOperation = key === 'high' || !withSkin ? 'source-over' : 'multiply'; g.drawImage(L[key], 0, 0); if (key === 'high' && raw) g.drawImage(L[key], 0, 0); }
     g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; if (withSkin && raw) skinOver(g);
     return c;
   };
@@ -1889,7 +1931,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined }), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -1929,14 +1971,14 @@ TT.open = async (el, id) => {
      One picture of the piece: the stencil (if there is one), fresh, healed and 10 years side by side, cropped to the
      work, and for a challenge its score card underneath. Kept in Portfolio › Simulator (art tagged "simulator"). */
   const workBox = () => { let x0 = W, y0 = H, x1 = -1, y1 = -1;
-    for (const key of [...INK, 'stencil']) { const D = key === 'stencil' ? L.stencil.getContext('2d').getImageData(0, 0, W, H).data : imgd[key].data;
+    for (const key of [...INK, 'stencil', 'marker']) { const D = !INK.includes(key) ? L[key].getContext('2d').getImageData(0, 0, W, H).data : imgd[key].data;
       for (let y = 0; y < H; y += 3) for (let x = 0; x < W; x += 3) if (D[(y * W + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
     if (x1 < 0) return { x: 0, y: 0, w: W, h: H }; const pad = 6 * mm;
     x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W, x1 + pad); y1 = Math.min(H, y1 + pad); return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; };
   const sheetOf = async (card) => {
-    const b = workBox(), hasSten = (() => { const D = L.stencil.getContext('2d').getImageData(b.x, b.y, b.w, b.h).data; for (let i = 3; i < D.length; i += 16) if (D[i] > 8) return true; return false; })();
+    const b = workBox(), has = (key) => { const D = L[key].getContext('2d').getImageData(b.x, b.y, b.w, b.h).data; for (let i = 3; i < D.length; i += 16) if (D[i] > 8) return true; return false; }, hasSten = has('stencil') || has('marker');
     const panels = [];
-    if (hasSten) { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.fillStyle = '#f6f3ee'; g.fillRect(0, 0, W, H); g.drawImage(L.stencil, 0, 0); panels.push(['Stencil', c]); }
+    if (hasSten) { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.fillStyle = '#f6f3ee'; g.fillRect(0, 0, W, H); g.drawImage(L.stencil, 0, 0); g.drawImage(L.marker, 0, 0); panels.push([has('marker') ? (has('stencil') ? 'Stencil and marker' : 'Marker') : 'Stencil', c]); }
     for (const [mode, label] of [['fresh', 'Fresh'], ['healed', 'Healed'], ['aged', '10 years']]) panels.push([label, viewOf(mode)]);
     const pw = 720, ph = Math.round(pw * b.h / b.w), gap = 36, M = 60, cw = M * 2 + panels.length * pw + (panels.length - 1) * gap;
     const cardW = card ? Math.min(cw - M * 2, 900) : 0, cardH = card ? Math.round(cardW / card.width * card.height) : 0, chH = 150 + ph + 70 + (card ? cardH + 40 : 0);
@@ -2163,7 +2205,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } TR.fill(0); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } TR.fill(0); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
@@ -2398,6 +2440,9 @@ function ttStyle() {
 .tt-selb { position: absolute; border: 1.5px dashed #ff8a7a; pointer-events: auto; touch-action: none; cursor: move; background: rgba(255,111,97,.04); }
 .tt-selbar { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: flex; gap: 4px; padding: 5px; border-radius: 12px; background: rgba(15,18,19,.9); pointer-events: auto; z-index: 2; }
 .tt-selbar button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 700 12px var(--ui); border-radius: 8px; padding: 6px 10px; cursor: pointer; } .tt-selbar button.ok { background: var(--teal); color: #071312; border-color: var(--teal); }
+.tt-mkc { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 6px; } .tt-mkc button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); cursor: pointer; padding: 0; }
+.tt-mkc button.on { outline: 2px solid var(--teal); outline-offset: 2px; } .tt-mkcu { position: relative; width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+.tt-mkcu input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .tt-letp { max-height: min(70vh, 560px); overflow-y: auto; } .tt-lseg { display: flex; gap: 3px; margin: 4px 6px; } .tt-lseg button { flex: 1; border: 0; border-radius: 7px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 11px var(--ui); padding: 7px 2px; cursor: pointer; }
 .tt-lseg button.on { background: rgba(181,138,232,.28); color: #d6bdf7; } .tt-selb.let { border-color: #b58ae8; }
 .tt-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 0 6px; }

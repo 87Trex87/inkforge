@@ -328,7 +328,9 @@ const MIGRATIONS = [
   `CREATE TABLE reels (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      name TEXT, doc TEXT, thumb_ref TEXT,
-     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));`
+     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));`,
+  // tattoo simulator: the skin marker layer (freehand drawn on the skin), beside the stencil
+  `ALTER TABLE tattoo_pieces ADD COLUMN marker_ref TEXT;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -558,7 +560,7 @@ const Media = {
       UNION ALL SELECT 1 FROM ref_images WHERE photo_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM assets WHERE svg_ref = ?1
       UNION ALL SELECT 1 FROM stencils WHERE src_ref = ?1 OR stencil_ref = ?1 OR thumb_ref = ?1
-      UNION ALL SELECT 1 FROM tattoo_pieces WHERE ?1 IN (stencil_ref, line_ref, shadow_ref, mid_ref, light_ref, high_ref, thumb_ref, skin_ref, blow_ref)
+      UNION ALL SELECT 1 FROM tattoo_pieces WHERE ?1 IN (stencil_ref, marker_ref, line_ref, shadow_ref, mid_ref, light_ref, high_ref, thumb_ref, skin_ref, blow_ref)
       UNION ALL SELECT 1 FROM tattoo_pieces WHERE instr(meta, ?1) > 0
       UNION ALL SELECT 1 FROM reels WHERE thumb_ref = ?1 OR instr(doc, ?1) > 0
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
@@ -2825,7 +2827,7 @@ const MERGE_TABLES = {
   ref_images: { section: 'references', refs: ['photo_ref', 'thumb_ref'] },
   assets: { section: 'assets', refs: ['svg_ref'] },
   stencils: { section: 'stencils', refs: ['src_ref', 'stencil_ref', 'thumb_ref'] },
-  tattoo_pieces: { section: 'tattoo', refs: ['stencil_ref', 'line_ref', 'shadow_ref', 'mid_ref', 'light_ref', 'high_ref', 'thumb_ref', 'skin_ref', 'blow_ref'], scan: ['meta'] },
+  tattoo_pieces: { section: 'tattoo', refs: ['stencil_ref', 'marker_ref', 'line_ref', 'shadow_ref', 'mid_ref', 'light_ref', 'high_ref', 'thumb_ref', 'skin_ref', 'blow_ref'], scan: ['meta'] },
   reels: { section: 'reel', refs: ['thumb_ref'], scan: ['doc'] },
   design_assets: { section: 'designs', fk: { design_id: 'designs' }, refs: ['ref'] },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
