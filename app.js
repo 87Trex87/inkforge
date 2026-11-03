@@ -108,7 +108,7 @@ const WS = {
   },
   async save() {
     const w = await (await this.file(true)).createWritable();
-    await w.write(JSON.stringify({ list: this.list, last: this.last, auto: this.auto, gid: this.gid, device: this.device })); await w.close();
+    await w.write(JSON.stringify({ list: this.list, last: this.last, auto: this.auto, fs: this.fs, gid: this.gid, device: this.device })); await w.close();
   },
   get: (id) => WS.list.find(w => w.id === id),
   async create(name) {
@@ -7574,6 +7574,8 @@ function showStart() {
       ${storageWarn()}
       <label class="toggle" style="display:inline-flex;margin-top:12px" data-tip="Skip this screen and go straight to the last workspace. Switch any time by tapping the workspace name at the top.">
         <input type="checkbox" id="st-auto" ${WS.auto ? 'checked' : ''}><span>Open my last workspace automatically</span></label>
+      ${FS.can() ? `<label class="toggle" style="display:inline-flex;margin-top:8px" data-tip="Hide the browser's bars once a workspace opens. The full screen button at the top switches it back.">
+        <input type="checkbox" id="st-fs" ${WS.fs !== false ? 'checked' : ''}><span>Go full screen when a workspace opens</span></label>` : ''}
       <p class="muted" style="font-size:12px;margin-top:16px">Workspaces are stored on this device. Save a workspace file to move it to another device or keep a copy safe: keeping that file safe is up to you.
         Or keep a workspace in your own Google Drive (☁) to use it on several devices: one device edits at a time, the others can view or take over.</p>
     </div>`;
@@ -7650,6 +7652,7 @@ function showStart() {
   });
   o.addEventListener('change', async (e) => {
     if (e.target.id === 'st-auto') { WS.auto = e.target.checked; return WS.save(); }
+    if (e.target.id === 'st-fs') { WS.fs = e.target.checked; return WS.save(); }
     if (e.target.id !== 'st-file') return;
     const f = e.target.files[0]; e.target.value = ''; if (!f) return;
     const bytes = new Uint8Array(await f.arrayBuffer());
@@ -7664,7 +7667,16 @@ function showStart() {
 
 // Opens a workspace and runs the normal start-up (snapshot recovery, migrations, settings).
 // `fileBytes`: a workspace/backup file to load into it first (from "Open file…").
+/* Full screen when a workspace opens. Browsers allow it only straight after a tap, so it's asked for at once (picking
+   a workspace is that tap); when the workspace opened by itself, the first tap in the app does it instead. */
+function autoFullScreen() {
+  if (WS.fs === false || !FS.can() || FS.on()) return;
+  FS.set(true);
+  const once = () => { removeEventListener('pointerup', once, true); if (!FS.on()) FS.set(true); };
+  setTimeout(() => { if (!FS.on()) addEventListener('pointerup', once, true); }, 400);
+}
 async function startWorkspace(w, fileBytes) {
+  autoFullScreen();
   const badge = $('#db-badge');
   let recovered = false, tourBack = false;
   try {

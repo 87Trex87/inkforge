@@ -541,6 +541,7 @@ TT.open = async (el, id) => {
       <button class="dz-ib" id="tt-redo" data-tip="Redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
       <button class="dz-ib tt-viewb" id="tt-view" data-tip="Preview: as worked, fresh, healed or after 10 years" aria-label="Preview"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><b></b></button>
       <button class="dz-ib" id="tt-stencilmk" data-tip="Send to the stencil maker" aria-label="Stencil maker">${ICON.stencil}</button>
+      <button class="dz-ib" id="tt-fs" data-tip="Full screen" aria-label="Full screen" ${typeof FS !== 'undefined' && FS.can() ? '' : 'hidden'}></button>
       <button class="dz-ib" id="tt-tl" data-tip="Timelapse and stats" aria-label="Timelapse and stats"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5z"/></svg></button>
       <button class="dz-ib" id="tt-png" data-tip="Save as PNG" aria-label="Save as PNG"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></button>
       <button class="dz-ib dz-go" id="tt-save" data-tip="Save" aria-label="Save"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>
@@ -1231,6 +1232,11 @@ TT.open = async (el, id) => {
      maker), ending on the piece as it is now. Frames are decoded a little ahead of the recording. */
   const tlFmt = (ms) => { const s = Math.round(ms / 1000); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
   const tlDist = (mm) => mm >= 1000 ? (mm / 1000).toFixed(2) + ' m' : mm >= 100 ? (mm / 10).toFixed(1) + ' cm' : Math.round(mm) + ' mm';
+  // Full screen: the whole app, so the skin gets the browser's bars too; the icon follows the state.
+  const fsBtn = $('#tt-fs'), fsShow = () => { if (!document.body.contains(fsBtn)) return document.removeEventListener('fullscreenchange', fsShow); const on = FS.on();
+    fsBtn.innerHTML = on ? '<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+    fsBtn.dataset.tip = on ? 'Exit full screen' : 'Full screen'; setTimeout(fit, 120); };
+  fsBtn.onclick = () => FS.set(!FS.on()); document.addEventListener('fullscreenchange', fsShow); fsShow();
   $('#tt-tl').onclick = () => {
     const o = document.createElement('div'); o.id = 'merge-dlg'; let len = +Settings.get('tt_tl_len', '30');
     const LAYN = Object.fromEntries(TT_LAYERS);
