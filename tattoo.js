@@ -162,7 +162,7 @@ TT.open = async (el, id) => {
      canvas once per frame. */
   const INK = TT_LAYERS.map(([key]) => key).filter(key => key !== 'stencil');
   const loadImg = async (ref) => { const u = ref && await Media.url(ref); return u ? new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; }) : null; };
-  const imgd = {}, dirty = {};
+  const imgd = {}, dirty = {}, touched = new Set();   // touched: layers changed since the last save
   const syncIn = (key) => { if (INK.includes(key)) imgd[key] = L[key].getContext('2d').getImageData(0, 0, W, H); };
   INK.forEach(syncIn);
   const ALOG = new Float32Array(256); for (let i = 0; i < 256; i++) ALOG[i] = -Math.log(Math.max(0.02, i / 255));
@@ -189,7 +189,7 @@ TT.open = async (el, id) => {
     const b = dirty[T.key] ||= { x0, y0, x1, y1 }; b.x0 = Math.min(b.x0, x0); b.y0 = Math.min(b.y0, y0); b.x1 = Math.max(b.x1, x1); b.y1 = Math.max(b.y1, y1);
   };
   const flushPig = () => { let u = null;
-    for (const key in dirty) { const b = dirty[key]; L[key].getContext('2d').putImageData(imgd[key], 0, 0, b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1); delete dirty[key];
+    for (const key in dirty) { const b = dirty[key]; L[key].getContext('2d').putImageData(imgd[key], 0, 0, b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1); delete dirty[key]; touched.add(key);
       u = u ? { x0: Math.min(u.x0, b.x0), y0: Math.min(u.y0, b.y0), x1: Math.max(u.x1, b.x1), y1: Math.max(u.y1, b.y1) } : { ...b }; }
     return u; };
   // One mark: into pigment (the page), or painted on a canvas (the test pad).
@@ -260,7 +260,18 @@ TT.open = async (el, id) => {
   const tlGrab = (force) => { if (TL.busy || (!force && Date.now() - TL.last < 1200)) return; TL.last = Date.now(); TL.busy = true;
     composite(Math.min(1, TL_LONG / Math.max(W, H))).toBlob(b => { TL.busy = false; if (b) { TL.fresh.push(b); TL.changed = false; st.dirty = true; } }, 'image/jpeg', 0.8); };
   const hist = [], fut = [];   // undo and redo: { key, data, tr, blow } snapshots of one layer and the skin
-  const state = (key) => ({ key, data: L[key].getContext('2d').getImageData(0, 0, W, H), tr: TR.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) });
+  /* An undo step is the layer and the skin before a change. Taken whole when a stroke starts, then cut down to the
+     patch the stroke touched when it ends: whole copies of a big page are ~20 MB each and could run a tablet out of
+     memory. `rc`: the patch in page px (none: the whole page). */
+  const state = (key, rc) => rc ? { key, rc, data: L[key].getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h), tr: TR.slice(), blow: bx.getImageData(rc.x >> 1, rc.y >> 1, (rc.w >> 1) + 2, (rc.h >> 1) + 2) }
+    : { key, data: L[key].getContext('2d').getImageData(0, 0, W, H), tr: TR.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) };
+  const cropID = (src, x, y, w, h) => { const out = new ImageData(w, h), sw = src.width;
+    for (let r = 0; r < h; r++) { const from = ((y + r) * sw + x) * 4; out.data.set(src.data.subarray(from, from + w * 4), r * w * 4); } return out; };
+  const cropTop = (box) => { const h = hist[hist.length - 1]; if (!h || h.rc) return;
+    const x = Math.max(0, Math.floor(box.x0)), y = Math.max(0, Math.floor(box.y0)), rc = { x, y, w: Math.min(W, Math.ceil(box.x1)) - x, h: Math.min(H, Math.ceil(box.y1)) - y };
+    if (rc.w <= 0 || rc.h <= 0) return;
+    const bxx = x >> 1, byy = y >> 1, bw = Math.min(blowC.width - bxx, (rc.w >> 1) + 2), bh = Math.min(blowC.height - byy, (rc.h >> 1) + 2);
+    h.data = cropID(h.data, rc.x, rc.y, rc.w, rc.h); h.blow = cropID(h.blow, bxx, byy, bw, bh); h.rc = rc; };
   const snap = (key) => { hist.push(state(key)); if (hist.length > 15) hist.shift(); fut.length = 0; };
   el.innerHTML = `<div class="dz-ed tt-ed">
     <div class="dz-top">
@@ -407,7 +418,7 @@ TT.open = async (el, id) => {
     const key = st.layer; if (st.hide.has(key)) toast('That layer is hidden: show it to see what you draw.');
     if (key === 'stencil' && st.tool !== 'erase') { toast('The stencil layer holds a picture to trace. Load one from Layers.'); return false; }
     if (st.view !== 'work') { st.view = 'work'; st.viewC = null; drawView(); }
-    const c = L[key]; snap(key);
+    const c = L[key]; snap(key); touched.add(key);
     let cx;
     if (INK.includes(key)) { const col = st.ink.c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
       cx = { pig: true, key, col, str: st.tool === 'erase' ? 1 : (st.ink.s ?? 1), lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; }
@@ -450,6 +461,8 @@ TT.open = async (el, id) => {
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
         }
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
+        const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y };
+        B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp);
         if (st.tool !== 'erase') { st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100); SS.punct++; }
         t += gap;
       }
@@ -459,7 +472,8 @@ TT.open = async (el, id) => {
     paint(u && pen.cx.pig ? { x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad } : undefined);
   };
   const strokeEnd = () => { if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
-    if (pen) { const mmD = pen.trav || 0; SS.mm += mmD; SS.ms += Math.max(0, pen.t - pen.t0); if (st.tool !== 'erase') SS.needles[st.needle] = (SS.needles[st.needle] || 0) + mmD; }
+    if (pen) { if (pen.box) cropTop(pen.box); else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
+      const mmD = pen.trav || 0; SS.mm += mmD; SS.ms += Math.max(0, pen.t - pen.t0); if (st.tool !== 'erase') SS.needles[st.needle] = (SS.needles[st.needle] || 0) + mmD; }
     pen = null; drawNeedleInk(); if (trDirty) paint(); TL.changed = true; tlGrab(); };
 
   const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
@@ -468,7 +482,7 @@ TT.open = async (el, id) => {
     if (cur.width !== Math.round(r.width * dpr)) { cur.width = Math.round(r.width * dpr); cur.height = Math.round(r.height * dpr); cur.style.width = r.width + 'px'; cur.style.height = r.height + 'px'; }
     cux.setTransform(1, 0, 0, 1, 0, 0); cux.clearRect(0, 0, cur.width, cur.height);
     if (e) curAt = { x: e.clientX - r.left, y: e.clientY - r.top, ev: e };
-    if (!curAt || pinch || pan || st.tool === 'erase' && false) return;
+    if (!curAt || pinch || pan) return;
     const s = k * mm, a = pageTurn(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
     cux.setTransform(dpr, 0, 0, dpr, 0, 0); cux.lineWidth = 1;
     if (isMag()) {   // the row's line, so its angle reads even when the needles are tiny on screen
@@ -484,9 +498,10 @@ TT.open = async (el, id) => {
   /* ---------- Pointer: pen draws; fingers move the page (or draw too, when allowed) ---------- */
   const pts = new Map(); let pinch = null, pan = null, space = false;
   cv.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch' && cal.penOnly && pen) return;   // a resting palm while the pen draws
     closePop(); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const r = stage.getBoundingClientRect();
-    if (pts.size === 2) { if (pen) { hist.length && undoTo(hist.pop()); pen = null; }   // a second finger: that was a pinch, not a stroke
+    if (pts.size === 2) { if (pen) { cancelAnimationFrame(pen.raf); hist.length && undoTo(hist.pop()); SS.strokes--; pen = null; }   // a second finger: that was a pinch, not a stroke
       const [a, b] = [...pts.values()], mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
       pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z, ang: Math.atan2(b.y - a.y, b.x - a.x), rot: st.rot, p: fromScreen(mx, my), snapped: null }; return; }
     cv.setPointerCapture(e.pointerId);
@@ -521,9 +536,9 @@ TT.open = async (el, id) => {
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; st.rot = 0; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
 
-  const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, 0, 0); syncIn(h.key);
-    if (h.tr) { TR.set(h.tr); trDirty = true; } if (h.blow) bx.putImageData(h.blow, 0, 0); st.dirty = true; paint(); };
-  const swap = (from, to) => { const h = from.pop(); if (!h) return false; to.push(state(h.key)); undoTo(h); return true; };
+  const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, h.rc?.x || 0, h.rc?.y || 0); syncIn(h.key); touched.add(h.key);
+    if (h.tr) { TR.set(h.tr); trDirty = true; } if (h.blow) bx.putImageData(h.blow, h.rc ? h.rc.x >> 1 : 0, h.rc ? h.rc.y >> 1 : 0); st.dirty = true; st.viewC = null; paint(); };
+  const swap = (from, to) => { if (pen) return true; const h = from.pop(); if (!h) return false; to.push(state(h.key, h.rc)); undoTo(h); return true; };
   const undo = () => swap(hist, fut) || toast('Nothing to undo.');
   const redo = () => swap(fut, hist) || toast('Nothing to redo.');
 
@@ -677,12 +692,12 @@ TT.open = async (el, id) => {
     if (ly) {
       if (t.closest('[data-hide]')) { st.hide.has(ly) ? st.hide.delete(ly) : st.hide.add(ly); st.dirty = true; paint(); return drawSide(); }
       if (t.closest('[data-clear]')) { if (!confirm('Clear everything on this layer? Undo brings it back.')) return;
-        const c = L[ly]; snap(ly); c.getContext('2d').clearRect(0, 0, W, H); syncIn(ly); st.dirty = true; paint(); return; }
+        const c = L[ly]; snap(ly); c.getContext('2d').clearRect(0, 0, W, H); syncIn(ly); touched.add(ly); st.dirty = true; st.viewC = null; paint(); return; }
       if (t.closest('[data-stl]')) return loadStencil();
       if (t.matches('input')) return;
       st.layer = ly; st.dirty = true; return drawSide();
     }
-    if (t.closest('[data-sz]')) { feel.size = +t.closest('[data-sz]').dataset.sz; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); return drawSide(); }
+    if (t.closest('[data-sz]')) { feel.size = +t.closest('[data-sz]').dataset.sz; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawCur(); return drawSide(); }
     if (t.closest('[data-feelreset]')) { TT.setFeel(st.needle, null); setNeedle(st.needle); return drawSide(); }
     if (t.closest('[data-padclear]')) return padInit();
     if (t.closest('[data-tune]')) return tuneIn();
@@ -897,7 +912,7 @@ TT.open = async (el, id) => {
     }
     if (!url) return;
     const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }); if (!im) return toast('Could not read that picture.');
-    const c = L.stencil, cx = c.getContext('2d'); snap('stencil');
+    const c = L.stencil, cx = c.getContext('2d'); snap('stencil'); touched.add('stencil');
     cx.clearRect(0, 0, W, H); const s = Math.min(W * 0.9 / im.naturalWidth, H * 0.9 / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
     cx.drawImage(im, (W - w) / 2, (H - h) / 2, w, h); st.hide.delete('stencil'); st.dirty = true; paint(); drawSide();
   };
@@ -914,13 +929,15 @@ TT.open = async (el, id) => {
   };
   const blobOf = (c) => new Promise(r => c.toBlob(r, 'image/png'));
   const save = async (quiet) => {
-    const layerRefs = {}; for (const [key] of TT_LAYERS) layerRefs[key] = await Media.save(await blobOf(L[key]), 'png');
+    st.dirty = false;   // cleared first: anything done while this save runs marks it dirty again
+    try {
+    const old = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [id]), chgd = new Set(touched); touched.clear();
+    const layerRefs = {}; for (const [key] of TT_LAYERS) layerRefs[key] = chgd.has(key) || !old ? await Media.save(await blobOf(L[key]), 'png') : old[key + '_ref'];
     const thumb = await Media.save(await blobOf(composite(Math.min(1, 420 / Math.max(W, H)))), 'png');
     const tc = document.createElement('canvas'); tc.width = tw; tc.height = th; const tg = tc.getContext('2d'), ti = tg.createImageData(tw, th);
     for (let i = 0; i < TR.length; i++) { const v = Math.min(255, Math.round(TR[i] / 2 * 255)); ti.data[i * 4] = ti.data[i * 4 + 1] = ti.data[i * 4 + 2] = v; ti.data[i * 4 + 3] = 255; }
     tg.putImageData(ti, 0, 0);
     const skinRef = TR.some(v => v > 0.004) ? await Media.save(await blobOf(tc), 'png') : null, blowRef = await Media.save(await blobOf(blowC), 'png');
-    const old = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [id]);
     const tlDrop = [];
     if (TL.fresh.length) { for (const b of TL.fresh.splice(0)) TL.refs.push(await Media.save(b, 'jpg'));
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
@@ -929,7 +946,8 @@ TT.open = async (el, id) => {
         JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS }), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
-    st.dirty = false; if (!quiet) toast('Saved.');
+    if (!quiet) toast('Saved.');
+    } catch (err) { st.dirty = true; TT_LAYERS.forEach(([key]) => touched.add(key)); if (!quiet) toast('Could not save: ' + err.message, 5000); throw err; }
   };
   $('#tt-save').onclick = () => save();
   $('#tt-back').onclick = async () => { if (st.dirty) await save(true); location.hash = 'tattoo'; };
@@ -1163,13 +1181,13 @@ TT.open = async (el, id) => {
   // The part of the page an example shows (mm): its box or shape, with a margin of skin.
   const exCrop = (T) => T.kind === 'final' ? [34, 20, 112, 88] : T.box ? [T.box[0] - 8, T.box[1] - 8, T.box[2] + 16, T.box[3] + 16] : T.id === 'colour' ? [66, 41, 48, 48] : T.id === 'mix' ? [70, 45, 40, 40] : [0, 0, 180, 130];
   const exStencil = (T) => {
-    const g = L.stencil.getContext('2d'); g.clearRect(0, 0, W, H); g.strokeStyle = 'rgba(78,40,150,.9)'; g.lineWidth = 0.32 * mm; g.lineJoin = g.lineCap = 'round';
+    const g = L.stencil.getContext('2d'); g.clearRect(0, 0, W, H); touched.add('stencil'); g.strokeStyle = 'rgba(78,40,150,.9)'; g.lineWidth = 0.32 * mm; g.lineJoin = g.lineCap = 'round';
     if (T.kind === 'line') { Mm(g, T.path); g.stroke(); }
     else if (T.box) { g.setLineDash([2 * mm, 1.5 * mm]); g.strokeRect(T.box[0] * mm, T.box[1] * mm, T.box[2] * mm, T.box[3] * mm); g.setLineDash([]); }
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'final') { Mm(g, heart); g.stroke(); Mm(g, banner); g.stroke(); Mm(g, shine); g.stroke(); }
   };
-  const exClear = () => { for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); } TR.fill(0); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } TR.fill(0); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = CHALL[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
