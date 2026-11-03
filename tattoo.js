@@ -59,7 +59,7 @@ function ttMix(a, b, t) {
 }
 // Grey wash: black ink thinned with water, not mixed with white; the strength is how much pigment it carries.
 const TT_WASH = [['Black', 1], ['Dark', 0.55], ['Mid', 0.3], ['Light', 0.14]];
-const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b', '#6b3f22', '#f4f1ea'];
+const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b', '#6b3f22', '#fbfbf8'];
 const TT_SKINS = [['Light', '#f1d3bd'], ['Fair', '#e2b493'], ['Medium', '#c68c63'], ['Tan', '#a86b45'], ['Brown', '#7b4a2c'], ['Deep', '#4e2f1e']];
 const TT_LAYERS = [['stencil', 'Stencil'], ['line', 'Linework'], ['shadow', 'Shadow'], ['mid', 'Mid tone'], ['light', 'Light tone'], ['high', 'Highlights']];
 const TT_DRAW = ['stencil', 'light', 'mid', 'shadow', 'line', 'high'];   // bottom to top
@@ -452,7 +452,7 @@ TT.open = async (el, id) => {
     const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; }); if (im) L[k].getContext('2d').drawImage(im, 0, 0, W, H); }
   let meta = {}; try { meta = JSON.parse(row.meta || '{}'); } catch {}
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
-    ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1 }, wash: !!meta.wash, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
+    ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? 75, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 0, magTilt: !!meta.magTilt, rot: meta.rot || 0 };
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
      saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
@@ -572,16 +572,16 @@ TT.open = async (el, id) => {
   /* An undo step is the layer and the skin before a change. Taken whole when a stroke starts, then cut down to the
      patch the stroke touched when it ends: whole copies of a big page are ~20 MB each and could run a tablet out of
      memory. `rc`: the patch in page px (none: the whole page). */
-  const state = (key, rc) => rc ? { key, rc, data: L[key].getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h), tr: TR.slice(), bu: BU.slice(), blow: bx.getImageData(rc.x >> 1, rc.y >> 1, (rc.w >> 1) + 2, (rc.h >> 1) + 2) }
-    : { key, data: L[key].getContext('2d').getImageData(0, 0, W, H), tr: TR.slice(), bu: BU.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) };
+  const state = (key, rc, hi) => rc ? { key, rc, data: L[key].getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h), hi: hi ? L.high.getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h) : null, tr: TR.slice(), bu: BU.slice(), blow: bx.getImageData(rc.x >> 1, rc.y >> 1, (rc.w >> 1) + 2, (rc.h >> 1) + 2) }
+    : { key, data: L[key].getContext('2d').getImageData(0, 0, W, H), hi: hi ? L.high.getContext('2d').getImageData(0, 0, W, H) : null, tr: TR.slice(), bu: BU.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) };
   const cropID = (src, x, y, w, h) => { const out = new ImageData(w, h), sw = src.width;
     for (let r = 0; r < h; r++) { const from = ((y + r) * sw + x) * 4; out.data.set(src.data.subarray(from, from + w * 4), r * w * 4); } return out; };
   const cropTop = (box) => { const h = hist[hist.length - 1]; if (!h || h.rc) return;
     const x = Math.max(0, Math.floor(box.x0)), y = Math.max(0, Math.floor(box.y0)), rc = { x, y, w: Math.min(W, Math.ceil(box.x1)) - x, h: Math.min(H, Math.ceil(box.y1)) - y };
     if (rc.w <= 0 || rc.h <= 0) return;
     const bxx = x >> 1, byy = y >> 1, bw = Math.min(blowC.width - bxx, (rc.w >> 1) + 2), bh = Math.min(blowC.height - byy, (rc.h >> 1) + 2);
-    h.data = cropID(h.data, rc.x, rc.y, rc.w, rc.h); h.blow = cropID(h.blow, bxx, byy, bw, bh); h.rc = rc; };
-  const snap = (key) => { hist.push(state(key)); if (hist.length > 15) hist.shift(); fut.length = 0; };
+    h.data = cropID(h.data, rc.x, rc.y, rc.w, rc.h); if (h.hi) h.hi = cropID(h.hi, rc.x, rc.y, rc.w, rc.h); h.blow = cropID(h.blow, bxx, byy, bw, bh); h.rc = rc; };
+  const snap = (key, hi) => { hist.push(state(key, null, hi)); if (hist.length > 15) hist.shift(); fut.length = 0; };
   el.innerHTML = `<div class="dz-ed tt-ed">
     <div class="dz-top">
       <button class="dz-ib" id="tt-back" data-tip="Back to your pieces" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
@@ -662,7 +662,9 @@ TT.open = async (el, id) => {
       for (const key of TT_DRAW) { if (key === 'stencil' || st.hide.has(key)) continue;
         tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, W, H); tg.drawImage(L[key], 0, 0);
         if (loss) { tg.globalCompositeOperation = 'destination-out'; tg.drawImage(loss, 0, 0, W, H); }
-        g.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; g.globalAlpha = a * (st.op[key] ?? 1);
+        // white settles to a faint version of itself (still readable if packed in well); on dark skin it disappears
+        const sk = ttHex(st.skin), skL = sk[0] * 0.3 + sk[1] * 0.59 + sk[2] * 0.11, wf = key === 'high' ? (aged ? 0.4 : 0.55) * Math.max(0, Math.min(1, (skL - 0.3) / 0.35)) : 1;
+        g.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; g.globalAlpha = a * (st.op[key] ?? 1) * wf;
         g.filter = `blur(${Math.max(0.4, mm * b)}px) saturate(${sat})`; g.drawImage(tmp, 0, 0); }
       g.filter = 'none'; g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     }
@@ -692,7 +694,8 @@ TT.open = async (el, id) => {
   const recomp = (x0, y0, w, h) => { cg.save(); cg.beginPath(); cg.rect(x0, y0, w, h); cg.clip(); cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over';
     cg.clearRect(x0, y0, w, h); cg.drawImage(skin, 0, 0); skinUnder(cg, true);
     for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
-      cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; cg.drawImage(L[key], 0, 0); }
+      cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; cg.drawImage(L[key], 0, 0);
+      if (key === 'high') cg.drawImage(L[key], 0, 0); }   // white laid twice: fresh white ink reads bright, not grey
     cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); cg.restore(); };
   const paint = (rect) => { if (rect) compR = compR ? { x0: Math.min(compR.x0, rect.x0), y0: Math.min(compR.y0, rect.y0), x1: Math.max(compR.x1, rect.x1), y1: Math.max(compR.y1, rect.y1) } : rect; else compAll = true;
     cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
@@ -763,7 +766,11 @@ TT.open = async (el, id) => {
     const key = st.layer; if (st.hide.has(key)) toast('That layer is hidden: show it to see what you draw.');
     if (key === 'stencil' && st.tool !== 'erase') { toast('The stencil layer holds a picture to trace. Load one from Layers.'); return false; }
     if (st.view !== 'work') { st.view = 'work'; st.viewC = null; drawView(); }
-    const c = L[key]; snap(key); touched.add(key);
+    /* White is opaque: ink with white in it (white, or a colour mixed with white) also covers the skin in the
+       highlights layer as much as it is white, so a pastel is solid and bright, not a thin, see-through tint the way
+       diluted ink is. */
+    const wsh = st.tool !== 'erase' && INK.includes(key) && key !== 'high' ? (st.ink.w || 0) : 0;
+    const c = L[key]; snap(key, wsh > 0.04); touched.add(key);
     let cx;
     if (INK.includes(key)) { const col = st.ink.c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
       cx = { pig: true, key, col, str: st.tool === 'erase' ? 1 : (st.ink.s ?? 1), lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; }
@@ -771,6 +778,7 @@ TT.open = async (el, id) => {
     const p = toPage(e);
     if (EX?.cur) { EX.cur.strokes = (EX.cur.strokes || 0) + 1; EX.cur.t0 ||= Date.now(); EX.cur.t1 = Date.now(); }
     SS.strokes++; if (st.tool === 'erase') SS.erase++; else SS.layers[key] = (SS.layers[key] || 0) + 1;
+    if (wsh > 0.04 && cx.pig) cx.alsoHi = { ...cx, key: 'high', w: wsh };
     pen = { cx, last: p, t: e.timeStamp, t0: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
     if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('The needle is dry: dip into an ink cap first.', 1800);
     return true;
@@ -819,6 +827,7 @@ TT.open = async (el, id) => {
             if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or the machine running too hard irritates the skin.', 3500); } } }
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
+        if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, pageTurn(pen.a, ev), depth, tilt, inkC * pen.cx.alsoHi.w, false);
         const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y };
         B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp);
         if (st.tool !== 'erase') { st.ink.v = Math.max(0, st.ink.v - 0.000008 * lay.length * depth * feel.flow / 100); SS.punct++; }
@@ -989,8 +998,9 @@ TT.open = async (el, id) => {
     if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; st.rot = 0; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
 
   const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, h.rc?.x || 0, h.rc?.y || 0); syncIn(h.key); touched.add(h.key);
+    if (h.hi) { L.high.getContext('2d').putImageData(h.hi, h.rc?.x || 0, h.rc?.y || 0); syncIn('high'); touched.add('high'); }
     if (h.tr) { TR.set(h.tr); trDirty = true; } if (h.bu) BU.set(h.bu); if (h.blow) bx.putImageData(h.blow, h.rc ? h.rc.x >> 1 : 0, h.rc ? h.rc.y >> 1 : 0); st.dirty = true; st.viewC = null; paint(); };
-  const swap = (from, to) => { if (pen) return true; const h = from.pop(); if (!h) return false; to.push(state(h.key, h.rc)); undoTo(h); return true; };
+  const swap = (from, to) => { if (pen) return true; const h = from.pop(); if (!h) return false; to.push(state(h.key, h.rc, !!h.hi)); undoTo(h); return true; };
   const undo = () => { if (!swap(hist, fut)) return toast('Nothing to undo.'); exUndo(); };
   const redo = () => swap(fut, hist) || toast('Nothing to redo.');
 
@@ -1016,17 +1026,19 @@ TT.open = async (el, id) => {
     const dil = cap.dataset.dilute != null, i = +(cap.dataset.cap ?? cap.dataset.wash ?? 0), ws = dil ? 0 : cap.dataset.wash != null ? TT_WASH[i][1] : 1;
     if (st.capEdit && !st.wash && !dil) { const inp = document.createElement('input'); inp.type = 'color'; inp.value = st.caps[i];
       inp.oninput = () => { st.caps[i] = inp.value; st.dirty = true; drawTray(); }; inp.click(); return; }
-    e.preventDefault(); const col = dil ? st.ink.c : ws < 1 ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1; SS.dips++;
+    e.preventDefault(); const capW = (() => { const c = ttHex(ws < 1 ? TT_CAPS[0] : st.caps[i]); return Math.min(...c) > 0.85 ? 1 : 0; })();   // a white cap
+    const col = dil ? st.ink.c : ws < 1 ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1; SS.dips++;
     const step = (now) => { if (!dip) return; const dt = Math.min(0.1, (now - t0) / 1000); t0 = now;
       const a = dt * 0.9, frac = a / (st.ink.v + a);   // ink added this moment, and how much of the mix it is
       const wet = st.ink.v > 0.005; st.ink.c = wet ? ttMix(st.ink.c, col, frac) : col; st.ink.s = wet ? (st.ink.s ?? 1) * (1 - frac) + ws * frac : ws; st.ink.v = Math.min(1, st.ink.v + a);
+      if (!dil) st.ink.w = wet ? (st.ink.w || 0) * (1 - frac) + capW * frac : capW;   // the white share of the pigment (water doesn't change it)
       drawNeedleInk(); dip.raf = requestAnimationFrame(step); };
     dip = { cap, raf: requestAnimationFrame(step) }; st.dirty = true;
   });
   const dipEnd = () => { if (!dip) return; cancelAnimationFrame(dip.raf); dip.cap.classList.remove('dip'); dip = null; };
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => tray.addEventListener(t, dipEnd));
   tray.addEventListener('click', (e) => {
-    if (e.target.closest('[data-rinse]')) { st.ink = { c: [1, 1, 1], v: 0, s: 1 }; drawNeedleInk(); return toast('Needle rinsed.', 1200); }
+    if (e.target.closest('[data-rinse]')) { st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; drawNeedleInk(); return toast('Needle rinsed.', 1200); }
     if (e.target.closest('[data-set]')) { st.wash = !st.wash; st.capEdit = false; st.dirty = true; return drawTray(); }
     if (e.target.closest('[data-capedit]')) { st.capEdit = !st.capEdit; toast(st.capEdit ? 'Tap a cap to change its colour. Tap the pencil again when done.' : 'Done changing colours.', 2200); return drawTray(); }
   });
@@ -1378,7 +1390,7 @@ TT.open = async (el, id) => {
     const c = document.createElement('canvas'); c.width = Math.round(W * scale); c.height = Math.round(H * scale); const g = c.getContext('2d'); g.scale(scale, scale);
     const raw = mode === 'work' || mode === 'fresh';
     if (withSkin) { if (raw && trDirty) buildTrauma(); g.drawImage(skin, 0, 0); skinUnder(g, raw); }
-    for (const key of TT_DRAW) { if (key === 'stencil' || st.hide.has(key)) continue; g.globalAlpha = st.op[key] ?? 1; g.globalCompositeOperation = key === 'high' || !withSkin ? 'source-over' : 'multiply'; g.drawImage(L[key], 0, 0); }
+    for (const key of TT_DRAW) { if (key === 'stencil' || st.hide.has(key)) continue; g.globalAlpha = st.op[key] ?? 1; g.globalCompositeOperation = key === 'high' || !withSkin ? 'source-over' : 'multiply'; g.drawImage(L[key], 0, 0); if (key === 'high' && raw) g.drawImage(L[key], 0, 0); }
     g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; if (withSkin && raw) skinOver(g);
     return c;
   };
@@ -1398,7 +1410,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS }), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -1640,7 +1652,7 @@ TT.open = async (el, id) => {
     if (T.kind !== 'line') { const cr = exCrop(T), sr = stage.getBoundingClientRect(), w = Math.max(140, Math.min(280, sr.width * 0.28)), h = w * cr[3] / cr[2];
       refNew({ gen: T.id, ar: cr[3] / cr[2], w, op: 1, x: sr.width - w / 2 - 14, y: Math.min(sr.height - 90 - h / 2, Math.max(150 + h / 2, sr.height / 2)) }); }
     refSel = null;
-    st.ink = { c: [1, 1, 1], v: 0, s: 1 }; st.wash = !!T.wash;   // each challenge starts with a clean, empty needle
+    st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; st.wash = !!T.wash;   // each challenge starts with a clean, empty needle
     setNeedle(T.needle); st.layer = T.layer; st.caps = [...TT_CAPS]; st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
     drawTray(); drawView(); drawRefs(); exBar(); paint(); st.dirty = true;
   };
