@@ -881,7 +881,7 @@ TT.open = async (el, id) => {
   /* On screen: the ruler's line with a handle at each end, and the symmetry centre (draggable) with its axes. */
   const guides = $('#tt-guides');
   function placeGuides() { if (!CHEAT) return; const hs = [];
-    $('#tt-rail [data-r="tools"]')?.classList.toggle('on', ['blend', 'fill', 'shape', 'lasso'].includes(st.tool) || st.ruler.on || st.sym.mode !== 'off' || !!st.fast);
+    $('#tt-rail [data-r="tools"]')?.classList.toggle('on', ['blend', 'fill', 'shape', 'lasso', 'pick'].includes(st.tool) || st.grid.on || st.ruler.on || st.sym.mode !== 'off' || !!st.fast);
     $('#tt-rail [data-r="ruler"]')?.classList.toggle('on', st.ruler.on); $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off');
     if (st.ruler.on) hs.push(['ra', st.ruler.a], ['rb', st.ruler.b]);
     if (st.sym.mode !== 'off') hs.push(['sc', st.sym.c]);
@@ -891,9 +891,14 @@ TT.open = async (el, id) => {
       sh = `<div data-gh="sbody" class="tt-selb" style="left:${c.x}px;top:${c.y}px;width:${w}px;height:${h2}px;transform:translate(-50%,-50%) rotate(${ang}rad)"></div>`
         + cs.map((q, i) => `<i data-gh="sk${i}" class="lsel" style="left:${q.x}px;top:${q.y}px"></i>`).join('') + `<i data-gh="srot" class="lsel rot" style="left:${top.x + up.x}px;top:${top.y + up.y}px"></i>`
         + `<div class="tt-selbar"><button data-sa="fx">Flip ↔</button><button data-sa="fy">Flip ↕</button><button data-sa="del">Delete</button><button data-sa="undo">Cancel</button><button data-sa="ok" class="ok">Done</button></div>`; }
+    if (snapE?.live) sh += snapE.anchors.map((a, i) => { const q = toScreen(a); return `<i data-gh="an${i}" class="anc ${a.c ? 'corner' : ''}" style="left:${q.x}px;top:${q.y}px"></i>`; }).join('')
+      + `<div class="tt-selbar"><span class="tt-anhint">Drag an anchor to reshape · tap it for curve or corner</span><button data-sa="snapok" class="ok">Done</button></div>`;
     guides.innerHTML = sh + hs.map(([k2, p]) => { const s = toScreen(p); return `<i data-gh="${k2}" class="${k2 === 'sc' ? 'sym' : ''}" style="left:${s.x}px;top:${s.y}px"></i>`; }).join('');
     drawCur(); }
   const drawGuides = () => { if (!CHEAT) return; const dpr = cur.width / (stage.clientWidth || 1); cux.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (st.grid.on) { const g = st.grid.mm * mm; cux.lineWidth = 1; cux.strokeStyle = 'rgba(255,255,255,.18)'; cux.beginPath();
+      for (let x = g; x < W; x += g) { const a = toScreen({ x, y: 0 }), b = toScreen({ x, y: H }); cux.moveTo(a.x, a.y); cux.lineTo(b.x, b.y); }
+      for (let y = g; y < H; y += g) { const a = toScreen({ x: 0, y }), b = toScreen({ x: W, y }); cux.moveTo(a.x, a.y); cux.lineTo(b.x, b.y); } cux.stroke(); }
     if (st.ruler.on) { const a = toScreen(st.ruler.a), b = toScreen(st.ruler.b), L = Math.hypot(b.x - a.x, b.y - a.y) || 1, ex = (b.x - a.x) / L * 4000, ey = (b.y - a.y) / L * 4000;
       cux.lineWidth = 6; cux.strokeStyle = 'rgba(255,111,97,.18)'; cux.beginPath(); cux.moveTo(a.x - ex, a.y - ey); cux.lineTo(b.x + ex, b.y + ey); cux.stroke();
       cux.lineWidth = 1.5; cux.strokeStyle = 'rgba(255,111,97,.9)'; cux.beginPath(); cux.moveTo(a.x - ex, a.y - ey); cux.lineTo(b.x + ex, b.y + ey); cux.stroke(); }
@@ -904,35 +909,42 @@ TT.open = async (el, id) => {
       cux.setLineDash([]); } };
   let gDrag = null;
   guides.addEventListener('pointerdown', (e) => { const h = e.target.closest('[data-gh]'); if (!h) return; e.stopPropagation(); e.preventDefault(); try { guides.setPointerCapture(e.pointerId); } catch {} gDrag = h.dataset.gh;
+    if (snapE?.live && /^an\d+$/.test(gDrag)) { gDrag = { k: 'an', i: +gDrag.slice(2), x: e.clientX, y: e.clientY, moved: false }; return; }
     if (lsel && /^s(body|k|rot)/.test(gDrag)) { const r = stage.getBoundingClientRect(); gDrag = { k: gDrag, p0: fromScreen(e.clientX - r.left, e.clientY - r.top), tx: lsel.tx, ty: lsel.ty, s: lsel.s, rot: lsel.rot, c: selCentre() }; } });
-  guides.addEventListener('click', (e) => { const a = e.target.closest('[data-sa]')?.dataset.sa; if (!a || !lsel) return;
+  guides.addEventListener('click', (e) => { const a = e.target.closest('[data-sa]')?.dataset.sa; if (a === 'snapok') return snapFinish(); if (!a || !lsel) return;
     if (a === 'fx') lsel.fx *= -1; if (a === 'fy') lsel.fy *= -1; if (a === 'ok') return selCommit(); if (a === 'del') return selCommit(true); if (a === 'undo') return selCancel();
     selApply(); placeGuides(); });
   guides.addEventListener('pointermove', (e) => { if (!gDrag) return; const r = stage.getBoundingClientRect(), p = fromScreen(e.clientX - r.left, e.clientY - r.top), cl = { x: Math.max(0, Math.min(W, p.x)), y: Math.max(0, Math.min(H, p.y)) };
+    if (gDrag?.k === 'an') { if (!snapE) return; if (!gDrag.moved && Math.hypot(e.clientX - gDrag.x, e.clientY - gDrag.y) < 5) return;
+      gDrag.moved = true; snapE.moved = true; snapE.anchors[gDrag.i] = { ...snapE.anchors[gDrag.i], x: cl.x, y: cl.y };
+      if (!snapRaf) snapRaf = requestAnimationFrame(() => { snapRaf = 0; renderSnap(); }); return placeGuides(); }
     if (typeof gDrag === 'object') { if (!lsel) return; const g = gDrag, c = g.c;
       if (g.k === 'sbody') { lsel.tx = g.tx + p.x - g.p0.x; lsel.ty = g.ty + p.y - g.p0.y; }
       else if (g.k === 'srot') { let a = g.rot + Math.atan2(p.y - c.y, p.x - c.x) - Math.atan2(g.p0.y - c.y, g.p0.x - c.x); const q = Math.round(a / (Math.PI / 4)) * (Math.PI / 4); if (Math.abs(a - q) < 0.05) a = q; lsel.rot = a; }
       else lsel.s = Math.max(0.05, g.s * Math.hypot(p.x - c.x, p.y - c.y) / Math.max(1, Math.hypot(g.p0.x - c.x, g.p0.y - c.y)));
       selApply(); return placeGuides(); }
     if (gDrag === 'ra') st.ruler.a = cl; else if (gDrag === 'rb') st.ruler.b = cl; else st.sym.c = cl; st.dirty = true; placeGuides(); });
-  for (const n of ['pointerup', 'pointercancel']) guides.addEventListener(n, () => { gDrag = null; });
+  for (const n of ['pointerup', 'pointercancel']) guides.addEventListener(n, (e) => { const g = gDrag; gDrag = null;
+    if (g?.k === 'an' && !g.moved && e.type === 'pointerup' && snapE) { const a = snapE.anchors[g.i]; a.c = !a.c; snapE.moved = true; renderSnap(); placeGuides(); } });
   /* The Tools menu: every cheat tool in one place (the rail stays short), each button named under its icon. */
-  const TOOL_BTNS = `<button class="tt-tb" data-r="ruler" data-tip="Ruler: strokes run straight along it. Drag its ends to place it." aria-label="Ruler"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
+  const TOOL_BTNS = `<button class="tt-tb" data-r="pick" data-tip="Colour pick: tap ink in the skin to load that exact colour on the needle" aria-label="Colour pick"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-2 2-6-6z"/><path d="M15 9l-9 9H4v-2l9-9"/></svg></button>
+        <button class="tt-tb" data-r="grid" data-tip="Grid over the page, for lining things up" aria-label="Grid"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></button><button class="tt-tb" data-r="ruler" data-tip="Ruler: strokes run straight along it. Drag its ends to place it." aria-label="Ruler"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
         <button class="tt-tb" data-r="blend" data-tip="Blend: smudge and soften ink on the current layer" aria-label="Blend"><svg viewBox="0 0 24 24"><path d="M14 3l7 7-8 8a3 3 0 0 1-4 0l-3-3a3 3 0 0 1 0-4z"/><path d="M4 21c2 0 3-1 3-3"/></svg></button>
         <button class="tt-tb" data-r="fill" data-tip="Fill: tap inside an outline to pack it with the ink on the needle" aria-label="Fill"><svg viewBox="0 0 24 24"><path d="M5 11l7-7 7 7-7 7z"/><path d="M5 11h14"/><path d="M20 15s2 2.5 2 4a2 2 0 0 1-4 0c0-1.5 2-4 2-4z"/></svg></button>
         <button class="tt-tb" data-r="shape" data-tip="Shapes: drag out a line, box, ellipse, triangle or star" aria-label="Shapes"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="9" height="9" rx="1"/><circle cx="16.5" cy="7.5" r="4.5"/></svg></button>
         <button class="tt-tb" data-r="sym" data-tip="Symmetry and mandala" aria-label="Symmetry"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M18.4 5.6l-4.2 4.2M9.8 14.2l-4.2 4.2"/></svg></button>
         <button class="tt-tb" data-r="lasso" data-tip="Lasso: draw round part of the work to move, size, turn or flip it" aria-label="Lasso"><svg viewBox="0 0 24 24"><path d="M4 9c0-3 3.6-5 8-5s8 2 8 5-3.6 5-8 5c-1.4 0-2.7-.2-3.8-.6"/><path d="M6 13c-1.5 1-1.5 3 0 4s3 0 3-2-2-2-3-2zM6 17c0 2 1 3 2 4"/></svg></button>`;
-  const TOOL_NAMES = { ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
+  const TOOL_NAMES = { pick: 'Colour pick', grid: 'Grid', ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
   function toolsPop(b) {
     pop.innerHTML = `<div class="gh">Cheat tools</div><div class="tt-tools">${TOOL_BTNS}</div>
-      <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>`;
+      <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
+      <label class="dz-sl" style="margin:2px 6px 6px"><span>Grid size<b id="tt-gridv">${st.grid.mm} mm</b></span><input type="range" min="2" max="30" step="1" value="${st.grid.mm}" data-gridmm></label>`;
     pop.querySelectorAll('.tt-tb').forEach(x => { const r = x.dataset.r; x.insertAdjacentHTML('beforeend', `<span>${TOOL_NAMES[r]}</span>`);
-      x.classList.toggle('on', r === st.tool || (r === 'ruler' && st.ruler.on) || (r === 'sym' && st.sym.mode !== 'off')); });
+      x.classList.toggle('on', r === st.tool || (r === 'grid' && st.grid.on) || (r === 'ruler' && st.ruler.on) || (r === 'sym' && st.sym.mode !== 'off')); });
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   /* ---------- Cheat tools: blend, fill and shapes ----------
      All work on the current layer with the ink on the needle, and undo like a stroke. */
-  st.lassoAll = !!meta.lassoAll; st.blend = meta.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || { sten: true }; st.shape = meta.shape || { kind: 'rect', fill: false };
+  st.lassoAll = !!meta.lassoAll; st.grid = meta.grid || { on: false, mm: 10 }; st.blend = meta.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || { sten: true }; st.shape = meta.shape || { kind: 'rect', fill: false };
   function toolPop(b) {
     const T = st.tool, sl = (o, f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:4px 6px"><span>${lab}<b>${fmt(st[o][f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${st[o][f]}" data-tl="${o}.${f}"></label>`;
     const tg = (o, f, lab) => `<label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-tl="${o}.${f}" ${st[o][f] ? 'checked' : ''}><span>${lab}</span></label>`;
@@ -1007,6 +1019,12 @@ TT.open = async (el, id) => {
         const BB = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; BB.x0 = Math.min(BB.x0, q.x - bp); BB.y0 = Math.min(BB.y0, q.y - bp); BB.x1 = Math.max(BB.x1, q.x + bp); BB.y1 = Math.max(BB.y1, q.y + bp); } }
     const u = flushPig(); cropTop(pen.box); pen = null; st.dirty = true; paint(u ? { x0: u.x0 - 4 * mm, y0: u.y0 - 4 * mm, x1: u.x1 + 4 * mm, y1: u.y1 + 4 * mm } : undefined); TL.changed = true; tlGrab(); };
   const toolDown = (e) => { const p = toPage(e);
+    if (st.tool === 'pick') {   // the ink at that spot, all layers mixed as they show
+      const x = Math.round(p.x), y = Math.round(p.y); if (x < 0 || y < 0 || x >= W || y >= H) return; const i = (y * W + x) * 4; let r = 0, g = 0, b = 0, w = 0, keep = 1;
+      for (const key of INK) { const D = imgd[key].data, a = D[i + 3] / 255; if (!a) continue; r += D[i] * a; g += D[i + 1] * a; b += D[i + 2] * a; w += a; keep *= 1 - a; }
+      if (!w) return toast('No ink there to pick up.', 1500);
+      const c = [r / w / 255, g / w / 255, b / w / 255]; st.ink = { c, v: 1, s: Math.max(0.15, Math.min(1, (1 - keep) * 1.1)), w: Math.min(...c) > 0.85 ? 1 : 0 }; st.dirty = true; drawNeedleInk();
+      st.tool = 'needle'; sel(); placeGuides(); return toast('Picked up that colour: the needle is loaded.', 1600); }
     if (st.tool === 'lasso') { if (lsel) selCommit(); td = { kind: 'lasso', id: e.pointerId, pts: [p] }; return; }
     if (st.tool === 'fill') { const key = toolLayer(); if (key) fillAt(p, key); return; }
     if (st.tool === 'shape') { td = { kind: 'shape', id: e.pointerId, a: p, b: p }; return drawCur(e); }
@@ -1068,18 +1086,69 @@ TT.open = async (el, id) => {
     if (R > 1.5 * mm && sd / R < 0.14 && len > Math.PI * 2 * R * 0.8 && L < R * 0.9) return { kind: 'circle', c, R, a0: Math.atan2(a.y - c.y, a.x - c.x) };
     return null; };
   // Hold the pen still mid-stroke: the stroke is redone as the clean shape, at the stroke's own depth.
-  const snapNow = () => { if (!CHEAT || !pen || pen.snapped || !pen.cx.pig || st.tool === 'erase') return;
-    const sh = shapeOf(pen.raw || []); if (!sh) return toast('Hold to snap: draw a rough line or circle, then hold still.', 2200);
-    const h = hist[hist.length - 1]; if (!h || h.rc) return;
-    for (const key of [h.key, ...(h.hi ? ['high'] : [])]) { delete dirty[key]; L[key].getContext('2d').putImageData(key === 'high' ? h.hi : h.data, 0, 0); syncIn(key); }
-    const pts = [], step = 0.08 * mm;
-    if (sh.kind === 'line') { const n = Math.max(2, Math.ceil(Math.hypot(sh.b.x - sh.a.x, sh.b.y - sh.a.y) / step)); for (let i = 0; i <= n; i++) pts.push({ x: sh.a.x + (sh.b.x - sh.a.x) * i / n, y: sh.a.y + (sh.b.y - sh.a.y) * i / n }); }
-    else { const n = Math.ceil(Math.PI * 2 * sh.R / step); for (let i = 0; i <= n; i++) { const t2 = sh.a0 + Math.PI * 2 * i / n; pts.push({ x: sh.c.x + Math.cos(t2) * sh.R, y: sh.c.y + Math.sin(t2) * sh.R }); } }
-    const depth = pen.dn ? pen.dsum / pen.dn : 0.6, ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(), bp = pen.foot * 2 + 6 * mm;
-    for (let i = 0; i < pts.length; i++) { const q = pts[i], n2 = pts[Math.min(pts.length - 1, i + 1)], pv = pts[Math.max(0, i - 1)], a = Math.atan2(n2.y - pv.y, n2.x - pv.x) + 0;
-      puncture(pen.cx, q, a, depth, 0, ink, false); if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, a, depth, 0, ink * pen.cx.alsoHi.w, false); if (pen.sym) symPunc(q, a, depth, 0, ink, false);
+  /* Hold to snap fits whatever was drawn: a line or circle when it's close to one, otherwise the stroke cleaned up
+     into smooth curves and sharp corners (corners where it turns hard). Right after, tapping the line shows its
+     anchors: drag one to reshape, tap one to switch it between curve and corner. */
+  const fitPath = (raw) => {
+    if (raw.length < 4) return null; let len = 0; for (let i = 1; i < raw.length; i++) len += Math.hypot(raw[i].x - raw[i - 1].x, raw[i].y - raw[i - 1].y); if (len < 3 * mm) return null;
+    const sh = shapeOf(raw);
+    if (sh?.kind === 'line') return { kind: 'line', closed: false, anchors: [{ ...sh.a, c: true }, { ...sh.b, c: true }] };
+    if (sh?.kind === 'circle') return { kind: 'circle', closed: true, anchors: [...Array(8)].map((_, i) => { const a = sh.a0 + Math.PI * i / 4; return { x: sh.c.x + Math.cos(a) * sh.R, y: sh.c.y + Math.sin(a) * sh.R, c: false }; }) };
+    // resample every mm, so turns and tolerances don't depend on how fast it was drawn
+    const st1 = Math.max(1, mm), P = [raw[0]]; let carry = 0;
+    for (let i = 1; i < raw.length; i++) { const a = raw[i - 1], b = raw[i], d = Math.hypot(b.x - a.x, b.y - a.y); let tt = st1 - carry; while (tt <= d) { P.push({ x: a.x + (b.x - a.x) * tt / d, y: a.y + (b.y - a.y) * tt / d }); tt += st1; } carry = d - (tt - st1); }
+    const last = raw[raw.length - 1]; if (Math.hypot(last.x - P[P.length - 1].x, last.y - P[P.length - 1].y) > st1 * 0.3) P.push(last);
+    const closed = Math.hypot(P[0].x - P[P.length - 1].x, P[0].y - P[P.length - 1].y) < Math.max(4 * mm, len * 0.1); if (closed) P.pop();
+    // the hand's wobble is ironed out first, more on bigger strokes (so a big shape shrugs off a bigger wobble)
+    const K = Math.max(3, Math.round(len / mm * 0.025)), eps = Math.max(0.7 * mm, len * 0.018);
+    for (let pass = 0; pass < 3; pass++) { const Q = P.map(q => ({ ...q })); for (let i = 0; i < P.length; i++) { if (!closed && (i === 0 || i === P.length - 1)) continue;
+      const a = Q[(i - 1 + Q.length) % Q.length], c = Q[(i + 1) % Q.length]; P[i] = { x: (a.x + Q[i].x * 2 + c.x) / 4, y: (a.y + Q[i].y * 2 + c.y) / 4 }; } }
+    const n = P.length, at = (i) => closed ? P[(i + n) % n] : P[Math.max(0, Math.min(n - 1, i))];
+    const turn = (i) => { const a = at(i - K), b = at(i), c = at(i + K), a1 = Math.atan2(b.y - a.y, b.x - a.x), a2 = Math.atan2(c.y - b.y, c.x - b.x); let d = Math.abs(a2 - a1); if (d > Math.PI) d = Math.PI * 2 - d; return d; };
+    const T = P.map((_, i) => (!closed && (i < K || i > n - 1 - K)) ? 0 : turn(i)), cor = [];
+    for (let i = 0; i < n; i++) if (T[i] > 0.9 && [...Array(2 * K + 1)].every((_, j) => { const o = i - K + j; const oi = closed ? (o + n) % n : o; return oi < 0 || oi >= n || oi === i || T[oi] <= T[i]; })) cor.push(i);
+    // between corners (and the ends), keep only the points the curve needs (Douglas-Peucker)
+    const rdp = (lo, hi, out) => { let md = 0, mi = -1; const a = at(lo), b = at(hi), L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      for (let i = lo + 1; i < hi; i++) { const q = at(i), d = Math.abs((b.x - a.x) * (a.y - q.y) - (a.x - q.x) * (b.y - a.y)) / L; if (d > md) { md = d; mi = i; } }
+      if (md > eps && mi > 0) { rdp(lo, mi, out); out.push(mi); rdp(mi, hi, out); } };
+    const breaks = closed ? (cor.length ? cor : [0]) : [0, ...cor.filter(i => i > 0 && i < n - 1), n - 1], idx = [];
+    for (let j = 0; j < breaks.length - (closed ? 0 : 1); j++) { const lo = breaks[j], hi = closed ? (j + 1 < breaks.length ? breaks[j + 1] : breaks[0] + n) : breaks[j + 1]; idx.push(lo); const mid = []; rdp(lo, hi, mid); idx.push(...mid); }
+    if (!closed) idx.push(n - 1);
+    const anchors = []; for (const i of idx) { const q = at(i), c = cor.includes(((i % n) + n) % n) || (!closed && (i === 0 || i === n - 1)); const l2 = anchors[anchors.length - 1]; if (!l2 || Math.hypot(l2.x - q.x, l2.y - q.y) > 0.5 * mm) anchors.push({ x: q.x, y: q.y, c }); }
+    if (anchors.length < 2) return null;
+    return { kind: 'free', closed, anchors }; };
+  // Points along the anchors: curves through smooth anchors, straight into and out of corners.
+  const pathPts = (A, closed, step) => { const n = A.length, out = [], P = (i) => closed ? A[(i + n) % n] : A[Math.max(0, Math.min(n - 1, i))];
+    const tan = (i) => { const a = P(i); if (a.c && !(closed && false)) return { x: 0, y: 0 }; const p0 = P(i - 1), p1 = P(i + 1); return { x: (p1.x - p0.x) * 0.5, y: (p1.y - p0.y) * 0.5 }; };
+    for (let s2 = 0; s2 < (closed ? n : n - 1); s2++) { const a = P(s2), b = P(s2 + 1), ta = tan(s2), tb = tan(s2 + 1), m = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * 1.2 / step));
+      for (let j = s2 ? 1 : 0; j <= m; j++) { const u = j / m, u2 = u * u, u3 = u2 * u, h1 = 2 * u3 - 3 * u2 + 1, h2 = -2 * u3 + 3 * u2, h3 = u3 - 2 * u2 + u, h4 = u3 - u2;
+        out.push({ x: h1 * a.x + h2 * b.x + h3 * ta.x + h4 * tb.x, y: h1 * a.y + h2 * b.y + h3 * ta.y + h4 * tb.y }); } }
+    return out; };
+  let snapE = null, snapRaf = 0;
+  // Lay the snapped path into the skin, over the layer as it was before the stroke.
+  const renderSnap = () => { const S = snapE; if (!S) return;
+    delete dirty[S.key]; L[S.key].getContext('2d').putImageData(S.base, 0, 0); syncIn(S.key); if (S.baseHi) { delete dirty.high; L.high.getContext('2d').putImageData(S.baseHi, 0, 0); syncIn('high'); }
+    const own = !pen; if (own) pen = { cx: S.cx, foot: S.foot, sym: S.sym, box: null, id: -1 }; else pen.box = null;
+    const pts = pathPts(S.anchors, S.closed, 0.08 * mm), bp = S.foot * 2 + 6 * mm;
+    for (let i = 0; i < pts.length; i++) { const q = pts[i], n2 = pts[Math.min(pts.length - 1, i + 1)], pv = pts[Math.max(0, i - 1)], a = Math.atan2(n2.y - pv.y, n2.x - pv.x);
+      puncture(S.cx, q, a, S.depth, 0, S.ink, false); if (S.cx.alsoHi) puncture(S.cx.alsoHi, q, a, S.depth, 0, S.ink * S.cx.alsoHi.w, false); if (pen.sym) symPunc(q, a, S.depth, 0, S.ink, false);
       const B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp); }
-    pen.snapped = true; pen.q = []; flushPig(); st.dirty = true; paint(); navigator.vibrate?.(15); toast(sh.kind === 'line' ? 'Snapped to a straight line.' : 'Snapped to a circle.', 1400); };
+    S.box = { ...pen.box }; S.pts = pts; if (own) pen = null; flushPig(); st.dirty = true; paint(); };
+  const snapNow = () => { if (!CHEAT || !pen || pen.snapped || !pen.cx.pig || st.tool === 'erase') return;
+    const fit = fitPath(pen.raw || []); if (!fit) return toast('Hold to snap: draw a little more, then hold still.', 2000);
+    const h = hist[hist.length - 1]; if (!h || h.rc) return;
+    snapE = { key: h.key, base: h.data, baseHi: h.hi, anchors: fit.anchors, closed: fit.closed, kind: fit.kind, depth: pen.dn ? pen.dsum / pen.dn : 0.6,
+      ink: Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(), cx: pen.cx, sym: pen.sym, foot: pen.foot, live: false };
+    renderSnap(); pen.snapped = true; pen.q = []; navigator.vibrate?.(15);
+    toast(fit.kind === 'line' ? 'Snapped to a straight line. Tap it to adjust.' : fit.kind === 'circle' ? 'Snapped to a circle. Tap it to adjust.' : 'Snapped and smoothed. Tap it to adjust its anchors.', 1800); };
+  // The adjusting is done: the undo step is widened to cover wherever the path ended up.
+  function snapFinish() { const S = snapE; if (!S) return; snapE = null; cancelAnimationFrame(snapRaf); snapRaf = 0;
+    if (S.h && S.moved && hist[hist.length - 1] === S.h) { const h = S.h, o = h.rc || { x: 0, y: 0, w: W, h: H };
+      const x0 = Math.max(0, Math.floor(Math.min(o.x, S.box.x0))), y0 = Math.max(0, Math.floor(Math.min(o.y, S.box.y0))), x1 = Math.min(W, Math.ceil(Math.max(o.x + o.w, S.box.x1))), y1 = Math.min(H, Math.ceil(Math.max(o.y + o.h, S.box.y1)));
+      h.rc = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; h.data = cropID(S.base, x0, y0, x1 - x0, y1 - y0); h.hi = S.baseHi ? cropID(S.baseHi, x0, y0, x1 - x0, y1 - y0) : null; h.blow = null; TL.changed = true; tlGrab(); }
+    placeGuides(); }
+  const nearSnap = (e) => { if (!snapE?.pts) return false; const r = stage.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
+    for (let i = 0; i < snapE.pts.length; i += 4) { const q = toScreen(snapE.pts[i]); if (Math.hypot(q.x - sx, q.y - sy) < 16) return true; } return false; };
   const crash = (p, d, ev) => { if (!pen || CHEAT) return; const sev = Math.max(0.2, Math.min(1, (d - 0.55) / 0.35));
     trAdd(p, pen.foot * 1.4, 0.15 * sev / (cal.tough || 1));
     const ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(); for (let i = 0; i < 3; i++) puncture(pen.cx, p, pen.a, Math.min(1.1, d + 0.25), tiltOf(ev), ink, false);
@@ -1090,7 +1159,8 @@ TT.open = async (el, id) => {
   const strokeEnd = () => { clearTimeout(pen?.hold?.t); if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
     if (pen?.landed && pen.dEnd > 0.55 && pen.speed > 40 && pen.cx.pig && st.tool !== 'erase') {   // the take-off: still deep as it left at speed
       crash(pen.last, pen.dEnd, pen.evEnd); const u = flushPig(), pad = pen.foot * 2 + 4 * mm; if (u) paint({ x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad }); }
-    if (pen) { if (pen.box) { cropTop(pen.box); if (st.tool === 'erase' && pen.cx.pig) exLaser(); } else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
+    if (pen?.snapped && snapE) { if (pen.box) cropTop(pen.box); snapE.h = hist[hist.length - 1]; }
+    if (pen) { if (pen.box) { if (!pen.snapped || !snapE) cropTop(pen.box); if (st.tool === 'erase' && pen.cx.pig) exLaser(); } else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
       const mmD = pen.trav || 0; SS.mm += mmD; SS.ms += Math.max(0, pen.t - pen.t0); if (st.tool !== 'erase') SS.needles[st.needle] = (SS.needles[st.needle] || 0) + mmD; }
     pen = null; drawNeedleInk(); if (trDirty) paint(); TL.changed = true; tlGrab(); };
 
@@ -1173,7 +1243,7 @@ TT.open = async (el, id) => {
     const s = k * mm, a = pageTurn(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
     cux.setTransform(dpr, 0, 0, dpr, 0, 0); cux.lineWidth = 1;
     if (CHEAT && st.tool === 'blend') { cux.beginPath(); cux.arc(curAt.x, curAt.y, st.blend.r * s, 0, 7); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.45)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); return; }
-    if (CHEAT && (st.tool === 'fill' || st.tool === 'shape' || st.tool === 'lasso')) {
+    if (CHEAT && (st.tool === 'fill' || st.tool === 'shape' || st.tool === 'lasso' || st.tool === 'pick')) {
       if (td?.kind === 'lasso') { const P = td.pts.map(toScreen); cux.setLineDash([5, 4]); cux.beginPath(); P.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.closePath(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); cux.setLineDash([]); }
       if (td?.kind === 'shape') { const P = shapePts(st.shape.kind, td.a, td.b).map(toScreen); cux.beginPath(); P.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.4)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.stroke(); }
       cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.beginPath(); cux.moveTo(curAt.x - 8, curAt.y); cux.lineTo(curAt.x + 8, curAt.y); cux.moveTo(curAt.x, curAt.y - 8); cux.lineTo(curAt.x, curAt.y + 8); cux.stroke(); return; }
@@ -1215,7 +1285,8 @@ TT.open = async (el, id) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     if (st.check) return drawCur(e);   // checking the skin, not tattooing
     if (lsel && st.tool !== 'lasso') selCommit();
-    if (CHEAT && ['blend', 'fill', 'shape', 'lasso'].includes(st.tool)) return toolDown(e);
+    if (snapE) { if (!snapE.live && st.tool === 'needle' && nearSnap(e)) { snapE.live = true; placeGuides(); return; } snapFinish(); }
+    if (CHEAT && ['blend', 'fill', 'shape', 'lasso', 'pick'].includes(st.tool)) return toolDown(e);
     if (strokeStart(e)) strokeMove(e);
   });
   cv.addEventListener('pointermove', (e) => {
@@ -1250,7 +1321,7 @@ TT.open = async (el, id) => {
     if (h.more) for (const m of h.more) { L[m.key].getContext('2d').putImageData(m.data, h.rc?.x || 0, h.rc?.y || 0); syncIn(m.key); touched.add(m.key); }
     if (h.hi) { L.high.getContext('2d').putImageData(h.hi, h.rc?.x || 0, h.rc?.y || 0); syncIn('high'); touched.add('high'); }
     if (h.tr) { TR.set(h.tr); trDirty = true; } if (h.bu) BU.set(h.bu); if (h.blow) bx.putImageData(h.blow, h.rc ? h.rc.x >> 1 : 0, h.rc ? h.rc.y >> 1 : 0); st.dirty = true; st.viewC = null; paint(); };
-  const swap = (from, to) => { if (pen) return true; if (lsel) { selCancel(); return true; }   // undo while something floats: put it back where it was
+  const swap = (from, to) => { if (pen) return true; if (snapE) snapFinish(); if (lsel) { selCancel(); return true; }   // undo while something floats: put it back where it was
     const h = from.pop(); if (!h) return false; const s2 = state(h.key, h.rc, !!h.hi); if (h.more) s2.more = h.more.map(m => ({ key: m.key, data: L[m.key].getContext('2d').getImageData(h.rc?.x || 0, h.rc?.y || 0, h.rc?.w || W, h.rc?.h || H) })); to.push(s2); undoTo(h); return true; };
   const undo = () => { if (!swap(hist, fut)) return toast('Nothing to undo.'); exUndo(); };
   const redo = () => swap(fut, hist) || toast('Nothing to redo.');
@@ -1308,6 +1379,8 @@ TT.open = async (el, id) => {
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
     if (r === 'tools') { if (!pop.hidden) return closePop(); return toolsPop(b); }
+    if (r === 'grid') { closePop(); st.grid.on = !st.grid.on; st.dirty = true; return placeGuides(); }
+    if (r === 'pick') { closePop(); if (lsel) selCommit(); st.tool = 'pick'; sel(); placeGuides(); return toast('Tap ink in the skin to load that colour.', 1800); }
     if (r === 'ruler') { closePop(); st.ruler.on = !st.ruler.on; st.dirty = true; b.classList.toggle('on', st.ruler.on); placeGuides(); return toast(st.ruler.on ? 'Ruler on: drag its ends to place it. Strokes close to it run along its edge.' : 'Ruler off.', 2200); }
     if (r === 'sym') {
       if (!pop.hidden) return closePop();
@@ -1340,6 +1413,7 @@ TT.open = async (el, id) => {
     const b = e.target.closest('[data-nd]'); if (!b) return; setNeedle(b.dataset.nd); st.tool = 'needle'; closePop(); sel(); if (st.panel === 'feel') drawSide(); };
   pop.oninput = (e) => {
     if (e.target.matches('[data-lassoall]')) { st.lassoAll = e.target.checked; st.dirty = true; return; }
+    if (e.target.matches('[data-gridmm]')) { st.grid.mm = +e.target.value; $('#tt-gridv').textContent = st.grid.mm + ' mm'; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-fast]')) { st.fast = e.target.checked; st.dirty = true; return toast(st.fast ? 'Fast lines on: pull lines as quick as you like.' : 'Fast lines off.', 1600); }
     if (e.target.matches('[data-tl]')) { const [o, f] = e.target.dataset.tl.split('.'); st[o][f] = e.target.type === 'checkbox' ? e.target.checked : +e.target.value; st.dirty = true;
       const v = e.target.closest('label').querySelector('b'); if (v) v.textContent = f === 'r' ? st[o][f] + ' mm' : Math.round(st[o][f] * 100) + '%'; return drawCur(); }
@@ -1683,7 +1757,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined }), id]);
+        JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined }), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -2186,6 +2260,8 @@ function ttStyle() {
 .tt-cheat { flex: none; font: 800 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: #ff8a7a; border: 1.5px solid #ff6f61; border-radius: 6px; padding: 2px 6px; transform: rotate(-3deg); }
 .tt-guides { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 .tt-guides i { position: absolute; width: 22px; height: 22px; margin: -11px; border-radius: 50%; background: rgba(255,111,97,.25); border: 2px solid #ff6f61; pointer-events: auto; touch-action: none; cursor: grab; }
+.tt-guides i.anc { width: 16px; height: 16px; margin: -8px; border-radius: 50%; background: #fff; border: 2px solid #ff6f61; } .tt-guides i.anc.corner { border-radius: 3px; background: #ff6f61; }
+.tt-anhint { font: 600 11px var(--ui); color: var(--ink2); align-self: center; padding: 0 6px; }
 .tt-guides i.lsel { width: 18px; height: 18px; margin: -9px; border-radius: 4px; background: #1a1410; border-color: #ff8a7a; } .tt-guides i.lsel.rot { border-radius: 50%; }
 .tt-selb { position: absolute; border: 1.5px dashed #ff8a7a; pointer-events: auto; touch-action: none; cursor: move; background: rgba(255,111,97,.04); }
 .tt-selbar { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: flex; gap: 4px; padding: 5px; border-radius: 12px; background: rgba(15,18,19,.9); pointer-events: auto; z-index: 2; }
