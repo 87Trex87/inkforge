@@ -1290,6 +1290,11 @@ TT.open = async (el, id) => {
   let snapE = null, snapRaf = 0;
   // Lay the snapped path into the skin, over the layer as it was before the stroke.
   const renderSnap = () => { const S = snapE; if (!S) return;
+    if (S.mk) {   // a marker stroke: redrawn as felt-tip dots along the clean path
+      const g = L.marker.getContext('2d'); g.putImageData(S.base, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.fillStyle = S.mk.col;
+      const pts = pathPts(S.anchors, S.closed, Math.max(0.5, S.mk.r * 0.3)), B = { x0: W, y0: H, x1: 0, y1: 0 };
+      for (const q of pts) { mkDot(g, q, S.mk.r); B.x0 = Math.min(B.x0, q.x - S.mk.r - 2); B.y0 = Math.min(B.y0, q.y - S.mk.r - 2); B.x1 = Math.max(B.x1, q.x + S.mk.r + 2); B.y1 = Math.max(B.y1, q.y + S.mk.r + 2); }
+      S.box = B; S.pts = pts; touched.add('marker'); st.dirty = true; compAll = true; return paint(); }
     delete dirty[S.key]; L[S.key].getContext('2d').putImageData(S.base, 0, 0); syncIn(S.key); if (S.baseHi) { delete dirty.high; L.high.getContext('2d').putImageData(S.baseHi, 0, 0); syncIn('high'); }
     const own = !pen; if (own) pen = { cx: S.cx, foot: S.foot, sym: S.sym, box: null, id: -1 }; else pen.box = null;
     const pts = pathPts(S.anchors, S.closed, 0.08 * mm), bp = S.foot * 2 + 6 * mm;
@@ -1351,18 +1356,27 @@ TT.open = async (el, id) => {
   const mkDot = (g, p, r) => { g.beginPath(); g.arc(p.x, p.y, r, 0, 7); g.fill(); };
   const mkDown = (e) => { const p = toPage(e); if (st.view !== 'work') { st.view = 'work'; st.viewC = null; drawView(); } st.hide.delete('marker');
     snap('marker'); touched.add('marker'); const g = L.marker.getContext('2d');
-    mk = { id: e.pointerId, g, last: p, sp: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y } };
+    mk = { id: e.pointerId, g, last: p, sp: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y }, raw: [p], rs: 0, rn: 0 };
     g.fillStyle = st.mk.col; g.globalCompositeOperation = st.mk.wipe ? 'destination-out' : 'source-over'; mkTo(p, e); };
   // the spirit wipe is a cloth, much wider than the marker's tip
-  const mkTo = (p, e) => { const M = st.mk, pr = e.pointerType === 'mouse' ? 0.6 : Math.max(0.15, e.pressure || 0.5);
+  const mkTo = (p, e) => { if (mk.snapped) return; const M = st.mk, pr = e.pointerType === 'mouse' ? 0.6 : Math.max(0.15, e.pressure || 0.5);
+    const lr = mk.raw[mk.raw.length - 1]; if (Math.hypot(p.x - lr.x, p.y - lr.y) > 0.5) mk.raw.push(p);
     mk.sp = { x: mk.sp.x + (p.x - mk.sp.x) * 0.55, y: mk.sp.y + (p.y - mk.sp.y) * 0.55 };   // a little smoothing
     const r = (M.wipe ? Math.max(3, M.r * 5) : M.r) * mm / 2 * (0.6 + 0.6 * pr), a = mk.last, b = mk.sp, d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(1, Math.ceil(d / Math.max(0.5, r * 0.3)));
-    mk.g.globalAlpha = M.wipe ? 0.35 : 1;
+    mk.g.globalAlpha = M.wipe ? 0.35 : 1; mk.rs += r; mk.rn++;
     for (let i = 1; i <= n; i++) mkDot(mk.g, { x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }, r);
     const B = mk.box; B.x0 = Math.min(B.x0, b.x - r - 2); B.y0 = Math.min(B.y0, b.y - r - 2); B.x1 = Math.max(B.x1, b.x + r + 2); B.y1 = Math.max(B.y1, b.y + r + 2);
     mk.last = b; st.dirty = true; paint({ x0: Math.min(a.x, b.x) - r - 2, y0: Math.min(a.y, b.y) - r - 2, x1: Math.max(a.x, b.x) + r + 2, y1: Math.max(a.y, b.y) + r + 2 }); };
-  const mkMove = (e) => { for (const ev of (e.getCoalescedEvents?.().length ? e.getCoalescedEvents() : [e])) mkTo(toPage(ev), ev); };
-  const mkUp = () => { if (!mk) return; mk.g.globalAlpha = 1; mk.g.globalCompositeOperation = 'source-over'; cropTop(mk.box); mk = null; TL.changed = true; tlGrab(); };
+  const mkMove = (e) => { for (const ev of (e.getCoalescedEvents?.().length ? e.getCoalescedEvents() : [e])) mkTo(toPage(ev), ev);
+    // cheat mode: hold still to snap the marker line, the same as the needle's hold to snap
+    if (CHEAT && !st.mk.wipe && !mk.snapped) { const h0 = mk.hold; if (!h0 || Math.hypot(e.clientX - h0.x, e.clientY - h0.y) > 4) { clearTimeout(h0?.t); mk.hold = { x: e.clientX, y: e.clientY, t: setTimeout(mkSnap, 550) }; } } };
+  const mkSnap = () => { if (!mk || mk.snapped) return; const fit = fitPath(mk.raw); if (!fit) { if (mk.raw.length > 12) toast('Hold to snap: draw a little more, then hold still.', 2000); return; }
+    const h = hist[hist.length - 1]; if (!h || h.rc || h.key !== 'marker') return;
+    snapE = { key: 'marker', base: h.data, anchors: fit.anchors, closed: fit.closed, kind: fit.kind, mk: { col: st.mk.col, r: mk.rn ? mk.rs / mk.rn : st.mk.r * mm / 2 }, live: false };
+    renderSnap(); mk.snapped = true; navigator.vibrate?.(15);
+    toast(fit.kind === 'line' ? 'Snapped to a straight line. Tap it to adjust.' : fit.kind === 'circle' ? 'Snapped to a circle. Tap it to adjust.' : 'Snapped and smoothed. Tap it to adjust its anchors.', 1800); };
+  const mkUp = () => { if (!mk) return; clearTimeout(mk.hold?.t); mk.g.globalAlpha = 1; mk.g.globalCompositeOperation = 'source-over';
+    if (mk.snapped && snapE) { cropTop(snapE.box); snapE.h = hist[hist.length - 1]; } else cropTop(mk.box); mk = null; TL.changed = true; tlGrab(); };
 
   /* Skin meter: depth, speed (how close the punctures land) and how worked the skin under the needle is, each a
      bar with its safe band in green, so a stroke going wrong shows before the damage does. Shows the last values
@@ -1488,9 +1502,9 @@ TT.open = async (el, id) => {
     if (space || e.button === 1 || (touch && cal.penOnly)) { pan = { x: e.clientX, y: e.clientY, vx, vy }; return; }
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     if (st.check) return drawCur(e);   // checking the skin, not tattooing
-    if (st.tool === 'marker') return mkDown(e);
     if (lsel && st.tool !== 'lasso') selCommit();
-    if (snapE) { if (!snapE.live && st.tool === 'needle' && nearSnap(e)) { snapE.live = true; placeGuides(); return; } snapFinish(); }
+    if (snapE) { if (!snapE.live && (st.tool === 'needle' || st.tool === 'marker') && nearSnap(e)) { snapE.live = true; placeGuides(); return; } snapFinish(); }
+    if (st.tool === 'marker') return mkDown(e);
     if (CHEAT && ['blend', 'fill', 'shape', 'lasso', 'pick', 'liquify', 'text'].includes(st.tool)) return toolDown(e);
     if (strokeStart(e)) strokeMove(e);
   });
