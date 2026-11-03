@@ -1300,13 +1300,15 @@ TT.open = async (el, id) => {
     pop.innerHTML = `<div class="gh">Skin marker</div><div class="tt-lseg"><button data-mk="draw" class="${M.wipe ? '' : 'on'}">Marker</button><button data-mk="wipe" class="${M.wipe ? 'on' : ''}">Spirit wipe</button></div>
       <div class="tt-mkc">${MK_COLS.map(c => `<button data-mkc="${c}" style="background:${c}" class="${M.col === c ? 'on' : ''}" aria-label="Marker colour"></button>`).join('')}<label class="tt-mkcu" data-tip="Any colour"><input type="color" data-mkcu value="${M.col}"></label></div>
       <label class="dz-sl" style="margin:4px 6px"><span>Tip<b>${M.r} mm</b></span><input type="range" min="0.2" max="4" step="0.1" value="${M.r}" data-mkr></label>
+      <label class="dz-sl" style="margin:4px 6px"><span>Opacity<b>${Math.round((st.op.marker ?? 0.9) * 100)}%</b></span><input type="range" min="0.1" max="1" step="0.05" value="${st.op.marker ?? 0.9}" data-mko></label>
       <div class="row" style="gap:4px;margin:4px 6px 6px"><button class="btn small" data-mk="clear">Wipe it all</button></div>`;
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   pop.addEventListener('click', async (e) => { const m = e.target.closest('[data-mk]')?.dataset.mk, c = e.target.closest('[data-mkc]')?.dataset.mkc;
     if (c) { st.mk.col = c; st.mk.wipe = false; st.dirty = true; return markerPop($('#tt-rail [data-r="marker"]')); }
     if (m === 'draw' || m === 'wipe') { st.mk.wipe = m === 'wipe'; st.dirty = true; drawCur(); return markerPop($('#tt-rail [data-r="marker"]')); }
     if (m === 'clear') { if (!await ask('Wipe all the marker off the skin?')) return; snap('marker'); L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); st.dirty = true; paint(); } });
-  pop.addEventListener('input', (e) => { if (e.target.matches('[data-mkr]')) { st.mk.r = +e.target.value; e.target.closest('label').querySelector('b').textContent = st.mk.r + ' mm'; st.dirty = true; return drawCur(); }
+  pop.addEventListener('input', (e) => { if (e.target.matches('[data-mko]')) { st.op.marker = +e.target.value; e.target.closest('label').querySelector('b').textContent = Math.round(st.op.marker * 100) + '%'; st.dirty = true; compAll = true; return paint(); }
+    if (e.target.matches('[data-mkr]')) { st.mk.r = +e.target.value; e.target.closest('label').querySelector('b').textContent = st.mk.r + ' mm'; st.dirty = true; return drawCur(); }
     if (e.target.matches('[data-mkcu]')) { st.mk.col = e.target.value; st.mk.wipe = false; st.dirty = true; } });
   let mk = null;
   const mkDot = (g, p, r) => { g.beginPath(); g.arc(p.x, p.y, r, 0, 7); g.fill(); };

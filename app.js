@@ -614,6 +614,26 @@ function ask(msg, def) {
 }
 const askText = (msg, def = '') => ask(msg, def);
 
+/* While a pop-up is open the page behind it is off limits: its keyboard shortcuts are held back (the pop-up's own
+   keys still work), Escape closes the top pop-up, and Android's back button closes it rather than leaving the
+   page (a history step is added while one is open). */
+const MODAL_SEL = '.ask-dlg, #merge-dlg, #reel-rec, #reel-pick, #img-viewer';
+const modalTop = () => { const all = document.querySelectorAll(MODAL_SEL); return all[all.length - 1] || null; };
+function modalClose(o) {
+  if (o.classList.contains('ask-dlg')) return o.querySelector('[data-ask="0"]')?.click();
+  if (o.id === 'img-viewer') return o.querySelector('[data-a="close"]')?.click() ?? o.remove();
+  const b = o.querySelector('[data-src=""], [data-v=""], [data-cr="close"], [data-x], .close')
+    || [...o.querySelectorAll('button')].find(x => /^(cancel|close|not now|no thanks|done)$/i.test(x.textContent.trim()));
+  b ? b.click() : o.remove();
+}
+addEventListener('keydown', (e) => { const top = modalTop(); if (!top || top.contains(e.target)) return;
+  e.stopPropagation(); if (e.key === 'Escape' && !top.classList.contains('ask-dlg') && top.id !== 'img-viewer') { e.preventDefault(); modalClose(top); } }, true);
+{ let skipPop = false;
+  new MutationObserver(() => { const open = !!modalTop();
+    if (open && !history.state?.dlg) history.pushState({ dlg: 1 }, '');
+    else if (!open && history.state?.dlg) { skipPop = true; history.back(); } }).observe(document.body, { childList: true });
+  addEventListener('popstate', () => { if (skipPop) { skipPop = false; return; } const top = modalTop(); if (top) modalClose(top); }); }
+
 function toast(msg, ms = 2600) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, ms);
@@ -3249,11 +3269,11 @@ function openGallery(srcs, start = 0, bg = '', labels = []) {
   const show = (n) => { i = (n + srcs.length) % srcs.length; sc = 1; tx = ty = 0; img.src = srcs[i]; apply(false);
     o.querySelector('.gv-count').textContent = srcs.length > 1 ? `${i + 1} / ${srcs.length}` : '';
     o.querySelector('.gv-label').textContent = labels[i] || ''; };
-  const close = () => { o.remove(); removeEventListener('keydown', key); document.documentElement.classList.remove('gv-lock'); };
+  const close = () => { o.remove(); removeEventListener('keydown', key, true); document.documentElement.classList.remove('gv-lock'); };
   const key = (e) => { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') show(i + 1); if (e.key === 'ArrowLeft') show(i - 1);
     if (e.key === '+' || e.key === '=') { const r = stage.getBoundingClientRect(); zoomAt(sc * 1.5, r.left + r.width / 2, r.top + r.height / 2, true); }
     if (e.key === '-') { const r = stage.getBoundingClientRect(); zoomAt(sc / 1.5, r.left + r.width / 2, r.top + r.height / 2, true); } };
-  addEventListener('keydown', key);
+  addEventListener('keydown', key, true);   // capture: it runs while the modal guard holds back the page's own keys
   o.addEventListener('click', (e) => {
     const a = e.target.closest('[data-a]')?.dataset.a, r = stage.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     if (a === 'close') return close();
