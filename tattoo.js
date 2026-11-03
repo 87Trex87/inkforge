@@ -633,7 +633,7 @@ TT.open = async (el, id) => {
   /* Previews: fresh = redness round the ink; healed = settled a little softer; 10 years = softer edges, faded
      and duller colour. Made at page size from the layers (without the stencil). */
   const viewOf = (mode) => {
-    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), ink = composite(1, true, mode);
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), ink = mode === 'fresh' ? composite(1, true, mode) : null;
     g.drawImage(skin, 0, 0);
     if (mode === 'fresh') {
       g.drawImage(ink, 0, 0);
@@ -642,10 +642,39 @@ TT.open = async (el, id) => {
       mg.filter = 'none'; mg.globalCompositeOperation = 'source-in'; mg.fillStyle = '#d4483e'; mg.fillRect(0, 0, W, H);
       g.globalCompositeOperation = 'multiply'; g.globalAlpha = 0.8; g.drawImage(m, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     } else {
-      const [b, a, sat] = mode === 'healed' ? [0.1, 0.9, 0.92] : [0.38, 0.7, 0.68];
-      g.filter = `blur(${Math.max(0.5, mm * b)}px) saturate(${sat})`; g.globalAlpha = a; g.drawImage(ink, 0, 0); g.filter = 'none'; g.globalAlpha = 1;
+      /* Healed: overworked skin has pushed ink out, so those parts come back patchy, more of it gone the harder
+         they were worked; blowouts stay for good as a soft blue-grey haze that spreads a little with the years;
+         ten years settles the edges only slightly (still crisp) and dulls the colour. */
+      const aged = mode === 'aged', [b, a, sat] = aged ? [0.14, 0.8, 0.72] : [0.06, 0.92, 0.92], loss = falloutMask(aged);
+      g.globalCompositeOperation = 'multiply';
+      g.filter = `blur(${Math.max(1, mm * (aged ? 0.9 : 0.5))}px)`; g.drawImage(blowC, 0, 0, W, H);   // blowouts: softened, never faded
+      g.filter = `blur(${Math.max(1.5, mm * (aged ? 1.8 : 1.1))}px)`; g.globalAlpha = 0.6; g.drawImage(blowC, 0, 0, W, H); g.globalAlpha = 1;
+      const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const tg = tmp.getContext('2d');
+      for (const key of TT_DRAW) { if (key === 'stencil' || st.hide.has(key)) continue;
+        tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, W, H); tg.drawImage(L[key], 0, 0);
+        if (loss) { tg.globalCompositeOperation = 'destination-out'; tg.drawImage(loss, 0, 0, W, H); }
+        g.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; g.globalAlpha = a * (st.op[key] ?? 1);
+        g.filter = `blur(${Math.max(0.4, mm * b)}px) saturate(${sat})`; g.drawImage(tmp, 0, 0); }
+      g.filter = 'none'; g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     }
     return c;
+  };
+  /* Where overworked skin lost ink, as a mask (opaque = ink gone): nothing below swollen, then more the harder it
+     was worked, broken up into blotches so it heals patchy rather than evenly lighter. The same blotches every
+     time for a piece. */
+  const falloutMask = (aged) => {
+    let any = false; for (let i = 0; i < TR.length; i++) if (TR[i] > 0.9) { any = true; break; } if (!any) return null;
+    const sev = document.createElement('canvas'); sev.width = tw; sev.height = th; const sg = sev.getContext('2d'), si = sg.createImageData(tw, th);
+    for (let i = 0; i < TR.length; i++) { const v = Math.max(0, Math.min(1, (TR[i] - 0.9) / 1.3)); si.data[i * 4 + 3] = Math.round(Math.min(1, v * (aged ? 1.1 : 1)) * 255); }
+    sg.putImageData(si, 0, 0);
+    let s = (id * 2654435761) >>> 0 || 7; const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let x = Math.imul(s ^ (s >>> 15), 1 | s); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const m = document.createElement('canvas'); m.width = Math.ceil(W / 2); m.height = Math.ceil(H / 2); const mg = m.getContext('2d');
+    for (let i = 0, n = Math.round(m.width * m.height / 40); i < n; i++) { const r = (0.25 + rnd() * 0.9) * mm / 2;
+      mg.fillStyle = `rgba(0,0,0,${0.35 + rnd() * 0.65})`; mg.beginPath(); mg.arc(rnd() * m.width, rnd() * m.height, r, 0, 7); mg.fill(); }
+    mg.globalCompositeOperation = 'destination-in'; mg.imageSmoothingEnabled = true; mg.drawImage(sev, 0, 0, m.width, m.height);
+    // the worst parts lose most of it, not just spots
+    mg.globalCompositeOperation = 'source-over'; mg.globalAlpha = 0.55; mg.drawImage(sev, 0, 0, m.width, m.height); mg.globalAlpha = 1;
+    return m;
   };
   /* The skin and every layer are composed once into `comp`; while tattooing only the patch the needle touched is
      composed again, so each frame is one picture on the screen however far it is zoomed. */
