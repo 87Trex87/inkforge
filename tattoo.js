@@ -977,7 +977,8 @@ TT.open = async (el, id) => {
   for (const n of ['pointerup', 'pointercancel']) guides.addEventListener(n, (e) => { const g = gDrag; gDrag = null;
     if (g?.k === 'an' && !g.moved && e.type === 'pointerup' && snapE) { const a = snapE.anchors[g.i]; a.c = !a.c; snapE.moved = true; renderSnap(); placeGuides(); } });
   /* The Tools menu: every cheat tool in one place (the rail stays short), each button named under its icon. */
-  const TOOL_BTNS = `<button class="tt-tb" data-r="liquify" data-tip="Liquify: push the ink around like wet paint, to nudge shapes and curves" aria-label="Liquify"><svg viewBox="0 0 24 24"><path d="M4 12c3-6 6 6 9 0s5-4 7-2"/><path d="M4 18c3-4 6 2 9-1s5-2 7-1"/><circle cx="17" cy="6" r="2"/></svg></button>
+  const TOOL_BTNS = `<button class="tt-tb" data-r="place" data-tip="Place a tattoo saved to your portfolio (or any picture) into this piece, then move, size, turn and flip it" aria-label="Place tattoo"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg></button>
+        <button class="tt-tb" data-r="liquify" data-tip="Liquify: push the ink around like wet paint, to nudge shapes and curves" aria-label="Liquify"><svg viewBox="0 0 24 24"><path d="M4 12c3-6 6 6 9 0s5-4 7-2"/><path d="M4 18c3-4 6 2 9-1s5-2 7-1"/><circle cx="17" cy="6" r="2"/></svg></button>
         <button class="tt-tb" data-r="text" data-tip="Lettering: tap to place text on the stencil layer, to trace" aria-label="Lettering"><svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button><button class="tt-tb" data-r="pick" data-tip="Colour pick: tap ink in the skin to load that exact colour on the needle" aria-label="Colour pick"><svg viewBox="0 0 24 24"><path d="M14 4l6 6-2 2-6-6z"/><path d="M15 9l-9 9H4v-2l9-9"/></svg></button>
         <button class="tt-tb" data-r="grid" data-tip="Grid over the page, for lining things up" aria-label="Grid"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></button><button class="tt-tb" data-r="ruler" data-tip="Ruler: strokes run straight along it. Drag its ends to place it." aria-label="Ruler"><svg viewBox="0 0 24 24"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/></svg></button>
         <button class="tt-tb" data-r="blend" data-tip="Blend: smudge and soften ink on the current layer" aria-label="Blend"><svg viewBox="0 0 24 24"><path d="M14 3l7 7-8 8a3 3 0 0 1-4 0l-3-3a3 3 0 0 1 0-4z"/><path d="M4 21c2 0 3-1 3-3"/></svg></button>
@@ -985,7 +986,7 @@ TT.open = async (el, id) => {
         <button class="tt-tb" data-r="shape" data-tip="Shapes: drag out a line, box, ellipse, triangle or star" aria-label="Shapes"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="9" height="9" rx="1"/><circle cx="16.5" cy="7.5" r="4.5"/></svg></button>
         <button class="tt-tb" data-r="sym" data-tip="Symmetry and mandala" aria-label="Symmetry"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M18.4 5.6l-4.2 4.2M9.8 14.2l-4.2 4.2"/></svg></button>
         <button class="tt-tb" data-r="lasso" data-tip="Lasso: draw round part of the work to move, size, turn or flip it" aria-label="Lasso"><svg viewBox="0 0 24 24"><path d="M4 9c0-3 3.6-5 8-5s8 2 8 5-3.6 5-8 5c-1.4 0-2.7-.2-3.8-.6"/><path d="M6 13c-1.5 1-1.5 3 0 4s3 0 3-2-2-2-3-2zM6 17c0 2 1 3 2 4"/></svg></button>`;
-  const TOOL_NAMES = { liquify: 'Liquify', text: 'Lettering', pick: 'Colour pick', grid: 'Grid', ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
+  const TOOL_NAMES = { place: 'Place tattoo', liquify: 'Liquify', text: 'Lettering', pick: 'Colour pick', grid: 'Grid', ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
   function toolsPop(b) {
     pop.innerHTML = `<div class="gh">Cheat tools</div><div class="tt-tools">${TOOL_BTNS}</div>
       <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
@@ -1230,6 +1231,30 @@ TT.open = async (el, id) => {
     if (!any) { hist.pop(); for (const key of keys) syncIn(key); return toast('Nothing inside that lasso on ' + (st.lassoAll ? 'the ink layers.' : 'this layer.'), 1800); }
     lsel = { keys, base, fl, b: { x: x0, y: y0, w: bw, h: bh }, tx: 0, ty: 0, s: 1, rot: 0, fx: 1, fy: 1, poly };
     selApply(); placeGuides(); };
+  /* Place: a picture becomes a floating piece on the current ink layer (white parts on the highlights layer, so they
+     stay white), handled like a lasso selection: drag, size, turn, flip, Done. */
+  async function placePick() {
+    const rows = await DB.all(`SELECT p.title, x.photo_ref, x.thumb_ref FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id WHERE x.label = 'Ink only (clear background)' ORDER BY p.id DESC LIMIT 120`);
+    const us = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+    const ref = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
+      o.innerHTML = `<div class="card dz-pick"><h2>Place a tattoo</h2>${rows.length ? `<div class="dz-pf">${rows.map((r, i) => `<button data-v="${esc(r.photo_ref)}" title="${esc(r.title || '')}" class="tt-plc"><img src="${us[i]}" alt="" style="object-fit:contain"></button>`).join('')}</div>`
+        : '<p class="muted">Nothing yet: tattoos saved to the portfolio from the simulator show up here.</p>'}
+        <div class="row" style="gap:8px;margin-top:10px"><button class="btn" data-v="">Cancel</button><span style="flex:1"></span><button class="btn" data-v="@file">From this device</button></div></div>`;
+      o.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v); }; document.body.appendChild(o); });
+    if (!ref) return;
+    const url = ref === '@file' ? await new Promise((res) => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = () => res(i.files[0] ? URL.createObjectURL(i.files[0]) : null); i.click(); }) : await Media.url(ref);
+    if (!url) return; const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }); if (!im) return toast('Could not read that picture.');
+    placeSel(im); }
+  function placeSel(im) { if (lsel) selCommit(); if (snapE) snapFinish();
+    const key = INK.includes(st.layer) ? st.layer : 'line', w = im.naturalWidth, h = im.naturalHeight; if (!w || !h) return;
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(im, 0, 0); const D = g.getImageData(0, 0, w, h), wd = new ImageData(w, h); let white = false;
+    if (key !== 'high') for (let i = 0; i < D.data.length; i += 4) { const r = D.data[i], gg = D.data[i + 1], b = D.data[i + 2]; if (D.data[i + 3] && Math.min(r, gg, b) > 225) { wd.data.set([r, gg, b, D.data[i + 3]], i); D.data[i + 3] = 0; white = true; } }
+    g.putImageData(D, 0, 0); const fl = { [key]: c };
+    const keys = white ? [key, 'high'] : [key]; if (white) { const hc = document.createElement('canvas'); hc.width = w; hc.height = h; hc.getContext('2d').putImageData(wd, 0, 0); fl.high = hc; }
+    const hh = state(keys[0]); hh.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(hh); if (hist.length > 15) hist.shift(); fut.length = 0;
+    const base = {}; for (const k2 of keys) { base[k2] = new ImageData(new Uint8ClampedArray(imgd[k2].data), W, H); touched.add(k2); }
+    lsel = { keys, base, fl, b: { x: W / 2 - w / 2, y: H / 2 - h / 2, w, h }, tx: 0, ty: 0, s: Math.min(1, W * 0.6 / w, H * 0.6 / h), rot: 0, fx: 1, fy: 1 };
+    st.tool = 'lasso'; sel(); selApply(); placeGuides(); toast('Drag it into place, size it from a corner, turn it from the dot, then Done.', 2600); }
   function selCommit(drop) { if (!lsel) return; const S = lsel; lsel = null; cancelAnimationFrame(selRaf); selRaf = 0;
     const c = { x: S.b.x + S.b.w / 2 + S.tx, y: S.b.y + S.b.h / 2 + S.ty };
     for (const key of S.keys) { const g = L[key].getContext('2d'); g.putImageData(S.base[key], 0, 0);
@@ -1603,6 +1628,7 @@ TT.open = async (el, id) => {
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
     if (r === 'tools') { if (!pop.hidden) return closePop(); return toolsPop(b); }
+    if (r === 'place') { closePop(); return placePick(); }
     if (r === 'grid') { closePop(); st.grid.on = !st.grid.on; st.dirty = true; return placeGuides(); }
     if (r === 'pick') { closePop(); if (lsel) selCommit(); st.tool = 'pick'; sel(); placeGuides(); return toast('Tap ink in the skin to load that colour.', 1800); }
     if (r === 'ruler') { closePop(); st.ruler.on = !st.ruler.on; st.dirty = true; b.classList.toggle('on', st.ruler.on); placeGuides(); return toast(st.ruler.on ? 'Ruler on: drag its ends to place it. Strokes close to it run along its edge.' : 'Ruler off.', 2200); }
@@ -2011,7 +2037,15 @@ TT.open = async (el, id) => {
   const drawView = () => { const b = $('#tt-view'); if (!b) return; b.querySelector('b').textContent = VIEWS.find(v => v[0] === st.view)[1]; b.classList.toggle('on', st.view !== 'work'); };
   $('#tt-view').onclick = () => { const i = VIEWS.findIndex(v => v[0] === st.view); st.view = VIEWS[(i + 1) % VIEWS.length][0]; st.viewC = null; drawView(); paint();
     toast({ work: 'As you worked it', fresh: 'Fresh: just tattooed, the skin around it red and raised', healed: 'Healed: settled into the skin, a touch softer', aged: 'After about 10 years: softer edges and faded colour' }[st.view], 2400); };
-  $('#tt-png').onclick = async () => { const a = document.createElement('a'); a.href = URL.createObjectURL(await blobOf(composite())); a.download = (($('#tt-name').value || 'tattoo').replace(/[^\w-]+/g, '_')) + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+  $('#tt-png').onclick = async () => {   // on its skin, or the ink alone on a clear background (to use anywhere)
+    const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
+      o.innerHTML = `<div class="card"><h2>Save as PNG</h2><div class="dz-ex"><button data-pg="skin"><b>On the skin</b><small>The whole page as you see it</small></button><button data-pg="clear"><b>Ink only</b><small>No skin: a clear background, cropped to the tattoo</small></button></div>
+        <button class="btn" data-pg="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+      o.onclick = (e) => { const b = e.target.closest('[data-pg]'); if (!b) return; o.remove(); res(b.dataset.pg); }; document.body.appendChild(o); });
+    if (!pick) return; if (lsel) selCommit(); if (snapE) snapFinish();
+    const c = pick === 'skin' ? composite() : inkPng(); if (!c) return toast('There\u2019s no ink to save yet.');
+    const name = (($('#tt-name').value || 'tattoo').replace(/[^\w-]+/g, '_')) + (pick === 'clear' ? '-ink' : '') + '.png';
+    await saveFiles([new File([await blobOf(c)], name, { type: 'image/png' })]); };
   /* ---------- Timelapse and stats ----------
      The kept frames played back over a chosen length and recorded in real time with MediaRecorder (like the reel
      maker), ending on the piece as it is now. Frames are decoded a little ahead of the recording. */
@@ -2030,6 +2064,11 @@ TT.open = async (el, id) => {
       for (let y = 0; y < H; y += 3) for (let x = 0; x < W; x += 3) if (D[(y * W + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
     if (x1 < 0) return { x: 0, y: 0, w: W, h: H }; const pad = 6 * mm;
     x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W, x1 + pad); y1 = Math.min(H, y1 + pad); return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; };
+  // Just the ink (no skin, stencil or marker), on a clear background, cropped to where the ink is.
+  const inkPng = () => { let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (const key of INK) { if (st.hide.has(key)) continue; const D = imgd[key].data; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (D[(y * W + x) * 4 + 3] > 6) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+    if (x1 < 0) return null; const pad = 2 * mm; x0 = Math.max(0, Math.floor(x0 - pad)); y0 = Math.max(0, Math.floor(y0 - pad)); x1 = Math.min(W, Math.ceil(x1 + pad)); y1 = Math.min(H, Math.ceil(y1 + pad));
+    const full = composite(1, false), c = document.createElement('canvas'); c.width = x1 - x0; c.height = y1 - y0; c.getContext('2d').drawImage(full, x0, y0, c.width, c.height, 0, 0, c.width, c.height); return c; };
   const sheetOf = async (card) => {
     const b = workBox(), has = (key) => { const D = L[key].getContext('2d').getImageData(b.x, b.y, b.w, b.h).data; for (let i = 3; i < D.length; i += 16) if (D[i] > 8) return true; return false; }, hasSten = has('stencil') || has('marker');
     const panels = [];
@@ -2059,6 +2098,8 @@ TT.open = async (el, id) => {
       [title || $('#tt-name')?.value.trim() || st.name || 'Simulator piece', CHEAT ? 'Designed in cheat mode in the tattoo simulator (no skin was harmed).' : card ? 'Challenge piece from the tattoo simulator, with its score card.' : 'From the tattoo simulator: fresh, healed and 10 years.']);
     const pid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
     await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [pid, photo, thumb, 'Fresh, healed and 10 years']);
+    const ic = inkPng(); if (ic) { const ib = await blobOf(ic), it = document.createElement('canvas'), s2 = Math.min(1, 360 / Math.max(ic.width, ic.height)); it.width = Math.max(1, Math.round(ic.width * s2)); it.height = Math.max(1, Math.round(ic.height * s2)); it.getContext('2d').drawImage(ic, 0, 0, it.width, it.height);
+      await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 1)', [pid, await Media.save(ib, 'png'), await Media.save(await blobOf(it), 'png'), 'Ink only (clear background)']); }
     toast('Saved to Portfolio › Simulator.', 2500); };
   $('#tt-pf').onclick = async () => { const b = $('#tt-pf'); if (b.disabled) return; b.disabled = true; if (lsel) selCommit(); if (snapE) snapFinish();
     try { const r = EX?.res?.[EX.res.length - 1], T = r && TT_CH.find(c => c.id === r.id); await toPortfolio(r && T ? await cardOf(T, r, EX.info) : null, T?.title); }
