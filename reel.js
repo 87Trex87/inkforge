@@ -2,10 +2,10 @@
 /* InkForge reel maker: quick, consistent vertical (9:16) tattoo reels.
    A reel = optional intro card + clips (photos/videos) + optional outro card, drawn on one canvas.
    The look (fonts, colours, handle, transitions) is a saved "style" so every reel matches.
-   Drafts live in memory only: imported videos are never copied into storage. Export records the
+   Reels are saved like designs (see "Saved reels" in app.js): clips are copied into the media folder. Export records the
    canvas + Web Audio mix in real time with MediaRecorder (MP4 where the browser supports it). */
 
-const REEL_VERSION = 6;   // app.js checks this matches, to catch a stale cached copy
+const REEL_VERSION = 7;   // app.js checks this matches, to catch a stale cached copy
 // Card backgrounds: { ref, op, zoom, rot, flip } with ref = media file name (kept in the media folder).
 const REEL_CARD_BG = { ref: '', op: 0.55, zoom: 1, rot: 0, flip: false };
 const REEL_STYLE_DEFAULTS = {
@@ -504,7 +504,7 @@ function reelPlayBtn() {
 }
 
 /* ---------- Adding clips ---------- */
-async function reelAddFile(file) {
+async function reelAddFile(file, keep = true) {
   const url = URL.createObjectURL(file);
   const c = { id: ++R.seq, name: file.name, url, motion: 'in', fit: 'cover', caption: '', mute: true, filter: 'none', speed: 1, rot: 0, flip: false };
   if (file.type.startsWith('video')) {
@@ -524,6 +524,7 @@ async function reelAddFile(file) {
     Object.assign(c, { type: 'image', el: img, w: img.naturalWidth, h: img.naturalHeight, dur: 2.5, thumb: url });
   }
   R.clips.push(c);
+  if (keep && typeof reelKeep === 'function') reelKeep(c, file);   // copied into the media folder, so the reel can be opened again
   return c;
 }
 

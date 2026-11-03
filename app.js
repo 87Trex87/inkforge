@@ -322,7 +322,13 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));`,
   // tattoo simulator: the worked skin (trauma map) and blowouts
   `ALTER TABLE tattoo_pieces ADD COLUMN skin_ref TEXT;
-   ALTER TABLE tattoo_pieces ADD COLUMN blow_ref TEXT;`
+   ALTER TABLE tattoo_pieces ADD COLUMN blow_ref TEXT;`,
+  // saved reels: the edit (clips, cards, transitions, music settings, style) as JSON; its photos, videos and song are
+  // media files named inside doc
+  `CREATE TABLE reels (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     name TEXT, doc TEXT, thumb_ref TEXT,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -517,6 +523,19 @@ const Media = {
     const w = await fh.createWritable(); await w.write(blob); await w.close();
     return name;
   },
+  // Big files (videos, songs): named from a hash of their size and samples through them, so they are never read
+  // into memory whole, and not written again when already here.
+  async saveBig(blob, ext) {
+    if (blob.size < 24e6) return this.save(blob, ext);
+    const parts = [new TextEncoder().encode(String(blob.size))], step = blob.size / 8;
+    for (let i = 0; i < 8; i++) parts.push(new Uint8Array(await blob.slice(Math.floor(i * step), Math.floor(i * step) + 65536).arrayBuffer()));
+    parts.push(new Uint8Array(await blob.slice(blob.size - 65536).arrayBuffer()));
+    const name = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await new Blob(parts).arrayBuffer()))].slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('') + '.' + ext;
+    const dir = await this.dir();
+    try { await dir.getFileHandle(name); return name; } catch {}
+    const w = await (await dir.getFileHandle(name, { create: true })).createWritable(); await w.write(blob); await w.close();
+    return name;
+  },
   async url(name) {
     if (!name) return '';
     if (this.urls.has(name)) return this.urls.get(name);
@@ -541,6 +560,7 @@ const Media = {
       UNION ALL SELECT 1 FROM stencils WHERE src_ref = ?1 OR stencil_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM tattoo_pieces WHERE ?1 IN (stencil_ref, line_ref, shadow_ref, mid_ref, light_ref, high_ref, thumb_ref, skin_ref, blow_ref)
       UNION ALL SELECT 1 FROM tattoo_pieces WHERE instr(meta, ?1) > 0
+      UNION ALL SELECT 1 FROM reels WHERE thumb_ref = ?1 OR instr(doc, ?1) > 0
       UNION ALL SELECT 1 FROM settings WHERE instr(value, ?1) > 0 LIMIT 1`, [name]);
     if (used) return;
     try { await (await this.dir()).removeEntry(name); } catch {}
@@ -1196,7 +1216,7 @@ const VIEWS = {
     title: () => 'Studio',
     render: () => tileGroup('Create', [
         tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil'),
-        tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reel'),
+        tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reels'),
         tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs'),
         tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend'),
         tile('split', 'Split for printing', 'Big stencils over several pages to tape together', false, 'split'),
@@ -1724,9 +1744,15 @@ const VIEWS = {
       });
     }
   },
+  reels: {
+    title: () => 'Reel maker',
+    render: () => '<div id="reel-list"></div>',
+    mount() { reelList(); }
+  },
   reel: {
     title: () => 'Reel',
     render: () => `
+      <div class="reel-top"><input class="in" id="reel-name" aria-label="Reel name" placeholder="Reel name"></div>
       <div class="reel-wrap">
         <div class="reel-stage">
           <canvas id="reel-cv" width="${PREVIEW_W}" height="${PREVIEW_H}"></canvas>
@@ -1747,7 +1773,12 @@ const VIEWS = {
           <button class="btn primary" id="reel-export" style="width:100%;margin:14px 0 24px">Export reel</button>
         </div>
       </div>`,
-    mount() {
+    async mount(id) {
+      if (!id) { location.replace('#reels'); return; }
+      const v = $('#view'); v.style.opacity = 0.4; v.style.pointerEvents = 'none';
+      if (!(await reelOpen(+id)) || !$('#reel-cv')) return;
+      v.style.opacity = ''; v.style.pointerEvents = '';
+      const nm = $('#reel-name'); nm.value = RS.name; nm.oninput = () => { RS.name = nm.value; };
       reelPlayBtn(); reelRender();
       $('#reel-play').onclick = () => R.playing ? reelPause() : reelPlay();
       $('#reel-restart').onclick = () => { reelShow(0); reelPlay(); };
@@ -2742,10 +2773,12 @@ const MERGE_SECTIONS = [
   ['rules', 'Rule book', 'Your studio rules'],
   ['quotes', 'Saved quotes', 'Quotes saved to finish or book later'],
   ['designs', 'Designs', 'Vouchers, business cards, flyers and posts'],
-  ['reel', 'Reel templates', 'Saved reel templates and their images'],
+  ['reel', 'Reels', 'Saved reels with their photos, videos and music, and reel templates'],
   ['settings', 'Settings', 'Profile, quote and app settings, only where yours are still blank']
 ];
-// table -> { section, fk: { column: parentTable }, refs: [media columns], skip: [columns not compared or copied] }.
+// table -> { section, fk: { column: parentTable }, refs: [media columns], scan: [JSON columns naming media files],
+// skip: [columns not compared or copied] }.
+const MEDIA_REF_RE = /[0-9a-f]{32}\.(?:png|jpe?g|webp|svg|mp4|webm|mov|m4a|mp3|wav|ogg|aac)/g;
 // section null = device-specific, never merged.
 const MERGE_TABLES = {
   clients: { section: 'clients', refs: ['photo_ref'] },
@@ -2764,13 +2797,14 @@ const MERGE_TABLES = {
   ref_images: { section: 'references', refs: ['photo_ref', 'thumb_ref'] },
   assets: { section: 'assets', refs: ['svg_ref'] },
   stencils: { section: 'stencils', refs: ['src_ref', 'stencil_ref', 'thumb_ref'] },
-  tattoo_pieces: { section: 'tattoo', refs: ['stencil_ref', 'line_ref', 'shadow_ref', 'mid_ref', 'light_ref', 'high_ref', 'thumb_ref', 'skin_ref', 'blow_ref'] },
+  tattoo_pieces: { section: 'tattoo', refs: ['stencil_ref', 'line_ref', 'shadow_ref', 'mid_ref', 'light_ref', 'high_ref', 'thumb_ref', 'skin_ref', 'blow_ref'], scan: ['meta'] },
+  reels: { section: 'reel', refs: ['thumb_ref'], scan: ['doc'] },
   design_assets: { section: 'designs', fk: { design_id: 'designs' }, refs: ['ref'] },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
-  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces'];
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
@@ -2833,6 +2867,7 @@ async function mergeBackup(src, media, picked) {
     await DB.run(`INSERT INTO "${t}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, cols.map(c => out[c]));
     const nid = row.id != null ? (await DB.one('SELECT last_insert_rowid() AS id')).id : true;
     for (const c of cfg.refs || []) if (out[c]) needRefs.add(out[c]);
+    for (const c of cfg.scan || []) for (const r of String(out[c] || '').match(MEDIA_REF_RE) || []) needRefs.add(r);
     local[t].set(fp, nid);
     if (t === 'clients') for (const k of clientKeys(out)) local[t].set(k, nid);
     if (row.id != null) idMap[t].set(row.id, nid);
@@ -2886,7 +2921,7 @@ function mergeCounts(src) {
   const n = {}; MERGE_SECTIONS.forEach(([k]) => n[k] = 0);
   for (const [t, cfg] of Object.entries(MERGE_TABLES)) if (cfg.section && t !== 'settings' && t !== 'booking_photos' && t !== 'portfolio_photos' && t !== 'stock_take_lines') n[cfg.section] += (src[t] || []).length;
   const set = Object.fromEntries((src.settings || []).map(r => [r.key, r.value]));
-  try { n.reel = JSON.parse(set.reel_templates || '[]').length; } catch {}
+  try { n.reel += JSON.parse(set.reel_templates || '[]').length; } catch {}
   n.settings = Object.keys(set).filter(k => !MERGE_SETTING_SKIP.test(k) && set[k]).length;
   return n;
 }
@@ -5785,6 +5820,112 @@ async function openRulesPrint() {
 // The draft stays in memory while the app is open, so leaving the Reel screen loses nothing.
 function reelChanged() { reelTimeline(); reelRender(); if (!R.quickDrag) reelQuick(); }
 
+/* ---------- Saved reels ----------
+   A reel is kept like a design: its edit as JSON (clips, cards, transitions, music settings and the style), with its
+   photos, videos and song copied into the media folder so it opens again later. A change is spotted by comparing the
+   edit with what was last saved (every 2 s), so every control saves without each one asking; also saved when leaving
+   the editor and when the app goes to the background. */
+const REEL_EXT = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+  'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/ogg': 'ogg', 'audio/aac': 'aac' };
+const reelExt = (f) => REEL_EXT[f.type] || (f.type.startsWith('video') ? 'mp4' : f.type.startsWith('audio') ? 'm4a' : 'jpg');
+const RS = { id: null, name: '', saved: '', busy: null, pend: [], loaded: false };
+// Copies a clip's (or the song's) file into the media folder in the background; copies of a clip share its file.
+function reelKeep(obj, file) {
+  const p = Media.saveBig(file, reelExt(file)).then(ref => { obj.ref = ref; if (obj.url) R.clips.forEach(c => { if (c.url === obj.url) c.ref = ref; }); })
+    .catch(err => toast(`Could not keep ${file.name}: ${err.message}`, 5000));
+  RS.pend.push(p); return p;
+}
+const reelDocJSON = () => JSON.stringify({ v: 1,
+  clips: R.clips.map(c => { const o = {}; for (const [k, v] of Object.entries(c)) if (!['el', 'url', 'thumb', 'gain'].includes(k) && (v == null || typeof v !== 'object' || Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) o[k] = v; return o; }),
+  trans: R.trans, music: R.music ? { ref: R.music.ref, name: R.music.name, offset: R.music.offset, vol: R.music.vol } : null, style: reelStyle() });
+async function reelSave() {
+  if (!RS.id || !RS.loaded || R.recording) return;
+  if (RS.busy) return RS.busy;
+  return (RS.busy = (async () => { try {
+    await Promise.all(RS.pend.splice(0));
+    const json = reelDocJSON(), name = RS.name.trim() || 'Reel';
+    if (name + json === RS.saved) return;
+    const old = await DB.one('SELECT doc, thumb_ref FROM reels WHERE id = ?', [RS.id]); if (!old) return;
+    let thumb = old.thumb_ref;
+    const seg = reelSegments().segs.find(x => x.kind === 'clip');
+    if (seg && !R.playing) { const c = document.createElement('canvas'); c.width = 270; c.height = 480;
+      reelDraw(c.getContext('2d'), 270, 480, seg.start + Math.min(0.5, seg.dur / 2)); thumb = await Media.save(await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8)), 'jpg'); }
+    await DB.run(`UPDATE reels SET name = ?, doc = ?, thumb_ref = ?, updated_at = datetime('now') WHERE id = ?`, [name, json, thumb, RS.id]);
+    RS.saved = name + json;
+    for (const r of new Set(String(old.doc || '').match(MEDIA_REF_RE) || [])) if (!json.includes(r)) await Media.release(r);
+    if (old.thumb_ref && old.thumb_ref !== thumb) await Media.release(old.thumb_ref);
+  } catch (err) { console.warn('Reel save failed:', err); toast('Could not save the reel: ' + err.message, 5000); } finally { RS.busy = null; } })());
+}
+setInterval(() => { if (location.hash.startsWith('#reel/')) reelSave(); }, 2000);
+addEventListener('hashchange', () => { if (RS.id && !location.hash.startsWith('#reel/')) reelSave(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) reelSave(); });
+// Loads a saved reel into the editor (a reel already open stays as it is in memory).
+async function reelOpen(id) {
+  if (RS.id === id && RS.loaded) return true;
+  if (RS.id) await reelSave();
+  const row = await DB.one('SELECT * FROM reels WHERE id = ?', [id]); if (!row) { location.replace('#reels'); return false; }
+  reelPause();
+  Object.assign(R, { clips: [], sel: -1, pick: null, trans: {}, music: null, t: 0, tplId: null });
+  RS.id = id; RS.loaded = false; RS.name = row.name || 'Reel'; RS.pend = [];
+  let doc = {}; try { doc = JSON.parse(row.doc || '{}'); } catch {}
+  if (doc.style) await Settings.set('reel_style', JSON.stringify(doc.style));
+  R.trans = doc.trans || {};
+  let missing = 0;
+  for (const sv of doc.clips || []) {
+    const u = sv.ref && await Media.url(sv.ref); if (!u) { missing++; continue; }
+    try {
+      const blob = await (await fetch(u)).blob();
+      const c = await reelAddFile(new File([blob], sv.name || 'clip', { type: blob.type || (sv.type === 'video' ? 'video/mp4' : 'image/jpeg') }), false);
+      const { id: sid, ...rest } = sv; Object.assign(c, rest); if (sid != null) c.id = sid; R.seq = Math.max(R.seq, c.id);
+    } catch { missing++; }
+  }
+  if (doc.music?.ref) {
+    const u = await Media.url(doc.music.ref);
+    try { if (!u) throw 0; R.music = { ...doc.music, buffer: await reelAudio().decodeAudioData(await (await fetch(u)).arrayBuffer()) }; } catch { missing++; }
+  }
+  if (missing) toast(`${missing} file${missing > 1 ? 's' : ''} of this reel could not be found.`, 5000);
+  RS.loaded = true; RS.saved = RS.name + reelDocJSON();
+  return true;
+}
+// The list of saved reels, like the designs and the simulator's pieces.
+async function reelList() {
+  const el = $('#reel-list'); if (!el) return;
+  const rows = await DB.all('SELECT id, name, doc, thumb_ref FROM reels ORDER BY updated_at DESC, id DESC');
+  const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+  const info = (r) => { try { const d = JSON.parse(r.doc || '{}'), n = (d.clips || []).length; return n ? `${n} clip${n > 1 ? 's' : ''}` : 'Empty'; } catch { return ''; } };
+  el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Vertical reels from your photos and videos, in your own style. Saved as you go, so you can come back to edit them.</p>
+      <button class="btn primary" id="reel-new">+ New reel</button></div>
+    ${rows.length ? `<div class="dz-grid">${rows.map((r, i) => `<div class="dz-item" data-open="${r.id}">
+        <div class="dz-thumb reel-thumb">${urls[i] ? `<img src="${urls[i]}" alt="">` : ICON.reels}</div>
+        <div class="dz-meta"><b>${esc(r.name || 'Reel')}</b><span class="muted">${info(r)}</span></div>
+        <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate">⧉</button>
+        <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>`
+      : `<div class="empty"><div class="empty-ico">${ICON.reels}</div><div style="font:24px var(--display)">Make a reel</div>
+         <div class="muted">Add photos and videos of your work; your intro and outro cards, watermark and style are added for you.</div></div>`}`;
+  el.onclick = async (e) => {
+    const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    if (t.closest('#reel-new')) {
+      const n = (await DB.one('SELECT COUNT(*) AS n FROM reels')).n;
+      await DB.run('INSERT INTO reels (name, doc) VALUES (?, ?)', [`Reel ${n + 1}`, JSON.stringify({ v: 1, clips: [], trans: {}, music: null, style: reelStyle() })]);
+      location.hash = 'reel/' + (await DB.one('SELECT last_insert_rowid() AS id')).id; return;
+    }
+    if (d('del')) {
+      const r = await DB.one('SELECT * FROM reels WHERE id = ?', [+d('del')]);
+      if (!r || !confirm(`Delete "${r.name || 'this reel'}"? Its photos, videos and music are removed from the app too (not from your device). This can't be undone.`)) return;
+      await DB.run('DELETE FROM reels WHERE id = ?', [r.id]);
+      if (RS.id === r.id) { RS.id = null; RS.loaded = false; }
+      for (const ref of new Set([r.thumb_ref, ...(String(r.doc || '').match(MEDIA_REF_RE) || [])])) await Media.release(ref);
+      return reelList();
+    }
+    if (d('dup')) {
+      const r = await DB.one('SELECT * FROM reels WHERE id = ?', [+d('dup')]);
+      await DB.run('INSERT INTO reels (name, doc, thumb_ref) VALUES (?, ?, ?)', [(r.name || 'Reel') + ' (copy)', r.doc, r.thumb_ref]);
+      return reelList();
+    }
+    if (d('open')) location.hash = 'reel/' + d('open');
+  };
+}
+
 /* ---------- Quick slider under the timeline ----------
    The main timing control of whatever is selected, right by the timeline: a photo's length, a
    video's start and end, a card's duration or a transition's duration. Same values as the panel. */
@@ -6089,7 +6230,7 @@ async function reelPanel() {
       try {
         const ctx = reelAudio();
         const buffer = await ctx.decodeAudioData(await f.arrayBuffer());
-        R.music = { name: f.name, buffer, offset: 0, vol: 0.8 };
+        R.music = { name: f.name, buffer, offset: 0, vol: 0.8 }; reelKeep(R.music, f);
         reelPanel();
       } catch { toast('Could not read that audio file.'); }
     });
@@ -7255,7 +7396,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
   quote: 'more', 'quote-cal': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
-  reel: 'studio', stencil: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
+  reel: 'studio', reels: 'studio', stencil: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
 function render() {
@@ -7291,7 +7432,7 @@ addEventListener('hashchange', () => { if (booted) render(); });
     if (!have()) await new Promise(res => { const sc = document.createElement('script'); sc.src = src + '?v=' + Date.now(); sc.onload = sc.onerror = res; document.head.appendChild(sc); });
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
-  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 6 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1 || typeof TOUR_VERSION === 'undefined' || TOUR_VERSION !== 1) {
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 7 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1 || typeof TOUR_VERSION === 'undefined' || TOUR_VERSION !== 1) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
     if (!tried) { await Promise.all(['./', 'index.html', 'reel.js', 'design.js', 'tour.js', 'app.js', 'app.css', 'sw.js'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }
