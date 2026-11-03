@@ -1336,13 +1336,7 @@ const VIEWS = {
       };
       const download = (file) => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
       $('#pf-post').onclick = () => DZ.post(it.id);
-      $('#pf-share').onclick = async () => {
-        const file = await photoFile();
-        try {
-          if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: it.title || '' });
-          else download(file);
-        } catch (e) { if (e.name !== 'AbortError') toast('Could not share: ' + e.message); }
-      };
+      $('#pf-share').onclick = async () => shareFiles([await photoFile()], it.title);
       $('#pf-save').onclick = async () => { const file = await photoFile(); download(file); toast(`Saved ${file.name}`); };
       $('#pf-del').onclick = async () => {
         if (!confirm(`Delete "${it.title || PF_KIND[it.kind]}" and its ${photos.length} photo${photos.length === 1 ? '' : 's'}?`)) return;
@@ -1450,6 +1444,8 @@ const VIEWS = {
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (!photos.length) return toast('Add at least one photo.');
+        if (f.dataset.saving) return; f.dataset.saving = '1';   // a double tap must not add the piece twice
+        f.querySelector('[type=submit]').disabled = true;
         const d = Object.fromEntries(new FormData(f));
         const flash = it.kind === 'flash';
         const vals = [it.kind, d.title.trim() || null, d.description.trim() || null, d.placement.trim() || null,
@@ -1992,10 +1988,13 @@ const VIEWS = {
         else return;
         Dirty.set(true); draw();
       });
+      let saving = false;
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (saving) return;
         const title = $('#fe-title').value.trim();
         if (!title) return toast('Give the form a title.');
+        saving = true;
         const clean = JSON.stringify(blocks.map(b => {
           const o = { t: b.t, text: b.text.trim() };
           if (b.t === 'field') { if (b.v?.trim()) o.v = b.v.trim(); if (b.long) o.long = true; }
@@ -2032,7 +2031,7 @@ const VIEWS = {
         <div class="form-foot row" style="background:var(--bg)">
           <button type="button" class="btn" id="fs-cancel">Cancel</button>
           ${consent ? '<button type="button" class="btn primary" style="flex:1" id="fs-save">Sign & save</button>'
-            : '<button type="button" class="btn" id="fs-print">Print</button><button type="button" class="btn primary" style="flex:1" id="fs-share">Send</button>'}
+            : '<button type="button" class="btn" id="fs-print">Print</button><button type="button" class="btn" id="fs-png" data-tip="Save as a picture on this device">Save</button><button type="button" class="btn primary" style="flex:1" id="fs-share" data-tip="Send as text in any messaging app">Send</button>'}
         </div>`;
       const answers = { checks: {}, fields: {} };
       // Prefilled fields follow the chosen client until the artist types over them.
@@ -2068,19 +2067,25 @@ const VIEWS = {
           [client?.id ?? null, ctx.bookingId ?? null, t.id, t.kind, t.title, client ? fullName(client) : null, JSON.stringify(frozen), JSON.stringify(answers), sigRef]);
         return (await DB.one('SELECT last_insert_rowid() AS id')).id;
       };
+      let busy = false;
       if (consent) $('#fs-save').onclick = async () => {
+        if (busy) return;
         if (!client) return toast('Choose the client first.');
         const checks = blocks.map((b, i) => b.t === 'check' && !b.opt ? i : -1).filter(i => i >= 0);
         if (checks.some(i => !answers.checks[i])) return toast('All required boxes need to be ticked before signing.');
         const missing = blocks.find((b, i) => b.t === 'choice' && b.req && !answers.fields[i]);
         if (missing) return toast(`Choose an option for "${missing.text}".`);
         if (pad.empty()) return toast('Please sign in the box.');
-        const sigRef = await Media.save(await pad.blob(), 'png');
-        const sid = await record(sigRef);
+        busy = true; $('#fs-save').disabled = true;   // a double tap must not save the form twice
+        let sid;
+        try { sid = await record(await Media.save(await pad.blob(), 'png')); }
+        catch (err) { busy = false; $('#fs-save').disabled = false; return toast('Could not save: ' + err.message, 5000); }
         Dirty.set(false); toast('Consent signed and saved.'); location.replace('#signed/' + sid);
       };
       else {
-        $('#fs-print').onclick = () => window.print();
+        // The same A4 page as on receipts: laid out to fit one page, without the screen around it.
+        $('#fs-print').onclick = async () => printCanvas(await formPage(t, formCtx(client, booking)));
+        $('#fs-png').onclick = async () => saveFiles([await canvasFile(await formPage(t, formCtx(client, booking)), `${t.title.replace(/[^\w-]+/g, '_')}${client ? '-' + fullName(client).replace(/[^\w-]+/g, '_') : ''}.png`)]);
         $('#fs-share').onclick = async () => {
           const text = formAsText(blocks, formCtx(client, booking));
           try {
@@ -5101,6 +5106,19 @@ async function printCanvas(...cvs) {
   window.print();
 }
 
+// Files to the device (plain downloads), or to the share sheet; sharing falls back to saving when it can't open
+// (e.g. the tap that asked for it expired while the files were made).
+async function saveFiles(files) {
+  for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); await new Promise(r => setTimeout(r, 250)); }
+  toast(files.length > 1 ? `Saved ${files.length} files.` : `Saved ${files[0].name}`);
+}
+async function shareFiles(files, title) {
+  try { if (navigator.canShare?.({ files })) return await navigator.share({ files, title: title || '' }); }
+  catch (err) { if (err.name === 'AbortError') return; }
+  return saveFiles(files);
+}
+const canvasFile = async (cv, name, type = 'image/png') => new File([await new Promise(r => cv.toBlob(r, type, 0.9))], name, { type });
+
 /* Shared page drawing for A4 documents (1240 x 1754 = 150 dpi). */
 const DOC = { W: 1240, H: 1754, M: 90, teal: '#14857c', ink: '#1a1a1a', soft: '#6b6b6b' };
 async function docCanvas() {
@@ -5415,7 +5433,7 @@ async function openPortfolioPrint() {
       </div>
       <label class="toggle" style="display:inline-flex;margin:12px 0"><input type="checkbox" id="pfp-cover" ${PFP.cover ? 'checked' : ''}><span>Cover page with your logo</span></label>
       <p class="muted" style="font-size:12px;margin:0 0 10px">${n} picture${n === 1 ? '' : 's'} · ${pages} page${pages === 1 ? '' : 's'}. Client names are never printed. ${PFP.theme === 'dark' ? 'Dark pages use a lot of ink; Save as PDF to share it digitally.' : ''}</p>
-      <div class="row"><button class="btn" id="pfp-close">Cancel</button><button class="btn primary" id="pfp-go" style="flex:1" ${n ? '' : 'disabled'}>Print / PDF</button></div></div>`;
+      <div class="row"><button class="btn" id="pfp-close">Cancel</button><button class="btn" id="pfp-save" ${n ? '' : 'disabled'} data-tip="Save the pages as pictures on this device">Save</button><button class="btn" id="pfp-share" ${n ? '' : 'disabled'}>Share</button><button class="btn primary" id="pfp-go" style="flex:1" ${n ? '' : 'disabled'}>Print / PDF</button></div></div>`;
   };
   document.body.appendChild(o); await draw();
   o.addEventListener('change', (e) => { if (e.target.id === 'pfp-cover') { PFP.cover = e.target.checked; draw(); } });
@@ -5427,6 +5445,17 @@ async function openPortfolioPrint() {
     if (d('pt')) { PFP.theme = d('pt'); return draw(); }
     if (d('pph')) { PFP.photos = d('pph'); return draw(); }
     if (t.closest('#pfp-close')) return o.remove();
+    const as = t.closest('#pfp-save') ? 'save' : t.closest('#pfp-share') ? 'share' : null;
+    if (as) {
+      const { which, ...keep } = PFP; await Settings.set('pf_print', JSON.stringify(keep));
+      const b = t.closest('button'), was = b.textContent; b.disabled = true; b.textContent = 'Making pages…';
+      try {
+        const pages = await portfolioPages();
+        const files = await Promise.all(pages.map((cv, i) => canvasFile(cv, `portfolio-${String(i + 1).padStart(2, '0')}.jpg`, 'image/jpeg')));
+        o.remove(); return as === 'save' ? saveFiles(files) : shareFiles(files, 'Portfolio');
+      } catch (err) { toast('Could not make the pages: ' + err.message, 5000); b.disabled = false; b.textContent = was; }
+      return;
+    }
     if (!t.closest('#pfp-go')) return;
     const { which, ...keep } = PFP; await Settings.set('pf_print', JSON.stringify(keep));
     const btn = $('#pfp-go'); btn.disabled = true; btn.textContent = 'Making pages…';
