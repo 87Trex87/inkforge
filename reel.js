@@ -503,6 +503,15 @@ function reelPlayBtn() {
   b.innerHTML = R.playing ? '<svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
 }
 
+/* A clip copy (split or duplicate) gets its own video element on the same file, so both can show their own frame at
+   once: a transition between two halves of a split shows each one correctly. */
+function reelOwnVideo(c) {
+  if (c.type !== 'video') return c;
+  const v = document.createElement('video'); v.src = c.url; v.muted = false; v.playsInline = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
+  v.addEventListener('seeked', () => { if (!R.playing) reelRender(); });
+  c.el = v; delete c.gain; reelHookClipAudio(c); return c;
+}
+
 /* ---------- Adding clips ---------- */
 async function reelAddFile(file, keep = true) {
   const url = URL.createObjectURL(file);
@@ -511,6 +520,11 @@ async function reelAddFile(file, keep = true) {
     const v = document.createElement('video');
     v.src = url; v.muted = false; v.playsInline = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
     await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('Unsupported video')); });
+    if (!isFinite(v.duration)) {   // some recordings (e.g. WebM) don't state their length: seek past the end to find it
+      await new Promise(res => { v.ondurationchange = () => { if (isFinite(v.duration)) res(); }; v.currentTime = 1e7; setTimeout(res, 3000); });
+      v.ondurationchange = null; v.currentTime = 0; await new Promise(res => { v.onseeked = res; setTimeout(res, 1000); }); v.onseeked = null;
+      if (!isFinite(v.duration)) throw new Error('Could not read the video’s length');
+    }
     Object.assign(c, { type: 'video', el: v, w: v.videoWidth, h: v.videoHeight, srcDur: v.duration, inP: 0, outP: Math.min(v.duration, 5), motion: 'none' });
     v.addEventListener('seeked', () => { if (!R.playing) reelRender(); });
     reelHookClipAudio(c);

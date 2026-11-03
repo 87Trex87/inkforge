@@ -1503,5 +1503,6 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 /* Saved reels: tall thumbnails, and the name above the editor */
 .reel-thumb { aspect-ratio: 9 / 12; }
 .reel-thumb svg { width: 40px; height: 40px; stroke: var(--ink2); fill: none; stroke-width: 1.5; }
-.reel-top { max-width: 1100px; margin: 0 auto 10px; }
+.reel-top { max-width: 1100px; margin: 0 auto 10px; display: flex; gap: 8px; align-items: center; }
+.reel-top .in { flex: 1; min-width: 0; }
 .reel-top .in { font-weight: 600; }

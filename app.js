@@ -1752,7 +1752,8 @@ const VIEWS = {
   reel: {
     title: () => 'Reel',
     render: () => `
-      <div class="reel-top"><input class="in" id="reel-name" aria-label="Reel name" placeholder="Reel name"></div>
+      <div class="reel-top"><button class="btn icon-btn" data-go="reels" aria-label="All reels" data-tip="All reels"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+        <input class="in" id="reel-name" aria-label="Reel name" placeholder="Reel name"></div>
       <div class="reel-wrap">
         <div class="reel-stage">
           <canvas id="reel-cv" width="${PREVIEW_W}" height="${PREVIEW_H}"></canvas>
@@ -6351,12 +6352,13 @@ function reelClipBind(ed, c) {
     if (act === 'del') return reelRemoveClip(i);
     let pick = c;
     // Copies get their own caption position and sticker list, so moving one never moves the other.
-    const copy = (extra) => ({ ...c, id: ++R.seq, cap: c.cap && { ...c.cap }, stickers: (c.stickers || []).map(o => ({ ...o })), ...extra });
+    const copy = (extra) => reelOwnVideo({ ...c, id: ++R.seq, cap: c.cap && { ...c.cap }, stickers: (c.stickers || []).map(o => ({ ...o })), ...extra });
     if (act === 'dup') {
       pick = copy(); R.clips.splice(i + 1, 0, pick);
     } else if (act === 'split') {
       const seg = reelSegments().segs.find(x => x.clip === c);
-      const cut = c.inP + (R.t - seg.start) * (c.speed || 1);
+      const cut = seg && c.inP + (R.t - seg.start) * (c.speed || 1);
+      if (!seg || !(cut > c.inP + 0.2 && cut < c.outP - 0.2)) return toast('Move the playhead onto this clip, away from its ends, to split it there.');
       pick = copy({ inP: cut }); R.clips.splice(i + 1, 0, pick); c.outP = cut;
       toast('Clip split.');
     } else { const j = act === 'left' ? i - 1 : i + 1; [R.clips[i], R.clips[j]] = [R.clips[j], R.clips[i]]; }
@@ -6369,7 +6371,8 @@ function reelClipBind(ed, c) {
 function reelRemoveClip(i) {
   const [gone] = R.clips.splice(i, 1); if (!gone) return;
   // Split/duplicated clips share the media; only release it when no clip uses it any more.
-  if (!R.clips.some(x => x.url === gone.url)) { if (gone.type === 'video') gone.el.pause(); URL.revokeObjectURL(gone.url); }
+  if (gone.type === 'video') gone.el.pause();
+  if (!R.clips.some(x => x.url === gone.url)) URL.revokeObjectURL(gone.url);
   delete R.trans[gone.id];
   R.sel = Math.min(i, R.clips.length - 1);
   R.t = Math.min(R.t, reelSegments().total);
