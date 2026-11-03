@@ -1796,12 +1796,12 @@ const VIEWS = {
     }
   },
   tattoo: {   // experimental: everything else is in tattoo.js, loaded only here
-    title: (id) => id ? 'Tattoo' : 'Tattoo simulator',
+    title: (id) => id === 'challenges' ? 'Challenges' : id ? 'Tattoo' : 'Tattoo simulator',
     render: () => '<div id="tt"></div>',
     async mount(id) {
       if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const s = document.createElement('script'); s.src = 'tattoo.js'; s.onload = s.onerror = res; document.head.appendChild(s); });
       if (typeof TT === 'undefined') return toast('Could not load the tattoo simulator.');
-      const el = $('#tt'); if (!el) return; id ? TT.open(el, +id) : TT.list(el);
+      const el = $('#tt'); if (!el) return; id === 'challenges' ? TT.hub(el) : id ? TT.open(el, +id) : TT.list(el);
     }
   },
   stencil: {

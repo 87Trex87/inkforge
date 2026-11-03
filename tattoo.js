@@ -85,13 +85,273 @@ const TT = {
     Settings.set('tt_tuned', ''); Settings.set('tt_ver', '2'); return true; }
 };
 
+/* ---------- Challenges ----------
+   Every challenge sits on an 18 x 13 cm patch of skin; shapes and boxes are in mm on it. `kind` says how it is judged:
+   line (follow a stencil line), grad (a shading profile across a box), pack (solid black box), fill (pack a shape in
+   a colour), blend (one colour feathered into another) and piece (a whole flash picture: lines, coloured regions,
+   highlights and a shading direction). The apprentice exam is a fixed run of them; every one can also be played on
+   its own from the Challenges hub, for medals, personal bests and trophies. `diff` is 1 to 3 stars; `hub` puts it
+   in a hub section other than its scoring category. */
+const RED = TT_CAPS[2], YEL = TT_CAPS[3], BLU = TT_CAPS[4], GRN = TT_CAPS[5], BRN = TT_CAPS[6], WHT = TT_CAPS[7], GRY = TT_CAPS[1];
+const MIX = ttToHex(ttMix(ttHex(RED), ttHex(YEL), 0.55));
+const heart = (g) => { g.moveTo(90, 46); g.bezierCurveTo(88, 28, 60, 26, 58, 46); g.bezierCurveTo(56, 64, 80, 80, 90, 100); g.bezierCurveTo(100, 80, 124, 64, 122, 46); g.bezierCurveTo(120, 26, 92, 28, 90, 46); g.closePath(); };
+const banner = (g) => { g.moveTo(54, 66); g.lineTo(126, 66); g.lineTo(126, 79); g.lineTo(54, 79); g.closePath();
+  g.moveTo(54, 68); g.lineTo(41, 66); g.lineTo(46, 74); g.lineTo(41, 82); g.lineTo(54, 79); g.closePath(); g.moveTo(126, 68); g.lineTo(139, 66); g.lineTo(134, 74); g.lineTo(139, 82); g.lineTo(126, 79); g.closePath(); };
+const shine = (g) => { g.moveTo(76.5, 43); g.ellipse(70, 43, 6.5, 3.2, -0.6, 0, 7); g.closePath(); };
+// Path helpers that never join one part to the next with a stray line.
+const ttCirc = (g, x, y, r) => { g.moveTo(x + r, y); g.arc(x, y, r, 0, Math.PI * 2); g.closePath(); };
+const ttEll = (g, x, y, rx, ry, a) => { g.moveTo(x + rx * Math.cos(a), y + rx * Math.sin(a)); g.ellipse(x, y, rx, ry, a, 0, Math.PI * 2); g.closePath(); };
+const ttPoly = (g, pts) => { g.moveTo(...pts[0]); for (const p of pts.slice(1)) g.lineTo(...p); g.closePath(); };
+const ttStar = (g, x, y, R, r) => ttPoly(g, Array.from({ length: 10 }, (_, i) => { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r : R; return [x + q * Math.cos(a), y + q * Math.sin(a)]; }));
+// Flash shapes
+const fStar = (g) => ttStar(g, 90, 68, 38, 16);
+const fBolt = (g) => ttPoly(g, [[98, 22], [68, 72], [87, 72], [76, 108], [114, 54], [94, 54], [106, 22]]);
+const fGem = (g) => ttPoly(g, [[60, 50], [74, 32], [106, 32], [120, 50], [90, 100]]);
+const fGemFacets = (g) => { g.moveTo(60, 50); g.lineTo(120, 50); g.moveTo(74, 32); g.lineTo(82, 50); g.lineTo(90, 100); g.moveTo(106, 32); g.lineTo(98, 50); g.lineTo(90, 100); g.moveTo(82, 50); g.lineTo(90, 32); g.lineTo(98, 50); };
+const fCherries = (g) => { ttCirc(g, 72, 86, 12); ttCirc(g, 104, 88, 12); };
+const fStems = (g) => { g.moveTo(72, 74); g.quadraticCurveTo(80, 50, 96, 34); g.moveTo(104, 76); g.quadraticCurveTo(102, 52, 96, 34); };
+const fLeaf = (g) => ttEll(g, 110, 36, 12, 5.5, -0.5);
+const fPetals = (g) => { for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + k * 2 * Math.PI / 5; ttEll(g, 90 + 16 * Math.cos(a), 65 + 16 * Math.sin(a), 13, 8, a); } };
+const fCentre = (g) => ttCirc(g, 90, 65, 8);
+const fBlade = (g) => ttPoly(g, [[90, 18], [98, 30], [98, 80], [82, 80], [82, 30]]);
+const fGuard = (g) => g.rect(70, 80, 40, 7);
+const fHandle = (g) => g.rect(85, 87, 10, 21);
+const fPommel = (g) => ttCirc(g, 90, 114, 6);
+const fCap = (g) => { g.moveTo(56, 64); g.arc(90, 64, 34, Math.PI, Math.PI * 2); g.closePath(); };
+const fStem = (g) => { g.moveTo(80, 64); g.lineTo(78, 98); g.quadraticCurveTo(90, 104, 102, 98); g.lineTo(100, 64); g.closePath(); };
+const fSpots = (g) => { ttCirc(g, 77, 50, 5); ttCirc(g, 96, 41, 6); ttCirc(g, 109, 55, 4); };
+const fAnchor = (g) => { ttCirc(g, 90, 28, 7); g.moveTo(90, 35); g.lineTo(90, 104); g.moveTo(72, 46); g.lineTo(108, 46);
+  g.moveTo(60, 82); g.quadraticCurveTo(66, 108, 90, 106); g.quadraticCurveTo(114, 108, 120, 82); g.moveTo(54, 89); g.lineTo(60, 80); g.lineTo(66, 89); g.moveTo(114, 89); g.lineTo(120, 80); g.lineTo(126, 89); };
+
+const TT_CH = [
+  // ---- lining ----
+  { id: 'straight', cat: 'line', diff: 1, title: 'Straight lines', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
+    text: 'Black ink, 3RL. Line the three stencil lines: one steady pull each, solid and even, without going back over them.',
+    path: (g) => { for (const y of [35, 65, 95]) { g.moveTo(30, y); g.lineTo(150, y); } } },
+  { id: 'curves', cat: 'line', diff: 2, title: 'Curves and a circle', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
+    text: 'Black ink, 3RL. Follow the S-curve and the circle, keeping the line the same weight all the way round.',
+    path: (g) => { g.moveTo(22, 100); g.bezierCurveTo(40, 20, 70, 110, 90, 30); g.moveTo(152, 65); g.arc(128, 65, 24, 0, Math.PI * 2); } },
+  { id: 'bold', cat: 'line', diff: 2, title: 'Bold line', needle: '9RL', layer: 'line', ink: 'black', kind: 'line', core: 1.1,
+    text: 'Black ink, 9RL. Pull the bold arc solid in one pass, no gaps and no wobble.',
+    path: (g) => { g.moveTo(30, 95); g.quadraticCurveTo(90, 10, 150, 95); } },
+  { id: 'zigzag', cat: 'line', diff: 2, title: 'Sharp corners', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
+    text: 'Black ink, 3RL. Line the zigzag with crisp points: stop, turn and pull again at each corner, without rounding them off or doubling back.',
+    path: (g) => { g.moveTo(26, 90); for (let i = 1; i <= 8; i++) g.lineTo(26 + i * 16, i % 2 ? 40 : 90); } },
+  { id: 'fine', cat: 'line', diff: 3, title: 'Fine line', needle: '1RL', layer: 'line', ink: 'black', kind: 'line', core: 0.25,
+    text: 'Black ink, 1RL. Three fine, gentle curves close together: light and steady, so they stay crisp and never touch.',
+    path: (g) => { for (const y of [52, 66, 80]) { g.moveTo(30, y); g.quadraticCurveTo(90, y - 18, 150, y); } } },
+  { id: 'spiral', cat: 'line', diff: 3, title: 'Spiral', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
+    text: 'Black ink, 3RL. Follow the spiral from the middle out in one continuous line, turning the skin (two fingers) as you go if it helps.',
+    path: (g) => { for (let i = 0; i <= 360; i++) { const a = i / 360 * Math.PI * 6, r = 3 + i / 360 * 50; i ? g.lineTo(90 + r * Math.cos(a), 65 + r * Math.sin(a) * 0.95) : g.moveTo(90 + r, 65); } } },
+  { id: 'loops', cat: 'line', diff: 3, title: 'Script loops', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.55,
+    text: 'Black ink, 5RL. Run the loops like joined-up script: an even line through every loop and turn.',
+    path: (g) => { for (let i = 0; i <= 600; i++) { const t = i / 600 * Math.PI * 12, x = 28 + t * 3.1 - 7 * Math.sin(t), y = 70 - 15 * Math.cos(t); i ? g.lineTo(x, y) : g.moveTo(x, y); } } },
+  // ---- shading ----
+  { id: 'whip', cat: 'shade', diff: 1, title: 'Whip shading', needle: '7RS', layer: 'shadow', ink: 'black', kind: 'grad', box: [55, 56, 70, 18], prof: (f) => Math.pow(1 - f, 1.4),
+    text: 'Black ink, 7RS. Whip shade the box to match the example: dark at the left, fading out to clean skin on the right.' },
+  { id: 'whipr', cat: 'shade', diff: 1, title: 'Whip from the right', needle: '7RS', layer: 'shadow', ink: 'black', kind: 'grad', box: [55, 56, 70, 18], prof: (f) => Math.pow(f, 1.4),
+    text: 'Black ink, 7RS. The other way round: dark at the right, whipping out to clean skin on the left.' },
+  { id: 'smooth', cat: 'shade', diff: 2, title: 'Smooth gradient', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'grad', box: [45, 56, 90, 18], prof: (f) => Math.pow(Math.sin(Math.PI * f), 1.2),
+    text: 'Black ink, 15CM. Pendulum shade the box: soft at both ends, darkest through the middle, with no hard edges.' },
+  { id: 'wash', cat: 'shade', diff: 2, title: 'Grey wash blend', needle: '15CM', layer: 'shadow', ink: 'wash', wash: true, kind: 'grad', box: [45, 55, 90, 20], dk: 0.45, prof: (f) => Math.pow(1 - f, 1.1),
+    text: 'Grey wash, 15CM. Blend from dark on the left to clean skin on the right with the washes: dark wash at the left, mid through the middle, light to fade it out. Smooth, no steps between the tones.' },
+  { id: 'longfade', cat: 'shade', diff: 3, title: 'Long fade', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'grad', box: [25, 57, 130, 16], prof: (f) => 1 - f,
+    text: 'Black ink, 15CM. One long, even fade across the whole box: as smooth at the far end as at the start.' },
+  { id: 'steps', cat: 'shade', diff: 3, title: 'Three clean tones', needle: '15M1', layer: 'shadow', ink: 'wash', wash: true, kind: 'grad', box: [45, 55, 90, 20], dk: 0.45, prof: (f) => f < 1 / 3 ? 1 : f < 2 / 3 ? 0.5 : 0.22,
+    text: 'Grey wash, 15M1. Three flat tones in equal thirds, dark to light, each one even with a crisp edge between them (not a blend).' },
+  // ---- packing ----
+  { id: 'pack', cat: 'pack', diff: 1, title: 'Solid black', needle: '15M1', layer: 'shadow', ink: 'black', kind: 'pack', box: [75, 50, 30, 30],
+    text: 'Black ink, 15M1. Pack the box solid and even, edge to edge, with your usual technique. Watch the skin: solid, not chewed.' },
+  { id: 'bigpack', cat: 'pack', diff: 3, title: 'Big black pack', needle: '15M1', layer: 'shadow', ink: 'black', kind: 'pack', box: [55, 40, 70, 50],
+    text: 'Black ink, 15M1. A big area to pack solid: work in sections, overlap your passes, and keep the skin from chewing up.' },
+  { id: 'colour', cat: 'pack', diff: 1, title: 'Colour packing', needle: '11M1', layer: 'mid', ink: 'red', kind: 'fill', col: RED, crop: [66, 41, 48, 48], shape: (g) => { g.arc(90, 65, 16, 0, Math.PI * 2); },
+    text: 'Red ink, 11M1. Pack the circle with solid red, right up to the line and no further.' },
+  { id: 'bluesq', cat: 'pack', diff: 1, title: 'Blue square', needle: '11M1', layer: 'mid', ink: 'blue', kind: 'fill', col: BLU, crop: [67, 42, 46, 46], shape: (g) => g.rect(75, 50, 30, 30),
+    text: 'Blue ink, 11M1. Pack the square solid blue, keeping the corners sharp and the edges clean.' },
+  { id: 'greentri', cat: 'pack', diff: 2, title: 'Green triangle', needle: '9M1', layer: 'mid', ink: 'green', kind: 'fill', col: GRN, crop: [56, 32, 68, 64], shape: (g) => ttPoly(g, [[90, 40], [116, 88], [64, 88]]),
+    text: 'Green ink, 9M1. Pack the triangle right into its points without going over the edges.' },
+  { id: 'yelstar', cat: 'pack', diff: 3, title: 'Yellow star', needle: '7M1', layer: 'mid', ink: 'yellow', kind: 'fill', col: YEL, crop: [60, 36, 60, 60], shape: (g) => ttStar(g, 90, 67, 26, 11),
+    text: 'Yellow ink, 7M1. Pack the star solid, all the way into each of its five points: small needle, small passes.' },
+  // ---- colour ----
+  { id: 'mix', cat: 'colour', diff: 2, title: 'Mix a colour', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: MIX, crop: [70, 45, 40, 40], shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
+    text: 'Mix the colour in the example from the red and yellow caps (dip in one, then the other: the longer the dip, the more of it), then pack the square with it.' },
+  { id: 'mixgreen', cat: 'colour', diff: 2, title: 'Mix a green', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: ttToHex(ttMix(ttHex(BLU), ttHex(YEL), 0.5)), crop: [70, 45, 40, 40], shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
+    text: 'Mix the green in the example from the blue and yellow caps, then pack the square with it.' },
+  { id: 'mixpurple', cat: 'colour', diff: 3, title: 'Mix a purple', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: ttToHex(ttMix(ttHex(RED), ttHex(BLU), 0.5)), crop: [70, 45, 40, 40], shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
+    text: 'Mix the purple in the example from the red and blue caps (it takes a careful balance), then pack the square with it.' },
+  { id: 'blend', cat: 'colour', diff: 2, title: 'Colour blend', needle: '15CM', layer: 'mid', ink: 'red, yellow', kind: 'blend', box: [45, 55, 90, 20], from: RED, to: YEL,
+    text: 'Red feathered into yellow, like the example: solid red on the left, feather it out, then saturate yellow into the feathered part and across to the right.' },
+  { id: 'blendby', cat: 'colour', diff: 3, title: 'Blue into yellow', needle: '15CM', layer: 'mid', ink: 'blue, yellow', kind: 'blend', box: [45, 55, 90, 20], from: BLU, to: YEL,
+    text: 'Blue feathered into yellow: solid blue on the left, feathered out, with yellow saturated through it to the right. The middle should turn green, not muddy.' },
+  // ---- flash: whole pictures ----
+  { id: 'fbolt', cat: 'final', hub: 'flash', diff: 1, title: 'Flash: lightning bolt', needle: '3RL', layer: 'line', ink: 'black, yellow', kind: 'piece', crop: [58, 14, 66, 102],
+    lines: fBolt, regions: [{ shape: fBolt, col: YEL }],
+    text: 'Line the bolt in black, then pack it solid yellow up to the line.' },
+  { id: 'fanchor', cat: 'line', hub: 'flash', diff: 2, title: 'Flash: anchor (lines)', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6,
+    path: fAnchor, text: 'Black ink, 5RL. Line the whole anchor: ring, shank, stock, arms and points, with clean joins.' },
+  { id: 'fstar', cat: 'final', hub: 'flash', diff: 2, title: 'Flash: shaded star', needle: '3RL', layer: 'line', ink: 'black, yellow, white', kind: 'piece', crop: [48, 26, 84, 82],
+    lines: fStar, regions: [{ shape: fStar, col: YEL }], hi: [(g) => ttEll(g, 82, 56, 4, 2.4, -0.5)], shade: { in: fStar, light: [80, 44, 20, 14], dark: [72, 80, 36, 10] },
+    text: 'Line the star, pack it yellow, shade the lower points darker with black, and put a white highlight up near the top.' },
+  { id: 'fgem', cat: 'final', hub: 'flash', diff: 2, title: 'Flash: gem', needle: '3RL', layer: 'line', ink: 'black, blue, white', kind: 'piece', crop: [52, 24, 76, 84],
+    lines: (g) => { fGem(g); fGemFacets(g); }, regions: [{ shape: fGem, col: BLU }], hi: [(g) => ttPoly(g, [[76, 36], [84, 36], [78, 46]])], shade: { in: fGem, light: [66, 38, 12, 8], dark: [94, 62, 10, 18] },
+    text: 'Line the gem and its facets, pack it blue, shade the lower right side darker, and put a white glint in the top left facet.' },
+  { id: 'fcherry', cat: 'final', hub: 'flash', diff: 2, title: 'Flash: cherries', needle: '3RL', layer: 'line', ink: 'black, red, green, white', kind: 'piece', crop: [52, 24, 76, 82],
+    lines: (g) => { fCherries(g); fStems(g); fLeaf(g); }, regions: [{ shape: fCherries, col: RED }, { shape: fLeaf, col: GRN }], hi: [(g) => { ttEll(g, 67, 81, 3, 1.8, -0.6); ttEll(g, 99, 83, 3, 1.8, -0.6); }],
+    text: 'Line the cherries, stems and leaf, pack the cherries red and the leaf green, and give each cherry a small white shine.' },
+  { id: 'fflower', cat: 'final', hub: 'flash', diff: 2, title: 'Flash: flower', needle: '3RL', layer: 'line', ink: 'black, red, yellow', kind: 'piece', crop: [52, 26, 76, 78],
+    lines: (g) => { fPetals(g); fCentre(g); }, regions: [{ shape: fPetals, col: RED }, { shape: fCentre, col: YEL }],
+    text: 'Line the five petals and the centre, pack the petals red and the centre yellow.' },
+  { id: 'fdagger', cat: 'final', hub: 'flash', diff: 3, title: 'Flash: dagger', needle: '3RL', layer: 'line', ink: 'black, grey, red, yellow', kind: 'piece', crop: [52, 12, 76, 112],
+    lines: (g) => { fBlade(g); g.moveTo(90, 22); g.lineTo(90, 78); fGuard(g); fHandle(g); fPommel(g); },
+    regions: [{ shape: fBlade, col: GRY }, { shape: fGuard, col: YEL }, { shape: fHandle, col: RED }, { shape: fPommel, col: YEL }], shade: { in: fBlade, light: [83, 34, 5, 40], dark: [92, 34, 5, 40] },
+    text: 'Line the dagger (and the ridge down the blade), pack the blade grey with its right side shaded darker, the guard and pommel yellow and the handle red.' },
+  { id: 'fmush', cat: 'final', hub: 'flash', diff: 3, title: 'Flash: mushroom', needle: '3RL', layer: 'line', ink: 'black, red, brown, white', kind: 'piece', crop: [48, 22, 84, 90],
+    lines: (g) => { fCap(g); fStem(g); fSpots(g); }, regions: [{ shape: fCap, col: RED }, { shape: fStem, col: BRN }], hi: [fSpots],
+    text: 'Line the cap, stem and spots, pack the cap red and the stem brown, and fill the spots solid white.' },
+  { id: 'final', cat: 'final', hub: 'flash', diff: 3, title: 'Final piece: traditional heart', needle: '3RL', layer: 'line', ink: 'all', kind: 'piece', crop: [34, 20, 112, 88],
+    lines: (g) => { heart(g); banner(g); shine(g); }, regions: [{ shape: heart, col: RED, tol: 2.2 }, { shape: banner, col: YEL }], hi: [shine], shade: { in: heart, light: [40, 20, 42, 38], dark: [98, 58, 50, 50] },
+    text: 'Tattoo the heart like the reference: line it (black), shade the lower right of the heart (black), pack the heart red and the banner yellow, and put a white highlight in the shine. Use any needles and layers you like.' }
+];
+const TT_EXAM = ['straight', 'curves', 'bold', 'whip', 'smooth', 'pack', 'wash', 'colour', 'mix', 'blend', 'final'];
+const TT_HUB = [['line', 'Lining'], ['shade', 'Shading'], ['pack', 'Packing'], ['colour', 'Colour'], ['flash', 'Flash']];
+const ttHubOf = (c) => c.hub || c.cat;
+const ttShort = (t) => { t = t.replace(/^Flash: /, ''); return t[0].toUpperCase() + t.slice(1); };
+// The part of the page an example shows (mm): its crop, its box with a margin, or the whole patch.
+const ttCrop = (T) => T.crop || (T.box ? [T.box[0] - 8, T.box[1] - 8, T.box[2] + 16, T.box[3] + 16] : [0, 0, 180, 130]);
+// A challenge's example on skin (line challenges: the stencil to follow), as a picture of its crop.
+function ttExGen(T, skin) {
+  const c = document.createElement('canvas'), sc = 2; c.width = 180 * sc; c.height = 130 * sc; const g = c.getContext('2d');
+  g.fillStyle = skin; g.fillRect(0, 0, c.width, c.height); g.scale(sc, sc); g.lineCap = g.lineJoin = 'round';
+  const dots = (x0, y0, w, h, f, col) => { g.fillStyle = col; for (let i = 0; i < w * h * 3; i++) { const px = x0 + Math.random() * w, py = y0 + Math.random() * h, a = f((px - x0) / w); if (Math.random() < a) { g.globalAlpha = 0.6 + a * 0.4; g.beginPath(); g.arc(px, py, 0.35, 0, 7); g.fill(); } } g.globalAlpha = 1; };
+  if (T.kind === 'line') { g.strokeStyle = '#141414'; g.lineWidth = Math.max(0.5, T.core); g.beginPath(); T.path(g); g.stroke(); }
+  if (T.kind === 'grad') dots(...T.box, T.wash ? (f) => T.prof(f) * 0.5 : T.prof, '#141414');
+  if (T.kind === 'pack') { g.fillStyle = '#161616'; g.fillRect(...T.box); }
+  if (T.kind === 'fill') { g.fillStyle = T.col; g.beginPath(); T.shape(g); g.fill(); }
+  if (T.kind === 'blend') { const [x0, y0, w, h] = T.box, A = ttHex(T.from || RED), B = ttHex(T.to || YEL);
+    for (let x = 0; x < w; x += 0.5) { const f = x / w; g.fillStyle = f < 0.3 ? ttToHex(A) : f > 0.7 ? ttToHex(B) : ttToHex(ttMix(A, B, (f - 0.3) / 0.4)); g.fillRect(x0 + x, y0, 0.6, h); } }
+  if (T.kind === 'piece') {
+    for (const r of T.regions || []) { g.fillStyle = r.col; g.beginPath(); r.shape(g); g.fill(); }
+    if (T.shade) { const [lx, ly, lw, lh] = T.shade.light, [dx, dy, dw, dh] = T.shade.dark, sh = g.createLinearGradient(lx + lw / 2, ly + lh / 2, dx + Math.min(dw, 20) / 2, dy + Math.min(dh, 20) / 2);
+      sh.addColorStop(0.35, 'rgba(20,20,20,0)'); sh.addColorStop(1, 'rgba(20,20,20,.8)');
+      g.save(); g.beginPath(); T.shade.in(g); g.clip(); g.fillStyle = sh; g.fillRect(0, 0, 180, 130); g.restore(); }
+    for (const h of T.hi || []) { g.fillStyle = WHT; g.beginPath(); h(g); g.fill(); }
+    g.strokeStyle = '#141414'; g.lineWidth = 0.9; g.beginPath(); T.lines(g); g.stroke();
+  }
+  const [x0, y0, w, h] = ttCrop(T), o = document.createElement('canvas'); o.width = w * sc; o.height = h * sc;
+  o.getContext('2d').drawImage(c, x0 * sc, y0 * sc, w * sc, h * sc, 0, 0, w * sc, h * sc);
+  return o.toDataURL('image/png');
+}
+
+/* ---------- Medals, personal bests and trophies ----------
+   Kept in the setting tt_awards (so backups carry them): pb { id: { best, bestT, last, lastT, tries } }, a log of
+   every finished challenge, trophies { id: when }, and finished exams. */
+const TT_MEDALS = [[90, 'gold', 'Gold'], [75, 'silver', 'Silver'], [60, 'bronze', 'Bronze']];
+const ttMedal = (s) => s == null ? null : TT_MEDALS.find(([m]) => s >= m) || null;
+const ttHubCh = (sec) => TT_CH.filter(c => ttHubOf(c) === sec);
+const ttBest = (a, id) => a.pb[id]?.best ?? -1;
+const TT_TROPHIES = [
+  { id: 'first', tier: 'bronze', name: 'First ink', desc: 'Finish any challenge.', test: (a) => Object.keys(a.pb).length >= 1 },
+  { id: 'ten', tier: 'silver', name: 'Getting serious', desc: 'Finish 10 different challenges.', test: (a) => Object.keys(a.pb).length >= 10 },
+  { id: 'all', tier: 'gold', name: 'Completionist', desc: 'Finish every challenge.', test: (a) => TT_CH.every(c => a.pb[c.id]) },
+  { id: 'medals', tier: 'bronze', name: 'On the podium', desc: 'Win a medal in every section.', test: (a) => TT_HUB.every(([k]) => ttHubCh(k).some(c => ttBest(a, c.id) >= 60)) },
+  { id: 'gold5', tier: 'silver', name: 'Golden hands', desc: 'Win 5 gold medals.', test: (a) => TT_CH.filter(c => ttBest(a, c.id) >= 90).length >= 5 },
+  { id: 'gold15', tier: 'gold', name: 'Gold rush', desc: 'Win 15 gold medals.', test: (a) => TT_CH.filter(c => ttBest(a, c.id) >= 90).length >= 15 },
+  ...TT_HUB.map(([k, n]) => ({ id: 'm-' + k, tier: 'gold', name: { line: 'Line master', shade: 'Shade master', pack: 'Packing master', colour: 'Colourist', flash: 'Flash master' }[k], desc: `Gold on every ${n.toLowerCase()} challenge.`, test: (a) => ttHubCh(k).every(c => ttBest(a, c.id) >= 90) })),
+  { id: 'flash', tier: 'silver', name: 'Flash collector', desc: 'Finish every flash piece.', test: (a) => ttHubCh('flash').every(c => a.pb[c.id]) },
+  { id: 'hard', tier: 'gold', name: 'Hard mode', desc: 'Silver or better on every three-star challenge.', test: (a) => TT_CH.filter(c => c.diff === 3).every(c => ttBest(a, c.id) >= 75) },
+  { id: 'perfect', tier: 'gold', name: 'Flawless', desc: 'Score 95 or more on any challenge.', test: (a) => TT_CH.some(c => ttBest(a, c.id) >= 95) },
+  { id: 'clean', tier: 'silver', name: 'Gentle hands', desc: 'A medal on a flash piece with the skin at 95% or better and no blowouts.', test: (a) => a.log.some(l => ttHubOf(TT_CH.find(c => c.id === l.id) || {}) === 'flash' && l.s >= 60 && l.skin >= 95 && !l.blow) },
+  { id: 'improve', tier: 'bronze', name: 'Practice pays', desc: 'Beat a personal best by 15 points or more.', test: (a) => a.log.some((l, i) => { const prev = a.log.slice(0, i).filter(x => x.id === l.id); return prev.length && l.s - Math.max(...prev.map(x => x.s)) >= 15; }) },
+  { id: 'days', tier: 'silver', name: 'Dedicated', desc: 'Practise on 5 different days.', test: (a) => new Set(a.log.map(l => new Date(l.t).toDateString())).size >= 5 },
+  { id: 'exam', tier: 'silver', name: 'Graduate', desc: 'Finish the apprentice exam.', test: (a) => a.exam.length > 0 },
+  { id: 'examA', tier: 'gold', name: 'Top of the class', desc: 'Grade A in the apprentice exam.', test: (a) => a.exam.some(e => e.grade === 'A') }
+];
+TT.aw = {
+  get() { let a = {}; try { a = JSON.parse(Settings.get('tt_awards', '{}')); } catch {} return { pb: {}, log: [], trophies: {}, exam: [], ...a }; },
+  put(a) { Settings.set('tt_awards', JSON.stringify(a)); },
+  check(a) { const got = []; for (const t of TT_TROPHIES) if (!a.trophies[t.id] && t.test(a)) { a.trophies[t.id] = Date.now(); got.push(t); } return got; },
+  // A finished challenge: returns the earlier best (null the first time), the best now and any trophies just won.
+  record(T, res) {
+    const a = this.get(), p = a.pb[T.id] || { best: 0, tries: 0 }, was = p.tries ? p.best : null;
+    p.tries++; p.last = res.total; p.lastT = Date.now(); if (was == null || res.total > p.best) { p.best = res.total; p.bestT = Date.now(); }
+    a.pb[T.id] = p; a.log.push({ id: T.id, s: res.total, t: Date.now(), skin: res.skin, blow: res.blowouts }); if (a.log.length > 1500) a.log.splice(0, a.log.length - 1500);
+    const gained = this.check(a); this.put(a); return { was, best: p.best, newPb: was != null && res.total > was, first: was == null, gained };
+  },
+  exam(overall, grade) { const a = this.get(); a.exam.push({ overall, grade, t: Date.now() }); const g = this.check(a); this.put(a); return g; }
+};
+const ttStars = (n) => '<span class="tt-stars">' + [1, 2, 3].map(i => `<i class="${i <= n ? 'on' : ''}"></i>`).join('') + '</span>';
+const ttCup = (tier, size = 28) => `<svg class="tt-cup ${tier}" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M9.5 17h5"/></svg>`;
+const ttMedalIco = (m, size = 22) => m ? `<svg class="tt-medal ${m[1]}" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="M8 2l4 7 4-7"/><circle cx="12" cy="15" r="6"/></svg>` : '';
+
+// Starts (or restarts) a challenge on its own piece of skin; each challenge keeps one piece.
+async function ttChStart(id) {
+  const T = TT_CH.find(c => c.id === id); if (!T) return;
+  const exam = { v: 1, mode: 'ch', list: [id], i: 0, res: [], started: Date.now() };
+  const rows = await DB.all(`SELECT id, meta FROM tattoo_pieces WHERE meta LIKE '%"mode":"ch"%'`);
+  const hit = rows.find(r => { try { return JSON.parse(r.meta).exam?.list?.[0] === id; } catch { return false; } });
+  if (hit) { let m = {}; try { m = JSON.parse(hit.meta); } catch {} await DB.run(`UPDATE tattoo_pieces SET meta = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...m, exam }), hit.id]); location.hash = 'tattoo/' + hit.id; return; }
+  await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Challenge: ' + T.title, 18, 13, Settings.get('tt_skin', '#e2b493'), JSON.stringify({ exam })]);
+  location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
+}
+
+/* ---------- The Challenges hub ----------
+   Sections of challenge cards (example, stars, best score and medal), the trophy cabinet, and a results sheet to
+   print, save or share for comparing over time. */
+TT.hub = async (el) => {
+  ttStyle();
+  const a = TT.aw.get(), skin = Settings.get('tt_skin', '#e2b493');
+  const done = TT_CH.filter(c => a.pb[c.id]).length, golds = TT_CH.filter(c => ttBest(a, c.id) >= 90).length, cups = Object.keys(a.trophies).length;
+  el.innerHTML = `<div class="tt-hub">
+    <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <div class="tt-hubsum"><span><b>${done}</b> / ${TT_CH.length} done</span><span>${ttMedalIco(TT_MEDALS[0], 18)}<b>${golds}</b> gold</span><span>${ttCup('gold', 18)}<b>${cups}</b> / ${TT_TROPHIES.length} trophies</span></div>
+      <span style="flex:1"></span><button class="btn" id="tt-sheet">Results sheet</button></div>
+    <div class="letter">Trophy cabinet</div>
+    <div class="tt-cabinet">${TT_TROPHIES.map(t => `<div class="tt-trophy ${a.trophies[t.id] ? 'won' : ''}" data-tip="${esc(t.desc)}">${ttCup(a.trophies[t.id] ? t.tier : 'locked', 30)}<b>${esc(t.name)}</b><span>${a.trophies[t.id] ? new Date(a.trophies[t.id]).toLocaleDateString() : esc(t.desc)}</span></div>`).join('')}</div>
+    ${TT_HUB.map(([k, n]) => `<div class="letter">${n}</div><div class="tt-chgrid">${ttHubCh(k).sort((x, y) => x.diff - y.diff).map(c => { const p = a.pb[c.id], m = ttMedal(p?.best);
+      return `<button class="tt-chc" data-ch="${c.id}"><div class="tt-chimg"><img src="${ttExGen(c, skin)}" alt=""></div>
+        <div class="tt-chmeta"><b>${esc(ttShort(c.title))}</b><span>${ttStars(c.diff)} ${c.needle}</span>
+        <span class="tt-chpb">${p ? `${ttMedalIco(m)} Best ${p.best}` : '<i class="muted">Not tried yet</i>'}</span></div></button>`; }).join('')}</div>`).join('')}
+  </div>`;
+  el.onclick = (e) => { const c = e.target.closest('[data-ch]'); if (c) return ttChStart(c.dataset.ch); if (e.target.closest('#tt-sheet')) return TT.sheet(); };
+};
+
+// The results sheet: every challenge with its stars, best, medal and tries, the trophies and exam grades, on an A4 page.
+TT.sheet = async () => {
+  const a = TT.aw.get(), { cv, x, font, text, header } = await docCanvas(); await header();
+  const { W, M, teal, soft } = DOC; let y = 300;
+  text('Challenge results', M, y, font(54, 400, true)); text(new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }), W - M, y, font(22), soft, 'right'); y += 46;
+  const done = TT_CH.filter(c => a.pb[c.id]).length, golds = TT_CH.filter(c => ttBest(a, c.id) >= 90).length;
+  text(`${done} of ${TT_CH.length} challenges done · ${golds} gold · ${Object.keys(a.trophies).length} of ${TT_TROPHIES.length} trophies`, M, y, font(22), soft); y += 40;
+  const cols = [M, M + 560, M + 660, M + 780, M + 900];
+  for (const [k, n] of TT_HUB) {
+    x.fillStyle = teal; x.fillRect(M, y - 4, W - 2 * M, 2); y += 30; text(n.toUpperCase(), M, y, font(20, 700), teal);
+    text('STARS', cols[1], y, font(16, 700), soft); text('BEST', cols[2], y, font(16, 700), soft); text('MEDAL', cols[3], y, font(16, 700), soft); text('TRIES', cols[4], y, font(16, 700), soft); y += 30;
+    for (const c of ttHubCh(k).sort((p, q) => p.diff - q.diff)) { const p = a.pb[c.id], m = ttMedal(p?.best);
+      text(ttShort(c.title), cols[0], y, font(21)); text('★'.repeat(c.diff), cols[1], y, font(21), '#c99a2e');
+      text(p ? String(p.best) : '–', cols[2], y, font(21, 700)); text(m ? m[2] : '', cols[3], y, font(21), m ? { gold: '#b8860b', silver: '#7d8a91', bronze: '#a0622d' }[m[1]] : soft); text(p ? String(p.tries) : '', cols[4], y, font(21), soft); y += 29; }
+    y += 6;
+  }
+  const won = TT_TROPHIES.filter(t => a.trophies[t.id]);
+  if (won.length) { y += 8; text('TROPHIES', M, y, font(20, 700), teal); y += 30; text(won.map(t => t.name).join(' · '), M, y, font(19)); y += 34; }
+  if (a.exam.length) { text('APPRENTICE EXAM', M, y, font(20, 700), teal); y += 30; text(a.exam.slice(-6).map(e => `${new Date(e.t).toLocaleDateString()}: ${e.grade} (${e.overall})`).join(' · '), M, y, font(19)); }
+  const file = await canvasFile(cv, `challenge-results-${ymd(new Date())}.png`);
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card"><h2>Results sheet</h2><img src="${cv.toDataURL('image/jpeg', 0.8)}" alt="" style="width:100%;border-radius:8px;margin-bottom:10px">
+    <div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" data-a="x">Close</button><span style="flex:1"></span><button class="btn" data-a="save">Save</button><button class="btn" data-a="share">Share</button><button class="btn primary" data-a="print">Print / PDF</button></div></div>`;
+  o.onclick = (e) => { const k = e.target.closest('[data-a]')?.dataset.a; if (!k) return;
+    if (k === 'x') return o.remove(); if (k === 'save') return saveFiles([file]); if (k === 'share') return shareFiles([file], 'Challenge results');
+    if (k === 'print') { o.remove(); printCanvas(cv); } };
+  document.body.appendChild(o);
+};
+
 /* ---------- The list of pieces ---------- */
 TT.list = async (el) => {
   ttStyle();
   const rows = (await DB.all('SELECT id, name, w_cm, h_cm, thumb_ref, updated_at, meta FROM tattoo_pieces ORDER BY updated_at DESC, id DESC'))
-    .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} return { ...r, exam: ex ? (ex.done ? 2 : 1) : 0 }; });
+    .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} return { ...r, ch: ex?.mode === 'ch', exam: ex ? (ex.done ? 2 : 1) : 0 }; }).filter(r => !r.ch);
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Experimental: draw with needle groupings in ink on skin. Works best with a pressure pen (like an S Pen).</p>
+      <button class="btn" id="tt-chal" data-go="tattoo/challenges" data-tip="Single challenges in every style and flash pieces to tattoo: medals, personal bests and trophies">Challenges</button>
       <button class="btn" id="tt-exam" data-tip="A set of challenges, from lines to a finished piece, with a report card">Apprentice exam</button>
       <button class="btn primary" id="tt-new">+ New piece</button></div>
     ${rows.length ? `<div class="dz-grid">${rows.map((r, i) => `<div class="dz-item" data-open="${r.id}"><div class="dz-thumb">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</div>
@@ -1124,72 +1384,20 @@ TT.open = async (el, id) => {
      condition and blowouts, and keeps how the pen was used (pressure, speed, angle) for tuning. The exam is a
      piece of its own: leaving saves it, and opening it carries on where it stopped. */
   const Mm = (g, f) => { g.save(); g.scale(mm, mm); g.beginPath(); f(g); g.restore(); };
-  const RED = TT_CAPS[2], YEL = TT_CAPS[3], WHT = TT_CAPS[7];
-  const MIX = ttToHex(ttMix(ttHex(RED), ttHex(YEL), 0.55));
-  const heart = (g) => { g.moveTo(90, 46); g.bezierCurveTo(88, 28, 60, 26, 58, 46); g.bezierCurveTo(56, 64, 80, 80, 90, 100); g.bezierCurveTo(100, 80, 124, 64, 122, 46); g.bezierCurveTo(120, 26, 92, 28, 90, 46); g.closePath(); };
-  const banner = (g) => { g.moveTo(54, 66); g.lineTo(126, 66); g.lineTo(126, 79); g.lineTo(54, 79); g.closePath();
-    g.moveTo(54, 68); g.lineTo(41, 66); g.lineTo(46, 74); g.lineTo(41, 82); g.lineTo(54, 79); g.closePath(); g.moveTo(126, 68); g.lineTo(139, 66); g.lineTo(134, 74); g.lineTo(139, 82); g.lineTo(126, 79); g.closePath(); };
-  const shine = (g) => { g.ellipse(70, 43, 6.5, 3.2, -0.6, 0, 7); g.closePath(); };
-  const CHALL = [
-    { id: 'straight', cat: 'line', title: 'Straight lines', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
-      text: 'Black ink, 3RL. Line the three stencil lines: one steady pull each, solid and even, without going back over them.',
-      path: (g) => { for (const y of [35, 65, 95]) { g.moveTo(30, y); g.lineTo(150, y); } } },
-    { id: 'curves', cat: 'line', title: 'Curves and a circle', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
-      text: 'Black ink, 3RL. Follow the S-curve and the circle, keeping the line the same weight all the way round.',
-      path: (g) => { g.moveTo(22, 100); g.bezierCurveTo(40, 20, 70, 110, 90, 30); g.moveTo(152, 65); g.arc(128, 65, 24, 0, Math.PI * 2); } },
-    { id: 'bold', cat: 'line', title: 'Bold line', needle: '9RL', layer: 'line', ink: 'black', kind: 'line', core: 1.1,
-      text: 'Black ink, 9RL. Pull the bold arc solid in one pass, no gaps and no wobble.',
-      path: (g) => { g.moveTo(30, 95); g.quadraticCurveTo(90, 10, 150, 95); } },
-    { id: 'whip', cat: 'shade', title: 'Whip shading', needle: '7RS', layer: 'shadow', ink: 'black', kind: 'grad', box: [55, 56, 70, 18], prof: (f) => Math.pow(1 - f, 1.4),
-      text: 'Black ink, 7RS. Whip shade the box to match the example: dark at the left, fading out to clean skin on the right.' },
-    { id: 'smooth', cat: 'shade', title: 'Smooth gradient', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'grad', box: [45, 56, 90, 18], prof: (f) => Math.pow(Math.sin(Math.PI * f), 1.2),
-      text: 'Black ink, 15CM. Pendulum shade the box: soft at both ends, darkest through the middle, with no hard edges.' },
-    { id: 'pack', cat: 'pack', title: 'Solid black', needle: '15M1', layer: 'shadow', ink: 'black', kind: 'pack', box: [75, 50, 30, 30],
-      text: 'Black ink, 15M1. Pack the box solid and even, edge to edge, with your usual technique. Watch the skin: solid, not chewed.' },
-    { id: 'wash', cat: 'shade', title: 'Grey wash blend', needle: '15CM', layer: 'shadow', ink: 'wash', wash: true, kind: 'grad', box: [45, 55, 90, 20], dk: 0.45, prof: (f) => Math.pow(1 - f, 1.1),
-      text: 'Grey wash, 15CM. Blend from dark on the left to clean skin on the right with the washes: dark wash at the left, mid through the middle, light to fade it out. Smooth, no steps between the tones.' },
-    { id: 'colour', cat: 'pack', title: 'Colour packing', needle: '11M1', layer: 'mid', ink: 'red', kind: 'fill', col: RED, shape: (g) => { g.arc(90, 65, 16, 0, Math.PI * 2); },
-      text: 'Red ink, 11M1. Pack the circle with solid red, right up to the line and no further.' },
-    { id: 'mix', cat: 'colour', title: 'Mix a colour', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: MIX, shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
-      text: 'Mix the colour in the example from the red and yellow caps (dip in one, then the other: the longer the dip, the more of it), then pack the square with it.' },
-    { id: 'blend', cat: 'colour', title: 'Colour blend', needle: '15CM', layer: 'mid', ink: 'red, yellow', kind: 'blend', box: [45, 55, 90, 20],
-      text: 'Red feathered into yellow, like the example: solid red on the left, feather it out, then saturate yellow into the feathered part and across to the right.' },
-    { id: 'final', cat: 'final', title: 'Final piece: traditional heart', needle: '3RL', layer: 'line', ink: 'all', kind: 'final',
-      text: 'Tattoo the heart like the reference: line it (black), shade the lower right of the heart (black), pack the heart red and the banner yellow, and put a white highlight in the shine. Use any needles and layers you like.' }
-  ];
-  // Examples: drawn on skin, for the floating reference beside each challenge.
-  function exGen(name) {
-    const T = CHALL.find(c => c.id === name); if (!T) return '';
-    const c = document.createElement('canvas'), sc = 2; c.width = 180 * sc; c.height = 130 * sc; const g = c.getContext('2d');
-    g.fillStyle = st.skin; g.fillRect(0, 0, c.width, c.height); g.scale(sc, sc);
-    const dots = (x0, y0, w, h, f, col) => { g.fillStyle = col; for (let i = 0; i < w * h * 3; i++) { const px = x0 + Math.random() * w, py = y0 + Math.random() * h, a = f((px - x0) / w); if (Math.random() < a) { g.globalAlpha = 0.6 + a * 0.4; g.beginPath(); g.arc(px, py, 0.35, 0, 7); g.fill(); } } g.globalAlpha = 1; };
-    if (T.kind === 'grad') dots(...T.box, T.wash ? (f) => T.prof(f) * 0.5 : T.prof, '#141414');
-    if (T.kind === 'pack') { g.fillStyle = '#161616'; g.fillRect(...T.box); }
-    if (T.kind === 'fill') { g.fillStyle = T.col; g.beginPath(); T.shape(g); g.fill(); }
-    if (T.kind === 'blend') { const [x0, y0, w, h] = T.box; for (let x = 0; x < w; x += 0.5) { const f = x / w; g.fillStyle = f < 0.3 ? RED : f > 0.7 ? YEL : ttToHex(ttMix(ttHex(RED), ttHex(YEL), (f - 0.3) / 0.4)); g.fillRect(x0 + x, y0, 0.6, h); } }
-    if (T.kind === 'final') {
-      g.fillStyle = RED; g.beginPath(); heart(g); g.fill();
-      const sh = g.createLinearGradient(70, 40, 112, 92); sh.addColorStop(0.45, 'rgba(20,20,20,0)'); sh.addColorStop(1, 'rgba(20,20,20,.85)');
-      g.save(); g.beginPath(); heart(g); g.clip(); g.fillStyle = sh; g.fillRect(40, 20, 100, 90); g.restore();
-      g.fillStyle = YEL; g.beginPath(); banner(g); g.fill(); g.fillStyle = WHT; g.beginPath(); shine(g); g.fill();
-      g.strokeStyle = '#141414'; g.lineWidth = 0.9; g.lineJoin = 'round'; g.beginPath(); heart(g); g.stroke(); g.beginPath(); banner(g); g.stroke(); g.beginPath(); shine(g); g.stroke();
-    }
-    const [x0, y0, w, h] = exCrop(T), o = document.createElement('canvas'); o.width = w * sc; o.height = h * sc;
-    o.getContext('2d').drawImage(c, x0 * sc, y0 * sc, w * sc, h * sc, 0, 0, w * sc, h * sc);
-    return o.toDataURL('image/png');
-  }
-  // The part of the page an example shows (mm): its box or shape, with a margin of skin.
-  const exCrop = (T) => T.kind === 'final' ? [34, 20, 112, 88] : T.box ? [T.box[0] - 8, T.box[1] - 8, T.box[2] + 16, T.box[3] + 16] : T.id === 'colour' ? [66, 41, 48, 48] : T.id === 'mix' ? [70, 45, 40, 40] : [0, 0, 180, 130];
+  // This run's challenges: the exam's, or the one challenge played from the hub.
+  const exList = () => (EX?.list || TT_EXAM).map(id => TT_CH.find(c => c.id === id)).filter(Boolean);
+  const exGen = (name) => { const T = TT_CH.find(c => c.id === name); return T ? ttExGen(T, st.skin) : ''; };
+  const exCrop = ttCrop;
   const exStencil = (T) => {
     const g = L.stencil.getContext('2d'); g.clearRect(0, 0, W, H); touched.add('stencil'); g.strokeStyle = 'rgba(78,40,150,.9)'; g.lineWidth = 0.32 * mm; g.lineJoin = g.lineCap = 'round';
     if (T.kind === 'line') { Mm(g, T.path); g.stroke(); }
     else if (T.box) { g.setLineDash([2 * mm, 1.5 * mm]); g.strokeRect(T.box[0] * mm, T.box[1] * mm, T.box[2] * mm, T.box[3] * mm); g.setLineDash([]); }
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
-    else if (T.kind === 'final') { Mm(g, heart); g.stroke(); Mm(g, banner); g.stroke(); Mm(g, shine); g.stroke(); }
+    else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
   const exClear = () => { for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } TR.fill(0); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
-    const T = CHALL[EX.i]; if (!T) return;
+    const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
     exStencil(T); st.hide.delete('stencil'); st.op.stencil = 0.6;
     refs = refs.filter(r => !r.gen);
@@ -1239,30 +1447,33 @@ TT.open = async (el, id) => {
       for (let i = 3; i < m.length; i += 4) { const d = densAt(i - 3); if (m[i] > 128) { n++; if (d > 0.6) { cov++; const c = colAt(i - 3); if (c) { cs[0] += c[0]; cs[1] += c[1]; cs[2] += c[2]; cn++; } } } else if (d > 0.2) { ink++; if (out[i] < 30) sp++; } }
       const avg = cn ? cs.map(v => v / cn) : [255, 255, 255], col = 1 - clamp01(dist(avg, want) * 3), cv2 = cov / Math.max(1, n), spl = sp / Math.max(1, ink + cov), cw = T.colW || 0.35;
       return { score: Math.round(100 * ((0.8 - cw) * cv2 + cv2 * (cw * col + 0.2 * (1 - spl)))), coverage: Math.round(cv2 * 100), colour: Math.round(col * 100), spill: Math.round(spl * 100), yourColour: ttToHex(avg.map(v => v / 255)) }; }
-    if (T.kind === 'blend') { const { x0, y0, x1, y1 } = boxIdx(T.box); let err = 0, n = 0, cov = 0, tot = 0;
-      for (let x = x0; x < x1; x += 3) { const f = (x - x0) / (x1 - x0), want = (f < 0.3 ? ttHex(RED) : f > 0.7 ? ttHex(YEL) : ttMix(ttHex(RED), ttHex(YEL), (f - 0.3) / 0.4)).map(v => v * 255);
+    if (T.kind === 'blend') { const { x0, y0, x1, y1 } = boxIdx(T.box), A = ttHex(T.from || RED), Bc = ttHex(T.to || YEL); let err = 0, n = 0, cov = 0, tot = 0;
+      for (let x = x0; x < x1; x += 3) { const f = (x - x0) / (x1 - x0), want = (f < 0.3 ? A : f > 0.7 ? Bc : ttMix(A, Bc, (f - 0.3) / 0.4)).map(v => v * 255);
         let cs = [0, 0, 0], cn = 0; for (let y = y0; y < y1; y += 3) { tot++; const i = (y * W + x) * 4; if (densAt(i) > 0.5) { cov++; const c = colAt(i); if (c) { cs[0] += c[0]; cs[1] += c[1]; cs[2] += c[2]; cn++; } } }
         err += cn ? dist(cs.map(v => v / cn), want) : 0.6; n++; }
       const e = err / Math.max(1, n), cv2 = cov / Math.max(1, tot); return { score: Math.round(100 * (0.4 * cv2 + 0.6 * (1 - clamp01(e * 3)))), coverage: Math.round(cv2 * 100), colour: Math.round((1 - clamp01(e * 3)) * 100) }; }
-    if (T.kind === 'final') {
-      const ln = lineScore((g) => { heart(g); banner(g); shine(g); }, 0.6);
-      const hm = maskOf(heart, true), bm = maskOf(banner, true), sm = maskOf(shine, true), red = ttHex(RED).map(v => v * 255), yel = ttHex(YEL).map(v => v * 255);
-      let rn = 0, rc = 0, rd = 0, bn = 0, bc = 0, bd = 0, sn = 0, sl = 0, lumUL = 0, nUL = 0, lumLR = 0, nLR = 0;
+    if (T.kind === 'piece') {
+      const ln = lineScore(T.lines, 0.6), regs = (T.regions || []).map(r => ({ ...r, m: maskOf(r.shape, true), want: ttHex(r.col).map(v => v * 255), n: 0, c: 0, d: 0 }));
+      const his = (T.hi || []).map(h => maskOf(h, true)), shIn = T.shade && maskOf(T.shade.in, true), inR = (b, X, Y) => X >= b[0] && X <= b[0] + b[2] && Y >= b[1] && Y <= b[1] + b[3];
+      let sn = 0, sl = 0, lumL = 0, nL = 0, lumD = 0, nD = 0;
       for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const i = (y * W + x) * 4, j = i + 3, d = densAt(i), c = colAt(i);
-        if (sm[j] > 128) { sn++; const hi = imgd.high.data[i + 3] / 255; if (hi > 0.4 || (c && (c[0] + c[1] + c[2]) / 765 > 0.75 && d > 0.3)) sl++; }
-        else if (bm[j] > 128) { bn++; if (d > 0.55) { bc++; if (c) bd += 1 - clamp01(dist(c, yel) * 3); } }
-        else if (hm[j] > 128) { rn++; if (d > 0.55) { rc++; if (c) rd += 1 - clamp01(dist(c, red) * 2.2); }
-          const X = x / mm, Y = y / mm, lum = c ? (1 - d) + d * (c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11) / 255 : 1;
-          if (X < 82 && Y < 58) { lumUL += lum; nUL++; } if (X > 98 && Y > 58) { lumLR += lum; nLR++; } } }
-      const redS = 0.6 * rc / Math.max(1, rn) + 0.4 * rd / Math.max(1, rc), banS = 0.6 * bc / Math.max(1, bn) + 0.4 * bd / Math.max(1, bc), hiS = sl / Math.max(1, sn);
-      const shade = clamp01(((lumUL / Math.max(1, nUL)) - (lumLR / Math.max(1, nLR))) / 0.12);
-      return { score: Math.round(0.35 * ln.score + 100 * (0.3 * redS + 0.15 * banS + 0.1 * hiS + 0.1 * shade)), lines: ln.score, red: Math.round(redS * 100), banner: Math.round(banS * 100), highlight: Math.round(hiS * 100), shading: Math.round(shade * 100) };
+        if (his.some(m => m[j] > 128)) { sn++; const hi = imgd.high.data[i + 3] / 255; if (hi > 0.4 || (c && (c[0] + c[1] + c[2]) / 765 > 0.75 && d > 0.3)) sl++; continue; }
+        for (let k = regs.length - 1; k >= 0; k--) { const r = regs[k]; if (r.m[j] <= 128) continue;   // later regions sit on top
+          r.n++; if (d > 0.55) { r.c++; if (c) r.d += 1 - clamp01(dist(c, r.want) * (r.tol || 2.6)); } break; }
+        if (shIn && shIn[j] > 128) { const X = x / mm, Y = y / mm, lum = c ? (1 - d) + d * (c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11) / 255 : 1;
+          if (inR(T.shade.light, X, Y)) { lumL += lum; nL++; } if (inR(T.shade.dark, X, Y)) { lumD += lum; nD++; } } }
+      const area = regs.reduce((t, r) => t + r.n, 0), fill = area ? regs.reduce((t, r) => t + r.n * (0.6 * r.c / Math.max(1, r.n) + 0.4 * r.d / Math.max(1, r.c)), 0) / area : null;
+      const hiS = his.length ? sl / Math.max(1, sn) : null, shade = T.shade ? clamp01(((lumL / Math.max(1, nL)) - (lumD / Math.max(1, nD))) / 0.12) : null;
+      const parts = [[0.35, ln.score / 100], [0.45, fill], [0.1, hiS], [0.1, shade]].filter(([, v]) => v != null), wsum = parts.reduce((t, [w]) => t + w, 0);
+      const out = { score: Math.round(100 * parts.reduce((t, [w, v]) => t + w * v, 0) / wsum), lines: ln.score };
+      if (fill != null) out.colour = Math.round(fill * 100); if (hiS != null) out.highlight = Math.round(hiS * 100); if (shade != null) out.shading = Math.round(shade * 100);
+      return out;
     }
     return { score: 0 };
   };
   const statOf = (a) => a.length ? { med: pct(a, 0.5), p10: pct(a, 0.1), p90: pct(a, 0.9) } : null;
   const exDone = () => {
-    const T = CHALL[EX.i], empty = !EX.cur?.strokes, sc = empty ? { score: 0 } : scoreOf(T);
+    const T = exList()[EX.i], empty = !EX.cur?.strokes, sc = empty ? { score: 0 } : scoreOf(T);
     let mx = 0, sum = 0, n = 0; for (const v of TR) if (v > 0.02) { mx = Math.max(mx, v); sum += v; n++; }
     const skin = Math.round(100 * (1 - clamp01((mx - 0.6) / 1.4))), blow = EX.cur?.blow || 0;
     const total = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5)));
@@ -1270,17 +1481,25 @@ TT.open = async (el, id) => {
     const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, thumb: th,
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
     EX.res = EX.res.filter(r => r.id !== T.id); EX.res.push(res); st.dirty = true; exBar(res);
+    if (EX.mode === 'ch') { const info = empty ? null : TT.aw.record(T, res); EX.info = info; save(true); chReport(T, res, info); }
   };
-  const exNext = () => { EX.cur = null; EX.i++; if (EX.i >= CHALL.length) { EX.done = true; EX.finished = Date.now(); exBar(); save(true); return exReport(); } exStart(true); save(true); };
+  const exNext = () => { EX.cur = null; EX.i++; if (EX.i >= exList().length) { EX.done = true; EX.finished = Date.now(); exBar(); save(true); return exReport(); } exStart(true); save(true); };
   function exBar(res) {
     const b = $('#tt-exbar'); if (!b) return; b.hidden = !EX;
     if (!EX) return;
     if (EX.done) { b.innerHTML = `<div class="tt-exh"><b>Exam finished</b></div><div class="row" style="gap:6px"><button class="btn small primary" data-ex="report">Report card</button></div>`; return; }
-    const T = CHALL[EX.i];
-    b.innerHTML = `<div class="tt-exh"><b>${EX.i + 1} / ${CHALL.length} · ${T.title}</b><span class="tt-exdots">${CHALL.map((c, j) => `<i class="${j < EX.i ? 'done' : j === EX.i ? 'on' : ''}"></i>`).join('')}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+    const T = exList()[EX.i];
+    if (EX.mode === 'ch') { const p = TT.aw.get().pb[T.id];
+      b.innerHTML = `<div class="tt-exh"><b>${T.title}</b>${ttStars(T.diff)}<span class="muted" style="font-size:11px">${p ? 'Best ' + p.best : ''}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+        <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
+        ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${ttMedal(res.total)?.[2] || 'No medal'}</span></div>
+          <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">Challenges</button><span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
+        : `<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">Challenges</button><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
+      return; }
+    b.innerHTML = `<div class="tt-exh"><b>${EX.i + 1} / ${exList().length} · ${T.title}</b><span class="tt-exdots">${exList().map((c, j) => `<i class="${j < EX.i ? 'done' : j === EX.i ? 'on' : ''}"></i>`).join('')}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
       <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
       ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number').map(([kk, v]) => `${kk} ${v}%`).join(' · ')} · skin ${res.skin}%${res.blowouts ? ` · ${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}` : ''}</span></div>
-        <div class="row" style="gap:6px"><button class="btn small" data-ex="retry">Try again</button><span style="flex:1"></span><button class="btn small primary" data-ex="next">${EX.i === CHALL.length - 1 ? 'Finish' : 'Next challenge'}</button></div>`
+        <div class="row" style="gap:6px"><button class="btn small" data-ex="retry">Try again</button><span style="flex:1"></span><button class="btn small primary" data-ex="next">${EX.i === exList().length - 1 ? 'Finish' : 'Next challenge'}</button></div>`
       : `<div class="row" style="gap:6px"><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
   }
   $('#tt-exbar').addEventListener('click', (e) => { const a = e.target.closest('[data-ex]')?.dataset.ex; if (!a) return;
@@ -1288,7 +1507,45 @@ TT.open = async (el, id) => {
     if (a === 'done') return exDone();
     if (a === 'retry') { if (!confirm('Start this challenge again on clean skin?')) return; return exStart(true); }
     if (a === 'next') return exNext();
-    if (a === 'report') return exReport(); });
+    if (a === 'report') return exReport();
+    if (a === 'hub') return location.hash = 'tattoo/challenges';
+    if (a === 'again') { EX.res = []; EX.info = null; return exStart(true); }
+    if (a === 'card') { const r = EX.res[EX.res.length - 1]; if (r) chReport(exList()[0], r, EX.info); } });
+  // The report card for one challenge: score and medal, against the personal best, its parts, and trophies won.
+  function chReport(T, res, info) {
+    const m = ttMedal(res.total), parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
+    const all = TT_CH.filter(c => ttHubOf(c) === ttHubOf(T)).sort((x, y) => x.diff - y.diff), next = all[all.indexOf(T) + 1];
+    const o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
+    o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade ${m ? m[1] : ''}"><b>${res.total}</b><div><h2 style="margin:0">${esc(T.title)}</h2>
+        <span class="muted">${ttStars(T.diff)} ${m ? m[2] + ' medal' : res.empty ? 'Nothing tattooed' : 'No medal yet: 60 for bronze'}</span></div>${ttMedalIco(m, 40)}</div>
+      ${info ? (info.newPb ? `<div class="tt-pb">New personal best! <span>was ${info.was}</span></div>` : info.first ? '<div class="tt-pb">First try: that\'s your score to beat.</div>' : `<div class="muted" style="margin:6px 0">Personal best: ${info.best}</div>`) : ''}
+      <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}
+        ${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${res.skin >= 80 ? 'var(--teal)' : res.skin >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${res.skin}</b></div>` : ''}</div>
+      ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}</p>` : ''}
+      <img class="tt-chshot" src="${res.thumb}" alt="">
+      ${info?.gained?.length ? `<div class="lbl">Trophies won</div><div class="tt-cabinet">${info.gained.map(t => `<div class="tt-trophy won">${ttCup(t.tier, 30)}<b>${esc(t.name)}</b><span>${esc(t.desc)}</span></div>`).join('')}</div>` : ''}
+      <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-cr="hub">Challenges</button><button class="btn" data-cr="save">Save card</button><span style="flex:1"></span>
+        ${next ? '<button class="btn" data-cr="next">Next challenge</button>' : ''}<button class="btn" data-cr="close">Close</button><button class="btn primary" data-cr="again">Try again</button></div></div>`;
+    o.onclick = async (e) => { const a = e.target.closest('[data-cr]')?.dataset.cr; if (!a) return;
+      if (a === 'close') return o.remove();
+      if (a === 'hub') { o.remove(); location.hash = 'tattoo/challenges'; return; }
+      if (a === 'next') { o.remove(); if (st.dirty) await save(true); return ttChStart(next.id); }
+      if (a === 'again') { o.remove(); EX.res = []; EX.info = null; return exStart(true); }
+      if (a === 'save') {   // a picture of the card: the attempt, the score, medal and best, for comparing later
+        const c = document.createElement('canvas'); c.width = 1080; c.height = 1350; const g = c.getContext('2d');
+        g.fillStyle = '#121617'; g.fillRect(0, 0, 1080, 1350);
+        const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = res.thumb; });
+        const s2 = Math.min(1000 / im.width, 700 / im.height); g.drawImage(im, (1080 - im.width * s2) / 2, 300, im.width * s2, im.height * s2);
+        g.fillStyle = '#e9e3d6'; g.font = "64px 'Pirata One', serif"; g.fillText(T.title, 50, 110);
+        g.font = '600 30px Inter, sans-serif'; g.fillStyle = '#9aa5a6'; g.fillText(`${'★'.repeat(T.diff)}  ·  ${new Date().toLocaleDateString()}${info ? '  ·  best ' + info.best : ''}`, 50, 165);
+        g.fillStyle = m ? { gold: '#e2b34a', silver: '#c9d1d6', bronze: '#c88a55' }[m[1]] : '#1fb5a8'; g.font = '800 120px Inter, sans-serif'; g.textAlign = 'right'; g.fillText(String(res.total), 1030, 140);
+        g.font = '700 30px Inter, sans-serif'; g.fillText(m ? m[2].toUpperCase() : 'NO MEDAL', 1030, 190); g.textAlign = 'left';
+        g.font = '500 28px Inter, sans-serif'; g.fillStyle = '#e9e3d6';
+        [...parts, ...(res.skin != null ? [['skin', res.skin]] : [])].forEach(([kk, v], n) => g.fillText(`${kk[0].toUpperCase() + kk.slice(1)}  ${v}`, 50 + (n % 2) * 520, 1080 + Math.floor(n / 2) * 50));
+        return saveFiles([await canvasFile(c, `${T.id}-${res.total}-${ymd(new Date())}.png`)]);
+      } };
+    document.body.appendChild(o);
+  }
   const CATS = [['line', 'Linework', 'Pull lines in one steady motion at your lining speed, with the same depth all the way; follow the stencil rather than going back over it.'],
     ['shade', 'Shading', 'Let speed do the fading: slow and pressed in where it should be dark, faster and lighter as it fades; keep a steady rhythm on a pendulum.'],
     ['pack', 'Packing', 'Overlap your passes so no skin shows between them, and stop at the line: solid and even, not more passes in one spot.'],
@@ -1298,7 +1555,7 @@ TT.open = async (el, id) => {
   const exCats = () => {
     const R = EX.res, by = (c) => R.filter(r => r.cat === c), avg = (a) => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : null, fin = R.find(r => r.id === 'final' && !r.empty);
     return { line: avg([...by('line').map(r => r.parts.score), ...(fin ? [fin.parts.lines] : [])]), shade: avg([...by('shade').map(r => r.parts.score), ...(fin ? [fin.parts.shading] : [])]),
-      pack: avg(by('pack').map(r => r.parts.score)), colour: avg([...by('colour').map(r => r.parts.score), ...(fin ? [Math.round((fin.parts.red + fin.parts.banner + fin.parts.highlight) / 3)] : [])]),
+      pack: avg(by('pack').map(r => r.parts.score)), colour: avg([...by('colour').map(r => r.parts.score), ...(fin ? [fin.parts.colour != null ? Math.round((fin.parts.colour * 2 + (fin.parts.highlight ?? fin.parts.colour)) / 3) : Math.round((fin.parts.red + fin.parts.banner + fin.parts.highlight) / 3)] : [])]),
       skin: avg(R.filter(r => !r.empty).map(r => r.skin)), blow: R.some(r => !r.empty) ? Math.max(0, 100 - R.reduce((x, r) => x + r.blowouts, 0) * 3) : null };
   };
   function exReport() {
@@ -1307,8 +1564,9 @@ TT.open = async (el, id) => {
     const ranked = CATS.filter(([kk]) => C[kk] != null).sort((a, b) => C[b[0]] - C[a[0]]);
     const good = ranked.filter(([kk]) => C[kk] >= 80).slice(0, 3), work = ranked.filter(([kk]) => C[kk] < 72).reverse().slice(0, 3);
     const R = EX.res, all = (f) => R.map(r => r.stats[f]?.med).filter(v => v != null);
+    if (EX.done && !EX.awarded) { EX.awarded = true; st.dirty = true; const got = TT.aw.exam(overall, grade); if (got.length) setTimeout(() => toast('Trophy won: ' + got.map(t => t.name).join(', '), 4000), 600); }
     const o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
-    o.innerHTML = `<div class="card tt-tcard tt-report"><div class="tt-grade"><b>${grade}</b><div><h2 style="margin:0">Apprentice exam</h2><span class="muted">Overall ${overall} / 100 · ${R.length} of ${CHALL.length} challenges</span></div></div>
+    o.innerHTML = `<div class="card tt-tcard tt-report"><div class="tt-grade"><b>${grade}</b><div><h2 style="margin:0">Apprentice exam</h2><span class="muted">Overall ${overall} / 100 · ${R.length} of ${exList().length} challenges</span></div></div>
       <div class="tt-cats">${CATS.map(([kk, n]) => C[kk] == null ? '' : `<div><span>${n}</span><i><s style="width:${C[kk]}%;background:${C[kk] >= 80 ? 'var(--teal)' : C[kk] >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${C[kk]}</b></div>`).join('')}</div>
       ${good.length ? `<div class="lbl">You excel at</div><ul class="tt-list">${good.map(([, n]) => `<li><b>${n}</b></li>`).join('')}</ul>` : ''}
       ${work.length ? `<div class="lbl">Needs work</div><ul class="tt-list">${work.map(([, n, tip]) => `<li><b>${n}.</b> ${tip}</li>`).join('')}</ul>` : ''}
@@ -1341,6 +1599,20 @@ function ttStyle() {
   if (document.getElementById('tt-css')) return;
   const s = document.createElement('style'); s.id = 'tt-css';
   s.textContent = `
+.tt-hubsum { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink2); align-items: center; } .tt-hubsum span { display: inline-flex; gap: 4px; align-items: center; } .tt-hubsum b { color: var(--ink); }
+.tt-cabinet { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.tt-trophy { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; padding: 8px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); opacity: .55; }
+.tt-trophy.won { opacity: 1; } .tt-trophy svg { grid-row: span 2; } .tt-trophy b { font-size: 12px; } .tt-trophy span { font-size: 10px; color: var(--ink2); line-height: 1.25; }
+.tt-cup, .tt-medal { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.tt-cup.gold, .tt-medal.gold { stroke: #e2b34a; } .tt-cup.silver, .tt-medal.silver { stroke: #c9d1d6; } .tt-cup.bronze, .tt-medal.bronze { stroke: #c88a55; } .tt-cup.locked { stroke: var(--ink2); }
+.tt-chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.tt-chc { display: flex; flex-direction: column; text-align: left; padding: 0; border-radius: 12px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: inherit; }
+.tt-chc:hover { border-color: var(--teal); } .tt-chimg { aspect-ratio: 4 / 3; overflow: hidden; background: #1b1e1f; } .tt-chimg img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.tt-chmeta { display: flex; flex-direction: column; gap: 2px; padding: 8px; font-size: 12px; } .tt-chmeta b { font-size: 13px; } .tt-chpb { display: inline-flex; gap: 4px; align-items: center; }
+.tt-stars { display: inline-flex; gap: 2px; margin-right: 4px; vertical-align: middle; } .tt-stars i { width: 8px; height: 8px; transform: rotate(45deg); background: var(--line); display: inline-block; } .tt-stars i.on { background: #e2b34a; }
+.tt-chrep .tt-grade.gold b { color: #e2b34a; } .tt-chrep .tt-grade.silver b { color: #c9d1d6; } .tt-chrep .tt-grade.bronze b { color: #c88a55; } .tt-chrep .tt-grade { align-items: center; }
+.tt-pb { margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: rgba(31,181,166,.14); color: var(--teal); font-weight: 700; } .tt-pb span { color: var(--ink2); font-weight: 400; font-size: 12px; margin-left: 6px; }
+.tt-chshot { display: block; max-width: 100%; max-height: 220px; margin: 8px auto; border-radius: 10px; }
 #main:has(.tt-ed) { padding: 0; overflow: hidden; } #main:has(.tt-ed) #topbar { display: none; } #view:has(.tt-ed) { max-width: none; height: 100%; animation: none; } #tt:has(.tt-ed) { height: 100%; }
 .tt-stage { background: #1b1e1f; touch-action: none; } .tt-stage canvas#tt-cv { position: absolute; inset: 0; touch-action: none; cursor: none; }
 #tt-cur { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
