@@ -830,10 +830,24 @@ TT.open = async (el, id) => {
   const meterEl = $('#tt-meter');
   // Thinner needles cut deeper for the same push: #08 starts blowing out sooner (and more often) than #12.
   function blowD() { return 0.8 - (0.3 - (feel.size || 0.3)) * 1.2; }
+  /* Check: the cursor becomes a circle that reads the skin inside it (its average wear as a score out of 100,
+     and how worked the worst spot is) instead of tattooing; the slider sets the circle's size in mm. */
+  st.checkR ??= 6;
+  const chkRow = () => `<div class="tt-chkrow"><button class="${st.check ? 'on' : ''}" data-chk data-tip="Check the skin: the cursor reads the skin inside its circle instead of tattooing">Check</button>
+    <input type="range" min="2" max="30" step="1" value="${st.checkR}" data-chkr aria-label="Check circle size" ${st.check ? '' : 'hidden'}><em>${st.check ? st.checkR + ' mm' : ''}</em></div>`;
+  meterEl.addEventListener('click', (e) => { if (!e.target.closest('[data-chk]')) return; st.check = !st.check; meterBuild(); meter(lastM); drawCur(); });
+  meterEl.addEventListener('input', (e) => { if (!e.target.matches('[data-chkr]')) return; st.checkR = +e.target.value; e.target.nextElementSibling.textContent = st.checkR + ' mm'; drawCur(); });
+  // Skin inside a circle round page point p (radius in page px): average wear, the worst spot, and a score.
+  const skinCheck = (p, R) => { let sum = 0, n = 0, mx = 0; const r2 = (R / TS) ** 2, cx0 = p.x / TS, cy0 = p.y / TS;
+    for (let y = Math.max(0, Math.floor(cy0 - R / TS)); y <= Math.min(th - 1, Math.ceil(cy0 + R / TS)); y++)
+      for (let x2 = Math.max(0, Math.floor(cx0 - R / TS)); x2 <= Math.min(tw - 1, Math.ceil(cx0 + R / TS)); x2++) {
+        if ((x2 + 0.5 - cx0) ** 2 + (y + 0.5 - cy0) ** 2 > r2) continue; const v = TR[y * tw + x2]; sum += v; n++; if (v > mx) mx = v; }
+    const avg = n ? sum / n : 0; return { avg, mx, score: Math.round(100 * (1 - Math.max(0, Math.min(1, (avg - 0.3) / 1.6)))) }; };
+  const skinWord = (v) => v < 0.3 ? 'fresh' : v < 0.8 ? 'red' : v < 1.4 ? 'swollen' : 'overworked';
   const meterBands = () => { const d = blowD(); MTR[0][5] = d; MTR[0][6] = d + 0.12; };
   const meterBuild = () => { meterBands(); meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
     const badZ = low ? `left:0;width:${P(bad)}%` : `left:${P(bad)}%;right:0`;
-    return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join(''); };
+    return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('') + chkRow(); };
   meterBuild();
   const meter = (m) => { for (const [key, , lo, hi, g0, g1, bad, fmt, low] of MTR) { const v = m[key], row = meterEl.querySelector(`[data-m="${key}"]`);
     let z = v >= g0 && v <= g1 ? 'ok' : (low ? v < bad : v > bad) ? 'bad' : 'warn';
@@ -872,6 +886,14 @@ TT.open = async (el, id) => {
     if (!curAt || pinch || pan) return;
     const s = k * mm, a = pageTurn(pen?.a || 0, curAt.ev) + st.rot, ca = Math.cos(a), sa = Math.sin(a), rr = Math.max(1.2, feel.size / 2 * s * 0.8);
     cux.setTransform(dpr, 0, 0, dpr, 0, 0); cux.lineWidth = 1;
+    if (st.check) { const R = st.checkR * s, c = skinCheck(fromScreen(curAt.x, curAt.y), st.checkR * mm), col = c.score >= 80 ? '#6fe39a' : c.score >= 55 ? '#f2c14e' : '#ff7a66';
+      cux.beginPath(); cux.arc(curAt.x, curAt.y, R, 0, 7); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.5)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = col; cux.stroke();
+      cux.beginPath(); cux.arc(curAt.x, curAt.y, 1.5, 0, 7); cux.fillStyle = col; cux.fill();
+      const tx = curAt.x + R * 0.72 + 8, ty = curAt.y - R * 0.72 - 8, l1 = `Skin ${c.score}`, l2 = `${skinWord(c.avg)} · worst ${skinWord(c.mx)}`;
+      cux.font = '700 15px Inter, sans-serif'; const w = Math.max(cux.measureText(l1).width, (cux.font = '600 11px Inter, sans-serif', cux.measureText(l2).width)) + 16;
+      cux.fillStyle = 'rgba(15,18,19,.88)'; cux.beginPath(); cux.roundRect?.(tx, ty - 34, w, 40, 8) ?? cux.rect(tx, ty - 34, w, 40); cux.fill();
+      cux.fillStyle = col; cux.font = '700 15px Inter, sans-serif'; cux.fillText(l1, tx + 8, ty - 16); cux.fillStyle = '#cfd6d8'; cux.font = '600 11px Inter, sans-serif'; cux.fillText(l2, tx + 8, ty - 2);
+      return; }
     if (isMag()) {   // the row's line, so its angle reads even when the needles are tiny on screen
       const us = lay.map(n => n.u), u0 = Math.min(...us) * s - 6, u1 = Math.max(...us) * s + 6;
       cux.strokeStyle = 'rgba(31,182,166,.9)'; cux.lineWidth = 2; cux.beginPath();
@@ -900,6 +922,7 @@ TT.open = async (el, id) => {
     const touch = e.pointerType === 'touch';
     if (space || e.button === 1 || (touch && cal.penOnly)) { pan = { x: e.clientX, y: e.clientY, vx, vy }; return; }
     if (e.button !== 0 && e.pointerType === 'mouse') return;
+    if (st.check) return drawCur(e);   // checking the skin, not tattooing
     if (strokeStart(e)) strokeMove(e);
   });
   cv.addEventListener('pointermove', (e) => {
@@ -912,7 +935,7 @@ TT.open = async (el, id) => {
       st.rot = rot; pinTo(pinch.p, mx, my); st.dirty = true; return paint(); }
     if (pan) { vx = pan.vx + e.clientX - pan.x; vy = pan.vy + e.clientY - pan.y; return paint(); }
     if (pen && e.pointerId === pen.id) strokeMove(e);
-    if (e.pointerType !== 'touch') { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
+    if (e.pointerType !== 'touch' || (st.check && !pan)) { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
     calLive(e);
   });
   const up = (e) => { pts.delete(e.pointerId); if (pinch && pts.size < 2) pinch = null; pan = null; if (pen && e.pointerId === pen.id) strokeEnd(); };
@@ -1846,6 +1869,9 @@ function ttStyle() {
 @keyframes ttFlag { 0% { opacity: 0; transform: translate(-50%, 8px); } 8%, 80% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 .tt-meter { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5; width: min(300px, calc(100% - 220px)); min-width: 180px; padding: 6px 10px; border-radius: 12px;
   background: rgba(15,18,19,.82); display: grid; gap: 3px; }
+.tt-chkrow { display: flex; align-items: center; gap: 8px; margin-top: 3px; } .tt-chkrow em { font: 600 10px var(--ui); color: var(--ink2); font-style: normal; min-width: 36px; }
+.tt-chkrow button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 700 11px var(--ui); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.tt-chkrow button.on { background: rgba(31,182,166,.25); color: var(--teal); border-color: var(--teal); } .tt-chkrow input { flex: 1; accent-color: var(--teal); }
 .tt-mr { display: grid; grid-template-columns: 38px 1fr 66px; align-items: center; gap: 6px; font: 600 10px var(--ui); color: var(--ink2); }
 .tt-mr em { font-style: normal; text-align: right; } .tt-mr.ok em { color: #6fe39a; } .tt-mr.warn em { color: #f2c14e; } .tt-mr.bad em { color: #ff7a66; }
 .tt-mb { position: relative; height: 8px; border-radius: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
