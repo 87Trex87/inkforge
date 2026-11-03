@@ -1796,13 +1796,15 @@ const VIEWS = {
           ${[['lines', 'Lines'], ['sketch', 'Lines + shade'], ['solid', 'Solid']].map(([k, l]) => `<button data-m="${k}" class="${ST.p.mode === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}
         </div>
         <div id="st-sliders"></div>
-        <div class="row st-export">
+        <div class="row st-export" style="flex-wrap:wrap">
           <label class="field" style="margin:0;flex:0 0 120px"><span>Print width ${help('Real size on paper in centimetres. Height follows the image proportions.')}</span>
             <input class="in" id="st-cm" type="number" inputmode="decimal" min="1" max="300" step="0.5" value="${ST.cm}"></label>
           <button class="btn" id="st-print" style="align-self:flex-end">Print</button>
           <button class="btn" id="st-split" style="align-self:flex-end" data-tip="Too big for one sheet? Split it over several pages to tape together">Split</button>
           <button class="btn" id="st-keep" style="align-self:flex-end" data-tip="Keep the stencil and the picture it was made from in Portfolio › Stencils">Keep</button>
-          <button class="btn primary" id="st-save" style="align-self:flex-end;flex:1">Save / share</button>
+          <button class="btn" id="st-sim" style="align-self:flex-end" data-tip="Open a new piece in the tattoo simulator with this stencil on its stencil layer, at its print size">Simulator</button>
+          <button class="btn" id="st-share" style="align-self:flex-end">Share</button>
+          <button class="btn primary" id="st-save" style="align-self:flex-end;flex:1">Save to device</button>
         </div>
       </div>` : `
       <label class="card st-pick">
@@ -1834,7 +1836,7 @@ const VIEWS = {
       $('#st-autocrop').onclick = () => stAutoCrop();
       stCropWire();
       $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(300, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); });
-      $('#st-save').onclick = stExport;
+      $('#st-save').onclick = () => stExport(false); $('#st-share').onclick = () => stExport(true); $('#st-sim').onclick = stToSim;
       $('#st-keep').onclick = stKeep;
       $('#st-print').onclick = stPrint;
       $('#st-split').onclick = async () => { if (!ST.mask) return; await SP.open(await stBlob(), `stencil-${ymd(new Date())}`, ST.cm); };
@@ -6817,13 +6819,28 @@ async function stBlob() {
   return c.convertToBlob({ type: 'image/png' });
 }
 
-async function stExport() {
+async function stExport(share) {
   if (!ST.mask) return;
   const file = new File([await stBlob()], `stencil-${ymd(new Date())}.png`, { type: 'image/png' });
   try {
-    if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Stencil' });
+    if (share && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Stencil' });
     else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
   } catch (e) { if (e.name !== 'AbortError') toast('Could not save: ' + e.message); }
+}
+
+// A new simulator piece with this stencil on its stencil layer at print size, centred with a margin of skin around it.
+async function stToSim() {
+  if (!ST.mask) return;
+  const sw = ST.cm, sh = ST.cm * ST.h / ST.w, pad = 3;
+  const w = Math.min(60, Math.max(3, Math.ceil(sw + pad * 2))), h = Math.min(60, Math.max(3, Math.ceil(sh + pad * 2)));
+  const R = Math.min(80, 2400 / Math.max(w, h)), W = Math.round(w * R), H = Math.round(h * R);   // the simulator's page px per cm
+  const k = Math.min(1, w / (sw + pad * 2), h / (sh + pad * 2)), dw = sw * R * k, dh = sh * R * k;   // shrink only past the 60 cm page limit
+  const src = new OffscreenCanvas(ST.w, ST.h); src.getContext('2d').putImageData(stImage(ST.mask), 0, 0);
+  const c = new OffscreenCanvas(W, H), g = c.getContext('2d'); g.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  const ref = await Media.save(await c.convertToBlob({ type: 'image/png' }), 'png');
+  await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, stencil_ref) VALUES (?, ?, ?, ?, ?)',
+    [ST.from || `Piece ${ymd(new Date())}`, w, h, Settings.get('tt_skin', '#e2b493'), ref]);
+  location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
 }
 
 // Prints the stencil at its real size (width in cm) on a blank page.
