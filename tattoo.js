@@ -812,7 +812,7 @@ TT.open = async (el, id) => {
       const v = d * k / (96 / 25.4) / dt;   // the hand's speed on the screen, mm per second (zoom doesn't change it)
       pen.speed = pen.speed ? pen.speed * 0.7 + v * 0.3 : v; pen.a = Math.atan2(dy, dx); pen.trav = (pen.trav || 0) + d / mm;
       // fast lines: speed no longer thins the ink or spaces the punctures out; quick strokes only taper a touch
-      const fast = CHEAT && st.fast && st.tool !== 'erase', tilt = tiltOf(ev), depth = fast ? depthOf(pNorm(ev), Math.min(pen.speed, 15), tilt) * (1 - Math.min(0.3, pen.speed / 900)) : depthOf(pNorm(ev), pen.speed, tilt);
+      const fast = CHEAT && st.fast,   /* the laser too: a quick sweep clears a solid path */ tilt = tiltOf(ev), depth = fast ? depthOf(pNorm(ev), Math.min(pen.speed, 15), tilt) * (1 - Math.min(0.3, pen.speed / 900)) : depthOf(pNorm(ev), pen.speed, tilt);
       if (CHEAT) { pen.dsum = (pen.dsum || 0) + depth; pen.dn = (pen.dn || 0) + 1; }
       if (st.tool !== 'erase' && pen.cx.pig && ev.pointerType !== 'mouse') {   // a mouse has no pressure to land with
         /* Landing like a plane: the needle should come in on the move and sink in gradually. Over the first mm the
