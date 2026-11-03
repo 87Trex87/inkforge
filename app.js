@@ -883,10 +883,12 @@ const VIEWS = {
       $('#f-cancel').onclick = () => history.back();
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (f.dataset.saving) return;
         const d = Object.fromEntries(new FormData(f));
         for (const k in d) d[k] = d[k].trim();
         if (!d.first_name) return toast('First name is required.');
         if (d.phone) { const ph = intlPhone(d.phone); if (ph === null) return toast(phoneBad()); d.phone = ph; }
+        f.dataset.saving = '1';   // a double tap must not add the client twice
         d.instagram = d.instagram.replace(/^@/, '');
         d.tags = d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ');
         if (newPhoto) photoRef = await Media.save(newPhoto, 'jpg');
@@ -2213,7 +2215,8 @@ const VIEWS = {
       <details class="card qc-sec" data-sec="backup" ${SET_OPEN.has('backup') ? 'open' : ''}><summary><h2>Backup and storage ${help('A backup holds everything: clients, bookings, forms, portfolio, stock, rules, reel templates, settings and all photos. Save one regularly, e.g. to cloud storage.')}</h2></summary>
         <div id="last-backup" class="muted" style="margin-bottom:12px"></div>
         <div class="row">
-          <button class="btn primary" id="b-export" data-tip="Save this workspace as a file: a backup, or to open it on another device">Save workspace file</button>
+          <button class="btn primary" id="b-export" data-tip="Save this workspace as a file on this device: a backup, or to open it on another device">Save workspace file</button>
+          <button class="btn" id="b-share" data-tip="Send the workspace file to another app, e.g. Google Drive or email">Share</button>
           <button class="btn" id="b-merge" data-tip="Add another backup's data to yours, e.g. from another artist or device. Pick which sections; duplicates are skipped.">Merge from file…</button>
           ${WS.list.length > 1 ? '<button class="btn" id="b-mergews" data-tip="Copy sections from another workspace on this device into this one, e.g. to update every artist from a test workspace">Merge from workspace…</button>' : ''}
           <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
@@ -2285,7 +2288,9 @@ const VIEWS = {
         await Gcal.disconnect(); renderGcalStatus();
       };
       renderGcalStatus();
-      $('#b-export').onclick = exportBackup;
+      // The workspace itself, not the click event, is what gets saved (passing the event saved nothing).
+      $('#b-export').onclick = () => exportBackup(WS.cur).catch(err => toast('Could not save: ' + err.message, 5000));
+      $('#b-share').onclick = () => exportBackup(WS.cur, true).catch(err => toast('Could not share: ' + err.message, 5000));
       $('#b-import').onclick = () => $('#import-file').click();
       $('#b-merge').onclick = () => $('#merge-file').click();
       const mws = $('#b-mergews');
@@ -2748,28 +2753,30 @@ const BACKUP_MAGIC = 'INKFORGE1';
 // The open workspace by default; any other workspace's file can be built without opening it.
 async function buildBackup(w = WS.cur) {
   const db = await DB.exportBytes(w === WS.cur ? undefined : WS.dbPath(w));
+  // Media files go in as File objects: the browser reads them when the backup is written out, so photos and videos
+  // are never all held in memory at once (a workspace with reels can hold hundreds of MB).
   const media = [];
-  for await (const [name, h] of (await Media.dir(w)).entries()) {
-    if (h.kind === 'file') media.push({ name, bytes: new Uint8Array(await (await h.getFile()).arrayBuffer()) });
-  }
-  const manifest = new TextEncoder().encode(JSON.stringify({ v: 1, name: w?.name, db: db.length, media: media.map(m => ({ name: m.name, len: m.bytes.length })) }));
+  for await (const [name, h] of (await Media.dir(w)).entries()) if (h.kind === 'file') media.push({ name, file: await h.getFile() });
+  const manifest = new TextEncoder().encode(JSON.stringify({ v: 1, name: w?.name, db: db.length, media: media.map(m => ({ name: m.name, len: m.file.size })) }));
   const head = new Uint8Array(BACKUP_MAGIC.length + 4);
   head.set(new TextEncoder().encode(BACKUP_MAGIC));
   new DataView(head.buffer).setUint32(BACKUP_MAGIC.length, manifest.length);
-  return new Blob([head, manifest, db, ...media.map(m => m.bytes)]);
+  return new Blob([head, manifest, db, ...media.map(m => m.file)]);
 }
-async function restoreBackup(bytes) {
-  const magic = new TextDecoder().decode(bytes.slice(0, 15));
-  if (magic === 'SQLite format 3') return DB.importBytes(bytes);
+// `src`: the backup file (or its bytes). Read a piece at a time, so a big backup never sits in memory whole.
+async function restoreBackup(src) {
+  const blob = src instanceof Blob ? src : new Blob([src]), part = async (a, b) => new Uint8Array(await blob.slice(a, b).arrayBuffer());
+  const head = await part(0, BACKUP_MAGIC.length + 4), magic = new TextDecoder().decode(head.slice(0, 15));
+  if (magic === 'SQLite format 3') return DB.importBytes(await part(0, blob.size));
   if (!magic.startsWith(BACKUP_MAGIC)) throw new Error('That file is not an InkForge backup.');
-  const mlen = new DataView(bytes.buffer, bytes.byteOffset).getUint32(BACKUP_MAGIC.length);
+  const mlen = new DataView(head.buffer).getUint32(BACKUP_MAGIC.length);
   let off = BACKUP_MAGIC.length + 4;
-  const man = JSON.parse(new TextDecoder().decode(bytes.subarray(off, off + mlen))); off += mlen;
-  const db = bytes.slice(off, off + man.db); off += man.db;
+  const man = JSON.parse(new TextDecoder().decode(await part(off, off + mlen))); off += mlen;
+  const db = await part(off, off + man.db); off += man.db;
   const dir = await Media.dir();
   for (const m of man.media) {
     const w = await (await dir.getFileHandle(m.name, { create: true })).createWritable();
-    await w.write(bytes.subarray(off, off + m.len)); await w.close(); off += m.len;
+    await w.write(blob.slice(off, off + m.len)); await w.close(); off += m.len;
   }
   for (const u of Media.urls.values()) URL.revokeObjectURL(u);
   Media.urls.clear();
@@ -2987,19 +2994,14 @@ async function openMerge(from) {
   };
 }
 
-async function exportBackup(w = WS.cur) {
+// Saves the workspace file to the device (Downloads), or `share`s it to another app (falling back to saving).
+async function exportBackup(w = WS.cur, share = false) {
+  if (!w?.id) w = WS.cur;
   const bytes = await buildBackup(w);
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   const name = `${(w?.name || 'InkForge').replace(/[^\w-]+/g, '_')}-${stamp}.inkforge`;
   const file = new File([bytes], name, { type: 'application/octet-stream' });
-  // Phones: share sheet (save to Files / Drive). Desktop: download.
-  if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'InkForge backup' }); }
-    catch (e) { if (e.name === 'AbortError') return; throw e; }
-  } else {
-    const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  }
+  await (share ? shareFiles([file], 'InkForge backup') : saveFiles([file]));
   if (w === WS.cur && booted) {
     await Settings.set('last_backup', new Date().toISOString());
     if (location.hash === '#settings') render();
@@ -3010,12 +3012,11 @@ async function exportBackup(w = WS.cur) {
 $('#import-file').addEventListener('change', async (e) => {
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
-  const bytes = new Uint8Array(await f.arrayBuffer());
-  const magic = new TextDecoder().decode(bytes.slice(0, 15));
+  const magic = new TextDecoder().decode(new Uint8Array(await f.slice(0, 15).arrayBuffer()));
   if (magic !== 'SQLite format 3' && !magic.startsWith(BACKUP_MAGIC)) return toast('That file is not an InkForge backup.');
   if (!confirm(`Restore "${f.name}"?\n\nEverything currently on this device will be replaced. This cannot be undone.`)) return;
   try {
-    await restoreBackup(bytes);
+    await restoreBackup(f);
     await migrate(); Settings.cache = {}; await Settings.load();
     toast('Backup restored.'); render();
   } catch (err) { toast('Restore failed: ' + err.message, 5000); }
