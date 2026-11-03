@@ -753,6 +753,11 @@ TT.open = async (el, id) => {
     }
     for (const nd of lay) { const px = curAt.x + nd.u * s * -sa + nd.v * s * ca, py = curAt.y + nd.u * s * ca + nd.v * s * sa;
       cux.beginPath(); cux.arc(px, py, rr, 0, 7); cux.fillStyle = 'rgba(255,255,255,.35)'; cux.fill(); cux.strokeStyle = 'rgba(0,0,0,.55)'; cux.stroke(); }
+    // What's loaded: a drop of the needle's ink beside the cursor (paler when diluted), hidden while tattooing.
+    if (!pen && st.ink.v > 0.01) { const dx = curAt.x + Math.max(14, rr + 10), dy = curAt.y - Math.max(14, rr + 10);
+      cux.beginPath(); cux.moveTo(dx, dy - 9); cux.bezierCurveTo(dx + 7, dy - 1, dx + 6, dy + 6, dx, dy + 6); cux.bezierCurveTo(dx - 6, dy + 6, dx - 7, dy - 1, dx, dy - 9); cux.closePath();
+      cux.fillStyle = '#fff'; cux.fill(); cux.globalAlpha = Math.max(0.12, st.ink.s ?? 1); cux.fillStyle = ttToHex(st.ink.c); cux.fill(); cux.globalAlpha = 1;
+      cux.lineWidth = 1.5; cux.strokeStyle = 'rgba(0,0,0,.7)'; cux.stroke(); }
   };
   cv.addEventListener('pointerleave', () => { curAt = null; drawCur(); });
 
@@ -808,6 +813,7 @@ TT.open = async (el, id) => {
   const drawTray = () => {
     tray.innerHTML = `<button class="tt-set" data-set data-tip="Switch between colour inks and grey wash" aria-label="Ink set">${st.wash ? 'Wash' : 'Inks'}</button>
       <button class="tt-cup" data-rinse data-tip="Rinse: clean the needle" aria-label="Rinse"></button>
+      <button class="tt-cup tt-dil" data-dilute data-tip="Dilute: hold to thin the ink on the needle (keeps its colour, only lighter)" aria-label="Dilute"></button>
       ${st.wash ? TT_WASH.map(([n, s], i) => `<button class="tt-cap tt-wcap" data-wash="${i}" style="--c:rgba(20,20,20,${s})" data-tip="${n} wash" aria-label="${n} wash"><i></i></button>`).join('')
         : st.caps.map((c, i) => `<button class="tt-cap" data-cap="${i}" style="--c:${c}" aria-label="Ink cap"><i></i></button>`).join('')}
       <button class="tt-load" id="tt-load" data-tip="Ink on the needle" aria-label="Ink on the needle"><i></i><span></span></button>
@@ -815,14 +821,16 @@ TT.open = async (el, id) => {
     drawNeedleInk();
   };
   const drawNeedleInk = () => { const b = $('#tt-load'); if (!b) return; b.querySelector('i').style.background = st.ink.v > 0.01 ? ttToHex(st.ink.c) : 'transparent'; b.querySelector('i').style.opacity = st.ink.s ?? 1;
-    b.style.setProperty('--v', Math.round(st.ink.v * 100) + '%'); b.querySelector('span').textContent = Math.round(st.ink.v * 100) + '%'; };
+    b.style.setProperty('--v', Math.round(st.ink.v * 100) + '%'); b.querySelector('span').textContent = Math.round(st.ink.v * 100) + '%';
+    b.dataset.tip = st.ink.v > 0.01 ? `Ink on the needle: ${Math.round(st.ink.v * 100)}%, strength ${Math.round((st.ink.s ?? 1) * 100)}%` : 'The needle is dry'; drawCur(); };
   let dip = null;
   tray.addEventListener('pointerdown', (e) => {
-    const cap = e.target.closest('[data-cap], [data-wash]'); if (!cap) return;
-    const i = +(cap.dataset.cap ?? cap.dataset.wash), ws = cap.dataset.wash != null ? TT_WASH[i][1] : 1;
-    if (st.capEdit && !st.wash) { const inp = document.createElement('input'); inp.type = 'color'; inp.value = st.caps[i];
+    const cap = e.target.closest('[data-cap], [data-wash], [data-dilute]'); if (!cap) return;
+    // The dilute cup is clear water: it adds volume of the needle's own colour at no strength, so a hold thins it.
+    const dil = cap.dataset.dilute != null, i = +(cap.dataset.cap ?? cap.dataset.wash ?? 0), ws = dil ? 0 : cap.dataset.wash != null ? TT_WASH[i][1] : 1;
+    if (st.capEdit && !st.wash && !dil) { const inp = document.createElement('input'); inp.type = 'color'; inp.value = st.caps[i];
       inp.oninput = () => { st.caps[i] = inp.value; st.dirty = true; drawTray(); }; inp.click(); return; }
-    e.preventDefault(); const col = ws < 1 ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1; SS.dips++;
+    e.preventDefault(); const col = dil ? st.ink.c : ws < 1 ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1; SS.dips++;
     const step = (now) => { if (!dip) return; const dt = Math.min(0.1, (now - t0) / 1000); t0 = now;
       const a = dt * 0.9, frac = a / (st.ink.v + a);   // ink added this moment, and how much of the mix it is
       const wet = st.ink.v > 0.005; st.ink.c = wet ? ttMix(st.ink.c, col, frac) : col; st.ink.s = wet ? (st.ink.s ?? 1) * (1 - frac) + ws * frac : ws; st.ink.v = Math.min(1, st.ink.v + a);
@@ -1637,6 +1645,8 @@ function ttStyle() {
 .tt-cap i { position: absolute; inset: 5px; border-radius: 50%; background: var(--c); box-shadow: inset 0 2px 4px rgba(0,0,0,.35); }
 .tt-cap.dip { transform: scale(.92); outline: 3px solid var(--teal); outline-offset: 2px; }
 .tt-cup { width: 34px; height: 38px; flex: none; border-radius: 6px 6px 12px 12px; border: 2px solid #9fb3b8; background: linear-gradient(transparent 35%, rgba(150,200,220,.45) 35%); cursor: pointer; padding: 0; }
+.tt-cup.tt-dil { border-color: #b9c4c7; background: linear-gradient(transparent 35%, rgba(235,240,242,.3) 35%); }
+.tt-cup.tt-dil.dip { transform: scale(.92); outline: 3px solid var(--teal); outline-offset: 2px; }
 .tt-load { width: 46px; height: 46px; flex: none; border-radius: 50%; border: 0; padding: 0; position: relative; cursor: default; display: grid; place-items: center;
   background: conic-gradient(var(--teal) var(--v, 0%), rgba(255,255,255,.12) 0); }
 .tt-load i { position: absolute; inset: 5px; border-radius: 50%; border: 2px solid #222; } .tt-load span { position: relative; font: 700 9px var(--ui); color: #fff; text-shadow: 0 1px 2px #000; }
