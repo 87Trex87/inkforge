@@ -4192,7 +4192,8 @@ function qzDraw() {
         <div class="lbl" style="margin-top:12px">Send to the client</div>
         <div class="qz-acts">
           <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print / PDF</button>
-          <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture">Image</button>
+          <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, saved to this device">Save image</button>
+          <button class="btn" id="qz-imgsh" data-tip="The quote sheet as a picture, to send in any app">Share image</button>
           <button class="btn" id="qz-share" data-tip="A short text version for a chat">Text</button>
           <button class="btn" id="qz-link" data-tip="A web page the client opens on their phone: they read the quote, pick a day and time and reply to you on WhatsApp. Nothing to install.">Link</button>
         </div>
@@ -4321,7 +4322,8 @@ function qzBind(el) {
     if (t.closest('#qz-share')) return qzShare();
     if (t.closest('#qz-link')) return qzLink();
     if (t.closest('#qz-print')) return qzPrint();
-    if (t.closest('#qz-img')) return qzSaveImage();
+    if (t.closest('#qz-img')) return qzSaveImage(false);
+    if (t.closest('#qz-imgsh')) return qzSaveImage(true);
   };
   // Sliders: update the value label at once, redraw the preview parts when the finger lifts.
   el.oninput = (e) => {
@@ -4377,7 +4379,12 @@ function qzTouch(redraw) {
   if (redraw) { const f = $('.qz-flag'); if (f) f.remove(); }
 }
 
-async function qzSaveQuote(quiet) {
+let qzSaving = null;
+function qzSaveQuote(quiet) {
+  if (qzSaving) return qzSaving;   // a save already running: wait for it rather than storing the quote twice
+  return (qzSaving = qzSaveNow(quiet).finally(() => { qzSaving = null; }));
+}
+async function qzSaveNow(quiet) {
   const r = qCalc(), data = {};
   for (const k of QZ_KEYS) data[k] = QZ[k];
   let ref = QZ.designRef;
@@ -4820,20 +4827,14 @@ async function qzAvPanel() {
     <p class="muted" style="font-size:12px;margin:6px 0 0"><b>${count('open')}</b> open · <b>${count('part')}</b> with some time · hidden days and your Holds show as booked.</p>`;
 }
 
-async function qzSaveImage() {
+async function qzSaveImage(share) {
   const { cv, ref } = qzMulti() ? await qzComboSheet() : await qzSheet();
   const tag = QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : '';
   const pages = [[cv, `Quote-${ref}${tag}.png`]];
   if (qzHasDesign()) pages.push([await designPage(), `Design-${ref}${tag}.png`]);
   if (QZ.withAvail) pages.push([(await qzAvailSheet()).cv, `Open-appointments-${ref}${tag}.png`]);
-  const files = await Promise.all(pages.map(async ([c, n]) => new File([await new Promise(res => c.toBlob(res, 'image/png'))], n, { type: 'image/png' })));
-  try {
-    if (navigator.canShare?.({ files })) await navigator.share({ files, title: 'Tattoo quote' });
-    else {
-      for (const file of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
-      toast(files.length > 1 ? `Quote saved (${files.length} pages).` : 'Quote image saved.');
-    }
-  } catch (e) { if (e.name !== 'AbortError') toast('Could not save: ' + e.message); }
+  const files = await Promise.all(pages.map(([c, n]) => canvasFile(c, n)));
+  return share ? shareFiles(files, 'Tattoo quote') : saveFiles(files);
 }
 
 async function qzShare() {
@@ -4847,11 +4848,7 @@ async function qzShare() {
       + (cb.save ? `\nYou save ${money(cb.save)} by doing them together.` : '')
       + `\nDeposit to book together: ${money(cb.tog.deposit)}\n\nFinal price may change with design changes.`
       + (notes.length ? '\n' + notes.join('\n') : '');
-    try {
-      if (navigator.share) await navigator.share({ text });
-      else { await navigator.clipboard.writeText(text); toast('Quote copied.'); }
-    } catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
-    return;
+    return shareText(text, 'Quote copied.');
   }
   const text = `Tattoo quote${studio ? ' from ' + studio : ''}\n`
     + `${qzPlacement()} · ${QZ.w} x ${QZ.h} cm\n${qzSummary()}\n\n`
@@ -4860,10 +4857,7 @@ async function qzShare() {
     + `${r.disc || r.vat ? 'Total' : 'Estimate'}: ${money(r.total)} (about ${fmtH(r.hours)}${r.sessions > 1 ? ` over ${r.sessions} sessions` : ''})\n`
     + `Deposit to book: ${money(r.deposit)}\n\nFinal price may change with design changes.`
     + (jobNote(QZ.job) ? '\n' + jobNote(QZ.job) : '');
-  try {
-    if (navigator.share) await navigator.share({ text });
-    else { await navigator.clipboard.writeText(text); toast('Quote copied.'); }
-  } catch (e) { if (e.name !== 'AbortError') toast('Could not share.'); }
+  return shareText(text, 'Quote copied.');
 }
 
 /* Calibrate: every number the calculator uses, grouped, with a live sample so changes make sense. */
