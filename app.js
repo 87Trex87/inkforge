@@ -7539,25 +7539,73 @@ async function notesShow() {
   const shown = rows.filter(r => r.doc.note?.pin);
   for (let i = 0; i < shown.length; i++) { const r = shown[i], u = await noteUrl(r); if (run !== noteRun) return;
     const links = await noteLive(r.doc.note.links || []); if (run !== noteRun) return;
-    const p = pos[r.id] || { x: 16 + i * 24, y: 80 + i * 24 }, n = document.createElement('div'); n.className = 'note-pin'; n.dataset.note = r.id;
+    const p = pos[r.id] || { x: 16 + i * 24, y: 80 + i * 24 }, n = document.createElement('div'); n.className = 'note-pin' + (p.st ? ' ' + p.st : ''); n.dataset.note = r.id;
+    const live = await noteLayers(r); if (run !== noteRun) return;
     n.style.left = Math.max(0, Math.min(innerWidth - 80, p.x)) + 'px'; n.style.top = Math.max(0, Math.min(innerHeight - 60, p.y)) + 'px'; n.style.background = r.doc.bg?.c || '#ffe27a';
-    n.innerHTML = `<div class="note-h" data-tip="Drag to move"><span>⋮⋮</span><button data-ne="${r.id}" aria-label="Edit note" data-tip="Edit">✎</button><button data-nh="${r.id}" aria-label="Hide note" data-tip="Hide">×</button></div>
-      <div class="note-b"><img src="${u}" alt="${esc(r.name)}" draggable="false"></div>${links.length ? `<div class="note-l">${links.map(l => `<a href="#${esc(l.go)}">${esc(l.label)}</a>`).join('')}</div>` : ''}`;
+    n.innerHTML = `<div class="note-h" data-tip="Drag to move"><span>⋮⋮</span><button data-nm aria-label="Minimise" data-tip="Minimise">−</button><button data-nx aria-label="Maximise" data-tip="Bigger or back">⤢</button><button data-ne="${r.id}" aria-label="Edit note" data-tip="Edit">✎</button><button data-nh="${r.id}" aria-label="Hide note" data-tip="Hide">×</button></div>
+      <div class="note-b"><div class="note-c"><img src="${u}" alt="${esc(r.name)}" draggable="false">${live}</div></div>${links.length ? `<div class="note-l">${links.map(l => `<a href="#${esc(l.go)}">${esc(l.label)}</a>`).join('')}</div>` : ''}`;
     L.appendChild(n); }
   document.body.appendChild(L);
   L.addEventListener('click', async (e) => { const ne = e.target.closest('[data-ne]')?.dataset.ne, nh = e.target.closest('[data-nh]')?.dataset.nh;
     if (e.target.closest('#notes-btn')) return notesPanel();
     if (ne) { location.hash = 'design/' + ne; return; }
-    if (nh) { await notePin(+nh, false); notesShow(); } });
+    if (nh) { await notePin(+nh, false); notesShow(); return; }
+    const n = e.target.closest('.note-pin'); if (!n) return;
+    if (e.target.closest('[data-nm]')) return noteState(n, 'min');
+    if (e.target.closest('[data-nx]')) return noteState(n, n.classList.contains('max') ? '' : 'max'); });
+  // A tick on the note is saved straight into it.
+  L.addEventListener('change', async (e) => { const c = e.target.closest('[data-tk]'); if (!c) return; const n = c.closest('.note-pin'), [lid, s] = [c.dataset.tk, c.value];
+    const r = await DB.one('SELECT doc FROM designs WHERE id = ?', [+n.dataset.note]); if (!r) return; const doc = JSON.parse(r.doc), l = doc.layers.find(x => x.id === lid); if (!l) return;
+    const it = l.items.find(i => i.s === s); if (it) it.on = c.checked; else l.items.push({ s, on: c.checked }); c.closest('label').classList.toggle('done', c.checked);
+    await DB.run('UPDATE designs SET doc = ? WHERE id = ?', [JSON.stringify(doc), +n.dataset.note]); });
+  // Tapping a note shows its strip for a few seconds (a mouse just hovers).
+  let stripT = 0;
+  L.addEventListener('pointerdown', (e) => { const n = e.target.closest('.note-pin'); L.querySelectorAll('.note-pin.on').forEach(x => x !== n && x.classList.remove('on')); if (!n) return; n.classList.add('on'); L.appendChild(n); clearTimeout(stripT); stripT = setTimeout(() => n.classList.remove('on'), 4000); }, true);
   let drag = null;
-  L.addEventListener('pointerdown', (e) => { const h = e.target.closest('.note-h'); if (!h || e.target.closest('button')) return; const n = h.parentElement, b = n.getBoundingClientRect(); drag = { n, dx: e.clientX - b.left, dy: e.clientY - b.top }; try { h.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); });
-  L.addEventListener('pointermove', (e) => { if (!drag) return; drag.n.style.left = Math.max(0, Math.min(innerWidth - 80, e.clientX - drag.dx)) + 'px'; drag.n.style.top = Math.max(0, Math.min(innerHeight - 60, e.clientY - drag.dy)) + 'px'; });
-  const end = () => { if (!drag) return; const P = notePos(); P[drag.n.dataset.note] = { x: parseFloat(drag.n.style.left), y: parseFloat(drag.n.style.top) }; Settings.set('note_pos', JSON.stringify(P)); drag = null; };
+  L.addEventListener('pointerdown', (e) => { const n = e.target.closest('.note-pin'); if (!n || e.target.closest('button') || (!e.target.closest('.note-h') && !n.classList.contains('min'))) return; const b = n.getBoundingClientRect(); drag = { n, dx: e.clientX - b.left, dy: e.clientY - b.top, x: e.clientX, y: e.clientY }; try { L.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); });
+  L.addEventListener('pointermove', (e) => { if (!drag) return; if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true; drag.n.style.left = Math.max(0, Math.min(innerWidth - 80, e.clientX - drag.dx)) + 'px'; drag.n.style.top = Math.max(0, Math.min(innerHeight - 60, e.clientY - drag.dy)) + 'px'; });
+  const end = () => { if (!drag) return; const P = notePos(), id = drag.n.dataset.note; P[id] = { ...P[id], x: parseFloat(drag.n.style.left), y: parseFloat(drag.n.style.top) }; Settings.set('note_pos', JSON.stringify(P));
+    if (!drag.moved && drag.n.classList.contains('min')) noteState(drag.n, '');   // tapping a minimised note opens it
+    drag = null; };
   L.addEventListener('pointerup', end); L.addEventListener('pointercancel', end);
 }
-// The note as a picture, redrawn only when it has changed.
+// Minimised, normal or maximised; kept with the note's place. A bigger note is nudged to stay on screen.
+function noteState(n, st) { n.classList.remove('min', 'max'); if (st) n.classList.add(st); const P = notePos(), id = n.dataset.note, b0 = n.getBoundingClientRect();
+  P[id] = { x: b0.left, y: b0.top, ...P[id], st }; const b = n.getBoundingClientRect(); if (b.right > innerWidth - 4) n.style.left = Math.max(4, innerWidth - b.width - 4) + 'px'; if (b.bottom > innerHeight - 4) n.style.top = Math.max(4, innerHeight - b.height - 4) + 'px';
+  P[id].x = parseFloat(n.style.left); P[id].y = parseFloat(n.style.top); Settings.set('note_pos', JSON.stringify(P)); }
+// What's low on stock, keeping any ticks already made.
+async function noteShopItems(old = []) { const was = new Map(old.map(i => [i.s, i.on])), rows = await DB.all('SELECT name FROM inventory_items WHERE qty <= min_qty ORDER BY name COLLATE NOCASE'); return rows.map(r => ({ s: r.name, on: !!was.get(r.name) })); }
+// A note's shortcuts and checklists as real links and checkboxes, placed over its picture (sized with the note).
+async function noteLayers(r) { const D = r.doc, u = (v) => v / D.w * 100, out = [];
+  for (const l of D.layers || []) { if (l.t !== 'shortcut' && l.t !== 'check') continue;
+    const box = `left:${u(l.x)}%;top:${l.y / D.h * 100}%;width:${u(l.w)}%;transform:rotate(${l.rot || 0}deg);`;
+    if (l.t === 'shortcut') { out.push(`<a class="ns" href="#${esc(l.go || 'home')}" style="${box}height:${l.h / D.h * 100}%;font-size:${u(Math.min(l.w, l.h) * 0.11)}cqw"><i style="width:${u(Math.min(l.w, l.h) * 0.56)}cqw;height:${u(Math.min(l.w, l.h) * 0.56)}cqw">${l.svg || ''}</i><b>${esc(l.label || '')}</b></a>`); continue; }
+    const items = l.src === 'shop' ? await noteShopItems(l.items) : l.items || [], s = u(l.size || 64);
+    out.push(`<div class="nk" style="${box}font-size:${s}cqw">${l.title ? `<h4>${esc(l.title)}</h4>` : ''}${items.map(i => `<label class="${i.on ? 'done' : ''}"><input type="checkbox" data-tk="${esc(l.id)}" value="${esc(i.s)}" ${i.on ? 'checked' : ''}><span>${esc(i.s)}</span></label>`).join('') || '<em>Nothing on it</em>'}</div>`); }
+  return out.join(''); }
+// Picks what a shortcut opens: an app, or something saved in one. Resolves { go, label, svg }, or null.
+const NOTE_APPS = [['clients', 'Clients', 'user'], ['book', 'Bookings', 'cal'], ['quote', 'Quick quote', 'quote'], ['quotes', 'Saved quotes', 'saved'], ['inventory', 'Inventory', 'stock'], ['rules', 'Rule book', 'rule'], ['stats', 'Stats', 'stats'], ['stencil', 'Stencil maker', 'stencil'], ['reels', 'Reel maker', 'reel'], ['tattoo', 'Tattoo simulator', 'needle'], ['designs', 'Design studio', 'design'], ['portfolio', 'Portfolio', 'portfolio'], ['forms', 'Forms', 'form'], ['settings', 'Settings', 'settings']];
+const NOTE_ICO = { user: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 4-7 8-7s7 2 8 7"/></svg>', cal: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>' };
+const noteIco = (k) => NOTE_ICO[k] || ICON[k] || ICON.design;
+async function noteShortcutPick() {
+  const q = async (sql, f) => (await DB.all(sql)).map(f);
+  const groups = [['Clients', 'user', await q('SELECT id, first_name, last_name FROM clients ORDER BY last_name COLLATE NOCASE LIMIT 300', c => ['client/' + c.id, fullName(c)])],
+    ['Appointments', 'cal', await q(`SELECT b.id, b.start_at, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.start_at >= date('now') ORDER BY b.start_at LIMIT 100`, b => ['booking-edit/' + b.id, fmtDay(b.start_at) + (b.first_name ? ' · ' + fullName(b) : '')])],
+    ['Designs', 'design', await q(`SELECT id, name FROM designs WHERE kind <> 'note' ORDER BY updated_at DESC LIMIT 200`, r => ['design/' + r.id, r.name])],
+    ['Tattoo pieces', 'needle', await q(`SELECT id, name FROM tattoo_pieces WHERE meta IS NULL OR meta NOT LIKE '%"mode":"ch"%' ORDER BY updated_at DESC LIMIT 200`, r => ['tattoo/' + r.id, r.name || 'Piece'])],
+    ['Reels', 'reel', await q('SELECT id, name FROM reels ORDER BY updated_at DESC LIMIT 200', r => ['reel/' + r.id, r.name || 'Reel'])],
+    ['Portfolio', 'portfolio', await q('SELECT id, title FROM portfolio_items ORDER BY id DESC LIMIT 200', r => ['pf/' + r.id, r.title || 'Untitled'])],
+    ['Inventory items', 'stock', await q('SELECT id, name FROM inventory_items ORDER BY name COLLATE NOCASE LIMIT 300', r => ['inv-edit/' + r.id, r.name])],
+    ['Rules', 'rule', await q('SELECT id, title FROM rules ORDER BY id LIMIT 200', r => ['rule-edit/' + r.id, r.title])]].filter(g => g[2].length);
+  return new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; const done = (v) => { o.remove(); res(v); };
+    o.innerHTML = `<div class="card dz-pick"><h2>Add a shortcut</h2><div class="lbl">Apps</div><div class="ns-grid">${NOTE_APPS.map(([g, n, k]) => `<button data-sg="${g}" data-sn="${esc(n)}" data-si="${k}">${noteIco(k)}<span>${esc(n)}</span></button>`).join('')}</div>
+      ${groups.map(([n, k, it]) => `<div class="lbl" style="margin-top:10px">${esc(n)}</div><div class="ns-list">${it.map(([g, t]) => `<button data-sg="${esc(g)}" data-sn="${esc(t)}" data-si="${k}">${esc(t)}</button>`).join('')}</div>`).join('')}
+      <button class="btn" data-x style="width:100%;margin-top:12px">Cancel</button></div>`;
+    o.onclick = (e) => { const b = e.target.closest('[data-sg]'); if (b) return done({ go: b.dataset.sg, label: b.dataset.sn, svg: noteIco(b.dataset.si) }); if (e.target.closest('[data-x]')) done(null); };
+    document.body.appendChild(o); }); }
+// The note as a picture (shortcuts and checklists go over it live), redrawn only when it has changed.
 async function noteUrl(r) { const c = noteImg.get(r.id); if (c?.at === r.updated_at) return c.url;
-  const cv = await dzCanvas(r.doc, 460 / r.doc.w), url = URL.createObjectURL(await new Promise(res => cv.toBlob(res, 'image/png')));
+  const cv = await dzCanvas({ ...r.doc, layers: (r.doc.layers || []).filter(l => l.t !== 'shortcut' && l.t !== 'check') }, 460 / r.doc.w), url = URL.createObjectURL(await new Promise(res => cv.toBlob(res, 'image/png')));
   if (c) URL.revokeObjectURL(c.url); noteImg.set(r.id, { at: r.updated_at, url }); return url; }
 async function notePin(id, on) { const r = await DB.one('SELECT doc FROM designs WHERE id = ?', [id]); if (!r) return; const doc = JSON.parse(r.doc); doc.note = { links: [], ...doc.note, pin: on };
   await DB.run('UPDATE designs SET doc = ? WHERE id = ?', [JSON.stringify(doc), id]); }

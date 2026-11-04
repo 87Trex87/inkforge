@@ -578,6 +578,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   const one = async (x, l) => {
     const im = l.t === 'image' ? await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref) : null;
     const tex = l.fm === 'tex' && l.tex?.ref ? await dzImg(l.tex.ref) : null;
+    const nIco = l.t === 'shortcut' ? await dzIcoImg(l.svg || '', dzInkOn(doc)) : null; if (l.t === 'check') l.h = dzCheckH(l);
     let lines = null;
     if (l.t === 'text') {   // measure first, so the box (and its centre) is the real height of the text
       x.setTransform(1, 0, 0, 1, 0, 0);
@@ -607,6 +608,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     x.translate(l.x + l.w / 2, l.y + (l.h || 0) / 2); x.rotate((l.rot || 0) * Math.PI / 180);
     x.globalAlpha = l.op ?? 1;
     const flip = () => { if (l.fx || l.fy) x.scale(l.fx ? -1 : 1, l.fy ? -1 : 1); };   // mirrored
+    if (l.t === 'shortcut' || l.t === 'check') { dzNoteDraw(x, l, doc, nIco); x.restore(); return; }
     if (l.t === 'text') {
       flip();
       const px = l._px || l.size, lh = px * (l.lh || 1.2); x.font = dzFontStr(doc, l, px);
@@ -1034,6 +1036,25 @@ function dzNew(kind, opt, theme, piece, size, sides) {
   dzFillSlots(doc, piece);
   return doc;
 }
+/* Note-only layers. A shortcut is one big thumb-sized tile (icon and name) that opens part of the app; a checklist is
+   rows of tick boxes, custom or from the shopping list. Drawn here for the editor; a pinned note shows them as real
+   links and checkboxes. */
+const dzInkOn = (doc) => { const c = String(doc.bg?.c || '#ffe27a'); if (c[0] !== '#' || c.length < 7) return '#222'; const v = parseInt(c.slice(1, 3), 16) * 0.3 + parseInt(c.slice(3, 5), 16) * 0.59 + parseInt(c.slice(5, 7), 16) * 0.11; return v < 110 ? '#f4f1ea' : '#222'; };
+const dzIcoCache = new Map();
+function dzIcoImg(svg, col) { const k = col + svg; if (dzIcoCache.has(k)) return dzIcoCache.get(k);
+  const src = String(svg).replace('<svg ', `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" fill="none" stroke="${col}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" `);
+  const p = new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = 'data:image/svg+xml,' + encodeURIComponent(src); }); dzIcoCache.set(k, p); return p; }
+const dzCheckH = (l) => { const s = l.size || 64; return (l.title ? s * 1.7 : 0) + Math.max(1, l.items?.length || 0) * s * 2.1 + s * 0.4; };
+function dzNoteDraw(x, l, doc, ico) { const col = dzInkOn(doc), w = l.w, h = l.h; x.strokeStyle = col; x.fillStyle = col; x.textAlign = 'left'; x.textBaseline = 'middle';
+  const fit = (s, mx) => { if (x.measureText(s).width <= mx) return s; while (s.length > 1 && x.measureText(s + '…').width > mx) s = s.slice(0, -1); return s + '…'; };
+  if (l.t === 'shortcut') { x.save(); x.globalAlpha *= 0.14; x.beginPath(); x.roundRect(-w / 2, -h / 2, w, h, w * 0.08); x.fill(); x.restore();
+    const f = Math.min(w, h) * 0.11, sz = Math.min(w, h) * 0.56; if (ico) x.drawImage(ico, -sz / 2, -h * 0.4, sz, sz);
+    x.font = `700 ${f}px Inter, sans-serif`; x.textAlign = 'center'; x.fillText(fit(l.label || 'Shortcut', w * 0.9), 0, h * 0.33); return; }
+  const s = l.size || 64, row = s * 2.1; let y = -h / 2 + s * 0.2;
+  if (l.title) { x.font = `800 ${s * 1.1}px Inter, sans-serif`; x.fillText(fit(l.title, w), -w / 2, y + s * 0.8); y += s * 1.7; }
+  for (const it of (l.items?.length ? l.items : [{ s: 'Nothing on it yet' }])) { const cy = y + row / 2, bx = -w / 2 + 4; x.lineWidth = s * 0.08; x.beginPath(); x.roundRect(bx, cy - s * 0.55, s * 1.1, s * 1.1, s * 0.18); x.stroke();
+    if (it.on) { x.beginPath(); x.moveTo(bx + s * 0.22, cy); x.lineTo(bx + s * 0.48, cy + s * 0.28); x.lineTo(bx + s * 0.9, cy - s * 0.3); x.stroke(); }
+    x.font = `600 ${s}px Inter, sans-serif`; const t = fit(it.s, w - s * 1.5); x.fillText(t, bx + s * 1.4, cy); if (it.on) { x.lineWidth = s * 0.05; x.beginPath(); x.moveTo(bx + s * 1.4, cy); x.lineTo(bx + s * 1.4 + x.measureText(t).width, cy); x.stroke(); } y += row; } }
 /* Sticky notes: ordinary designs (kind 'note') of a fixed width that grow downwards. doc.note holds whether it's
    pinned to the menu screens and its quick links; the overlay that shows them lives in app.js. */
 const DZ_NOTE_COLS = ['#ffe27a', '#ffb3c7', '#a9e4ff', '#b6f0b1', '#ffc48a', '#d7c2ff', '#ffffff', '#2b2f31'];
@@ -1374,15 +1395,27 @@ DZ.edit = async (id) => {
   /* Sticky note bar: colour, more or less room, quick links, pinned or hidden. */
   const noteBar = () => { const b = $('#dz-notebar'); if (!b) return; doc.note ||= { pin: false, links: [] };
     b.innerHTML = DZ_NOTE_COLS.map(c => `<button class="nc ${doc.bg?.c === c ? 'on' : ''}" data-nc="${c}" style="background:${c}" aria-label="Note colour"></button>`).join('')
-      + `<button data-na="more">+ Room</button><button data-na="less">− Room</button><button data-na="links">Links${doc.note.links.length ? ' ' + doc.note.links.length : ''}</button><button data-na="pin" class="${doc.note.pin ? 'on' : ''}">${doc.note.pin ? 'Pinned' : 'Hidden'}</button>`; };
+      + `<button data-na="short" class="add">+ Shortcut</button><button data-na="check" class="add">+ Checklist</button><button data-na="more">+ Room</button><button data-na="less">− Room</button><button data-na="links">Links${doc.note.links.length ? ' ' + doc.note.links.length : ''}</button><button data-na="pin" class="${doc.note.pin ? 'on' : ''}">${doc.note.pin ? 'Pinned' : 'Hidden'}</button>`; };
   $('#dz-notebar')?.addEventListener('click', async (e) => { const c = e.target.closest('[data-nc]')?.dataset.nc, a = e.target.closest('[data-na]')?.dataset.na;
     if (c) { doc.bg = { ...doc.bg, c }; changed(true); return noteBar(); }
     if (a === 'pin') { doc.note.pin = !doc.note.pin; changed(true); return noteBar(); }
+    if (a === 'short' || a === 'check') { const y = doc.layers.length ? Math.max(...doc.layers.map(l => (l.y || 0) + (l.h || 0))) + 40 : 60;
+      let l; if (a === 'short') { const p = await noteShortcutPick(); if (!p) return; l = { t: 'shortcut', ...p, x: 60, y, w: 780, h: 780 }; }
+      else l = { t: 'check', title: 'To do', items: [], src: 'custom', size: 64, x: 40, y, w: 820, h: 300 };
+      l.h = l.t === 'check' ? dzCheckH(l) : l.h; if (y + l.h + 60 > doc.h) { doc.h = y + l.h + 60; fit(); } add(l); return; }
     if (a === 'links') { const l = await noteLinks(doc.note.links); if (l) { doc.note.links = l; changed(true); noteBar(); } return; }
     if (a === 'more' || a === 'less') { const low = Math.max(450, ...doc.layers.map(l => (l.y || 0) + (l.h || 0)));   // never cuts into what's on the note
       doc.h = a === 'more' ? doc.h + 450 : Math.max(low, doc.h - 450); if (a === 'less' && doc.h === low && low > 450) toast('That\u2019s as short as the note\u2019s contents allow.');
       fit(false); const r = stage.getBoundingClientRect(); z = Math.max(1, Math.min(12, (r.width - 84) / doc.w / fitK)); fit(false); vy = Math.min(0, (r.height - doc.h * k) / 2 - 70); fit(); changed(true); } });
   noteBar();
+  if (doc.kind === 'note') {
+    side.addEventListener('input', (e) => { const f = e.target.dataset?.nl, l = layer(); if (!f || !l) return;
+      if (f === 'items') { const was = new Map((l.items || []).map(i => [i.s, i.on])); l.items = e.target.value.split('\n').map(s => s.trim()).filter(Boolean).map(s => ({ s, on: !!was.get(s) })); }
+      else l[f] = f === 'size' ? +e.target.value : e.target.value;
+      if (l.t === 'check') l.h = dzCheckH(l); if (l.y + (l.h || 0) + 40 > doc.h) { doc.h = l.y + l.h + 40; fit(); } changed(); });
+    side.addEventListener('click', async (e) => { const l = layer(); if (!l) return; const s = e.target.closest('[data-nls]')?.dataset.nls;
+      if (s) { l.src = s; if (s === 'shop') { l.items = await noteShopItems(l.items); l.title ||= 'Shopping list'; } l.h = dzCheckH(l); if (l.y + l.h + 40 > doc.h) { doc.h = l.y + l.h + 40; fit(); } changed(true); return drawSide(); }
+      if (e.target.closest('[data-nlgo]')) { const p = await noteShortcutPick(); if (p) { Object.assign(l, p); changed(true); drawSide(); } } }); }
   const undo = (d) => { if (histT) { clearTimeout(histT); push(); } const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; qsHide(); drawPen(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
@@ -1437,7 +1470,7 @@ DZ.edit = async (id) => {
   const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
   const LOCK = (on) => on ? '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
     : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>';
-  const layerName = (l) => l.name || (l.t === 'text' ? ((dzFill(doc, l.text).trim() || l.text).split('\n')[0].trim().slice(0, 30) || 'Text')
+  const layerName = (l) => l.name || (l.t === 'shortcut' ? 'Shortcut: ' + (l.label || '') : l.t === 'check' ? 'Checklist' : l.t === 'text' ? ((dzFill(doc, l.text).trim() || l.text).split('\n')[0].trim().slice(0, 30) || 'Text')
     : l.t === 'image' ? (l.logo ? 'Logo' : l.slot != null ? `Photo ${l.slot + 1}` : 'Picture')
     : ({ ellipse: 'Circle', line: 'Line', star: 'Star', path: 'Traced shape' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
   const layerIco = (l) => l.t === 'text' ? 'T' : l.t === 'image' ? (l.logo ? '◎' : '▣') : '◆';
@@ -1564,6 +1597,14 @@ DZ.edit = async (id) => {
   };
   const drawItem = () => {
     const l = layer();
+    if (l.t === 'shortcut' || l.t === 'check') { const n = l.t === 'check';
+      side.innerHTML = `<div class="dz-lh"><b>${n ? 'Checklist' : 'Shortcut'}</b>${dzIB('data-act="del"', 'del', 'Delete', 'danger')}</div>` + (n
+        ? `<label class="field"><span>Title</span><input class="in" data-nl="title" value="${esc(l.title || '')}"></label>
+           <div class="seg" style="margin-bottom:8px"><button data-nls="custom" class="${l.src !== 'shop' ? 'on' : ''}" style="flex:1">Custom</button><button data-nls="shop" class="${l.src === 'shop' ? 'on' : ''}" style="flex:1">Shopping list</button></div>
+           ${l.src === 'shop' ? '<p class="muted dz-hint">Filled from Inventory: whatever is at or below its minimum, kept current on the pinned note.</p>' : `<label class="field"><span>Items, one per line</span><textarea class="in" rows="6" data-nl="items">${esc((l.items || []).map(i => i.s).join('\n'))}</textarea></label>`}
+           <label class="dz-sl"><span>Text size<b>${l.size}</b></span><input type="range" min="40" max="130" step="2" value="${l.size}" data-nl="size"></label>`
+        : `<label class="field"><span>Name</span><input class="in" data-nl="label" value="${esc(l.label || '')}"></label><button class="btn small" data-nlgo>Change what it opens</button>`);
+      return; }
     const kindName = l.t === 'text' ? 'Text' : l.t === 'image' ? (l.logo ? 'Logo' : 'Picture') : 'Shape';
     if (cut) { side.innerHTML = cutPanel(l); return; }
     if (nodes) { side.innerHTML = nodePanel(l); return; }
