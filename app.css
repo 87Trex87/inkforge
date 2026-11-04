@@ -1546,3 +1546,11 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .note-pin.max { width: min(92vw, 440px); } .note-pin.max .note-c { width: min(92vw, 440px); } .note-pin.max .note-b { max-height: 70vh; }
 .note-rz { position: absolute; right: 0; bottom: 0; z-index: 2; width: 26px; height: 26px; cursor: nwse-resize; touch-action: none; opacity: 0; pointer-events: none; background: linear-gradient(135deg, transparent 55%, rgba(0,0,0,.55) 55%); }
 .note-pin:hover .note-rz, .note-pin.on .note-rz { opacity: 1; pointer-events: auto; } .note-pin.min .note-rz, .note-pin.max .note-rz { display: none; }
+
+/* editor guides for a sticky note: where the pinned note's strip, scroll bar and first view fall (never exported) */
+.dz-page.is-note { container-type: inline-size; }
+.dz-nguide { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; } .dz-nguide i { position: absolute; display: block; font-style: normal; } .dz-nguide b { font: 600 2.6cqw var(--ui); color: #222; opacity: .75; padding: 0 1.5cqw; }
+.dz-nguide .s { left: 0; right: 0; top: 0; height: 14.3cqw; background: rgba(0,0,0,.14); border-bottom: 1px dashed rgba(0,0,0,.5); display: flex; align-items: center; }
+.dz-nguide .b { right: 0; top: 14.3cqw; bottom: 0; width: 3.8cqw; background: rgba(0,0,0,.1); border-left: 1px dashed rgba(0,0,0,.4); }
+.dz-nguide .f { left: 0; right: 0; top: 110cqw; border-top: 1px dashed rgba(0,0,0,.55); }
+.nb-links { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font: 600 11px var(--ui); color: var(--ink2); }

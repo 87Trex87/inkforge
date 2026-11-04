@@ -1261,7 +1261,7 @@ DZ.edit = async (id) => {
           ${dzIB('data-rail="doc"', 'page', 'Page: theme, background, sides and details')}
           <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg,image/*" hidden id="dz-file"></div>
         <div class="dz-pop" id="dz-pop" hidden></div>
-        <div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
+        <div class="dz-page ${doc.kind === 'note' ? 'is-note' : ''}" id="dz-page"><canvas id="dz-cv"></canvas>${doc.kind === 'note' ? '<div class="dz-nguide" aria-hidden="true"><i class="s"><b>Top strip (on hover or tap)</b></i><i class="b"></i><i class="f"><b>Scrolls below this line</b></i></div>' : ''}<div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
@@ -1285,7 +1285,7 @@ DZ.edit = async (id) => {
   // Canvas size: fit the page into the stage; drawn at device resolution for crisp text.
   /* View: zoom (z, 1 = the whole design fits) and pan (vx, vy, screen px from centred). */
   let fitK = 1, z = 1, vx = 0, vy = 0, rs = 1, crispT = null;
-  const tb = () => doc.sides ? 48 : 0;   // room above the design for the page tabs
+  const tb = () => doc.kind === 'note' ? ($('#dz-notebar')?.offsetHeight || 0) + 16 : doc.sides ? 48 : 0;   // room above the design for the page tabs, or a note's bar
   // Phones: the panel is a bottom sheet (up to 48% of the stage, or just its header when folded).
   const sheetH = (H) => innerWidth <= 700 && side && !side.hidden ? (side.classList.contains('min') ? 52 : Math.round(H * 0.48)) : 0;
   let sheetWas = 0;
@@ -1395,7 +1395,8 @@ DZ.edit = async (id) => {
   /* Sticky note bar: colour, more or less room, quick links, pinned or hidden. */
   const noteBar = () => { const b = $('#dz-notebar'); if (!b) return; doc.note ||= { pin: false, links: [] };
     b.innerHTML = DZ_NOTE_COLS.map(c => `<button class="nc ${doc.bg?.c === c ? 'on' : ''}" data-nc="${c}" style="background:${c}" aria-label="Note colour"></button>`).join('')
-      + `<button data-na="short" class="add">+ Shortcut</button><button data-na="check" class="add">+ Checklist</button><button data-na="more">+ Room</button><button data-na="less">− Room</button><button data-na="links">Links${doc.note.links.length ? ' ' + doc.note.links.length : ''}</button><button data-na="pin" class="${doc.note.pin ? 'on' : ''}">${doc.note.pin ? 'Pinned' : 'Hidden'}</button>`; };
+      + `<button data-na="short" class="add">+ Shortcut</button><button data-na="check" class="add">+ Checklist</button><button data-na="more">+ Room</button><button data-na="less">− Room</button><button data-na="links">Links${doc.note.links.length ? ' ' + doc.note.links.length : ''}</button><button data-na="pin" class="${doc.note.pin ? 'on' : ''}">${doc.note.pin ? 'Pinned' : 'Hidden'}</button>`
+      + (doc.note.links.length ? `<div class="nb-links"><span>Links:</span>${doc.note.links.map(l => `<button data-na="links" data-tip="${esc(l.url || 'Change links')}">${esc(l.label || NOTE_SECTIONS.find(s => s[0] === l.go)?.[1] || l.go)}${l.url ? ' ↗' : ''}</button>`).join('')}</div>` : ''); fit(false); };
   $('#dz-notebar')?.addEventListener('click', async (e) => { const c = e.target.closest('[data-nc]')?.dataset.nc, a = e.target.closest('[data-na]')?.dataset.na;
     if (c) { doc.bg = { ...doc.bg, c }; changed(true); return noteBar(); }
     if (a === 'pin') { doc.note.pin = !doc.note.pin; changed(true); return noteBar(); }
@@ -1417,7 +1418,7 @@ DZ.edit = async (id) => {
     side.addEventListener('click', async (e) => { const l = layer(); if (!l) return; const s = e.target.closest('[data-nls]')?.dataset.nls;
       if (s) { l.src = s; if (s === 'shop') { l.items = await noteShopItems(l.items); l.title ||= 'Shopping list'; } l.h = dzCheckH(l); if (l.y + l.h + 40 > doc.h) { doc.h = l.y + l.h + 40; fit(); } changed(true); return drawSide(); }
       if (e.target.closest('[data-nlgo]')) { const p = await noteShortcutPick(); if (p) { Object.assign(l, p); changed(true); drawSide(); } } }); }
-  const undo = (d) => { if (histT) { clearTimeout(histT); push(); } const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; qsHide(); drawPen(); if (!layer()) sel = null;
+  const undo = (d) => { if (histT) { clearTimeout(histT); push(); } const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); setTimeout(noteBar); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; qsHide(); drawPen(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
