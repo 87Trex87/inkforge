@@ -1536,5 +1536,6 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 
 /* the note's scroll bar shows with its strip; the contents keep their width so nothing jumps when it appears */
 .note-b { overflow-x: hidden; scrollbar-width: none; } .note-b::-webkit-scrollbar { display: none; }
-.note-pin:hover .note-b, .note-pin.on .note-b { scrollbar-width: thin; } .note-pin:hover .note-b::-webkit-scrollbar, .note-pin.on .note-b::-webkit-scrollbar { display: block; }
+.note-pin:hover .note-b, .note-pin.on .note-b { scrollbar-width: auto; } .note-pin:hover .note-b::-webkit-scrollbar, .note-pin.on .note-b::-webkit-scrollbar { display: block; width: 8px; }
+.note-b::-webkit-scrollbar-track { margin-top: 30px; background: rgba(0,0,0,.1); } .note-b::-webkit-scrollbar-thumb { background: rgba(0,0,0,.45); border-radius: 4px; }   /* starts below the strip */
 .note-c { width: 210px; } .note-pin.min .note-c { width: 64px; } .note-pin.max .note-c { width: min(92vw, 440px); }
