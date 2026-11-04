@@ -1406,7 +1406,8 @@ DZ.edit = async (id) => {
     if (a === 'links') { const l = await noteLinks(doc.note.links); if (l) { doc.note.links = l; changed(true); noteBar(); } return; }
     if (a === 'more' || a === 'less') { const low = Math.max(450, ...doc.layers.map(l => (l.y || 0) + (l.h || 0)));   // never cuts into what's on the note
       doc.h = a === 'more' ? doc.h + 450 : Math.max(low, doc.h - 450); if (a === 'less' && doc.h === low && low > 450) toast('That\u2019s as short as the note\u2019s contents allow.');
-      fit(false); const r = stage.getBoundingClientRect(); z = Math.max(1, Math.min(12, (r.width - 84) / doc.w / fitK)); fit(false); vy = Math.min(0, (r.height - doc.h * k) / 2 - 70); fit(); changed(true); } });
+      if (z > 1) { z = 1; vx = vy = 0; }   // the whole note in view; already zoomed out enough stays as it is
+      fit(); changed(true); } });
   noteBar();
   if (doc.kind === 'note') {
     side.addEventListener('input', (e) => { const f = e.target.dataset?.nl, l = layer(); if (!f || !l) return;
