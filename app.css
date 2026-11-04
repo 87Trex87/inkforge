@@ -1511,3 +1511,17 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .ask-dlg { position: fixed; inset: 0; z-index: 400; background: rgba(0,0,0,.7); display: flex; padding: 16px; }
 .ask-dlg .card { width: min(440px, 100%); margin: auto; } .ask-q { font-weight: 600; margin: 0 0 6px; white-space: pre-line; } .ask-d { margin: 0; font-size: 13px; white-space: pre-line; }
 .ask-dlg .in { width: 100%; margin-top: 10px; } .btn.danger { background: #d9534f; border-color: #d9534f; color: #fff; }
+
+/* sticky notes on the menu screens */
+#notes-layer { position: fixed; inset: 0; z-index: 30; pointer-events: none; }
+#notes-btn { position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); pointer-events: auto; border: 1px solid #c9a93f; border-radius: 10px; background: #ffe27a; color: #2b2410; font: 700 12px var(--ui); padding: 7px 11px; cursor: pointer; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
+.note-pin { position: absolute; width: 190px; pointer-events: auto; border-radius: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.5); overflow: hidden; color: #222; }
+.note-h { display: flex; align-items: center; gap: 2px; padding: 2px 4px; background: rgba(0,0,0,.14); cursor: move; touch-action: none; font-size: 12px; } .note-h span { flex: 1; opacity: .6; }
+.note-h button { border: 0; background: none; color: inherit; font-size: 15px; width: 28px; height: 26px; cursor: pointer; }
+.note-b { max-height: 230px; overflow-y: auto; } .note-b img { display: block; width: 100%; height: auto; }
+.note-l { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; background: rgba(0,0,0,.14); } .note-l a { font: 700 11px var(--ui); color: #111; background: rgba(255,255,255,.65); border-radius: 6px; padding: 3px 6px; text-decoration: none; }
+.note-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; } .note-row img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; } .note-row b { flex: 1; min-width: 0; }
+.note-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.dz-notebar { position: absolute; left: 60px; right: 10px; bottom: 10px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px; border-radius: 12px; background: rgba(15,18,19,.88); }
+.dz-notebar button { border: 0; border-radius: 7px; background: rgba(255,255,255,.08); color: var(--ink); font: 700 11px var(--ui); padding: 6px 8px; cursor: pointer; } .dz-notebar button.on { background: rgba(31,182,166,.28); color: var(--teal); }
+.dz-notebar .nc { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); } .dz-notebar .nc.on { outline: 2px solid var(--teal); outline-offset: 1px; }

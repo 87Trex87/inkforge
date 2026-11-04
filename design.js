@@ -10,6 +10,7 @@
 const DESIGN_VERSION = 1;   // app.js checks this matches, to catch a stale cached copy
 
 const DZ_KINDS = {
+  note: { label: 'Sticky note', sub: 'Pin it on your menu screens', w: 900, h: 900, per: 0, note: 1 },
   page: { label: 'Blank page', sub: 'A2 to A6, Letter, custom…', w: 2480, h: 3508, per: 0, page: 1 },
   fold: { label: 'Folded pamphlet', sub: 'Trifold, bifold, Z-fold…', w: 3508, h: 2480, per: 0, fold: 1 },
   voucher: { label: 'Gift voucher', sub: 'DL, 210 × 99 mm', w: 2480, h: 1169, per: 2 },
@@ -1033,6 +1034,15 @@ function dzNew(kind, opt, theme, piece, size, sides) {
   dzFillSlots(doc, piece);
   return doc;
 }
+/* Sticky notes: ordinary designs (kind 'note') of a fixed width that grow downwards. doc.note holds whether it's
+   pinned to the menu screens and its quick links; the overlay that shows them lives in app.js. */
+const DZ_NOTE_COLS = ['#ffe27a', '#ffb3c7', '#a9e4ff', '#b6f0b1', '#ffc48a', '#d7c2ff', '#ffffff', '#2b2f31'];
+async function dzNoteNew(col = DZ_NOTE_COLS[0]) {
+  const doc = dzNew('note', null, 'paper'); doc.bg = { c: col }; doc.note = { pin: true, links: [] };
+  const n = (await DB.one('SELECT COUNT(*) AS n FROM designs WHERE kind = ?', ['note'])).n;
+  await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', ['Sticky note' + (n ? ' ' + (n + 1) : ''), 'note', JSON.stringify(doc)]);
+  const id = (await DB.one('SELECT last_insert_rowid() AS id')).id; await dzThumb(id, doc); location.hash = 'design/' + id; return id;
+}
 // Saves a design's thumbnail for the list (also used right after creating one).
 async function dzThumb(id, doc) {
   const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
@@ -1161,6 +1171,7 @@ async function dzPicker(opts = {}) {
   o.onclick = async (e) => {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('[data-x]')) return o.remove();
+    if (d('kind') === 'note') { o.remove(); return dzNoteNew(); }
     if (d('kind')) { st.kind = d('kind'); st.li = 0; st.two = false; return draw(); }
     if (d('two') != null) { st.two = d('two') === '1'; return draw(); }
     if (t.closest('[data-back]')) { st.kind = null; return draw(); }
@@ -1227,13 +1238,14 @@ DZ.edit = async (id) => {
           <i class="sep"></i>
           ${dzIB('data-rail="layers"', 'layers', 'Layers')}
           ${dzIB('data-rail="doc"', 'page', 'Page: theme, background, sides and details')}
-          <input type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden id="dz-file"></div>
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg,image/*" hidden id="dz-file"></div>
         <div class="dz-pop" id="dz-pop" hidden></div>
         <div class="dz-page" id="dz-page"><canvas id="dz-cv"></canvas><div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
         <div class="dz-faces" id="dz-faces"></div>
+        ${doc.kind === 'note' ? '<div class="dz-notebar" id="dz-notebar"></div>' : ''}
         <div id="dz-qs" class="dz-qs" hidden><span class="dz-qs-what"></span><div class="dz-qs-row"><span>Yours</span><input type="range" min="0" max="100" step="1" value="50" aria-label="Closer to what you drew, or cleaner"><span>Cleaner</span></div><div class="dz-qs-row"><button class="btn small" data-qs="no" title="Put back the shape it snapped to">Cancel</button><button class="btn small primary" data-qs="ok">Keep</button></div></div><div id="dz-marq" hidden></div><div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
       <div class="dz-side" id="dz-side" hidden></div>
     </div></div>`;
@@ -1350,7 +1362,7 @@ DZ.edit = async (id) => {
   let dzKeys = null, dzPenKeys = null, dzRO = null;   // let go of when leaving, so the editor can be freed
   addEventListener('hashchange', function away() { removeEventListener('hashchange', away); document.removeEventListener('visibilitychange', onHide); focus(false);
     removeEventListener('keydown', dzKeys); removeEventListener('keyup', dzPenKeys); dzRO?.disconnect();
-    flush().then(async () => { const keep = docRefs(); for (const r of new Set([...dropped, ...made])) if (!keep.includes(r)) await Media.release(r); }); });
+    flush().then(async () => { if (typeof notesShow === 'function') notesShow(); const keep = docRefs(); for (const r of new Set([...dropped, ...made])) if (!keep.includes(r)) await Media.release(r); }); });
   // A change: redraw, remember for undo, save.
   let histT = null;
   const push = () => { histT = null; const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
@@ -1359,6 +1371,18 @@ DZ.edit = async (id) => {
     clearTimeout(histT);
     if (now) push(); else histT = setTimeout(push, 450);
   };
+  /* Sticky note bar: colour, more or less room, quick links, pinned or hidden. */
+  const noteBar = () => { const b = $('#dz-notebar'); if (!b) return; doc.note ||= { pin: false, links: [] };
+    b.innerHTML = DZ_NOTE_COLS.map(c => `<button class="nc ${doc.bg?.c === c ? 'on' : ''}" data-nc="${c}" style="background:${c}" aria-label="Note colour"></button>`).join('')
+      + `<button data-na="more">+ Room</button><button data-na="less">− Room</button><button data-na="links">Links${doc.note.links.length ? ' ' + doc.note.links.length : ''}</button><button data-na="pin" class="${doc.note.pin ? 'on' : ''}">${doc.note.pin ? 'Pinned' : 'Hidden'}</button>`; };
+  $('#dz-notebar')?.addEventListener('click', async (e) => { const c = e.target.closest('[data-nc]')?.dataset.nc, a = e.target.closest('[data-na]')?.dataset.na;
+    if (c) { doc.bg = { ...doc.bg, c }; changed(true); return noteBar(); }
+    if (a === 'pin') { doc.note.pin = !doc.note.pin; changed(true); return noteBar(); }
+    if (a === 'links') { const l = await noteLinks(doc.note.links); if (l) { doc.note.links = l; changed(true); noteBar(); } return; }
+    if (a === 'more' || a === 'less') { const low = Math.max(450, ...doc.layers.map(l => (l.y || 0) + (l.h || 0)));   // never cuts into what's on the note
+      doc.h = a === 'more' ? doc.h + 450 : Math.max(low, doc.h - 450); if (a === 'less' && doc.h === low && low > 450) toast('That\u2019s as short as the note\u2019s contents allow.');
+      fit(false); const r = stage.getBoundingClientRect(); z = Math.max(1, Math.min(12, (r.width - 84) / doc.w / fitK)); fit(false); vy = Math.min(0, (r.height - doc.h * k) / 2 - 70); fit(); changed(true); } });
+  noteBar();
   const undo = (d) => { if (histT) { clearTimeout(histT); push(); } const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; qsHide(); drawPen(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
@@ -2611,6 +2635,11 @@ DZ.edit = async (id) => {
   const center = (w, h) => ({ x: (doc.w - w) / 2, y: (doc.h - h) / 2, w, h });
   const add = (l) => { doc.layers.push({ id: dzId(), op: 1, rot: 0, ...l, ...(doc.sides && face !== 'f' ? { side: face } : {}) }); sel = doc.layers.at(-1).id; changed(true); drawSide(); };
   const importPic = async (file, max = 2000) => {
+    if (/svg/.test(file.type) || /\.svg$/i.test(file.name || '')) {   // an SVG: drawn crisp to a clear-background picture
+      const u = URL.createObjectURL(file), im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('That SVG could not be read.')); i.src = u; });
+      const nw = im.naturalWidth || 1000, nh = im.naturalHeight || 1000, s = Math.min(max, 1600) / Math.max(nw, nh), c = document.createElement('canvas'); c.width = Math.round(nw * s); c.height = Math.round(nh * s);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+      const ref = await Media.save(await new Promise(r => c.toBlob(r, 'image/png')), 'png'); return { ref, ar: c.width / c.height }; }
     const alpha = /png|webp|gif/.test(file.type);
     const blob = alpha ? await pngBlob(file, max) : await Media.shrink(file, max, 0.9);
     const ref = await Media.save(blob, alpha ? 'png' : 'jpg');

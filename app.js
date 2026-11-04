@@ -7521,6 +7521,85 @@ async function bookingsCsv(cols) {
         ...cols.map(c => raw(r, c[0])), ...(cols.some(c => c[0] === 'deposit') ? [r.deposit_paid ? 'Yes' : 'No'] : [])]; }));
 }
 
+/* ---------- Sticky notes on the menu screens ----------
+   Pinned notes (designs of kind 'note') float over Home, Studio and More only, wherever they were dragged; a long
+   one scrolls inside itself. The Notes button lists them all to pin, hide, edit or start a new one. */
+const NOTE_SCREENS = ['home', 'studio', 'more'], NOTE_SECTIONS = [['inventory', 'Shopping list'], ['book', 'Bookings'], ['clients', 'Clients'], ['portfolio', 'Portfolio'], ['quote', 'Quotes'], ['designs', 'Design studio'], ['tattoo', 'Tattoo simulator'], ['rules', 'Rule book']];
+const noteImg = new Map();   // design id -> { at, url }
+let noteRun = 0;
+const notePos = () => { try { return JSON.parse(Settings.get('note_pos', '{}')); } catch { return {}; } };
+async function notesRows() { return (await DB.all(`SELECT id, name, doc, thumb_ref, updated_at FROM designs WHERE kind = 'note' ORDER BY id`)).map(r => { let doc = {}; try { doc = JSON.parse(r.doc); } catch {} return { ...r, doc }; }); }
+async function notesShow() {
+  const run = ++noteRun, key = (location.hash.slice(1) || 'home').split('/')[0];
+  document.querySelectorAll('#notes-layer').forEach(x => x.remove());
+  if (!NOTE_SCREENS.includes(key) || !booted) return;
+  const rows = await notesRows(); if (run !== noteRun) return;
+  const pos = notePos(), L = document.createElement('div'); L.id = 'notes-layer';
+  L.innerHTML = '<button id="notes-btn" data-tip="Your sticky notes: pin, hide, edit or add one">Notes</button>';
+  const shown = rows.filter(r => r.doc.note?.pin);
+  for (let i = 0; i < shown.length; i++) { const r = shown[i], u = await noteUrl(r); if (run !== noteRun) return;
+    const links = await noteLive(r.doc.note.links || []); if (run !== noteRun) return;
+    const p = pos[r.id] || { x: 16 + i * 24, y: 80 + i * 24 }, n = document.createElement('div'); n.className = 'note-pin'; n.dataset.note = r.id;
+    n.style.left = Math.max(0, Math.min(innerWidth - 80, p.x)) + 'px'; n.style.top = Math.max(0, Math.min(innerHeight - 60, p.y)) + 'px'; n.style.background = r.doc.bg?.c || '#ffe27a';
+    n.innerHTML = `<div class="note-h" data-tip="Drag to move"><span>⋮⋮</span><button data-ne="${r.id}" aria-label="Edit note" data-tip="Edit">✎</button><button data-nh="${r.id}" aria-label="Hide note" data-tip="Hide">×</button></div>
+      <div class="note-b"><img src="${u}" alt="${esc(r.name)}" draggable="false"></div>${links.length ? `<div class="note-l">${links.map(l => `<a href="#${esc(l.go)}">${esc(l.label)}</a>`).join('')}</div>` : ''}`;
+    L.appendChild(n); }
+  document.body.appendChild(L);
+  L.addEventListener('click', async (e) => { const ne = e.target.closest('[data-ne]')?.dataset.ne, nh = e.target.closest('[data-nh]')?.dataset.nh;
+    if (e.target.closest('#notes-btn')) return notesPanel();
+    if (ne) { location.hash = 'design/' + ne; return; }
+    if (nh) { await notePin(+nh, false); notesShow(); } });
+  let drag = null;
+  L.addEventListener('pointerdown', (e) => { const h = e.target.closest('.note-h'); if (!h || e.target.closest('button')) return; const n = h.parentElement, b = n.getBoundingClientRect(); drag = { n, dx: e.clientX - b.left, dy: e.clientY - b.top }; try { h.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); });
+  L.addEventListener('pointermove', (e) => { if (!drag) return; drag.n.style.left = Math.max(0, Math.min(innerWidth - 80, e.clientX - drag.dx)) + 'px'; drag.n.style.top = Math.max(0, Math.min(innerHeight - 60, e.clientY - drag.dy)) + 'px'; });
+  const end = () => { if (!drag) return; const P = notePos(); P[drag.n.dataset.note] = { x: parseFloat(drag.n.style.left), y: parseFloat(drag.n.style.top) }; Settings.set('note_pos', JSON.stringify(P)); drag = null; };
+  L.addEventListener('pointerup', end); L.addEventListener('pointercancel', end);
+}
+// The note as a picture, redrawn only when it has changed.
+async function noteUrl(r) { const c = noteImg.get(r.id); if (c?.at === r.updated_at) return c.url;
+  const cv = await dzCanvas(r.doc, 460 / r.doc.w), url = URL.createObjectURL(await new Promise(res => cv.toBlob(res, 'image/png')));
+  if (c) URL.revokeObjectURL(c.url); noteImg.set(r.id, { at: r.updated_at, url }); return url; }
+async function notePin(id, on) { const r = await DB.one('SELECT doc FROM designs WHERE id = ?', [id]); if (!r) return; const doc = JSON.parse(r.doc); doc.note = { links: [], ...doc.note, pin: on };
+  await DB.run('UPDATE designs SET doc = ? WHERE id = ?', [JSON.stringify(doc), id]); }
+// Links whose client or booking still exists, with today's names.
+async function noteLive(links) { const out = [];
+  for (const l of links) {
+    if (l.type === 'client') { const c = await DB.one('SELECT id, first_name, last_name FROM clients WHERE id = ?', [l.id]); if (c) out.push({ go: 'client/' + c.id, label: fullName(c) }); }
+    else if (l.type === 'booking') { const b = await DB.one('SELECT id, start_at FROM bookings WHERE id = ?', [l.id]); if (b) out.push({ go: 'booking-edit/' + b.id, label: fmtDay(b.start_at) }); }
+    else { const s = NOTE_SECTIONS.find(x => x[0] === l.go); if (s) out.push({ go: s[0], label: s[1] }); } }
+  return out; }
+async function notesPanel() {
+  const rows = await notesRows(), us = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card"><h2>Sticky notes</h2>${rows.length ? rows.map((r, i) => `<div class="note-row"><img src="${us[i] || ''}" alt=""><b>${esc(r.name)}</b>
+      <button class="btn small ${r.doc.note?.pin ? 'primary' : ''}" data-p="${r.id}">${r.doc.note?.pin ? 'Pinned' : 'Hidden'}</button><button class="btn small" data-e="${r.id}">Edit</button></div>`).join('') : '<p class="muted">No notes yet.</p>'}
+    <div class="row" style="gap:8px;margin-top:12px"><button class="btn" data-x>Close</button><span style="flex:1"></span><button class="btn primary" data-n>+ New note</button></div></div>`;
+  o.onclick = async (e) => { const t = e.target, p = t.closest('[data-p]')?.dataset.p, ed = t.closest('[data-e]')?.dataset.e;
+    if (t.closest('[data-x]') || t === o) { o.remove(); return notesShow(); }
+    if (t.closest('[data-n]')) { o.remove(); return dzNoteNew(); }
+    if (ed) { o.remove(); location.hash = 'design/' + ed; return; }
+    if (p) { const r = rows.find(x => x.id === +p), on = !r.doc.note?.pin; await notePin(+p, on); r.doc.note = { ...r.doc.note, pin: on }; t.textContent = on ? 'Pinned' : 'Hidden'; t.classList.toggle('primary', on); } };
+  document.body.appendChild(o);
+}
+// Choosing a note's links: sections, a client, an upcoming appointment. Resolves the new list, or null if cancelled.
+async function noteLinks(cur) {
+  const list = cur.map(l => ({ ...l })), clients = await DB.all('SELECT id, first_name, last_name FROM clients ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE LIMIT 500');
+  const books = await DB.all(`SELECT b.id, b.start_at, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.start_at >= date('now') ORDER BY b.start_at LIMIT 100`);
+  const lab = (l) => l.label || NOTE_SECTIONS.find(s => s[0] === l.go)?.[1] || l.go;
+  return new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
+    const draw = () => { o.innerHTML = `<div class="card"><h2>Quick links</h2><div class="note-chips">${list.map((l, i) => `<button class="btn small" data-rm="${i}">${esc(lab(l))} ×</button>`).join('') || '<span class="muted">None yet.</span>'}</div>
+      <div class="lbl">Section</div><select class="in" data-s><option value="">Add a section…</option>${NOTE_SECTIONS.map(([g, n]) => `<option value="${g}">${n}</option>`).join('')}</select>
+      <div class="lbl">Client</div><select class="in" data-c><option value="">Add a client…</option>${clients.map(c => `<option value="${c.id}">${esc(fullName(c))}</option>`).join('')}</select>
+      <div class="lbl">Appointment</div><select class="in" data-b><option value="">Add an upcoming appointment…</option>${books.map(b => `<option value="${b.id}">${esc(fmtDay(b.start_at))}${b.first_name ? ' · ' + esc(fullName(b)) : ''}</option>`).join('')}</select>
+      <div class="row" style="gap:8px;margin-top:12px"><button class="btn" data-x style="flex:1">Cancel</button><button class="btn primary" data-ok style="flex:1">Done</button></div></div>`; };
+    o.onchange = (e) => { const v = e.target.value, t = e.target; if (!v) return;
+      if (t.matches('[data-s]')) list.push({ type: 'section', go: v });
+      if (t.matches('[data-c]')) { const c = clients.find(x => x.id === +v); list.push({ type: 'client', id: c.id, label: fullName(c) }); }
+      if (t.matches('[data-b]')) { const b = books.find(x => x.id === +v); list.push({ type: 'booking', id: b.id, label: fmtDay(b.start_at) }); } draw(); };
+    o.onclick = (e) => { const rm = e.target.closest('[data-rm]')?.dataset.rm; if (rm != null) { list.splice(+rm, 1); return draw(); }
+      if (e.target.closest('[data-x]')) { o.remove(); res(null); } if (e.target.closest('[data-ok]')) { o.remove(); res(list); } };
+    document.body.appendChild(o); draw(); }); }
+
 /* Unsaved-form guard: navigating away from a dirty form asks first. */
 const Dirty = {
   on: false,
@@ -7550,6 +7629,7 @@ function render() {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === active));
   $('#main').scrollTop = 0;
   v.mount?.(arg);
+  notesShow();
 }
 $('#nav').addEventListener('click', e => {
   const b = e.target.closest('.nav-btn'); if (b) location.hash = b.dataset.view;
@@ -7777,7 +7857,7 @@ async function startWorkspace(w, fileBytes) {
       <button class="btn primary" onclick="location.reload()">Reload</button></div>`;
     return;
   }
-  booted = true;
+  booted = true; notesShow();
   Snapshot.ready = true;
   render();
   if (w.cloud) cloudBar(Cloud.viewOnly ? undefined : null);
