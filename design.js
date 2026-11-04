@@ -2751,7 +2751,7 @@ DZ.edit = async (id) => {
     }
   }, true);
   stage.addEventListener('pointerdown', (e) => {
-    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop')) return;
+    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop, .dz-notebar')) return;
     // Background (around the design, or an empty part of it): drag to pan, tap to deselect. Shift-drag, or on a
     // touchscreen a moment's hold before dragging, draws a selection box instead.
     stage.setPointerCapture(e.pointerId);

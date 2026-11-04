@@ -7526,7 +7526,7 @@ async function bookingsCsv(cols) {
    one scrolls inside itself. The Notes button lists them all to pin, hide, edit or start a new one. */
 const NOTE_SCREENS = ['home', 'studio', 'more'], NOTE_SECTIONS = [['inventory', 'Shopping list'], ['book', 'Bookings'], ['clients', 'Clients'], ['portfolio', 'Portfolio'], ['quote', 'Quotes'], ['designs', 'Design studio'], ['tattoo', 'Tattoo simulator'], ['rules', 'Rule book']];
 const noteImg = new Map();   // design id -> { at, url }
-let noteRun = 0;
+let noteRun = 0, noteTop = 1;   // noteTop: raises the note last touched (without moving it in the page, which would cancel the tap)
 const notePos = () => { try { return JSON.parse(Settings.get('note_pos', '{}')); } catch { return {}; } };
 async function notesRows() { return (await DB.all(`SELECT id, name, doc, thumb_ref, updated_at FROM designs WHERE kind = 'note' ORDER BY id`)).map(r => { let doc = {}; try { doc = JSON.parse(r.doc); } catch {} return { ...r, doc }; }); }
 async function notesShow() {
@@ -7560,7 +7560,7 @@ async function notesShow() {
     await DB.run('UPDATE designs SET doc = ? WHERE id = ?', [JSON.stringify(doc), +n.dataset.note]); });
   // Tapping a note shows its strip for a few seconds (a mouse just hovers).
   let stripT = 0;
-  L.addEventListener('pointerdown', (e) => { const n = e.target.closest('.note-pin'); L.querySelectorAll('.note-pin.on').forEach(x => x !== n && x.classList.remove('on')); if (!n) return; n.classList.add('on'); L.appendChild(n); clearTimeout(stripT); stripT = setTimeout(() => n.classList.remove('on'), 4000); }, true);
+  L.addEventListener('pointerdown', (e) => { const n = e.target.closest('.note-pin'); L.querySelectorAll('.note-pin.on').forEach(x => x !== n && x.classList.remove('on')); if (!n) return; n.classList.add('on'); n.style.zIndex = ++noteTop; clearTimeout(stripT); stripT = setTimeout(() => n.classList.remove('on'), 4000); }, true);
   let drag = null;
   L.addEventListener('pointerdown', (e) => { const n = e.target.closest('.note-pin'); if (!n || e.target.closest('button') || (!e.target.closest('.note-h') && !n.classList.contains('min'))) return; const b = n.getBoundingClientRect(); drag = { n, dx: e.clientX - b.left, dy: e.clientY - b.top, x: e.clientX, y: e.clientY }; try { L.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); });
   L.addEventListener('pointermove', (e) => { if (!drag) return; if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true; drag.n.style.left = Math.max(0, Math.min(innerWidth - 80, e.clientX - drag.dx)) + 'px'; drag.n.style.top = Math.max(0, Math.min(innerHeight - 60, e.clientY - drag.dy)) + 'px'; });
