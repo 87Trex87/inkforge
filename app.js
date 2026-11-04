@@ -7539,11 +7539,11 @@ async function notesShow() {
   const shown = rows.filter(r => r.doc.note?.pin);
   for (let i = 0; i < shown.length; i++) { const r = shown[i], u = await noteUrl(r); if (run !== noteRun) return;
     const links = await noteLive(r.doc.note.links || []); if (run !== noteRun) return;
-    const p = pos[r.id] || { x: 16 + i * 24, y: 80 + i * 24 }, n = document.createElement('div'); n.className = 'note-pin' + (p.st ? ' ' + p.st : ''); n.dataset.note = r.id;
+    const p = pos[r.id] || { x: 16 + i * 24, y: 80 + i * 24 }, n = document.createElement('div'); n.className = 'note-pin' + (p.st ? ' ' + p.st : ''); n.dataset.note = r.id; if (p.w) n.style.setProperty('--nw', p.w + 'px');
     const live = await noteLayers(r); if (run !== noteRun) return;
     n.style.left = Math.max(0, Math.min(innerWidth - 80, p.x)) + 'px'; n.style.top = Math.max(0, Math.min(innerHeight - 60, p.y)) + 'px'; n.style.background = r.doc.bg?.c || '#ffe27a';
     n.innerHTML = `<div class="note-h" data-tip="Drag to move"><span>⋮⋮</span><button data-nm aria-label="Minimise" data-tip="Minimise">−</button><button data-nx aria-label="Maximise" data-tip="Bigger or back">⤢</button><button data-ne="${r.id}" aria-label="Edit note" data-tip="Edit">✎</button><button data-nh="${r.id}" aria-label="Hide note" data-tip="Hide">×</button></div>
-      <div class="note-b"><div class="note-c"><img src="${u}" alt="${esc(r.name)}" draggable="false">${live}</div></div>${links.length ? `<div class="note-l">${links.map(l => `<a href="#${esc(l.go)}">${esc(l.label)}</a>`).join('')}</div>` : ''}`;
+      <div class="note-b"><div class="note-c"><img src="${u}" alt="${esc(r.name)}" draggable="false">${live}</div></div>${links.length ? `<div class="note-l">${links.map(l => `<a href="#${esc(l.go)}">${esc(l.label)}</a>`).join('')}</div>` : ''}<i class="note-rz" data-tip="Drag to resize"></i>`;
     L.appendChild(n); }
   document.body.appendChild(L);
   L.addEventListener('click', async (e) => { const ne = e.target.closest('[data-ne]')?.dataset.ne, nh = e.target.closest('[data-nh]')?.dataset.nh;
@@ -7562,6 +7562,12 @@ async function notesShow() {
   let stripT = 0;
   L.addEventListener('pointerdown', (e) => { const n = e.target.closest('.note-pin'); L.querySelectorAll('.note-pin.on').forEach(x => x !== n && x.classList.remove('on')); if (!n) return; n.classList.add('on'); n.style.zIndex = ++noteTop; clearTimeout(stripT); stripT = setTimeout(() => n.classList.remove('on'), 4000); }, true);
   let drag = null;
+  // Resizing from the corner: its normal size is the largest, and it only goes a little smaller (contents scale with it).
+  let rz = null;
+  L.addEventListener('pointerdown', (e) => { if (!e.target.closest('.note-rz')) return; const n = e.target.closest('.note-pin'); rz = { n, x: e.clientX, w: n.offsetWidth }; try { L.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); e.stopImmediatePropagation(); });
+  L.addEventListener('pointermove', (e) => { if (rz) rz.n.style.setProperty('--nw', Math.round(Math.max(150, Math.min(210, rz.w + e.clientX - rz.x))) + 'px'); });
+  const rzEnd = () => { if (!rz) return; const P = notePos(), id = rz.n.dataset.note, b = rz.n.getBoundingClientRect(); P[id] = { x: b.left, y: b.top, ...P[id], w: rz.n.offsetWidth }; Settings.set('note_pos', JSON.stringify(P)); rz = null; };
+  L.addEventListener('pointerup', rzEnd); L.addEventListener('pointercancel', rzEnd);
   L.addEventListener('pointerdown', (e) => { const n = e.target.closest('.note-pin'); if (!n || e.target.closest('button') || (!e.target.closest('.note-h') && !n.classList.contains('min'))) return; const b = n.getBoundingClientRect(); drag = { n, dx: e.clientX - b.left, dy: e.clientY - b.top, x: e.clientX, y: e.clientY }; try { L.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); });
   L.addEventListener('pointermove', (e) => { if (!drag) return; if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true; drag.n.style.left = Math.max(0, Math.min(innerWidth - 80, e.clientX - drag.dx)) + 'px'; drag.n.style.top = Math.max(0, Math.min(innerHeight - 60, e.clientY - drag.dy)) + 'px'; });
   const end = () => { if (!drag) return; const P = notePos(), id = drag.n.dataset.note; P[id] = { ...P[id], x: parseFloat(drag.n.style.left), y: parseFloat(drag.n.style.top) }; Settings.set('note_pos', JSON.stringify(P));
@@ -7620,12 +7626,20 @@ async function notesPanel() {
   const rows = await notesRows(), us = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   const o = document.createElement('div'); o.id = 'merge-dlg';
   o.innerHTML = `<div class="card"><h2>Sticky notes</h2>${rows.length ? rows.map((r, i) => `<div class="note-row"><img src="${us[i] || ''}" alt=""><b>${esc(r.name)}</b>
-      <button class="btn small ${r.doc.note?.pin ? 'primary' : ''}" data-p="${r.id}">${r.doc.note?.pin ? 'Pinned' : 'Hidden'}</button><button class="btn small" data-e="${r.id}">Edit</button></div>`).join('') : '<p class="muted">No notes yet.</p>'}
+      <button class="btn small ${r.doc.note?.pin ? 'primary' : ''}" data-p="${r.id}">${r.doc.note?.pin ? 'Pinned' : 'Hidden'}</button><button class="btn small" data-e="${r.id}">Edit</button><button class="btn small" data-d="${r.id}" aria-label="Delete note" data-tip="Delete this note">Delete</button></div>`).join('') : '<p class="muted">No notes yet.</p>'}
     <div class="row" style="gap:8px;margin-top:12px"><button class="btn" data-x>Close</button><span style="flex:1"></span><button class="btn primary" data-n>+ New note</button></div></div>`;
   o.onclick = async (e) => { const t = e.target, p = t.closest('[data-p]')?.dataset.p, ed = t.closest('[data-e]')?.dataset.e;
     if (t.closest('[data-x]') || t === o) { o.remove(); return notesShow(); }
     if (t.closest('[data-n]')) { o.remove(); return dzNoteNew(); }
     if (ed) { o.remove(); location.hash = 'design/' + ed; return; }
+    const del = t.closest('[data-d]')?.dataset.d;
+    if (del) { const r = rows.find(x => x.id === +del); if (!await ask(`Delete "${r.name}"?
+
+This can't be undone.`)) return;
+      const refs = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [r.id])).map(x => x.ref); await DB.run('DELETE FROM designs WHERE id = ?', [r.id]);
+      for (const ref of [r.thumb_ref, ...refs]) await Media.release(ref);
+      const P = notePos(); delete P[r.id]; await Settings.set('note_pos', JSON.stringify(P)); const c = noteImg.get(r.id); if (c) { URL.revokeObjectURL(c.url); noteImg.delete(r.id); }
+      t.closest('.note-row').remove(); return notesShow(); }
     if (p) { const r = rows.find(x => x.id === +p), on = !r.doc.note?.pin; await notePin(+p, on); r.doc.note = { ...r.doc.note, pin: on }; t.textContent = on ? 'Pinned' : 'Hidden'; t.classList.toggle('primary', on); } };
   document.body.appendChild(o);
 }

@@ -1539,3 +1539,10 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .note-pin:hover .note-b, .note-pin.on .note-b { scrollbar-width: auto; } .note-pin:hover .note-b::-webkit-scrollbar, .note-pin.on .note-b::-webkit-scrollbar { display: block; width: 8px; }
 .note-b::-webkit-scrollbar-track { margin-top: 30px; background: rgba(0,0,0,.1); } .note-b::-webkit-scrollbar-thumb { background: rgba(0,0,0,.45); border-radius: 4px; }   /* starts below the strip */
 .note-c { width: 210px; } .note-pin.min .note-c { width: 64px; } .note-pin.max .note-c { width: min(92vw, 440px); }
+
+/* resizable pinned note */
+.note-pin { width: var(--nw, 210px); } .note-c { width: var(--nw, 210px); } .note-b { max-height: calc(var(--nw, 210px) * 1.1); }
+.note-pin.min { width: 64px; } .note-pin.min .note-c { width: 64px; } .note-pin.min .note-b { max-height: 64px; }
+.note-pin.max { width: min(92vw, 440px); } .note-pin.max .note-c { width: min(92vw, 440px); } .note-pin.max .note-b { max-height: 70vh; }
+.note-rz { position: absolute; right: 0; bottom: 0; z-index: 2; width: 26px; height: 26px; cursor: nwse-resize; touch-action: none; opacity: 0; pointer-events: none; background: linear-gradient(135deg, transparent 55%, rgba(0,0,0,.55) 55%); }
+.note-pin:hover .note-rz, .note-pin.on .note-rz { opacity: 1; pointer-events: auto; } .note-pin.min .note-rz, .note-pin.max .note-rz { display: none; }
