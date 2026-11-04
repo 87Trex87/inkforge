@@ -7543,7 +7543,7 @@ async function notesShow() {
     const live = await noteLayers(r); if (run !== noteRun) return;
     n.style.left = Math.max(0, Math.min(innerWidth - 80, p.x)) + 'px'; n.style.top = Math.max(0, Math.min(innerHeight - 60, p.y)) + 'px'; n.style.background = r.doc.bg?.c || '#ffe27a';
     n.innerHTML = `<div class="note-h" data-tip="Drag to move"><span>⋮⋮</span><button data-nm aria-label="Minimise" data-tip="Minimise">−</button><button data-nx aria-label="Maximise" data-tip="Bigger or back">⤢</button><button data-ne="${r.id}" aria-label="Edit note" data-tip="Edit">✎</button><button data-nh="${r.id}" aria-label="Hide note" data-tip="Hide">×</button></div>
-      <div class="note-b"><div class="note-c"><img src="${u}" alt="${esc(r.name)}" draggable="false">${live}</div></div>${links.length ? `<div class="note-l">${links.map(l => `<a href="#${esc(l.go)}">${esc(l.label)}</a>`).join('')}</div>` : ''}<i class="note-rz" data-tip="Drag to resize"></i>`;
+      <div class="note-b"><div class="note-c"><img src="${u}" alt="${esc(r.name)}" draggable="false">${live}</div></div>${links.length ? `<div class="note-l">${links.map(l => l.url ? `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.label)} ↗</a>` : `<a href="#${esc(l.go)}">${esc(l.label)}</a>`).join('')}</div>` : ''}<i class="note-rz" data-tip="Drag to resize"></i>`;
     L.appendChild(n); }
   document.body.appendChild(L);
   L.addEventListener('click', async (e) => { const ne = e.target.closest('[data-ne]')?.dataset.ne, nh = e.target.closest('[data-nh]')?.dataset.nh;
@@ -7618,6 +7618,7 @@ async function notePin(id, on) { const r = await DB.one('SELECT doc FROM designs
 // Links whose client or booking still exists, with today's names.
 async function noteLive(links) { const out = [];
   for (const l of links) {
+    if (l.type === 'web') { out.push({ url: l.url, label: l.label }); continue; }
     if (l.type === 'client') { const c = await DB.one('SELECT id, first_name, last_name FROM clients WHERE id = ?', [l.id]); if (c) out.push({ go: 'client/' + c.id, label: fullName(c) }); }
     else if (l.type === 'booking') { const b = await DB.one('SELECT id, start_at FROM bookings WHERE id = ?', [l.id]); if (b) out.push({ go: 'booking-edit/' + b.id, label: fmtDay(b.start_at) }); }
     else { const s = NOTE_SECTIONS.find(x => x[0] === l.go); if (s) out.push({ go: s[0], label: s[1] }); } }
@@ -7653,13 +7654,19 @@ async function noteLinks(cur) {
       <div class="lbl">Section</div><select class="in" data-s><option value="">Add a section…</option>${NOTE_SECTIONS.map(([g, n]) => `<option value="${g}">${n}</option>`).join('')}</select>
       <div class="lbl">Client</div><select class="in" data-c><option value="">Add a client…</option>${clients.map(c => `<option value="${c.id}">${esc(fullName(c))}</option>`).join('')}</select>
       <div class="lbl">Appointment</div><select class="in" data-b><option value="">Add an upcoming appointment…</option>${books.map(b => `<option value="${b.id}">${esc(fmtDay(b.start_at))}${b.first_name ? ' · ' + esc(fullName(b)) : ''}</option>`).join('')}</select>
+      <div class="lbl">Website</div><div class="row" style="gap:6px;flex-wrap:wrap"><input class="in" id="nl-url" type="url" inputmode="url" placeholder="example.com" autocomplete="off" style="flex:2 1 150px"><input class="in" id="nl-name" placeholder="Name (optional)" autocomplete="off" style="flex:1 1 110px"><button class="btn small" data-web>Add</button></div>
       <div class="row" style="gap:8px;margin-top:12px"><button class="btn" data-x style="flex:1">Cancel</button><button class="btn primary" data-ok style="flex:1">Done</button></div></div>`; };
-    o.onchange = (e) => { const v = e.target.value, t = e.target; if (!v) return;
+    // A web address: https is assumed when none is typed, and only http(s) links are kept.
+    const addWeb = () => { let s = $('#nl-url', o).value.trim(); if (!s) return false; if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) s = 'https://' + s; let u; try { u = new URL(s); } catch { toast('That doesn’t look like a web address.'); return null; }
+      if (!/^https?:$/.test(u.protocol) || !u.hostname.includes('.')) { toast('That doesn’t look like a web address.'); return null; }
+      list.push({ type: 'web', url: u.href, label: $('#nl-name', o).value.trim() || u.hostname.replace(/^www\./, '') }); return true; };
+    o.onchange = (e) => { const v = e.target.value, t = e.target; if (!v || t.id === 'nl-url' || t.id === 'nl-name') return;
       if (t.matches('[data-s]')) list.push({ type: 'section', go: v });
       if (t.matches('[data-c]')) { const c = clients.find(x => x.id === +v); list.push({ type: 'client', id: c.id, label: fullName(c) }); }
       if (t.matches('[data-b]')) { const b = books.find(x => x.id === +v); list.push({ type: 'booking', id: b.id, label: fmtDay(b.start_at) }); } draw(); };
     o.onclick = (e) => { const rm = e.target.closest('[data-rm]')?.dataset.rm; if (rm != null) { list.splice(+rm, 1); return draw(); }
-      if (e.target.closest('[data-x]')) { o.remove(); res(null); } if (e.target.closest('[data-ok]')) { o.remove(); res(list); } };
+      if (e.target.closest('[data-web]')) { if (addWeb()) draw(); return; }
+      if (e.target.closest('[data-x]')) { o.remove(); res(null); } if (e.target.closest('[data-ok]')) { if (addWeb() === null) return; o.remove(); res(list); } };
     document.body.appendChild(o); draw(); }); }
 
 /* Unsaved-form guard: navigating away from a dirty form asks first. */
