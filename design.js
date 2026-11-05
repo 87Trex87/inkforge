@@ -359,6 +359,7 @@ const DZ_UI = {
   eyeoff: '<path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   all: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2.5"/><path d="M8 12l3 3 5-6"/>', none: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2.5"/><path d="M9 9l6 6M15 9l-6 6"/>',
   merge: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M12 14v7M9 18l3 3 3-3"/>', png: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>',
+  qr: '<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/>', link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   frametext: '<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 2"/><path d="M8 9h8M8 12h8M8 15h5"/>', ajust: '<path d="M4 6h16M4 10h16M4 14h16M4 18h9"/>', vtop: '<path d="M4 4h16M12 20V9M8 12l4-4 4 4"/>', vmid: '<path d="M4 12h16M12 3v5M12 21v-5M9 6l3 2 3-2M9 18l3-2 3 2"/>', vbot: '<path d="M4 20h16M12 4v11M8 12l4 4 4-4"/>',
   aleft: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>', acenter: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>', aright: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>',
   s_rect: '<rect x="4" y="4" width="16" height="16"/>', s_round: '<rect x="4" y="4" width="16" height="16" rx="5"/>', s_ellipse: '<circle cx="12" cy="12" r="8.5"/>',
@@ -621,6 +622,8 @@ function dzTrim(c) {
 // CSS for a gradient's colour bar (left to right).
 const dzGradCss = (doc, g) => `linear-gradient(90deg, ${[...g.stops].sort((a, b) => a.p - b.p).map(st => `${dzCol(doc, st.c) || '#000'} ${Math.round(st.p * 1000) / 10}%`).join(', ')})`;
 // Draws the design onto a canvas at `scale` (canvas px per page px). Text layers get their height measured.
+// A link as it will be opened: https:// added where there's no scheme, and only web, mail and phone links allowed.
+const dzLinkOK = (s) => { s = String(s || '').trim(); if (!s || /^https?:\/\/$/i.test(s)) return ''; if (/^(https?:|mailto:|tel:)/i.test(s)) return s; if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return ''; if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return 'mailto:' + s; return 'https://' + s; };
 const txt0 = (doc, l) => dzCase(l, dzFill(doc, l.text));
 /* Text on a curve: a text layer with `on` set to a shape's id runs along that shape's outline (its first loop). Its box
    follows the shape; moving the text by any means moves the shape with it. Closed shapes run clockwise from the top so
@@ -688,6 +691,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     const flip = () => { if (l.fx || l.fy) x.scale(l.fx ? -1 : 1, l.fy ? -1 : 1); };   // mirrored
     if (l.t === 'shortcut' || l.t === 'check') { dzNoteDraw(x, l, doc, nIco); x.restore(); return; }
     if (l.t === 'field') { dzFieldDraw(x, doc, l, opts); x.restore(); return; }
+    if (l.qr && l.qrbg && l.qrbg !== 'none') { x.fillStyle = dzCol(doc, l.qrbg); x.fillRect(-l.w / 2, -(l.h || 0) / 2, l.w, l.h || 0); }
     if (l.t === 'text') {
       flip();
       const px = l._px || l.size, lh = px * (l.lh || 1.2); x.font = dzFontStr(doc, l, px);
@@ -1679,7 +1683,7 @@ DZ.edit = async (id) => {
       + [['left', 'aleft'], ['center', 'acenter'], ['right', 'aright'], ...(l.frame ? [['justify', 'ajust']] : [])].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')
       + (l.frame ? sep + [['top', 'vtop', 'Top of the frame'], ['middle', 'vmid', 'Middle of the frame'], ['bottom', 'vbot', 'Bottom of the frame']].map(([a, ic, n]) => dzIB(`data-va="${a}"`, ic, n, (l.va || 'top') === a ? 'on' : '')).join('') : '')
       + sep + col('c', 'Text', 'Text colour');
-    else if (l.t === 'shape') own = (l.shape === 'ring' ? '' : dzIB('data-curvetext', '<path d="M3 17C8 7 16 7 21 17"/><path d="M9 6V3h6v3M12 3v7"/>', 'Text on this curve') + sep) + (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40));
+    else if (l.t === 'shape') own = (l.shape === 'ring' || l.qr ? '' : dzIB('data-curvetext', '<path d="M3 17C8 7 16 7 21 17"/><path d="M9 6V3h6v3M12 3v7"/>', 'Text on this curve') + sep) + (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40));
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
     else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour');
     const field = l.t === 'field';
@@ -1688,7 +1692,7 @@ DZ.edit = async (id) => {
       + (field ? '' : dzIB('data-act="fx"', 'fx', 'Flip left to right', l.fx ? 'on' : '') + dzIB('data-act="fy"', 'fy', 'Flip upside down', l.fy ? 'on' : '') + dzIB(`data-act="clip" ${F().indexOf(l) ? '' : 'disabled'}`, 'clip', 'Clip to the layer below: only shows inside it', clipped(l) ? 'on' : '') + sep
         + `${l.t !== 'text' ? dzIB('data-act="crop"', 'crop', 'Crop', cropping ? 'on' : '') : ''}
         ${dzIB('data-act="cut"', 'area', 'Select area: part of it by box, ellipse, lasso or colour, to delete, split or move')}
-        ${l.t === 'shape' && l.shape !== 'line' ? dzIB('data-act="nodes"', 'nodes', l.shape === 'vec' ? 'Edit nodes' : 'Edit nodes (turns it into a free shape)') : ''}
+        ${l.t === 'shape' && l.shape !== 'line' && !l.qr ? dzIB('data-act="nodes"', 'nodes', l.shape === 'vec' ? 'Edit nodes' : 'Edit nodes (turns it into a free shape)') : ''}
         <button class="dz-ib" data-bool="contour" data-tip="Contour: grow or shrink the outline, or add a border round it (O)" aria-label="Contour">${DZ_BOOL_ICON.contour}</button>
         ${l.t === 'shape' && (l.subs?.length > 1 || l.shape === 'path' || l.shape === 'ring') ? `<button class="dz-ib" data-bool="separate" data-tip="Separate: split into its pieces" aria-label="Separate">${DZ_BOOL_ICON.separate}</button>` : ''}
         ${l.t === 'image' && (l.ref || l.logo) ? dzIB('data-act="toshape"', 'toshape', 'To shape: trace the picture into a shape you can fill') : ''}
@@ -1745,7 +1749,7 @@ DZ.edit = async (id) => {
     p.innerHTML = a === 'fields' ? FF_TYPES.map(([v, n]) => mi(`data-ffadd="${v}"`, 'frametext', n)).join('') : a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="frame"', 'frametext', 'Frame text') + mi('data-add="heading"', 'heading', 'Heading')
         + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
       : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-add="logo"', 'logo', 'Studio logo')
-      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => dzIB(`data-shape="${v}"`, 's_' + v, n)).join('')}</div>` + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
+      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => dzIB(`data-shape="${v}"`, 's_' + v, n)).join('')}</div>` + mi('data-qradd', 'qr', 'QR code') + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
     p.hidden = false; btn?.classList.add('open');
     const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p.offsetHeight - 8)) + 'px';
   };
@@ -1838,7 +1842,7 @@ DZ.edit = async (id) => {
         ${fsec('Text', `<textarea class="in dz-text" data-k="text" rows="${l.frame ? 7 : 2}">${esc(l.text)}</textarea>
           <div class="row" style="margin-bottom:8px"><select class="in" data-tk="caps" aria-label="Case" style="flex:1;min-width:0">${[['', 'As typed'], ['upper', 'ALL CAPS'], ['small', 'Small caps'], ['title', 'Title Case'], ['lower', 'lowercase']].map(([v, n]) => `<option value="${v}" ${(l.caps || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>`, { fold: true, open: true })}
         ${fsec('Colour', `${fillUI(l, 'c')}${l.arc && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Bent text shows the plain colour.</p>' : ''}`, { fold: true, open: true })}
-        ${l.frame || l.vert ? '' : fsec('Follow a curve', `<label class="field"><span>Curve</span><select class="in" data-tcurve><option value="">None</option>${F().filter(s => s.t === 'shape').map(s => `<option value="${s.id}" ${l.on === s.id ? 'selected' : ''}>${esc(layerName(s))}</option>`).join('')}</select></label>
+        ${l.frame || l.vert ? '' : fsec('Follow a curve', `<label class="field"><span>Curve</span><select class="in" data-tcurve><option value="">None</option>${F().filter(s => s.t === 'shape' && !s.qr).map(s => `<option value="${s.id}" ${l.on === s.id ? 'selected' : ''}>${esc(layerName(s))}</option>`).join('')}</select></label>
           ${l.on ? `<label class="toggle" style="display:flex;margin-bottom:6px" data-tip="The text keeps its shape; the line itself no longer shows"><input type="checkbox" data-tchide ${doc.layers.find(s => s.id === l.on)?.hide ? 'checked' : ''}><span>Hide the curve</span></label>
           <label class="toggle" style="display:flex;margin-bottom:6px" data-tip="Run the other way, on the other side of the line"><input type="checkbox" data-tcflip ${l.pflip ? 'checked' : ''}><span>Flip to the other side</span></label>
           ${slider('pst', 'Start along the curve', -50, 50, 1, l.pst || 0, v => v + '%') + slider('pb', 'Distance from the curve', -100, 100, 1, l.pb || 0)}` : ''}`, { fold: true, open: !!l.on })}
@@ -1870,6 +1874,12 @@ DZ.edit = async (id) => {
           ${l.cover ? slider('px', 'Move photo left / right', -1, 1, 0.02, l.px || 0, v => Math.round(v * 100)) + slider('py', 'Move photo up / down', -1, 1, 0.02, l.py || 0, v => Math.round(v * 100)) : ''}
           ${slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0)}
 `}`, { fold: true, open: true })}
+      ${l.qr ? fsec('QR code', `<label class="field"><span>Link or text</span><textarea class="in" rows="2" data-qrt>${esc(l.qr.text)}</textarea></label>
+        <label class="field"><span>Survives damage</span><select class="in" data-qrec>${[['L', 'Low: smallest code'], ['M', 'Medium'], ['Q', 'High'], ['H', 'Highest: can take a logo on top']].map(([v, n]) => `<option value="${v}" ${l.qr.ec === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <div class="lbl">Background</div>${swatches('qrbg', l.qrbg, true)}
+        <p class="dz-hint muted" style="margin:6px 0 0">Keep it dark on light so phones can read it. Test it with your phone before printing.</p>`, { fold: true, open: true }) : ''}
+      ${doc.form && l.t !== 'field' ? fsec('Link', `<label class="field"><span>Opens when clicked in the PDF</span><input class="in" data-linkv value="${esc(l.link || '')}" placeholder="website, email or tel:" inputmode="url" autocomplete="off"></label>
+        ${l.link ? `<a class="btn small" href="${esc(l.link)}" target="_blank" rel="noopener">Try it</a>` : ''}${l.t === 'shape' && !l.qr && l.link ? ' <button class="btn small" data-qrfrom>Add a QR code of this link</button>' : ''}`, { fold: true, open: !!l.link }) : ''}
       ${fsec('Rotation and opacity', `${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
         ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}`, { fold: true })}
       ${fsec('Saving', `<div class="dz-tb">${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
@@ -3219,6 +3229,8 @@ DZ.edit = async (id) => {
     if (t.closest('[data-collapse]')) { mini = !mini; Settings.set('dz_panel_min', mini ? '1' : ''); return drawSide(); }
     if (d('rail')) return railAct(d('rail'), t.closest('[data-rail]'));
     if (t.closest('[data-ffupd]')) { const n = await ffUpdateLists(doc); toast(n ? `Updated ${n} field${n > 1 ? 's' : ''}.` : 'Already up to date.'); if (n) changed(true); return drawSide(); }
+    if (t.closest('[data-qradd], [data-qrfrom]')) { closePop(); const from = t.closest('[data-qrfrom]') ? l : null, txt = from?.link || 'https://', m = dzQr(txt, 'M'), s = from ? Math.min(from.w, from.h || from.w) * 0.8 : Math.min(doc.w, doc.h) * 0.3;
+      secOpen.set('QR code', true); return add({ t: 'shape', shape: 'vec', name: 'QR code', keep: true, qr: { text: txt, ec: 'M', link: true }, ...(from ? {} : {}), subs: dzQrSubs(m), fill: '#000000', stroke: 'none', sw: 0, qrbg: '#ffffff', w: s, h: s, x: from ? from.x + (from.w - s) / 2 : (doc.w - s) / 2, y: from ? from.y + ((from.h || 0) - s) / 2 : (doc.h - s) / 2, link: dzLinkOK(txt) }); }
     if (t.closest('[data-curvetext]') && l) { secOpen.set('Follow a curve', true); return add({ t: 'text', text: 'Your text here', size: Math.round(Math.max(24, Math.min(doc.h * 0.05, Math.min(l.w, l.h || l.w) * 0.14))), font: '@2', c: '@fg', al: 'center', lh: 1.2, on: l.id, x: l.x, y: l.y, w: l.w, h: l.h || 1 }); }
     if (t.closest('.dz-pop') && (d('add') || d('pic') || d('shape') || d('field'))) closePop();
     if (d('tab')) { tab = d('tab'); return drawSide(); }
@@ -3464,7 +3476,12 @@ DZ.edit = async (id) => {
   side.addEventListener('pointerup', (e) => { rowUp(); ldrop(e); }); side.addEventListener('pointercancel', (e) => { rowUp(); ldrop(e); });
   side.addEventListener('contextmenu', (e) => { if (e.target.closest('.dz-lr')) e.preventDefault(); });
   page.addEventListener('contextmenu', (e) => e.preventDefault());
+  side.addEventListener('input', (e) => { const t2 = e.target, l = layer(); if (!l?.qr || !(t2.hasAttribute('data-qrt') || t2.hasAttribute('data-qrec'))) return;
+    const txt = t2.hasAttribute('data-qrt') ? t2.value : l.qr.text, ec = t2.hasAttribute('data-qrec') ? t2.value : l.qr.ec, m = txt.trim() && dzQr(txt.trim(), ec); if (m === null) return toast('That is too long for a QR code.'); if (!m) return;
+    const wasLink = l.link === dzLinkOK(l.qr.text); l.qr = { ...l.qr, text: txt, ec }; l.subs = dzQrSubs(m); if (wasLink || !l.link) l.link = dzLinkOK(txt); changed(); });
   side.addEventListener('change', (e) => { const t2 = e.target, l = layer(); if (!l) return;
+    if (t2.hasAttribute('data-linkv')) { const v = dzLinkOK(t2.value); if (t2.value.trim() && !v) toast('Links can be web, email or phone.'); l.link = v; changed(true); return drawSide(); }
+    if (t2.hasAttribute('data-qrt') || t2.hasAttribute('data-qrec')) { changed(true); return drawSide(); }
     if (t2.hasAttribute('data-tcurve')) { if (t2.value) { Object.assign(l, { on: t2.value, arc: 0, al: 'center' }); delete l._bx; } else { const S = doc.layers.find(o => o.id === l.on); if (S?.hide) S.hide = false; delete l.on; delete l._bx; l.w = Math.min(l.w, doc.w * 0.8); } changed(true); return drawSide(); }
     if (t2.hasAttribute('data-tchide')) { const S = doc.layers.find(o => o.id === l.on); if (S) { S.hide = t2.checked; changed(true); } return; }
     if (t2.hasAttribute('data-tcflip')) { l.pflip = t2.checked; changed(true); } });
