@@ -1152,7 +1152,7 @@ function dzFillSlots(doc, piece) {
 function dzNew(kind, opt, theme, piece, size, sides) {
   const k = DZ_KINDS[kind], code = Math.random().toString(36).slice(2, 8).toUpperCase(), exp = new Date(); exp.setFullYear(exp.getFullYear() + 1);
   let doc;
-  if (opt?.custom) { doc = JSON.parse(JSON.stringify(opt.custom.doc)); doc.layers.forEach(l => l.id = dzId()); doc.theme = theme || doc.theme; }
+  if (opt?.custom) { doc = JSON.parse(JSON.stringify(opt.custom.doc)); { const ids = new Map(); doc.layers.forEach(l => { const n = dzId(); ids.set(l.id, n); l.id = n; }); doc.layers.forEach(l => { if (l.on) { l.on = ids.get(l.on); delete l._bx; } }); } doc.theme = theme || doc.theme; }
   else doc = { v: 1, kind, w: k.w, h: k.h, theme, bg: { c: '@bg' }, layers: opt?.make ? opt.make(k.w, k.h) : [] };
   doc.kind = kind; doc.w = k.w; doc.h = k.h;
   delete doc.dpi; delete doc.paper; delete doc.fold;
@@ -1904,10 +1904,13 @@ DZ.edit = async (id) => {
   const flatten = async (list, max = 4000) => {
     const vis = list.filter(l => !l.hide), bases = vis.filter(l => !(l.clip && vis.indexOf(l) > 0));
     if (!bases.length) return null;
-    const bs = bases.map(box), bx = Math.floor(Math.min(...bs.map(b => b.x0))), by = Math.floor(Math.min(...bs.map(b => b.y0)));
+    // Drawn past the box (the result is trimmed afterwards): outlines, shadows, and the tails of letters.
+    const extra = (l) => (l.sw || 0) + (l.tsw || 0) + (l.shc && l.shc !== 'none' ? Math.abs(l.shx ?? 6) + Math.abs(l.shy ?? 6) + (l.shb ?? 8) * 2 : 0) + (l.t === 'text' ? l.size * 0.5 : 0);
+    const bs = bases.map(l => { const b = box(l), e = extra(l); return { x0: b.x0 - e, y0: b.y0 - e, x1: b.x1 + e, y1: b.y1 + e }; }), bx = Math.floor(Math.min(...bs.map(b => b.x0))), by = Math.floor(Math.min(...bs.map(b => b.y0)));
     const bw = Math.max(1, Math.ceil(Math.max(...bs.map(b => b.x1))) - bx), bh = Math.max(1, Math.ceil(Math.max(...bs.map(b => b.y1))) - by);
-    const d = JSON.parse(JSON.stringify({ ...doc, layers: vis })); d.w = bw; d.h = bh; delete d.sides;
-    for (const l of d.layers) { l.x -= bx; l.y -= by; }
+    const curves = doc.layers.filter(s => vis.some(l => l.on === s.id) && !vis.includes(s)).map(s => ({ ...s, hide: true }));
+    const d = JSON.parse(JSON.stringify({ ...doc, layers: [...curves, ...vis] })); d.w = bw; d.h = bh; delete d.sides;
+    for (const l of d.layers) { l.x -= bx; l.y -= by; delete l._bx; }
     const sc = Math.min(1, max / Math.max(bw, bh)), c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(bw * sc)); c.height = Math.max(1, Math.round(bh * sc));
     await dzDraw(c, d, sc, { noBg: true });
@@ -1925,6 +1928,7 @@ DZ.edit = async (id) => {
     const f = await flatten(list); if (!f) return;
     const ref = await Media.save(await pngOf(f.cv), 'png'); made.add(ref);
     const gone = new Set(list.map(l => l.id)), top = Math.max(...list.map(l => doc.layers.indexOf(l)));
+    for (const l of list) if (l.on) { const S = doc.layers.find(s => s.id === l.on); if (S?.hide && !doc.layers.some(o => o.on === S.id && !gone.has(o.id))) gone.add(S.id); }
     const m = { id: dzId(), t: 'image', ref, side: list[0].side, x: f.bx, y: f.by, w: f.bw, h: f.bh, op: 1, rot: 0, name: list.length > 1 ? 'Merged' : layerName(list[0]) };
     const out = []; doc.layers.forEach((l, i) => { if (!gone.has(l.id)) out.push(l); if (i === top) out.push(m); });
     doc.layers = out; picking = false; picks = new Set(); sel = m.id; changed(true); drawSide();
@@ -2870,6 +2874,7 @@ DZ.edit = async (id) => {
     if (a === 'del') { const gone = new Set(L.map(l => l.id)); doc.layers = doc.layers.filter(l => !gone.has(l.id)); picks = new Set(); toast(`Deleted ${L.length}. Undo brings ${L.length === 1 ? 'it' : 'them'} back.`); }
     if (a === 'dup') {   // copies go together above the highest one, keeping their order (and clipping)
       const top = Math.max(...L.map(l => doc.layers.indexOf(l))), cs = L.map(l => ({ ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30, lock: undefined }));
+      const idm = new Map(L.map((l, j) => [l.id, cs[j].id])); for (const c of cs) if (c.on) { delete c._bx; if (idm.has(c.on)) c.on = idm.get(c.on); }
       doc.layers.splice(top + 1, 0, ...cs); picks = new Set(cs.map(c => c.id));
     }
     changed(true); placeSel(); drawSide();
@@ -3061,7 +3066,7 @@ DZ.edit = async (id) => {
     const h = e.target.closest('[data-h]')?.dataset.h, p = toPage(e);
     if (!h || many()) {
       const hl = hit(p);
-      if (hl && e.ctrlKey && e.altKey && !many() && !hl.lock) { const c = JSON.parse(JSON.stringify(hl)); c.id = dzId(); doc.layers.splice(doc.layers.indexOf(hl) + 1, 0, c); select(c.id); dupDrag = true; }
+      if (hl && e.ctrlKey && e.altKey && !many() && !hl.lock) { const c = JSON.parse(JSON.stringify(hl)); c.id = dzId(); if (c.on) { const S = doc.layers.find(s => s.id === c.on); if (S) { const c2 = { ...JSON.parse(JSON.stringify(S)), id: dzId() }; doc.layers.splice(doc.layers.indexOf(S) + 1, 0, c2); c.on = c2.id; } } doc.layers.splice(doc.layers.indexOf(hl) + 1, 0, c); select(c.id); dupDrag = true; }
       else if (hl && (e.ctrlKey || e.metaKey || e.shiftKey)) { e.dzHit = true; return togglePick(hl.id); }
       if (many() && hl) {
         // Several selected: tapping one in selection mode adds it (or, without moving, takes it out); dragging moves them all.
@@ -3308,7 +3313,9 @@ DZ.edit = async (id) => {
       if (a === 'nodes') return startNodes(l);
       if (a === 'clip') { if (F().indexOf(l) > 0) l.clip = !l.clip || undefined; }
       if (a === 'del') { doc.layers.splice(i, 1); sel = null; }
-      if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id; }
+      if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id;
+        // text on a curve brings a copy of its curve, so the copy can be seen and moved on its own
+        if (c.on) { delete c._bx; const S = doc.layers.find(s => s.id === c.on); if (S) { const c2 = { ...JSON.parse(JSON.stringify(S)), id: dzId(), x: S.x + 30, y: S.y + 30 }; doc.layers.splice(doc.layers.indexOf(S) + 1, 0, c2); c.on = c2.id; } } }
       if (a === 'up' || a === 'down') {   // past the next item on the same page
         const FL = F(), o = FL[FL.indexOf(l) + (a === 'up' ? 1 : -1)];
         if (o) { const j = doc.layers.indexOf(o); [doc.layers[i], doc.layers[j]] = [doc.layers[j], doc.layers[i]]; }
