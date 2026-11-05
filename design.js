@@ -145,21 +145,55 @@ function dzWrap(x, text, maxW) {
   }
   return out;
 }
-/* Frame text: lines laid out inside a fixed box. Paragraphs wrap separately, with their own spacing; lines that don't
-   fit the box are held back (over = true) until the frame is made bigger or the letters smaller. */
+// Text case (small caps are drawn by the canvas itself).
+const dzCase = (l, s) => l.caps === 'upper' ? s.toUpperCase() : l.caps === 'lower' ? s.toLowerCase() : l.caps === 'title' ? s.toLowerCase().replace(/(^|[\s(-])(\p{L})/gu, (m, p, c) => p + c.toUpperCase()) : s;
+// Like dzWrap for one paragraph, with a width that can differ per line (indents, drop caps).
+function dzWrapW(x, para, widthAt) {
+  const out = []; let line = '';
+  for (const w of para.split(/(\s+)/)) { const n = line + w;
+    if (x.measureText(n.trimEnd()).width > widthAt(out.length) && line.trim()) { out.push(line.trimEnd()); line = w.trimStart(); } else line = n; }
+  out.push(line.trimEnd()); return out;
+}
+// Vertical text: upright letters top to bottom, columns left to right. In a frame, words wrap at the frame's height.
+function dzVertLay(x, doc, l, txt) {
+  const pad = l.frame ? l.pad || 0 : 0, iw = l.w - pad * 2, ih = (l.h || 1) - pad * 2; let px = l.size;
+  for (;;) { x.font = dzFontStr(doc, l, px); const adv = px * 1.05 + (l.ls || 0) * (px / l.size), colw = px * (l.lh || 1.2), cols = [];
+    for (const para of txt.split('\n')) { if (!l.frame) { cols.push([...para]); continue; }
+      const max = Math.max(1, Math.floor(ih / adv)); let cur = [];
+      for (const w of para.split(/(\s+)/)) { let ch = [...w]; if (cur.length + ch.length > max && cur.length) { cols.push(cur); cur = []; if (!w.trim()) ch = []; }
+        while (ch.length > max) { cols.push(ch.slice(0, max)); ch = ch.slice(max); } cur.push(...ch); }
+      cols.push(cur); }
+    const fits = cols.length * colw <= iw + 0.5;
+    if (!l.frame || !l.fit || fits || px <= 8) { const shown = l.frame ? cols.slice(0, Math.max(1, Math.floor((iw + 0.5) / colw))) : cols;
+      return { v: true, px, adv, colw, pad, cols: shown, over: shown.length < cols.length }; }
+    px *= 0.94; }
+}
+/* Frame text: lines laid out inside a fixed box, in one or more columns. Paragraphs wrap separately, with their own
+   spacing, indents, bullets and an optional drop cap; lines that don't fit are held back (over = true) until the frame
+   is made bigger or the letters smaller. */
 function dzFrameLay(x, doc, l, txt) {
-  const pad = l.pad || 0, iw = Math.max(10, l.w - pad * 2), ih = Math.max(1, (l.h || 1) - pad * 2);
-  let px = l.size, rows, used;
+  if (l.vert) return dzVertLay(x, doc, l, txt);
+  const pad = l.pad || 0, n = Math.max(1, l.cols || 1), ih = Math.max(1, (l.h || 1) - pad * 2);
+  const gut = n > 1 ? (l.gut ?? l.size) : 0, cw = Math.max(10, (l.w - pad * 2 - gut * (n - 1)) / n);
+  let px = l.size, rows, over, drop, hs;
   for (;;) {
-    x.font = dzFontStr(doc, l, px); const lh = px * (l.lh || 1.2), gap = (l.ps || 0) * (px / l.size);
-    rows = []; used = 0;
-    txt.split('\n').forEach((para, p, all) => { const L = dzWrap(x, para, iw);
-      L.forEach((s, i) => { rows.push({ s, y: used, end: i === L.length - 1 }); used += lh; });
-      if (p < all.length - 1) used += gap; });
-    if (!l.fit || used <= ih || px <= 8) break; px *= 0.94;
+    x.font = dzFontStr(doc, l, px); const k = px / l.size, lh = px * (l.lh || 1.2), gap = (l.ps || 0) * k, ind1 = (l.ind1 || 0) * k, indl = (l.indl || 0) * k, indr = (l.indr || 0) * k, hang = l.list ? px * 1.5 : 0;
+    rows = []; over = false; drop = null; hs = Array(n).fill(0); let col = 0, y = 0, num = 0;
+    const paras = txt.split('\n');
+    paras.forEach((para, p) => { let body = para, dw = 0, dn = 0;
+      if (!p && l.drop >= 2 && !l.list && para.trim()) { const ch = [...para][0], dpx = ((l.drop - 1) * lh + px * 0.72) / 0.72; x.font = dzFontStr(doc, l, dpx); dw = x.measureText(ch).width + px * 0.25; x.font = dzFontStr(doc, l, px);
+        drop = { ch, dpx, x: indl, y: (l.drop - 1) * lh + px * 0.9 }; dn = l.drop; body = para.slice(ch.length); }
+      const widthAt = (i) => Math.max(10, cw - indl - indr - hang - (!i ? ind1 : 0) - (i < dn ? dw : 0));
+      const mark = l.list && para.trim() ? (l.list === 'num' ? ++num + '.' : '•') : '';
+      dzWrapW(x, body, widthAt).forEach((s, i, L) => {
+        if (y + lh > ih + 0.5 && rows.length) { if (col < n - 1) { col++; y = 0; } else over = true; }
+        if (over) return;
+        rows.push({ s, y, col, x: indl + hang + (!i ? ind1 : 0) + (i < dn ? dw : 0), w: widthAt(i), end: i === L.length - 1, mark: !i ? mark : '', mx: indl }); y += lh; hs[col] = y; });
+      if (p < paras.length - 1 && y) y += gap; });
+    if (!l.fit || !over || px <= 8) break; px *= 0.94;
   }
-  const lh = px * (l.lh || 1.2), shown = rows.filter((r, i) => !i || r.y + lh <= ih + 0.5), h = shown.length ? shown.at(-1).y + lh : lh;
-  return { px, lh, rows: shown, iw, over: shown.length < rows.length, top: -l.h / 2 + pad + (l.va === 'middle' ? (ih - h) / 2 : l.va === 'bottom' ? ih - h : 0) };
+  const off = (c) => l.va === 'middle' ? (ih - hs[c]) / 2 : l.va === 'bottom' ? ih - hs[c] : 0;
+  return { px, lh: px * (l.lh || 1.2), rows, cw, gut, pad, over, drop, top: hs.map((_, c) => -l.h / 2 + pad + off(c)) };
 }
 function dzStar(x, cx, cy, r) {
   x.beginPath();
@@ -598,13 +632,15 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     const tex = l.fm === 'tex' && l.tex?.ref ? await dzImg(l.tex.ref) : null;
     const nIco = l.t === 'shortcut' ? await dzIcoImg(l.svg || '', dzInkOn(doc)) : null; if (l.t === 'check') l.h = dzCheckH(l); if (l.t === 'field') l.h = dzFieldGeom(l, x).h;
     let lines = null;
+    if ('fontVariantCaps' in x) x.fontVariantCaps = l.t === 'text' && l.caps === 'small' ? 'small-caps' : 'normal';
     if (l.t === 'text') {   // measure first, so the box (and its centre) is the real height of the text
       x.setTransform(1, 0, 0, 1, 0, 0);
       if ('letterSpacing' in x) x.letterSpacing = (l.ls || 0) + 'px';
       // "Shrink to fit": a long name or amount gets smaller instead of wrapping onto a second line.
-      const txt = dzFill(doc, l.text), want = l.fit ? txt.split('\n').length : Infinity;
+      const txt = dzCase(l, dzFill(doc, l.text)), want = l.fit ? txt.split('\n').length : Infinity;
       let px = l.size;
-      if (l.frame) { l.h = Math.max(10, l.h || 10); const F = dzFrameLay(x, doc, l, txt); l._fr = F; l._over = F.over; l._arc = null; l._px = F.px; lines = F.rows; }
+      if (l.frame) { l.h = Math.max(10, l.h || 10); const F = dzFrameLay(x, doc, l, txt); l._fr = F; l._over = F.over; l._arc = null; l._px = F.px; lines = F.rows || []; }
+      else if (l.vert) { const F = dzVertLay(x, doc, l, txt); l._fr = F; l._arc = null; l._px = F.px; lines = []; l.w = Math.max(F.px, F.cols.length * F.colw); l.h = Math.max(F.px, Math.max(1, ...F.cols.map(c => c.length)) * F.adv); }
       else if (l.arc) {
         // Bent text: one line laid along a circle. The bend is the angle the text covers (up to a full circle).
         const one = txt.replace(/\s*\n\s*/g, ' '), chars = [...one], a = Math.min(360, Math.abs(l.arc)) * Math.PI / 180;
@@ -634,6 +670,12 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
       const px = l._px || l.size, lh = px * (l.lh || 1.2); x.font = dzFontStr(doc, l, px);
       if ('letterSpacing' in x) x.letterSpacing = (l.ls || 0) + 'px';
       x.fillStyle = (!l.arc && dzPaint(x, doc, l, tex)) || dzCol(doc, l.c) || '#000'; x.textBaseline = 'alphabetic';   // bent text: plain colour
+      if (l.shc && l.shc !== 'none') { x.shadowColor = dzCol(doc, l.shc); x.shadowOffsetX = (l.shx ?? 6) * scale; x.shadowOffsetY = (l.shy ?? 6) * scale; x.shadowBlur = (l.shb ?? 8) * scale; }
+      // One run of text: outline behind the fill, then underline and strikethrough (not on vertical text).
+      const put = (s, ax, y) => { if (l.tsw && l.tsc && l.tsc !== 'none') { x.save(); x.lineJoin = 'round'; x.lineWidth = l.tsw; x.strokeStyle = dzCol(doc, l.tsc); x.strokeText(s, ax, y); x.restore(); }
+        x.fillText(s, ax, y); if ((!l.u && !l.st) || l.vert || !s) return;
+        const w = x.measureText(s).width, a0 = x.textAlign === 'center' ? ax - w / 2 : x.textAlign === 'right' ? ax - w : ax;
+        if (l.u) x.fillRect(a0, y + px * 0.12, w, Math.max(1, px * 0.06)); if (l.st) x.fillRect(a0, y - px * 0.3, w, Math.max(1, px * 0.06)); };
       if (l.arc && l._arc) {
         // Each letter sits on the circle, turned to follow it: up = a rainbow over the centre, down = a smile under it.
         const { chars, ws, wt, R } = l._arc, up = l.arc > 0;
@@ -648,18 +690,24 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
           else { x.translate(R * Math.sin(phi), cy + R * Math.cos(phi)); x.rotate(-phi); }
           x.fillText(ch, 0, 0); x.restore();
         });
+      } else if (l.vert && l._fr?.v) {
+        const F = l._fr, room = l.h - F.pad * 2, al = l.al; x.textAlign = 'center'; x.textBaseline = 'middle';
+        F.cols.forEach((c, i) => { const len = c.length * F.adv, y0 = -l.h / 2 + F.pad + (al === 'center' ? (room - len) / 2 : al === 'right' ? room - len : 0), cx = -l.w / 2 + F.pad + F.colw * (i + 0.5);
+          c.forEach((ch, j) => put(ch, cx, y0 + (j + 0.5) * F.adv)); });
       } else if (l.frame) {
-        const F = l._fr, al = l.al || 'left', pad = l.pad || 0, ax = al === 'center' ? 0 : al === 'right' ? l.w / 2 - pad : -l.w / 2 + pad;
-        x.textAlign = al === 'justify' ? 'left' : al;
-        for (const r of F.rows) { const y = F.top + r.y + px * 0.9, W = r.s.split(/\s+/);
+        const F = l._fr, al = l.al || 'left';
+        if (F.drop) { const f0 = x.font; x.font = dzFontStr(doc, l, F.drop.dpx); x.textAlign = 'left'; put(F.drop.ch, -l.w / 2 + F.pad + F.drop.x, F.top[0] + F.drop.y); x.font = f0; }
+        for (const r of F.rows) { const cl = -l.w / 2 + F.pad + r.col * (F.cw + F.gut), x0 = cl + r.x, y = F.top[r.col] + r.y + px * 0.9, ax = al === 'center' ? x0 + r.w / 2 : al === 'right' ? x0 + r.w : x0, W = r.s.split(/\s+/);
+          if (r.mark) { x.textAlign = 'left'; put(r.mark, cl + r.mx, y); }
+          x.textAlign = al === 'justify' ? 'left' : al;
           if (al === 'justify' && !r.end && W.length > 1) {   // the last line of a paragraph stays as it is
-            const room = F.iw - W.reduce((s, w) => s + x.measureText(w).width, 0), g = room / (W.length - 1); let at = ax;
-            for (const w of W) { x.fillText(w, at, y); at += x.measureText(w).width + g; }
-          } else x.fillText(r.s, ax, y); }
+            const g = (r.w - W.reduce((s, w) => s + x.measureText(w).width, 0)) / (W.length - 1); let at = ax;
+            for (const w of W) { put(w, at, y); at += x.measureText(w).width + g; }
+          } else put(r.s, ax, y); }
       } else {
         x.textAlign = l.al || 'left';
         const ax = l.al === 'center' ? 0 : l.al === 'right' ? l.w / 2 : -l.w / 2;
-        lines.forEach((ln, i) => x.fillText(ln, ax, -l.h / 2 + i * lh + px * 0.9));
+        lines.forEach((ln, i) => put(ln, ax, -l.h / 2 + i * lh + px * 0.9));
       }
     } else {
       // Pictures and shapes. A crop shows part of the full picture or shape: `crop` is the kept part
@@ -1680,6 +1728,7 @@ DZ.edit = async (id) => {
       ${l.t === 'text' ? `
         <div class="seg" style="margin-bottom:8px"><button data-tframe="0" class="${l.frame ? '' : 'on'}" style="flex:1" data-tip="The box follows the text: dragging a corner scales the letters">Normal text</button><button data-tframe="1" class="${l.frame ? 'on' : ''}" style="flex:1" data-tip="A box you size yourself: the text wraps inside it, for paragraphs">Frame text</button></div>
         ${l.frame ? `<p class="dz-over-note" ${l._over ? '' : 'hidden'}>Some text doesn't fit. Make the frame bigger or the letters smaller.</p>` : ''}
+        <div class="seg" style="margin-bottom:8px"><button data-tvert="0" class="${l.vert ? '' : 'on'}" style="flex:1">Horizontal</button><button data-tvert="1" class="${l.vert ? 'on' : ''}" style="flex:1" data-tip="Upright letters running top to bottom">Vertical</button></div>
         <textarea class="in dz-text" data-k="text" rows="${l.frame ? 7 : 2}">${esc(l.text)}</textarea>
         <select class="in" data-k="font" style="width:100%;margin-bottom:6px" aria-label="Font">${fontOpts(l.font)}</select>
         <div class="row" style="gap:6px;flex-wrap:nowrap;margin-bottom:8px">
@@ -1689,7 +1738,15 @@ DZ.edit = async (id) => {
         ${slider('size', 'Size', 8, Math.round(doc.h * 0.4), 1, Math.round(l.size))}
         <div class="lbl">Colour</div>${fillUI(l, 'c')}${l.arc && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Bent text shows the plain colour.</p>' : ''}
         ${l.frame ? slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2) + slider('ps', 'Paragraph spacing', 0, Math.round(l.size * 3), 1, l.ps || 0) + slider('pad', 'Margin inside the frame', 0, Math.round(Math.min(l.w, l.h) / 3), 1, l.pad || 0)
-          : slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
+          : l.vert ? slider('lh', 'Column spacing', 0.8, 2.5, 0.05, l.lh || 1.2) : slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
+        ${fsec('Character', `<label class="field"><span>Case</span><select class="in" data-tk="caps">${[['', 'As typed'], ['upper', 'ALL CAPS'], ['small', 'Small caps'], ['title', 'Title Case'], ['lower', 'lowercase']].map(([v, n]) => `<option value="${v}" ${(l.caps || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+          <span class="dz-tb dz-tbi" style="margin-bottom:8px"><button class="dz-ib ${l.u ? 'on' : ''}" data-tog="u" data-tip="Underline" style="text-decoration:underline">U</button><button class="dz-ib ${l.st ? 'on' : ''}" data-tog="st" data-tip="Strikethrough" style="text-decoration:line-through">S</button></span>
+          <div class="lbl">Text outline</div>${swatches('tsc', l.tsc, true)}${slider('tsw', 'Outline width', 0, 30, 1, l.tsw || 0)}
+          <div class="lbl">Shadow</div>${swatches('shc', l.shc, true)}${slider('shx', 'Across', -60, 60, 1, l.shx ?? 6) + slider('shy', 'Down', -60, 60, 1, l.shy ?? 6) + slider('shb', 'Blur', 0, 60, 1, l.shb ?? 8)}`, { fold: true })}
+        ${l.frame && !l.vert ? fsec('Paragraph and columns', `<label class="field"><span>List</span><select class="in" data-tk="list">${[['', 'None'], ['bullet', 'Bullets'], ['num', 'Numbers']].map(([v, n]) => `<option value="${v}" ${(l.list || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+          ${slider('ind1', 'First line indent', 0, Math.round(l.w / 3), 1, l.ind1 || 0) + slider('indl', 'Left indent', 0, Math.round(l.w / 3), 1, l.indl || 0) + slider('indr', 'Right indent', 0, Math.round(l.w / 3), 1, l.indr || 0)}
+          ${slider('drop', 'Drop cap', 0, 6, 1, l.drop || 0, v => +v < 2 ? 'off' : v + ' lines')}
+          ${slider('cols', 'Columns', 1, 5, 1, l.cols || 1) + slider('gut', 'Gap between columns', 0, Math.round(l.w / 5), 1, l.gut ?? Math.round(l.size))}`, { fold: true }) : ''}
         ${l.arc ? '<p class="muted" style="font-size:11px;margin:-4px 0 8px">Bent text runs on one line. <button class="link" data-act="unbend">Straighten</button></p>' : ''}
         ${fsec('Text options', `<label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Long text gets smaller to stay on its lines instead of wrapping, e.g. a studio name or amount"><input type="checkbox" data-fit ${l.fit ? 'checked' : ''}><span>Shrink to fit</span></label>
           ${slider('ls', 'Letter spacing', -5, 40, 1, l.ls || 0) + (l.frame ? '' : slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2))}
@@ -3140,6 +3197,7 @@ DZ.edit = async (id) => {
       changed(true); return drawSide();
     }
     if (d('al')) { l.al = d('al'); changed(true); return drawSide(); }
+    if (d('tvert') && l?.t === 'text') { const on = d('tvert') === '1'; if (on === !!l.vert) return; if (on) { l.vw = l.w; l.arc = 0; l.vert = true; } else { l.vert = false; if (!l.frame && l.vw) l.w = l.vw; } await redraw(); changed(true); return drawSide(); }
     if (d('va')) { l.va = d('va'); changed(true); return drawSide(); }
     if (d('tframe') && l?.t === 'text') { const on = d('tframe') === '1'; if (on === !!l.frame) return; l.frame = on; if (on) { l.arc = 0; l.h = Math.max(l.h || 0, l.size * 3); if (l.ps == null) l.ps = Math.round(l.size * 0.6); } else if (l.al === 'justify') l.al = 'left'; await redraw(); changed(true); return drawSide(); }
     if (d('ctool')) { copt.tool = d('ctool'); saveCopt(); return drawSide(); }
@@ -3236,6 +3294,7 @@ DZ.edit = async (id) => {
   side.addEventListener('pointerup', (e) => { rowUp(); ldrop(e); }); side.addEventListener('pointercancel', (e) => { rowUp(); ldrop(e); });
   side.addEventListener('contextmenu', (e) => { if (e.target.closest('.dz-lr')) e.preventDefault(); });
   page.addEventListener('contextmenu', (e) => e.preventDefault());
+  side.addEventListener('change', (e) => { const tk = e.target.dataset.tk, tl = layer(); if (tk && tl) { tl[tk] = e.target.value; changed(true); } });
   side.addEventListener('change', (e) => { if (e.target.matches('[data-fcat]')) { doc.form.cat = e.target.value; changed(true); } });
   side.addEventListener('input', (e) => { const k2 = e.target.dataset.ffk, l = layer(); if (!k2 || !l) return; const t = e.target;
     l[k2] = t.type === 'checkbox' ? t.checked : k2 === 'opts' ? t.value.split('\n').map(s => s.trim()).filter(Boolean) : t.value;
