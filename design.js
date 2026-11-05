@@ -1591,7 +1591,7 @@ DZ.edit = async (id) => {
         <button data-lclip class="${cl ? 'on' : ''}" ${i ? '' : 'disabled'} title="${cl ? 'Unclip' : 'Clip to the layer below: only shows inside it'}" aria-label="Clip to layer below"><svg viewBox="0 0 24 24"><path d="M7 4v10a3 3 0 0 0 3 3h10"/><path d="M16 13l4 4-4 4"/></svg></button>
         <button data-lhide title="${l.hide ? 'Show' : 'Hide'}" aria-label="${l.hide ? 'Show' : 'Hide'}">${l.hide ? EYE_OFF : EYE}</button>
         <button data-llock class="${l.lock ? 'on' : ''}" title="${l.lock ? 'Unlock' : 'Lock'}" aria-label="Lock">${LOCK(l.lock)}</button>
-        <button data-ldel title="Delete" aria-label="Delete">✕</button></div>`; }).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
+        <button data-ldel ${l.lock ? 'disabled' : ''} title="${l.lock ? 'Unlock it to delete' : 'Delete'}" aria-label="Delete">✕</button></div>`; }).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
       <p class="muted dz-hint">Top of the list is in front. Drag ⠿ to reorder; tap a name again to rename; hold a layer to select several.</p>`;
   };
   let mini = Settings.get('dz_panel_min', '') === '1';
@@ -1629,6 +1629,7 @@ DZ.edit = async (id) => {
   let cpop = null;
   const drawCtx = () => { const b = $('#dz-ctx'); if (!b) return; const l = layer(), sl = b.scrollLeft, sep = '<i class="dz-csep"></i>';
     if (many() && !toolOn() && !cut && !nodes && !cropping) { cpop = null; const L = picked(), n = L.length, dis = n ? '' : 'disabled', all = (f) => n && L.every(f);
+      if (n && all(l => l.lock)) { b.innerHTML = dzIB('data-mact="all"', 'all', 'Select all') + dzIB('data-mact="none"', 'none', 'Select none') + sep + `<span class="muted dz-chint" style="padding-right:8px">Locked</span>` + dzIB('data-mact="lock"', 'lock', 'Unlock', 'on') + dzIB('data-mact="dup"', 'copy', 'Duplicate'); b.scrollLeft = 0; return; }
       b.innerHTML = dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${dis}`, 'none', 'Select none') + sep
         + dzIB(`data-mact="dup" ${dis}`, 'copy', 'Duplicate') + dzIB(`data-mact="hide" ${dis}`, all(l => l.hide) ? 'eyeoff' : 'eye', all(l => l.hide) ? 'Show' : 'Hide') + dzIB(`data-mact="lock" ${dis}`, all(l => l.lock) ? 'lock' : 'unlock', all(l => l.lock) ? 'Unlock' : 'Lock', all(l => l.lock) ? 'on' : '') + dzIB(`data-mact="clip" ${dis}`, 'clip', 'Clip to the layer below: each only shows inside it', all(l => l.clip) ? 'on' : '') + sep
         + AL.map(([a, tp, ic]) => `<button class="dz-ib" data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} data-tip="Align: ${tp}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${tp}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('') + sep
@@ -1640,6 +1641,7 @@ DZ.edit = async (id) => {
     const col = (key, ic, tip, none) => { const c = l[key], paint = (key === 'c' || key === 'fill') && l.fm === 'grad' && l.grad ? dzGradCss(doc, l.grad) : (c && c !== 'none' ? dzCol(doc, c) : key === 'c' ? dzCol(doc, '@fg') : 'transparent');
       return `<button class="dz-cbtn ${cpop === key ? 'on' : ''}" data-cpop="${key}" data-none="${none ? 1 : ''}" data-tip="${tip}" aria-label="${tip}"><small>${ic}</small><i style="background:${paint}"></i></button>`; };
     const num = (k, v, tip, max) => `<label class="dz-cnum" data-tip="${tip}"><input class="in" type="text" inputmode="text" data-calc min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}"></label>`;
+    if (l.lock) { cpop = null; b.innerHTML = `<span class="muted dz-chint" style="padding-right:8px">Locked</span>` + dzIB('data-act="lock"', 'lock', 'Unlock', 'on') + dzIB('data-act="dup"', 'copy', 'Duplicate'); return; }
     let own = '';
     if (l.t === 'text') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font)}</select>${num('size', l.size, 'Text size')}${sep}`
       + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + tog('u', 'text-decoration:underline', 'Underline') + tog('st', 'text-decoration:line-through', 'Strikethrough') + sep
@@ -1768,6 +1770,7 @@ DZ.edit = async (id) => {
   };
   const drawItem = () => {
     const l = layer();
+    if (l.lock) { side.innerHTML = `<div class="dz-lh"><b>Locked</b><button class="btn small" data-act="done">Done</button></div><div class="dz-lockn"><span class="muted">It can't be moved or changed while locked.</span><button class="btn small" data-act="lock">Unlock</button></div>`; return; }
     if (l.t === 'field') { side.innerHTML = `<div class="dz-lh"><b>Form field</b></div>
         <label class="field"><span>Type</span><select class="in" data-ffk="ft">${FF_TYPES.map(([v, n]) => `<option value="${v}" ${l.ft === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="field"><span>Label</span><textarea class="in" rows="3" data-ffk="label">${esc(l.label || '')}</textarea></label>
@@ -2828,6 +2831,7 @@ DZ.edit = async (id) => {
     if (a === 'hide') { const v = !every(l => l.hide); L.forEach(l => l.hide = v); }
     if (a === 'lock') { const v = !every(l => l.lock); L.forEach(l => l.lock = v); }
     if (a === 'clip') { const v = !every(l => l.clip); L.forEach(l => { if (F().indexOf(l) > 0) l.clip = v || undefined; }); }
+    if (a === 'del' && L.some(l => l.lock)) return toast('Unlock them first.');
     if (a === 'del') { const gone = new Set(L.map(l => l.id)); doc.layers = doc.layers.filter(l => !gone.has(l.id)); picks = new Set(); toast(`Deleted ${L.length}. Undo brings ${L.length === 1 ? 'it' : 'them'} back.`); }
     if (a === 'dup') {   // copies go together above the highest one, keeping their order (and clipping)
       const top = Math.max(...L.map(l => doc.layers.indexOf(l))), cs = L.map(l => ({ ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30, lock: undefined }));
@@ -3036,8 +3040,9 @@ DZ.edit = async (id) => {
     }
     let l = layer();
     if (!h) { const hl = hit(p); if (hl?.id !== sel) { select(hl?.id || null); l = hl; } }
-    if (!l || l.lock) return;
+    if (!l) return;
     e.dzHit = true;   // an item was picked: the stage doesn't pan
+    if (l.lock) return;   // selected, but it stays where it is
     e.preventDefault(); page.setPointerCapture(e.pointerId);
     drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, dup: dupDrag, l0: { ...l, crop: l.crop ? { ...l.crop } : null } }; dupDrag = false;
   });
@@ -3158,6 +3163,7 @@ DZ.edit = async (id) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') { e.preventDefault(); cutOp('invert'); }
       return;
     }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && l.lock) return toast('Unlock it first.');
     if (e.key === 'Delete' || e.key === 'Backspace') { doc.layers = doc.layers.filter(x => x !== l); sel = null; changed(true); drawSide(); }
     const step = e.shiftKey ? 20 : e.altKey ? 1 : 4, mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (mv && !l.lock) { e.preventDefault(); l.x += mv[0]; l.y += mv[1]; changed(); }
@@ -3183,7 +3189,8 @@ DZ.edit = async (id) => {
       if (rowHeld) { rowHeld = false; return; }   // the long press already picked it
       if (t.closest('[data-lclip]')) { if (F().indexOf(ly) > 0) ly.clip = !ly.clip || undefined; changed(true); return drawSide(); }
       if (t.closest('[data-lhide]')) { ly.hide = !ly.hide; if (ly.hide && sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
-      if (t.closest('[data-llock]')) { ly.lock = !ly.lock; placeSel(); changed(true); return drawSide(); }
+      if (t.closest('[data-llock]')) { ly.lock = !ly.lock; if (!many() && !ly.hide) sel = ly.id; placeSel(); changed(true); return drawSide(); }
+      if (t.closest('[data-ldel]') && ly.lock) return toast('Unlock it first.');
       if (t.closest('[data-ldel]')) { doc.layers = doc.layers.filter(x => x !== ly); if (sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
       if (e.shiftKey && !t.closest('button')) {   // a range in the list, from the last one picked
         const list = [...F()].reverse(), a = list.findIndex(x => x.id === (anchor || sel)), b = list.indexOf(ly);
