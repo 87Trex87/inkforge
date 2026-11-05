@@ -1583,3 +1583,9 @@ textarea.ff-i { resize: none; }
 .dz-cbtn small { font-size: 11px; } .dz-cbtn i { width: 20px; height: 20px; border-radius: 5px; border: 1px solid var(--line); }
 .dz-cbtn.on { background: rgba(40,180,165,.15); }
 .dz-cpop { position: fixed; z-index: 30; width: 290px; padding: 10px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.dz-ctxw { flex: none; display: flex; align-items: stretch; background: var(--bg2); border-bottom: 1px solid var(--line); }
+.dz-ctxw .dz-ctx { flex: 1; min-width: 0; border-bottom: 0; }
+.dz-csnap { flex: none; display: flex; align-items: center; padding: 0 8px; border-left: 1px solid var(--line); }
+.dz-csnap .dz-ib { width: 34px; height: 34px; }
+.dz-snappop { max-height: 70vh; overflow-y: auto; }
+.dz-keys summary { cursor: pointer; font-size: 12px; color: var(--teal); } .dz-keys ul { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--ink2); } .dz-keys li { margin-bottom: 4px; }

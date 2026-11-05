@@ -1326,7 +1326,7 @@ DZ.edit = async (id) => {
       <button class="dz-ib" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24">${DZ_UI.tpl}</svg></button>
       <button class="dz-ib dz-go" id="dz-export" aria-label="Export" data-tip="Export: print, save or share"><svg viewBox="0 0 24 24">${DZ_UI.export}</svg></button>
     </div>
-    <div class="dz-ctx" id="dz-ctx"></div>
+    <div class="dz-ctxw"><div class="dz-ctx" id="dz-ctx"></div><div class="dz-csnap" id="dz-csnap"></div></div>
     <div class="dz-body">
       <div class="dz-stage" id="dz-stage">
         <div class="dz-rail" id="dz-rail">
@@ -1955,7 +1955,10 @@ DZ.edit = async (id) => {
       d.cur = L ? p : null;
       holdWatch(d, p, () => { const g = dzGuess(d.pts.map(([x2, y2]) => ({ x: x2, y: y2 }))); if (!g || !g.subs[0].closed) return;
         d.snap = holdStart(g, p); d.pts = d.snap.cur.map(q => [q.x, q.y]); d.cur = null; drawCut(); toast(g.label + ': keep holding and move to resize.', 2500); });
-    } else d.p1 = p;
+    } else {   // box or ellipse. Shift: square or circle. Ctrl: from the centre.
+      d.o ||= d.p0; let q = p;
+      if (e.shiftKey) { const s = Math.max(Math.abs(p.x - d.o.x), Math.abs(p.y - d.o.y)); q = { x: d.o.x + Math.sign(p.x - d.o.x || 1) * s, y: d.o.y + Math.sign(p.y - d.o.y || 1) * s }; }
+      d.p0 = e.ctrlKey ? { x: 2 * d.o.x - q.x, y: 2 * d.o.y - q.y } : d.o; d.p1 = q; }
     drawCut();
   };
   const cutUp = () => {
@@ -2127,7 +2130,7 @@ DZ.edit = async (id) => {
   const nodeMove = (e) => {
     const L = nodeLayer(), d = ndrag; if (!L || !d) return;
     if (pinch) { L.subs = d.base; ndrag = null; redraw(); return drawNodes(); }   // zooming instead
-    const p = toPage(e), q0 = p2n(L, d.p0), q1 = p2n(L, p); let du = q1.u - q0.u, dv = q1.v - q0.v;
+    const p = d.kind === 'n' && !e.shiftKey ? snapPt(toPage(e), e, new Set([L.id])) : toPage(e), q0 = p2n(L, d.p0), q1 = p2n(L, p); let du = q1.u - q0.u, dv = q1.v - q0.v;
     if (!d.moved && Math.hypot(p.x - d.p0.x, p.y - d.p0.y) * k < 3) return; d.moved = true; clearTimeout(d.holdT);
     L.subs = JSON.parse(JSON.stringify(d.base));
     if (d.kind === 'n') {
@@ -2450,7 +2453,7 @@ DZ.edit = async (id) => {
       if (N.length >= 3 && sNear(N[0], p) < PEN_CLOSE) return penClose();
       const ln = N.at(-1);
       if (ln && sNear(ln, p) < PEN_CLOSE) { ln.ox = ln.oy = 0; ln.t = 'corner'; toast('Handle dropped: the next part starts straight.'); return drawPen(); }
-      if (e.shiftKey && ln) p = snap45(ln, p);
+      if (e.shiftKey && ln) p = snap45(ln, p); else p = snapPt(p, e);
     }
     pen.nodes.push({ x: p.x, y: p.y, ix: 0, iy: 0, ox: 0, oy: 0, t: 'corner' });
     pen.drag = { i: pen.nodes.length - 1, anchor: { ...p }, curve: false, at: null, alt: e.altKey };
@@ -2823,19 +2826,29 @@ DZ.edit = async (id) => {
   // Guide lines at page positions (false = hidden).
   const guides = (gx, gy) => { const v = page.querySelector('.dz-guide.v'), hz = page.querySelector('.dz-guide.hz');
     v.hidden = gx === false; hz.hidden = gy === false; if (gx !== false) v.style.left = gx * k + 'px'; if (gy !== false) hz.style.top = gy * k + 'px'; };
-  // Snapping while moving: the moved items' edges and centres line up with the page's edges and centre and with
-  // every other item on the page (the master page's too). Hold Alt to move freely.
-  const snapTo = (list, e) => {
-    if (e.altKey || e.ctrlKey || !list.length) return guides(false, false);
-    const ids = new Set(list.map(m => m.id)), bs = list.map(box);
+  // Snapping: edges and centres line up with the page and with every other item on the page (the master page's too),
+  // while moving, resizing, placing pen points and dragging nodes. Hold Alt for none. Options are in the strip's magnet.
+  const snapO = (() => { try { return { on: true, page: true, edges: true, mids: true, dist: 10, gap: 0, ...JSON.parse(Settings.get('dz_snap', '{}')) }; } catch { return { on: true, page: true, edges: true, mids: true, dist: 10, gap: 0 }; } })();
+  const snapTargets = (ids) => { const tx = [], ty = [], G = snapO.gap || 0;
+    if (snapO.page) { tx.push(0, doc.w / 2, doc.w); ty.push(0, doc.h / 2, doc.h); }
+    for (const o of dzPages(doc, face).flat()) if (!o.hide && !ids.has(o.id)) { const b = box(o);
+      if (snapO.edges) { tx.push(b.x0, b.x1); ty.push(b.y0, b.y1); if (G) { tx.push(b.x0 - G, b.x1 + G); ty.push(b.y0 - G, b.y1 + G); } }
+      if (snapO.mids) { tx.push((b.x0 + b.x1) / 2); ty.push((b.y0 + b.y1) / 2); } }
+    return { tx, ty }; };
+  const snapBest = (cs, ts) => { let r = null; for (const c of cs) for (const v of ts) { const d = v - c; if (Math.abs(d) < snapO.dist / k && (!r || Math.abs(d) < Math.abs(r.d))) r = { d, t: v }; } return r; };
+  // lock: the axis Shift is holding still ('x' or 'y'), which doesn't snap.
+  const snapTo = (list, e, lock) => {
+    if (e.altKey || !snapO.on || !list.length) return guides(false, false);
+    const ids = new Set(list.map(m => m.id)), bs = list.map(box), { tx, ty } = snapTargets(ids);
     const B = { x0: Math.min(...bs.map(b => b.x0)), x1: Math.max(...bs.map(b => b.x1)), y0: Math.min(...bs.map(b => b.y0)), y1: Math.max(...bs.map(b => b.y1)) };
-    const tx = [0, doc.w / 2, doc.w], ty = [0, doc.h / 2, doc.h];
-    for (const o of dzPages(doc, face).flat()) if (!o.hide && !ids.has(o.id)) { const b = box(o); tx.push(b.x0, (b.x0 + b.x1) / 2, b.x1); ty.push(b.y0, (b.y0 + b.y1) / 2, b.y1); }
-    const best = (cs, ts) => { let r = null; for (const c of cs) for (const t of ts) { const d = t - c; if (Math.abs(d) < 10 / k && (!r || Math.abs(d) < Math.abs(r.d))) r = { d, t }; } return r; };
-    const sx = best([B.x0, (B.x0 + B.x1) / 2, B.x1], tx), sy = best([B.y0, (B.y0 + B.y1) / 2, B.y1], ty);
+    const sx = lock === 'x' ? null : snapBest([B.x0, (B.x0 + B.x1) / 2, B.x1], tx), sy = lock === 'y' ? null : snapBest([B.y0, (B.y0 + B.y1) / 2, B.y1], ty);
     for (const m of list) { if (sx) m.x += sx.d; if (sy) m.y += sy.d; }
     guides(sx ? sx.t : false, sy ? sy.t : false);
   };
+  // One point (a pen point or a node) snapped the same way.
+  const snapPt = (p, e, ids = new Set()) => { if (e.altKey || !snapO.on) { guides(false, false); return p; }
+    const { tx, ty } = snapTargets(ids), sx = snapBest([p.x], tx), sy = snapBest([p.y], ty); guides(sx ? sx.t : false, sy ? sy.t : false);
+    return { ...p, x: p.x + (sx?.d || 0), y: p.y + (sy?.d || 0) }; };
   let drag = null;
   const pts = new Map(); let pinch = null, bg = null;
   /* Shift, Alt and Ctrl without a keyboard. While something is being dragged (an item, a node or handle, the
@@ -2950,6 +2963,7 @@ DZ.edit = async (id) => {
     if (face === last) setFace(doc.pages === 2 ? 'f' : 'p' + (doc.pages - 1)); doc.layers = doc.layers.filter(l => l.side !== last); doc.pages--; changed(true); drawFaces(); };
   stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') return frame(); zoomTo(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4)); };
+  let dupDrag = false;   // this drag started with Ctrl+Alt: a copy is being dragged
   let press = null;   // long press: hold still on an item to start selecting several
   const cancelPress = () => { if (press) clearTimeout(press.t); press = null; };
   page.addEventListener('pointerdown', (e) => {
@@ -2965,7 +2979,8 @@ DZ.edit = async (id) => {
     const h = e.target.closest('[data-h]')?.dataset.h, p = toPage(e);
     if (!h || many()) {
       const hl = hit(p);
-      if (hl && (e.ctrlKey || e.metaKey || e.shiftKey)) { e.dzHit = true; return togglePick(hl.id); }
+      if (hl && e.ctrlKey && e.altKey && !many() && !hl.lock) { const c = JSON.parse(JSON.stringify(hl)); c.id = dzId(); doc.layers.splice(doc.layers.indexOf(hl) + 1, 0, c); select(c.id); dupDrag = true; }
+      else if (hl && (e.ctrlKey || e.metaKey || e.shiftKey)) { e.dzHit = true; return togglePick(hl.id); }
       if (many() && hl) {
         // Several selected: tapping one in selection mode adds it (or, without moving, takes it out); dragging moves them all.
         e.dzHit = true; e.preventDefault();
@@ -2982,7 +2997,7 @@ DZ.edit = async (id) => {
     if (!l || l.lock) return;
     e.dzHit = true;   // an item was picked: the stage doesn't pan
     e.preventDefault(); page.setPointerCapture(e.pointerId);
-    drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, l0: { ...l, crop: l.crop ? { ...l.crop } : null } };
+    drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, dup: dupDrag, l0: { ...l, crop: l.crop ? { ...l.crop } : null } }; dupDrag = false;
   });
   page.addEventListener('pointermove', (e) => {
     if (rest.has(e.pointerId)) return;
@@ -2995,16 +3010,17 @@ DZ.edit = async (id) => {
     if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) cancelPress();
     if (!drag || pinch) return;
     if (drag.h === 'group') {
-      const p = toPage(e), dx = p.x - drag.p0.x, dy = p.y - drag.p0.y;
+      const p = toPage(e), fine = e.altKey ? 0.25 : 1; let dx = (p.x - drag.p0.x) * fine, dy = (p.y - drag.p0.y) * fine;
       if (!drag.moved && Math.hypot(dx, dy) * k < 6) return; drag.moved = true;
+      const lock = e.shiftKey ? (Math.abs(dx) > Math.abs(dy) ? 'y' : 'x') : null; if (lock === 'y') dy = 0; if (lock === 'x') dx = 0;
       for (const [id, o] of drag.l0) { const m = doc.layers.find(x => x.id === id); if (m) { m.x = o.x + dx; m.y = o.y + dy; } }
-      snapTo(doc.layers.filter(m => drag.l0.has(m.id)), e);
+      snapTo(doc.layers.filter(m => drag.l0.has(m.id)), e, lock);
       placeSel(); return redraw();
     }
     const l = layer(), p = toPage(e), o = drag.l0, a = (o.rot || 0) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
     if (cropping && o.crop) {
       // Crop: edges cut away (the whole stays where it is); dragging inside slides the whole under the window.
-      const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y, lx = dx * cos + dy * sin, ly = -dx * sin + dy * cos;
+      const fn = e.altKey ? 0.25 : 1, dx = (p.x - drag.p0.x) * fn, dy = (p.y - drag.p0.y) * fn, lx = dx * cos + dy * sin, ly = -dx * sin + dy * cos;
       const c0 = o.crop, FW = o.w / c0.w, FH = o.h / c0.h, mn = 0.04, cl = (v, a1, b1) => Math.max(a1, Math.min(b1, v));
       if (drag.h === 'pan') { l.crop = { ...c0, x: cl(c0.x - lx / FW, 0, 1 - c0.w), y: cl(c0.y - ly / FH, 0, 1 - c0.h) }; }
       else if (drag.h !== 'rot') {
@@ -3019,33 +3035,39 @@ DZ.edit = async (id) => {
         l.x = ccx + vx * cos - vy * sin - l.w / 2; l.y = ccy + vx * sin + vy * cos - l.h / 2;
       }
     } else if (drag.h === 'move') {
-      l.x = o.x + p.x - drag.p0.x; l.y = o.y + p.y - drag.p0.y;
-      snapTo([l], e);
+      // Shift: straight across or down. Alt: fine and without snapping (not while Ctrl+Alt is making a copy).
+      const alt = e.altKey && !drag.dup, fine = alt ? 0.25 : 1; let dx = (p.x - drag.p0.x) * fine, dy = (p.y - drag.p0.y) * fine;
+      const lock = e.shiftKey ? (Math.abs(dx) > Math.abs(dy) ? 'y' : 'x') : null; if (lock === 'y') dy = 0; if (lock === 'x') dx = 0;
+      l.x = o.x + dx; l.y = o.y + dy;
+      snapTo([l], { altKey: alt }, lock);
     } else if (drag.h === 'rot') {
       const cx = o.x + o.w / 2, cy = o.y + (o.h || 0) / 2;
       let deg = Math.atan2(p.y - cy, p.x - cx) * 180 / Math.PI + 90; deg = ((deg + 540) % 360) - 180;
-      const near = Math.round(deg / 15) * 15; if (Math.abs(deg - near) < 4) deg = near;
-      l.rot = Math.round(deg);
+      // Shift: 15 degree steps. Alt: free and fine. Otherwise it only catches near each 15 degrees.
+      const near = Math.round(deg / 15) * 15; if (e.shiftKey || (!e.altKey && Math.abs(deg - near) < 4)) deg = near;
+      l.rot = e.altKey ? Math.round(deg * 10) / 10 : Math.round(deg);
     } else {
       // Resize around the opposite corner/side, measured in the layer's own (rotated) frame.
-      const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y, lx = dx * cos + dy * sin, ly = -dx * sin + dy * cos;
+      // Shift: keep (or, for pictures, break) the proportions. Ctrl: from the centre. Alt: fine, and no snapping.
+      const fine = e.altKey ? 0.25 : 1, mid = e.ctrlKey ? 2 : 1, dx = (p.x - drag.p0.x) * fine, dy = (p.y - drag.p0.y) * fine, lx = dx * cos + dy * sin, ly = -dx * sin + dy * cos;
       const sx = drag.h.includes('e') ? 1 : drag.h.includes('w') ? -1 : 0, sy = drag.h.includes('s') ? 1 : drag.h.includes('n') ? -1 : 0;
-      let w = Math.max(20, o.w + sx * lx), hgt = Math.max(10, (o.h || 1) + sy * ly);
-      if (sy) {   // corners keep the proportions; text scales its font with it
-        const s = Math.max(w / o.w, hgt / (o.h || 1)); w = o.w * s; hgt = (o.h || 1) * s;
-        if (o.t === 'text' && !o.frame) l.size = Math.max(6, o.size * s);
-        if ((o.t !== 'text' || o.frame) && o.shape !== 'line' && dzKeep(o) === e.shiftKey) { w = Math.max(20, o.w + sx * lx); hgt = Math.max(10, (o.h || 1) + sy * ly); }
-      } else hgt = o.h || 1;
-      // Keep the opposite edge where it was.
-      const ocx = o.x + o.w / 2, ocy = o.y + (o.h || 0) / 2;
-      const ax = -sx * o.w / 2, ay = -sy * (o.h || 0) / 2, wx = ocx + ax * cos - ay * sin, wy = ocy + ax * sin + ay * cos;
-      const nax = -sx * w / 2, nay = -sy * hgt / 2, ncx = wx - (nax * cos - nay * sin), ncy = wy - (nax * sin + nay * cos);
-      l.w = w; if (o.t !== 'text' || o.frame) l.h = hgt;
-      l.x = ncx - w / 2; l.y = ncy - (o.t === 'text' && !o.frame ? (o.h || 0) * (w / o.w) : hgt) / 2;
+      const oh = o.h || 1, normal = o.t === 'text' && !o.frame, keep = o.shape !== 'line' && (normal ? sx && sy : dzKeep(o) !== e.shiftKey);
+      let w = Math.max(20, o.w + sx * lx * mid), hgt = Math.max(10, oh + sy * ly * mid), snapX = null, snapY = null;
+      const ocx = o.x + o.w / 2, ocy = o.y + oh / 2;
+      if (!o.rot && !e.altKey && snapO.on) { const { tx, ty } = snapTargets(new Set([l.id]));
+        if (sx) { const ed = mid > 1 ? ocx + sx * w / 2 : sx > 0 ? o.x + w : o.x + o.w - w; snapX = snapBest([ed], tx); if (snapX) w = Math.max(20, w + sx * snapX.d * mid); }
+        if (sy && !(normal && snapX)) { const ed = mid > 1 ? ocy + sy * hgt / 2 : sy > 0 ? o.y + hgt : o.y + oh - hgt; snapY = snapBest([ed], ty); if (snapY) hgt = Math.max(10, hgt + sy * snapY.d * mid); } }
+      if (keep) { const s = snapX ? w / o.w : snapY ? hgt / oh : sx && sy ? Math.max(w / o.w, hgt / oh) : sx ? w / o.w : hgt / oh; w = o.w * s; hgt = oh * s; if (normal) l.size = Math.max(6, o.size * s); }
+      guides(snapX ? snapX.t : false, snapY ? snapY.t : false);
+      // Keep the opposite edge where it was (from the centre: the centre).
+      const ax = -sx * o.w / 2, ay = -sy * oh / 2, wx = ocx + ax * cos - ay * sin, wy = ocy + ax * sin + ay * cos;
+      const nax = -sx * w / 2, nay = -sy * hgt / 2, ncx = mid > 1 ? ocx : wx - (nax * cos - nay * sin), ncy = mid > 1 ? ocy : wy - (nax * sin + nay * cos);
+      l.w = w; if (!normal) l.h = hgt;
+      l.x = ncx - w / 2; l.y = ncy - (normal ? oh * (w / o.w) : hgt) / 2;
     }
     redraw();
   });
-  const end = () => { cancelPress(); if (pen?.drag) { pen.drag = null; return drawPen(); } if (stroke) return pclUp(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
+  const end = () => { cancelPress(); guides(false, false); if (pen?.drag) { pen.drag = null; return drawPen(); } if (stroke) return pclUp(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
     if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
     changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
@@ -3078,7 +3100,7 @@ DZ.edit = async (id) => {
     if (many()) {
       if (e.key === 'Escape') { picking = false; return setPicks([]); }
       if (e.key === 'Delete' || e.key === 'Backspace') return multiAct('del');
-      const st = e.shiftKey ? 20 : 4, mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
+      const st = e.shiftKey ? 20 : e.altKey ? 1 : 4, mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
       if (mv) { e.preventDefault(); for (const m of picked()) if (!m.lock) { m.x += mv[0]; m.y += mv[1]; } changed(); placeSel(); }
       return;
     }
@@ -3095,7 +3117,7 @@ DZ.edit = async (id) => {
       return;
     }
     if (e.key === 'Delete' || e.key === 'Backspace') { doc.layers = doc.layers.filter(x => x !== l); sel = null; changed(true); drawSide(); }
-    const step = e.shiftKey ? 20 : 4, mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+    const step = e.shiftKey ? 20 : e.altKey ? 1 : 4, mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (mv && !l.lock) { e.preventDefault(); l.x += mv[0]; l.y += mv[1]; changed(); }
     if (e.key === 'Escape') { if (cropping) { endCrop(); return drawSide(); } select(null); }
   });
@@ -3252,6 +3274,23 @@ DZ.edit = async (id) => {
   };
   side.addEventListener('click', sideClick);
   for (const x of [$('#dz-rail'), $('#dz-pop')]) { x.addEventListener('click', sideClick); x.addEventListener('change', (e) => sideChange(e)); }
+  /* The magnet: snapping on or off and what snaps to what. Stays at the end of the strip whatever is selected. */
+  let snapPop = false;
+  const drawSnap = () => { const b = $('#dz-csnap'); if (!b) return; const ck = (key, n, tip) => `<label class="toggle" style="display:flex;margin-bottom:6px" data-tip="${tip}"><input type="checkbox" data-sn="${key}" ${snapO[key] ? 'checked' : ''}><span>${n}</span></label>`;
+    b.innerHTML = `<button class="dz-ib ${snapO.on ? 'on' : ''}" data-snapb data-tip="Snapping" aria-label="Snapping"><svg viewBox="0 0 24 24"><path d="M5 4v8a7 7 0 0 0 14 0V4h-4v8a3 3 0 0 1-6 0V4zM5 8h4M15 8h4"/></svg></button>`
+      + (snapPop ? `<div class="dz-cpop dz-snappop" style="right:8px;left:auto;top:${b.getBoundingClientRect().bottom + 6}px">
+        ${ck('on', 'Snapping on', 'Hold Alt to ignore it for one move')}
+        <div class="lbl">Snap to</div>${ck('page', 'Page edges and centre', 'The sides and middle of the page')}${ck('edges', 'Edges of other items', 'Edges line up with edges')}${ck('mids', 'Centres of other items', 'Middles line up with middles')}
+        <label class="dz-sl"><span>Snap distance<b>${snapO.dist}</b></span><input type="range" min="3" max="30" step="1" value="${snapO.dist}" data-snv="dist"></label>
+        <label class="field" style="margin-bottom:8px" data-tip="Also snap this far outside other items, so spaces between them come out the same"><span>Gap between items (${dzUnit(doc)})</span><input class="in" type="number" min="0" step="any" value="${dzToU(doc, snapO.gap || 0)}" data-sng></label>
+        <details class="dz-keys"><summary>Shift, Ctrl and Alt</summary><ul><li><b>Resizing:</b> Shift evens or frees the proportions, Ctrl sizes from the centre, Alt is fine and doesn't snap.</li><li><b>Moving:</b> Shift goes straight across or down, Alt is fine and doesn't snap, Ctrl+Alt drags a copy.</li><li><b>Rotating:</b> Shift is 15° steps, Alt is free and fine.</li><li><b>Arrow keys:</b> Shift is a big step, Alt is one pixel.</li><li><b>Selecting:</b> Ctrl or Shift adds or removes.</li></ul></details></div>` : ''); };
+  drawSnap();
+  const snapSave = () => Settings.set('dz_snap', JSON.stringify(snapO));
+  $('#dz-csnap').addEventListener('click', (e) => { if (e.target.closest('[data-snapb]')) { snapPop = !snapPop; drawSnap(); } });
+  $('#dz-csnap').addEventListener('input', (e) => { const t2 = e.target; if (t2.dataset.sn) { snapO[t2.dataset.sn] = t2.checked; snapSave(); if (t2.dataset.sn === 'on') $('#dz-csnap [data-snapb]').classList.toggle('on', t2.checked); }
+    if (t2.dataset.snv) { snapO.dist = +t2.value; t2.closest('label').querySelector('b').textContent = t2.value; snapSave(); }
+    if (t2.hasAttribute('data-sng')) { const v = dzFromU(doc, +t2.value); snapO.gap = v > 0 ? v : 0; snapSave(); } });
+  stage.addEventListener('pointerdown', () => { if (snapPop) { snapPop = false; drawSnap(); } }, true);
   const ctxB = $('#dz-ctx');
   ctxB.addEventListener('click', async (e) => { const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
     const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
