@@ -1589,3 +1589,13 @@ textarea.ff-i { resize: none; }
 .dz-csnap .dz-ib { width: 34px; height: 34px; }
 .dz-snappop { max-height: 70vh; overflow-y: auto; }
 .dz-keys summary { cursor: pointer; font-size: 12px; color: var(--teal); } .dz-keys ul { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--ink2); } .dz-keys li { margin-bottom: 4px; }
+/* Position and size, above the Shift / Alt / Ctrl buttons */
+.dz-xf { position: absolute; left: 10px; bottom: 102px; z-index: 5; width: 164px; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 4px; border-radius: 12px; background: rgba(15,18,19,.92); border: 1px solid var(--line); }
+.dz-xf[hidden] { display: none; }
+.dz-xf label { display: flex; align-items: center; gap: 3px; min-width: 0; } .dz-xf label span { font: 600 11px var(--ui); color: var(--ink2); width: 10px; flex: none; }
+.dz-xf .in { min-height: 26px; height: 26px; width: 100%; min-width: 0; padding: 0 4px; font-size: 12px; }
+.dz-xf .in:disabled { opacity: .55; }
+.dz-xfr { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; } .dz-xfr select { flex: 1; min-width: 0; } .dz-xfr .dz-chain { width: 26px; height: 26px; flex: none; padding: 2px; }
+.dz-xfd { font-size: 11px; color: var(--teal); white-space: nowrap; } .dz-xfd i { font-style: normal; color: var(--ink); } .dz-xfr:has(.dz-xfd) select { max-width: 52px; }
+@media (max-height: 860px) { .dz-ed .dz-xf { left: 62px; bottom: 58px; } }
+@media (max-width: 700px) { .dz-ed .dz-xf { left: 58px; top: 150px; bottom: auto; } }

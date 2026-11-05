@@ -872,6 +872,26 @@ async function dzCanvas(doc, scale = 1, face) {
   await dzDraw(cv, doc, scale, { face }); return cv;
 }
 
+/* Number boxes do sums: type 10+5, 210/3 or (20-4)*2 and it works out on Enter or on leaving the box. While a sum is
+   being typed, the box's own handlers don't see it; they get the answer. */
+function dzCalc(s) {
+  const src = String(s).replace(/\s+/g, '').replace(/,/g, '.').replace(/[×x]/gi, '*').replace(/÷/g, '/'); let i = 0;
+  const num = () => { if (src[i] === '-') { i++; return -num(); } if (src[i] === '+') { i++; return num(); }
+    if (src[i] === '(') { i++; const v = sum(); if (src[i++] !== ')') return NaN; return v; }
+    const m = /^\d*\.?\d+|^\d+\./.exec(src.slice(i)); if (!m) return NaN; i += m[0].length; return +m[0]; };
+  const prod = () => { let v = num(); while (src[i] === '*' || src[i] === '/') { const o = src[i++], r = num(); v = o === '*' ? v * r : r ? v / r : NaN; } return v; };
+  const sum = () => { let v = prod(); while (src[i] === '+' || src[i] === '-') { const o = src[i++], r = prod(); v = o === '+' ? v + r : v - r; } return v; };
+  const v = sum(); return i === src.length && Number.isFinite(v) ? v : NaN;
+}
+document.addEventListener('focusin', (e) => { if (e.target.matches?.('input[data-calc]')) e.target.dataset.was = e.target.value; });
+document.addEventListener('input', (e) => { const t = e.target; if (t.matches?.('input[data-calc]') && (!t.value.trim() || !Number.isFinite(+t.value))) e.stopImmediatePropagation(); }, true);
+const dzCalcCommit = (t) => { const raw = t.value.trim(); if (!raw || Number.isFinite(+raw)) return;
+  let v = dzCalc(raw); if (Number.isNaN(v)) { toast('That sum doesn\'t work out.'); t.value = t.dataset.was ?? ''; return; }
+  const mn = t.getAttribute('min'), mx = t.getAttribute('max'); if (mn != null && v < +mn) v = +mn; if (mx != null && v > +mx) v = +mx;
+  t.value = +v.toFixed(3); t.dispatchEvent(new Event('input', { bubbles: true })); };
+document.addEventListener('change', (e) => { if (e.target.matches?.('input[data-calc]')) dzCalcCommit(e.target); }, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches?.('input[data-calc]')) { e.preventDefault(); e.target.blur(); } }, true);
+
 /* ---------- Templates ---------- */
 let dzN = 0; const dzId = () => 'L' + Date.now().toString(36) + (dzN++);
 const dzT = (text, x, y, w, size, o = {}) => ({ id: dzId(), t: 'text', text, x, y, w, h: size * 1.2, size, font: '@2', c: '@fg', al: 'left', lh: 1.2, ...o });
@@ -1247,8 +1267,8 @@ async function dzPicker(opts = {}) {
       ${sz && !sz.fold ? `<div class="lbl">Size</div><div class="dz-papers">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => {
           const pp = DZ_PAPER.find(x => x[0] === n);
           return `<button data-ps="${esc(n)}" class="${st.ps === n ? 'on' : ''}"><b>${esc(n)}</b><small>${pp ? `${dzMM(pp[1])} × ${dzMM(pp[2])}` : 'your size'}</small></button>`; }).join('')}</div>
-        ${st.ps === 'Custom' ? `<div class="dz-csize"><label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-cs="cw" value="${st.cw}"></label>
-          <span class="muted">×</span><label><span>H</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-cs="ch" value="${st.ch}"></label>
+        ${st.ps === 'Custom' ? `<div class="dz-csize"><label><span>W</span><input class="in" type="text" inputmode="text" data-calc min="0" step="any" data-cs="cw" value="${st.cw}"></label>
+          <span class="muted">×</span><label><span>H</span><input class="in" type="text" inputmode="text" data-calc min="0" step="any" data-cs="ch" value="${st.ch}"></label>
           <select class="in" data-cs="cu">${['mm', 'cm', 'in'].map(u => `<option ${st.cu === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>`
         : `<div class="seg" style="margin-top:8px">${[[false, 'Portrait'], [true, 'Landscape']].map(([v, n]) => `<button data-land="${v ? 1 : 0}" class="${st.land === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>`}
         <p class="muted" style="font-size:12px;margin:6px 0 12px">${dzMM(sz.mm[0])} × ${dzMM(sz.mm[1])} mm, ${sz.w} × ${sz.h} px at ${sz.dpi} dpi${sz.dpi < 300 ? ' (large pages use a lower dpi so they open on phones and tablets)' : ''}.</p>` : ''}
@@ -1346,6 +1366,7 @@ DZ.edit = async (id) => {
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
+        <div class="dz-xf" id="dz-xf" hidden></div>
         <div class="dz-faces" id="dz-faces"></div>
         ${doc.kind === 'note' ? '<div class="dz-notebar" id="dz-notebar"></div>' : ''}
         <div id="dz-qs" class="dz-qs" hidden><span class="dz-qs-what"></span><div class="dz-qs-row"><span>Yours</span><input type="range" min="0" max="100" step="1" value="50" aria-label="Closer to what you drew, or cleaner"><span>Cleaner</span></div><div class="dz-qs-row"><button class="btn small" data-qs="no" title="Put back the shape it snapped to">Cancel</button><button class="btn small primary" data-qs="ok">Keep</button></div></div><div id="dz-marq" hidden></div><div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
@@ -1437,7 +1458,7 @@ DZ.edit = async (id) => {
     if (!l) return;
     Object.assign(selBox.style, { left: l.x * k + 'px', top: l.y * k + 'px', width: l.w * k + 'px', height: (l.h || 1) * k + 'px', transform: `rotate(${l.rot || 0}deg)` });
     selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('framesel', !!l.frame); selBox.classList.toggle('over', !!(l.frame && l._over)); const ovn = side?.querySelector('.dz-over-note'); if (ovn) ovn.hidden = !l._over; selBox.classList.toggle('cropping', cropping);
-    for (const [kk, v] of [['w', l.w], ['h', l.h || 0]]) { const i = side?.querySelector(`[data-dim="${kk}"]`); if (i && document.activeElement !== i) i.value = dzToU(doc, v); }
+    drawXf();
   };
 
   // Saving: a few seconds after changes, with a small thumbnail for the list; pictures listed for backups.
@@ -1575,6 +1596,32 @@ DZ.edit = async (id) => {
   };
   let mini = Settings.get('dz_panel_min', '') === '1';
   const toolOn = () => !!(penOn || pclOn || cont || cut || nodes || cropping);
+  /* The box above Shift / Alt / Ctrl: where the selection is and how big, always on show and typed into directly.
+     Several items: their outer box, which moves them together. Nodes: the box round the picked nodes, and the
+     distance from one to the next in the order they were picked. */
+  let xfKey = '';
+  const xfNow = () => {
+    if (nodes) { const L = nodeLayer(); if (!L || !nodes.sel.length) return null; const P = nodes.sel.map(([s2, i]) => { const n = L.subs[s2]?.nodes[i]; return n ? n2p(L, n.x, n.y) : null; }).filter(Boolean); if (!P.length) return null;
+      const X = P.map(q => q.x), Y = P.map(q => q.y), x = Math.min(...X), y = Math.min(...Y); let d = 0; for (let i = 1; i < P.length; i++) d += Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y);
+      return { mode: 'n', x, y, w: Math.max(...X) - x, h: Math.max(...Y) - y, d: P.length > 1 ? d : null, noSize: true }; }
+    if (toolOn() || cut || cropping) return null;
+    if (many()) { const L = picked(); if (!L.length) return null; const B = L.map(box), x = Math.min(...B.map(b => b.x0)), y = Math.min(...B.map(b => b.y0)); return { mode: 'm', x, y, w: Math.max(...B.map(b => b.x1)) - x, h: Math.max(...B.map(b => b.y1)) - y, noSize: true }; }
+    const l = layer(); if (!l) return null;
+    return { mode: 'l', x: l.x, y: l.y, w: l.w, h: l.h || 0, l, noH: (l.t === 'text' && !l.frame) || l.t === 'check' || (l.t === 'field' && !['area', 'sign'].includes(l.ft)), lock: !!l.lock }; };
+  const drawXf = () => { const b = $('#dz-xf'); if (!b) return; const v = xfNow(); b.hidden = !v; if (!v) { xfKey = ''; return; }
+    const l = v.l, key = [v.mode, dzUnit(doc), l?.id, l && dzKeep(l), v.noH, v.lock, v.d != null].join('|');
+    const f = (k, n, off, tip) => `<label data-tip="${tip}"><span>${n}</span><input class="in" type="text" inputmode="text" data-calc data-xf="${k}" ${off ? 'disabled' : ''} aria-label="${tip}"></label>`;
+    if (key !== xfKey) { xfKey = key; b.innerHTML = f('x', 'X', v.lock, 'Across from the left of the page') + f('y', 'Y', v.lock, 'Down from the top of the page') + f('w', 'W', v.noSize || v.lock, 'Width') + f('h', 'H', v.noSize || v.noH || v.lock, 'Height')
+      + `<div class="dz-xfr">${l ? `<button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' && !l.frame ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
+          <svg viewBox="0 0 24 24">${dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
+            : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>` : ''}${v.d != null ? '<span class="dz-xfd" data-tip="Distance from node to node, in the order you picked them"><b>D</b> <i></i></span>' : ''}<select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>`; }
+    for (const kk of ['x', 'y', 'w', 'h']) { const i = b.querySelector(`[data-xf="${kk}"]`); if (i && document.activeElement !== i) i.value = dzToU(doc, v[kk]); }
+    const dd = b.querySelector('.dz-xfd i'); if (dd) dd.textContent = dzToU(doc, v.d) + ' ' + dzUnit(doc); };
+  const xfSet = (k, val) => { const v = xfNow(); if (!v) return; const dx = k === 'x' ? val - v.x : 0, dy = k === 'y' ? val - v.y : 0;
+    if (v.mode === 'n') { if (k !== 'x' && k !== 'y') return; const L = nodeLayer(); for (const [s2, i] of nodes.sel) { const n = L.subs[s2]?.nodes[i]; if (!n) continue; const q = n2p(L, n.x, n.y), u = p2n(L, { x: q.x + dx, y: q.y + dy }); n.x = u.u; n.y = u.v; } refit(L); drawNodes(); return redraw(); }
+    if (v.mode === 'm') { for (const m of picked()) if (!m.lock) { m.x += dx; m.y += dy; } return; }
+    const l = v.l; if (k === 'x') l.x = val; if (k === 'y') l.y = val;
+    if (k === 'w' || k === 'h') { if (!(val > 0)) return; const keep = dzKeep(l) && (l.t !== 'text' || l.frame), r = l.w / (l.h || 1); if (k === 'w') { l.w = val; if (keep) l.h = val / r; } else { l.h = val; if (keep) l.w = val * r; } } };
   /* The strip under the top bar: quick tools and properties for what's selected, a different set per kind of layer. */
   let cpop = null;
   const drawCtx = () => { const b = $('#dz-ctx'); if (!b) return; const l = layer(), sl = b.scrollLeft, sep = '<i class="dz-csep"></i>';
@@ -1589,7 +1636,7 @@ DZ.edit = async (id) => {
     const tog = (k, s, tip) => `<button class="dz-ib ${l[k] ? 'on' : ''}" data-tog="${k}" data-tip="${tip}" style="${s}">${tip[0]}</button>`;
     const col = (key, ic, tip, none) => { const c = l[key], paint = (key === 'c' || key === 'fill') && l.fm === 'grad' && l.grad ? dzGradCss(doc, l.grad) : (c && c !== 'none' ? dzCol(doc, c) : key === 'c' ? dzCol(doc, '@fg') : 'transparent');
       return `<button class="dz-cbtn ${cpop === key ? 'on' : ''}" data-cpop="${key}" data-none="${none ? 1 : ''}" data-tip="${tip}" aria-label="${tip}"><small>${ic}</small><i style="background:${paint}"></i></button>`; };
-    const num = (k, v, tip, max) => `<label class="dz-cnum" data-tip="${tip}"><input class="in" type="number" min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}"></label>`;
+    const num = (k, v, tip, max) => `<label class="dz-cnum" data-tip="${tip}"><input class="in" type="text" inputmode="text" data-calc min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}"></label>`;
     let own = '';
     if (l.t === 'text') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font)}</select>${num('size', l.size, 'Text size')}${sep}`
       + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + tog('u', 'text-decoration:underline', 'Underline') + tog('st', 'text-decoration:line-through', 'Strikethrough') + sep
@@ -1641,7 +1688,7 @@ DZ.edit = async (id) => {
     side.querySelectorAll('details.fsec').forEach(d => { const o = secOpen.get(secName(d)); if (o != null) d.open = o; });
     const key = tab + ':' + (sel || '');
     if (key === sideKey) { side.scrollTop = was; if (actSel) { const n = side.querySelector(actSel); if (n) { n.focus({ preventScroll: true }); if (caret) n.setSelectionRange?.(...caret); } } } else { side.scrollTop = 0; sideKey = key; }
-    drawCtx(); drawMods(); drawFaces(); drawRail();
+    drawCtx(); drawXf(); drawMods(); drawFaces(); drawRail();
     const nh = sheetH(stage.clientHeight); if (nh !== sheetWas) { sheetWas = nh; fit(); redraw(); }
   };
   const drawRail = () => { const r = $('#dz-rail'); if (!r) return;
@@ -1780,15 +1827,7 @@ DZ.edit = async (id) => {
           ${l.cover ? slider('px', 'Move photo left / right', -1, 1, 0.02, l.px || 0, v => Math.round(v * 100)) + slider('py', 'Move photo up / down', -1, 1, 0.02, l.py || 0, v => Math.round(v * 100)) : ''}
           ${slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0)}
 `}`, { fold: true, open: true })}
-      ${fsec('Position and opacity', `<div class="dz-dims">
-        <label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="w" value="${dzToU(doc, l.w)}"></label>
-        <button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' && !l.frame ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
-          <svg viewBox="0 0 24 24">${dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
-            : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>
-        <label><span>H</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="h" value="${dzToU(doc, l.h || 0)}" ${l.t === 'text' && !l.frame ? 'disabled title="Text height follows the text; use Size for the letters"' : ''}></label>
-        <select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
-      </div>
-      ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
+      ${fsec('Rotation and opacity', `${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
         ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}`, { fold: true })}
       ${fsec('Saving', `<div class="dz-tb">${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
         ${vecOnly([l.id]) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}${dzIB('data-mact="stencil"', 'stencil', 'Make a stencil')}</div>
@@ -2397,7 +2436,7 @@ DZ.edit = async (id) => {
   const contPanel = () => `<div class="dz-lh"><b>Contour</b><button class="btn small" data-cont="cancel">Cancel</button></div>
     <p class="muted" style="font-size:12px;margin:0 0 8px">Drag across the design: right grows, left shrinks (Shift for whole ${dzUnit(doc)}). Or type the width; a minus number shrinks. Holes move the other way.</p>
     <div class="row" style="gap:6px;flex-wrap:nowrap;align-items:center"><label class="field" style="flex:1;margin:0"><span>Width (${dzUnit(doc)})</span>
-      <input class="in" type="number" step="any" inputmode="decimal" data-contd value="${dzToU(doc, copt2.d)}"></label>
+      <input class="in" type="text" inputmode="text" data-calc step="any" data-contd value="${dzToU(doc, copt2.d)}"></label>
       <button class="btn small" data-cont="flip" style="align-self:flex-end" title="Swap between growing and shrinking">±</button></div>
     <div class="seg" style="margin:8px 0">${[['round', 'Round'], ['miter', 'Sharp'], ['bevel', 'Bevel']].map(([j, nm]) => `<button data-cont="${j}" class="${copt2.join === j ? 'on' : ''}" style="flex:1">${nm}</button>`).join('')}</div>
     <label class="toggle" style="display:inline-flex"><input type="checkbox" data-contkeep ${copt2.keep ? 'checked' : ''}><span>Keep original (add the contour as a new shape)</span></label>
@@ -2883,7 +2922,7 @@ DZ.edit = async (id) => {
     }
   }, true);
   stage.addEventListener('pointerdown', (e) => {
-    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop, .dz-notebar')) return;
+    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-xf, .dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop, .dz-notebar')) return;
     // Background (around the design, or an empty part of it): drag to pan, tap to deselect. Shift-drag, or on a
     // touchscreen a moment's hold before dragging, draws a selection box instead.
     stage.setPointerCapture(e.pointerId);
@@ -3067,7 +3106,7 @@ DZ.edit = async (id) => {
     }
     redraw();
   });
-  const end = () => { cancelPress(); guides(false, false); if (pen?.drag) { pen.drag = null; return drawPen(); } if (stroke) return pclUp(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
+  const end = () => { cancelPress(); guides(false, false); requestAnimationFrame(drawXf); if (pen?.drag) { pen.drag = null; return drawPen(); } if (stroke) return pclUp(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
     if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
     changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
@@ -3282,7 +3321,7 @@ DZ.edit = async (id) => {
         ${ck('on', 'Snapping on', 'Hold Alt to ignore it for one move')}
         <div class="lbl">Snap to</div>${ck('page', 'Page edges and centre', 'The sides and middle of the page')}${ck('edges', 'Edges of other items', 'Edges line up with edges')}${ck('mids', 'Centres of other items', 'Middles line up with middles')}
         <label class="dz-sl"><span>Snap distance<b>${snapO.dist}</b></span><input type="range" min="3" max="30" step="1" value="${snapO.dist}" data-snv="dist"></label>
-        <label class="field" style="margin-bottom:8px" data-tip="Also snap this far outside other items, so spaces between them come out the same"><span>Gap between items (${dzUnit(doc)})</span><input class="in" type="number" min="0" step="any" value="${dzToU(doc, snapO.gap || 0)}" data-sng></label>
+        <label class="field" style="margin-bottom:8px" data-tip="Also snap this far outside other items, so spaces between them come out the same"><span>Gap between items (${dzUnit(doc)})</span><input class="in" type="text" inputmode="text" data-calc min="0" step="any" value="${dzToU(doc, snapO.gap || 0)}" data-sng></label>
         <details class="dz-keys"><summary>Shift, Ctrl and Alt</summary><ul><li><b>Resizing:</b> Shift evens or frees the proportions, Ctrl sizes from the centre, Alt is fine and doesn't snap.</li><li><b>Moving:</b> Shift goes straight across or down, Alt is fine and doesn't snap, Ctrl+Alt drags a copy.</li><li><b>Rotating:</b> Shift is 15° steps, Alt is free and fine.</li><li><b>Arrow keys:</b> Shift is a big step, Alt is one pixel.</li><li><b>Selecting:</b> Ctrl or Shift adds or removes.</li></ul></details></div>` : ''); };
   drawSnap();
   const snapSave = () => Settings.set('dz_snap', JSON.stringify(snapO));
@@ -3291,6 +3330,10 @@ DZ.edit = async (id) => {
     if (t2.dataset.snv) { snapO.dist = +t2.value; t2.closest('label').querySelector('b').textContent = t2.value; snapSave(); }
     if (t2.hasAttribute('data-sng')) { const v = dzFromU(doc, +t2.value); snapO.gap = v > 0 ? v : 0; snapSave(); } });
   stage.addEventListener('pointerdown', () => { if (snapPop) { snapPop = false; drawSnap(); } }, true);
+  const xfB = $('#dz-xf');
+  xfB.addEventListener('click', (e) => { if (e.target.closest('[data-act], [data-unit]')) sideClick(e); });
+  xfB.addEventListener('input', (e) => { const k = e.target.dataset.xf; if (!k) return; xfSet(k, dzFromU(doc, +e.target.value)); placeSel(); changed(); });
+  xfB.addEventListener('change', (e) => { if (e.target.hasAttribute('data-unit')) return sideChange(e); if (e.target.dataset.xf) { changed(true); drawXf(); } });
   const ctxB = $('#dz-ctx');
   ctxB.addEventListener('click', async (e) => { const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
     const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
@@ -3726,7 +3769,7 @@ SP.mount = () => {
       <div class="card sp-ctl">
         <div class="two">
           <label class="field"><span>Width ${help('Real size of the whole design on the skin. Height follows the image.')}</span>
-            <div class="unit-in"><input class="in" id="sp-w" type="number" inputmode="decimal" min="5" max="300" step="0.5" value="${+SP.wcm.toFixed(1)}"><em>cm</em></div></label>
+            <div class="unit-in"><input class="in" id="sp-w" type="text" inputmode="text" data-calc min="5" max="300" step="0.5" value="${+SP.wcm.toFixed(1)}"><em>cm</em></div></label>
           <label class="field"><span>Height</span><div class="unit-in"><input class="in" value="${H.toFixed(1)}" disabled><em>cm</em></div></label>
         </div>
         <div class="lbl">Paper</div>
