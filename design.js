@@ -105,7 +105,9 @@ const DZF = {
     this.loaded.add(name);
   },
   async all(doc) { const t = DZ_THEMES[doc.theme] || DZ_THEMES.ink;
-    await Promise.all([t.f1, t.f2, ...doc.layers.filter(l => l.t === 'text' || (l.t === 'field' && l.font)).map(l => l.font[0] === '@' ? t['f' + l.font[1]] : l.font)].map(f => this.load(f))); }
+    await Promise.all([t.f1, t.f2, ...doc.layers.filter(l => l.t === 'text' || (l.t === 'field' && l.font)).map(l => l.font[0] === '@' ? t['f' + l.font[1]] : l.font)].map(f => this.load(f)));
+    // italics are separate font files: fetched here so the first draw isn't in the fallback font
+    await Promise.all(doc.layers.filter(l => l.it && l.font).flatMap(l => [400, 700].map(w => document.fonts.load(`italic ${w} 48px "${dzFont(doc, l.font)}"`).catch(() => {})))); }
 };
 
 /* ---------- Drawing ---------- */
