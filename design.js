@@ -1324,6 +1324,7 @@ DZ.edit = async (id) => {
       <button class="dz-ib" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24">${DZ_UI.tpl}</svg></button>
       <button class="dz-ib dz-go" id="dz-export" aria-label="Export" data-tip="Export: print, save or share"><svg viewBox="0 0 24 24">${DZ_UI.export}</svg></button>
     </div>
+    <div class="dz-ctx" id="dz-ctx"></div>
     <div class="dz-body">
       <div class="dz-stage" id="dz-stage">
         <div class="dz-rail" id="dz-rail">
@@ -1572,6 +1573,39 @@ DZ.edit = async (id) => {
   };
   let mini = Settings.get('dz_panel_min', '') === '1';
   const toolOn = () => !!(penOn || pclOn || cont || cut || nodes || cropping);
+  /* The strip under the top bar: quick tools and properties for what's selected, a different set per kind of layer. */
+  let cpop = null;
+  const drawCtx = () => { const b = $('#dz-ctx'); if (!b) return; const l = layer(), sl = b.scrollLeft, sep = '<i class="dz-csep"></i>';
+    if (!l || many() || toolOn() || cut || nodes || cropping || l.t === 'shortcut' || l.t === 'check') { cpop = null; b.innerHTML = `<span class="muted dz-chint">${many() ? 'Several items selected: their tools are in the panel.' : 'Select something to see its tools here.'}</span>`; return; }
+    const tog = (k, s, tip) => `<button class="dz-ib ${l[k] ? 'on' : ''}" data-tog="${k}" data-tip="${tip}" style="${s}">${tip[0]}</button>`;
+    const col = (key, ic, tip, none) => { const c = l[key], paint = (key === 'c' || key === 'fill') && l.fm === 'grad' && l.grad ? dzGradCss(doc, l.grad) : (c && c !== 'none' ? dzCol(doc, c) : 'transparent');
+      return `<button class="dz-cbtn ${cpop === key ? 'on' : ''}" data-cpop="${key}" data-none="${none ? 1 : ''}" data-tip="${tip}" aria-label="${tip}"><small>${ic}</small><i style="background:${paint}"></i></button>`; };
+    const num = (k, v, tip, max) => `<label class="dz-cnum" data-tip="${tip}"><input class="in" type="number" min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}"></label>`;
+    let own = '';
+    if (l.t === 'text') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font)}</select>${num('size', l.size, 'Text size')}${sep}`
+      + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + tog('u', 'text-decoration:underline', 'Underline') + tog('st', 'text-decoration:line-through', 'Strikethrough') + sep
+      + [['left', 'aleft'], ['center', 'acenter'], ['right', 'aright'], ...(l.frame ? [['justify', 'ajust']] : [])].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')
+      + (l.frame ? sep + [['top', 'vtop', 'Top of the frame'], ['middle', 'vmid', 'Middle of the frame'], ['bottom', 'vbot', 'Bottom of the frame']].map(([a, ic, n]) => dzIB(`data-va="${a}"`, ic, n, (l.va || 'top') === a ? 'on' : '')).join('') : '')
+      + sep + col('c', 'Text', 'Text colour');
+    else if (l.t === 'shape') own = (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40));
+    else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
+    else if (l.t === 'field') own = num('size', l.size || 46, 'Text size');
+    const field = l.t === 'field';
+    b.innerHTML = (own ? own + sep : '')
+      + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="up"', 'fwd', 'Bring forward') + dzIB('data-act="down"', 'back', 'Send back') + sep
+      + (field ? '' : dzIB('data-act="fx"', 'fx', 'Flip left to right', l.fx ? 'on' : '') + dzIB('data-act="fy"', 'fy', 'Flip upside down', l.fy ? 'on' : '') + dzIB(`data-act="clip" ${F().indexOf(l) ? '' : 'disabled'}`, 'clip', 'Clip to the layer below: only shows inside it', clipped(l) ? 'on' : '') + sep
+        + `${l.t !== 'text' ? dzIB('data-act="crop"', 'crop', 'Crop', cropping ? 'on' : '') : ''}
+        ${dzIB('data-act="cut"', 'area', 'Select area: part of it by box, ellipse, lasso or colour, to delete, split or move')}
+        ${l.t === 'shape' && l.shape !== 'line' ? dzIB('data-act="nodes"', 'nodes', l.shape === 'vec' ? 'Edit nodes' : 'Edit nodes (turns it into a free shape)') : ''}
+        <button class="dz-ib" data-bool="contour" data-tip="Contour: grow or shrink the outline, or add a border round it (O)" aria-label="Contour">${DZ_BOOL_ICON.contour}</button>
+        ${l.t === 'shape' && (l.subs?.length > 1 || l.shape === 'path' || l.shape === 'ring') ? `<button class="dz-ib" data-bool="separate" data-tip="Separate: split into its pieces" aria-label="Separate">${DZ_BOOL_ICON.separate}</button>` : ''}
+        ${l.t === 'image' && (l.ref || l.logo) ? dzIB('data-act="toshape"', 'toshape', 'To shape: trace the picture into a shape you can fill') : ''}
+        ${l.t !== 'image' || l.ref || l.logo ? dzIB('data-act="flatten1"', 'flatten', l.t === 'image' ? 'Flatten: bake in rotation, flips, crop and opacity' : 'Flatten into a picture') : ''}
+        ${dzIB('data-act="pick"', 'pick', 'Select more items')}` + sep)
+      + dzIB('data-act="lock"', l.lock ? 'lock' : 'unlock', l.lock ? 'Unlock' : 'Lock', l.lock ? 'on' : '') + dzIB('data-act="del"', 'del', 'Delete', 'danger')
+      + (cpop ? `<div class="dz-cpop">${swatches(cpop, l[cpop], cpop !== 'c')}</div>` : '');
+    b.scrollLeft = sl;
+    if (cpop) { const q = b.querySelector(`[data-cpop="${cpop}"]`).getBoundingClientRect(), p = b.querySelector('.dz-cpop'); p.style.left = Math.max(8, Math.min(innerWidth - 300, q.left)) + 'px'; p.style.top = q.bottom + 6 + 'px'; } };
   // Redrawing the panel keeps it as it was: which sections are open, where it's scrolled to and the control in use.
   const secOpen = new Map(); let sideKey = '';
   const secName = (d) => d.querySelector('summary')?.firstChild?.textContent.trim();
@@ -1598,7 +1632,7 @@ DZ.edit = async (id) => {
     side.querySelectorAll('details.fsec').forEach(d => { const o = secOpen.get(secName(d)); if (o != null) d.open = o; });
     const key = tab + ':' + (sel || '');
     if (key === sideKey) { side.scrollTop = was; if (actSel) { const n = side.querySelector(actSel); if (n) { n.focus({ preventScroll: true }); if (caret) n.setSelectionRange?.(...caret); } } } else { side.scrollTop = 0; sideKey = key; }
-    drawMods(); drawFaces(); drawRail();
+    drawCtx(); drawMods(); drawFaces(); drawRail();
     const nh = sheetH(stage.clientHeight); if (nh !== sheetWas) { sheetWas = nh; fit(); redraw(); }
   };
   const drawRail = () => { const r = $('#dz-rail'); if (!r) return;
@@ -1688,12 +1722,11 @@ DZ.edit = async (id) => {
   };
   const drawItem = () => {
     const l = layer();
-    if (l.t === 'field') { side.innerHTML = `<div class="dz-lh"><b>Form field</b>${dzIB('data-act="del"', 'del', 'Delete', 'danger')}</div>
+    if (l.t === 'field') { side.innerHTML = `<div class="dz-lh"><b>Form field</b></div>
         <label class="field"><span>Type</span><select class="in" data-ffk="ft">${FF_TYPES.map(([v, n]) => `<option value="${v}" ${l.ft === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="field"><span>Label</span><textarea class="in" rows="3" data-ffk="label">${esc(l.label || '')}</textarea></label>
         ${l.ft === 'radio' || l.ft === 'combo' ? `<label class="field"><span>Options, one per line</span><textarea class="in" rows="4" data-ffk="opts">${esc((l.opts || []).join('\n'))}</textarea></label>` : ''}
         ${l.ft === 'text' || l.ft === 'date' ? `<label class="field"><span>Fill in automatically</span><select class="in" data-ffk="v">${FF_PREFILL.map(([v, n]) => `<option value="${v}" ${(l.v || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
-        ${slider('size', 'Text size', 20, 140, 1, l.size || 46)}
         <label class="toggle" style="display:inline-flex"><input type="checkbox" data-ffk="req" ${l.req ? 'checked' : ''}><span>Required</span></label>
         <p class="muted dz-hint">Radio and combo boxes need InkForge or a PDF to fill in; on paper they print as they look here.</p>`; return; }
     if (l.t === 'shortcut' || l.t === 'check') { const n = l.t === 'check';
@@ -1715,23 +1748,16 @@ DZ.edit = async (id) => {
     }
     side.innerHTML = `
       <div class="dz-lh"><b>${kindName}</b><button class="btn small" data-act="done">Done</button></div>
-      <div class="dz-tb">
-        ${dzIB('data-act="dup"', 'copy', 'Duplicate')}${dzIB('data-act="up"', 'fwd', 'Bring forward')}${dzIB('data-act="down"', 'back', 'Send back')}
-        ${dzIB('data-act="lock"', l.lock ? 'lock' : 'unlock', l.lock ? 'Unlock' : 'Lock', l.lock ? 'on' : '')}${dzIB('data-act="del"', 'del', 'Delete', 'danger')}</div>
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
         <button class="btn small" data-act="flatten">Flatten group</button></div>` : ''}
       
       ${l.t === 'text' ? `
         ${l.frame ? `<p class="dz-over-note" ${l._over ? '' : 'hidden'}>Some text doesn't fit. Make the frame bigger or the letters smaller.</p>` : ''}
         ${fsec('Text', `<textarea class="in dz-text" data-k="text" rows="${l.frame ? 7 : 2}">${esc(l.text)}</textarea>
-          <select class="in" data-k="font" style="width:100%;margin-bottom:6px" aria-label="Font">${fontOpts(l.font)}</select>
-          ${slider('size', 'Size', 8, Math.round(doc.h * 0.4), 1, Math.round(l.size))}
-          <div class="row" style="gap:6px;flex-wrap:nowrap;margin-bottom:8px"><span class="dz-tb dz-tbi" style="margin:0"><button class="dz-ib ${l.b ? 'on' : ''}" data-tog="b" data-tip="Bold" style="font-weight:800">B</button><button class="dz-ib ${l.it ? 'on' : ''}" data-tog="it" data-tip="Italic" style="font-style:italic">I</button><button class="dz-ib ${l.u ? 'on' : ''}" data-tog="u" data-tip="Underline" style="text-decoration:underline">U</button><button class="dz-ib ${l.st ? 'on' : ''}" data-tog="st" data-tip="Strikethrough" style="text-decoration:line-through">S</button></span>
-            <select class="in" data-tk="caps" aria-label="Case" style="flex:1;min-width:0">${[['', 'As typed'], ['upper', 'ALL CAPS'], ['small', 'Small caps'], ['title', 'Title Case'], ['lower', 'lowercase']].map(([v, n]) => `<option value="${v}" ${(l.caps || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>`, { fold: true, open: true })}
+          <div class="row" style="margin-bottom:8px"><select class="in" data-tk="caps" aria-label="Case" style="flex:1;min-width:0">${[['', 'As typed'], ['upper', 'ALL CAPS'], ['small', 'Small caps'], ['title', 'Title Case'], ['lower', 'lowercase']].map(([v, n]) => `<option value="${v}" ${(l.caps || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>`, { fold: true, open: true })}
         ${fsec('Colour', `${fillUI(l, 'c')}${l.arc && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Bent text shows the plain colour.</p>' : ''}`, { fold: true, open: true })}
         ${fsec('Layout', `<div class="seg" style="margin-bottom:8px"><button data-tframe="0" class="${l.frame ? '' : 'on'}" style="flex:1" data-tip="The box follows the text: dragging a corner scales the letters">Normal</button><button data-tframe="1" class="${l.frame ? 'on' : ''}" style="flex:1" data-tip="A box you size yourself: the text wraps inside it, for paragraphs">Frame</button></div>
           <div class="seg" style="margin-bottom:8px"><button data-tvert="0" class="${l.vert ? '' : 'on'}" style="flex:1">Horizontal</button><button data-tvert="1" class="${l.vert ? 'on' : ''}" style="flex:1" data-tip="Upright letters running top to bottom">Vertical</button></div>
-          <div class="row" style="gap:6px;flex-wrap:nowrap;margin-bottom:8px"><span class="dz-tb dz-tbi">${[['left', 'aleft'], ['center', 'acenter'], ['right', 'aright'], ...(l.frame ? [['justify', 'ajust']] : [])].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')}</span>${l.frame ? `<span class="dz-tb dz-tbi">${[['top', 'vtop', 'Top of the frame'], ['middle', 'vmid', 'Middle of the frame'], ['bottom', 'vbot', 'Bottom of the frame']].map(([a, ic, n]) => dzIB(`data-va="${a}"`, ic, n, (l.va || 'top') === a ? 'on' : '')).join('')}</span>` : ''}</div>
           <label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Long text gets smaller to stay on its lines instead of wrapping, e.g. a studio name or amount"><input type="checkbox" data-fit ${l.fit ? 'checked' : ''}><span>Shrink to fit</span></label>
           ${l.frame ? slider('pad', 'Margin inside the frame', 0, Math.round(Math.min(l.w, l.h) / 3), 1, l.pad || 0) : l.vert ? '' : slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
           ${l.arc ? '<p class="muted" style="font-size:11px;margin:-4px 0 8px">Bent text runs on one line. <button class="link" data-act="unbend">Straighten</button></p>' : ''}`, { fold: true })}
@@ -1746,8 +1772,6 @@ DZ.edit = async (id) => {
         ${fsec('Studio info', `<div class="dz-fields">${DZ_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true })}`
       : l.t === 'shape' ? fsec(l.shape === 'line' ? 'Line' : 'Fill and outline', `
         <div class="lbl">${l.shape === 'line' ? 'Colour' : 'Fill'}</div>${fillUI(l, 'fill', true)}
-        <div class="lbl" style="margin-top:8px">Outline</div>${swatches('stroke', l.stroke, true)}
-        ${slider('sw', 'Outline width', 0, 40, 1, l.sw || 0)}
         ${l.shape === 'rect' || !l.shape ? slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0) : ''}
         ${l.shape === 'poly' ? slider('n', 'Sides', 3, 16, 1, l.n || 6) : ''}
         ${l.shape === 'star' ? slider('n', 'Points', 3, 24, 1, l.n || 5) + slider('inner', 'Inner depth', 0.1, 0.95, 0.01, l.inner ?? 0.45, v => Math.round(v * 100) + '%') : ''}
@@ -1759,7 +1783,7 @@ DZ.edit = async (id) => {
         ${l.logo ? '' : `<label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Fill the whole box and crop what doesn't fit, like a photo frame. Off: the whole picture fits inside."><input type="checkbox" data-cover ${l.cover ? 'checked' : ''}><span>Fill the box (crop)</span></label>
           ${l.cover ? slider('px', 'Move photo left / right', -1, 1, 0.02, l.px || 0, v => Math.round(v * 100)) + slider('py', 'Move photo up / down', -1, 1, 0.02, l.py || 0, v => Math.round(v * 100)) : ''}
           ${slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0)}
-          <div class="lbl">Outline</div>${swatches('stroke', l.stroke, true)}${slider('sw', 'Outline width', 0, 40, 1, l.sw || 0)}`}`, { fold: true, open: true })}
+`}`, { fold: true, open: true })}
       ${fsec('Position and opacity', `<div class="dz-dims">
         <label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="w" value="${dzToU(doc, l.w)}"></label>
         <button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' && !l.frame ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
@@ -1769,17 +1793,8 @@ DZ.edit = async (id) => {
         <select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
       </div>
       ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
-        ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}
-        <div class="dz-tb" style="margin-top:8px">${dzIB('data-act="fx"', 'fx', 'Flip left to right', l.fx ? 'on' : '')}${dzIB('data-act="fy"', 'fy', 'Flip upside down', l.fy ? 'on' : '')}${dzIB(`data-act="clip" ${F().indexOf(l) ? '' : 'disabled'}`, 'clip', 'Clip to the layer below: only shows inside it', clipped(l) ? 'on' : '')}</div>`, { fold: true })}
-      ${fsec('Tools and saving', `<div class="dz-tb">${l.t !== 'text' ? dzIB('data-act="crop"', 'crop', 'Crop', cropping ? 'on' : '') : ''}
-        ${dzIB('data-act="cut"', 'area', 'Select area: part of it by box, ellipse, lasso or colour, to delete, split or move')}
-        ${l.t === 'shape' && l.shape !== 'line' ? dzIB('data-act="nodes"', 'nodes', l.shape === 'vec' ? 'Edit nodes' : 'Edit nodes (turns it into a free shape)') : ''}
-        <button class="dz-ib" data-bool="contour" data-tip="Contour: grow or shrink the outline, or add a border round it (O)" aria-label="Contour">${DZ_BOOL_ICON.contour}</button>
-        ${l.t === 'shape' && (l.subs?.length > 1 || l.shape === 'path' || l.shape === 'ring') ? `<button class="dz-ib" data-bool="separate" data-tip="Separate: split into its pieces" aria-label="Separate">${DZ_BOOL_ICON.separate}</button>` : ''}
-        ${l.t === 'image' && (l.ref || l.logo) ? dzIB('data-act="toshape"', 'toshape', 'To shape: trace the picture into a shape you can fill') : ''}
-        ${l.t !== 'image' || l.ref || l.logo ? dzIB('data-act="flatten1"', 'flatten', l.t === 'image' ? 'Flatten: bake in rotation, flips, crop and opacity' : 'Flatten into a picture') : ''}
-        ${dzIB('data-act="pick"', 'pick', 'Select more items')}
-        ${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
+        ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}`, { fold: true })}
+      ${fsec('Saving', `<div class="dz-tb">${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
         ${vecOnly([l.id]) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}${dzIB('data-mact="stencil"', 'stencil', 'Make a stencil')}</div>
         ${l.t !== 'image' || l.crop || l.r ? `<button class="btn small" data-mact="merge" style="margin-top:4px">Turn into a picture</button>` : ''}`, { fold: true })}`;
   };
@@ -3241,6 +3256,15 @@ DZ.edit = async (id) => {
   };
   side.addEventListener('click', sideClick);
   for (const x of [$('#dz-rail'), $('#dz-pop')]) { x.addEventListener('click', sideClick); x.addEventListener('change', (e) => sideChange(e)); }
+  const ctxB = $('#dz-ctx');
+  ctxB.addEventListener('click', async (e) => { const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
+    const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
+    if (pick && l && (cpop === 'c' || cpop === 'fill')) l.fm = 'solid';
+    if (pick) { const was = cpop; cpop = null; if (was !== 'c' && was !== 'fill' && pick.dataset.c !== 'none' && was === 'stroke' && !l.sw) l.sw = 4; }
+    await sideClick(e); drawCtx(); });
+  ctxB.addEventListener('change', (e) => { if (e.target.dataset.ck) changed(true); else sideChange(e); });
+  ctxB.addEventListener('input', (e) => { const k = e.target.dataset.ck, l = layer(), v = +e.target.value; if (!k || !l || !(v >= 0) || (k === 'size' && v < 6)) return; l[k] = v; changed(); });
+  stage.addEventListener('pointerdown', () => { if (cpop) { cpop = null; drawCtx(); } }, true);
   stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dz-pop, .dz-rail')) closePop(); }, true);
   let gdrag = null;
   side.addEventListener('pointerdown', (e) => {
