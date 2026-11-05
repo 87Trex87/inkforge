@@ -31,7 +31,7 @@ function ttLayout(nd, dia) {
     const a = Math.ceil(n / 2), b = n - a, w = (a - 1) * dia;
     for (let i = 0; i < a; i++) out.push({ u: -w / 2 + i * dia, v: 0 });
     for (let i = 0; i < b; i++) out.push({ u: -w / 2 + dia / 2 + i * dia, v: dia * 0.55 });
-    for (const p of out) { const t = w ? Math.abs(p.u) / (w / 2) : 0;
+    for (const p of out) { const t = w ? Math.abs(p.u) / (w / 2) : 0; p.t = w ? p.u / (w / 2) : 0;   // t: place along the row, -1 to 1
       p.e = nd.kind === 'soft' ? 0.22 + 0.78 * Math.pow(Math.cos(t * Math.PI / 2), 1.5) : 1; }
   }
   return out;
@@ -738,7 +738,7 @@ TT.open = async (el, id) => {
   // The input, through the overall calibration and then the needle's feel.
   const pNorm = (ev) => ev.pointerType === 'mouse' ? 0.6 : Math.max(0, Math.min(1, ((ev.pressure || 0.5) - cal.pMin) / Math.max(0.05, cal.pMax - cal.pMin)));
   const tiltOf = (ev) => Math.max(0, Math.min(1, (Math.hypot(ev.tiltX || 0, ev.tiltY || 0) - cal.tilt0) / Math.max(10, 60 - cal.tilt0)));
-  const depthOf = (pr, speed, tilt) => { const d = (feel.dMin + (feel.dMax - feel.dMin) * curve(pr, feel.pCurve + cal.curve)) * (0.8 + (volt() - 6.5) * 0.15);   // harder hits at higher voltage
+  const depthOf = (pr, speed, tilt0) => { const tilt = isMag() ? 0 : tilt0, d = (feel.dMin + (feel.dMax - feel.dMin) * curve(pr, feel.pCurve + cal.curve)) * (0.8 + (volt() - 6.5) * 0.15);   // harder hits at higher voltage
     return Math.max(0.02, Math.min(1, d * (1 - Math.min(0.9, speed / 200 * feel.speedFade / 100 * cal.fade) - tilt * feel.tiltFade / 100 * 0.6))); };
   const volt = () => Math.max(4, Math.min(11, (feel.volt ?? 7) + (cal.voltOff || 0)));
   const hzOf = () => volt() * 14;   // hits per second
@@ -764,19 +764,32 @@ TT.open = async (el, id) => {
      Needle hang: a longer hang is softer (each needle lands a little off and at its own depth, and tilt spreads
      it more). Skin stretch: loose skin moves under the needles (a wobble shared by the whole puncture), takes
      ink less evenly and lets it bleed further. */
-  const puncture = (cx, p, a, depth, tilt, inkC, erase, sc = mm) => {
-    const hang = (feel.hang ?? 40) / 100, loose = 1 - st.stretch / 100;
+  /* Tilting a magnum: the stack rolls along its row (roll -1 to 1; the sign says which end goes down), so the end that's
+     down goes deepest and the others come up out of the skin in turn. Pressure sets how many still reach: a hard edge
+     feathering away, or only two or three needles for a soft guide line. A curved magnum's belly is what touches, so
+     rolling it moves the deepest point along the row until it reaches the end: half of it lies flat and the rest lifts
+     away, a 13CM working like a 7M. magReach gives how deep one needle goes, 0 if it misses the skin. */
+  let rollNow = 0; st.magRoll = meta.magRoll ?? 0;
+  const magReach = (nd, depth, roll) => { const tau = Math.abs(roll); if (tau < 0.01) return depth * nd.e; const s = Math.sign(roll), q = (1 - s * nd.t) / 2;
+    if (nk !== 'soft') return Math.max(0, depth - tau * 1.5 * q);
+    const te = Math.min(1, Math.abs(nd.t - s * tau)); return Math.max(0, depth * (0.22 + 0.78 * Math.pow(Math.cos(te * Math.PI / 2), 1.5)) - tau * 0.25 * q); };
+  // The set tilt plus the way the pen is leaning along the row (leaning towards an end puts that end down).
+  const setRoll = (ev, a) => { let lean = 0; if (isMag() && ev && st.magTilt) { const tx = ev.tiltX || 0, ty = ev.tiltY || 0, h = Math.hypot(tx, ty); if (h > 1) lean = tiltOf(ev) * (tx * -Math.sin(a) + ty * Math.cos(a)) / h; }
+    rollNow = isMag() ? Math.max(-1, Math.min(1, (st.magRoll || 0) + lean)) : 0; };
+  const puncture = (cx, p, a, depth, tilt0, inkC, erase, sc = mm) => {
+    const mag = isMag() && !erase, tilt = mag ? 0 : tilt0, hang = (feel.hang ?? 40) / 100, loose = 1 - st.stretch / 100;
     const ca = Math.cos(a), sa = Math.sin(a), sp = 1 + tilt * feel.tiltSpread / 100 * 0.8 * (0.5 + hang);
     const wide = lay.length > 4 && nk !== 'liner', rr = feel.size / 2 * sc * (wide ? 0.62 + depth * 0.45 : 0.45 + depth * 0.35) * sp, flow = feel.flow / 100 * cal.flow, bleed = feel.bleed / 100 * (1 + loose * 0.8);
     const hit = (1 - (feel.miss / 100) * (1 - depth)) * (1 - loose * 0.15), wob = loose * 0.12, wu = (Math.random() - 0.5) * wob, wv = (Math.random() - 0.5) * wob;
     for (const nd of lay) {
-      if (Math.random() > hit || (nd.e < 1 && Math.random() > 0.55 + nd.e * 0.45)) continue;   // shallow edge needles skip more
+      const reach = mag ? magReach(nd, depth, rollNow) : depth * nd.e, ratio = depth > 0 ? reach / depth : 0; if (mag && reach <= 0.004) continue;   // up out of the skin
+      if (Math.random() > hit || (ratio < 1 && Math.random() > 0.55 + ratio * 0.45)) continue;   // shallow edge needles skip more
       const j = 0.04 + hang * 0.06, u = (nd.u + wu + (Math.random() - 0.5) * j) * sc * sp, v = (nd.v + wv + (Math.random() - 0.5) * j) * sc;
-      const dd = Math.max(0.02, depth * nd.e * (1 + (Math.random() - 0.5) * hang * 0.5));
-      const px = p.x + u * -sa + v * ca, py = p.y + u * ca + v * sa, al = Math.min(1, (0.18 * nd.e + dd * 0.6) * flow * inkC);
+      const dd = Math.max(0.02, reach * (1 + (Math.random() - 0.5) * hang * 0.5));
+      const px = p.x + u * -sa + v * ca, py = p.y + u * ca + v * sa, al = Math.min(1, (0.18 * ratio + dd * 0.6) * flow * inkC), r1 = mag ? rr * (0.55 + 0.45 * Math.min(1, ratio)) : rr;
       if (al <= 0.004) continue;
-      put(cx, px, py, rr, al, erase);
-      if (bleed && !erase) put(cx, px, py, rr * 1.6, al * bleed * 0.25, false);
+      put(cx, px, py, r1, al, erase);
+      if (bleed && !erase) put(cx, px, py, r1 * 1.6, al * bleed * 0.25, false);
     }
     cx.globalAlpha = 1;
   };
@@ -849,6 +862,7 @@ TT.open = async (el, id) => {
           if (bump > 0 && Math.random() < 0.12 * bump) { buAdd({ x: q.x + (Math.random() - 0.5) * pen.foot * 2, y: q.y + (Math.random() - 0.5) * pen.foot * 2 }, 0.3 * bump); SS.bumps = (SS.bumps || 0) + 1;
             if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or the machine running too hard irritates the skin.', 3500); } } }
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
+        setRoll(ev, turnOf(pen.a, ev)); st.lastD = depth;
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, pageTurn(pen.a, ev), depth, tilt, inkC * pen.cx.alsoHi.w, false);
         if (pen.sym) symPunc(q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
@@ -1445,7 +1459,7 @@ TT.open = async (el, id) => {
     for (let i = 0; i < snapE.pts.length; i += 4) { const q = toScreen(snapE.pts[i]); if (Math.hypot(q.x - sx, q.y - sy) < 16) return true; } return false; };
   const crash = (p, d, ev) => { if (!pen || CHEAT) return; const sev = Math.max(0.2, Math.min(1, (d - 0.55) / 0.35));
     trAdd(p, pen.foot * 1.4, 0.15 * sev / (cal.tough || 1));
-    const ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(); for (let i = 0; i < 3; i++) puncture(pen.cx, p, pen.a, Math.min(1.1, d + 0.25), tiltOf(ev), ink, false);
+    const ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(); setRoll(ev, turnOf(pen.a, ev)); for (let i = 0; i < 3; i++) puncture(pen.cx, p, pen.a, Math.min(1.1, d + 0.25), tiltOf(ev), ink, false);
     const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     B.x0 = Math.min(B.x0, p.x - bp); B.y0 = Math.min(B.y0, p.y - bp); B.x1 = Math.max(B.x1, p.x + bp); B.y1 = Math.max(B.y1, p.y + bp);
     SS.crash = (SS.crash || 0) + 1; if (EX?.cur) EX.cur.crash = (EX.cur.crash || 0) + 1;
@@ -1604,8 +1618,10 @@ TT.open = async (el, id) => {
       cux.strokeStyle = 'rgba(31,182,166,.9)'; cux.lineWidth = 2; cux.beginPath();
       cux.moveTo(curAt.x + u0 * -sa, curAt.y + u0 * ca); cux.lineTo(curAt.x + u1 * -sa, curAt.y + u1 * ca); cux.stroke(); cux.lineWidth = 1;
     }
-    for (const nd of lay) { const px = curAt.x + nd.u * s * -sa + nd.v * s * ca, py = curAt.y + nd.u * s * ca + nd.v * s * sa;
-      cux.beginPath(); cux.arc(px, py, rr, 0, 7); cux.fillStyle = 'rgba(255,255,255,.35)'; cux.fill(); cux.strokeStyle = 'rgba(0,0,0,.55)'; cux.stroke(); }
+    const mg = isMag(), curRoll = pen ? rollNow : (st.magRoll || 0), curD = st.lastD ?? 0.5; let hits = 0;
+    for (const nd of lay) { const px = curAt.x + nd.u * s * -sa + nd.v * s * ca, py = curAt.y + nd.u * s * ca + nd.v * s * sa, rc = mg ? magReach(nd, curD, curRoll) / curD : 1; if (rc > 0.004) hits++;
+      cux.beginPath(); cux.arc(px, py, rr, 0, 7); cux.fillStyle = mg ? `rgba(255,255,255,${0.05 + 0.55 * Math.min(1, rc)})` : 'rgba(255,255,255,.35)'; cux.fill(); cux.strokeStyle = rc > 0.004 ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.2)'; cux.stroke(); }
+    if (mg && Math.abs(curRoll) > 0.01) { const tx = curAt.x - 30, ty = curAt.y + Math.max(rr + 26, 26), tt = `${hits} of ${lay.length}`; cux.font = '600 11px Inter, sans-serif'; const tw = cux.measureText(tt).width + 10; cux.fillStyle = 'rgba(15,18,19,.85)'; cux.fillRect(tx, ty - 12, tw, 16); cux.fillStyle = '#fff'; cux.fillText(tt, tx + 5, ty); }
     // What's loaded: a drop of the needle's ink beside the cursor (paler when diluted), hidden while tattooing.
     if (!pen && st.ink.v > 0.01) { const dx = curAt.x + Math.max(14, rr + 10), dy = curAt.y - Math.max(14, rr + 10);
       cux.beginPath(); cux.moveTo(dx, dy - 9); cux.bezierCurveTo(dx + 7, dy - 1, dx + 6, dy + 6, dx, dy + 6); cux.bezierCurveTo(dx - 6, dy + 6, dx - 7, dy - 1, dx, dy - 9); cux.closePath();
@@ -1663,6 +1679,7 @@ TT.open = async (el, id) => {
     if (e.target.matches?.('input, textarea')) return;
     if (e.key === ' ') { space = e.type === 'keydown'; e.preventDefault(); }
     if (e.type === 'keydown' && (e.key === '[' || e.key === ']') && isMag()) { setAng(st.magAng + (e.key === ']' ? 15 : -15)); }
+    if (e.type === 'keydown' && (e.key === ',' || e.key === '.') && isMag()) { setRoll2((st.magRoll || 0) + (e.key === '.' ? 0.1 : -0.1)); toast('Stack tilt: ' + rollText(), 900); }
     if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
     if (e.type === 'keydown' && CHEAT) {   // Enter puts a lasso down or finishes adjusting a snap; Escape cancels; Delete removes the lassoed part
@@ -1755,6 +1772,8 @@ TT.open = async (el, id) => {
       pop.innerHTML = `<div class="gh">Magnum angle</div><div class="tt-angs">${[0, 30, 45, 60, 90, 120, 135, 150].map(v => `<button data-ang="${v}" class="${st.magAng === v ? 'on' : ''}">
           <svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg>${v}°</button>`).join('')}</div>
         <label class="dz-sl" style="margin:6px 6px 2px"><span id="tt-angn">${st.magTilt ? 'Offset on the lean' : 'Fine'}</span><span><b id="tt-angv">${st.magAng}°</b></span><input type="range" min="0" max="179" step="1" value="${st.magAng}" data-angr></label>
+        <label class="dz-sl" style="margin:6px 6px 2px" data-tip="Roll the stack onto one end: that end goes deepest and the rest feather away. Press , and . while tattooing. Less pressure, fewer needles reach the skin."><span>Stack tilt<b id="tt-rollv">${rollText()}</b></span><input type="range" min="-100" max="100" step="5" value="${Math.round((st.magRoll || 0) * 100)}" data-angroll></label>
+        <button class="btn small" data-rollzero style="margin:0 6px 6px">Flat</button>
         <label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-angt ${st.magTilt ? 'checked' : ''}><span>Follows the way the pen leans</span></label>
         <label class="toggle" style="display:flex;margin:0 6px 6px;border:0;min-height:30px;padding:0" data-tip="Which of the magnum's two rows leads: the shorter row in front, or the longer. Kept for every piece."><input type="checkbox" data-angf ${st.magFlip ? 'checked' : ''}><span>Short row in front</span></label>`;
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
@@ -1788,9 +1807,13 @@ TT.open = async (el, id) => {
     if (e.target.matches('[data-symr]')) { st.sym.n = +e.target.value; $('#tt-symnv').textContent = st.sym.n; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-symmir]')) { st.sym.mir = e.target.checked; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-angr]')) { setAng(+e.target.value); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', +x.dataset.ang === st.magAng)); }
+    if (e.target.matches('[data-angroll]')) return setRoll2(+e.target.value / 100);
     if (e.target.matches('[data-angf]')) { st.magFlip = e.target.checked; Settings.set('tt_magflip', st.magFlip ? '1' : '0'); return drawCur(); }
     if (e.target.matches('[data-angt]')) { st.magTilt = e.target.checked; st.dirty = true; const n = $('#tt-angn'); if (n) n.textContent = st.magTilt ? 'Offset on the lean' : 'Fine'; drawAng(); }
   };
+  function rollText() { const v = Math.round((st.magRoll || 0) * 100); return v ? `${Math.abs(v)}% ${v > 0 ? 'this end' : 'other end'}` : 'flat'; }
+  function setRoll2(v) { st.magRoll = Math.max(-1, Math.min(1, Math.round(v * 20) / 20)); st.dirty = true; const b = $('#tt-rollv'); if (b) b.textContent = rollText(); const r = pop.querySelector('[data-angroll]'); if (r) r.value = Math.round(st.magRoll * 100); drawCur(); }
+  pop.addEventListener('click', (e) => { if (e.target.closest('[data-rollzero]')) setRoll2(0); });
   function setAng(v) { st.magAng = ((Math.round(v) % 180) + 180) % 180; st.dirty = true; const l = $('#tt-angv'); if (l) l.textContent = st.magAng + '°'; const r = pop.querySelector('[data-angr]'); if (r) r.value = st.magAng; drawAng(); drawCur(); }
   function drawAng() { const b = $('#tt-rail [data-r="angle"]'); if (!b) return; b.hidden = !isMag();
     $('#tt-angi').setAttribute('transform', `rotate(${st.magAng} 12 12)`); $('#tt-angl').textContent = st.magTilt ? (st.magAng ? 'pen+' + st.magAng : 'pen') : st.magAng + '°'; }
@@ -1916,7 +1939,7 @@ TT.open = async (el, id) => {
         if (!last) { last = q; continue; }
         const dx = q.x - last.x, dy = q.y - last.y, d = Math.hypot(dx, dy), dt = Math.max(1, q.t - last.t) / 1000; if (d < 0.01) continue;
         const v = d / q.s / (96 / 25.4) / dt; sp = sp ? sp * 0.7 + v * 0.3 : v;   // screen mm per second, as on the page
-        const tilt = tiltOf(q), depth = depthOf(pNorm(q), sp, tilt), gap = gapMm(sp) * pm, a = turnOf(Math.atan2(dy, dx), q);
+        const tilt = tiltOf(q), depth = depthOf(pNorm(q), sp, tilt), gap = gapMm(sp) * pm, a = turnOf(Math.atan2(dy, dx), q); setRoll(q, a);
         let tt = carry; while (tt <= d) { puncture(ix, { x: last.x + dx * tt / d, y: last.y + dy * tt / d }, a, depth, tilt, 1, false, pm); tt += gap; }
         carry = tt - d; last = q;
       }
@@ -2127,7 +2150,7 @@ TT.open = async (el, id) => {
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        (keepPrefs(), JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
+        (keepPrefs(), JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
