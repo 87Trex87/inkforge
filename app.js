@@ -330,7 +330,13 @@ const MIGRATIONS = [
      name TEXT, doc TEXT, thumb_ref TEXT,
      created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));`,
   // tattoo simulator: the skin marker layer (freehand drawn on the skin), beside the stencil
-  `ALTER TABLE tattoo_pieces ADD COLUMN marker_ref TEXT;`
+  `ALTER TABLE tattoo_pieces ADD COLUMN marker_ref TEXT;`,
+  // forms made in the designer: a completed form is kept as flattened page pictures
+  `CREATE TABLE signed_form_pages (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     form_id INTEGER NOT NULL REFERENCES signed_forms(id) ON DELETE CASCADE,
+     ref TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);
+   CREATE INDEX idx_signed_pages ON signed_form_pages (form_id);`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -553,6 +559,7 @@ const Media = {
     const used = await DB.one(`SELECT 1 AS x FROM clients WHERE photo_ref = ?1
       UNION ALL SELECT 1 FROM booking_photos WHERE photo_ref = ?1
       UNION ALL SELECT 1 FROM signed_forms WHERE signature_ref = ?1
+      UNION ALL SELECT 1 FROM signed_form_pages WHERE ref = ?1
       UNION ALL SELECT 1 FROM portfolio_photos WHERE photo_ref = ?1 OR thumb_ref = ?1
       UNION ALL SELECT 1 FROM quotes WHERE design_ref = ?1
       UNION ALL SELECT 1 FROM designs WHERE thumb_ref = ?1
@@ -843,8 +850,8 @@ const VIEWS = {
         const urls = await Promise.all(pfs.map(p => Media.url(p.thumb)));
         pe.innerHTML = pfs.length ? `<div class="pf-strip">${pfs.map((p, i) => `<a class="pf-tile${pfBg(p.bg)}" href="#pf/${p.id}">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</a>`).join('')}</div>` : 'None yet.';
       }
-      const tpls = await DB.all('SELECT id, kind FROM form_templates ORDER BY id');
-      const firstOf = (k) => tpls.find(t => t.kind === k)?.id;
+      const tpls = await FF.all();
+      const firstOf = (k) => tpls.find(t => t.cat === k)?.id;
       const fb = $('#c-fbtns');
       if (fb) {
         if (firstOf('consent')) fb.innerHTML += `<button class="btn small" data-t="${firstOf('consent')}">Consent</button>`;
@@ -859,7 +866,7 @@ const VIEWS = {
           fe.className = 'card list flush';
           fe.innerHTML = sf.map(r => `<a class="c-row" href="#signed/${r.id}"><span class="c-main"><span class="c-n">${esc(r.title)}</span>
             <span class="muted c-sub">${new Date(r.signed_at + 'Z').toLocaleDateString()}</span></span>
-            <span class="chip">${r.kind === 'consent' ? 'Signed' : 'Sent'}</span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('');
+            <span class="chip">${r.kind === 'consent' ? 'Signed' : 'Saved'}</span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('');
         }
       }
       $('#c-del').onclick = async () => {
@@ -1273,7 +1280,7 @@ const VIEWS = {
         tile('needle', 'Tattoo simulator', 'Experimental: tattoo in ink on skin with needle groupings', false, 'tattoo')])
       + tileGroup('Your work', [
         tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
-        tile('forms', 'Consent & aftercare', 'Build, sign and send forms', false, 'forms')])
+        tile('forms', 'Forms', 'Consent, aftercare and your own forms', false, 'forms')])
   },
   more: {
     title: () => 'More',
@@ -1934,260 +1941,17 @@ const VIEWS = {
   forms: {
     title: () => 'Forms',
     render: () => '<div id="f-list"></div>',
-    async mount() {
-      const t = await DB.all('SELECT id, kind, title, blocks FROM form_templates ORDER BY kind, title COLLATE NOCASE');
-      const recent = await DB.all(`SELECT id, kind, title, client_name, signed_at FROM signed_forms ORDER BY signed_at DESC LIMIT 10`);
-      const sec = (kind, label, tip) => `
-        <div class="letter row" style="justify-content:space-between">${label} ${help(tip)}
-          <button class="btn small" data-new="${kind}" style="margin-left:auto">+ New</button></div>
-        <div class="card list">${t.filter(x => x.kind === kind).map(x => `
-          <div class="c-row f-tpl">
-            <span class="ava">${ICON[kind === 'consent' ? 'forms' : 'rules']}</span>
-            <span class="c-main"><span class="c-n">${esc(x.title)}</span><span class="muted c-sub">${JSON.parse(x.blocks).length} blocks</span></span>
-            <span class="f-acts"><button class="btn small icon-btn" data-dup="${x.id}" data-tip="Duplicate: start a new form from this one" aria-label="Duplicate"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
-            <button class="btn small" data-edit="${x.id}">Edit</button>
-            ${kind === 'consent' ? `<button class="btn small" data-blank="${x.id}" data-tip="Print an empty copy to fill in by hand">Print blank</button>` : ''}
-            <button class="btn small primary" data-use="${x.id}">${kind === 'consent' ? 'Sign' : 'Send'}</button></span>
-          </div>`).join('') || '<div class="muted" style="padding:14px">None yet.</div>'}</div>`;
-      $('#f-list').innerHTML =
-        sec('consent', 'Consent', 'Clients read, tick and sign on your phone or tablet. A frozen copy is kept on their record.')
-        + sec('aftercare', 'Aftercare', 'Send care instructions to a client through any messaging app, or print them.')
-        + (recent.length ? `<div class="letter">Recent</div><div class="card list">${recent.map(r => `
-          <a class="c-row" href="#signed/${r.id}"><span class="c-main"><span class="c-n">${esc(r.title)}</span>
-            <span class="muted c-sub">${esc(r.client_name || 'No client')} · ${new Date(r.signed_at + 'Z').toLocaleDateString()}</span></span>
-            <span class="chip">${r.kind === 'consent' ? 'Signed' : 'Sent'}</span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('')}</div>` : '');
-      $('#f-list').onclick = (e) => {
-        const b = e.target.closest('button'); if (!b) return;
-        if (b.dataset.new) location.hash = 'form-edit/new-' + b.dataset.new;
-        if (b.dataset.edit) location.hash = 'form-edit/' + b.dataset.edit;
-        if (b.dataset.use) { Forms.ctx = {}; location.hash = 'form-sign/' + b.dataset.use; }
-        if (b.dataset.blank) printBlankForm(+b.dataset.blank);
-        if (b.dataset.dup) (async () => {
-          // A copy to adapt; the original stays as it is. Opens straight in the editor.
-          const src = t.find(x => x.id === +b.dataset.dup);
-          await DB.run('INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', [src.kind, src.title + ' (copy)', src.blocks]);
-          const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
-          toast('Copy made. Rename and adjust it.'); location.hash = 'form-edit/' + id;
-        })();
-      };
-    }
-  },
-  'form-edit': {
-    title: (id) => String(id).startsWith('new') ? 'New form' : 'Edit form',
-    render: () => '<form id="fe-form" class="card" autocomplete="off"></form>',
-    async mount(id) {
-      const isNew = id.startsWith('new');
-      const t = isNew ? { kind: id.split('-')[1] === 'aftercare' ? 'aftercare' : 'consent', title: '', blocks: '[]' }
-        : await DB.one('SELECT * FROM form_templates WHERE id = ?', [+id]);
-      if (!t) { location.hash = 'forms'; return; }
-      const blocks = JSON.parse(t.blocks);
-      if (isNew && !blocks.length) blocks.push({ t: 'h', text: '' }, { t: 'p', text: '' });
-      const f = $('#fe-form');
-      const TYPES = { h: 'Heading', sub: 'Subheading', p: 'Paragraph', li: 'Bullet', check: 'Tick box', field: 'Answer field', choice: 'Choice' };
-      const flag = (i, k, label, on, tip) => `<label class="toggle blk-flag" data-tip="${tip}"><input type="checkbox" data-i="${i}" data-k="${k}" ${on ? 'checked' : ''}><span>${label}</span></label>`;
-      const extras = (b, i) =>
-        b.t === 'field' ? `<div class="blk-extra"><input class="in" data-i="${i}" data-k="v" value="${esc(b.v || '')}" placeholder="Prefill, e.g. {client} or {phone}">
-          ${flag(i, 'long', 'Long', b.long, 'Several lines, for notes')}</div>`
-        : b.t === 'choice' ? `<div class="blk-extra"><input class="in" data-i="${i}" data-k="opts" value="${esc(b.opts || '')}" placeholder="Options, separated by /">
-          ${flag(i, 'req', 'Required', b.req, 'The client must pick one before signing')}</div>`
-        : b.t === 'check' ? `<div class="blk-extra">${flag(i, 'opt', 'Optional', b.opt, 'Can be left unticked when signing')}</div>` : '';
-      const draw = () => {
-        f.innerHTML = `
-          <div class="two">
-            <label class="field"><span>Title</span><input class="in" id="fe-title" value="${esc(t.title)}" required></label>
-            <label class="field"><span>Type</span><select class="in" id="fe-kind">
-              <option value="consent" ${t.kind === 'consent' ? 'selected' : ''}>Consent (signed)</option>
-              <option value="aftercare" ${t.kind === 'aftercare' ? 'selected' : ''}>Aftercare (sent)</option></select></label>
-          </div>
-          <div class="lbl">Content ${help('Placeholders fill in automatically: {client}, {first}, {phone}, {email}, {description} and {quote} (from the booking), {artist}, {studio}, {date}, and your {artist_phone}, {instagram}, {facebook}, {tiktok} from Settings. Lines whose placeholders are empty are left out. Tick boxes must be ticked before signing unless marked Optional.')}</div>
-          <div id="fe-blocks">${blocks.map((b, i) => `
-            <div class="blk blk-${b.t}" data-i="${i}">
-              <div class="blk-bar"><span class="chip">${TYPES[b.t]}</span>
-                <span class="row" style="gap:4px;margin-left:auto">
-                  <button type="button" class="mini" data-act="up" aria-label="Move up" ${i ? '' : 'disabled'}>&uarr;</button>
-                  <button type="button" class="mini" data-act="down" aria-label="Move down" ${i < blocks.length - 1 ? '' : 'disabled'}>&darr;</button>
-                  <button type="button" class="mini del" data-act="del" aria-label="Remove">&times;</button></span></div>
-              <textarea class="in" rows="${b.t === 'p' ? 3 : 1}" data-i="${i}" placeholder="${TYPES[b.t]} text">${esc(b.text)}</textarea>
-              ${extras(b, i)}
-            </div>`).join('')}</div>
-          <div class="row add-blocks">${Object.entries(TYPES).map(([k, v]) => `<button type="button" class="btn small" data-add="${k}">+ ${v}</button>`).join('')}</div>
-          <div class="form-foot row">
-            ${isNew ? '' : '<button type="button" class="btn danger icon-btn" id="fe-del" data-tip="Delete template" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>'}
-            <button type="button" class="btn" id="fe-cancel">Cancel</button>
-            <button type="submit" class="btn primary" style="flex:1">Save</button>
-          </div>`;
-        $('#fe-cancel').onclick = () => history.back();
-        const del = $('#fe-del');
-        if (del) del.onclick = async () => {
-          if (!await ask(`Delete the "${t.title}" template?\n\nForms already signed with it are kept.`)) return;
-          await DB.run('DELETE FROM form_templates WHERE id = ?', [t.id]);
-          Dirty.set(false); toast('Template deleted.'); location.replace('#forms');
-        };
-      };
-      draw();
-      f.addEventListener('input', (e) => {
-        Dirty.set(true);
-        if (e.target.matches('textarea[data-i]')) blocks[+e.target.dataset.i].text = e.target.value;
-        else if (e.target.matches('input.in[data-k]')) blocks[+e.target.dataset.i][e.target.dataset.k] = e.target.value;
-        if (e.target.id === 'fe-title') t.title = e.target.value;
-      });
-      f.addEventListener('change', (e) => {
-        if (e.target.id === 'fe-kind') { t.kind = e.target.value; Dirty.set(true); }
-        if (e.target.matches('input[type=checkbox][data-k]')) { blocks[+e.target.dataset.i][e.target.dataset.k] = e.target.checked; Dirty.set(true); }
-      });
-      f.addEventListener('click', (e) => {
-        const b = e.target.closest('button'); if (!b) return;
-        if (b.dataset.add) { blocks.push({ t: b.dataset.add, text: '' }); Dirty.set(true); draw(); f.querySelector(`textarea[data-i="${blocks.length - 1}"]`).focus(); return; }
-        const i = +b.closest('.blk')?.dataset.i;
-        if (b.dataset.act === 'del') blocks.splice(i, 1);
-        else if (b.dataset.act === 'up') blocks.splice(i - 1, 0, blocks.splice(i, 1)[0]);
-        else if (b.dataset.act === 'down') blocks.splice(i + 1, 0, blocks.splice(i, 1)[0]);
-        else return;
-        Dirty.set(true); draw();
-      });
-      let saving = false;
-      f.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (saving) return;
-        const title = $('#fe-title').value.trim();
-        if (!title) return toast('Give the form a title.');
-        saving = true;
-        const clean = JSON.stringify(blocks.map(b => {
-          const o = { t: b.t, text: b.text.trim() };
-          if (b.t === 'field') { if (b.v?.trim()) o.v = b.v.trim(); if (b.long) o.long = true; }
-          if (b.t === 'choice') { o.opts = (b.opts || '').trim(); if (b.req) o.req = true; }
-          if (b.t === 'check' && b.opt) o.opt = true;
-          return o;
-        }).filter(b => b.text));
-        if (isNew) await DB.run('INSERT INTO form_templates (kind, title, blocks) VALUES (?, ?, ?)', [t.kind, title, clean]);
-        else await DB.run(`UPDATE form_templates SET kind = ?, title = ?, blocks = ?, updated_at = datetime('now') WHERE id = ?`, [t.kind, title, clean, t.id]);
-        Dirty.set(false); toast('Form saved.'); location.replace('#forms');
-      });
-      Dirty.set(false);
-    }
+    mount() { return FF.list(); }
   },
   'form-sign': {
     title: () => 'Form',
     render: () => '<div id="fs"></div>',
-    async mount(id) {
-      const t = await DB.one('SELECT * FROM form_templates WHERE id = ?', [+id]);
-      if (!t) { location.hash = 'forms'; return; }
-      $('#view-title').textContent = t.kind === 'consent' ? 'Sign' : 'Aftercare';
-      const ctx = Forms.ctx || {}; Forms.ctx = null;
-      let client = ctx.clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [ctx.clientId]) : null;
-      const booking = ctx.bookingId ? await DB.one('SELECT * FROM bookings WHERE id = ?', [ctx.bookingId]) : null;
-      const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
-      const blocks = JSON.parse(t.blocks);
-      const consent = t.kind === 'consent';
-      const el = $('#fs');
-      el.innerHTML = `
-        <div class="card"><label class="field" style="margin:0"><span>Client</span>
-          <div class="picker"><input class="in" id="fs-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
-          <div class="pick-list" id="fs-list" hidden></div></div></label></div>
-        <div class="sheet sheet-${t.kind}" id="fs-sheet"></div>
-        <div class="form-foot row" style="background:var(--bg)">
-          <button type="button" class="btn" id="fs-cancel">Cancel</button>
-          ${consent ? '<button type="button" class="btn primary" style="flex:1" id="fs-save">Sign & save</button>'
-            : '<button type="button" class="btn" id="fs-print">Print</button><button type="button" class="btn" id="fs-png" data-tip="Save as a picture on this device">Save</button><button type="button" class="btn primary" style="flex:1" id="fs-share" data-tip="Send as text in any messaging app">Send</button>'}
-        </div>`;
-      const answers = { checks: {}, fields: {} };
-      // Prefilled fields follow the chosen client until the artist types over them.
-      const typed = new Set();
-      const prefill = (c) => blocks.forEach((b, i) => { if (b.t === 'field' && b.v && !typed.has(i)) answers.fields[i] = fillPlaceholders(b.v, c).replace(/^_+$/, ''); });
-      let pad = null;
-      const drawSheet = () => {
-        const c = formCtx(client, booking);
-        prefill(c);
-        $('#fs-sheet').innerHTML = (logoUrl ? `<img class="sheet-logo" src="${logoUrl}" alt="">` : '') + renderFormBlocks(blocks, c, answers, consent)
-          + (consent ? `<div class="sig-wrap"><div class="sig-label">Signature <button type="button" class="link" id="fs-clear">Clear</button></div>
-              <canvas id="fs-sig"></canvas><div class="sig-line">${esc(c.client)} · ${esc(c.date)}</div></div>` : '');
-        if (consent) { pad = signaturePad($('#fs-sig')); $('#fs-clear').onclick = () => pad.clear(); }
-      };
-      drawSheet();
-      $('#fs-sheet').addEventListener('change', (e) => {
-        if (e.target.dataset.check != null) answers.checks[e.target.dataset.check] = e.target.checked;
-        if (e.target.dataset.choice != null) answers.fields[e.target.dataset.choice] = e.target.value;
-        Dirty.set(true);
-      });
-      $('#fs-sheet').addEventListener('input', (e) => { if (e.target.dataset.field != null) { answers.fields[e.target.dataset.field] = e.target.value; typed.add(+e.target.dataset.field); Dirty.set(true); } });
-      clientPicker($('#fs-client'), $('#fs-list'), async (cid) => {
-        client = await DB.one('SELECT * FROM clients WHERE id = ?', [cid]);
-        const sig = pad && !pad.empty() ? pad.data() : null;
-        drawSheet(); if (sig) pad.restore(sig);
-      });
-      $('#fs-cancel').onclick = () => history.back();
-      const record = async (sigRef) => {
-        const c = formCtx(client, booking);
-        const frozen = blocks.map(b => blankLine(b, c) ? null : { ...b, text: fillPlaceholders(b.text, c) });
-        frozen.forEach((b, i) => { if (!b) frozen[i] = { t: 'p', text: '' }; });   // keep indexes aligned with answers
-        await DB.run(`INSERT INTO signed_forms (client_id, booking_id, template_id, kind, title, client_name, blocks, answers, signature_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [client?.id ?? null, ctx.bookingId ?? null, t.id, t.kind, t.title, client ? fullName(client) : null, JSON.stringify(frozen), JSON.stringify(answers), sigRef]);
-        return (await DB.one('SELECT last_insert_rowid() AS id')).id;
-      };
-      let busy = false;
-      if (consent) $('#fs-save').onclick = async () => {
-        if (busy) return;
-        if (!client) return toast('Choose the client first.');
-        const checks = blocks.map((b, i) => b.t === 'check' && !b.opt ? i : -1).filter(i => i >= 0);
-        if (checks.some(i => !answers.checks[i])) return toast('All required boxes need to be ticked before signing.');
-        const missing = blocks.find((b, i) => b.t === 'choice' && b.req && !answers.fields[i]);
-        if (missing) return toast(`Choose an option for "${missing.text}".`);
-        if (pad.empty()) return toast('Please sign in the box.');
-        busy = true; $('#fs-save').disabled = true;   // a double tap must not save the form twice
-        let sid;
-        try { sid = await record(await Media.save(await pad.blob(), 'png')); }
-        catch (err) { busy = false; $('#fs-save').disabled = false; return toast('Could not save: ' + err.message, 5000); }
-        Dirty.set(false); toast('Consent signed and saved.'); location.replace('#signed/' + sid);
-      };
-      else {
-        // The same A4 page as on receipts: laid out to fit one page, without the screen around it.
-        $('#fs-print').onclick = async () => printCanvas(await formPage(t, formCtx(client, booking)));
-        $('#fs-png').onclick = async () => saveFiles([await canvasFile(await formPage(t, formCtx(client, booking)), `${t.title.replace(/[^\w-]+/g, '_')}${client ? '-' + fullName(client).replace(/[^\w-]+/g, '_') : ''}.png`)]);
-        $('#fs-share').onclick = async () => {
-          const text = formAsText(blocks, formCtx(client, booking));
-          try {
-            if (navigator.share) await navigator.share({ title: t.title, text });
-            else { await navigator.clipboard.writeText(text); toast('Copied. Paste it into any message.'); }
-          } catch (e) { if (e.name === 'AbortError') return; toast('Could not share: ' + e.message); return; }
-          if (client) { await record(null); toast('Logged on ' + fullName(client) + '\'s record.'); }
-          Dirty.set(false);
-        };
-      }
-      Dirty.set(false);
-    }
+    mount(id) { return FF.fill(+id); }
   },
   signed: {
     title: () => 'Form',
     render: () => '<div id="sf"></div>',
-    async mount(id) {
-      const s = await DB.one('SELECT * FROM signed_forms WHERE id = ?', [+id]);
-      const el = $('#sf');
-      if (!s) { el.innerHTML = '<div class="card muted">Form not found.</div>'; return; }
-      const answers = JSON.parse(s.answers);
-      const sig = await Media.url(s.signature_ref);
-      const logoUrl = await Media.url(Settings.get('studio_logo_ref'));
-      const when = new Date(s.signed_at + 'Z');
-      el.innerHTML = `
-        <div class="sheet sheet-${s.kind}">
-          ${logoUrl ? `<img class="sheet-logo" src="${logoUrl}" alt="">` : ''}
-          ${renderFormBlocks(JSON.parse(s.blocks), null, answers, false, true)}
-          ${s.kind === 'consent' ? `<div class="sig-wrap"><div class="sig-label">Signature</div>
-            ${sig ? `<img class="sig-img" src="${sig}" alt="Signature">` : '<div class="muted">Signature file missing.</div>'}
-            <div class="sig-line">${esc(s.client_name || '')} · ${when.toLocaleString()}</div></div>`
-          : `<p class="sig-line">Sent to ${esc(s.client_name || '')} · ${when.toLocaleString()}</p>`}
-        </div>
-        <div class="row no-print" style="margin:14px 0 24px">
-          ${s.client_id ? `<a class="btn" href="#client/${s.client_id}">Client</a>` : ''}
-          <button class="btn danger icon-btn" id="sf-del" data-tip="Delete this record" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-          <button class="btn primary" style="flex:1" onclick="window.print()" data-tip="Choose 'Save as PDF' in the print dialog to keep or email a copy.">Print / PDF</button>
-        </div>`;
-      $('#sf-del').onclick = async () => {
-        if (!await ask(`Delete this ${s.kind === 'consent' ? 'signed consent form' : 'aftercare record'}?\n\nThis cannot be undone.`)) return;
-        await DB.run('DELETE FROM signed_forms WHERE id = ?', [s.id]);
-        await Media.release(s.signature_ref);
-        toast('Deleted.'); history.back();
-      };
-    }
+    mount(id) { return FF.view(+id); }
   },
   settings: {
     title: () => 'Settings',
@@ -2857,6 +2621,7 @@ const MERGE_TABLES = {
   booking_photos: { section: 'bookings', fk: { booking_id: 'bookings' }, refs: ['photo_ref'] },
   form_templates: { section: 'forms' },
   signed_forms: { section: 'forms', fk: { client_id: 'clients', booking_id: 'bookings', template_id: 'form_templates' }, refs: ['signature_ref'] },
+  signed_form_pages: { section: 'forms', fk: { form_id: 'signed_forms' }, refs: ['ref'] },
   portfolio_items: { section: 'portfolio', fk: { client_id: 'clients', booking_id: 'bookings' } },
   portfolio_photos: { section: 'portfolio', fk: { item_id: 'portfolio_items' }, refs: ['photo_ref', 'thumb_ref'] },
   inventory_items: { section: 'inventory' },
@@ -2874,7 +2639,7 @@ const MERGE_TABLES = {
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
-const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'portfolio_items',
+const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'signed_form_pages', 'portfolio_items',
   'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
@@ -5034,7 +4799,7 @@ async function openReceipt(bid) {
   const b = await DB.one(`SELECT b.*, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.id = ?`, [bid]);
   if (!b) return;
   const cur = Settings.get('currency'), opts = receiptOpts();
-  const afters = await DB.all(`SELECT id, title FROM form_templates WHERE kind = 'aftercare' ORDER BY title COLLATE NOCASE`);
+  const afters = (await FF.all()).filter(f => f.cat === 'aftercare').map(f => ({ id: f.id, title: f.name }));
   if (!afters.some(a => a.id === opts.aftercareId)) opts.aftercareId = afters[0]?.id ?? null;
   const st = { kind: b.promo_kind || '', value: b.promo_value ?? 10, months: +Settings.get('promo_months', '3') || 3 };
   const o = document.createElement('div'); o.id = 'merge-dlg';
@@ -5052,7 +4817,7 @@ async function openReceipt(bid) {
         <label class="field"><span>Valid for</span><div class="unit-in"><input class="in" id="rc-mo" type="number" min="1" max="24" value="${st.months}"><em>months</em></div></label>
       </div>` : ''}
       <div class="rc-after">
-        <label class="toggle" ${afters.length ? '' : 'data-tip="Create an aftercare form under Studio › Forms first"'}><input type="checkbox" id="rc-ac" ${opts.aftercare && afters.length ? 'checked' : ''} ${afters.length ? '' : 'disabled'}><span>Include aftercare</span></label>
+        <label class="toggle" ${afters.length ? '' : 'data-tip="Make an aftercare form under Studio › Forms first"'}><input type="checkbox" id="rc-ac" ${opts.aftercare && afters.length ? 'checked' : ''} ${afters.length ? '' : 'disabled'}><span>Include aftercare</span></label>
         ${afters.length > 1 ? `<select class="in" id="rc-acid" ${opts.aftercare ? '' : 'disabled'}>${afters.map(a => `<option value="${a.id}" ${a.id === opts.aftercareId ? 'selected' : ''}>${esc(a.title)}</option>`).join('')}</select>` : ''}
       </div>
       <p class="muted" style="font-size:12px;margin:4px 0 10px">${opts.aftercare ? 'Print / PDF puts both on one document; images and Send give two pages.' : ''}</p>
@@ -5101,11 +4866,8 @@ async function receiptPages(b, promo, opts) {
   const r = await receiptSheet(b, promo, opts.show);
   const pages = [{ cv: r.cv, name: `Receipt-${r.ref}${tag}.png` }];
   if (opts.aftercare && opts.aftercareId) {
-    const t = await DB.one('SELECT * FROM form_templates WHERE id = ?', [opts.aftercareId]);
-    if (t) {
-      const client = b.client_id ? await DB.one('SELECT * FROM clients WHERE id = ?', [b.client_id]) : null;
-      pages.push({ cv: await formPage(t, formCtx(client, b)), name: `Aftercare-${r.ref}${tag}.png` });
-    }
+    const client = b.client_id ? await DB.one('SELECT * FROM clients WHERE id = ?', [b.client_id]) : null;
+    (await ffPagesFor(opts.aftercareId, client, b)).forEach((p, i) => pages.push({ cv: p.cv, name: `Aftercare-${r.ref}${tag}${i ? '-' + (i + 1) : ''}.png` }));
   }
   return pages;
 }

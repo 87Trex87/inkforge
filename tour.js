@@ -102,7 +102,7 @@ const TOUR_STEPS = [
     more: 'Print a portfolio book, set a white or black background for flash, zoom into photos, and turn any piece into a social post with one tap. The References tab keeps pictures you\'ve collected for ideas, sorted by category and ready to use in the design studio. The Assets tab keeps vector stickers and shapes as SVG: save shapes there from the design studio, or add .svg files, and find them under Shape › Assets. The Stencils tab keeps stencils you made, each with the picture it came from, ready to print again or reopen in the stencil maker.' },
   { id: 'forms', route: 'forms', sel: '#view', title: 'Consent and aftercare',
     text: 'Clients read, tick and sign on your phone or tablet.',
-    more: 'Edit the forms to suit your studio. Signed copies are kept on the client\'s card; aftercare can be printed or sent with the receipt.' },
+    more: 'Forms are designed in the Design studio with text boxes, check boxes, radio and combo boxes and signatures. Fill them in here, print them, or save an interactive PDF. Completed copies are kept here and on the client\'s card; aftercare can go with the receipt.' },
   { id: 'more', basic: 1, route: 'more', sel: '#view', title: 'Running the studio',
     text: 'Quotes, stats, stock, your rule book and settings.',
     more: 'Stats shows tattoos, hours and earnings over time. Inventory tracks stock with low-stock alerts and stock takes. The rule book keeps your studio rules for clients and staff.' },

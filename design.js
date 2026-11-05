@@ -11,6 +11,7 @@ const DESIGN_VERSION = 1;   // app.js checks this matches, to catch a stale cach
 
 const DZ_KINDS = {
   note: { label: 'Sticky note', sub: 'Pin it on your menu screens', w: 900, h: 900, per: 0, note: 1 },
+  form: { label: 'Form', sub: 'Consent, aftercare, any form', w: 2480, h: 3508, per: 0, form: 1 },
   page: { label: 'Blank page', sub: 'A2 to A6, Letter, custom…', w: 2480, h: 3508, per: 0, page: 1 },
   fold: { label: 'Folded pamphlet', sub: 'Trifold, bifold, Z-fold…', w: 3508, h: 2480, per: 0, fold: 1 },
   voucher: { label: 'Gift voucher', sub: 'DL, 210 × 99 mm', w: 2480, h: 1169, per: 2 },
@@ -595,7 +596,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   const one = async (x, l) => {
     const im = l.t === 'image' ? await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref) : null;
     const tex = l.fm === 'tex' && l.tex?.ref ? await dzImg(l.tex.ref) : null;
-    const nIco = l.t === 'shortcut' ? await dzIcoImg(l.svg || '', dzInkOn(doc)) : null; if (l.t === 'check') l.h = dzCheckH(l);
+    const nIco = l.t === 'shortcut' ? await dzIcoImg(l.svg || '', dzInkOn(doc)) : null; if (l.t === 'check') l.h = dzCheckH(l); if (l.t === 'field') l.h = dzFieldGeom(l, x).h;
     let lines = null;
     if (l.t === 'text') {   // measure first, so the box (and its centre) is the real height of the text
       x.setTransform(1, 0, 0, 1, 0, 0);
@@ -627,6 +628,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     x.globalAlpha = l.op ?? 1;
     const flip = () => { if (l.fx || l.fy) x.scale(l.fx ? -1 : 1, l.fy ? -1 : 1); };   // mirrored
     if (l.t === 'shortcut' || l.t === 'check') { dzNoteDraw(x, l, doc, nIco); x.restore(); return; }
+    if (l.t === 'field') { dzFieldDraw(x, doc, l, opts); x.restore(); return; }
     if (l.t === 'text') {
       flip();
       const px = l._px || l.size, lh = px * (l.lh || 1.2); x.font = dzFontStr(doc, l, px);
@@ -813,7 +815,7 @@ function dzPages(doc, face = 'f') {
   const own = doc.layers.filter(l => dzSide(l) === face);
   return face === 'm' ? [own] : [doc.layers.filter(l => l.side === 'm'), own];
 }
-const dzFaceNames = (doc) => doc.fold ? { f: 'Outside', b: 'Inside', m: 'Master' } : { f: 'Front', b: 'Back', m: 'Master' };
+const dzFaceNames = (doc) => doc.form ? { f: 'Page 1', b: 'Back', m: 'Master' } : doc.fold ? { f: 'Outside', b: 'Inside', m: 'Master' } : { f: 'Front', b: 'Back', m: 'Master' };
 // A finished copy of the design as its own canvas (full size unless `scale`), front unless `face`.
 async function dzCanvas(doc, scale = 1, face) {
   const cv = document.createElement('canvas'); cv.width = Math.round(doc.w * scale); cv.height = Math.round(doc.h * scale);
@@ -1054,11 +1056,12 @@ function dzNew(kind, opt, theme, piece, size, sides) {
   doc.kind = kind; doc.w = k.w; doc.h = k.h;
   delete doc.dpi; delete doc.paper; delete doc.fold;
   if (k.social) delete doc.sides; else if (sides || size?.fold) doc.sides = 2; else if (!opt?.custom) delete doc.sides;
-  if (opt?.make && !doc.sides) { doc.layers = doc.layers.filter(l => l.side !== 'b'); doc.layers.forEach(l => delete l.side); }
+  if (opt?.make && !doc.sides && !k.form) { doc.layers = doc.layers.filter(l => l.side !== 'b'); doc.layers.forEach(l => delete l.side); }
   if (size) { doc.w = size.w; doc.h = size.h; doc.dpi = size.dpi;
     doc.paper = size.fold ? `${size.label}, ${size.sheet} sheet (${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm)` : `${size.label}, ${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm`;
     if (size.fold) doc.fold = size.fold; }
   doc.vals = kind === 'voucher' ? { amount: '', to: '', from: '', ...(opt?.custom ? doc.vals : {}), code, expires: ymd(exp) } : {};
+  if (k.form) ffSetup(doc, opt?.make);
   dzFillSlots(doc, piece);
   return doc;
 }
@@ -1159,7 +1162,7 @@ DZ.list = async () => {
 // New design: pick what it is, then a layout and a theme (previews drawn with your own details and photos).
 // opts.piece: start a post from this portfolio piece (only post sizes are offered).
 async function dzPicker(opts = {}) {
-  const st = { kind: null, li: 0, theme: 'ink', piece: opts.piece ? await dzPiece(opts.piece) : null,
+  const st = { kind: opts.kind || null, li: 0, theme: opts.kind === 'form' ? 'paper' : 'ink', piece: opts.piece ? await dzPiece(opts.piece) : null,
     ps: Settings.get('dz_paper', 'A4'), land: false, cw: 200, ch: 200, cu: 'mm', ft: 'tri', fs: Settings.get('dz_fold_sheet', 'A4'), two: false };
   // The chosen blank page size (mm, turned for landscape) at its dpi.
   const size = () => {
@@ -1277,6 +1280,7 @@ DZ.edit = async (id) => {
       <div class="dz-stage" id="dz-stage">
         <div class="dz-rail" id="dz-rail">
           ${dzIB('data-rail="select"', 'select', 'Select and move')}
+          ${doc.kind === 'form' ? dzIB('data-rail="fields"', 'frametext', 'Form fields') : ''}
           ${dzIB('data-rail="text"', 'text', 'Text')}
           ${dzIB('data-rail="image"', 'picture', 'Picture')}
           ${dzIB('data-rail="shape"', 'shape', 'Shape')}
@@ -1364,6 +1368,8 @@ DZ.edit = async (id) => {
   const drawFaces = () => {
     const b = $('#dz-faces'); if (!b) return; b.hidden = !doc.sides; if (!doc.sides) return;
     const nm = dzFaceNames(doc), n = (f) => doc.layers.filter(l => dzSide(l) === f).length;
+    if (doc.form) { b.innerHTML = [...ffFaces(doc), 'm'].map((f, i) => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Headers and frames shown under every page"' : ''}>${f === 'm' ? 'Master' : i + 1}</button>`).join('')
+      + `<button data-fpage="add" data-tip="Add a page">+</button>${doc.pages > 1 ? '<button data-fpage="del" data-tip="Delete the last page">−</button>' : ''}`; return; }
     b.innerHTML = ['f', 'b', 'm'].map(f => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Backgrounds and frames shown under both sides"' : ''}>${nm[f]}${n(f) ? ` <small>${n(f)}</small>` : ''}</button>`).join('');
   };
   const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
@@ -1498,7 +1504,7 @@ DZ.edit = async (id) => {
   const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
   const LOCK = (on) => on ? '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
     : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>';
-  const layerName = (l) => l.name || (l.t === 'shortcut' ? 'Shortcut: ' + (l.label || '') : l.t === 'check' ? 'Checklist' : l.t === 'text' ? ((dzFill(doc, l.text).trim() || l.text).split('\n')[0].trim().slice(0, 30) || 'Text')
+  const layerName = (l) => l.name || (l.t === 'field' ? 'Field: ' + (l.label || l.ft).slice(0, 30) : l.t === 'shortcut' ? 'Shortcut: ' + (l.label || '') : l.t === 'check' ? 'Checklist' : l.t === 'text' ? ((dzFill(doc, l.text).trim() || l.text).split('\n')[0].trim().slice(0, 30) || 'Text')
     : l.t === 'image' ? (l.logo ? 'Logo' : l.slot != null ? `Photo ${l.slot + 1}` : 'Picture')
     : ({ ellipse: 'Circle', line: 'Line', star: 'Star', path: 'Traced shape' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
   const layerIco = (l) => l.t === 'text' ? 'T' : l.t === 'image' ? (l.logo ? '◎' : '▣') : '◆';
@@ -1554,7 +1560,7 @@ DZ.edit = async (id) => {
     const p = pop(); if (!p) return;
     if (!p.hidden && btn?.classList.contains('open')) return closePop();
     closePop();
-    p.innerHTML = a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="frame"', 'frametext', 'Frame text') + mi('data-add="heading"', 'heading', 'Heading')
+    p.innerHTML = a === 'fields' ? FF_TYPES.map(([v, n]) => mi(`data-ffadd="${v}"`, 'frametext', n)).join('') : a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="frame"', 'frametext', 'Frame text') + mi('data-add="heading"', 'heading', 'Heading')
         + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
       : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-add="logo"', 'logo', 'Studio logo')
       : `<div class="sg">${DZ_SHAPES.map(([v, n]) => dzIB(`data-shape="${v}"`, 's_' + v, n)).join('')}</div>` + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
@@ -1611,7 +1617,8 @@ DZ.edit = async (id) => {
             <div class="two"><label class="field"><span>Placement</span><input class="in" data-v="placement" value="${esc(doc.vals?.placement ?? '')}"></label>
               <label class="field"><span>Date</span><input class="in" type="date" data-v="date" value="${esc(doc.vals?.date ?? '')}"></label></div>
             <label class="field"><span>Tags ${help('Comma separated; shown as #hashtags wherever {tags} is used.')}</span><input class="in" data-v="tags" value="${esc(doc.vals?.tags ?? '')}" placeholder="blackwork, floral"></label>`) : ''}
-        ${!DZ_KINDS[doc.kind].social && !doc.fold ? fsec('Sides', `<div class="seg">${[[0, 'One side'], [1, 'Front and back']].map(([v, n]) =>
+        ${doc.form ? fsec('Form', `<label class="field" style="margin:0"><span>Keep it under</span><select class="in" data-fcat>${FF_CATS.map(([v, n]) => `<option value="${v}" ${doc.form.cat === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`) : ''}
+        ${!DZ_KINDS[doc.kind].social && !doc.fold && !doc.form ? fsec('Sides', `<div class="seg">${[[0, 'One side'], [1, 'Front and back']].map(([v, n]) =>
             `<button data-sides="${v}" class="${!!doc.sides === !!v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
           <p class="muted" style="font-size:11px;margin:6px 0 0">${doc.sides ? 'Switch between Front, Back and Master at the top right of the design. Master holds backgrounds and frames shown under both sides.' : 'Front and back adds a back page and a master page for things shared by both.'}</p>`) : ''}
         ${fsec('Theme', `<div class="dz-themes">${Object.entries(DZ_THEMES).map(([kk, t]) =>
@@ -1625,6 +1632,14 @@ DZ.edit = async (id) => {
   };
   const drawItem = () => {
     const l = layer();
+    if (l.t === 'field') { side.innerHTML = `<div class="dz-lh"><b>Form field</b>${dzIB('data-act="del"', 'del', 'Delete', 'danger')}</div>
+        <label class="field"><span>Type</span><select class="in" data-ffk="ft">${FF_TYPES.map(([v, n]) => `<option value="${v}" ${l.ft === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="field"><span>Label</span><textarea class="in" rows="3" data-ffk="label">${esc(l.label || '')}</textarea></label>
+        ${l.ft === 'radio' || l.ft === 'combo' ? `<label class="field"><span>Options, one per line</span><textarea class="in" rows="4" data-ffk="opts">${esc((l.opts || []).join('\n'))}</textarea></label>` : ''}
+        ${l.ft === 'text' || l.ft === 'date' ? `<label class="field"><span>Fill in automatically</span><select class="in" data-ffk="v">${FF_PREFILL.map(([v, n]) => `<option value="${v}" ${(l.v || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
+        ${slider('size', 'Text size', 20, 140, 1, l.size || 46)}
+        <label class="toggle" style="display:inline-flex"><input type="checkbox" data-ffk="req" ${l.req ? 'checked' : ''}><span>Required</span></label>
+        <p class="muted dz-hint">Radio and combo boxes need InkForge or a PDF to fill in; on paper they print as they look here.</p>`; return; }
     if (l.t === 'shortcut' || l.t === 'check') { const n = l.t === 'check';
       side.innerHTML = `<div class="dz-lh"><b>${n ? 'Checklist' : 'Shortcut'}</b>${dzIB('data-act="del"', 'del', 'Delete', 'danger')}</div>` + (n
         ? `<label class="field"><span>Title</span><input class="in" data-nl="title" value="${esc(l.title || '')}"></label>
@@ -2855,7 +2870,12 @@ DZ.edit = async (id) => {
   $('#dz-qs').oninput = (e) => { if (qs && e.target.type === 'range') qsApply(+e.target.value / 100); };
   $('#dz-qs').onclick = (e) => { const a = e.target.closest('[data-qs]')?.dataset.qs; if (a) qsDone(a === 'ok'); };
   $('#dz-mods').onclick = (e) => { const m = e.target.closest('[data-mod]')?.dataset.mod; if (!m) return; dock[m] = !dock[m]; drawMods(); };
-  $('#dz-faces').onclick = (e) => { const f = e.target.closest('[data-face]')?.dataset.face; if (f) setFace(f); };
+  $('#dz-faces').onclick = async (e) => { const f = e.target.closest('[data-face]')?.dataset.face; if (f) return setFace(f);
+    const a = e.target.closest('[data-fpage]')?.dataset.fpage; if (!a) return;
+    if (a === 'add') { doc.pages++; setFace('p' + doc.pages); return changed(true); }
+    const last = 'p' + doc.pages, n = doc.layers.filter(l => l.side === last).length;
+    if (!await ask(`Delete page ${doc.pages}?` + (n ? `\n\nIts ${n} item${n > 1 ? 's' : ''} will be removed.` : ''))) return;
+    if (face === last) setFace(doc.pages === 2 ? 'f' : 'p' + (doc.pages - 1)); doc.layers = doc.layers.filter(l => l.side !== last); doc.pages--; changed(true); drawFaces(); };
   stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') return frame(); zoomTo(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4)); };
   let press = null;   // long press: hold still on an item to start selecting several
@@ -3041,6 +3061,8 @@ DZ.edit = async (id) => {
       }
       anchor = ly.id; return select(ly.id);
     }
+    if (d('ffadd')) { const ft = d('ffadd'), w = Math.round(doc.w * 0.6); closePop();
+      return add(dzFieldNew(ft, { x: (doc.w - w) / 2, y: doc.h * 0.3, w, h: ft === 'sign' ? 300 : ft === 'area' ? 400 : 90, label: FF_TYPES.find(t => t[0] === ft)[1], ...(ft === 'radio' || ft === 'combo' ? { opts: ['Option 1', 'Option 2'] } : {}) })); }
     if (d('add')) {
       const a = d('add');
       if (a === 'text') return add({ t: 'text', text: 'Your text', size: Math.round(doc.h * 0.05), font: '@2', c: '@fg', al: 'center', lh: 1.2, ...center(doc.w * 0.6, doc.h * 0.06) });
@@ -3214,6 +3236,11 @@ DZ.edit = async (id) => {
   side.addEventListener('pointerup', (e) => { rowUp(); ldrop(e); }); side.addEventListener('pointercancel', (e) => { rowUp(); ldrop(e); });
   side.addEventListener('contextmenu', (e) => { if (e.target.closest('.dz-lr')) e.preventDefault(); });
   page.addEventListener('contextmenu', (e) => e.preventDefault());
+  side.addEventListener('change', (e) => { if (e.target.matches('[data-fcat]')) { doc.form.cat = e.target.value; changed(true); } });
+  side.addEventListener('input', (e) => { const k2 = e.target.dataset.ffk, l = layer(); if (!k2 || !l) return; const t = e.target;
+    l[k2] = t.type === 'checkbox' ? t.checked : k2 === 'opts' ? t.value.split('\n').map(s => s.trim()).filter(Boolean) : t.value;
+    if (k2 === 'ft') { if ((l.ft === 'radio' || l.ft === 'combo') && !l.opts?.length) l.opts = ['Option 1', 'Option 2']; l.h = l.ft === 'sign' ? 300 : l.ft === 'area' ? 400 : l.h; drawSide(); }
+    changed(); });
   side.addEventListener('input', (e) => {
     const t = e.target, l = layer(), key = t.dataset.k;
     if (t.dataset.dim && l) {
@@ -3358,8 +3385,10 @@ function dzExport(doc, name) {
       <p class="muted" style="font-size:13px;margin-top:0">${esc(kind.label)}, ${esc(doc.paper || kind.sub)}. Saved at ${kind.social ? 'full size' : `print quality (${doc.dpi || 300} dpi)`}.
         ${doc.sides ? `Saved as two pages, ${dzFaceNames(doc).f.toLowerCase()} then ${dzFaceNames(doc).b.toLowerCase()}. Print double-sided${doc.w > doc.h ? ', flipping on the short edge' : ''}.` : ''}</p>
       <div class="dz-ex">
-        <button data-ex="png"><b>Save picture</b><small>PNG, for printing elsewhere or posting</small></button>
-        <button data-ex="share"><b>Share</b><small>Send it in WhatsApp or another app</small></button>
+        ${kind.form ? `<button data-ex="ffpdf"><b>Interactive PDF</b><small>Text boxes, check boxes, radio and combo boxes can be filled in on a device. Sign by hand or in InkForge.</small></button>
+        <button data-ex="ffprint"><b>Print blank</b><small>All pages, to fill in by hand</small></button>
+        <button data-ex="ffopen"><b>Fill in now</b><small>In InkForge, saved to the client</small></button>` : `<button data-ex="png"><b>Save picture</b><small>PNG, for printing elsewhere or posting</small></button>
+        <button data-ex="share"><b>Share</b><small>Send it in WhatsApp or another app</small></button>`}
         ${kind.fold ? '<button data-ex="print"><b>Print / PDF</b><small>Two pages: outside, then inside</small></button>' : ''}
         ${kind.page ? `<button data-ex="print"><b>Print / PDF</b><small>${doc.sides ? 'Two pages. ' : ''}Fits the paper in your printer; choose the same size there</small></button>` : ''}
         ${kind.per ? `<button data-ex="print"><b>Print / PDF</b><small>${st.sheet ? `${kind.per} on an A4 sheet with cut marks` : 'One per page'}</small></button>` : ''}
@@ -3372,6 +3401,9 @@ function dzExport(doc, name) {
     const a = e.target.closest('[data-ex]')?.dataset.ex;
     if (e.target.closest('[data-x]')) return o.remove();
     if (!a) return;
+    if (a === 'ffopen') { o.remove(); Forms.ctx = {}; location.hash = 'form-sign/' + id; return; }
+    if (a === 'ffprint') { o.remove(); return ffPrintBlank(doc); }
+    if (a === 'ffpdf') { toast('Preparing…'); return ffSavePdf(ffCopy(doc, ffBlankCtx()), name); }
     toast('Preparing…');
     const cv = await dzCanvas(doc);
     if (doc.sides) {   // the two sides as their own pages

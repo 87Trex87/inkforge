@@ -1559,3 +1559,14 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 #dz-sel.over::after { content: '+'; position: absolute; right: -2px; bottom: -2px; width: 16px; height: 16px; background: #e5484d; color: #fff; font: 700 14px/16px Inter, sans-serif; text-align: center; border-radius: 3px; pointer-events: none; }
 .dz-over-note { color: #e5484d; font-size: 12px; margin: 0 0 8px; }
 #dz-sel.framesel .n, #dz-sel.framesel .s { display: block; }
+/* Forms: real inputs laid over the drawn pages */
+#ff-pages { max-width: 900px; margin: 12px auto; }
+.ff-page { position: relative; margin-bottom: 14px; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.35); }
+.ff-page > canvas, .ff-page > img { display: block; width: 100%; height: auto; }
+.ff-over { position: absolute; inset: 0; }
+.ff-i { position: absolute; background: rgba(40,160,150,.08); border: 0; color: #111; padding: 0 .2em; font-family: Inter, sans-serif; min-height: 0; border-radius: 2px; }
+textarea.ff-i { resize: none; }
+.ff-c { position: absolute; margin: 0; accent-color: #1a9e92; opacity: .9; }
+.ff-sign { position: absolute; }
+.ff-sign canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.ff-sign button { position: absolute; right: 4px; top: 2px; font-size: 12px; }
