@@ -7,9 +7,10 @@ const FF_CATS = [['consent', 'Consent'], ['aftercare', 'Aftercare'], ['other', '
 const FF_PREFILL = [['', 'Nothing'], ['{client}', 'Client name'], ['{phone}', 'Client phone'], ['{email}', 'Client email'], ['{date}', 'Today']];
 const ffFaces = (doc) => Array.from({ length: doc.pages || 1 }, (_, i) => i ? 'p' + (i + 1) : 'f');
 const ffX = document.createElement('canvas').getContext('2d');
-/* Studio data for option lists: [key, name, group, private, query]. A field keeps its own typed options (own) plus the
-   sources ticked (src), refreshed whenever the form is designed or filled in. Private lists name clients, so they're
-   only offered on combo boxes (which show just the answer) and are left out of PDFs, which get passed around. */
+/* Studio data for option lists: [key, name, group, private, query]. Ticking a source (src) writes its values into the
+   field's options, as if typed, so they travel with the form into PDFs. They stay as they are until Update lists pulls
+   them again; imp remembers which options came from the data, so typed ones survive. Private lists name clients: combo
+   boxes only (radio and check lists print every option on the page), and a PDF holding them asks first. */
 const ffQ = (sql, f = 'v') => async () => (await DB.all(sql)).map(r => r[f]).filter(Boolean);
 const FF_SRC = [
   ['clients', 'All clients', 'Clients', 1, ffQ(`SELECT trim(first_name || ' ' || last_name) AS v FROM clients WHERE category = 'Client' ORDER BY first_name COLLATE NOCASE LIMIT 300`)],
@@ -31,10 +32,12 @@ const FF_SRC = [
   ['rules', 'Studio rules', 'Studio', 0, ffQ(`SELECT title AS v FROM rules ORDER BY sort LIMIT 60`)]
 ];
 const FF_LIST_MAX = 30;   // radio buttons and check boxes take room on the page; a combo box doesn't
-async function ffApply(l) { if (!['combo', 'radio', 'check'].includes(l.ft)) return; const own = l.own ?? (l.src?.length ? [] : l.opts || []); l.own = own; const all = [...own], pub = [...own];
-  for (const key of l.src || []) { const S = FF_SRC.find(x => x[0] === key); if (!S || (S[3] && l.ft !== 'combo')) continue; let vals = []; try { vals = await S[4](); } catch {} all.push(...vals); if (!S[3]) pub.push(...vals); }
-  const max = l.ft === 'combo' ? 500 : FF_LIST_MAX; l.opts = [...new Set(all.map(String))].slice(0, max); l.optsPub = [...new Set(pub.map(String))].slice(0, max); }
-const ffRefresh = async (doc) => { for (const l of doc.layers) if (l.t === 'field' && l.src?.length) await ffApply(l); };
+async function ffApply(l) { if (!['combo', 'radio', 'check'].includes(l.ft)) return; const imp = new Set(l.imp || []), typed = l.own ?? (l.opts || []).filter(o => !imp.has(o)), fresh = [];
+  for (const key of l.src || []) { const S = FF_SRC.find(x => x[0] === key); if (!S || (S[3] && l.ft !== 'combo')) continue; try { fresh.push(...(await S[4]()).map(String)); } catch {} }
+  l.opts = [...new Set([...typed, ...fresh])].slice(0, l.ft === 'combo' ? 500 : FF_LIST_MAX); l.imp = [...new Set(fresh)].filter(o => !typed.includes(o)); delete l.own; delete l.optsPub; }
+// Update lists: every field's data pulled again. Returns how many fields changed.
+const ffUpdateLists = async (doc) => { let n = 0; for (const l of doc.layers) if (l.t === 'field' && l.src?.length) { const was = JSON.stringify(l.opts); await ffApply(l); if (JSON.stringify(l.opts) !== was) n++; } return n; };
+const ffHasPrivate = (doc) => doc.layers.some(l => l.t === 'field' && l.src?.some(k => FF_SRC.find(s => s[0] === k)?.[3]));
 
 /* Where everything in a field sits, in the layer's own box (top left = 0,0). Drawing, filling in and the PDF all use this. */
 const ffFont = (doc, l, wt, s = l.size || 46) => `${l.it ? 'italic ' : ''}${l.b || (l.font && wt === 600) ? 700 : wt} ${s}px "${doc && l.font ? dzFont(doc, l.font) : 'Inter'}", Inter, sans-serif`;
@@ -126,7 +129,7 @@ function ffCopy(doc, ctx) { const d = JSON.parse(JSON.stringify(doc));
   return d; }
 const ffBlankCtx = () => ({ ...formCtx(null), client: '____________________', first: '', date: '____ / ____ / ________' });
 async function ffPage(d, face, opt = {}, scale = 1) { const cv = document.createElement('canvas'); cv.width = Math.round(d.w * scale); cv.height = Math.round(d.h * scale); await dzDraw(cv, d, scale, { face, ...opt }); return cv; }
-async function ffPrintBlank(doc) { await ffRefresh(doc); const d = ffCopy(doc, ffBlankCtx()), pages = []; for (const f of ffFaces(d)) pages.push(await ffPage(d, f, { noVal: true, print: true })); return printCanvas(...pages); }
+async function ffPrintBlank(doc) { const d = ffCopy(doc, ffBlankCtx()), pages = []; for (const f of ffFaces(d)) pages.push(await ffPage(d, f, { noVal: true, print: true })); return printCanvas(...pages); }
 // The pages of a form filled for a client, for attaching to a receipt.
 async function ffPagesFor(id, client, booking) { const r = await DB.one('SELECT doc, name FROM designs WHERE id = ?', [id]); if (!r) return []; const d = ffCopy(JSON.parse(r.doc), formCtx(client, booking)), out = [];
   for (const f of ffFaces(d)) out.push({ cv: await ffPage(d, f, { noVal: true }), name: r.name }); return out; }
@@ -153,7 +156,7 @@ async function ffPdf(d, opt = {}) {
     if (!opt.flat) for (const l of d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === face)) {
       const g = dzFieldGeom(l, ffX, d), fs = ((l.size || 46) * k * 0.9).toFixed(1), da = `/DA(/Helv ${fs} Tf 0 g)`, v = vals[l.id], base = `/Type/Annot/Subtype/Widget/F 4/P ${page} 0 R/T${ffStr(l.id)}/TU${ffStr(l.label || '')}`;
       if (l.ft === 'text' || l.ft === 'date' || l.ft === 'area') { const n = add(`<<${base}/FT/Tx/Rect${rect(l, g.box)}${da}${l.ft === 'area' ? '/Ff 4096' : ''}${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
-      else if (l.ft === 'combo') { const n = add(`<<${base}/FT/Ch/Ff 131072/Rect${rect(l, g.box)}${da}/Opt[${[...new Set([...(l.src?.length ? l.optsPub || [] : l.opts || []), ...(v ? [v] : [])])].map(ffStr).join(' ')}]${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
+      else if (l.ft === 'combo') { const n = add(`<<${base}/FT/Ch/Ff 131072/Rect${rect(l, g.box)}${da}/Opt[${[...new Set([...(l.opts || []), ...(v ? [v] : [])])].map(ffStr).join(' ')}]${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
       else if (l.ft === 'check' && !g.box) { g.opts.forEach((r, i) => { const w = r.d * k, on = ap(w, w, tick(w, w)), off = ap(w, w, ''), ck = Array.isArray(v) && v.includes(r.v); const n = add(`<<${base.replace(ffStr(l.id), ffStr(l.id + '_' + i)).replace(ffStr(l.label || ''), ffStr(r.v))}/FT/Btn/Rect${rect(l, { x: r.x, y: r.y, w: r.d, h: r.d })}${da}/AP<</N<</Yes ${on} 0 R/Off ${off} 0 R>>>>/AS${ck ? '/Yes/V/Yes' : '/Off/V/Off'}>>`); annots.push(n); fields.push(n); }); }
       else if (l.ft === 'check') { const w = g.box.w * k, on = ap(w, w, tick(w, w)), off = ap(w, w, ''); const n = add(`<<${base}/FT/Btn/Rect${rect(l, g.box)}${da}/AP<</N<</Yes ${on} 0 R/Off ${off} 0 R>>>>/AS${v ? '/Yes/V/Yes' : '/Off/V/Off'}>>`); annots.push(n); fields.push(n); }
       else if (l.ft === 'radio') { const par = resv(), ks = [];
@@ -172,7 +175,7 @@ async function ffPdf(d, opt = {}) {
   const xref = at; push(ffEnc.encode(`xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${off.map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<</Size ${objs.length + 1}/Root ${catalog} 0 R>>\nstartxref\n${xref}\n%%EOF`));
   return new Blob(parts, { type: 'application/pdf' });
 }
-async function ffSavePdf(d, name, opt) { await ffRefresh(d); const f = new File([await ffPdf(d, opt)], String(name || 'form').replace(/[^\w-]+/g, '_') + '.pdf', { type: 'application/pdf' });
+async function ffSavePdf(d, name, opt) { if (ffHasPrivate(d) && !await ask('This PDF lists client names or their tattoos in its drop-downs.\n\nAnyone you send it to can read them. Save it anyway?')) return; const f = new File([await ffPdf(d, opt)], String(name || 'form').replace(/[^\w-]+/g, '_') + '.pdf', { type: 'application/pdf' });
   try { if (opt?.share && navigator.canShare?.({ files: [f] })) return await navigator.share({ files: [f], title: name }); } catch (e) { if (e.name === 'AbortError') return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); }
 
@@ -187,12 +190,13 @@ const FF = {
     const forms = await FF.all(), done = await DB.all('SELECT id, kind, title, client_name, signed_at FROM signed_forms ORDER BY signed_at DESC LIMIT 20'), el = $('#f-list');
     const sec = ([cat, name]) => { const L = forms.filter(f => f.cat === cat); return !L.length && cat === 'other' ? '' : `<div class="letter">${name}</div><div class="card list">${L.map(f => `
       <div class="c-row f-tpl"><span class="ava">${ICON.forms}</span><span class="c-main"><span class="c-n">${esc(f.name)}</span><span class="muted c-sub">${f.doc.pages || 1} page${(f.doc.pages || 1) > 1 ? 's' : ''}</span></span>
-        <span class="f-acts"><button class="btn small" data-f="dup" data-id="${f.id}">Copy</button><button class="btn small" data-f="edit" data-id="${f.id}">Design</button><button class="btn small" data-f="print" data-id="${f.id}" data-tip="An empty copy to fill in by hand">Print</button><button class="btn small" data-f="pdf" data-id="${f.id}" data-tip="A PDF the client can fill in on their own device">PDF</button><button class="btn small primary" data-f="fill" data-id="${f.id}">Fill in</button></span></div>`).join('') || '<div class="muted" style="padding:14px">None yet.</div>'}</div>`; };
+        <span class="f-acts"><button class="btn small" data-f="dup" data-id="${f.id}">Copy</button>${f.doc.layers.some(l => l.src?.length) ? `<button class="btn small" data-f="upd" data-id="${f.id}" data-tip="Pull the drop-down and check lists from your studio data again">Update lists</button>` : ''}<button class="btn small" data-f="edit" data-id="${f.id}">Design</button><button class="btn small" data-f="print" data-id="${f.id}" data-tip="An empty copy to fill in by hand">Print</button><button class="btn small" data-f="pdf" data-id="${f.id}" data-tip="A PDF the client can fill in on their own device">PDF</button><button class="btn small primary" data-f="fill" data-id="${f.id}">Fill in</button></span></div>`).join('') || '<div class="muted" style="padding:14px">None yet.</div>'}</div>`; };
     el.innerHTML = `<div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="btn primary" data-f="new">+ New form</button></div>` + FF_CATS.map(sec).join('')
       + `<div class="letter">Completed</div><div class="card list">${done.map(r => `<a class="c-row" href="#signed/${r.id}"><span class="c-main"><span class="c-n">${esc(r.title)}</span><span class="muted c-sub">${esc(r.client_name || 'No client')} · ${new Date(r.signed_at + 'Z').toLocaleDateString()}</span></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('') || '<div class="muted" style="padding:14px">Forms you fill in are kept here and on the client\'s card.</div>'}</div>`;
     el.onclick = async (e) => { const b = e.target.closest('[data-f]'); if (!b) return; const a = b.dataset.f, f = forms.find(x => x.id === +b.dataset.id);
       if (a === 'new') return dzPicker({ kind: 'form' });
       if (a === 'edit') location.hash = 'design/' + f.id;
+      if (a === 'upd') { const n = await ffUpdateLists(f.doc); if (n) await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(f.doc), f.id]); return toast(n ? `Updated ${n} field${n > 1 ? 's' : ''}.` : 'Already up to date.'); }
       if (a === 'fill') { Forms.ctx = {}; location.hash = 'form-sign/' + f.id; }
       if (a === 'print') return ffPrintBlank(f.doc);
       if (a === 'pdf') { toast('Preparing…'); return ffSavePdf(ffCopy(f.doc, ffBlankCtx()), f.name); }
@@ -201,7 +205,7 @@ const FF = {
   async fill(id) {
     const r = await DB.one(`SELECT name, doc FROM designs WHERE id = ? AND kind = 'form'`, [id]); if (!r) { location.hash = 'forms'; return; }
     $('#view-title').textContent = r.name;
-    const ctx0 = Forms.ctx || {}, src = JSON.parse(r.doc); Forms.ctx = null; await ffRefresh(src);
+    const ctx0 = Forms.ctx || {}, src = JSON.parse(r.doc); Forms.ctx = null;
     let client = ctx0.clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [ctx0.clientId]) : null;
     const booking = ctx0.bookingId ? await DB.one('SELECT * FROM bookings WHERE id = ?', [ctx0.bookingId]) : null;
     const el = $('#fs'), vals = {}, typed = new Set(), pads = {}, faces = ffFaces(src), cat = src.form?.cat || 'other'; let d;
