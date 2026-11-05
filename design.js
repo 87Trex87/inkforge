@@ -621,8 +621,28 @@ function dzTrim(c) {
 // CSS for a gradient's colour bar (left to right).
 const dzGradCss = (doc, g) => `linear-gradient(90deg, ${[...g.stops].sort((a, b) => a.p - b.p).map(st => `${dzCol(doc, st.c) || '#000'} ${Math.round(st.p * 1000) / 10}%`).join(', ')})`;
 // Draws the design onto a canvas at `scale` (canvas px per page px). Text layers get their height measured.
+const txt0 = (doc, l) => dzCase(l, dzFill(doc, l.text));
+/* Text on a curve: a text layer with `on` set to a shape's id runs along that shape's outline (its first loop). Its box
+   follows the shape; moving the text by any means moves the shape with it. Closed shapes run clockwise from the top so
+   the words sit upright on the outside; open ones run left to right. */
+const dzCurves = new WeakMap();
+function dzCurve(S) {
+  const d = dzSvgPath(S), first = d.slice(0, (d.slice(1).search(/M/) + 1) || d.length), el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('d', first); let len = 0; try { len = el.getTotalLength(); } catch {} if (!(len > 0)) return null;
+  const n = Math.min(1500, Math.max(32, Math.ceil(len / 6))), a = (S.rot || 0) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a), cx = S.x + S.w / 2, cy = S.y + (S.h || 0) / 2, P = [];
+  for (let i = 0; i <= n; i++) { const q = el.getPointAtLength(len * i / n); let u = q.x, v = q.y; if (S.fx) u = -u; if (S.fy) v = -v; P.push({ x: cx + u * cos - v * sin, y: cy + u * sin + v * cos }); }
+  const closed = /z\s*$/i.test(first); let area = 0; for (let i = 0; i < n; i++) area += P[i].x * P[i + 1].y - P[i + 1].x * P[i].y;
+  if (closed ? area < 0 : P[0].x > P[n].x) P.reverse();
+  let top = 0; if (closed) P.forEach((q, i) => { if (q.y < P[top].y) top = i; });
+  return { P, len, closed, top: top / n * len };
+}
+const dzCurveAt = (C, s) => { const n = C.P.length - 1; let f = s / C.len; if (C.closed) f = ((f % 1) + 1) % 1; else if (f < 0 || f > 1) return null;
+  const i = Math.min(n - 1, Math.floor(f * n)), a = C.P[i], b = C.P[i + 1], u = f * n - i; return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, a: Math.atan2(b.y - a.y, b.x - a.x) }; };
+function dzCurveSync(doc) { for (const l of doc.layers) { if (l.t !== 'text' || !l.on) continue; const S = doc.layers.find(o => o.id === l.on && o.t === 'shape'), C = S && dzCurve(S); if (!C) { dzCurves.delete(l); continue; }
+    if (l._bx && (l.x !== l._bx.x || l.y !== l._bx.y)) { S.x += l.x - l._bx.x; S.y += l.y - l._bx.y; const C2 = dzCurve(S); if (C2) Object.assign(C, C2); }
+    dzCurves.set(l, C); const pad = l.size * 1.2 + Math.abs(l.pb || 0), X = C.P.map(q => q.x), Y = C.P.map(q => q.y); l.x = Math.min(...X) - pad; l.y = Math.min(...Y) - pad; l.w = Math.max(...X) + pad - l.x; l.h = Math.max(...Y) + pad - l.y; l.rot = 0; l._bx = { x: l.x, y: l.y }; } }
 async function dzDraw(cv, doc, scale = 1, opts = {}) {
-  await DZF.all(doc);
+  await DZF.all(doc); dzCurveSync(doc);
   const x = cv.getContext('2d'), W = doc.w * scale, H = doc.h * scale;
   x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
   if (!opts.noBg) x.fillStyle = dzCol(doc, doc.bg?.c) || '#ffffff', x.fillRect(0, 0, W, H);
@@ -641,7 +661,8 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
       // "Shrink to fit": a long name or amount gets smaller instead of wrapping onto a second line.
       const txt = dzCase(l, dzFill(doc, l.text)), want = l.fit ? txt.split('\n').length : Infinity;
       let px = l.size;
-      if (l.frame) { l.h = Math.max(10, l.h || 10); const F = dzFrameLay(x, doc, l, txt); l._fr = F; l._over = F.over; l._arc = null; l._px = F.px; lines = F.rows || []; }
+      if (dzCurves.has(l)) { l._arc = null; l._px = l.size; lines = []; }
+      else if (l.frame) { l.h = Math.max(10, l.h || 10); const F = dzFrameLay(x, doc, l, txt); l._fr = F; l._over = F.over; l._arc = null; l._px = F.px; lines = F.rows || []; }
       else if (l.vert) { const F = dzVertLay(x, doc, l, txt); l._fr = F; l._arc = null; l._px = F.px; lines = []; l.w = Math.max(F.px, F.cols.length * F.colw); l.h = Math.max(F.px, Math.max(1, ...F.cols.map(c => c.length)) * F.adv); }
       else if (l.arc) {
         // Bent text: one line laid along a circle. The bend is the angle the text covers (up to a full circle).
@@ -678,7 +699,17 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
         x.fillText(s, ax, y); if ((!l.u && !l.st) || l.vert || !s) return;
         const w = x.measureText(s).width, a0 = x.textAlign === 'center' ? ax - w / 2 : x.textAlign === 'right' ? ax - w : ax;
         if (l.u) x.fillRect(a0, y + px * 0.12, w, Math.max(1, px * 0.06)); if (l.st) x.fillRect(a0, y - px * 0.3, w, Math.max(1, px * 0.06)); };
-      if (l.arc && l._arc) {
+      const onC = dzCurves.get(l);
+      if (onC) {
+        const chars = [...txt0(doc, l).replace(/\s*\n\s*/g, ' ')]; if ('letterSpacing' in x) x.letterSpacing = '0px'; x.textAlign = 'center';
+        let C = onC; if (l.pflip) { C = { ...C, P: [...C.P].reverse(), top: C.len - C.top }; }
+        const ws = chars.map(c => x.measureText(c).width + (l.ls || 0)), wt = ws.reduce((m, v) => m + v, 0), al = l.al || 'center', cx = l.x + l.w / 2, cy = l.y + l.h / 2;
+        // Closed shapes: aligned around the top. Open lines: aligned along their length.
+        const base = (C.closed ? C.top - (al === 'center' ? wt / 2 : al === 'right' ? wt : 0) : al === 'center' ? (C.len - wt) / 2 : al === 'right' ? C.len - wt : 0) + (l.pst || 0) / 100 * C.len;
+        let at = base;
+        chars.forEach((ch, i) => { const q = dzCurveAt(C, at + ws[i] / 2); at += ws[i]; if (!q || (C.closed && at - ws[i] / 2 > base + C.len)) return;
+          const up = -(l.pb || 0); x.save(); x.translate(q.x - cx - Math.sin(q.a) * up, q.y - cy + Math.cos(q.a) * up); x.rotate(q.a); put(ch, 0, 0); x.restore(); });
+      } else if (l.arc && l._arc) {
         // Each letter sits on the circle, turned to follow it: up = a rainbow over the centre, down = a smile under it.
         const { chars, ws, wt, R } = l._arc, up = l.arc > 0;
         if ('letterSpacing' in x) x.letterSpacing = '0px';
@@ -1457,7 +1488,7 @@ DZ.edit = async (id) => {
     selBox.hidden = !l || !!cut || !!nodes || !!cont;
     if (!l) return;
     Object.assign(selBox.style, { left: l.x * k + 'px', top: l.y * k + 'px', width: l.w * k + 'px', height: (l.h || 1) * k + 'px', transform: `rotate(${l.rot || 0}deg)` });
-    selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('framesel', !!l.frame); selBox.classList.toggle('over', !!(l.frame && l._over)); const ovn = side?.querySelector('.dz-over-note'); if (ovn) ovn.hidden = !l._over; selBox.classList.toggle('cropping', cropping);
+    selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('framesel', !!l.frame); selBox.classList.toggle('onpath', !!l.on); selBox.classList.toggle('over', !!(l.frame && l._over)); const ovn = side?.querySelector('.dz-over-note'); if (ovn) ovn.hidden = !l._over; selBox.classList.toggle('cropping', cropping);
     drawXf();
   };
 
@@ -1607,9 +1638,9 @@ DZ.edit = async (id) => {
     if (toolOn() || cut || cropping) return null;
     if (many()) { const L = picked(); if (!L.length) return null; const B = L.map(box), x = Math.min(...B.map(b => b.x0)), y = Math.min(...B.map(b => b.y0)); return { mode: 'm', x, y, w: Math.max(...B.map(b => b.x1)) - x, h: Math.max(...B.map(b => b.y1)) - y, noSize: true }; }
     const l = layer(); if (!l) return null;
-    return { mode: 'l', x: l.x, y: l.y, w: l.w, h: l.h || 0, l, noH: (l.t === 'text' && !l.frame) || l.t === 'check' || (l.t === 'field' && !['area', 'sign'].includes(l.ft)), lock: !!l.lock }; };
+    return { mode: 'l', x: l.x, y: l.y, w: l.w, h: l.h || 0, l, noH: (l.t === 'text' && !l.frame) || l.t === 'check' || (l.t === 'field' && !['area', 'sign'].includes(l.ft)), lock: !!l.lock, noSize: !!l.on }; };
   const drawXf = () => { const b = $('#dz-xf'); if (!b) return; const v = xfNow(); b.hidden = !v; if (!v) { xfKey = ''; return; }
-    const l = v.l, key = [v.mode, dzUnit(doc), l?.id, l && dzKeep(l), v.noH, v.lock, v.d != null].join('|');
+    const l = v.l, key = [v.mode, dzUnit(doc), l?.id, l && dzKeep(l), v.noH, v.noSize, v.lock, v.d != null].join('|');
     const f = (k, n, off, tip) => `<label data-tip="${tip}"><span>${n}</span><input class="in" type="text" inputmode="text" data-calc data-xf="${k}" ${off ? 'disabled' : ''} aria-label="${tip}"></label>`;
     // A rebuild (the link toggled while typing) keeps the box in use: its focus, what's typed and the cursor.
     const fa = b.contains(document.activeElement) && document.activeElement.dataset.xf ? document.activeElement : null, fk = fa && { k: fa.dataset.xf, v: fa.value, s: fa.selectionStart, e: fa.selectionEnd };
@@ -1622,7 +1653,7 @@ DZ.edit = async (id) => {
     const dd = b.querySelector('.dz-xfd i'); if (dd) dd.textContent = dzToU(doc, v.d) + ' ' + dzUnit(doc); };
   const xfSet = (k, val) => { const v = xfNow(); if (!v) return; const dx = k === 'x' ? val - v.x : 0, dy = k === 'y' ? val - v.y : 0;
     if (v.mode === 'n') { if (k !== 'x' && k !== 'y') return; const L = nodeLayer(); for (const [s2, i] of nodes.sel) { const n = L.subs[s2]?.nodes[i]; if (!n) continue; const q = n2p(L, n.x, n.y), u = p2n(L, { x: q.x + dx, y: q.y + dy }); n.x = u.u; n.y = u.v; } refit(L); drawNodes(); return redraw(); }
-    if (v.mode === 'm') { for (const m of picked()) if (!m.lock) { m.x += dx; m.y += dy; } return; }
+    if (v.mode === 'm') { for (const m of picked()) if (!m.lock && !(m.on && picks.has(m.on))) { m.x += dx; m.y += dy; } return; }
     const l = v.l; if (k === 'x') l.x = val; if (k === 'y') l.y = val;
     if (k === 'w' || k === 'h') { if (!(val > 0)) return; const keep = dzKeep(l) && (l.t !== 'text' || l.frame), r = l.w / (l.h || 1); if (k === 'w') { l.w = val; if (keep) l.h = val / r; } else { l.h = val; if (keep) l.w = val * r; } } };
   /* The strip under the top bar: quick tools and properties for what's selected, a different set per kind of layer. */
@@ -1648,7 +1679,7 @@ DZ.edit = async (id) => {
       + [['left', 'aleft'], ['center', 'acenter'], ['right', 'aright'], ...(l.frame ? [['justify', 'ajust']] : [])].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')
       + (l.frame ? sep + [['top', 'vtop', 'Top of the frame'], ['middle', 'vmid', 'Middle of the frame'], ['bottom', 'vbot', 'Bottom of the frame']].map(([a, ic, n]) => dzIB(`data-va="${a}"`, ic, n, (l.va || 'top') === a ? 'on' : '')).join('') : '')
       + sep + col('c', 'Text', 'Text colour');
-    else if (l.t === 'shape') own = (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40));
+    else if (l.t === 'shape') own = (l.shape === 'ring' ? '' : dzIB('data-curvetext', '<path d="M3 17C8 7 16 7 21 17"/><path d="M9 6V3h6v3M12 3v7"/>', 'Text on this curve') + sep) + (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40));
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
     else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour');
     const field = l.t === 'field';
@@ -1805,7 +1836,11 @@ DZ.edit = async (id) => {
         ${fsec('Text', `<textarea class="in dz-text" data-k="text" rows="${l.frame ? 7 : 2}">${esc(l.text)}</textarea>
           <div class="row" style="margin-bottom:8px"><select class="in" data-tk="caps" aria-label="Case" style="flex:1;min-width:0">${[['', 'As typed'], ['upper', 'ALL CAPS'], ['small', 'Small caps'], ['title', 'Title Case'], ['lower', 'lowercase']].map(([v, n]) => `<option value="${v}" ${(l.caps || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>`, { fold: true, open: true })}
         ${fsec('Colour', `${fillUI(l, 'c')}${l.arc && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Bent text shows the plain colour.</p>' : ''}`, { fold: true, open: true })}
-        ${fsec('Layout', `<div class="seg" style="margin-bottom:8px"><button data-tframe="0" class="${l.frame ? '' : 'on'}" style="flex:1" data-tip="The box follows the text: dragging a corner scales the letters">Normal</button><button data-tframe="1" class="${l.frame ? 'on' : ''}" style="flex:1" data-tip="A box you size yourself: the text wraps inside it, for paragraphs">Frame</button></div>
+        ${l.frame || l.vert ? '' : fsec('Follow a curve', `<label class="field"><span>Curve</span><select class="in" data-tcurve><option value="">None</option>${F().filter(s => s.t === 'shape').map(s => `<option value="${s.id}" ${l.on === s.id ? 'selected' : ''}>${esc(layerName(s))}</option>`).join('')}</select></label>
+          ${l.on ? `<label class="toggle" style="display:flex;margin-bottom:6px" data-tip="The text keeps its shape; the line itself no longer shows"><input type="checkbox" data-tchide ${doc.layers.find(s => s.id === l.on)?.hide ? 'checked' : ''}><span>Hide the curve</span></label>
+          <label class="toggle" style="display:flex;margin-bottom:6px" data-tip="Run the other way, on the other side of the line"><input type="checkbox" data-tcflip ${l.pflip ? 'checked' : ''}><span>Flip to the other side</span></label>
+          ${slider('pst', 'Start along the curve', -50, 50, 1, l.pst || 0, v => v + '%') + slider('pb', 'Distance from the curve', -100, 100, 1, l.pb || 0)}` : ''}`, { fold: true, open: !!l.on })}
+        ${l.on ? '' : fsec('Layout', `<div class="seg" style="margin-bottom:8px"><button data-tframe="0" class="${l.frame ? '' : 'on'}" style="flex:1" data-tip="The box follows the text: dragging a corner scales the letters">Normal</button><button data-tframe="1" class="${l.frame ? 'on' : ''}" style="flex:1" data-tip="A box you size yourself: the text wraps inside it, for paragraphs">Frame</button></div>
           <div class="seg" style="margin-bottom:8px"><button data-tvert="0" class="${l.vert ? '' : 'on'}" style="flex:1">Horizontal</button><button data-tvert="1" class="${l.vert ? 'on' : ''}" style="flex:1" data-tip="Upright letters running top to bottom">Vertical</button></div>
           <label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Long text gets smaller to stay on its lines instead of wrapping, e.g. a studio name or amount"><input type="checkbox" data-fit ${l.fit ? 'checked' : ''}><span>Shrink to fit</span></label>
           ${l.frame ? slider('pad', 'Margin inside the frame', 0, Math.round(Math.min(l.w, l.h) / 3), 1, l.pad || 0) : l.vert ? '' : slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
@@ -2864,6 +2899,7 @@ DZ.edit = async (id) => {
     const L = F();   // only the page being edited (master items are edited on the Master tab)
     for (let i = L.length - 1; i >= 0; i--) {
       const l = L[i]; if (l.hide || !over(l)) continue;
+      const cv0 = dzCurves.get(l); if (cv0) { const r = l.size * 1.3 + Math.abs(l.pb || 0) + 10 / k; if (!cv0.P.some(q => Math.hypot(q.x - p.x, q.y - p.y) < r)) continue; }
       if (i > 0 && l.clip) { let b = i; while (b > 0 && L[b].clip) b--; if (L[b].hide || !over(L[b])) continue; }   // only where it shows
       return l;
     }
@@ -3060,8 +3096,8 @@ DZ.edit = async (id) => {
       const p = toPage(e), fine = e.altKey ? 0.25 : 1; let dx = (p.x - drag.p0.x) * fine, dy = (p.y - drag.p0.y) * fine;
       if (!drag.moved && Math.hypot(dx, dy) * k < 6) return; drag.moved = true;
       const lock = e.shiftKey ? (Math.abs(dx) > Math.abs(dy) ? 'y' : 'x') : null; if (lock === 'y') dy = 0; if (lock === 'x') dx = 0;
-      for (const [id, o] of drag.l0) { const m = doc.layers.find(x => x.id === id); if (m) { m.x = o.x + dx; m.y = o.y + dy; } }
-      snapTo(doc.layers.filter(m => drag.l0.has(m.id)), e, lock);
+      for (const [id, o] of drag.l0) { const m = doc.layers.find(x => x.id === id); if (m && !(m.on && drag.l0.has(m.on))) { m.x = o.x + dx; m.y = o.y + dy; } }
+      snapTo(doc.layers.filter(m => drag.l0.has(m.id) && !(m.on && drag.l0.has(m.on))), e, lock);
       placeSel(); return redraw();
     }
     const l = layer(), p = toPage(e), o = drag.l0, a = (o.rot || 0) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
@@ -3148,7 +3184,7 @@ DZ.edit = async (id) => {
       if (e.key === 'Escape') { picking = false; return setPicks([]); }
       if (e.key === 'Delete' || e.key === 'Backspace') return multiAct('del');
       const st = e.shiftKey ? 20 : e.altKey ? 1 : 4, mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
-      if (mv) { e.preventDefault(); for (const m of picked()) if (!m.lock) { m.x += mv[0]; m.y += mv[1]; } changed(); placeSel(); }
+      if (mv) { e.preventDefault(); for (const m of picked()) if (!m.lock && !(m.on && picks.has(m.on))) { m.x += mv[0]; m.y += mv[1]; } changed(); placeSel(); }
       return;
     }
     const l = layer(); if (!l) return;
@@ -3175,6 +3211,7 @@ DZ.edit = async (id) => {
     const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
     if (t.closest('[data-collapse]')) { mini = !mini; Settings.set('dz_panel_min', mini ? '1' : ''); return drawSide(); }
     if (d('rail')) return railAct(d('rail'), t.closest('[data-rail]'));
+    if (t.closest('[data-curvetext]') && l) { secOpen.set('Follow a curve', true); return add({ t: 'text', text: 'Your text here', size: Math.round(Math.max(24, Math.min(doc.h * 0.05, Math.min(l.w, l.h || l.w) * 0.14))), font: '@2', c: '@fg', al: 'center', lh: 1.2, on: l.id, x: l.x, y: l.y, w: l.w, h: l.h || 1 }); }
     if (t.closest('.dz-pop') && (d('add') || d('pic') || d('shape') || d('field'))) closePop();
     if (d('tab')) { tab = d('tab'); return drawSide(); }
     if (d('mact')) return multiAct(d('mact'));
@@ -3417,6 +3454,10 @@ DZ.edit = async (id) => {
   side.addEventListener('pointerup', (e) => { rowUp(); ldrop(e); }); side.addEventListener('pointercancel', (e) => { rowUp(); ldrop(e); });
   side.addEventListener('contextmenu', (e) => { if (e.target.closest('.dz-lr')) e.preventDefault(); });
   page.addEventListener('contextmenu', (e) => e.preventDefault());
+  side.addEventListener('change', (e) => { const t2 = e.target, l = layer(); if (!l) return;
+    if (t2.hasAttribute('data-tcurve')) { if (t2.value) { Object.assign(l, { on: t2.value, arc: 0, al: 'center' }); delete l._bx; } else { const S = doc.layers.find(o => o.id === l.on); if (S?.hide) S.hide = false; delete l.on; delete l._bx; l.w = Math.min(l.w, doc.w * 0.8); } changed(true); return drawSide(); }
+    if (t2.hasAttribute('data-tchide')) { const S = doc.layers.find(o => o.id === l.on); if (S) { S.hide = t2.checked; changed(true); } return; }
+    if (t2.hasAttribute('data-tcflip')) { l.pflip = t2.checked; changed(true); } });
   side.addEventListener('change', (e) => { const tk = e.target.dataset.tk, tl = layer(); if (tk && tl) { tl[tk] = e.target.value; changed(true); } });
   side.addEventListener('change', (e) => { if (e.target.matches('[data-fcat]')) { doc.form.cat = e.target.value; changed(true); } });
   side.addEventListener('input', (e) => { const k2 = e.target.dataset.ffk, l = layer(); if (!k2 || !l) return; const t = e.target;

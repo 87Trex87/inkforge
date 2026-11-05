@@ -1606,3 +1606,4 @@ textarea.ff-i { resize: none; }
 }
 @media (min-width: 701px) and (max-height: 720px) { .dz-ed .dz-rail .dz-ib { width: 32px; height: 30px; } .dz-ed .dz-rail { gap: 0; padding: 2px; } }
 .dz-lockn { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; padding: 2px 2px 4px; }
+#dz-sel.onpath { border-style: dotted; } #dz-sel.onpath .h { display: none; }
