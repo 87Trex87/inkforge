@@ -9,7 +9,7 @@ const ffFaces = (doc) => Array.from({ length: doc.pages || 1 }, (_, i) => i ? 'p
 const ffX = document.createElement('canvas').getContext('2d');
 
 /* Where everything in a field sits, in the layer's own box (top left = 0,0). Drawing, filling in and the PDF all use this. */
-const ffFont = (doc, l, wt, s = l.size || 46) => `${l.it ? 'italic ' : ''}${l.b ? 700 : wt} ${s}px "${doc && l.font ? dzFont(doc, l.font) : 'Inter'}", Inter, sans-serif`;
+const ffFont = (doc, l, wt, s = l.size || 46) => `${l.it ? 'italic ' : ''}${l.b || (l.font && wt === 600) ? 700 : wt} ${s}px "${doc && l.font ? dzFont(doc, l.font) : 'Inter'}", Inter, sans-serif`;
 function dzFieldGeom(l, x = ffX, doc) {
   const s = l.size || 46, lh = s * 1.3, w = l.w, g = { label: [], box: null, opts: [], h: 0 };
   x.font = ffFont(doc, l, 400);
