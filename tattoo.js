@@ -42,7 +42,7 @@ const TT_FEEL = {
 };
 const TT_FEEL_LIQ = { liner: { flow: 80, miss: 25, size: 0.3, bleed: 60 }, shader: { flow: 60, miss: 40, bleed: 45 }, mag: { flow: 60, miss: 35, bleed: 45 }, soft: { flow: 60, miss: 35, bleed: 55, speedFade: 30, dMax: 0.95 } };
 /* Voltage by grouping, as set up for a relatively slow hand (liners higher as they get bigger; shaders and
-   magnums lower). Voltage sets how fast the machine hits (about 14 hits a second per volt) and how hard. */
+   magnums lower). Voltage sets how fast the machine hits (about 98 a second at 7 V, rising steeply with voltage), how hard, and how fast the skin gets irritated. */
 const TT_VOLT = { '1RL': 7.0, '3RL': 7.2, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '11RL': 7.7, '14RL': 7.9, '5RS': 6.6, '7RS': 6.7, '9RS': 6.8, '11RS': 6.9,
   '7M1': 6.5, '9M1': 6.55, '11M1': 6.6, '13M1': 6.7, '15M1': 6.8, '9CM': 6.5, '15CM': 6.6, '23CM': 6.7, '31CM': 6.8 };
 /* Hand speed: how fast this artist moves. Each sets a starting hand speed, how much fast strokes fade and an offset
@@ -741,7 +741,7 @@ TT.open = async (el, id) => {
   const depthOf = (pr, speed, tilt0) => { const tilt = isMag() ? 0 : tilt0, d = (feel.dMin + (feel.dMax - feel.dMin) * curve(pr, feel.pCurve + cal.curve)) * (0.8 + (volt() - 6.5) * 0.15);   // harder hits at higher voltage
     return Math.max(0.02, Math.min(1, d * (1 - Math.min(0.9, speed / 200 * feel.speedFade / 100 * cal.fade) - tilt * feel.tiltFade / 100 * 0.6))); };
   const volt = () => Math.max(4, Math.min(11, (feel.volt ?? 7) + (cal.voltOff || 0)));
-  const hzOf = () => volt() * 14;   // hits per second
+  const hzOf = () => 98 * Math.pow(volt() / 7, 2.2);   // hits per second: unchanged at 7 V, and voltage counts for a lot, so 7.5 V lands dots far closer than 5 V at the same hand speed
   const gapMm = (speed) => Math.max(0.02, speed * (feel.hand / 100) * cal.hand / hzOf());   // mm between punctures
   /* Magnums hold their angle like a calligraphy nib: the row of needles stays at magAng whatever way the stroke
      goes (pulled along the row it lines; across it, it shades). With "follows the pen" the row sits across the
@@ -857,7 +857,7 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) / (cal.tough || 1));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) / (cal.tough || 1));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
