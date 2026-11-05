@@ -1802,10 +1802,12 @@ DZ.edit = async (id) => {
   const drawItem = () => {
     const l = layer();
     if (l.lock) { side.innerHTML = `<div class="dz-lh"><b>Locked</b><button class="btn small" data-act="done">Done</button></div><div class="dz-lockn"><span class="muted">It can't be moved or changed while locked.</span><button class="btn small" data-act="lock">Unlock</button></div>`; return; }
+    if (l.t === 'field' && l.src?.length && l._srcFor !== hi) { l._srcFor = hi; ffApply(l).then(() => { redraw(); }); }
     if (l.t === 'field') { side.innerHTML = `<div class="dz-lh"><b>Form field</b></div>
         <label class="field"><span>Type</span><select class="in" data-ffk="ft">${FF_TYPES.map(([v, n]) => `<option value="${v}" ${l.ft === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <label class="field"><span>Label</span><textarea class="in" rows="3" data-ffk="label">${esc(l.label || '')}</textarea></label>
-        ${l.ft === 'radio' || l.ft === 'combo' ? `<label class="field"><span>Options, one per line</span><textarea class="in" rows="4" data-ffk="opts">${esc((l.opts || []).join('\n'))}</textarea></label>` : ''}
+        ${['radio', 'combo', 'check'].includes(l.ft) ? `<label class="field"><span>${l.ft === 'check' ? 'Several boxes? One per line' : 'Your own options, one per line'}</span><textarea class="in" rows="3" data-ffk="opts">${esc((l.own ?? l.opts ?? []).join('\n'))}</textarea></label>
+        ${fsec('Fill from studio data', `${l.src?.length ? `<p class="dz-hint muted" style="margin:0 0 6px">${(l.opts || []).length} options now, kept up to date.${l.ft === 'combo' ? '' : ` A list shows up to ${FF_LIST_MAX}.`}</p>` : ''}${[...new Set(FF_SRC.map(s => s[2]))].map(g => { const S = FF_SRC.filter(s => s[2] === g && (!s[3] || l.ft === 'combo')); return S.length ? `<div class="lbl">${g}</div>` + S.map(s => `<label class="toggle" style="display:flex;margin-bottom:4px"${s[3] ? ' data-tip="Only here while filling in: left out of PDFs, which get passed around"' : ''}><input type="checkbox" data-ffsrc="${s[0]}" ${l.src?.includes(s[0]) ? 'checked' : ''}><span>${s[1]}</span></label>`).join('') : ''; }).join('')}`, { fold: true, open: !!l.src?.length })}` : ''}
         ${l.ft === 'text' || l.ft === 'date' ? `<label class="field"><span>Fill in automatically</span><select class="in" data-ffk="v">${FF_PREFILL.map(([v, n]) => `<option value="${v}" ${(l.v || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
         <label class="toggle" style="display:inline-flex"><input type="checkbox" data-ffk="req" ${l.req ? 'checked' : ''}><span>Required</span></label>
         <p class="muted dz-hint">Radio and combo boxes need InkForge or a PDF to fill in; on paper they print as they look here.</p>`; return; }
@@ -3467,9 +3469,11 @@ DZ.edit = async (id) => {
     if (t2.hasAttribute('data-tcflip')) { l.pflip = t2.checked; changed(true); } });
   side.addEventListener('change', (e) => { const tk = e.target.dataset.tk, tl = layer(); if (tk && tl) { tl[tk] = e.target.value; changed(true); } });
   side.addEventListener('change', (e) => { if (e.target.matches('[data-fcat]')) { doc.form.cat = e.target.value; changed(true); } });
+  side.addEventListener('change', async (e) => { const key = e.target.dataset.ffsrc, l = layer(); if (!key || !l) return; l.own ??= l.opts || []; if (l.own.join() === 'Option 1,Option 2') l.own = []; const s = new Set(l.src || []); e.target.checked ? s.add(key) : s.delete(key); l.src = [...s]; await ffApply(l); changed(true); drawSide(); });
   side.addEventListener('input', (e) => { const k2 = e.target.dataset.ffk, l = layer(); if (!k2 || !l) return; const t = e.target;
-    l[k2] = t.type === 'checkbox' ? t.checked : k2 === 'opts' ? t.value.split('\n').map(s => s.trim()).filter(Boolean) : t.value;
-    if (k2 === 'ft') { if ((l.ft === 'radio' || l.ft === 'combo') && !l.opts?.length) l.opts = ['Option 1', 'Option 2']; l.h = l.ft === 'sign' ? 300 : l.ft === 'area' ? 400 : l.h; drawSide(); }
+    l[k2] = t.type === 'checkbox' ? t.checked : k2 === 'opts' ? l.opts : t.value;
+    if (k2 === 'opts') { l.own = t.value.split('\n').map(s => s.trim()).filter(Boolean); ffApply(l).then(() => changed()); return; }
+    if (k2 === 'ft') { if ((l.ft === 'radio' || l.ft === 'combo') && !l.opts?.length && !l.own?.length) l.opts = l.own = ['Option 1', 'Option 2']; ffApply(l).then(() => changed()); l.h = l.ft === 'sign' ? 300 : l.ft === 'area' ? 400 : l.h; drawSide(); }
     changed(); });
   side.addEventListener('input', (e) => {
     const t = e.target, l = layer(), key = t.dataset.k;

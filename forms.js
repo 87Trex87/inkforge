@@ -7,13 +7,41 @@ const FF_CATS = [['consent', 'Consent'], ['aftercare', 'Aftercare'], ['other', '
 const FF_PREFILL = [['', 'Nothing'], ['{client}', 'Client name'], ['{phone}', 'Client phone'], ['{email}', 'Client email'], ['{date}', 'Today']];
 const ffFaces = (doc) => Array.from({ length: doc.pages || 1 }, (_, i) => i ? 'p' + (i + 1) : 'f');
 const ffX = document.createElement('canvas').getContext('2d');
+/* Studio data for option lists: [key, name, group, private, query]. A field keeps its own typed options (own) plus the
+   sources ticked (src), refreshed whenever the form is designed or filled in. Private lists name clients, so they're
+   only offered on combo boxes (which show just the answer) and are left out of PDFs, which get passed around. */
+const ffQ = (sql, f = 'v') => async () => (await DB.all(sql)).map(r => r[f]).filter(Boolean);
+const FF_SRC = [
+  ['clients', 'All clients', 'Clients', 1, ffQ(`SELECT trim(first_name || ' ' || last_name) AS v FROM clients WHERE category = 'Client' ORDER BY first_name COLLATE NOCASE LIMIT 300`)],
+  ['upcoming', 'Clients with upcoming bookings', 'Clients', 1, ffQ(`SELECT DISTINCT trim(c.first_name || ' ' || c.last_name) AS v FROM bookings b JOIN clients c ON c.id = b.client_id WHERE b.start_at >= date('now') ORDER BY b.start_at LIMIT 100`)],
+  ['projects', 'Upcoming tattoos', 'Bookings', 1, ffQ(`SELECT DISTINCT description AS v FROM bookings WHERE start_at >= date('now') AND description <> '' ORDER BY start_at LIMIT 100`)],
+  ['alljobs', 'All tattoo descriptions', 'Bookings', 1, ffQ(`SELECT DISTINCT description AS v FROM bookings WHERE description <> '' ORDER BY start_at DESC LIMIT 200`)],
+  ['placements', 'Placements used', 'Bookings', 0, ffQ(`SELECT v FROM (SELECT placement AS v FROM bookings UNION SELECT placement FROM portfolio_items) WHERE v <> '' ORDER BY v COLLATE NOCASE LIMIT 100`)],
+  ['topplace', 'Most popular placements', 'Stats', 0, ffQ(`SELECT placement AS v, count(*) AS n FROM bookings WHERE placement <> '' GROUP BY placement ORDER BY n DESC LIMIT 15`)],
+  ['sizes', 'Sizes used', 'Bookings', 0, ffQ(`SELECT DISTINCT size AS v FROM bookings WHERE size <> '' ORDER BY v COLLATE NOCASE LIMIT 60`)],
+  ['jobtypes', 'Types of work', 'Bookings', 0, async () => JOB_TYPES.map(j => j[1])],
+  ['pay', 'Payment methods', 'Bookings', 0, async () => [...PAY_METHODS]],
+  ['pieces', 'Portfolio tattoos', 'Portfolio', 0, ffQ(`SELECT DISTINCT title AS v FROM portfolio_items WHERE kind = 'tattoo' AND title <> '' ORDER BY title COLLATE NOCASE LIMIT 200`)],
+  ['flash', 'Available flash', 'Portfolio', 0, ffQ(`SELECT DISTINCT title AS v FROM portfolio_items WHERE kind = 'flash' AND claimed = 0 AND title <> '' ORDER BY title COLLATE NOCASE LIMIT 200`)],
+  ['tags', 'Portfolio tags', 'Portfolio', 0, async () => [...new Set((await DB.all(`SELECT tags FROM portfolio_items WHERE tags <> ''`)).flatMap(r => r.tags.split(',').map(s => s.trim())).filter(Boolean))].sort()],
+  ['stock', 'Inventory items', 'Inventory', 0, ffQ(`SELECT name AS v FROM inventory_items WHERE active = 1 ORDER BY name COLLATE NOCASE LIMIT 300`)],
+  ['stockcat', 'Inventory categories', 'Inventory', 0, ffQ(`SELECT DISTINCT category AS v FROM inventory_items WHERE active = 1 AND category <> '' ORDER BY v COLLATE NOCASE`)],
+  ['low', 'Items running low', 'Inventory', 0, ffQ(`SELECT name AS v FROM inventory_items WHERE active = 1 AND qty <= min_qty ORDER BY name COLLATE NOCASE LIMIT 100`)],
+  ['supply', 'Suppliers', 'Inventory', 0, ffQ(`SELECT DISTINCT supplier AS v FROM inventory_items WHERE supplier <> '' ORDER BY v COLLATE NOCASE`)],
+  ['rules', 'Studio rules', 'Studio', 0, ffQ(`SELECT title AS v FROM rules ORDER BY sort LIMIT 60`)]
+];
+const FF_LIST_MAX = 30;   // radio buttons and check boxes take room on the page; a combo box doesn't
+async function ffApply(l) { if (!['combo', 'radio', 'check'].includes(l.ft)) return; const own = l.own ?? (l.src?.length ? [] : l.opts || []); l.own = own; const all = [...own], pub = [...own];
+  for (const key of l.src || []) { const S = FF_SRC.find(x => x[0] === key); if (!S || (S[3] && l.ft !== 'combo')) continue; let vals = []; try { vals = await S[4](); } catch {} all.push(...vals); if (!S[3]) pub.push(...vals); }
+  const max = l.ft === 'combo' ? 500 : FF_LIST_MAX; l.opts = [...new Set(all.map(String))].slice(0, max); l.optsPub = [...new Set(pub.map(String))].slice(0, max); }
+const ffRefresh = async (doc) => { for (const l of doc.layers) if (l.t === 'field' && l.src?.length) await ffApply(l); };
 
 /* Where everything in a field sits, in the layer's own box (top left = 0,0). Drawing, filling in and the PDF all use this. */
 const ffFont = (doc, l, wt, s = l.size || 46) => `${l.it ? 'italic ' : ''}${l.b || (l.font && wt === 600) ? 700 : wt} ${s}px "${doc && l.font ? dzFont(doc, l.font) : 'Inter'}", Inter, sans-serif`;
 function dzFieldGeom(l, x = ffX, doc) {
   const s = l.size || 46, lh = s * 1.3, w = l.w, g = { label: [], box: null, opts: [], h: 0 };
   x.font = ffFont(doc, l, 400);
-  if (l.ft === 'check') {
+  if (l.ft === 'check' && !l.opts?.length) {
     const lines = l.label ? dzWrap(x, l.label, Math.max(20, w - s * 1.6)) : [];
     g.box = { x: 0, y: s * 0.12, w: s, h: s };
     lines.forEach((t, i) => g.label.push({ s: t, x: s * 1.6, y: i * lh + s }));
@@ -21,7 +49,7 @@ function dzFieldGeom(l, x = ffX, doc) {
   }
   let y = 0;
   if (l.label) { x.font = ffFont(doc, l, 600); for (const t of dzWrap(x, l.label, w)) { g.label.push({ s: t, x: 0, y: y + s, b: 1 }); y += lh; } x.font = ffFont(doc, l, 400); y += s * 0.15; }
-  if (l.ft === 'radio') {
+  if (l.ft === 'radio' || l.ft === 'check') {
     for (const o of (l.opts || [])) { const L = dzWrap(x, o, Math.max(20, w - s * 1.6)); g.opts.push({ v: o, x: 0, y: y + s * 0.12, d: s, lines: L.map((t, i) => ({ s: t, x: s * 1.6, y: y + i * lh + s })) }); y += L.length * lh + s * 0.25; }
     g.h = Math.max(y, s * 1.3); return g;
   }
@@ -34,8 +62,12 @@ function dzFieldDraw(x, doc, l, o = {}) {
   x.translate(-l.w / 2, -l.h / 2); x.fillStyle = col; x.strokeStyle = col; x.lineWidth = Math.max(2, s * 0.05); x.textAlign = 'left'; x.textBaseline = 'alphabetic';
   x.font = ffFont(doc, l, 600); for (const t of g.label.filter(t => t.b)) x.fillText(t.s, t.x, t.y);
   x.font = ffFont(doc, l, 400); for (const t of g.label.filter(t => !t.b)) x.fillText(t.s, t.x, t.y);
-  if (l.ft === 'check') { const b = g.box; x.strokeRect(b.x, b.y, b.w, b.h);
+  if (l.ft === 'check' && g.box) { const b = g.box; x.strokeRect(b.x, b.y, b.w, b.h);
     if (v) { x.beginPath(); x.moveTo(b.x + b.w * 0.2, b.y + b.h * 0.55); x.lineTo(b.x + b.w * 0.42, b.y + b.h * 0.78); x.lineTo(b.x + b.w * 0.82, b.y + b.h * 0.22); x.lineWidth *= 2; x.stroke(); }
+    return; }
+  if (l.ft === 'check') { for (const r of g.opts) { x.strokeRect(r.x, r.y, r.d, r.d);
+      if (Array.isArray(v) && v.includes(r.v)) { x.save(); x.beginPath(); x.moveTo(r.x + r.d * 0.2, r.y + r.d * 0.55); x.lineTo(r.x + r.d * 0.42, r.y + r.d * 0.78); x.lineTo(r.x + r.d * 0.82, r.y + r.d * 0.22); x.lineWidth *= 2; x.stroke(); x.restore(); }
+      for (const t of r.lines) x.fillText(t.s, t.x, t.y); }
     return; }
   if (l.ft === 'radio') { for (const r of g.opts) { x.beginPath(); x.arc(r.x + r.d / 2, r.y + r.d / 2, r.d / 2, 0, 7); x.stroke();
       if (v === r.v) { x.beginPath(); x.arc(r.x + r.d / 2, r.y + r.d / 2, r.d * 0.26, 0, 7); x.fill(); }
@@ -94,7 +126,7 @@ function ffCopy(doc, ctx) { const d = JSON.parse(JSON.stringify(doc));
   return d; }
 const ffBlankCtx = () => ({ ...formCtx(null), client: '____________________', first: '', date: '____ / ____ / ________' });
 async function ffPage(d, face, opt = {}, scale = 1) { const cv = document.createElement('canvas'); cv.width = Math.round(d.w * scale); cv.height = Math.round(d.h * scale); await dzDraw(cv, d, scale, { face, ...opt }); return cv; }
-async function ffPrintBlank(doc) { const d = ffCopy(doc, ffBlankCtx()), pages = []; for (const f of ffFaces(d)) pages.push(await ffPage(d, f, { noVal: true, print: true })); return printCanvas(...pages); }
+async function ffPrintBlank(doc) { await ffRefresh(doc); const d = ffCopy(doc, ffBlankCtx()), pages = []; for (const f of ffFaces(d)) pages.push(await ffPage(d, f, { noVal: true, print: true })); return printCanvas(...pages); }
 // The pages of a form filled for a client, for attaching to a receipt.
 async function ffPagesFor(id, client, booking) { const r = await DB.one('SELECT doc, name FROM designs WHERE id = ?', [id]); if (!r) return []; const d = ffCopy(JSON.parse(r.doc), formCtx(client, booking)), out = [];
   for (const f of ffFaces(d)) out.push({ cv: await ffPage(d, f, { noVal: true }), name: r.name }); return out; }
@@ -121,7 +153,8 @@ async function ffPdf(d, opt = {}) {
     if (!opt.flat) for (const l of d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === face)) {
       const g = dzFieldGeom(l, ffX, d), fs = ((l.size || 46) * k * 0.9).toFixed(1), da = `/DA(/Helv ${fs} Tf 0 g)`, v = vals[l.id], base = `/Type/Annot/Subtype/Widget/F 4/P ${page} 0 R/T${ffStr(l.id)}/TU${ffStr(l.label || '')}`;
       if (l.ft === 'text' || l.ft === 'date' || l.ft === 'area') { const n = add(`<<${base}/FT/Tx/Rect${rect(l, g.box)}${da}${l.ft === 'area' ? '/Ff 4096' : ''}${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
-      else if (l.ft === 'combo') { const n = add(`<<${base}/FT/Ch/Ff 131072/Rect${rect(l, g.box)}${da}/Opt[${(l.opts || []).map(ffStr).join(' ')}]${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
+      else if (l.ft === 'combo') { const n = add(`<<${base}/FT/Ch/Ff 131072/Rect${rect(l, g.box)}${da}/Opt[${[...new Set([...(l.src?.length ? l.optsPub || [] : l.opts || []), ...(v ? [v] : [])])].map(ffStr).join(' ')}]${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
+      else if (l.ft === 'check' && !g.box) { g.opts.forEach((r, i) => { const w = r.d * k, on = ap(w, w, tick(w, w)), off = ap(w, w, ''), ck = Array.isArray(v) && v.includes(r.v); const n = add(`<<${base.replace(ffStr(l.id), ffStr(l.id + '_' + i)).replace(ffStr(l.label || ''), ffStr(r.v))}/FT/Btn/Rect${rect(l, { x: r.x, y: r.y, w: r.d, h: r.d })}${da}/AP<</N<</Yes ${on} 0 R/Off ${off} 0 R>>>>/AS${ck ? '/Yes/V/Yes' : '/Off/V/Off'}>>`); annots.push(n); fields.push(n); }); }
       else if (l.ft === 'check') { const w = g.box.w * k, on = ap(w, w, tick(w, w)), off = ap(w, w, ''); const n = add(`<<${base}/FT/Btn/Rect${rect(l, g.box)}${da}/AP<</N<</Yes ${on} 0 R/Off ${off} 0 R>>>>/AS${v ? '/Yes/V/Yes' : '/Off/V/Off'}>>`); annots.push(n); fields.push(n); }
       else if (l.ft === 'radio') { const par = resv(), ks = [];
         g.opts.forEach((r, i) => { const w = r.d * k, on = ap(w, w, dot(w)), off = ap(w, w, ''); const n = add(`<</Type/Annot/Subtype/Widget/F 4/P ${page} 0 R/Parent ${par} 0 R/Rect${rect(l, { x: r.x, y: r.y, w: r.d, h: r.d })}/AP<</N<</o${i} ${on} 0 R/Off ${off} 0 R>>>>/AS${v === r.v ? '/o' + i : '/Off'}>>`); ks.push(n); annots.push(n); });
@@ -139,7 +172,7 @@ async function ffPdf(d, opt = {}) {
   const xref = at; push(ffEnc.encode(`xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${off.map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<</Size ${objs.length + 1}/Root ${catalog} 0 R>>\nstartxref\n${xref}\n%%EOF`));
   return new Blob(parts, { type: 'application/pdf' });
 }
-async function ffSavePdf(d, name, opt) { const f = new File([await ffPdf(d, opt)], String(name || 'form').replace(/[^\w-]+/g, '_') + '.pdf', { type: 'application/pdf' });
+async function ffSavePdf(d, name, opt) { await ffRefresh(d); const f = new File([await ffPdf(d, opt)], String(name || 'form').replace(/[^\w-]+/g, '_') + '.pdf', { type: 'application/pdf' });
   try { if (opt?.share && navigator.canShare?.({ files: [f] })) return await navigator.share({ files: [f], title: name }); } catch (e) { if (e.name === 'AbortError') return; }
   const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); }
 
@@ -168,7 +201,7 @@ const FF = {
   async fill(id) {
     const r = await DB.one(`SELECT name, doc FROM designs WHERE id = ? AND kind = 'form'`, [id]); if (!r) { location.hash = 'forms'; return; }
     $('#view-title').textContent = r.name;
-    const ctx0 = Forms.ctx || {}, src = JSON.parse(r.doc); Forms.ctx = null;
+    const ctx0 = Forms.ctx || {}, src = JSON.parse(r.doc); Forms.ctx = null; await ffRefresh(src);
     let client = ctx0.clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [ctx0.clientId]) : null;
     const booking = ctx0.bookingId ? await DB.one('SELECT * FROM bookings WHERE id = ?', [ctx0.bookingId]) : null;
     const el = $('#fs'), vals = {}, typed = new Set(), pads = {}, faces = ffFaces(src), cat = src.form?.cat || 'other'; let d;
@@ -183,6 +216,7 @@ const FF = {
       for (const f of faces) { const host = el.querySelector(`.ff-page[data-face="${f}"]`), cv = await ffPage(d, f, { noVal: true }, Math.min(1, 1400 / d.w)), c = host.querySelector('canvas'); c.width = cv.width; c.height = cv.height; c.getContext('2d').drawImage(cv, 0, 0);
         const sigs = Object.fromEntries(Object.entries(pads).filter(([, p]) => !p.empty()).map(([i, p]) => [i, p.data()]));
         host.querySelector('.ff-over').innerHTML = d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === f).map(l => { const g = dzFieldGeom(l, ffX, d), a = `data-id="${l.id}" data-s="${l.size || 46}" data-ff='${esc(l.font ? dzFont(d, l.font) : 'Inter')}' data-fb="${l.b ? 700 : 400}" data-fi="${l.it ? 'italic' : 'normal'}" data-fc="${esc(dzCol(d, l.c || '@fg') || '#111')}" aria-label="${esc(l.label || FF_TYPES.find(t => t[0] === l.ft)?.[1])}"`, v = vals[l.id] ?? '';
+          if (l.ft === 'check' && !g.box) return g.opts.map(o => `<input type="checkbox" class="ff-c" data-many value="${esc(o.v)}" ${a} style="${pct({ x: o.x, y: o.y, w: o.d, h: o.d }, l)}" ${Array.isArray(v) && v.includes(o.v) ? 'checked' : ''}>`).join('');
           if (l.ft === 'check') return `<input type="checkbox" class="ff-c" ${a} style="${pct(g.box, l)}" ${v ? 'checked' : ''}>`;
           if (l.ft === 'radio') return g.opts.map(o => `<input type="radio" class="ff-c" name="${l.id}" value="${esc(o.v)}" ${a} style="${pct({ x: o.x, y: o.y, w: o.d, h: o.d }, l)}" ${v === o.v ? 'checked' : ''}>`).join('');
           if (l.ft === 'combo') return `<select class="ff-i" ${a} style="${pct(g.box, l)}"><option value=""></option>${(l.opts || []).map(o => `<option ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -194,7 +228,7 @@ const FF = {
     await paint();
     new ResizeObserver(fontFit).observe($('#ff-pages'));
     const pagesEl = $('#ff-pages');
-    pagesEl.addEventListener('input', (e) => { const t = e.target, i = t.dataset.id; if (!i) return; vals[i] = t.type === 'checkbox' ? t.checked : t.value; typed.add(i); Dirty.set(true); });
+    pagesEl.addEventListener('input', (e) => { const t = e.target, i = t.dataset.id; if (!i) return; vals[i] = t.hasAttribute('data-many') ? [...pagesEl.querySelectorAll(`[data-id="${i}"]:checked`)].map(n => n.value) : t.type === 'checkbox' ? t.checked : t.value; typed.add(i); Dirty.set(true); });
     pagesEl.addEventListener('click', (e) => { const c = e.target.dataset.sigc; if (c) pads[c]?.clear(); });
     clientPicker($('#fs-client'), $('#fs-list'), async (cid) => { client = await DB.one('SELECT * FROM clients WHERE id = ?', [cid]); await paint(); });
     $('#fs-cancel').onclick = () => history.back();
@@ -205,7 +239,7 @@ const FF = {
     let busy = false;
     $('#fs-save').onclick = async () => { if (busy) return;
       if (!client) return toast('Choose the client first.');
-      for (const l of d.layers.filter(l => l.t === 'field' && l.req && !l.hide)) { const ok = l.ft === 'sign' ? pads[l.id] && !pads[l.id].empty() : !!vals[l.id];
+      for (const l of d.layers.filter(l => l.t === 'field' && l.req && !l.hide)) { const ok = l.ft === 'sign' ? pads[l.id] && !pads[l.id].empty() : Array.isArray(vals[l.id]) ? vals[l.id].length > 0 : !!vals[l.id];
         if (!ok) { el.querySelector(`[data-id="${l.id}"], [data-sig="${l.id}"]`)?.scrollIntoView({ block: 'center' }); return toast(l.ft === 'sign' ? 'Please sign in the box.' : l.ft === 'check' ? 'Every required box needs a tick.' : `Please answer "${(l.label || 'this field').slice(0, 50)}".`); } }
       busy = true; $('#fs-save').disabled = true;
       try { const refs = []; for (const cv of await baked(Math.min(1, 1654 / d.w))) refs.push(await Media.save(await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.88)), 'jpg'));
