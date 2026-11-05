@@ -105,7 +105,7 @@ const DZF = {
     this.loaded.add(name);
   },
   async all(doc) { const t = DZ_THEMES[doc.theme] || DZ_THEMES.ink;
-    await Promise.all([t.f1, t.f2, ...doc.layers.filter(l => l.t === 'text').map(l => l.font[0] === '@' ? t['f' + l.font[1]] : l.font)].map(f => this.load(f))); }
+    await Promise.all([t.f1, t.f2, ...doc.layers.filter(l => l.t === 'text' || (l.t === 'field' && l.font)).map(l => l.font[0] === '@' ? t['f' + l.font[1]] : l.font)].map(f => this.load(f))); }
 };
 
 /* ---------- Drawing ---------- */
@@ -630,7 +630,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   const one = async (x, l) => {
     const im = l.t === 'image' ? await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref) : null;
     const tex = l.fm === 'tex' && l.tex?.ref ? await dzImg(l.tex.ref) : null;
-    const nIco = l.t === 'shortcut' ? await dzIcoImg(l.svg || '', dzInkOn(doc)) : null; if (l.t === 'check') l.h = dzCheckH(l); if (l.t === 'field') l.h = dzFieldGeom(l, x).h;
+    const nIco = l.t === 'shortcut' ? await dzIcoImg(l.svg || '', dzInkOn(doc)) : null; if (l.t === 'check') l.h = dzCheckH(l); if (l.t === 'field') l.h = dzFieldGeom(l, x, doc).h;
     let lines = null;
     if ('fontVariantCaps' in x) x.fontVariantCaps = l.t === 'text' && l.caps === 'small' ? 'small-caps' : 'normal';
     if (l.t === 'text') {   // measure first, so the box (and its centre) is the real height of the text
@@ -1578,7 +1578,7 @@ DZ.edit = async (id) => {
   const drawCtx = () => { const b = $('#dz-ctx'); if (!b) return; const l = layer(), sl = b.scrollLeft, sep = '<i class="dz-csep"></i>';
     if (!l || many() || toolOn() || cut || nodes || cropping || l.t === 'shortcut' || l.t === 'check') { cpop = null; b.innerHTML = `<span class="muted dz-chint">${many() ? 'Several items selected: their tools are in the panel.' : 'Select something to see its tools here.'}</span>`; return; }
     const tog = (k, s, tip) => `<button class="dz-ib ${l[k] ? 'on' : ''}" data-tog="${k}" data-tip="${tip}" style="${s}">${tip[0]}</button>`;
-    const col = (key, ic, tip, none) => { const c = l[key], paint = (key === 'c' || key === 'fill') && l.fm === 'grad' && l.grad ? dzGradCss(doc, l.grad) : (c && c !== 'none' ? dzCol(doc, c) : 'transparent');
+    const col = (key, ic, tip, none) => { const c = l[key], paint = (key === 'c' || key === 'fill') && l.fm === 'grad' && l.grad ? dzGradCss(doc, l.grad) : (c && c !== 'none' ? dzCol(doc, c) : key === 'c' ? dzCol(doc, '@fg') : 'transparent');
       return `<button class="dz-cbtn ${cpop === key ? 'on' : ''}" data-cpop="${key}" data-none="${none ? 1 : ''}" data-tip="${tip}" aria-label="${tip}"><small>${ic}</small><i style="background:${paint}"></i></button>`; };
     const num = (k, v, tip, max) => `<label class="dz-cnum" data-tip="${tip}"><input class="in" type="number" min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}"></label>`;
     let own = '';
@@ -1589,7 +1589,7 @@ DZ.edit = async (id) => {
       + sep + col('c', 'Text', 'Text colour');
     else if (l.t === 'shape') own = (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40));
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
-    else if (l.t === 'field') own = num('size', l.size || 46, 'Text size');
+    else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour');
     const field = l.t === 'field';
     b.innerHTML = (own ? own + sep : '')
       + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="up"', 'fwd', 'Bring forward') + dzIB('data-act="down"', 'back', 'Send back') + sep

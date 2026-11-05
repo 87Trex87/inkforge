@@ -9,9 +9,10 @@ const ffFaces = (doc) => Array.from({ length: doc.pages || 1 }, (_, i) => i ? 'p
 const ffX = document.createElement('canvas').getContext('2d');
 
 /* Where everything in a field sits, in the layer's own box (top left = 0,0). Drawing, filling in and the PDF all use this. */
-function dzFieldGeom(l, x = ffX) {
+const ffFont = (doc, l, wt, s = l.size || 46) => `${l.it ? 'italic ' : ''}${l.b ? 700 : wt} ${s}px "${doc && l.font ? dzFont(doc, l.font) : 'Inter'}", Inter, sans-serif`;
+function dzFieldGeom(l, x = ffX, doc) {
   const s = l.size || 46, lh = s * 1.3, w = l.w, g = { label: [], box: null, opts: [], h: 0 };
-  x.font = `400 ${s}px Inter, sans-serif`;
+  x.font = ffFont(doc, l, 400);
   if (l.ft === 'check') {
     const lines = l.label ? dzWrap(x, l.label, Math.max(20, w - s * 1.6)) : [];
     g.box = { x: 0, y: s * 0.12, w: s, h: s };
@@ -19,7 +20,7 @@ function dzFieldGeom(l, x = ffX) {
     g.h = Math.max(s * 1.3, lines.length * lh); return g;
   }
   let y = 0;
-  if (l.label) { x.font = `600 ${s}px Inter, sans-serif`; for (const t of dzWrap(x, l.label, w)) { g.label.push({ s: t, x: 0, y: y + s, b: 1 }); y += lh; } x.font = `400 ${s}px Inter, sans-serif`; y += s * 0.15; }
+  if (l.label) { x.font = ffFont(doc, l, 600); for (const t of dzWrap(x, l.label, w)) { g.label.push({ s: t, x: 0, y: y + s, b: 1 }); y += lh; } x.font = ffFont(doc, l, 400); y += s * 0.15; }
   if (l.ft === 'radio') {
     for (const o of (l.opts || [])) { const L = dzWrap(x, o, Math.max(20, w - s * 1.6)); g.opts.push({ v: o, x: 0, y: y + s * 0.12, d: s, lines: L.map((t, i) => ({ s: t, x: s * 1.6, y: y + i * lh + s })) }); y += L.length * lh + s * 0.25; }
     g.h = Math.max(y, s * 1.3); return g;
@@ -29,10 +30,10 @@ function dzFieldGeom(l, x = ffX) {
 }
 // Draws a field. val is its answer (none in the editor or on a blank copy), sig the picture for a signature.
 function dzFieldDraw(x, doc, l, o = {}) {
-  const g = dzFieldGeom(l, x), s = l.size || 46, col = dzCol(doc, l.c || '@fg') || '#111', v = o.noVal ? undefined : o.vals?.[l.id];
+  const g = dzFieldGeom(l, x, doc), s = l.size || 46, col = dzCol(doc, l.c || '@fg') || '#111', v = o.noVal ? undefined : o.vals?.[l.id];
   x.translate(-l.w / 2, -l.h / 2); x.fillStyle = col; x.strokeStyle = col; x.lineWidth = Math.max(2, s * 0.05); x.textAlign = 'left'; x.textBaseline = 'alphabetic';
-  x.font = `600 ${s}px Inter, sans-serif`; for (const t of g.label.filter(t => t.b)) x.fillText(t.s, t.x, t.y);
-  x.font = `400 ${s}px Inter, sans-serif`; for (const t of g.label.filter(t => !t.b)) x.fillText(t.s, t.x, t.y);
+  x.font = ffFont(doc, l, 600); for (const t of g.label.filter(t => t.b)) x.fillText(t.s, t.x, t.y);
+  x.font = ffFont(doc, l, 400); for (const t of g.label.filter(t => !t.b)) x.fillText(t.s, t.x, t.y);
   if (l.ft === 'check') { const b = g.box; x.strokeRect(b.x, b.y, b.w, b.h);
     if (v) { x.beginPath(); x.moveTo(b.x + b.w * 0.2, b.y + b.h * 0.55); x.lineTo(b.x + b.w * 0.42, b.y + b.h * 0.78); x.lineTo(b.x + b.w * 0.82, b.y + b.h * 0.22); x.lineWidth *= 2; x.stroke(); }
     return; }
@@ -118,7 +119,7 @@ async function ffPdf(d, opt = {}) {
     const annots = [], page = resv();
     const rect = (l, b) => { const x = (l.x + b.x) * k, y = PH - (l.y + b.y + b.h) * k; return `[${x.toFixed(2)} ${y.toFixed(2)} ${(x + b.w * k).toFixed(2)} ${(y + b.h * k).toFixed(2)}]`; };
     if (!opt.flat) for (const l of d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === face)) {
-      const g = dzFieldGeom(l), fs = ((l.size || 46) * k * 0.9).toFixed(1), da = `/DA(/Helv ${fs} Tf 0 g)`, v = vals[l.id], base = `/Type/Annot/Subtype/Widget/F 4/P ${page} 0 R/T${ffStr(l.id)}/TU${ffStr(l.label || '')}`;
+      const g = dzFieldGeom(l, ffX, d), fs = ((l.size || 46) * k * 0.9).toFixed(1), da = `/DA(/Helv ${fs} Tf 0 g)`, v = vals[l.id], base = `/Type/Annot/Subtype/Widget/F 4/P ${page} 0 R/T${ffStr(l.id)}/TU${ffStr(l.label || '')}`;
       if (l.ft === 'text' || l.ft === 'date' || l.ft === 'area') { const n = add(`<<${base}/FT/Tx/Rect${rect(l, g.box)}${da}${l.ft === 'area' ? '/Ff 4096' : ''}${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
       else if (l.ft === 'combo') { const n = add(`<<${base}/FT/Ch/Ff 131072/Rect${rect(l, g.box)}${da}/Opt[${(l.opts || []).map(ffStr).join(' ')}]${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
       else if (l.ft === 'check') { const w = g.box.w * k, on = ap(w, w, tick(w, w)), off = ap(w, w, ''); const n = add(`<<${base}/FT/Btn/Rect${rect(l, g.box)}${da}/AP<</N<</Yes ${on} 0 R/Off ${off} 0 R>>>>/AS${v ? '/Yes/V/Yes' : '/Off/V/Off'}>>`); annots.push(n); fields.push(n); }
@@ -175,13 +176,13 @@ const FF = {
       <div id="ff-pages">${faces.map(f => `<div class="ff-page" data-face="${f}"><canvas></canvas><div class="ff-over"></div></div>`).join('')}</div>
       <div class="form-foot row" style="background:var(--bg)"><button type="button" class="btn" id="fs-cancel">Cancel</button><button type="button" class="btn" id="fs-print">Print</button><button type="button" class="btn" id="fs-pdf">PDF</button><button type="button" class="btn primary" style="flex:1" id="fs-save">Save to client</button></div>`;
     const K = () => $('#ff-pages').clientWidth / src.w;
-    const fontFit = () => { const k = K(); for (const n of el.querySelectorAll('[data-s]')) n.style.fontSize = n.dataset.s * k * 0.9 + 'px'; };
+    const fontFit = () => { const k = K(); for (const n of el.querySelectorAll('[data-s]')) { n.style.fontSize = n.dataset.s * k * 0.9 + 'px'; n.style.fontFamily = `"${n.dataset.ff}", Inter, sans-serif`; n.style.fontWeight = n.dataset.fb; n.style.fontStyle = n.dataset.fi; n.style.color = n.dataset.fc; } };
     const pct = (b, l) => `left:${(l.x + b.x) / src.w * 100}%;top:${(l.y + b.y) / src.h * 100}%;width:${b.w / src.w * 100}%;height:${b.h / src.h * 100}%`;
     const prefill = (c) => { for (const l of d.layers) if (l.t === 'field' && l.v && !typed.has(l.id)) vals[l.id] = fillPlaceholders(l.v, c).replace(/^_+$/, ''); };
     const paint = async () => { d = ffCopy(src, formCtx(client, booking)); prefill(formCtx(client, booking));
       for (const f of faces) { const host = el.querySelector(`.ff-page[data-face="${f}"]`), cv = await ffPage(d, f, { noVal: true }, Math.min(1, 1400 / d.w)), c = host.querySelector('canvas'); c.width = cv.width; c.height = cv.height; c.getContext('2d').drawImage(cv, 0, 0);
         const sigs = Object.fromEntries(Object.entries(pads).filter(([, p]) => !p.empty()).map(([i, p]) => [i, p.data()]));
-        host.querySelector('.ff-over').innerHTML = d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === f).map(l => { const g = dzFieldGeom(l), a = `data-id="${l.id}" data-s="${l.size || 46}" aria-label="${esc(l.label || FF_TYPES.find(t => t[0] === l.ft)?.[1])}"`, v = vals[l.id] ?? '';
+        host.querySelector('.ff-over').innerHTML = d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === f).map(l => { const g = dzFieldGeom(l, ffX, d), a = `data-id="${l.id}" data-s="${l.size || 46}" data-ff='${esc(l.font ? dzFont(d, l.font) : 'Inter')}' data-fb="${l.b ? 700 : 400}" data-fi="${l.it ? 'italic' : 'normal'}" data-fc="${esc(dzCol(d, l.c || '@fg') || '#111')}" aria-label="${esc(l.label || FF_TYPES.find(t => t[0] === l.ft)?.[1])}"`, v = vals[l.id] ?? '';
           if (l.ft === 'check') return `<input type="checkbox" class="ff-c" ${a} style="${pct(g.box, l)}" ${v ? 'checked' : ''}>`;
           if (l.ft === 'radio') return g.opts.map(o => `<input type="radio" class="ff-c" name="${l.id}" value="${esc(o.v)}" ${a} style="${pct({ x: o.x, y: o.y, w: o.d, h: o.d }, l)}" ${v === o.v ? 'checked' : ''}>`).join('');
           if (l.ft === 'combo') return `<select class="ff-i" ${a} style="${pct(g.box, l)}"><option value=""></option>${(l.opts || []).map(o => `<option ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
