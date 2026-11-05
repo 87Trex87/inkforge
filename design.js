@@ -1578,7 +1578,14 @@ DZ.edit = async (id) => {
   /* The strip under the top bar: quick tools and properties for what's selected, a different set per kind of layer. */
   let cpop = null;
   const drawCtx = () => { const b = $('#dz-ctx'); if (!b) return; const l = layer(), sl = b.scrollLeft, sep = '<i class="dz-csep"></i>';
-    if (!l || many() || toolOn() || cut || nodes || cropping || l.t === 'shortcut' || l.t === 'check') { cpop = null; b.innerHTML = `<span class="muted dz-chint">${many() ? 'Several items selected: their tools are in the panel.' : 'Select something to see its tools here.'}</span>`; return; }
+    if (many() && !toolOn() && !cut && !nodes && !cropping) { cpop = null; const L = picked(), n = L.length, dis = n ? '' : 'disabled', all = (f) => n && L.every(f);
+      b.innerHTML = dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${dis}`, 'none', 'Select none') + sep
+        + dzIB(`data-mact="dup" ${dis}`, 'copy', 'Duplicate') + dzIB(`data-mact="hide" ${dis}`, all(l => l.hide) ? 'eyeoff' : 'eye', all(l => l.hide) ? 'Show' : 'Hide') + dzIB(`data-mact="lock" ${dis}`, all(l => l.lock) ? 'lock' : 'unlock', all(l => l.lock) ? 'Unlock' : 'Lock', all(l => l.lock) ? 'on' : '') + dzIB(`data-mact="clip" ${dis}`, 'clip', 'Clip to the layer below: each only shows inside it', all(l => l.clip) ? 'on' : '') + sep
+        + AL.map(([a, tp, ic]) => `<button class="dz-ib" data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} data-tip="Align: ${tp}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${tp}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('') + sep
+        + [['add', 'Add: weld them into one outline'], ['subtract', 'Subtract: the bottom one, with the rest cut out of it'], ['intersect', 'Intersect: only where they all overlap'], ['xor', 'Exclude: everything except where they overlap'], ['divide', 'Divide: cut into every separate piece the overlaps make'], ['separate', 'Separate: split each into its separate pieces'], ['contour', 'Contour: grow or shrink the outline (O)']].map(([v, tp]) => `<button class="dz-ib" data-bool="${v}" ${!n || (n < 2 && !['separate', 'contour'].includes(v)) ? 'disabled' : ''} data-tip="${tp}" aria-label="${tp.split(':')[0]}">${DZ_BOOL_ICON[v]}</button>`).join('') + sep
+        + dzIB(`data-mact="merge" ${dis}`, 'merge', 'Merge into one picture (Undo brings the layers back)') + dzIB(`data-mact="del" ${dis}`, 'del', 'Delete', 'danger');
+      b.scrollLeft = sl; return; }
+    if (!l || many() || toolOn() || cut || nodes || cropping || l.t === 'shortcut' || l.t === 'check') { cpop = null; b.innerHTML = '<span class="muted dz-chint">Select something to see its tools here.</span>'; return; }
     const tog = (k, s, tip) => `<button class="dz-ib ${l[k] ? 'on' : ''}" data-tog="${k}" data-tip="${tip}" style="${s}">${tip[0]}</button>`;
     const col = (key, ic, tip, none) => { const c = l[key], paint = (key === 'c' || key === 'fill') && l.fm === 'grad' && l.grad ? dzGradCss(doc, l.grad) : (c && c !== 'none' ? dzCol(doc, c) : key === 'c' ? dzCol(doc, '@fg') : 'transparent');
       return `<button class="dz-cbtn ${cpop === key ? 'on' : ''}" data-cpop="${key}" data-none="${none ? 1 : ''}" data-tip="${tip}" aria-label="${tip}"><small>${ic}</small><i style="background:${paint}"></i></button>`; };
@@ -1667,20 +1674,7 @@ DZ.edit = async (id) => {
     const dis = n ? '' : 'disabled';
     side.innerHTML = `<div class="dz-lh"><b>${n ? `${n} selected` : 'Select items'} ${help(picking ? 'Tap items on the design or in Layers to add or remove them. Drag a selected item to move them all.'
         : 'Ctrl-click adds or removes; Shift-click in Layers picks a range. Shift-drag on an empty spot draws a box: left to right picks what\u2019s wholly inside, right to left anything it touches. On a touchscreen, hold an item, or hold an empty spot then drag for the box.')}</b><button class="btn small" data-mact="done">Done</button></div>
-      <div class="dz-tb">${dzIB('data-mact="all"', 'all', 'Select all')}${dzIB(`data-mact="none" ${dis}`, 'none', 'Select none')}<i class="sep"></i>
-        ${dzIB(`data-mact="dup" ${dis}`, 'copy', 'Duplicate')}${dzIB(`data-mact="hide" ${dis}`, all(l => l.hide) ? 'eyeoff' : 'eye', all(l => l.hide) ? 'Show' : 'Hide')}
-        ${dzIB(`data-mact="lock" ${dis}`, all(l => l.lock) ? 'lock' : 'unlock', all(l => l.lock) ? 'Unlock' : 'Lock', all(l => l.lock) ? 'on' : '')}
-        ${dzIB(`data-mact="clip" ${dis}`, 'clip', 'Clip to the layer below: each only shows inside it', all(l => l.clip) ? 'on' : '')}
-        ${dzIB(`data-mact="del" ${dis}`, 'del', 'Delete', 'danger')}</div>
-      ${fsec('Align', `<div class="dz-align">${AL.map(([a, t, ic]) => `<button data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} title="${t}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${t}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('')}</div>
-`)}
-      ${fsec('Shape builder', `<div class="dz-bool">${[['add', 'Add', 'Weld them into one outline'], ['subtract', 'Subtract', 'The bottom one, with the rest cut out of it'],
-          ['intersect', 'Intersect', 'Only where they all overlap'], ['xor', 'Exclude', 'Everything except where they overlap'], ['divide', 'Divide', 'Cut into every separate piece the overlaps make'],
-          ['separate', 'Separate', 'Split each into its separate pieces'], ['contour', 'Contour', 'Grow or shrink the outline (O)']].map(([b, nm, tip]) =>
-          `<button data-bool="${b}" ${!n || (n < 2 && !['separate', 'contour'].includes(b)) ? 'disabled' : ''} title="${tip}">${DZ_BOOL_ICON[b]}<span>${nm}</span></button>`).join('')}</div>
-`)}
-      ${fsec('Combine and save', `<div class="dz-tb">${dzIB(`data-mact="merge" ${dis}`, 'merge', 'Merge into one picture (Undo brings the layers back)')}
-        ${dzIB(`data-mact="refs" ${dis}`, 'refs', 'Save to references')}${dzIB(`data-mact="png" ${dis}`, 'png', 'Save as PNG')}
+      ${fsec('Saving', `<div class="dz-tb">${dzIB(`data-mact="refs" ${dis}`, 'refs', 'Save to references')}${dzIB(`data-mact="png" ${dis}`, 'png', 'Save as PNG')}
         ${n && vecOnly(L.map(l => l.id)) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}${dzIB(`data-mact="stencil" ${dis}`, 'stencil', 'Make a stencil')}</div>`)}`;
   };
   const drawEdit = () => {
