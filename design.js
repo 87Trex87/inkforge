@@ -82,7 +82,7 @@ function dzFold(type, sheet) {
     fold: { type, out: r(out), inn: r(inn), lo, li } };
 }
 // Keep proportions: pictures and the logo by default, shapes not; text sizes with its letters.
-const dzKeep = (l) => l.t === 'text' || (l.keep ?? (l.t !== 'shape' || l.shape === 'path'));
+const dzKeep = (l) => l.frame ? !!l.keep : l.t === 'text' || (l.keep ?? (l.t !== 'shape' || l.shape === 'path'));
 
 /* ---------- Fonts ---------- */
 const DZF = {
@@ -143,6 +143,22 @@ function dzWrap(x, text, maxW) {
     out.push(line.trimEnd());
   }
   return out;
+}
+/* Frame text: lines laid out inside a fixed box. Paragraphs wrap separately, with their own spacing; lines that don't
+   fit the box are held back (over = true) until the frame is made bigger or the letters smaller. */
+function dzFrameLay(x, doc, l, txt) {
+  const pad = l.pad || 0, iw = Math.max(10, l.w - pad * 2), ih = Math.max(1, (l.h || 1) - pad * 2);
+  let px = l.size, rows, used;
+  for (;;) {
+    x.font = dzFontStr(doc, l, px); const lh = px * (l.lh || 1.2), gap = (l.ps || 0) * (px / l.size);
+    rows = []; used = 0;
+    txt.split('\n').forEach((para, p, all) => { const L = dzWrap(x, para, iw);
+      L.forEach((s, i) => { rows.push({ s, y: used, end: i === L.length - 1 }); used += lh; });
+      if (p < all.length - 1) used += gap; });
+    if (!l.fit || used <= ih || px <= 8) break; px *= 0.94;
+  }
+  const lh = px * (l.lh || 1.2), shown = rows.filter((r, i) => !i || r.y + lh <= ih + 0.5), h = shown.length ? shown.at(-1).y + lh : lh;
+  return { px, lh, rows: shown, iw, over: shown.length < rows.length, top: -l.h / 2 + pad + (l.va === 'middle' ? (ih - h) / 2 : l.va === 'bottom' ? ih - h : 0) };
 }
 function dzStar(x, cx, cy, r) {
   x.beginPath();
@@ -306,6 +322,7 @@ const DZ_UI = {
   eyeoff: '<path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   all: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2.5"/><path d="M8 12l3 3 5-6"/>', none: '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2.5"/><path d="M9 9l6 6M15 9l-6 6"/>',
   merge: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M12 14v7M9 18l3 3 3-3"/>', png: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>',
+  frametext: '<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 2"/><path d="M8 9h8M8 12h8M8 15h5"/>', ajust: '<path d="M4 6h16M4 10h16M4 14h16M4 18h9"/>', vtop: '<path d="M4 4h16M12 20V9M8 12l4-4 4 4"/>', vmid: '<path d="M4 12h16M12 3v5M12 21v-5M9 6l3 2 3-2M9 18l3-2 3 2"/>', vbot: '<path d="M4 20h16M12 4v11M8 12l4 4 4-4"/>',
   aleft: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>', acenter: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>', aright: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>',
   s_rect: '<rect x="4" y="4" width="16" height="16"/>', s_round: '<rect x="4" y="4" width="16" height="16" rx="5"/>', s_ellipse: '<circle cx="12" cy="12" r="8.5"/>',
   s_tri: '<path d="M12 4l9 16H3z"/>', s_poly: '<path d="M12 3l8 5v8l-8 5-8-5V8z"/>', s_star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
@@ -586,7 +603,8 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
       // "Shrink to fit": a long name or amount gets smaller instead of wrapping onto a second line.
       const txt = dzFill(doc, l.text), want = l.fit ? txt.split('\n').length : Infinity;
       let px = l.size;
-      if (l.arc) {
+      if (l.frame) { l.h = Math.max(10, l.h || 10); const F = dzFrameLay(x, doc, l, txt); l._fr = F; l._over = F.over; l._arc = null; l._px = F.px; lines = F.rows; }
+      else if (l.arc) {
         // Bent text: one line laid along a circle. The bend is the angle the text covers (up to a full circle).
         const one = txt.replace(/\s*\n\s*/g, ' '), chars = [...one], a = Math.min(360, Math.abs(l.arc)) * Math.PI / 180;
         let ws, wt, R;
@@ -628,6 +646,14 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
           else { x.translate(R * Math.sin(phi), cy + R * Math.cos(phi)); x.rotate(-phi); }
           x.fillText(ch, 0, 0); x.restore();
         });
+      } else if (l.frame) {
+        const F = l._fr, al = l.al || 'left', pad = l.pad || 0, ax = al === 'center' ? 0 : al === 'right' ? l.w / 2 - pad : -l.w / 2 + pad;
+        x.textAlign = al === 'justify' ? 'left' : al;
+        for (const r of F.rows) { const y = F.top + r.y + px * 0.9, W = r.s.split(/\s+/);
+          if (al === 'justify' && !r.end && W.length > 1) {   // the last line of a paragraph stays as it is
+            const room = F.iw - W.reduce((s, w) => s + x.measureText(w).width, 0), g = room / (W.length - 1); let at = ax;
+            for (const w of W) { x.fillText(w, at, y); at += x.measureText(w).width + g; }
+          } else x.fillText(r.s, ax, y); }
       } else {
         x.textAlign = l.al || 'left';
         const ax = l.al === 'center' ? 0 : l.al === 'right' ? l.w / 2 : -l.w / 2;
@@ -1353,7 +1379,7 @@ DZ.edit = async (id) => {
     selBox.hidden = !l || !!cut || !!nodes || !!cont;
     if (!l) return;
     Object.assign(selBox.style, { left: l.x * k + 'px', top: l.y * k + 'px', width: l.w * k + 'px', height: (l.h || 1) * k + 'px', transform: `rotate(${l.rot || 0}deg)` });
-    selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('cropping', cropping);
+    selBox.classList.toggle('locked', !!l.lock); selBox.classList.toggle('textsel', l.t === 'text'); selBox.classList.toggle('framesel', !!l.frame); selBox.classList.toggle('over', !!(l.frame && l._over)); const ovn = side?.querySelector('.dz-over-note'); if (ovn) ovn.hidden = !l._over; selBox.classList.toggle('cropping', cropping);
     for (const [kk, v] of [['w', l.w], ['h', l.h || 0]]) { const i = side?.querySelector(`[data-dim="${kk}"]`); if (i && document.activeElement !== i) i.value = dzToU(doc, v); }
   };
 
@@ -1528,7 +1554,7 @@ DZ.edit = async (id) => {
     const p = pop(); if (!p) return;
     if (!p.hidden && btn?.classList.contains('open')) return closePop();
     closePop();
-    p.innerHTML = a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="heading"', 'heading', 'Heading')
+    p.innerHTML = a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="frame"', 'frametext', 'Frame text') + mi('data-add="heading"', 'heading', 'Heading')
         + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
       : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-add="logo"', 'logo', 'Studio logo')
       : `<div class="sg">${DZ_SHAPES.map(([v, n]) => dzIB(`data-shape="${v}"`, 's_' + v, n)).join('')}</div>` + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
@@ -1637,17 +1663,21 @@ DZ.edit = async (id) => {
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
         <button class="btn small" data-act="flatten">Flatten group</button></div>` : ''}
       ${l.t === 'text' ? `
-        <textarea class="in dz-text" data-k="text" rows="2">${esc(l.text)}</textarea>
+        <div class="seg" style="margin-bottom:8px"><button data-tframe="0" class="${l.frame ? '' : 'on'}" style="flex:1" data-tip="The box follows the text: dragging a corner scales the letters">Normal text</button><button data-tframe="1" class="${l.frame ? 'on' : ''}" style="flex:1" data-tip="A box you size yourself: the text wraps inside it, for paragraphs">Frame text</button></div>
+        ${l.frame ? `<p class="dz-over-note" ${l._over ? '' : 'hidden'}>Some text doesn't fit. Make the frame bigger or the letters smaller.</p>` : ''}
+        <textarea class="in dz-text" data-k="text" rows="${l.frame ? 7 : 2}">${esc(l.text)}</textarea>
         <select class="in" data-k="font" style="width:100%;margin-bottom:6px" aria-label="Font">${fontOpts(l.font)}</select>
         <div class="row" style="gap:6px;flex-wrap:nowrap;margin-bottom:8px">
-          <span class="dz-tb dz-tbi">${[['left', 'aleft'], ['center', 'acenter'], ['right', 'aright']].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')}</span>
+          <span class="dz-tb dz-tbi">${[['left', 'aleft'], ['center', 'acenter'], ['right', 'aright'], ...(l.frame ? [['justify', 'ajust']] : [])].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')}</span>
           <span class="dz-tb dz-tbi"><button class="dz-ib ${l.b ? 'on' : ''}" data-tog="b" data-tip="Bold" style="font-weight:800">B</button><button class="dz-ib ${l.it ? 'on' : ''}" data-tog="it" data-tip="Italic" style="font-style:italic">I</button></span></div>
+        ${l.frame ? `<div class="row" style="gap:6px;margin-bottom:8px"><span class="dz-tb dz-tbi">${[['top', 'vtop', 'Top of the frame'], ['middle', 'vmid', 'Middle of the frame'], ['bottom', 'vbot', 'Bottom of the frame']].map(([a, ic, n]) => dzIB(`data-va="${a}"`, ic, n, (l.va || 'top') === a ? 'on' : '')).join('')}</span></div>` : ''}
         ${slider('size', 'Size', 8, Math.round(doc.h * 0.4), 1, Math.round(l.size))}
         <div class="lbl">Colour</div>${fillUI(l, 'c')}${l.arc && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Bent text shows the plain colour.</p>' : ''}
-        ${slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
+        ${l.frame ? slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2) + slider('ps', 'Paragraph spacing', 0, Math.round(l.size * 3), 1, l.ps || 0) + slider('pad', 'Margin inside the frame', 0, Math.round(Math.min(l.w, l.h) / 3), 1, l.pad || 0)
+          : slider('arc', 'Bend', -360, 360, 5, l.arc || 0, v => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.abs(v) + '°')}
         ${l.arc ? '<p class="muted" style="font-size:11px;margin:-4px 0 8px">Bent text runs on one line. <button class="link" data-act="unbend">Straighten</button></p>' : ''}
         ${fsec('Text options', `<label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Long text gets smaller to stay on its lines instead of wrapping, e.g. a studio name or amount"><input type="checkbox" data-fit ${l.fit ? 'checked' : ''}><span>Shrink to fit</span></label>
-          ${slider('ls', 'Letter spacing', -5, 40, 1, l.ls || 0) + slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2)}
+          ${slider('ls', 'Letter spacing', -5, 40, 1, l.ls || 0) + (l.frame ? '' : slider('lh', 'Line height', 0.8, 2.5, 0.05, l.lh || 1.2))}
           <div class="lbl">Insert studio info</div><div class="dz-fields">${DZ_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true })}`
       : l.t === 'shape' ? `
         <div class="lbl">${l.shape === 'line' ? 'Colour' : 'Fill'}</div>${fillUI(l, 'fill', true)}
@@ -1668,10 +1698,10 @@ DZ.edit = async (id) => {
       ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}
       ${fsec('Size and position', `<div class="dz-dims">
         <label><span>W</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="w" value="${dzToU(doc, l.w)}"></label>
-        <button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
+        <button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' && !l.frame ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
           <svg viewBox="0 0 24 24">${dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
             : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>
-        <label><span>H</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="h" value="${dzToU(doc, l.h || 0)}" ${l.t === 'text' ? 'disabled title="Text height follows the text; use Size for the letters"' : ''}></label>
+        <label><span>H</span><input class="in" type="number" inputmode="decimal" min="0" step="any" data-dim="h" value="${dzToU(doc, l.h || 0)}" ${l.t === 'text' && !l.frame ? 'disabled title="Text height follows the text; use Size for the letters"' : ''}></label>
         <select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select>
       </div>
       ${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}`, { fold: true })}
@@ -2911,15 +2941,15 @@ DZ.edit = async (id) => {
       let w = Math.max(20, o.w + sx * lx), hgt = Math.max(10, (o.h || 1) + sy * ly);
       if (sy) {   // corners keep the proportions; text scales its font with it
         const s = Math.max(w / o.w, hgt / (o.h || 1)); w = o.w * s; hgt = (o.h || 1) * s;
-        if (o.t === 'text') l.size = Math.max(6, o.size * s);
-        if (o.t !== 'text' && o.shape !== 'line' && dzKeep(o) === e.shiftKey) { w = Math.max(20, o.w + sx * lx); hgt = Math.max(10, (o.h || 1) + sy * ly); }
+        if (o.t === 'text' && !o.frame) l.size = Math.max(6, o.size * s);
+        if ((o.t !== 'text' || o.frame) && o.shape !== 'line' && dzKeep(o) === e.shiftKey) { w = Math.max(20, o.w + sx * lx); hgt = Math.max(10, (o.h || 1) + sy * ly); }
       } else hgt = o.h || 1;
       // Keep the opposite edge where it was.
       const ocx = o.x + o.w / 2, ocy = o.y + (o.h || 0) / 2;
       const ax = -sx * o.w / 2, ay = -sy * (o.h || 0) / 2, wx = ocx + ax * cos - ay * sin, wy = ocy + ax * sin + ay * cos;
       const nax = -sx * w / 2, nay = -sy * hgt / 2, ncx = wx - (nax * cos - nay * sin), ncy = wy - (nax * sin + nay * cos);
-      l.w = w; if (o.t !== 'text') l.h = hgt;
-      l.x = ncx - w / 2; l.y = ncy - (o.t === 'text' ? (o.h || 0) * (w / o.w) : hgt) / 2;
+      l.w = w; if (o.t !== 'text' || o.frame) l.h = hgt;
+      l.x = ncx - w / 2; l.y = ncy - (o.t === 'text' && !o.frame ? (o.h || 0) * (w / o.w) : hgt) / 2;
     }
     redraw();
   });
@@ -3014,6 +3044,7 @@ DZ.edit = async (id) => {
     if (d('add')) {
       const a = d('add');
       if (a === 'text') return add({ t: 'text', text: 'Your text', size: Math.round(doc.h * 0.05), font: '@2', c: '@fg', al: 'center', lh: 1.2, ...center(doc.w * 0.6, doc.h * 0.06) });
+      if (a === 'frame') { const s = Math.round(Math.min(doc.w, doc.h) * 0.035); return add({ t: 'text', frame: true, text: 'Frame text keeps its box: the words wrap to fit it, and resizing the box never changes the letters.\nPress Enter for a new paragraph.', size: s, font: '@2', c: '@fg', al: 'left', lh: 1.3, ps: Math.round(s * 0.6), pad: 0, ...center(doc.w * 0.7, Math.min(doc.h * 0.5, s * 12)) }); }
       if (a === 'heading') return add({ t: 'text', text: 'Heading', size: Math.round(doc.h * 0.1), font: '@1', c: '@fg', al: 'center', lh: 1.1, ...center(doc.w * 0.7, doc.h * 0.11) });
       if (a === 'logo') { if (!Settings.get('studio_logo_ref')) toast('Add your logo in Settings › Profile; it shows here once added.', 5000); const s = Math.min(doc.w, doc.h) * 0.3; return add({ t: 'image', logo: true, ...center(s, s) }); }
       if (a === 'pen') return startPen();
@@ -3087,6 +3118,8 @@ DZ.edit = async (id) => {
       changed(true); return drawSide();
     }
     if (d('al')) { l.al = d('al'); changed(true); return drawSide(); }
+    if (d('va')) { l.va = d('va'); changed(true); return drawSide(); }
+    if (d('tframe') && l?.t === 'text') { const on = d('tframe') === '1'; if (on === !!l.frame) return; l.frame = on; if (on) { l.arc = 0; l.h = Math.max(l.h || 0, l.size * 3); if (l.ps == null) l.ps = Math.round(l.size * 0.6); } else if (l.al === 'justify') l.al = 'left'; await redraw(); changed(true); return drawSide(); }
     if (d('ctool')) { copt.tool = d('ctool'); saveCopt(); return drawSide(); }
     if (d('cmode')) { copt.mode = d('cmode'); saveCopt(); return drawSide(); }
     if (d('pen')) { await Settings.set('dz_pen', d('pen')); return drawSide(); }
@@ -3185,9 +3218,9 @@ DZ.edit = async (id) => {
     const t = e.target, l = layer(), key = t.dataset.k;
     if (t.dataset.dim && l) {
       const v = dzFromU(doc, +t.value); if (!(v > 0)) return;
-      const cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, r = l.w / (l.h || 1), keep = dzKeep(l) && l.t !== 'text';
+      const cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, r = l.w / (l.h || 1), keep = dzKeep(l) && (l.t !== 'text' || l.frame);
       if (t.dataset.dim === 'w') { l.w = v; if (keep) l.h = v / r; } else { l.h = v; if (keep) l.w = v * r; }
-      l.x = cx - l.w / 2; if (l.t !== 'text') l.y = cy - l.h / 2;
+      l.x = cx - l.w / 2; if (l.t !== 'text' || l.frame) l.y = cy - l.h / 2;
       const other = side.querySelector(`[data-dim="${t.dataset.dim === 'w' ? 'h' : 'w'}"]`);
       if (other && keep) other.value = dzToU(doc, t.dataset.dim === 'w' ? l.h : l.w);
       return changed();
