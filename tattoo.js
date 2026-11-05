@@ -770,25 +770,31 @@ TT.open = async (el, id) => {
      rolling it moves the deepest point along the row until it reaches the end: half of it lies flat and the rest lifts
      away, a 13CM working like a 7M. magReach gives how deep one needle goes, 0 if it misses the skin. */
   let rollNow = 0; st.magRoll = meta.magRoll ?? 0;
+  /* Needle look, for every piece: thickness scales each needle's mark (and how tight a round liner's needles sit); needle
+     texture is how much a magnum's separate marks show, the rest of the ink going down as a soft haze. 100 and 100 are
+     how the simulator used to draw. */
+  const nlook = { thin: +Settings.get('tt_thin', '65') / 100, tex: +Settings.get('tt_tex', '45') / 100 };
   const magReach = (nd, depth, roll) => { const tau = Math.abs(roll); if (tau < 0.01) return depth * nd.e; const s = Math.sign(roll), q = (1 - s * nd.t) / 2;
     if (nk !== 'soft') return Math.max(0, depth - tau * 1.5 * q);
     const te = Math.min(1, Math.abs(nd.t - s * tau)); return Math.max(0, depth * (0.22 + 0.78 * Math.pow(Math.cos(te * Math.PI / 2), 1.5)) - tau * 0.25 * q); };
   // The set tilt plus the way the pen is leaning along the row (leaning towards an end puts that end down).
   const setRoll = (ev, a) => { let lean = 0; if (isMag() && ev && st.magTilt) { const tx = ev.tiltX || 0, ty = ev.tiltY || 0, h = Math.hypot(tx, ty); if (h > 1) lean = tiltOf(ev) * (tx * -Math.sin(a) + ty * Math.cos(a)) / h; }
     rollNow = isMag() ? Math.max(-1, Math.min(1, (st.magRoll || 0) + lean)) : 0; };
+  const wideTex = () => isMag() ? nlook.tex : 1;
   const puncture = (cx, p, a, depth, tilt0, inkC, erase, sc = mm) => {
     const mag = isMag() && !erase, tilt = mag ? 0 : tilt0, hang = (feel.hang ?? 40) / 100, loose = 1 - st.stretch / 100;
-    const ca = Math.cos(a), sa = Math.sin(a), sp = 1 + tilt * feel.tiltSpread / 100 * 0.8 * (0.5 + hang);
-    const wide = lay.length > 4 && nk !== 'liner', rr = feel.size / 2 * sc * (wide ? 0.62 + depth * 0.45 : 0.45 + depth * 0.35) * sp, flow = feel.flow / 100 * cal.flow, bleed = feel.bleed / 100 * (1 + loose * 0.8);
+    const thin = nlook.thin, posK = nk === 'liner' || nk === 'shader' ? thin : 1, tex = wideTex(), ca = Math.cos(a), sa = Math.sin(a), sp = 1 + tilt * feel.tiltSpread / 100 * 0.8 * (0.5 + hang);
+    const wide = lay.length > 4 && nk !== 'liner', rr = feel.size / 2 * sc * (wide ? 0.62 + depth * 0.45 : 0.45 + depth * 0.35) * sp * thin, flow = feel.flow / 100 * cal.flow, bleed = feel.bleed / 100 * (1 + loose * 0.8);
     const hit = (1 - (feel.miss / 100) * (1 - depth)) * (1 - loose * 0.15), wob = loose * 0.12, wu = (Math.random() - 0.5) * wob, wv = (Math.random() - 0.5) * wob;
     for (const nd of lay) {
       const reach = mag ? magReach(nd, depth, rollNow) : depth * nd.e, ratio = depth > 0 ? reach / depth : 0; if (mag && reach <= 0.004) continue;   // up out of the skin
       if (Math.random() > hit || (ratio < 1 && Math.random() > 0.55 + ratio * 0.45)) continue;   // shallow edge needles skip more
-      const j = 0.04 + hang * 0.06, u = (nd.u + wu + (Math.random() - 0.5) * j) * sc * sp, v = (nd.v + wv + (Math.random() - 0.5) * j) * sc;
+      const j = 0.04 + hang * 0.06, u = (nd.u * posK + wu + (Math.random() - 0.5) * j) * sc * sp, v = (nd.v * posK + wv + (Math.random() - 0.5) * j) * sc;
       const dd = Math.max(0.02, reach * (1 + (Math.random() - 0.5) * hang * 0.5));
-      const px = p.x + u * -sa + v * ca, py = p.y + u * ca + v * sa, al = Math.min(1, (0.18 * ratio + dd * 0.6) * flow * inkC), r1 = mag ? rr * (0.55 + 0.45 * Math.min(1, ratio)) : rr;
+      const px = p.x + u * -sa + v * ca, py = p.y + u * ca + v * sa, al = Math.min(1, (0.18 * ratio + dd * 0.6) * flow * inkC * (1 + (1 - thin) * 0.5)), r1 = mag ? rr * (0.55 + 0.45 * Math.min(1, ratio)) : rr;
       if (al <= 0.004) continue;
-      put(cx, px, py, r1, al, erase);
+      if (tex < 1 && !erase) { put(cx, px, py, r1 * 2.6, al * (1 - tex) * 0.3, false); put(cx, px, py, r1, al * (0.25 + 0.75 * tex), false); }
+      else put(cx, px, py, r1, al, erase);
       if (bleed && !erase) put(cx, px, py, r1 * 1.6, al * bleed * 0.25, false);
     }
     cx.globalAlpha = 1;
@@ -1619,8 +1625,8 @@ TT.open = async (el, id) => {
       cux.moveTo(curAt.x + u0 * -sa, curAt.y + u0 * ca); cux.lineTo(curAt.x + u1 * -sa, curAt.y + u1 * ca); cux.stroke(); cux.lineWidth = 1;
     }
     const mg = isMag(), curRoll = pen ? rollNow : (st.magRoll || 0), curD = st.lastD ?? 0.5; let hits = 0;
-    for (const nd of lay) { const px = curAt.x + nd.u * s * -sa + nd.v * s * ca, py = curAt.y + nd.u * s * ca + nd.v * s * sa, rc = mg ? magReach(nd, curD, curRoll) / curD : 1; if (rc > 0.004) hits++;
-      cux.beginPath(); cux.arc(px, py, rr, 0, 7); cux.fillStyle = mg ? `rgba(255,255,255,${0.05 + 0.55 * Math.min(1, rc)})` : 'rgba(255,255,255,.35)'; cux.fill(); cux.strokeStyle = rc > 0.004 ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.2)'; cux.stroke(); }
+    for (const nd of lay) { const pk = mg ? 1 : nlook.thin, px = curAt.x + nd.u * pk * s * -sa + nd.v * pk * s * ca, py = curAt.y + nd.u * pk * s * ca + nd.v * pk * s * sa, rc = mg ? magReach(nd, curD, curRoll) / curD : 1; if (rc > 0.004) hits++;
+      cux.beginPath(); cux.arc(px, py, Math.max(0.8, rr * nlook.thin), 0, 7); cux.fillStyle = mg ? `rgba(255,255,255,${0.05 + 0.55 * Math.min(1, rc)})` : 'rgba(255,255,255,.35)'; cux.fill(); cux.strokeStyle = rc > 0.004 ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.2)'; cux.stroke(); }
     if (mg && Math.abs(curRoll) > 0.01) { const tx = curAt.x - 30, ty = curAt.y + Math.max(rr + 26, 26), tt = `${hits} of ${lay.length}`; cux.font = '600 11px Inter, sans-serif'; const tw = cux.measureText(tt).width + 10; cux.fillStyle = 'rgba(15,18,19,.85)'; cux.fillRect(tx, ty - 12, tw, 16); cux.fillStyle = '#fff'; cux.fillText(tt, tx + 5, ty); }
     // What's loaded: a drop of the needle's ink beside the cursor (paler when diluted), hidden while tattooing.
     if (!pen && st.ink.v > 0.01) { const dx = curAt.x + Math.max(14, rr + 10), dy = curAt.y - Math.max(14, rr + 10);
@@ -1687,6 +1693,7 @@ TT.open = async (el, id) => {
       if (e.key === 'Escape') { if (lsel) selCancel(); else if (snapE) snapFinish(); }
       if ((e.key === 'Delete' || e.key === 'Backspace') && lsel) { e.preventDefault(); selCommit(true); } } };
   addEventListener('keydown', keys); addEventListener('keyup', keys);
+  document.addEventListener('input', (e) => { const n = e.target; if (n.matches?.('[data-nthin]')) { nlook.thin = +n.value / 100; Settings.set('tt_thin', n.value); const b = $('#tt-thinv'); if (b) b.textContent = n.value + '%'; drawCur(); } if (n.matches?.('[data-ntex]')) { nlook.tex = +n.value / 100; Settings.set('tt_tex', n.value); const b = $('#tt-texv'); if (b) b.textContent = n.value + '%'; } });
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; st.rot = 0; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
 
@@ -1880,6 +1887,10 @@ TT.open = async (el, id) => {
       ${slider('hang', 'Needle hang', 0, 100, 1, f.hang ?? 40, v => v + '%')}
       <div class="lbl">Skin</div>
       <label class="dz-sl"><span>Skin stretch<b>${st.stretch}%</b></span><input type="range" min="0" max="100" step="1" value="${st.stretch}" data-stretch></label>
+      ${fsec('Needle look (all needles, all pieces)', `<label class="dz-sl"><span>Needle thickness<b id="tt-thinv">${Math.round(nlook.thin * 100)}%</b></span><input type="range" min="40" max="100" step="5" value="${Math.round(nlook.thin * 100)}" data-nthin></label>
+        <label class="dz-sl"><span>Magnum needle texture<b id="tt-texv">${Math.round(nlook.tex * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.tex * 100)}" data-ntex></label>
+        <p class="muted" style="font-size:11px;margin:2px 0 6px">Both at 100% is how it looked before. Takes effect on your next stroke; what's already tattooed stays.</p>
+        <button class="btn small" data-nold style="margin-bottom:6px">Back to before (100%)</button> <button class="btn small" data-nnew style="margin-bottom:6px">New look (65% / 45%)</button>`, { fold: true, open: true })}
       <div class="lbl">Needle size</div><div class="seg" style="margin-bottom:8px">${[[0.25, '#08'], [0.3, '#10'], [0.35, '#12']].map(([v, n]) => `<button data-sz="${v}" class="${f.size === v ? 'on' : ''}" style="flex:1">${n} · ${v} mm</button>`).join('')}</div>
       <label class="toggle" style="display:inline-flex"><input type="checkbox" data-penonly ${TT.cal().penOnly ? 'checked' : ''}><span>Pen only (fingers move the page)</span></label>
       <div class="row" style="margin-top:8px"><button class="btn small" data-feelreset>Reset ${nd.id}</button></div>`;
@@ -1903,6 +1914,7 @@ TT.open = async (el, id) => {
       if (t.matches('input')) return;
       st.layer = ly; st.dirty = true; return drawSide();
     }
+    if (t.closest('[data-nold], [data-nnew]')) { const old = t.closest('[data-nold]'); nlook.thin = old ? 1 : 0.65; nlook.tex = old ? 1 : 0.45; Settings.set('tt_thin', String(Math.round(nlook.thin * 100))); Settings.set('tt_tex', String(Math.round(nlook.tex * 100))); drawCur(); return drawSide(); }
     if (t.closest('[data-sz]')) { feel.size = +t.closest('[data-sz]').dataset.sz; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawCur(); drawSz(); return drawSide(); }
     if (t.closest('[data-feelreset]')) { TT.setFeel(st.needle, null); setNeedle(st.needle); return drawSide(); }
     if (t.closest('[data-padclear]')) return padInit();
