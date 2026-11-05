@@ -1599,7 +1599,7 @@ DZ.edit = async (id) => {
   /* The box above Shift / Alt / Ctrl: where the selection is and how big, always on show and typed into directly.
      Several items: their outer box, which moves them together. Nodes: the box round the picked nodes, and the
      distance from one to the next in the order they were picked. */
-  let xfKey = '';
+  let xfKey = '', xfRefocus = false;
   const xfNow = () => {
     if (nodes) { const L = nodeLayer(); if (!L || !nodes.sel.length) return null; const P = nodes.sel.map(([s2, i]) => { const n = L.subs[s2]?.nodes[i]; return n ? n2p(L, n.x, n.y) : null; }).filter(Boolean); if (!P.length) return null;
       const X = P.map(q => q.x), Y = P.map(q => q.y), x = Math.min(...X), y = Math.min(...Y); let d = 0; for (let i = 1; i < P.length; i++) d += Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y);
@@ -1611,10 +1611,13 @@ DZ.edit = async (id) => {
   const drawXf = () => { const b = $('#dz-xf'); if (!b) return; const v = xfNow(); b.hidden = !v; if (!v) { xfKey = ''; return; }
     const l = v.l, key = [v.mode, dzUnit(doc), l?.id, l && dzKeep(l), v.noH, v.lock, v.d != null].join('|');
     const f = (k, n, off, tip) => `<label data-tip="${tip}"><span>${n}</span><input class="in" type="text" inputmode="text" data-calc data-xf="${k}" ${off ? 'disabled' : ''} aria-label="${tip}"></label>`;
+    // A rebuild (the link toggled while typing) keeps the box in use: its focus, what's typed and the cursor.
+    const fa = b.contains(document.activeElement) && document.activeElement.dataset.xf ? document.activeElement : null, fk = fa && { k: fa.dataset.xf, v: fa.value, s: fa.selectionStart, e: fa.selectionEnd };
     if (key !== xfKey) { xfKey = key; b.innerHTML = f('x', 'X', v.lock, 'Across from the left of the page') + f('y', 'Y', v.lock, 'Down from the top of the page') + f('w', 'W', v.noSize || v.lock, 'Width') + f('h', 'H', v.noSize || v.noH || v.lock, 'Height')
       + `<div class="dz-xfr">${l ? `<button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' && !l.frame ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
           <svg viewBox="0 0 24 24">${dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
-            : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>` : ''}${v.d != null ? '<span class="dz-xfd" data-tip="Distance from node to node, in the order you picked them"><b>D</b> <i></i></span>' : ''}<select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>`; }
+            : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>` : ''}${v.d != null ? '<span class="dz-xfd" data-tip="Distance from node to node, in the order you picked them"><b>D</b> <i></i></span>' : ''}<select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>`;
+      if (fk) { const n = b.querySelector(`[data-xf="${fk.k}"]`); if (n && !n.disabled) { n.value = fk.v; n.dataset.was = fa.dataset.was ?? ''; xfRefocus = true; n.focus({ preventScroll: true }); xfRefocus = false; n.setSelectionRange(fk.s, fk.e); } } }
     for (const kk of ['x', 'y', 'w', 'h']) { const i = b.querySelector(`[data-xf="${kk}"]`); if (i && document.activeElement !== i) i.value = dzToU(doc, v[kk]); }
     const dd = b.querySelector('.dz-xfd i'); if (dd) dd.textContent = dzToU(doc, v.d) + ' ' + dzUnit(doc); };
   const xfSet = (k, val) => { const v = xfNow(); if (!v) return; const dx = k === 'x' ? val - v.x : 0, dy = k === 'y' ? val - v.y : 0;
@@ -3331,7 +3334,14 @@ DZ.edit = async (id) => {
     if (t2.hasAttribute('data-sng')) { const v = dzFromU(doc, +t2.value); snapO.gap = v > 0 ? v : 0; snapSave(); } });
   stage.addEventListener('pointerdown', () => { if (snapPop) { snapPop = false; drawSnap(); } }, true);
   const xfB = $('#dz-xf');
-  xfB.addEventListener('click', (e) => { if (e.target.closest('[data-act], [data-unit]')) sideClick(e); });
+  // The link can be toggled in the middle of typing a width or height: the box keeps focus, and the value typed so far
+  // is applied again from the size it started at, under the new setting.
+  let xfStart = null;
+  xfB.addEventListener('focusin', (e) => { const l = layer(); if (e.target.dataset.xf && l && !xfRefocus) xfStart = { id: l.id, w: l.w, h: l.h }; });
+  xfB.addEventListener('pointerdown', (e) => { if (e.target.closest('.dz-chain')) e.preventDefault(); });
+  xfB.addEventListener('click', async (e) => { if (!e.target.closest('[data-act], [data-unit]')) return; const a = document.activeElement, k = a?.dataset?.xf;
+    await sideClick(e); const l = layer();
+    if (e.target.closest('.dz-chain') && l && (k === 'w' || k === 'h') && xfStart?.id === l.id && a.value.trim() && Number.isFinite(+a.value)) { const inp = $(`#dz-xf [data-xf="${k}"]`); l.w = xfStart.w; l.h = xfStart.h; xfSet(k, dzFromU(doc, +inp.value)); placeSel(); changed(true); } });
   xfB.addEventListener('input', (e) => { const k = e.target.dataset.xf; if (!k) return; xfSet(k, dzFromU(doc, +e.target.value)); placeSel(); changed(); });
   xfB.addEventListener('change', (e) => { if (e.target.hasAttribute('data-unit')) return sideChange(e); if (e.target.dataset.xf) { changed(true); drawXf(); } });
   const ctxB = $('#dz-ctx');
