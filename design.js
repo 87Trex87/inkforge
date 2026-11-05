@@ -1642,7 +1642,7 @@ DZ.edit = async (id) => {
     if (toolOn() || cut || cropping) return null;
     if (many()) { const L = picked(); if (!L.length) return null; const B = L.map(box), x = Math.min(...B.map(b => b.x0)), y = Math.min(...B.map(b => b.y0)); return { mode: 'm', x, y, w: Math.max(...B.map(b => b.x1)) - x, h: Math.max(...B.map(b => b.y1)) - y, noSize: true }; }
     const l = layer(); if (!l) return null;
-    return { mode: 'l', x: l.x, y: l.y, w: l.w, h: l.h || 0, l, noH: (l.t === 'text' && !l.frame) || l.t === 'check' || (l.t === 'field' && !['area', 'sign'].includes(l.ft)), lock: !!l.lock, noSize: !!l.on }; };
+    return { mode: 'l', x: l.x, y: l.y, w: l.w, h: l.h || 0, l, noH: (l.t === 'text' && !l.frame) || l.t === 'check' || (l.t === 'field' && !['area', 'sign', 'button'].includes(l.ft)), lock: !!l.lock, noSize: !!l.on }; };
   const drawXf = () => { const b = $('#dz-xf'); if (!b) return; const v = xfNow(); b.hidden = !v; if (!v) { xfKey = ''; return; }
     const l = v.l, key = [v.mode, dzUnit(doc), l?.id, l && dzKeep(l), v.noH, v.noSize, v.lock, v.d != null].join('|');
     const f = (k, n, off, tip) => `<label data-tip="${tip}"><span>${n}</span><input class="in" type="text" inputmode="text" data-calc data-xf="${k}" ${off ? 'disabled' : ''} aria-label="${tip}"></label>`;
@@ -1685,7 +1685,7 @@ DZ.edit = async (id) => {
       + sep + col('c', 'Text', 'Text colour');
     else if (l.t === 'shape') own = (l.shape === 'ring' || l.qr ? '' : dzIB('data-curvetext', '<path d="M3 17C8 7 16 7 21 17"/><path d="M9 6V3h6v3M12 3v7"/>', 'Text on this curve') + sep) + (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40));
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
-    else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour');
+    else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
     const field = l.t === 'field';
     b.innerHTML = (own ? own + sep : '')
       + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="up"', 'fwd', 'Bring forward') + dzIB('data-act="down"', 'back', 'Send back') + sep
@@ -1804,6 +1804,10 @@ DZ.edit = async (id) => {
         <p class="muted dz-hint">{Fields} like {studio} fill in from Settings.</p>`;
     }
   };
+  const linkSec = (l) => { const lt = ffLinkType(l), def = FF_LINKS.find(x => x[0] === lt);
+    return fsec('Link', `<label class="field"><span>When clicked</span><select class="in" data-ltype>${FF_LINKS.map(([v, n]) => `<option value="${v}" ${lt === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      ${lt === 'page' ? `<label class="field"><span>Page</span><select class="in" data-linkv>${ffFaces(doc).map((_, i) => `<option value="${i + 1}" ${String(l.lval ?? '1') === String(i + 1) ? 'selected' : ''}>Page ${i + 1}</option>`).join('')}</select></label>` : def?.[2] ? `<label class="field"><span>${def[1]}</span><input class="in" data-linkv value="${esc(l.lval ?? l.link ?? '')}" placeholder="${esc(def[2])}" autocomplete="off"></label>` : ''}
+      ${l.link && !/^(page|act):/.test(l.link) ? `<a class="btn small" href="${esc(l.link)}" target="_blank" rel="noopener">Try it</a>` : ''}${l.t === 'shape' && !l.qr && l.link && !/^(page|act):/.test(l.link) ? ' <button class="btn small" data-qrfrom>Add a QR code of this link</button>' : ''}`, { fold: true, open: !!l.link || l.ft === 'button' }); };
   const drawItem = () => {
     const l = layer();
     if (l.lock) { side.innerHTML = `<div class="dz-lh"><b>Locked</b><button class="btn small" data-act="done">Done</button></div><div class="dz-lockn"><span class="muted">It can't be moved or changed while locked.</span><button class="btn small" data-act="lock">Unlock</button></div>`; return; }
@@ -1813,7 +1817,7 @@ DZ.edit = async (id) => {
         ${['radio', 'combo', 'check'].includes(l.ft) ? `<label class="field"><span>${l.ft === 'check' ? 'Several boxes? One per line' : 'Options, one per line'}</span><textarea class="in" rows="${(l.opts || []).length > 3 ? 7 : 3}" data-ffk="opts">${esc((l.opts ?? []).join('\n'))}</textarea></label>
         ${fsec('Fill from studio data', `<p class="dz-hint muted" style="margin:0 0 6px">Ticking one writes its items into the options above, ready for PDFs too.${l.ft === 'combo' ? '' : ` A list holds up to ${FF_LIST_MAX}.`}</p>${l.src?.length ? `<button class="btn small" data-ffupd style="margin-bottom:8px" data-tip="Pull this form's lists from your studio data again">Update all lists on this form</button>` : ''}${[...new Set(FF_SRC.map(s => s[2]))].map(g => { const S = FF_SRC.filter(s => s[2] === g && (!s[3] || l.ft === 'combo')); return S.length ? `<div class="lbl">${g}</div>` + S.map(s => `<label class="toggle" style="display:flex;margin-bottom:4px"${s[3] ? ' data-tip="Client details: anyone you send a PDF of this form to can read them"' : ''}><input type="checkbox" data-ffsrc="${s[0]}" ${l.src?.includes(s[0]) ? 'checked' : ''}><span>${s[1]}</span></label>`).join('') : ''; }).join('')}`, { fold: true, open: !!l.src?.length })}` : ''}
         ${l.ft === 'text' || l.ft === 'date' ? `<label class="field"><span>Fill in automatically</span><select class="in" data-ffk="v">${FF_PREFILL.map(([v, n]) => `<option value="${v}" ${(l.v || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
-        <label class="toggle" style="display:inline-flex"><input type="checkbox" data-ffk="req" ${l.req ? 'checked' : ''}><span>Required</span></label>
+        ${l.ft === 'button' ? linkSec(l) : `<label class="toggle" style="display:inline-flex"><input type="checkbox" data-ffk="req" ${l.req ? 'checked' : ''}><span>Required</span></label>`}
         <p class="muted dz-hint">Radio and combo boxes need InkForge or a PDF to fill in; on paper they print as they look here.</p>`; return; }
     if (l.t === 'shortcut' || l.t === 'check') { const n = l.t === 'check';
       side.innerHTML = `<div class="dz-lh"><b>${n ? 'Checklist' : 'Shortcut'}</b>${dzIB('data-act="del"', 'del', 'Delete', 'danger')}</div>` + (n
@@ -1878,8 +1882,7 @@ DZ.edit = async (id) => {
         <label class="field"><span>Survives damage</span><select class="in" data-qrec>${[['L', 'Low: smallest code'], ['M', 'Medium'], ['Q', 'High'], ['H', 'Highest: can take a logo on top']].map(([v, n]) => `<option value="${v}" ${l.qr.ec === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <div class="lbl">Background</div>${swatches('qrbg', l.qrbg, true)}
         <p class="dz-hint muted" style="margin:6px 0 0">Keep it dark on light so phones can read it. Test it with your phone before printing.</p>`, { fold: true, open: true }) : ''}
-      ${doc.form && l.t !== 'field' ? fsec('Link', `<label class="field"><span>Opens when clicked in the PDF</span><input class="in" data-linkv value="${esc(l.link || '')}" placeholder="website, email or tel:" inputmode="url" autocomplete="off"></label>
-        ${l.link ? `<a class="btn small" href="${esc(l.link)}" target="_blank" rel="noopener">Try it</a>` : ''}${l.t === 'shape' && !l.qr && l.link ? ' <button class="btn small" data-qrfrom>Add a QR code of this link</button>' : ''}`, { fold: true, open: !!l.link }) : ''}
+      ${doc.form && l.t !== 'field' ? linkSec(l) : ''}
       ${fsec('Rotation and opacity', `${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
         ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}`, { fold: true })}
       ${fsec('Saving', `<div class="dz-tb">${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
@@ -3262,7 +3265,7 @@ DZ.edit = async (id) => {
       anchor = ly.id; return select(ly.id);
     }
     if (d('ffadd')) { const ft = d('ffadd'), w = Math.round(doc.w * 0.6); closePop();
-      return add(dzFieldNew(ft, { x: (doc.w - w) / 2, y: doc.h * 0.3, w, h: ft === 'sign' ? 300 : ft === 'area' ? 400 : 90, label: FF_TYPES.find(t => t[0] === ft)[1], ...(ft === 'radio' || ft === 'combo' ? { opts: ['Option 1', 'Option 2'] } : {}) })); }
+      return add(dzFieldNew(ft, { x: (doc.w - w) / 2, y: doc.h * 0.3, w, h: ft === 'sign' ? 300 : ft === 'area' ? 400 : ft === 'button' ? 120 : 90, ...(ft === 'button' ? { w: Math.round(doc.w * 0.25), x: (doc.w - Math.round(doc.w * 0.25)) / 2, bg: '@accent', c: '#ffffff' } : {}), label: FF_TYPES.find(t => t[0] === ft)[1], ...(ft === 'radio' || ft === 'combo' ? { opts: ['Option 1', 'Option 2'] } : {}) })); }
     if (d('add')) {
       const a = d('add');
       if (a === 'text') return add({ t: 'text', text: 'Your text', size: Math.round(doc.h * 0.05), font: '@2', c: '@fg', al: 'center', lh: 1.2, ...center(doc.w * 0.6, doc.h * 0.06) });
@@ -3480,7 +3483,8 @@ DZ.edit = async (id) => {
     const txt = t2.hasAttribute('data-qrt') ? t2.value : l.qr.text, ec = t2.hasAttribute('data-qrec') ? t2.value : l.qr.ec, m = txt.trim() && dzQr(txt.trim(), ec); if (m === null) return toast('That is too long for a QR code.'); if (!m) return;
     const wasLink = l.link === dzLinkOK(l.qr.text); l.qr = { ...l.qr, text: txt, ec }; l.subs = dzQrSubs(m); if (wasLink || !l.link) l.link = dzLinkOK(txt); changed(); });
   side.addEventListener('change', (e) => { const t2 = e.target, l = layer(); if (!l) return;
-    if (t2.hasAttribute('data-linkv')) { const v = dzLinkOK(t2.value); if (t2.value.trim() && !v) toast('Links can be web, email or phone.'); l.link = v; changed(true); return drawSide(); }
+    if (t2.hasAttribute('data-ltype')) { l.ltype = t2.value; if (!t2.value) { delete l.lval; l.link = ''; } else { if (t2.value === 'page') l.lval = '1'; else if (t2.value.startsWith('act:')) delete l.lval; else if (/^(page:|act:)/.test(l.link || '')) l.lval = ''; else l.lval = l.lval ?? l.link ?? ''; l.link = ffLinkMake(t2.value, l.lval); } changed(true); return drawSide(); }
+    if (t2.hasAttribute('data-linkv')) { l.ltype ??= 'web'; l.lval = t2.value; const v = ffLinkMake(l.ltype, t2.value); if (t2.value.trim() && !v) toast("That link can't be used."); l.link = v; changed(true); return drawSide(); }
     if (t2.hasAttribute('data-qrt') || t2.hasAttribute('data-qrec')) { changed(true); return drawSide(); }
     if (t2.hasAttribute('data-tcurve')) { if (t2.value) { Object.assign(l, { on: t2.value, arc: 0, al: 'center' }); delete l._bx; } else { const S = doc.layers.find(o => o.id === l.on); if (S?.hide) S.hide = false; delete l.on; delete l._bx; l.w = Math.min(l.w, doc.w * 0.8); } changed(true); return drawSide(); }
     if (t2.hasAttribute('data-tchide')) { const S = doc.layers.find(o => o.id === l.on); if (S) { S.hide = t2.checked; changed(true); } return; }
@@ -3491,7 +3495,7 @@ DZ.edit = async (id) => {
   side.addEventListener('input', (e) => { const k2 = e.target.dataset.ffk, l = layer(); if (!k2 || !l) return; const t = e.target;
     l[k2] = t.type === 'checkbox' ? t.checked : k2 === 'opts' ? t.value.split('\n').map(s => s.trim()).filter(Boolean) : t.value;
     if (k2 === 'opts' && l.imp) l.imp = l.imp.filter(o => l.opts.includes(o));
-    if (k2 === 'ft') { if ((l.ft === 'radio' || l.ft === 'combo') && !l.opts?.length) l.opts = ['Option 1', 'Option 2']; l.h = l.ft === 'sign' ? 300 : l.ft === 'area' ? 400 : l.h; drawSide(); }
+    if (k2 === 'ft') { if ((l.ft === 'radio' || l.ft === 'combo') && !l.opts?.length) l.opts = ['Option 1', 'Option 2']; l.h = l.ft === 'sign' ? 300 : l.ft === 'area' ? 400 : l.ft === 'button' ? 120 : l.h; drawSide(); }
     changed(); });
   side.addEventListener('input', (e) => {
     const t = e.target, l = layer(), key = t.dataset.k;

@@ -2,7 +2,15 @@
    A form is a design of kind 'form': any number of pages (layer.side = 'f', 'p2', 'p3'..., or 'm' for the master under
    every page) holding ordinary layers plus field layers (t: 'field'). Filling one in lays real inputs over the drawn
    pages; a completed form is kept as flattened page pictures (signed_form_pages), so later edits never change it. */
-const FF_TYPES = [['text', 'Text box'], ['area', 'Paragraph box'], ['date', 'Date'], ['check', 'Check box'], ['radio', 'Radio buttons'], ['combo', 'Combo box'], ['sign', 'Signature']];
+const FF_TYPES = [['text', 'Text box'], ['area', 'Paragraph box'], ['date', 'Date'], ['check', 'Check box'], ['radio', 'Radio buttons'], ['combo', 'Combo box'], ['sign', 'Signature'], ['button', 'Button']];
+/* Link types. l.ltype and l.lval are what was chosen and typed; l.link is what gets opened: a URL, 'page:N' or 'act:name'. */
+const FF_LINKS = [['', 'No link'], ['web', 'Website', 'mysite.com'], ['email', 'Email', 'name@studio.com'], ['phone', 'Phone call', '+27 ...'], ['sms', 'Text message', '+27 ...'], ['whatsapp', 'WhatsApp', '+27 ...'], ['map', 'Map', 'Studio address'],
+  ['page', 'Go to page'], ['act:next', 'Next page'], ['act:prev', 'Previous page'], ['act:first', 'First page'], ['act:last', 'Last page'], ['act:print', 'Print'], ['act:reset', 'Clear the form']];
+const ffDigits = (s) => String(s).replace(/[^\d+]/g, '');
+function ffLinkMake(type, v) { v = String(v ?? '').trim(); if (type.startsWith('act:')) return type; if (type === 'page') return +v >= 1 ? 'page:' + Math.floor(+v) : ''; if (!v) return '';
+  if (type === 'email') return 'mailto:' + v.replace(/^mailto:/i, ''); if (type === 'phone') return 'tel:' + ffDigits(v); if (type === 'sms') return 'sms:' + ffDigits(v);
+  if (type === 'whatsapp') return 'https://wa.me/' + ffDigits(v).replace(/^\+/, ''); if (type === 'map') return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v); return dzLinkOK(v); }
+const ffLinkType = (l) => l.ltype ?? (!l.link ? '' : /^mailto:/.test(l.link) ? 'email' : /^tel:/.test(l.link) ? 'phone' : 'web');
 const FF_CATS = [['consent', 'Consent'], ['aftercare', 'Aftercare'], ['other', 'Other forms']];
 const FF_PREFILL = [['', 'Nothing'], ['{client}', 'Client name'], ['{phone}', 'Client phone'], ['{email}', 'Client email'], ['{date}', 'Today']];
 const ffFaces = (doc) => Array.from({ length: doc.pages || 1 }, (_, i) => i ? 'p' + (i + 1) : 'f');
@@ -44,6 +52,7 @@ const ffFont = (doc, l, wt, s = l.size || 46) => `${l.it ? 'italic ' : ''}${l.b 
 function dzFieldGeom(l, x = ffX, doc) {
   const s = l.size || 46, lh = s * 1.3, w = l.w, g = { label: [], box: null, opts: [], h: 0 };
   x.font = ffFont(doc, l, 400);
+  if (l.ft === 'button') { g.h = Math.max(l.h || 0, s * 1.8); g.box = { x: 0, y: 0, w, h: g.h }; return g; }
   if (l.ft === 'check' && !l.opts?.length) {
     const lines = l.label ? dzWrap(x, l.label, Math.max(20, w - s * 1.6)) : [];
     g.box = { x: 0, y: s * 0.12, w: s, h: s };
@@ -62,7 +71,10 @@ function dzFieldGeom(l, x = ffX, doc) {
 // Draws a field. val is its answer (none in the editor or on a blank copy), sig the picture for a signature.
 function dzFieldDraw(x, doc, l, o = {}) {
   const g = dzFieldGeom(l, x, doc), s = l.size || 46, col = dzCol(doc, l.c || '@fg') || '#111', v = o.noVal ? undefined : o.vals?.[l.id];
-  x.translate(-l.w / 2, -l.h / 2); x.fillStyle = col; x.strokeStyle = col; x.lineWidth = Math.max(2, s * 0.05); x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+  x.translate(-l.w / 2, -l.h / 2);
+  if (l.ft === 'button') { if (o.print || (o.vals && !o.noVal)) return;   // no use on paper or on a saved copy
+    x.fillStyle = dzCol(doc, l.bg || '@accent') || '#333'; x.beginPath(); x.roundRect(0, 0, l.w, l.h, Math.min(l.h / 2, s * 0.4)); x.fill(); x.fillStyle = l.c ? col : '#fff'; x.font = ffFont(doc, l, 600); x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(l.label || '', l.w / 2, l.h / 2); return; }
+  x.fillStyle = col; x.strokeStyle = col; x.lineWidth = Math.max(2, s * 0.05); x.textAlign = 'left'; x.textBaseline = 'alphabetic';
   x.font = ffFont(doc, l, 600); for (const t of g.label.filter(t => t.b)) x.fillText(t.s, t.x, t.y);
   x.font = ffFont(doc, l, 400); for (const t of g.label.filter(t => !t.b)) x.fillText(t.s, t.x, t.y);
   if (l.ft === 'check' && g.box) { const b = g.box; x.strokeRect(b.x, b.y, b.w, b.h);
@@ -146,15 +158,18 @@ async function ffPdf(d, opt = {}) {
   const ap = (w, h, draw) => add(stream(`/Type/XObject/Subtype/Form/BBox[0 0 ${w} ${h}]`, draw));
   const tick = (w, h) => `q ${Math.max(1, w * 0.1)} w ${w * .2} ${h * .45} m ${w * .42} ${h * .22} l ${w * .82} ${h * .78} l S Q`;
   const dot = (w) => { const r = w * .26, c = w / 2, q = r * .552; return `q 0 g ${c + r} ${c} m ${c + r} ${c + q} ${c + q} ${c + r} ${c} ${c + r} c ${c - q} ${c + r} ${c - r} ${c + q} ${c - r} ${c} c ${c - r} ${c - q} ${c - q} ${c - r} ${c} ${c - r} c ${c + q} ${c - r} ${c + r} ${c - q} ${c + r} ${c} c f Q`; };
-  for (const face of ffFaces(d)) {
+  const allFaces = ffFaces(d), pageIds = allFaces.map(() => resv());
+  const NAMED = { 'act:next': 'NextPage', 'act:prev': 'PrevPage', 'act:first': 'FirstPage', 'act:last': 'LastPage', 'act:print': 'Print' };
+  const linkAct = (s) => { if (s.startsWith('page:')) { const id = pageIds[+s.slice(5) - 1]; return id ? `/Dest[${id} 0 R/Fit]` : ''; } if (NAMED[s]) return `/A<</S/Named/N/${NAMED[s]}>>`; if (s === 'act:reset') return '/A<</S/ResetForm>>'; return `/A<</S/URI/URI${ffStr(s)}>>`; };
+  for (const face of allFaces) {
     const cv = await ffPage(d, face, { noVal: true, sigs: opt.sigs, print: false }, Math.min(1, 1654 / d.w));
     const jpg = Uint8Array.from(atob(cv.toDataURL('image/jpeg', 0.88).split(',')[1]), c => c.charCodeAt(0));
     const img = add(stream(`/Type/XObject/Subtype/Image/Width ${cv.width}/Height ${cv.height}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode`, jpg));
     const content = add(stream('', `q ${PW} 0 0 ${PH} 0 0 cm /I Do Q`));
-    const annots = [], page = resv();
+    const annots = [], page = pageIds[allFaces.indexOf(face)];
     const rect = (l, b) => { const x = (l.x + b.x) * k, y = PH - (l.y + b.y + b.h) * k; return `[${x.toFixed(2)} ${y.toFixed(2)} ${(x + b.w * k).toFixed(2)} ${(y + b.h * k).toFixed(2)}]`; };
-    for (const l of d.layers.filter(l => l.link && !l.hide && dzSide(l) === face)) { const a = (l.rot || 0) * Math.PI / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a)), h = l.h || 1, bw = l.w * c + h * s, bh = l.w * s + h * c, cx = l.x + l.w / 2, cy = l.y + h / 2;
-      annots.push(add(`<</Type/Annot/Subtype/Link/Border[0 0 0]/Rect${rect({ x: cx - bw / 2, y: cy - bh / 2 }, { x: 0, y: 0, w: bw, h: bh })}/A<</S/URI/URI${ffStr(l.link)}>>>>`)); }
+    for (const l of d.layers.filter(l => l.link && !l.hide && (dzSide(l) === face || l.side === 'm'))) { const act = linkAct(l.link); if (!act) continue; const a = (l.rot || 0) * Math.PI / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a)), h = l.h || 1, bw = l.w * c + h * s, bh = l.w * s + h * c, cx = l.x + l.w / 2, cy = l.y + h / 2;
+      annots.push(add(`<</Type/Annot/Subtype/Link/Border[0 0 0]/Rect${rect({ x: cx - bw / 2, y: cy - bh / 2 }, { x: 0, y: 0, w: bw, h: bh })}${act}>>`)); }
     if (!opt.flat) for (const l of d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === face)) {
       const g = dzFieldGeom(l, ffX, d), fs = ((l.size || 46) * k * 0.9).toFixed(1), da = `/DA(/Helv ${fs} Tf 0 g)`, v = vals[l.id], base = `/Type/Annot/Subtype/Widget/F 4/P ${page} 0 R/T${ffStr(l.id)}/TU${ffStr(l.label || '')}`;
       if (l.ft === 'text' || l.ft === 'date' || l.ft === 'area') { const n = add(`<<${base}/FT/Tx/Rect${rect(l, g.box)}${da}${l.ft === 'area' ? '/Ff 4096' : ''}${v ? '/V' + ffStr(v) : ''}>>`); annots.push(n); fields.push(n); }
@@ -221,10 +236,11 @@ const FF = {
     const paint = async () => { d = ffCopy(src, formCtx(client, booking)); prefill(formCtx(client, booking));
       for (const f of faces) { const host = el.querySelector(`.ff-page[data-face="${f}"]`), cv = await ffPage(d, f, { noVal: true }, Math.min(1, 1400 / d.w)), c = host.querySelector('canvas'); c.width = cv.width; c.height = cv.height; c.getContext('2d').drawImage(cv, 0, 0);
         const sigs = Object.fromEntries(Object.entries(pads).filter(([, p]) => !p.empty()).map(([i, p]) => [i, p.data()]));
-        host.querySelector('.ff-over').innerHTML = d.layers.filter(l => l.link && !l.hide && !l.rot && dzSide(l) === f).map(l => `<a class="ff-link" href="${esc(l.link)}" target="_blank" rel="noopener" aria-label="${esc(l.link)}" style="left:${l.x / d.w * 100}%;top:${l.y / d.h * 100}%;width:${l.w / d.w * 100}%;height:${(l.h || 1) / d.h * 100}%"></a>`).join('') + d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === f).map(l => { const g = dzFieldGeom(l, ffX, d), a = `data-id="${l.id}" data-s="${l.size || 46}" data-ff='${esc(l.font ? dzFont(d, l.font) : 'Inter')}' data-fb="${l.b ? 700 : 400}" data-fi="${l.it ? 'italic' : 'normal'}" data-fc="${esc(dzCol(d, l.c || '@fg') || '#111')}" aria-label="${esc(l.label || FF_TYPES.find(t => t[0] === l.ft)?.[1])}"`, v = vals[l.id] ?? '';
+        host.querySelector('.ff-over').innerHTML = d.layers.filter(l => l.link && !l.hide && !l.rot && (dzSide(l) === f || l.side === 'm')).map(l => `<a class="ff-link" href="${/^(page|act):/.test(l.link) ? '#' : esc(l.link)}" ${/^(page|act):/.test(l.link) ? `data-go="${esc(l.link)}"` : 'target="_blank" rel="noopener"'} aria-label="${esc(l.label || l.link)}" style="left:${l.x / d.w * 100}%;top:${l.y / d.h * 100}%;width:${l.w / d.w * 100}%;height:${(l.h || 1) / d.h * 100}%"></a>`).join('') + d.layers.filter(l => l.t === 'field' && !l.hide && dzSide(l) === f).map(l => { const g = dzFieldGeom(l, ffX, d), a = `data-id="${l.id}" data-s="${l.size || 46}" data-ff='${esc(l.font ? dzFont(d, l.font) : 'Inter')}' data-fb="${l.b ? 700 : 400}" data-fi="${l.it ? 'italic' : 'normal'}" data-fc="${esc(dzCol(d, l.c || '@fg') || '#111')}" aria-label="${esc(l.label || FF_TYPES.find(t => t[0] === l.ft)?.[1])}"`, v = vals[l.id] ?? '';
           if (l.ft === 'check' && !g.box) return g.opts.map(o => `<input type="checkbox" class="ff-c" data-many value="${esc(o.v)}" ${a} style="${pct({ x: o.x, y: o.y, w: o.d, h: o.d }, l)}" ${Array.isArray(v) && v.includes(o.v) ? 'checked' : ''}>`).join('');
           if (l.ft === 'check') return `<input type="checkbox" class="ff-c" ${a} style="${pct(g.box, l)}" ${v ? 'checked' : ''}>`;
           if (l.ft === 'radio') return g.opts.map(o => `<input type="radio" class="ff-c" name="${l.id}" value="${esc(o.v)}" ${a} style="${pct({ x: o.x, y: o.y, w: o.d, h: o.d }, l)}" ${v === o.v ? 'checked' : ''}>`).join('');
+          if (l.ft === 'button') return '';
           if (l.ft === 'combo') return `<select class="ff-i" ${a} style="${pct(g.box, l)}"><option value=""></option>${(l.opts || []).map(o => `<option ${v === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
           if (l.ft === 'area') return `<textarea class="ff-i" ${a} style="${pct(g.box, l)}">${esc(v)}</textarea>`;
           if (l.ft === 'sign') return `<div class="ff-sign" style="${pct(g.box, l)}"><canvas data-sig="${l.id}"></canvas><button type="button" class="link" data-sigc="${l.id}">Clear</button></div>`;
@@ -235,7 +251,11 @@ const FF = {
     new ResizeObserver(fontFit).observe($('#ff-pages'));
     const pagesEl = $('#ff-pages');
     pagesEl.addEventListener('input', (e) => { const t = e.target, i = t.dataset.id; if (!i) return; vals[i] = t.hasAttribute('data-many') ? [...pagesEl.querySelectorAll(`[data-id="${i}"]:checked`)].map(n => n.value) : t.type === 'checkbox' ? t.checked : t.value; typed.add(i); Dirty.set(true); });
-    pagesEl.addEventListener('click', (e) => { const c = e.target.dataset.sigc; if (c) pads[c]?.clear(); });
+    pagesEl.addEventListener('click', async (e) => { const c = e.target.dataset.sigc; if (c) pads[c]?.clear(); const go = e.target.dataset.go; if (!go) return; e.preventDefault();
+      const host = e.target.closest('.ff-page'), i = faces.indexOf(host.dataset.face), jump = (n) => el.querySelector(`.ff-page[data-face="${faces[n]}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      if (go.startsWith('page:')) return jump(+go.slice(5) - 1); if (go === 'act:next') return jump(i + 1); if (go === 'act:prev') return jump(i - 1); if (go === 'act:first') return jump(0); if (go === 'act:last') return jump(faces.length - 1);
+      if (go === 'act:print') return $('#fs-print').click();
+      if (go === 'act:reset' && await ask('Clear everything filled in on this form?')) { Object.keys(vals).forEach(k => delete vals[k]); typed.clear(); Object.values(pads).forEach(p => p.clear()); await paint(); } });
     clientPicker($('#fs-client'), $('#fs-list'), async (cid) => { client = await DB.one('SELECT * FROM clients WHERE id = ?', [cid]); await paint(); });
     $('#fs-cancel').onclick = () => history.back();
     const sigImgs = async () => { const o = {}; for (const [i, p] of Object.entries(pads)) if (!p.empty()) o[i] = await createImageBitmap(await p.blob()); return o; };
@@ -249,7 +269,7 @@ const FF = {
         if (!ok) { el.querySelector(`[data-id="${l.id}"], [data-sig="${l.id}"]`)?.scrollIntoView({ block: 'center' }); return toast(l.ft === 'sign' ? 'Please sign in the box.' : l.ft === 'check' ? 'Every required box needs a tick.' : `Please answer "${(l.label || 'this field').slice(0, 50)}".`); } }
       busy = true; $('#fs-save').disabled = true;
       try { const refs = []; for (const cv of await baked(Math.min(1, 1654 / d.w))) refs.push(await Media.save(await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.88)), 'jpg'));
-        const summary = d.layers.filter(l => l.t === 'field' && l.ft !== 'sign' && l.label).map(l => ({ t: l.ft, text: l.label, v: vals[l.id] ?? '' }));
+        const summary = d.layers.filter(l => l.t === 'field' && l.ft !== 'sign' && l.ft !== 'button' && l.label).map(l => ({ t: l.ft, text: l.label, v: vals[l.id] ?? '' }));
         await DB.run(`INSERT INTO signed_forms (client_id, booking_id, kind, title, client_name, blocks, answers) VALUES (?, ?, ?, ?, ?, ?, ?)`, [client.id, ctx0.bookingId ?? null, cat, r.name, fullName(client), JSON.stringify(summary), JSON.stringify(vals)]);
         const sid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
         await DB.tx(refs.map((ref, i) => ({ sql: 'INSERT INTO signed_form_pages (form_id, ref, sort) VALUES (?, ?, ?)', params: [sid, ref, i] })));
