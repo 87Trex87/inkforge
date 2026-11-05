@@ -52,23 +52,31 @@ const dzFieldNew = (ft, o = {}) => ({ id: dzId(), t: 'field', ft, keep: false, l
 
 /* Templates: lays the wording out over as many A4 pages as it takes. */
 function ffFromBlocks(tpl, W, H) {
-  const M = 190, cw = W - M * 2, out = []; let y = M, pg = 1;
+  // One page if the text stays readable (about 8.5pt at the least), otherwise two at the largest size that fits.
+  const steps = [1, 0.95, 0.9, 0.85, 0.8, 0.77], small = [0.74, 0.7, 0.66, 0.62, 0.58];
+  for (const k of steps) { const r = ffLay(tpl, W, H, k); if (r.pages === 1) return r.out; }
+  for (const k of steps) { const r = ffLay(tpl, W, H, k); if (r.pages <= 2) return r.out; }
+  for (const k of small) { const r = ffLay(tpl, W, H, k); if (r.pages <= 2) return r.out; }
+  return ffLay(tpl, W, H, small.at(-1)).out;
+}
+function ffLay(tpl, W, H, k) {
+  const M = 150, cw = W - M * 2, out = []; let y = M, pg = 1;
   const side = () => pg > 1 ? { side: 'p' + pg } : {};
   const place = (l, h, keep = 0) => { if (y + h + keep > H - M && y > M) { pg++; y = M; } Object.assign(l, { x: M, y, ...side() }); out.push(l); y += h; };
-  if (Settings.get('studio_logo_ref')) { out.push(dzLogo((W - 420) / 2, M - 60, 420, 300)); y = M + 280; }
+  if (Settings.get('studio_logo_ref')) { out.push(dzLogo((W - 420 * k) / 2, M - 40, 420 * k, 240 * k)); y = M + 220 * k; }
   const text = (s, size, o, gap, keep) => { ffX.font = `${o.b ? 700 : 400} ${size}px Inter, sans-serif`; const lh = o.lh || 1.3, h = dzWrap(ffX, s, cw).length * size * lh; place(dzT(s, 0, 0, cw, size, { lh, ...o }), h + gap, keep); };
   for (const b of tpl.blocks) {
-    if (b.t === 'h') text(b.text, 110, { font: '@1', al: 'center', c: '@accent' }, 40);
-    else if (b.t === 'sub') { y += 26; text(b.text, 60, { b: 1, c: '@accent' }, 18, 120); }
-    else if (b.t === 'p') text(b.text, 46, {}, 18);
-    else if (b.t === 'li') text('•  ' + b.text, 46, {}, 12);
+    if (b.t === 'h') text(b.text, 100 * k, { font: '@1', al: 'center', c: '@accent' }, 24 * k);
+    else if (b.t === 'sub') { y += 18 * k; text(b.text, 56 * k, { b: 1, c: '@accent' }, 12 * k, 120 * k); }
+    else if (b.t === 'p') text(b.text, 46 * k, {}, 12 * k);
+    else if (b.t === 'li') text('•  ' + b.text, 46 * k, {}, 8 * k);
     else { const ft = b.t === 'check' ? 'check' : b.t === 'choice' ? 'radio' : 'text';
-      const f = dzFieldNew(ft, { label: b.text, w: cw, v: b.v && /^\{\w+\}$/.test(b.v) ? b.v : '', req: b.t === 'choice' ? !!b.req : tpl.kind === 'consent' && b.t === 'check' && !b.opt });
+      const f = dzFieldNew(ft, { label: b.text, w: cw, size: 46 * k, v: b.v && /^\{\w+\}$/.test(b.v) ? b.v : '', req: b.t === 'choice' ? !!b.req : tpl.kind === 'consent' && b.t === 'check' && !b.opt });
       if (ft === 'radio') f.opts = String(b.opts || '').split('/').map(s => s.trim()).filter(Boolean);
-      const h = dzFieldGeom(f).h; f.h = h; place(f, h + 22); }
+      const h = dzFieldGeom(f).h; f.h = h; place(f, h + 12 * k); }
   }
-  if (tpl.kind === 'consent') { y += 30; const f = dzFieldNew('sign', { label: 'Signature', w: cw, h: 420, req: true }); place(f, 480); }
-  return out;
+  if (tpl.kind === 'consent') { y += 16 * k; const f = dzFieldNew('sign', { label: 'Signature', w: cw, size: 46 * k, h: 340 * k, req: true }); place(f, 340 * k); }
+  return { out, pages: pg };
 }
 const ffTpl = (get, cat) => { const m = (W, H) => ffFromBlocks(get(), W, H); m.cat = cat; return m; };
 DZ_TEMPLATES.form = [
