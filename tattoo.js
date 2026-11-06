@@ -43,6 +43,7 @@ const TT_FEEL = {
 const TT_FEEL_LIQ = { liner: { flow: 80, miss: 25, size: 0.3, bleed: 60 }, shader: { flow: 60, miss: 40, bleed: 45 }, mag: { flow: 60, miss: 35, bleed: 45 }, soft: { flow: 60, miss: 35, bleed: 55, speedFade: 30, dMax: 0.95 } };
 /* Voltage by grouping, as set up for a relatively slow hand (liners higher as they get bigger; shaders and
    magnums lower). Voltage sets how fast the machine hits (about 98 a second at 7 V, rising steeply with voltage), how hard, and how fast the skin gets irritated. */
+const TT_TOUGH = 1.8;   // what Skin toughness 1 means
 const TT_VOLT = { '1RL': 7.0, '3RL': 7.2, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '11RL': 7.7, '14RL': 7.9, '5RS': 6.6, '7RS': 6.7, '9RS': 6.8, '11RS': 6.9,
   '7M1': 6.5, '9M1': 6.55, '11M1': 6.6, '13M1': 6.7, '15M1': 6.8, '9CM': 6.5, '15CM': 6.6, '23CM': 6.7, '31CM': 6.8 };
 /* Hand speed: how fast this artist moves. Each sets a starting hand speed, how much fast strokes fade and an offset
@@ -72,10 +73,10 @@ const TT = {
   /* Overall calibration, for this device and hand, on top of every needle's own feel: the pen's pressure range,
      a pressure curve, hand speed (how far apart punctures land), how much fast strokes lighten, the angle the pen
      is naturally held at (tilt counts from there) and ink flow. Set by Tune in, or by hand. */
-  calDefaults: { penOnly: true, pMin: 0.136, pMax: 0.866, curve: -78.3, hand: 6.739, fade: 0.636, flow: 1.5, tilt0: 35, profile: 'slow', voltOff: 0, blow: 1, tough: 1, t3: 1 },
+  calDefaults: { penOnly: true, pMin: 0.136, pMax: 0.866, curve: -78.3, hand: 6.739, fade: 0.636, flow: 1.5, tilt0: 35, profile: 'slow', voltOff: 0, blow: 1, tough: 1, t3: 1, t4: 1 },
   // Toughness scale: rescaled twice (each time × 1 became what × 2.5 was); t2/t3 mark which scale a saved value is
   // on, and older ones are moved across.
-  cal() { try { const s = JSON.parse(Settings.get('tt_cal', '{}')); if (s.tough != null && !s.t3) { s.tough = Math.round(s.tough / (s.t2 ? 2.5 : 6.25) * 100) / 100; s.t3 = 1; } return { ...TT.calDefaults, ...s }; } catch { return { ...TT.calDefaults }; } },
+  cal() { try { const s = JSON.parse(Settings.get('tt_cal', '{}')); if (s.tough != null && !s.t3) { s.tough = Math.round(s.tough / (s.t2 ? 2.5 : 6.25) * 100) / 100; s.t3 = 1; } if (s.tough != null && !s.t4) { s.tough = Math.round(s.tough / 1.8 * 100) / 100; s.t4 = 1; } return { ...TT.calDefaults, ...s }; } catch { return { ...TT.calDefaults }; } },
   saveCal(c) { Settings.set('tt_cal', JSON.stringify(c)); },
   feel(id) { let o = {}; try { o = JSON.parse(Settings.get('tt_feel', '{}'))[id] || {}; } catch {} const nd = TT_NEEDLES.find(n => n.id === id);
     return { ...TT.feelBase(id), ...o }; },
@@ -513,19 +514,29 @@ TT.open = async (el, id) => {
      close together (pressing hard and pulling slowly) pushes ink under the skin: a soft, bluish bruise that spreads
      past the line and raises the skin. Both are kept with the piece; a healed preview drops the redness and
      swelling but keeps the blowouts. */
-  const TS = 4, tw = Math.ceil(W / TS), th = Math.ceil(H / TS), TR = new Float32Array(tw * th);
+  const TS = 4, tw = Math.ceil(W / TS), th = Math.ceil(H / TS), TR = new Float32Array(tw * th), TP = new Float32Array(tw * th), THit = new Float64Array(tw * th);
   // Bumps: little red pimples where the needle went too deep or the machine ran too hard (fresh skin only).
   const BU = new Float32Array(tw * th);
   const buAdd = (p, v) => { if (CHEAT) return; const i = Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS))); BU[i] = Math.min(1, BU[i] + v); trDirty = true; };
   const blowC = document.createElement('canvas'); blowC.width = Math.ceil(W / 2); blowC.height = Math.ceil(H / 2); const bx = blowC.getContext('2d');
   let trDirty = true, trT = 0; const told = {};
   const trAdd = (p, r, v) => { if (CHEAT) return;
-    const cx0 = p.x / TS, cy0 = p.y / TS, R2 = Math.max(1, r / TS);
+    const cx0 = p.x / TS, cy0 = p.y / TS, R2 = Math.max(1, r / TS), now = performance.now();
     for (let y = Math.max(0, Math.floor(cy0 - R2)); y <= Math.min(th - 1, Math.ceil(cy0 + R2)); y++)
       for (let x2 = Math.max(0, Math.floor(cx0 - R2)); x2 <= Math.min(tw - 1, Math.ceil(cx0 + R2)); x2++) {
-        const f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (f > 0) TR[y * tw + x2] += v * f; }
+        const f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (f > 0) { const c = y * tw + x2; TR[c] += v * f; if (TR[c] > TP[c]) TP[c] = TR[c]; THit[c] = now; } }
     trDirty = true;
   };
+  /* Skin settles once the needle moves away: after a few seconds' rest, redness and swelling halve about every 30 seconds.
+     Damage leaves a mark, though: skin worked past swollen only comes back down to a level set by the worst it reached
+     (TP), so bad damage never fully clears in the as-worked view. Only runs while the piece is open. */
+  const HEAL_REST = 3000, HEAL_HALF = 30000, healFloor = (pk) => pk < 1 ? 0 : Math.min(pk, (pk - 1) * 0.6 + 0.12);
+  let healT = performance.now();
+  const healId = setInterval(() => { if (!cv.isConnected) return clearInterval(healId); if (CHEAT) return; const now = performance.now(), dt = now - healT; healT = now; if (document.hidden) return;
+    const k = 1 - Math.pow(0.5, dt / HEAL_HALF); let moved = 0;
+    for (let i = 0; i < TR.length; i++) { const v = TR[i]; if (v <= 0 || now - THit[i] < HEAL_REST) continue; const fl = healFloor(TP[i]); if (v <= fl) continue; const nv = v - (v - fl) * k; TR[i] = nv < 0.005 ? 0 : nv; moved = Math.max(moved, v - nv);
+      if (BU[i] && TP[i] < 1) BU[i] = Math.max(0, BU[i] - k * 0.8); }
+    if (moved > 0.002) { trDirty = true; if (!pen && st.view === 'work') paint(); } }, 2000);
   const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
   // Raw skin: a mottled, bumpy texture of red and pink lumps, made once.
   const patty = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d');
@@ -581,7 +592,7 @@ TT.open = async (el, id) => {
   };
   { const bi = await loadImg(row.blow_ref); if (bi) bx.drawImage(bi, 0, 0, blowC.width, blowC.height);
     const ti = await loadImg(row.skin_ref); if (ti) { const c = document.createElement('canvas'); c.width = tw; c.height = th; const g = c.getContext('2d'); g.drawImage(ti, 0, 0, tw, th);
-      const d = g.getImageData(0, 0, tw, th).data; for (let i = 0; i < TR.length; i++) { TR[i] = d[i * 4] / 255 * 2; if (meta.bu) BU[i] = d[i * 4 + 2] / 255; } } }
+      const d = g.getImageData(0, 0, tw, th).data; for (let i = 0; i < TR.length; i++) { TR[i] = d[i * 4] / 255 * 2; TP[i] = Math.max(TR[i], d[i * 4 + 1] / 255 * 2); if (meta.bu) BU[i] = d[i * 4 + 2] / 255; } } }
   let refs = (meta.refs || []).filter(Boolean), refSel = null;
   const EX = meta.exam || null;
   /* Timelapse and stats. A small picture of the piece is kept after each stroke (at most one every 1.2 s) and the
@@ -869,7 +880,7 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) / (cal.tough || 1));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) / ((cal.tough || 1) * TT_TOUGH));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
@@ -1476,7 +1487,7 @@ TT.open = async (el, id) => {
   const nearSnap = (e) => { if (!snapE?.pts) return false; const r = stage.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
     for (let i = 0; i < snapE.pts.length; i += 4) { const q = toScreen(snapE.pts[i]); if (Math.hypot(q.x - sx, q.y - sy) < 16) return true; } return false; };
   const crash = (p, d, ev) => { if (!pen || CHEAT) return; const sev = Math.max(0.2, Math.min(1, (d - 0.55) / 0.35));
-    trAdd(p, pen.foot * 1.4, 0.15 * sev / (cal.tough || 1));
+    trAdd(p, pen.foot * 1.4, 0.15 * sev / ((cal.tough || 1) * TT_TOUGH));
     const ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(); setRoll(ev, turnOf(pen.a, ev)); for (let i = 0; i < 3; i++) puncture(pen.cx, p, pen.a, Math.min(1.1, d + 0.25), tiltOf(ev), ink, false);
     const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     B.x0 = Math.min(B.x0, p.x - bp); B.y0 = Math.min(B.y0, p.y - bp); B.x1 = Math.max(B.x1, p.x + bp); B.y1 = Math.max(B.y1, p.y + bp);
@@ -2166,7 +2177,7 @@ TT.open = async (el, id) => {
     const layerRefs = {}; for (const [key] of TT_LAYERS) layerRefs[key] = chgd.has(key) || !old ? await Media.save(await blobOf(L[key]), 'png') : old[key + '_ref'];
     const thumb = await Media.save(await blobOf(composite(Math.min(1, 420 / Math.max(W, H)))), 'png');
     const tc = document.createElement('canvas'); tc.width = tw; tc.height = th; const tg = tc.getContext('2d'), ti = tg.createImageData(tw, th);
-    for (let i = 0; i < TR.length; i++) { const v = Math.min(255, Math.round(TR[i] / 2 * 255)); ti.data[i * 4] = ti.data[i * 4 + 1] = v; ti.data[i * 4 + 2] = Math.round(BU[i] * 255); ti.data[i * 4 + 3] = 255; }
+    for (let i = 0; i < TR.length; i++) { const v = Math.min(255, Math.round(TR[i] / 2 * 255)); ti.data[i * 4] = v; ti.data[i * 4 + 1] = Math.min(255, Math.round(TP[i] / 2 * 255)); ti.data[i * 4 + 2] = Math.round(BU[i] * 255); ti.data[i * 4 + 3] = 255; }
     tg.putImageData(ti, 0, 0);
     const skinRef = TR.some(v => v > 0.004) ? await Media.save(await blobOf(tc), 'png') : null, blowRef = await Media.save(await blobOf(blowC), 'png');
     const tlDrop = [];
