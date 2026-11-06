@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 254;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 255;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -423,11 +423,28 @@ const TT_LESSONS = [
       { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher unlocks the next lesson, and more than 1 blowout is still an instant fail.',
         more: 'Your score is your line score, then reduced by up to 30% if the thickness of the line changes along the way, shown as Weight on your report card.' }
     ] },
-    { id: '1-5', title: 'Next lesson', sum: 'To be designed.' }
+    { id: '1-5', title: 'The flag', sum: 'Everything so far in one piece: straight lines, sharp corners and S curves. Grade C or higher finishes the chapter.', task: 'l-flag', steps: [
+      { title: 'Putting it all together', pic: { needles: ['5RL'] }, text: 'Your last easy linework lesson: a flag on a pole, with the same 5RL. The pole is your straight line, the waving edges are your S curves, the corners are your corners, and the ball on top is your circle.' },
+      { title: 'Plan your order', text: 'Think before you start. Pull the long pole first, then the flag edges into it, then the end of the flag. Turn the page with two fingers whenever a pull feels awkward.',
+        more: 'Lines that meet another line should land right on it and stop. Do not cross the pole, and do not leave a gap.' },
+      { title: 'Everything counts', text: 'Your line stays on the stencil, even and solid. Your corners are sharp, not rounded and not running past. Your weight is the same on the straight parts as on the curves.',
+        more: 'Reload before the ink runs low, so a thin patch does not sneak into the last line. Keep the same speed and pressure on every line.' },
+      { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher finishes the chapter, and more than 1 blowout is still an instant fail.',
+        more: 'Your score is your line score, reduced by up to 40% for poor corners and up to 30% for changing line weight. Both reductions apply together.' }
+    ] }
   ] },
   { name: 'Chapter 2: Medium', lessons: [] },
   { name: 'Chapter 3: Advanced', lessons: [] }
 ];
+// A flag on a pole, in mm: pole, ball, two waving edges (each an S) and the flag's end.
+const TT_FLAG = [['l', 45, 30, 45, 110], ['a', 45, 26, 4, 90, 450], ['c', 45, 36, 60, 18, 72, 18, 77.5, 36], ['c', 77.5, 36, 83, 54, 97, 36, 110, 36], ['l', 110, 36, 110, 70], ['c', 45, 70, 60, 52, 72, 52, 77.5, 70], ['c', 77.5, 70, 83, 88, 97, 70, 110, 70]];
+const ttGeomDraw = (g, segs) => { for (const s of segs) { if (s[0] === 'l') { g.moveTo(s[1], s[2]); g.lineTo(s[3], s[4]); } else if (s[0] === 'c') { g.moveTo(s[1], s[2]); g.bezierCurveTo(s[3], s[4], s[5], s[6], s[7], s[8]); } else { const a0 = s[4] * Math.PI / 180; g.moveTo(s[1] + s[3] * Math.cos(a0), s[2] + s[3] * Math.sin(a0)); g.arc(s[1], s[2], s[3], a0, s[5] * Math.PI / 180); } } };
+// Points about every half millimetre along a shape, each with the direction straight across the line.
+const ttGeomPts = (segs) => segs.flatMap(s => { const out = [];
+  if (s[0] === 'l') { const L = Math.hypot(s[3] - s[1], s[4] - s[2]), n = Math.ceil(L / 0.5); for (let i = 0; i <= n; i++) out.push({ x: s[1] + (s[3] - s[1]) * i / n, y: s[2] + (s[4] - s[2]) * i / n, nx: -(s[4] - s[2]) / L, ny: (s[3] - s[1]) / L }); }
+  else if (s[0] === 'a') { const n = Math.ceil(Math.abs(s[5] - s[4]) * Math.PI / 180 * s[3] / 0.5); for (let i = 0; i <= n; i++) { const a = (s[4] + (s[5] - s[4]) * i / n) * Math.PI / 180; out.push({ x: s[1] + s[3] * Math.cos(a), y: s[2] + s[3] * Math.sin(a), nx: Math.cos(a), ny: Math.sin(a) }); } }
+  else { const n = 80; for (let i = 0; i <= n; i++) { const u = i / n, v = 1 - u, f = (a, b, c, d) => v * v * v * a + 3 * v * v * u * b + 3 * v * u * u * c + u * u * u * d, df = (a, b, c, d) => 3 * v * v * (b - a) + 6 * v * u * (c - b) + 3 * u * u * (d - c), dx = df(s[1], s[3], s[5], s[7]), dy = df(s[2], s[4], s[6], s[8]), L = Math.hypot(dx, dy) || 1; out.push({ x: f(s[1], s[3], s[5], s[7]), y: f(s[2], s[4], s[6], s[8]), nx: -dy / L, ny: dx / L }); } }
+  return out; });
 // Lesson tasks run in the real workspace like a challenge, but stay out of the challenge list, medals and trophies.
 const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: 'Your first line', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1,
   text: 'Black ink, 5RL. Load the needle, then pull one clean line down the stencil in a single pass. Leave the skin to settle for about a minute, then press Done. C or higher unlocks the next lesson.',
@@ -437,7 +454,11 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
     path: (g) => { g.moveTo(60, 45); g.lineTo(120, 45); g.lineTo(120, 85); g.lineTo(60, 85); g.closePath(); } },
   { id: 'l-curve', lesson: '1-4', cat: 'line', diff: 1, title: 'Curves', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, arcs: [[78, 42, 15, -30, -270], [78, 79, 22, -90, 245]],
     text: 'Black ink, 5RL. Follow the S and on around the circle, with the same weight of line all the way. You can stop and restart. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
-    path: (g) => { g.moveTo(78 + 15 * Math.cos(-Math.PI / 6), 42 + 15 * Math.sin(-Math.PI / 6)); g.arc(78, 42, 15, -Math.PI / 6, -1.5 * Math.PI, true); g.arc(78, 79, 22, -Math.PI / 2, 245 * Math.PI / 180); } }];
+    path: (g) => { g.moveTo(78 + 15 * Math.cos(-Math.PI / 6), 42 + 15 * Math.sin(-Math.PI / 6)); g.arc(78, 42, 15, -Math.PI / 6, -1.5 * Math.PI, true); g.arc(78, 79, 22, -Math.PI / 2, 245 * Math.PI / 180); } },
+  { id: 'l-flag', lesson: '1-5', cat: 'line', diff: 1, title: 'The flag', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, geom: TT_FLAG, joints: [[45, 36], [45, 70], [45, 30], [77.5, 36], [77.5, 70]],
+    corners: [[110, 36, 1, -1, 0, 'Top right'], [110, 70, 1, 1, 0, 'Bottom right'], [45, 36, -1, -1, 1, 'Top edge at the pole'], [45, 70, -1, -1, 1, 'Bottom edge at the pole']],
+    text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
+    path: (g) => ttGeomDraw(g, TT_FLAG) }];
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
 const TT_BLOW_SEVERE = 7, TT_BLOW_JOKES = ['Did you nod off with your foot on the pedal?', 'That is not shading. That is a bruise with ambition.', 'Your mentor felt that from across town.', 'Somewhere, a client just googled laser removal.', 'The ink has left the building. So has my faith in you.', 'Chores. So many chores.', 'Fat layer says hi. Nobody invited it.'];
@@ -2706,27 +2727,27 @@ TT.open = async (el, id) => {
   const boxIdx = (b) => { const x0 = Math.round(b[0] * mm), y0 = Math.round(b[1] * mm), x1 = Math.round((b[0] + b[2]) * mm), y1 = Math.round((b[1] + b[3]) * mm); return { x0, y0, x1, y1 }; };
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
-  // How steady the line's thickness stays along arcs [cx, cy, r, from, to] (degrees): the ink's width across the line at each step.
-  const weightScore = (arcs) => { const ws = []; for (const [cx, cy, r, a0, a1] of arcs) { const n = Math.ceil(Math.abs(a1 - a0) * Math.PI / 180 * r / 0.5);
-      for (let i = 0; i <= n; i++) { const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a); let c = 0;
-        for (let o = -2.5; o <= 2.5; o += 1 / mm) { const X = Math.round((cx + (r + o) * ca) * mm), Y = Math.round((cy + (r + o) * sa) * mm); if (X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.2) c++; }
-        if (c) ws.push(c / mm); } }
+  // How steady the line's thickness stays along a shape: the ink's width across the line at each step, away from where lines meet.
+  const weightScore = (segs, joints = []) => { const ws = []; for (const q of ttGeomPts(segs)) { if (joints.some(j => Math.hypot(j[0] - q.x, j[1] - q.y) < 3.5)) continue; let c = 0;
+      for (let o = -2.5; o <= 2.5; o += 1 / mm) { const X = Math.round((q.x + o * q.nx) * mm), Y = Math.round((q.y + o * q.ny) * mm); if (X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.2) c++; }
+      if (c) ws.push(c / mm); }
     if (ws.length < 10) return 0; const m = ws.reduce((a, b) => a + b, 0) / ws.length, sd = Math.sqrt(ws.reduce((a, b) => a + (b - m) * (b - m), 0) / ws.length); return Math.round(100 * (1 - clamp01(sd / m / 0.5))); };
   /* Each corner, from [x, y, out x, out y]: ink has to reach the point itself, stay out of the diagonal just inside it
      (a rounded corner cuts through there), and stay off the two lines' extensions just past it (a crossed corner). */
   let cornerNotes = [];
   const cornerScore = (cs) => { cornerNotes = []; const inkAt = (x, y) => { const X = Math.round(x * mm), Y = Math.round(y * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.28 ? 1 : 0; };
     const frac = (x0, x1, y0, y1) => { let n = 0, c = 0; for (let x = x0; x <= x1 + 1e-6; x += 0.1) for (let y = y0; y <= y1 + 1e-6; y += 0.1) { n++; c += inkAt(x, y); } return c / Math.max(1, n); };
-    const one = ([x, y, sx, sy]) => { const box = (a0, a1, b0, b1) => frac(Math.min(x + sx * a0, x + sx * a1), Math.max(x + sx * a0, x + sx * a1), Math.min(y + sy * b0, y + sy * b1), Math.max(y + sy * b0, y + sy * b1));
+    const one = ([x, y, sx, sy, onlyX, label]) => { const box = (a0, a1, b0, b1) => frac(Math.min(x + sx * a0, x + sx * a1), Math.max(x + sx * a0, x + sx * a1), Math.min(y + sy * b0, y + sy * b1), Math.max(y + sy * b0, y + sy * b1));
       const reach = Math.min(1, frac(x - 0.7, x + 0.7, y - 0.7, y + 0.7) / 0.35), cut = box(-2.4, -1, -2.4, -1);
       // how far a line runs on past the corner: a clean end stops within 0.7 mm, and 2.2 mm past scores nothing. Any visible ink counts, across small gaps, so a faint, dotted whip-out still shows as running past.
       const faint = (X0, Y0) => { const X = Math.round(X0 * mm), Y = Math.round(Y0 * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.06; };
       const past = (ux, uy) => { let last = 0.7; for (let d = 0.7; d < 6 && d - last <= 0.5; d += 0.1) for (let o = -0.5; o <= 0.5; o += 0.1) if (faint(x + ux * d + uy * o, y + uy * d + ux * o)) { last = d; break; } return last - 0.7; };
-      const run = Math.max(past(sx, 0), past(0, sy)), name = `${sy < 0 ? 'Top' : 'Bottom'} ${sx < 0 ? 'left' : 'right'}`; if (reach < 0.7) cornerNotes.push(`${name} corner stops short of the point.`); if (cut > 0.15) cornerNotes.push(`${name} corner is rounded: the line cuts inside it.`); if (run > 0.3) cornerNotes.push(`${name} corner runs ${(run + 0.7).toFixed(1)} mm past the point.`);
+      const run = onlyX ? past(sx, 0) : Math.max(past(sx, 0), past(0, sy)), name = label || `${sy < 0 ? 'Top' : 'Bottom'} ${sx < 0 ? 'left' : 'right'}`; if (reach < 0.7) cornerNotes.push(`${name} ${label ? '' : 'corner '}stops short of the point.`); if (cut > 0.15) cornerNotes.push(`${name} ${label ? '' : 'corner '}is rounded: the line cuts inside it.`); if (run > 0.3) cornerNotes.push(`${name} ${label ? '' : 'corner '}runs ${(run + 0.7).toFixed(1)} mm past the point.`);
       return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(run / 1.5)); };
     return Math.round(100 * Math.min(1, cs.reduce((a, c) => a + one(c), 0) / cs.length / 0.78)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
   const scoreOf = (T) => {
-    if (T.arcs) { const ln = lineScore(T.path, T.core, T.covEase), wt = weightScore(T.arcs); return { ...ln, score: Math.round(ln.score * (0.7 + 0.3 * wt / 100)), weight: wt }; }
+    if (T.geom) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners), wt = weightScore(T.geom, T.joints); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100) * (0.7 + 0.3 * wt / 100)), corners: cr, weight: wt }; }
+    if (T.arcs) { const ln = lineScore(T.path, T.core, T.covEase), wt = weightScore(T.arcs.map(a => ['a', ...a])); return { ...ln, score: Math.round(ln.score * (0.7 + 0.3 * wt / 100)), weight: wt }; }
     if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100)), corners: cr }; }
     if (T.kind === 'line') return lineScore(T.path, T.core, T.covEase);
     if (T.kind === 'grad') {   // judged on its shape (scaled to your own darkest) and on getting reasonably dark
