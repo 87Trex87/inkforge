@@ -14,7 +14,7 @@ const TATTOO_VERSION = 1;
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
 const TT_KINDS = { liner: ['RL', 'Round liners'], shader: ['RS', 'Round shaders'], mag: ['M1', 'Magnums'], soft: ['CM', 'Soft edge magnums'] };
-const TT_NEEDLES = [['liner', [1, 3, 5, 7, 9, 11, 14]], ['shader', [5, 7, 9, 11]], ['mag', [7, 9, 11, 13, 15]], ['soft', [9, 15, 23, 31]]]
+const TT_NEEDLES = [['liner', [1, 3, 5, 7, 9, 11, 14]], ['shader', [5, 7, 9, 11, 14]], ['mag', [7, 9, 11, 13, 15]], ['soft', [9, 15, 23, 31]]]
   .flatMap(([kind, ns]) => ns.map(n => ({ id: n + TT_KINDS[kind][0], kind, n,
     name: `${{ liner: 'Liner', shader: 'Shader', mag: 'Magnum', soft: 'Soft edge magnum' }[kind]}, ${n} needle${n > 1 ? 's' : ''}` })));
 function ttLayout(nd, dia) {
@@ -24,7 +24,7 @@ function ttLayout(nd, dia) {
     if (n === 1) out.push({ u: 0, v: 0, e: 1 });
     else if (n <= 6) { const r = (dia / 2) / Math.sin(Math.PI / n) * gap; for (let i = 0; i < n; i++) { const a = i * 2 * Math.PI / n; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } }
     else {   // bigger rounds: an even outer circle around a small core, so the bundle stays round
-      const core = n <= 9 ? 1 : n <= 11 ? (nd.kind === 'shader' ? 3 : 2) : 4, ring = (m, off) => { const r = m < 2 ? 0 : dia * gap / (2 * Math.sin(Math.PI / m)); for (let i = 0; i < m; i++) { const a = off + i * 2 * Math.PI / m; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } };
+      const core = n <= 9 ? 1 : n <= 11 ? 3 : 4, ring = (m, off) => { const r = m < 2 ? 0 : dia * gap / (2 * Math.sin(Math.PI / m)); for (let i = 0; i < m; i++) { const a = off + i * 2 * Math.PI / m; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } };
       ring(core, 0); ring(n - core, Math.PI / (n - core));
     }
   } else {   // magnums: two staggered rows, flat; the soft edge kind sits the same but its outer needles hit shallower (an airbrush-like fade)
@@ -44,7 +44,7 @@ const TT_FEEL_LIQ = { liner: { flow: 80, miss: 25, size: 0.3, bleed: 60 }, shade
 /* Voltage by grouping, as set up for a relatively slow hand (liners higher as they get bigger; shaders and
    magnums lower). Voltage sets how fast the machine hits (about 98 a second at 7 V, rising steeply with voltage), how hard, and how fast the skin gets irritated. */
 const TT_TOUGH = 1.8;   // what Skin toughness 1 means
-const TT_VOLT = { '1RL': 7.0, '3RL': 7.55, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '11RL': 7.7, '14RL': 7.9, '5RS': 6.6, '7RS': 6.7, '9RS': 6.8, '11RS': 6.9,
+const TT_VOLT = { '1RL': 7.0, '3RL': 7.55, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '11RL': 7.7, '14RL': 7.9, '5RS': 6.6, '7RS': 6.7, '9RS': 6.8, '11RS': 6.9, '14RS': 7,
   '7M1': 6.5, '9M1': 6.55, '11M1': 5, '13M1': 8.25, '15M1': 6.55, '9CM': 6.5, '15CM': 7.45, '23CM': 6.7, '31CM': 6.75 };
 // Single groupings set apart from their kind, tuned on a real tablet by a relatively slow hand.
 const TT_FEEL_ID = { '1RL': { size: 0.25 }, '15M1': { speedFade: 100, tiltSpread: 55, size: 0.3, hang: 51 }, '23CM': { tiltSpread: 49, flow: 85, bleed: 35, miss: 40, hang: 65 }, '31CM': { hand: 31, speedFade: 47, tiltFade: 38, flow: 85 } };
@@ -373,7 +373,7 @@ const TT_LESSONS = [
         more: 'There are many more variants out there, such as flat magnums with a single row of needles instead of two. Needles also differ in taper, the length of the narrowing point: a long taper is finer and gentler on the skin, while a short taper is blunter and puts down more ink with each hit. In this simulation we only show the most commonly used stacks and arrangements. The pictures show the tips of the needles from below, as they meet the skin. In this simulator, the shape you see is the shape that lands on the skin with each hit.' },
       { title: 'RL: round liner', pic: { needles: ['1RL', '3RL', '7RL', '14RL'] }, text: 'Needles packed tightly into a circle. They work together like one sharp point, which gives a solid, clean line. This is your needle for linework.',
         more: 'Because all the force lands on a small area, a round liner is the easiest needle to blow out with. Pressing in deep while moving slowly pushes past the dermis and into the hypodermis, which is mostly fat with no structure to hold ink in place, so the ink spreads under the skin.' },
-      { title: 'RS: round shader', pic: { needles: ['5RS', '7RS', '9RS', '11RS'] }, text: 'The same circle, spaced a little looser. It is used for small areas of shading and colour, and it also pulls a lovely bold line, known as a power line.',
+      { title: 'RS: round shader', pic: { needles: ['5RS', '7RS', '11RS', '14RS'] }, text: 'The same circle, spaced a little looser. It is used for small areas of shading and colour, and it also pulls a lovely bold line, known as a power line.',
         more: 'Looser does not mean safer. Lining with a round shader looks great, but it can blow out just like a liner if you press deep and move slowly.' },
       { title: 'M: magnum', pic: { needles: ['7M1', '9M1', '11M1', '15M1'] }, text: 'Needles in a flat, stacked row. A magnum covers a wide band with each pass, so it suits shading and packing colour across bigger areas.',
         more: 'Which way you hold the stack matters. Roll it onto one end and that end goes deepest while the rest feather away, which is how you get a soft edge.' },
@@ -381,7 +381,7 @@ const TT_LESSONS = [
         more: 'This is the go-to for smooth grey gradients and for packing large areas of colour, because its passes blend into each other without hard lines.' },
       { title: 'Thickness: #08, #10, #12', pic: { sizes: true }, text: 'The number is the thickness of each single needle: #08 is 0.25 mm, #10 is 0.30 mm and #12 is 0.35 mm. Thinner needles leave finer marks; thicker ones carry more ink and hit bolder.',
         more: 'Thin needles go into the skin more easily, so they blow out more easily too. You can change the size of each needle in its settings under the sliders icon.' },
-      { title: 'Groupings: where each is used', pic: { table: [['1RL to 3RL', 'Fine line, small detail, lettering'], ['5RL to 9RL', 'Everyday linework'], ['11RL to 14RL', 'Bold, heavy outlines'], ['5RS to 11RS', 'Small shading, colour in tight spots, bold lines'], ['7M to 15M', 'Shading and colour in medium areas'], ['9CM to 31CM', 'Smooth gradients, packing large areas']] }, text: 'More needles cover more skin with each pass, but they also make the fine control harder. Choose the smallest grouping that does the job comfortably.',
+      { title: 'Groupings: where each is used', pic: { table: [['1RL to 3RL', 'Fine line, small detail, lettering'], ['5RL to 9RL', 'Everyday linework'], ['11RL to 14RL', 'Bold, heavy outlines'], ['5RS to 14RS', 'Small shading, colour in tight spots, bold lines'], ['7M to 15M', 'Shading and colour in medium areas'], ['9CM to 31CM', 'Smooth gradients, packing large areas']] }, text: 'More needles cover more skin with each pass, but they also make the fine control harder. Choose the smallest grouping that does the job comfortably.',
         more: 'Bigger groupings usually run at different voltages too. Each needle here starts at a sensible voltage, shown beside it while you tattoo.' },
       { title: 'Inks', pic: { caps: true }, text: 'Hold the pen in an ink cap to load the needle: the longer you hold it, the more ink you pick up. Dip into a second cap to mix the colours, as real pigment would.',
         more: 'Grey wash is black thinned with water, so it gets lighter without turning chalky the way adding white does. A needle runs out as you work, so keep dipping.' },
