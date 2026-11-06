@@ -10,6 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
+const TT_BUILD = 242;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -434,7 +435,7 @@ const ttLessonPic = (pic) => { if (!pic) return '';
 TT.lessons = (el) => { ttStyle();
   if (TT.lessonBack) { const b = TT.lessonBack; TT.lessonBack = null; return TT.lesson(el, b.id, b.i); }
   const p = ttLessonProg();
-  el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">Lessons</b></div>
+  el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">Lessons</b><span class="muted" style="font-size:12px">Build ${TT_BUILD}</span></div>
     ${TT_LESSONS.map(c => `<div class="letter">${c.name}</div>${c.lessons.length ? `<div class="tt-lslist">${c.lessons.map(l => { const open = ttLessonOpen(l.id, p), ready = !!l.steps?.length, can = open && ready;
       return `<button class="tt-lsrow ${can ? '' : 'off'}" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
   el.onclick = (e) => { const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
@@ -2731,7 +2732,7 @@ TT.open = async (el, id) => {
     const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
     const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now(); await Settings.set('tt_lessons', JSON.stringify(p));
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
-    o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
+    o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
       ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
       <img class="tt-chshot" src="${res.thumb}" alt="">
