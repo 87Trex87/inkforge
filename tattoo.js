@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 247;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 248;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -2662,7 +2662,7 @@ TT.open = async (el, id) => {
       // how far a line runs on past the corner: a clean end stops within 0.7 mm, and 2.2 mm past scores nothing
       const past = (ux, uy) => { let d = 0.7; for (; d < 4; d += 0.1) { let hit = false; for (let o = -0.5; o <= 0.5; o += 0.1) if (inkAt(x + ux * d + uy * o, y + uy * d + ux * o)) { hit = true; break; } if (!hit) break; } return d - 0.7; };
       return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(Math.max(past(sx, 0), past(0, sy)) / 1.5)); };
-    return Math.round(100 * cs.reduce((a, c) => a + one(c), 0) / cs.length); };
+    return Math.round(100 * Math.min(1, cs.reduce((a, c) => a + one(c), 0) / cs.length / 0.78)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
   const scoreOf = (T) => {
     if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100)), corners: cr }; }
     if (T.kind === 'line') return lineScore(T.path, T.core, T.covEase);
