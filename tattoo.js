@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 261;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 262;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -441,7 +441,7 @@ const TT_LESSONS = [
         more: 'Every circle overlaps the one before, and each trip overlaps the previous row. The picture is one continuous stroke, stretched out so you can see the path. On skin the circles sit far tighter, with no skin showing between them.' },
       { title: 'Keep it consistent', text: 'Your movement and depth must always stay the same. Keep the circles tight and do not dig. Consistency matters most here: patchy work is not allowed.',
         more: 'A patch usually comes from speeding up, lifting a little, or running low on ink. Digging in to fix a light spot chews up the skin and makes it worse, so come back over it with the same steady motion.' },
-      { title: 'No scratching', text: 'Do not scrub back and forth like colouring in with a crayon. It can look dark, but it scratches ink in unevenly and chews up the skin. Your motion is graded: only tight, proper circles earn the marks.' },
+      { title: 'No scratching', text: 'Do not scrub back and forth like colouring in with a crayon. It can look dark, but it scratches ink in unevenly and chews up the skin. Your motion is graded: tight circles or ovals that keep moving at an even speed earn the marks, and stop-start reversals lose them.' },
       { title: 'Stay inside the line', text: 'Work up to your outline without going over it. Slow your sweep slightly as you reach the edge and turn back, rather than running out past it.' },
       { title: 'Take a break if you need to', text: 'You do not have to do it all in one go. If the skin is getting bruised, stop and let it settle, then carry on. With consistent work it can easily be done in one go.',
         more: 'Skin starts settling a few seconds after the needle moves away, but badly overworked skin stays damaged and will not take ink well.' },
@@ -1071,10 +1071,13 @@ TT.open = async (el, id) => {
     if (!pen.raf) pen.raf = requestAnimationFrame(strokeFlush);
   };
   /* Packing: how many passes land on each half millimetre of the square (so a patch shows even where it already looks
-     dark), and the shape of the motion, sampled every 0.35 mm: steadily curving the same way is a circle. */
+     dark), and the feel of the motion, sampled every 0.35 mm. Tight circles and ovals keep turning the same way at an even speed; scrubbing turns one way then back, and slows to reverse. */
   const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(b[2] * 2 - 1, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(b[3] * 2 - 1, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
-  const packMotion = (dx, dy) => { const m = EX.cur.mv ||= { good: 0, bad: 0, all: 0 }; pen.mx = (pen.mx || 0) + dx / mm; pen.my = (pen.my || 0) + dy / mm; const l = Math.hypot(pen.mx, pen.my); if (l < 0.35) return; const an = Math.atan2(pen.my, pen.mx); pen.mx = pen.my = 0; m.all += l;
-    if (pen.ma != null) { let de = an - pen.ma; while (de > Math.PI) de -= 2 * Math.PI; while (de < -Math.PI) de += 2 * Math.PI; const sg = Math.sign(de); if (Math.abs(de) > 2.2) m.bad += l; else if (sg === pen.ms && Math.abs(de) / l >= 0.3) m.good += l; pen.ms = sg; } pen.ma = an; };
+  const packMotion = (dx, dy) => { const m = EX.cur.mv ||= { all: 0 }; m.stop ||= 0; m.turn ||= 0; m.fast ||= 0; pen.mx = (pen.mx || 0) + dx / mm; pen.my = (pen.my || 0) + dy / mm; const l = Math.hypot(pen.mx, pen.my); if (l < 0.35) return; const an = Math.atan2(pen.my, pen.mx); pen.mx = pen.my = 0; m.all += l;
+    const v = pen.speed || 0; if (v > 150) m.fast += l; pen.va = pen.va == null ? v : pen.va * 0.9 + v * 0.1;
+    if (pen.ma != null) { let sd = an - pen.ma; while (sd > Math.PI) sd -= 2 * Math.PI; while (sd < -Math.PI) sd += 2 * Math.PI; const de = Math.abs(sd); m.turn += Math.min(de, 2.2); if (de > 2.2) m.stop += v < pen.va * 0.5 ? 1 : 0.25;
+      // over each 30 mm of travel (several rows of this small square): a loop keeps turning the same way, while scrubbing turns one way then back again
+      m.ws = (m.ws || 0) + sd; m.wa = (m.wa || 0) + de; m.wl = (m.wl || 0) + l; if (m.wl >= 30) { m.net = (m.net || 0) + Math.abs(m.ws); m.abs = (m.abs || 0) + m.wa; m.ws = m.wa = m.wl = 0; } } pen.ma = an; };
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
       if (pen.snapped) continue;
@@ -2780,11 +2783,11 @@ TT.open = async (el, id) => {
       return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(run / 1.5)); };
     const main = cs.filter(c => !c[4]), side = cs.filter(c => c[4]), mean = (a) => a.reduce((s, c) => s + one(c), 0) / a.length;   // an edge ending on another line can only lose marks by crossing it: that line's own ink always reaches the point, so it can't earn any
     return Math.round(100 * Math.min(1, mean(main) / 0.78) * (side.length ? mean(side) : 1)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
-  // A packed square. Saturation: how dark. Coverage: how much is solid. Consistency: how evenly passes are layered over 1 mm patches, with patches well under the average counting extra, even where the ink looks dark. Technique: how much of the 7RS's travel was curving circles.
+  // A packed square. Saturation: how dark. Coverage: how much is solid. Consistency: how evenly passes are layered over 1 mm patches, with patches well under the average counting extra, even where the ink looks dark. Technique: the 7RS keeps turning the same way at an even speed, without stop-start reversals.
   const packScore = (b) => { const m = 0.6; let n = 0, solid = 0, sum = 0; for (let cx = b[0] + m; cx < b[0] + b[2] - m; cx += 1) for (let cy = b[1] + m; cy < b[1] + b[3] - m; cy += 1) { for (let x = Math.round(cx * mm); x < (cx + 1) * mm; x += 2) for (let y = Math.round(cy * mm); y < (cy + 1) * mm; y += 2) { const d = densAt((y * W + x) * 4); n++; sum += d; if (d > 0.7) solid++; } }
     const hm = EX.cur?.hm || [], pc = []; for (let i = 2; i + 1 < b[2] * 2 - 2; i += 2) for (let j = 2; j + 1 < b[3] * 2 - 2; j += 2) pc.push((hm[j * 30 + i] || 0) + (hm[j * 30 + i + 1] || 0) + (hm[(j + 1) * 30 + i] || 0) + (hm[(j + 1) * 30 + i + 1] || 0));
     const mean = pc.reduce((a, v) => a + v, 0) / Math.max(1, pc.length), sd = Math.sqrt(pc.reduce((a, v) => a + (v - mean) * (v - mean), 0) / Math.max(1, pc.length)), low = pc.filter(v => v < mean * 0.6).length / Math.max(1, pc.length);
-    const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = mean > 0 ? clamp01(1 - sd / mean / 0.4 - low * 1.5) * Math.min(1, sat / 0.5) : 0, sp = spillOut(inBox(b), 1.2), mv = EX.cur?.mv, tech = mv?.all ? clamp01(mv.good / mv.all / 0.55) : 0;
+    const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = mean > 0 ? clamp01(1 - sd / mean / 0.4 - low * 1.5) * Math.min(1, sat / 0.5) : 0, sp = spillOut(inBox(b), 1.2), mv = EX.cur?.mv, tech = mv?.all ? (mv.abs ? clamp01((mv.net / mv.abs - 0.3) / 0.4) : 1) * clamp01(1 - (mv.stop || 0) / (mv.all / 10) / 0.6) * clamp01((mv.turn || 0) / mv.all / 0.4) * (1 - 0.5 * (mv.fast || 0) / mv.all) : 0;
     return { score: Math.round(100 * cov * (0.2 * sat + 0.65 * cons + 0.15 * (1 - sp)) * (0.4 + 0.6 * tech)), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), technique: Math.round(tech * 100), spill: Math.round(sp * 100) }; };
   const scoreOf = (T) => {
     if (T.pack) return packScore(T.pack);
@@ -2905,7 +2908,7 @@ TT.open = async (el, id) => {
       g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx - Math.cos(ang - 0.45) * hd, ty - Math.sin(ang - 0.45) * hd); g.lineTo(tx - Math.cos(ang + 0.45) * hd, ty - Math.sin(ang + 0.45) * hd); g.closePath(); g.fill();
       g.fillStyle = 'rgba(15,18,19,.94)'; g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh); g.fillStyle = '#ffd24a'; lines.forEach((l, i) => g.fillText(l, bx + pad, by + pad + fs * (i + 0.85) * 1.15)); }
     const notes = [], P = res.parts, big = third.indexOf(Math.max(...third));
-    if (T.pack) { if (P.consistency < 80) notes.push('Yellow and red are patches with fewer passes than the rest, even if they look dark. Keep your circles tight and your speed the same, and overlap every pass.'); if (P.technique < 70) notes.push('Your motion was not tight circles. Scrubbing back and forth costs a lot of points here: small overlapping circles, moving steadily across.'); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
+    if (T.pack) { if (P.consistency < 80) notes.push('Yellow and red are patches with fewer passes than the rest, even if they look dark. Keep your circles tight and your speed the same, and overlap every pass.'); if (P.technique < 70) notes.push('Your motion was not tight circles. Stop-start scrubbing, wide sweeps or rushing cost a lot of points here: small overlapping circles or ovals at an even speed, moving steadily across.'); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
     else if (cn && miss / cn > 0.05) notes.push(`Red shows where the line left the stencil or went too light. Most of it is in the ${['top', 'middle', 'bottom'][big]} third. Keep your eye just ahead of the needle and hold your pressure there.`);
     if (!T.pack && P.spill > 2) notes.push('Orange is ink well off the line. Slow your approach and land on the stencil before you pull.');
     if (P.evenness < 75) notes.push('The darkness changes along the line. That usually means your speed or pressure changed, often at the start and end, or where you restarted.');
