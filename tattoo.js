@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 259;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 260;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -76,10 +76,10 @@ const TT = {
   /* Overall calibration, for this device and hand, on top of every needle's own feel: the pen's pressure range,
      a pressure curve, hand speed (how far apart punctures land), how much fast strokes lighten, the angle the pen
      is naturally held at (tilt counts from there) and ink flow. Set by Tune in, or by hand. */
-  calDefaults: { penOnly: true, pMin: 0.2, pMax: 0.866, curve: -75, hand: 4.1, fade: 0.35, flow: 2, tilt0: 35, profile: 'slow', voltOff: 0, blow: 1.2, tough: 1.5, t3: 1, t4: 1, b3: 1 },
+  calDefaults: { penOnly: true, pMin: 0.2, pMax: 0.866, curve: -75, hand: 4.1, fade: 0.35, flow: 2, tilt0: 35, profile: 'slow', voltOff: 0, blow: 1.2, tough: 1.25, t3: 1, t4: 1, b3: 1, t5: 1 },
   // Toughness scale: rescaled twice (each time × 1 became what × 2.5 was); t2/t3 mark which scale a saved value is
   // on, and older ones are moved across.
-  cal() { try { const s = JSON.parse(Settings.get('tt_cal', '{}')); if (s.tough != null && !s.t3) { s.tough = Math.round(s.tough / (s.t2 ? 2.5 : 6.25) * 100) / 100; s.t3 = 1; } if (s.tough != null && !s.t4) { s.tough = Math.round(s.tough / 1.8 * 100) / 100; s.t4 = 1; } if (s.blow != null && !s.b3) { s.blow = Math.round(s.blow / 3 * 100) / 100; s.b3 = 1; } return { ...TT.calDefaults, ...s }; } catch { return { ...TT.calDefaults }; } },
+  cal() { try { const s = JSON.parse(Settings.get('tt_cal', '{}')); if (s.tough != null && !s.t3) { s.tough = Math.round(s.tough / (s.t2 ? 2.5 : 6.25) * 100) / 100; s.t3 = 1; } if (s.tough != null && !s.t4) { s.tough = Math.round(s.tough / 1.8 * 100) / 100; s.t4 = 1; } if (s.tough === 1.5 && !s.t5) { s.tough = 1.25; s.t5 = 1; } if (s.blow != null && !s.b3) { s.blow = Math.round(s.blow / 3 * 100) / 100; s.b3 = 1; } return { ...TT.calDefaults, ...s }; } catch { return { ...TT.calDefaults }; } },
   saveCal(c) { Settings.set('tt_cal', JSON.stringify(c)); },
   feel(id) { let o = {}; try { o = JSON.parse(Settings.get('tt_feel', '{}'))[id] || {}; } catch {} const nd = TT_NEEDLES.find(n => n.id === id);
     return { ...TT.feelBase(id), ...o }; },
@@ -438,14 +438,15 @@ const TT_LESSONS = [
       { title: 'Two needles, one small square', pic: { needles: ['5RL', '7RS'] }, text: 'A 1.5 cm square. Line it first with a #10 5RL, then change to a #12 7RS and pack it solid black. You choose the needle in the workspace, so remember to change it.',
         more: 'The outline gives you a wall to work up to. Line it the way you learned in Chapter 1, sharp corners included.' },
       { title: 'The circular motion', pic: { motion: true }, text: 'There are a few ways to get solid colour, but the easiest to grasp is tight little circles. Stack 3 to 4 rows at once as you move across: 3 up, 1 to the right, 3 down, 1 to the right, and repeat to the far side. Then come back the same way.',
-        more: 'Every circle overlaps the one before, and each trip overlaps the previous row. The picture is stretched out so you can see the path; on skin the circles sit far tighter, with no skin showing between them.' },
+        more: 'Every circle overlaps the one before, and each trip overlaps the previous row. The picture is one continuous stroke, stretched out so you can see the path. On skin the circles sit far tighter, with no skin showing between them.' },
       { title: 'Keep it consistent', text: 'Your movement and depth must always stay the same. Keep the circles tight and do not dig. Consistency matters most here: patchy work is not allowed.',
         more: 'A patch usually comes from speeding up, lifting a little, or running low on ink. Digging in to fix a light spot chews up the skin and makes it worse, so come back over it with the same steady motion.' },
+      { title: 'No scratching', text: 'Do not scrub back and forth like colouring in with a crayon. It can look dark, but it scratches ink in unevenly and chews up the skin. Your motion is graded: only tight, proper circles earn the marks.' },
       { title: 'Stay inside the line', text: 'Work up to your outline without going over it. Slow your sweep slightly as you reach the edge and turn back, rather than running out past it.' },
       { title: 'Take a break if you need to', text: 'You do not have to do it all in one go. If the skin is getting bruised, stop and let it settle, then carry on. With consistent work it can easily be done in one go.',
         more: 'Skin starts settling a few seconds after the needle moves away, but badly overworked skin stays damaged and will not take ink well.' },
       { title: 'Your grade', text: 'When it is solid and the skin has settled, press Done. Grade C (70) or higher moves you on, and more than 1 blowout is an instant fail.',
-        more: 'Consistency counts most, then saturation, how much of the square is solid, and staying inside the line. Skin condition is part of the grade, as always.' }
+        more: 'Consistency counts most: how evenly your passes are layered across the square, even where it already looks dark. Then saturation, how much is solid and staying inside the line. Technique can take off up to 60% if you are not packing in tight circles. Skin condition is part of the grade, as always.' }
     ] }
   ] },
   { name: 'Chapter 3: Advanced', lessons: [] }
@@ -492,7 +493,8 @@ const ttLessonOpen = (id, p) => { const a = ttLessonList(), n = a.findIndex(l =>
 const ttNeedleSvg = (id, size) => { const nd = TT_NEEDLES.find(n => n.id === id), f = size ?? TT.feelBase(id).size, lay = ttLayout(nd, f), R = Math.max(0.5, ...lay.map(q => Math.hypot(q.u, q.v) + f)) * 1.1;
   return `<svg viewBox="${-R} ${-R} ${R * 2} ${R * 2}" role="img" aria-label="${esc(nd.name)}"><circle r="${(R * 0.99).toFixed(3)}" class="tt-lsbg"/>${lay.map(q => `<circle cx="${q.u.toFixed(3)}" cy="${q.v.toFixed(3)}" r="${(f * 0.42).toFixed(3)}" class="tt-lsdot"/>`).join('')}</svg>`; };
 // The packing path, neatly: tight loops stacked 3 rows high, stepping sideways up and down the column.
-const ttMotionSvg = () => { const pts = [], step = 11, r = 8; let cx = 22, cy = 74, dir = -1; for (let c = 0; c < 15; c++) { for (let i = 0; i < 3; i++) { for (let a = 0; a < 24; a++) { const f = a / 24, an = f * Math.PI * 2 + Math.PI / 2; pts.push([cx + (i === 0 ? 0 : 0) + r * Math.cos(an), cy + dir * step * (i + f) + r * Math.sin(an)]); } } cy += dir * step * 3; cx += step * 1.3; dir = -dir; }
+const ttMotionSvg = () => { const C = [], h = 33, sx = 14, x0 = 24, yB = 74; for (let c = 0; c < 15; c++) { const x = x0 + c * sx; C.push(c % 2 ? [x, yB - h] : [x, yB], c % 2 ? [x, yB] : [x, yB - h]); }
+  const pts = [], r = 8, per = 11; let travelled = 0; for (let i = 1; i < C.length; i++) { const a = C[i - 1], b = C[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.ceil(L / 0.5); for (let j = 0; j < n; j++) { const s = travelled + L * j / n, an = s / per * Math.PI * 2, f = j / n; pts.push([a[0] + (b[0] - a[0]) * f + r * Math.cos(an), a[1] + (b[1] - a[1]) * f + r * Math.sin(an)]); } travelled += L; }
   const d = pts.map((q, i) => `${i ? 'L' : 'M'}${q[0].toFixed(1)} ${q[1].toFixed(1)}`).join(' ');
   return `<svg class="tt-lsmotion" style="width:100%;height:auto;aspect-ratio:2.5" viewBox="0 0 250 100" role="img" aria-label="Tight overlapping circles moving up and down in columns, stepping from left to right"><path d="${d}" class="tt-lsmpath"/><path d="M14 94H236M228 89l8 5-8 5" class="tt-lsmarrow"/></svg>`; };
 const ttLessonPic = (pic) => { if (!pic) return '';
@@ -1068,6 +1070,11 @@ TT.open = async (el, id) => {
     const co = e.getCoalescedEvents?.(); pen.q.push(...(co?.length ? co : [e]));
     if (!pen.raf) pen.raf = requestAnimationFrame(strokeFlush);
   };
+  /* Packing: how many passes land on each half millimetre of the square (so a patch shows even where it already looks
+     dark), and the shape of the motion, sampled every 0.35 mm: steadily curving the same way is a circle. */
+  const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(29, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(29, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
+  const packMotion = (dx, dy) => { const m = EX.cur.mv ||= { good: 0, bad: 0, all: 0 }; pen.mx = (pen.mx || 0) + dx / mm; pen.my = (pen.my || 0) + dy / mm; const l = Math.hypot(pen.mx, pen.my); if (l < 0.35) return; const an = Math.atan2(pen.my, pen.mx); pen.mx = pen.my = 0; m.all += l;
+    if (pen.ma != null) { let de = an - pen.ma; while (de > Math.PI) de -= 2 * Math.PI; while (de < -Math.PI) de += 2 * Math.PI; const sg = Math.sign(de); if (Math.abs(de) > 2.2) m.bad += l; else if (sg === pen.ms && Math.abs(de) / l >= 0.3) m.good += l; pen.ms = sg; } pen.ma = an; };
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
       if (pen.snapped) continue;
@@ -1089,13 +1096,14 @@ TT.open = async (el, id) => {
       if (EX?.cur && st.tool !== 'erase' && (EX.cur.n = (EX.cur.n || 0) + 1) % 3 === 0 && EX.cur.p.length < 1500) {
         EX.cur.p.push(+pNorm(ev).toFixed(3)); EX.cur.v.push(Math.round(pen.speed)); EX.cur.d.push(+depth.toFixed(3)); EX.cur.t.push(Math.round(Math.hypot(ev.tiltX || 0, ev.tiltY || 0))); }
       // punctures land every (hand speed / machine speed) along the skin; `hand` scales screen speed to a tattooing hand's
+      const packB = EX?.cur && st.tool !== 'erase' && pen.cx.pig ? exList()[EX.i]?.pack : null; if (packB && st.needle === '7RS') packMotion(dx, dy);
       const gap = (fast ? Math.min(gapMm(pen.speed), 0.06) : gapMm(pen.speed)) / z * mm;
       let t = pen.carry;
       while (t <= d) {
         const q = { x: pen.last.x + dx * t / d, y: pen.last.y + dy * t / d };
         let inkC = st.tool === 'erase' ? 1 : Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake();
         if (st.tool !== 'erase' && pen.cx.pig) {
-          const t0 = trAt(q);
+          const t0 = trAt(q); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) / ((cal.tough || 1) * TT_TOUGH));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * 3 * Math.pow(0.3 / blowSize(), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
@@ -2120,7 +2128,7 @@ TT.open = async (el, id) => {
         ${cslider('pMin', 'Lightest pen reading', 0, 0.4, 0.01, cal.pMin, v => Math.round(v * 100) + '%')}${cslider('pMax', 'Hardest pen reading', 0.732, 1, 0.002, cal.pMax, v => Math.round(v * 100) + '%')}
         ${cslider('hand', 'Hand speed', 0.5, 5, 0.05, cal.hand, v => '× ' + v)}${cslider('fade', 'Fast strokes lighten', 0.05, 0.85, 0.05, cal.fade, v => '× ' + v)}
         ${cslider('flow', 'Ink flow', 1, 3, 0.05, cal.flow, v => '× ' + v)}${cslider('tilt0', 'Natural angle', 20, 50, 1, cal.tilt0, v => v + '°')}
-        ${cslider('blow', 'Blowout sensitivity', 0, 2.4, 0.05, cal.blow ?? 1, v => +v ? '× ' + v : 'off')}${cslider('tough', 'Skin toughness', 0.1, 2.9, 0.05, cal.tough ?? 1, v => '× ' + v)}
+        ${cslider('blow', 'Blowout sensitivity', 0, 2.4, 0.05, cal.blow ?? 1, v => +v ? '× ' + v : 'off')}${cslider('tough', 'Skin toughness', 0.1, 2.4, 0.05, cal.tough ?? 1, v => '× ' + v)}
         <button class="btn small" data-calreset>Reset all needles' calibration</button> <button class="btn small" data-toolreset>Reset tool settings</button>`, { fold: true })}
       <div class="lbl" style="margin-top:8px">${nd.id} only</div>
       <div class="lbl">Pressure → depth</div>
@@ -2305,7 +2313,7 @@ TT.open = async (el, id) => {
         const v = pct(speeds(pad), 0.5), fast = v > 150 ? ` You packed fast (about ${Math.round(v)} mm/s): slower, overlapping passes go in darker, as on skin.` : '';
         return `Your packing covered ${Math.round(cov * 100)}% of the box.${fast} ${cal.flow > before ? 'Ink now goes in a little more readily.' : cal.flow < before ? 'Ink now goes in a touch less readily.' : 'That\u2019s about right, so ink flow stays.'}`; } },
     { id: 'skin', title: 'Skin and blowouts', needle: '3RL', noPad: true, text: 'These are a matter of taste, so set them by feel. The middle of each slider is the default; you can come back and change them any time.',
-      sliders: [['cal', 'tough', 'Skin toughness: higher takes longer to redden and swell', 0.1, 2.9, 0.05, v => '× ' + v], ['cal', 'blow', 'Blowout sensitivity: higher blows out more easily', 0, 2.4, 0.05, v => +v ? '× ' + v : 'off']] },
+      sliders: [['cal', 'tough', 'Skin toughness: higher takes longer to redden and swell', 0.1, 2.4, 0.05, v => '× ' + v], ['cal', 'blow', 'Blowout sensitivity: higher blows out more easily', 0, 2.4, 0.05, v => +v ? '× ' + v : 'off']] },
     { id: 'look', title: 'Needle look', needle: '15M1', pm: 10, text: 'Draw on the pad and set how the needles should look. Thickness is for all needles, texture for magnums. New strokes use the change, so draw again after moving a slider.',
       sliders: [['look', 'thin', 'Needle thickness', 20, 70, 5, v => v + '%'], ['look', 'tex', 'Magnum needle texture', 0, 100, 5, v => v + '%']] }
   ];
@@ -2772,11 +2780,12 @@ TT.open = async (el, id) => {
       return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(run / 1.5)); };
     const main = cs.filter(c => !c[4]), side = cs.filter(c => c[4]), mean = (a) => a.reduce((s, c) => s + one(c), 0) / a.length;   // an edge ending on another line can only lose marks by crossing it: that line's own ink always reaches the point, so it can't earn any
     return Math.round(100 * Math.min(1, mean(main) / 0.78) * (side.length ? mean(side) : 1)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
-  // A packed square. Saturation: how dark. Coverage: how much is solid. Consistency: how alike 1 mm patches of it are, with patches well below the rest counting double. The outline's own 0.6 mm is left out.
-  const packScore = (b) => { const m = 0.6, cells = []; let n = 0, solid = 0, sum = 0; for (let cx = b[0] + m; cx < b[0] + b[2] - m; cx += 1) for (let cy = b[1] + m; cy < b[1] + b[3] - m; cy += 1) { let s = 0, c = 0; for (let x = Math.round(cx * mm); x < (cx + 1) * mm; x += 2) for (let y = Math.round(cy * mm); y < (cy + 1) * mm; y += 2) { const d = densAt((y * W + x) * 4); s += d; c++; n++; sum += d; if (d > 0.7) solid++; } cells.push(s / Math.max(1, c)); }
-    const mean = cells.reduce((a, v) => a + v, 0) / Math.max(1, cells.length), sd = Math.sqrt(cells.reduce((a, v) => a + (v - mean) * (v - mean), 0) / Math.max(1, cells.length)), low = cells.filter(v => v < mean - 0.15).length / Math.max(1, cells.length);
-    const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = clamp01(1 - sd / 0.25 - low) * Math.min(1, sat / 0.5), sp = spillOut(inBox(b), 1.2);
-    return { score: Math.round(100 * cov * (0.3 * sat + 0.55 * cons + 0.15 * (1 - sp))), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), spill: Math.round(sp * 100) }; };
+  // A packed square. Saturation: how dark. Coverage: how much is solid. Consistency: how evenly passes are layered over 1 mm patches, with patches well under the average counting extra, even where the ink looks dark. Technique: how much of the 7RS's travel was curving circles.
+  const packScore = (b) => { const m = 0.6; let n = 0, solid = 0, sum = 0; for (let cx = b[0] + m; cx < b[0] + b[2] - m; cx += 1) for (let cy = b[1] + m; cy < b[1] + b[3] - m; cy += 1) { for (let x = Math.round(cx * mm); x < (cx + 1) * mm; x += 2) for (let y = Math.round(cy * mm); y < (cy + 1) * mm; y += 2) { const d = densAt((y * W + x) * 4); n++; sum += d; if (d > 0.7) solid++; } }
+    const hm = EX.cur?.hm || [], pc = []; for (let i = 2; i + 1 < 28; i += 2) for (let j = 2; j + 1 < 28; j += 2) pc.push((hm[j * 30 + i] || 0) + (hm[j * 30 + i + 1] || 0) + (hm[(j + 1) * 30 + i] || 0) + (hm[(j + 1) * 30 + i + 1] || 0));
+    const mean = pc.reduce((a, v) => a + v, 0) / Math.max(1, pc.length), sd = Math.sqrt(pc.reduce((a, v) => a + (v - mean) * (v - mean), 0) / Math.max(1, pc.length)), low = pc.filter(v => v < mean * 0.6).length / Math.max(1, pc.length);
+    const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = mean > 0 ? clamp01(1 - sd / mean / 0.4 - low * 1.5) * Math.min(1, sat / 0.5) : 0, sp = spillOut(inBox(b), 1.2), mv = EX.cur?.mv, tech = mv?.all ? clamp01(mv.good / mv.all / 0.55) : 0;
+    return { score: Math.round(100 * cov * (0.2 * sat + 0.65 * cons + 0.15 * (1 - sp)) * (0.4 + 0.6 * tech)), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), technique: Math.round(tech * 100), spill: Math.round(sp * 100) }; };
   const scoreOf = (T) => {
     if (T.pack) return packScore(T.pack);
     if (T.geom) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners), wt = weightScore(T.geom, T.joints); return { ...ln, score: Math.round(ln.score * (0.8 + 0.2 * cr / 100) * (0.9 + 0.1 * wt / 100)), corners: cr, weight: wt }; }
@@ -2879,12 +2888,12 @@ TT.open = async (el, id) => {
     const m = Math.round(8 * mm), spots = EX.cur?.spots || [], severe = spots.filter(s => s[2] >= TT_BLOW_SEVERE); for (const s of spots) { x0 = Math.min(x0, s[0]); y0 = Math.min(y0, s[1]); x1 = Math.max(x1, s[0]); y1 = Math.max(y1, s[1]); }
     x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m); if (severe.length) { const need = Math.round(90 * mm) - (x1 - x0); if (need > 0) { x0 = Math.max(0, x0 - Math.ceil(need / 2)); x1 = Math.min(W, x1 + Math.ceil(need / 2)); } } const cw = x1 - x0, ch = y1 - y0, c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
     g.fillStyle = '#101314'; g.fillRect(0, 0, cw, ch); g.globalAlpha = 0.4; g.drawImage(composite(1), -x0, -y0); g.globalAlpha = 1;
-    const im = g.getImageData(0, 0, cw, ch), D = im.data, bl = (() => { const bc = document.createElement('canvas'); bc.width = W; bc.height = H; const bg = bc.getContext('2d'); bg.drawImage(blowC, 0, 0, W, H); return bg.getImageData(0, 0, W, H).data; })(), put = (i, r, gg, b) => { D[i] = r; D[i + 1] = gg; D[i + 2] = b; }, third = [0, 0, 0]; let miss = 0, cn = 0, sx = 0, sy = 0;
+    const im = g.getImageData(0, 0, cw, ch), D = im.data, bl = (() => { const bc = document.createElement('canvas'); bc.width = W; bc.height = H; const bg = bc.getContext('2d'); bg.drawImage(blowC, 0, 0, W, H); return bg.getImageData(0, 0, W, H).data; })(), put = (i, r, gg, b) => { D[i] = r; D[i + 1] = gg; D[i + 2] = b; }, third = [0, 0, 0], hm = EX.cur?.hm || [], hmN = hm.filter(v => v > 0), hmM = hmN.reduce((a, v) => a + v, 0) / Math.max(1, hmN.length), hmv = (x, y) => (hm[Math.floor(y * 2) * 30 + Math.floor(x * 2)] || 0) / Math.max(1, hmM); let miss = 0, cn = 0, sx = 0, sy = 0;
     for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const px = x + x0, py = y + y0, j = (py * W + px) * 4, i = (y * cw + x) * 4, d = densAt(j), tp = TP[Math.floor(py / TS) * tw + Math.floor(px / TS)];
       if (tp > 1) put(i, 120, 60, 170);
       if (bl[j + 3] > 40) put(i, 60, 130, 255);
       if (d > 0.2 && band[j + 3] < 30) put(i, 255, 150, 40);
-      if (T.pack && core[j + 3] > 128) { cn++; if (d > 0.7) put(i, 60, 220, 120); else if (d > 0.4) put(i, 240, 200, 60); else { put(i, 240, 60, 60); miss++; } }
+      if (T.pack && core[j + 3] > 128) { cn++; const hv = hmv((px / mm - T.pack[0]), (py / mm - T.pack[1])); if (d > 0.7 && hv >= 0.75) put(i, 60, 220, 120); else if (d > 0.4 && hv >= 0.5) put(i, 240, 200, 60); else { put(i, 240, 60, 60); miss++; } }
       else if (core[j + 3] > 128) { cn++; if (d > 0.28) put(i, 60, 220, 120); else { put(i, 240, 60, 60); miss++; sx += px; sy += py; third[Math.min(2, Math.floor((py - y0 - m) / Math.max(1, ch - 2 * m) * 3))]++; } } }
     g.putImageData(im, 0, 0);
     // A ring around every blowout, and for a really bad one, an arrow and the level of disappointment.
@@ -2896,7 +2905,7 @@ TT.open = async (el, id) => {
       g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx - Math.cos(ang - 0.45) * hd, ty - Math.sin(ang - 0.45) * hd); g.lineTo(tx - Math.cos(ang + 0.45) * hd, ty - Math.sin(ang + 0.45) * hd); g.closePath(); g.fill();
       g.fillStyle = 'rgba(15,18,19,.94)'; g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh); g.fillStyle = '#ffd24a'; lines.forEach((l, i) => g.fillText(l, bx + pad, by + pad + fs * (i + 0.85) * 1.15)); }
     const notes = [], P = res.parts, big = third.indexOf(Math.max(...third));
-    if (T.pack) { if (P.consistency < 80) notes.push('Yellow and red are patches: lighter than the solid green. Keep your circles tight and your speed and depth the same, and overlap every pass.'); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
+    if (T.pack) { if (P.consistency < 80) notes.push('Yellow and red are patches with fewer passes than the rest, even if they look dark. Keep your circles tight and your speed the same, and overlap every pass.'); if (P.technique < 70) notes.push('Your motion was not tight circles. Scrubbing back and forth costs a lot of points here: small overlapping circles, moving steadily across.'); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
     else if (cn && miss / cn > 0.05) notes.push(`Red shows where the line left the stencil or went too light. Most of it is in the ${['top', 'middle', 'bottom'][big]} third. Keep your eye just ahead of the needle and hold your pressure there.`);
     if (!T.pack && P.spill > 2) notes.push('Orange is ink well off the line. Slow your approach and land on the stencil before you pull.');
     if (P.evenness < 75) notes.push('The darkness changes along the line. That usually means your speed or pressure changed, often at the start and end, or where you restarted.');
