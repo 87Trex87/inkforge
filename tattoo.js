@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 260;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 261;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -435,7 +435,7 @@ const TT_LESSONS = [
   ] },
   { name: 'Chapter 2: Medium', lessons: [
     { id: '2-1', title: 'Solid black', sum: 'Line a small square, then pack it solid black with no patches. Grade C or higher moves you on.', task: 'l-pack', steps: [
-      { title: 'Two needles, one small square', pic: { needles: ['5RL', '7RS'] }, text: 'A 1.5 cm square. Line it first with a #10 5RL, then change to a #12 7RS and pack it solid black. You choose the needle in the workspace, so remember to change it.',
+      { title: 'Two needles, one small square', pic: { needles: ['5RL', '7RS'] }, text: 'A 1 cm square. Line it first with a #10 5RL, then change to a #12 7RS and pack it solid black. You choose the needle in the workspace, so remember to change it.',
         more: 'The outline gives you a wall to work up to. Line it the way you learned in Chapter 1, sharp corners included.' },
       { title: 'The circular motion', pic: { motion: true }, text: 'There are a few ways to get solid colour, but the easiest to grasp is tight little circles. Stack 3 to 4 rows at once as you move across: 3 up, 1 to the right, 3 down, 1 to the right, and repeat to the far side. Then come back the same way.',
         more: 'Every circle overlaps the one before, and each trip overlaps the previous row. The picture is one continuous stroke, stretched out so you can see the path. On skin the circles sit far tighter, with no skin showing between them.' },
@@ -475,7 +475,7 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
     text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
     path: (g) => ttGeomDraw(g, TT_FLAG) }];
 const ttPackPath = (b) => (g) => { g.moveTo(b[0], b[1]); g.lineTo(b[0] + b[2], b[1]); g.lineTo(b[0] + b[2], b[1] + b[3]); g.lineTo(b[0], b[1] + b[3]); g.closePath(); };
-TT_LS_CH.push({ id: 'l-pack', lesson: '2-1', cat: 'pack', diff: 2, title: 'Solid black', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [82.5, 52.5, 15, 15], needles: ['5RL', '7RS'], path: ttPackPath([82.5, 52.5, 15, 15]),
+TT_LS_CH.push({ id: 'l-pack', lesson: '2-1', cat: 'pack', diff: 2, title: 'Solid black', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [85, 55, 10, 10], needles: ['5RL', '7RS'], path: ttPackPath([85, 55, 10, 10]),
   text: 'Black ink. Line the square with the 5RL, then change to the 7RS and pack it solid with tight overlapping circles. Take a break if the skin bruises. Let it settle, then press Done.' });
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
@@ -1072,7 +1072,7 @@ TT.open = async (el, id) => {
   };
   /* Packing: how many passes land on each half millimetre of the square (so a patch shows even where it already looks
      dark), and the shape of the motion, sampled every 0.35 mm: steadily curving the same way is a circle. */
-  const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(29, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(29, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
+  const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(b[2] * 2 - 1, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(b[3] * 2 - 1, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
   const packMotion = (dx, dy) => { const m = EX.cur.mv ||= { good: 0, bad: 0, all: 0 }; pen.mx = (pen.mx || 0) + dx / mm; pen.my = (pen.my || 0) + dy / mm; const l = Math.hypot(pen.mx, pen.my); if (l < 0.35) return; const an = Math.atan2(pen.my, pen.mx); pen.mx = pen.my = 0; m.all += l;
     if (pen.ma != null) { let de = an - pen.ma; while (de > Math.PI) de -= 2 * Math.PI; while (de < -Math.PI) de += 2 * Math.PI; const sg = Math.sign(de); if (Math.abs(de) > 2.2) m.bad += l; else if (sg === pen.ms && Math.abs(de) / l >= 0.3) m.good += l; pen.ms = sg; } pen.ma = an; };
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
@@ -2782,7 +2782,7 @@ TT.open = async (el, id) => {
     return Math.round(100 * Math.min(1, mean(main) / 0.78) * (side.length ? mean(side) : 1)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
   // A packed square. Saturation: how dark. Coverage: how much is solid. Consistency: how evenly passes are layered over 1 mm patches, with patches well under the average counting extra, even where the ink looks dark. Technique: how much of the 7RS's travel was curving circles.
   const packScore = (b) => { const m = 0.6; let n = 0, solid = 0, sum = 0; for (let cx = b[0] + m; cx < b[0] + b[2] - m; cx += 1) for (let cy = b[1] + m; cy < b[1] + b[3] - m; cy += 1) { for (let x = Math.round(cx * mm); x < (cx + 1) * mm; x += 2) for (let y = Math.round(cy * mm); y < (cy + 1) * mm; y += 2) { const d = densAt((y * W + x) * 4); n++; sum += d; if (d > 0.7) solid++; } }
-    const hm = EX.cur?.hm || [], pc = []; for (let i = 2; i + 1 < 28; i += 2) for (let j = 2; j + 1 < 28; j += 2) pc.push((hm[j * 30 + i] || 0) + (hm[j * 30 + i + 1] || 0) + (hm[(j + 1) * 30 + i] || 0) + (hm[(j + 1) * 30 + i + 1] || 0));
+    const hm = EX.cur?.hm || [], pc = []; for (let i = 2; i + 1 < b[2] * 2 - 2; i += 2) for (let j = 2; j + 1 < b[3] * 2 - 2; j += 2) pc.push((hm[j * 30 + i] || 0) + (hm[j * 30 + i + 1] || 0) + (hm[(j + 1) * 30 + i] || 0) + (hm[(j + 1) * 30 + i + 1] || 0));
     const mean = pc.reduce((a, v) => a + v, 0) / Math.max(1, pc.length), sd = Math.sqrt(pc.reduce((a, v) => a + (v - mean) * (v - mean), 0) / Math.max(1, pc.length)), low = pc.filter(v => v < mean * 0.6).length / Math.max(1, pc.length);
     const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = mean > 0 ? clamp01(1 - sd / mean / 0.4 - low * 1.5) * Math.min(1, sat / 0.5) : 0, sp = spillOut(inBox(b), 1.2), mv = EX.cur?.mv, tech = mv?.all ? clamp01(mv.good / mv.all / 0.55) : 0;
     return { score: Math.round(100 * cov * (0.2 * sat + 0.65 * cons + 0.15 * (1 - sp)) * (0.4 + 0.6 * tech)), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), technique: Math.round(tech * 100), spill: Math.round(sp * 100) }; };
