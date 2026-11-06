@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 246;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 247;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -2658,8 +2658,10 @@ TT.open = async (el, id) => {
   const cornerScore = (cs) => { const inkAt = (x, y) => { const X = Math.round(x * mm), Y = Math.round(y * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.28 ? 1 : 0; };
     const frac = (x0, x1, y0, y1) => { let n = 0, c = 0; for (let x = x0; x <= x1 + 1e-6; x += 0.1) for (let y = y0; y <= y1 + 1e-6; y += 0.1) { n++; c += inkAt(x, y); } return c / Math.max(1, n); };
     const one = ([x, y, sx, sy]) => { const box = (a0, a1, b0, b1) => frac(Math.min(x + sx * a0, x + sx * a1), Math.max(x + sx * a0, x + sx * a1), Math.min(y + sy * b0, y + sy * b1), Math.max(y + sy * b0, y + sy * b1));
-      const reach = Math.min(1, frac(x - 0.5, x + 0.5, y - 0.5, y + 0.5) / 0.5), cut = box(-2.4, -1, -2.4, -1), over = Math.max(box(1.2, 3.5, -0.6, 0.6), box(-0.6, 0.6, 1.2, 3.5));
-      return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(over * 1.6)); };
+      const reach = Math.min(1, frac(x - 0.7, x + 0.7, y - 0.7, y + 0.7) / 0.35), cut = box(-2.4, -1, -2.4, -1);
+      // how far a line runs on past the corner: a clean end stops within 0.7 mm, and 2.2 mm past scores nothing
+      const past = (ux, uy) => { let d = 0.7; for (; d < 4; d += 0.1) { let hit = false; for (let o = -0.5; o <= 0.5; o += 0.1) if (inkAt(x + ux * d + uy * o, y + uy * d + ux * o)) { hit = true; break; } if (!hit) break; } return d - 0.7; };
+      return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(Math.max(past(sx, 0), past(0, sy)) / 1.5)); };
     return Math.round(100 * cs.reduce((a, c) => a + one(c), 0) / cs.length); };
   const scoreOf = (T) => {
     if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100)), corners: cr }; }
