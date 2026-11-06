@@ -388,11 +388,35 @@ const TT_LESSONS = [
       { title: 'Skin', pic: { skins: true }, text: 'Skin is the part that fights back. Every pass wears it: first it goes red, then it swells, and overworked skin stops taking ink. Work it gently and leave it alone once it has had enough.',
         more: 'Redness settles after a rest, but serious damage stays. Darker skin tones show less contrast and take no colour on the deepest tones, which you will plan for later on. Keep the skin stretched: loose skin moves under the needle.' }
     ] },
-    { id: '1-2', title: 'Your first line', sum: 'Pull your first line with a liner.' }
+    { id: '1-2', title: 'Your first line', sum: 'Pull one short, straight line with a 5RL. Grade C or higher moves you on.', task: 'l-first', steps: [
+      { title: 'Your needle: 5RL, #10', pic: { needles: ['5RL'] }, text: 'A good first needle: big enough to make a solid line, and small enough to stay controlled. The workspace will have it ready for you.',
+        more: '5 needles at 0.30 mm each, in a tight round. If you changed this needle in its settings, its size stays as you set it.' },
+      { title: 'Load your ink', pic: { caps: true }, text: 'In the workspace, hold the pen in the black ink cap for a moment to load the needle. An empty needle leaves nothing behind.' },
+      { title: 'Start moving before you go in', text: 'Begin the motion just above the skin, then land while already moving. Lift off the same way at the end. Landing or lifting while still leaves a dark dot.',
+        more: 'Coming straight down hard, known as a crash, marks the skin and can blow out. Ease in and ease out.' },
+      { title: 'Steady speed, steady pressure', text: 'Pull the line in one smooth movement, at one speed and one depth. Follow the middle of the stencil line, and look a little ahead of the needle, not at it.',
+        more: 'Too light and the ink misses. Too deep while moving slowly and it blows out. If you stop partway, carry on from just before the stop, moving as you land.' },
+      { title: 'Then leave it to settle', text: 'One clean pass is the goal, because every extra pass wears the skin. When the line is done, leave the skin alone for about a minute before you press Done, so the redness can calm down.',
+        more: 'Skin starts settling a few seconds after the needle moves away, and the redness halves about every 30 seconds. Your skin score counts for part of your grade, so waiting pays off.' },
+      { title: 'Your grade', text: 'Press Done when you are ready for your score. Grade C (70) or higher unlocks the next lesson, and you can try as often as you like.',
+        more: 'A is 90 or more, B is 80, C is 70, D is 60. Most of the score is the line itself: on the stencil, solid and even. The rest is the condition of the skin. Blowouts and extra undos take points off.' }
+    ] },
+    { id: '1-3', title: 'Next lesson', sum: 'To be designed.' }
   ] },
   { name: 'Chapter 2: Medium', lessons: [] },
   { name: 'Chapter 3: Advanced', lessons: [] }
 ];
+// Lesson tasks run in the real workspace like a challenge, but stay out of the challenge list, medals and trophies.
+const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: 'Your first line', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6,
+  text: 'Black ink, 5RL. Load the needle, then pull one clean line down the stencil in a single pass. Leave the skin to settle for about a minute, then press Done. C or higher unlocks the next lesson.',
+  path: (g) => { g.moveTo(90, 35); g.lineTo(90, 95); } }];
+const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
+const TT_LS_PASS = 70;
+const ttLessonRun = async (id) => { const T = TT_LS_CH.find(c => c.id === id), skin = TT_SKINS[ttChSkin()][1], exam = { v: 1, mode: 'ch', lesson: T.lesson, list: [id], i: 0, res: [], started: Date.now() };
+  const rows = await DB.all(`SELECT id, meta FROM tattoo_pieces WHERE meta LIKE '%"mode":"ch"%'`), hit = rows.find(r => { try { return JSON.parse(r.meta).exam?.list?.[0] === id; } catch { return false; } });
+  if (hit) { let m = {}; try { m = JSON.parse(hit.meta); } catch {} await DB.run(`UPDATE tattoo_pieces SET meta = ?, skin = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...m, exam }), skin, hit.id]); location.hash = 'tattoo/' + hit.id; return; }
+  await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Lesson: ' + T.title, 18, 13, skin, JSON.stringify({ exam })]);
+  location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id; };
 const ttLessonList = () => TT_LESSONS.flatMap(c => c.lessons);
 const ttLessonProg = () => { try { return { done: {}, ...JSON.parse(Settings.get('tt_lessons', '{}')) }; } catch { return { done: {} }; } };
 // A lesson opens once every lesson before it is done.
@@ -412,7 +436,7 @@ TT.lessons = (el) => { ttStyle();
   const p = ttLessonProg();
   el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">Lessons</b></div>
     ${TT_LESSONS.map(c => `<div class="letter">${c.name}</div>${c.lessons.length ? `<div class="tt-lslist">${c.lessons.map(l => { const open = ttLessonOpen(l.id, p), ready = !!l.steps?.length, can = open && ready;
-      return `<button class="tt-lsrow ${can ? '' : 'off'}" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
+      return `<button class="tt-lsrow ${can ? '' : 'off'}" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
   el.onclick = (e) => { const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
 };
 TT.lesson = (el, id, i) => { const l = ttLessonList().find(x => x.id === id), S = l.steps; let more = false;
@@ -422,11 +446,12 @@ TT.lesson = (el, id, i) => { const l = ttLessonList().find(x => x.id === id), S 
         <h2>${esc(s.title)}</h2>${ttLessonPic(s.pic)}<p>${esc(s.text)}</p>
         ${s.more ? (more ? `<p class="muted">${esc(s.more)}</p>` : '<button class="btn small" data-l="more">See more</button>') : ''}
         ${s.tune ? `<p class="tt-tmsg">${tuned ? 'This device is tuned in. You can run it again if you like.' : ''}</p><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn ${tuned ? '' : 'primary'}" data-l="tune">${tuned ? 'Tune in again' : 'Tune in now'}</button>${tuned ? '' : '<button class="btn" data-l="skip">Skip for now</button>'}</div>` : ''}
-        <div class="row" style="gap:6px;margin-top:14px"><button class="btn" data-l="prev" ${i ? '' : 'disabled'}>Back</button><span style="flex:1"></span><button class="btn primary" data-l="next" ${s.tune && !tuned ? 'disabled' : ''}>${last ? 'Finish lesson' : 'Next'}</button></div></div></div>`; };
+        <div class="row" style="gap:6px;margin-top:14px"><button class="btn" data-l="prev" ${i ? '' : 'disabled'}>Back</button><span style="flex:1"></span><button class="btn primary" data-l="${last && l.task ? 'run' : 'next'}" ${s.tune && !tuned ? 'disabled' : ''}>${last ? (l.task ? 'Go to the workspace' : 'Finish lesson') : 'Next'}</button></div></div></div>`; };
   el.onclick = async (e) => { const a = e.target.closest('[data-l]')?.dataset.l; if (!a) return;
     if (a === 'out') return TT.lessons(el);
     if (a === 'more') { more = true; return draw(); }
     if (a === 'prev') { i--; more = false; return draw(); }
+    if (a === 'run') return ttLessonRun(l.task);
     if (a === 'tune') { TT.lessonBack = { id, i }; return ttTuneOnly(); }
     if (a === 'skip' || a === 'next') { if (i < S.length - 1) { i++; more = false; return draw(); }
       const p = ttLessonProg(); p.done[id] = Date.now(); await Settings.set('tt_lessons', JSON.stringify(p)); toast('Lesson complete.'); return TT.lessons(el); } };
@@ -2567,7 +2592,7 @@ TT.open = async (el, id) => {
      piece of its own: leaving saves it, and opening it carries on where it stopped. */
   const Mm = (g, f) => { g.save(); g.scale(mm, mm); g.beginPath(); f(g); g.restore(); };
   // This run's challenges: the exam's, or the one challenge played from the hub.
-  const exList = () => (EX?.list || TT_EXAM).map(id => TT_CH.find(c => c.id === id)).filter(Boolean);
+  const exList = () => (EX?.list || TT_EXAM).map(id => TT_CH.find(c => c.id === id) || TT_LS_CH.find(c => c.id === id)).filter(Boolean);
   const exGen = (name) => { const T = TT_CH.find(c => c.id === name); return T ? ttExGen(T, st.skin) : ''; };
   const exCrop = ttCrop;
   const exStencil = (T) => {
@@ -2666,7 +2691,7 @@ TT.open = async (el, id) => {
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
     if (EX.cur) EX.cur.scored = true;
     EX.res = EX.res.filter(r => r.id !== T.id); EX.res.push(res); st.dirty = true; exBar(res);
-    if (EX.mode === 'ch') { const info = empty ? null : TT.aw.record(T, res); EX.info = info; save(true); chReport(T, res, info); }
+    if (EX.mode === 'ch') { const info = empty || EX.lesson ? null : TT.aw.record(T, res); EX.info = info; save(true); chReport(T, res, info); }
   };
   const exNext = () => { EX.cur = null; EX.i++; if (EX.i >= exList().length) { EX.done = true; EX.finished = Date.now(); exBar(); save(true); return exReport(); } exStart(true); save(true); };
   function exBar(res) {
@@ -2677,9 +2702,9 @@ TT.open = async (el, id) => {
     if (EX.mode === 'ch') { const p = TT.aw.get().pb[T.id];
       b.innerHTML = `<div class="tt-exh"><b>${T.title}</b>${ttStars(T.diff)}<span class="muted" style="font-size:11px">${p ? 'Best ' + p.best : ''}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
         <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
-        ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${ttMedal(res.total)?.[2] || 'No medal'}</span></div>
-          <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">Challenges</button><span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
-        : `${penLine()}<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">Challenges</button><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
+        ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${EX.lesson ? 'Grade ' + ttGrade(res.total) : ttMedal(res.total)?.[2] || 'No medal'}</span></div>
+          <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button><span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
+        : `${penLine()}<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
       return; }
     b.innerHTML = `<div class="tt-exh"><b>${EX.i + 1} / ${exList().length} · ${T.title}</b><span class="tt-exdots">${exList().map((c, j) => `<i class="${j < EX.i ? 'done' : j === EX.i ? 'on' : ''}"></i>`).join('')}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
       <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
@@ -2696,11 +2721,24 @@ TT.open = async (el, id) => {
     if (a === 'retry') { if (!await ask('Start this challenge again on clean skin?')) return; return exStart(true); }
     if (a === 'next') return exNext();
     if (a === 'report') return exReport();
-    if (a === 'hub') return location.hash = 'tattoo/challenges';
+    if (a === 'hub') return location.hash = EX.lesson ? 'tattoo/lessons' : 'tattoo/challenges';
     if (a === 'again') { EX.res = []; EX.info = null; return exStart(true); }
     if (a === 'card') { const r = EX.res[EX.res.length - 1]; if (r) chReport(exList()[0], r, EX.info); } });
   // The report card for one challenge: score and medal, against the personal best, its parts, and trophies won.
+  async function lessonReport(T, res) {
+    const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
+    const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now(); await Settings.set('tt_lessons', JSON.stringify(p));
+    const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
+    o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
+      <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
+      ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
+      <img class="tt-chshot" src="${res.thumb}" alt="">
+      <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lr="out">Lessons</button><button class="btn" data-lr="close">Close</button><span style="flex:1"></span><button class="btn ${pass ? '' : 'primary'}" data-lr="again">Try again</button>${pass ? '<button class="btn primary" data-lr="out">Continue</button>' : ''}</div></div>`;
+    o.onclick = (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
+    document.body.appendChild(o);
+  }
   function chReport(T, res, info) {
+    if (EX.lesson) return lessonReport(T, res);
     const m = ttMedal(res.total), parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
     const all = TT_CH.filter(c => ttHubOf(c) === ttHubOf(T)).sort((x, y) => x.diff - y.diff), next = all[all.indexOf(T) + 1];
     const o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
