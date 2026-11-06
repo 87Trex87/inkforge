@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 264;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 265;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -1027,7 +1027,7 @@ TT.open = async (el, id) => {
   const puncture = (cx, p, a, depth, tilt0, inkC, erase, sc = mm) => {
     const mag = isMag() && !erase, tilt = mag ? 0 : tilt0, hang = (feel.hang ?? 40) / 100, loose = 1 - st.stretch / 100;
     const thin = nlook.thin, posK = nk === 'liner' || nk === 'shader' ? thin : 1, tex = wideTex(), ca = Math.cos(a), sa = Math.sin(a), sp = 1 + tilt * feel.tiltSpread / 100 * 0.8 * (0.5 + hang);
-    const wide = lay.length > 4 && nk !== 'liner', rr = feel.size / 2 * sc * (wide ? 0.62 + depth * 0.45 : 0.45 + depth * 0.35) * sp * thin, flow = feel.flow / 100 * cal.flow * (nk === 'shader' && !erase ? 0.75 * (1 - 0.6 * Math.max(0, Math.min(1, ((pen?.speed || 0) - 60) / 120))) : 1), bleed = feel.bleed / 100 * (1 + loose * 0.8);
+    const wide = lay.length > 4 && nk !== 'liner', rr = feel.size / 2 * sc * (wide ? 0.62 + depth * 0.45 : 0.45 + depth * 0.35) * sp * thin, flow = feel.flow / 100 * cal.flow * (nk === 'shader' && !erase ? 0.75 * (1 - 0.6 * Math.max(0, Math.min(1, ((pen?.speed || 0) - 85) / 65))) : 1), bleed = feel.bleed / 100 * (1 + loose * 0.8);
     const hit = (1 - (feel.miss / 100) * (1 - depth)) * (1 - loose * 0.15), wob = loose * 0.12, wu = (Math.random() - 0.5) * wob, wv = (Math.random() - 0.5) * wob;
     for (const nd of lay) {
       const reach = mag ? magReach(nd, depth, rollNow) : depth * nd.e, ratio = depth > 0 ? reach / depth : 0; if (mag && reach <= 0.004) continue;   // up out of the skin
@@ -1074,7 +1074,7 @@ TT.open = async (el, id) => {
   /* Packing: how many passes land on each half millimetre of the square (so a patch shows even where it already looks
      dark), and how steady the 7RS's speed and depth stay. Scrubbing tends to show up as rushing and uneven speed. */
   const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(b[2] * 2 - 1, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(b[3] * 2 - 1, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
-  const packMotion = (d, depth) => { const m = EX.cur.mv ||= { all: 0, fast: 0, n: 0, vm: 0, vs: 0, dm: 0, ds: 0 }, l = d / mm, v = pen.speed || 0; m.all += l; if (v > 150) m.fast += l; m.n++; const a = v - m.vm; m.vm += a / m.n; m.vs += a * (v - m.vm); const b = depth - m.dm; m.dm += b / m.n; m.ds += b * (depth - m.dm); };
+  const packMotion = (d, depth) => { const m = EX.cur.mv ||= { all: 0, fast: 0, n: 0, vm: 0, vs: 0, dm: 0, ds: 0 }, l = d / mm, v = pen.speed || 0; m.all += l; if (v > 110) m.fast += l; m.n++; const a = v - m.vm; m.vm += a / m.n; m.vs += a * (v - m.vm); const b = depth - m.dm; m.dm += b / m.n; m.ds += b * (depth - m.dm); };
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
       if (pen.snapped) continue;
@@ -2905,7 +2905,7 @@ TT.open = async (el, id) => {
       g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx - Math.cos(ang - 0.45) * hd, ty - Math.sin(ang - 0.45) * hd); g.lineTo(tx - Math.cos(ang + 0.45) * hd, ty - Math.sin(ang + 0.45) * hd); g.closePath(); g.fill();
       g.fillStyle = 'rgba(15,18,19,.94)'; g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh); g.fillStyle = '#ffd24a'; lines.forEach((l, i) => g.fillText(l, bx + pad, by + pad + fs * (i + 0.85) * 1.15)); }
     const notes = [], P = res.parts, big = third.indexOf(Math.max(...third));
-    if (T.pack) { if (P.consistency < 80) notes.push('Yellow and red are patches with fewer passes than the rest, even if they look dark. Keep your circles tight and your speed the same, and overlap every pass.'); if (P.control < 70) notes.push(`Your speed or depth was not steady${EX.cur?.mv?.n ? ` (you averaged about ${Math.round(EX.cur.mv.vm)} mm/s, and ${Math.round((EX.cur.mv.fast || 0) / Math.max(1, EX.cur.mv.all) * 100)}% of your travel was over 150 mm/s)` : ''}. Rushing usually means scrubbing: slow down and keep the same pace and depth.`); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
+    if (T.pack) { if (P.consistency < 80) notes.push('Yellow and red are patches with fewer passes than the rest, even if they look dark. Keep your circles tight and your speed the same, and overlap every pass.'); if (P.control < 70) notes.push(`Your speed or depth was not steady${EX.cur?.mv?.n ? ` (you averaged about ${Math.round(EX.cur.mv.vm)} mm/s, and ${Math.round((EX.cur.mv.fast || 0) / Math.max(1, EX.cur.mv.all) * 100)}% of your travel was over 110 mm/s)` : ''}. Rushing usually means scrubbing: slow down and keep the same pace and depth.`); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
     else if (cn && miss / cn > 0.05) notes.push(`Red shows where the line left the stencil or went too light. Most of it is in the ${['top', 'middle', 'bottom'][big]} third. Keep your eye just ahead of the needle and hold your pressure there.`);
     if (!T.pack && P.spill > 2) notes.push('Orange is ink well off the line. Slow your approach and land on the stencil before you pull.');
     if (P.evenness < 75) notes.push('The darkness changes along the line. That usually means your speed or pressure changed, often at the start and end, or where you restarted.');
