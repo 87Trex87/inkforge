@@ -24,7 +24,7 @@ function ttLayout(nd, dia) {
     if (n === 1) out.push({ u: 0, v: 0, e: 1 });
     else if (n <= 6) { const r = (dia / 2) / Math.sin(Math.PI / n) * gap; for (let i = 0; i < n; i++) { const a = i * 2 * Math.PI / n; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } }
     else {   // bigger rounds: an even outer circle around a small core, so the bundle stays round
-      const core = n <= 9 ? 1 : n <= 11 ? 2 : 4, ring = (m, off) => { const r = m < 2 ? 0 : dia * gap / (2 * Math.sin(Math.PI / m)); for (let i = 0; i < m; i++) { const a = off + i * 2 * Math.PI / m; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } };
+      const core = n <= 9 ? 1 : n <= 11 ? (nd.kind === 'shader' ? 3 : 2) : 4, ring = (m, off) => { const r = m < 2 ? 0 : dia * gap / (2 * Math.sin(Math.PI / m)); for (let i = 0; i < m; i++) { const a = off + i * 2 * Math.PI / m; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } };
       ring(core, 0); ring(n - core, Math.PI / (n - core));
     }
   } else {   // magnums: two staggered rows, flat; the soft edge kind sits the same but its outer needles hit shallower (an airbrush-like fade)
