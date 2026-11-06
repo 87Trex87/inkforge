@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 242;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 243;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -408,7 +408,7 @@ const TT_LESSONS = [
   { name: 'Chapter 3: Advanced', lessons: [] }
 ];
 // Lesson tasks run in the real workspace like a challenge, but stay out of the challenge list, medals and trophies.
-const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: 'Your first line', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6,
+const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: 'Your first line', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86,
   text: 'Black ink, 5RL. Load the needle, then pull one clean line down the stencil in a single pass. Leave the skin to settle for about a minute, then press Done. C or higher unlocks the next lesson.',
   path: (g) => { g.moveTo(90, 35); g.lineTo(90, 95); } }];
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
@@ -2625,7 +2625,7 @@ TT.open = async (el, id) => {
   const colAt = (i) => { let r = 0, g2 = 0, b = 0, w = 0; for (const key of INK) { const D = imgd[key].data, a = D[i + 3] / 255; if (!a) continue; r += D[i] * a; g2 += D[i + 1] * a; b += D[i + 2] * a; w += a; } return w ? [r / w, g2 / w, b / w] : null; };
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 441;
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
-  const lineScore = (draw, coreW) => {
+  const lineScore = (draw, coreW, covEase = 1) => {   // covEase: the share of the strip that counts as full coverage
     coreW = Math.min(coreW, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35));   // never wider than the needle in use can make
     const core = maskOf(draw, false, coreW), band = maskOf(draw, false, coreW + 2.2), mid = maskOf(draw, false, Math.min(0.2, coreW * 0.4));
     let cn = 0, cin = 0, sum = 0, sum2 = 0, mn = 0, ink = 0, out = 0;
@@ -2634,14 +2634,14 @@ TT.open = async (el, id) => {
       if (mid[i] > 128) { mn++; sum += d; sum2 += d * d; }
       if (d > 0.2) { ink++; if (band[i] < 30) out++; } }
     const mean = sum / Math.max(1, mn), sd = Math.sqrt(Math.max(0, sum2 / Math.max(1, mn) - mean * mean));
-    const cov = cin / Math.max(1, cn), spill = out / Math.max(1, ink), cons = 1 - clamp01(sd / 0.8);
+    const cov = Math.min(1, cin / Math.max(1, cn) / covEase), spill = out / Math.max(1, ink), cons = 1 - clamp01(sd / 0.8);
     return { score: Math.round(100 * cov * (0.55 + 0.25 * (1 - spill) + 0.2 * cons)), coverage: Math.round(cov * 100), spill: Math.round(spill * 100), evenness: Math.round(cons * 100) };
   };
   const boxIdx = (b) => { const x0 = Math.round(b[0] * mm), y0 = Math.round(b[1] * mm), x1 = Math.round((b[0] + b[2]) * mm), y1 = Math.round((b[1] + b[3]) * mm); return { x0, y0, x1, y1 }; };
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
   const scoreOf = (T) => {
-    if (T.kind === 'line') return lineScore(T.path, T.core);
+    if (T.kind === 'line') return lineScore(T.path, T.core, T.covEase);
     if (T.kind === 'grad') {   // judged on its shape (scaled to your own darkest) and on getting reasonably dark
       const { x0, y0, x1, y1 } = boxIdx(T.box), cs = [], ts = [];
       for (let x = x0; x < x1; x += 2) { let s2 = 0, m = 0; for (let y = y0; y < y1; y += 2) { s2 += densAt((y * W + x) * 4); m++; } cs.push(s2 / m); ts.push(T.prof((x - x0) / (x1 - x0))); }
