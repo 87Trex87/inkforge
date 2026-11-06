@@ -73,10 +73,10 @@ const TT = {
   /* Overall calibration, for this device and hand, on top of every needle's own feel: the pen's pressure range,
      a pressure curve, hand speed (how far apart punctures land), how much fast strokes lighten, the angle the pen
      is naturally held at (tilt counts from there) and ink flow. Set by Tune in, or by hand. */
-  calDefaults: { penOnly: true, pMin: 0.136, pMax: 0.866, curve: -78.3, hand: 6.739, fade: 0.636, flow: 1.5, tilt0: 35, profile: 'slow', voltOff: 0, blow: 1, tough: 1, t3: 1, t4: 1 },
+  calDefaults: { penOnly: true, pMin: 0.136, pMax: 0.866, curve: -78.3, hand: 6.739, fade: 0.636, flow: 1.5, tilt0: 35, profile: 'slow', voltOff: 0, blow: 1, tough: 1, t3: 1, t4: 1, b3: 1 },
   // Toughness scale: rescaled twice (each time × 1 became what × 2.5 was); t2/t3 mark which scale a saved value is
   // on, and older ones are moved across.
-  cal() { try { const s = JSON.parse(Settings.get('tt_cal', '{}')); if (s.tough != null && !s.t3) { s.tough = Math.round(s.tough / (s.t2 ? 2.5 : 6.25) * 100) / 100; s.t3 = 1; } if (s.tough != null && !s.t4) { s.tough = Math.round(s.tough / 1.8 * 100) / 100; s.t4 = 1; } return { ...TT.calDefaults, ...s }; } catch { return { ...TT.calDefaults }; } },
+  cal() { try { const s = JSON.parse(Settings.get('tt_cal', '{}')); if (s.tough != null && !s.t3) { s.tough = Math.round(s.tough / (s.t2 ? 2.5 : 6.25) * 100) / 100; s.t3 = 1; } if (s.tough != null && !s.t4) { s.tough = Math.round(s.tough / 1.8 * 100) / 100; s.t4 = 1; } if (s.blow != null && !s.b3) { s.blow = Math.round(s.blow / 3 * 100) / 100; s.b3 = 1; } return { ...TT.calDefaults, ...s }; } catch { return { ...TT.calDefaults }; } },
   saveCal(c) { Settings.set('tt_cal', JSON.stringify(c)); },
   feel(id) { let o = {}; try { o = JSON.parse(Settings.get('tt_feel', '{}'))[id] || {}; } catch {} const nd = TT_NEEDLES.find(n => n.id === id);
     return { ...TT.feelBase(id), ...o }; },
@@ -881,7 +881,7 @@ TT.open = async (el, id) => {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) / ((cal.tough || 1) * TT_TOUGH));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
-          const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
+          const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * 3 * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
