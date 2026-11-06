@@ -785,7 +785,7 @@ TT.open = async (el, id) => {
   /* Needle look, for every piece: thickness scales each needle's mark (and how tight a round liner's needles sit); needle
      texture is how much a magnum's separate marks show, the rest of the ink going down as a soft haze. 100 and 100 are
      how the simulator used to draw. */
-  const nlook = { thin: +Settings.get('tt_thin', '65') / 100, tex: +Settings.get('tt_tex', '45') / 100, whip: +Settings.get('tt_whipwear', '25') / 100 };
+  const nlook = { thin: +Settings.get('tt_thin', '65') / 100, tex: +Settings.get('tt_tex', '45') / 100, whip: +Settings.get('tt_whip2', '50') / 100 };   // 50% is the skin's plain wear; below eases it while whipping, above adds irritation
   const magReach = (nd, depth, roll) => { const tau = Math.abs(roll); if (tau < 0.01) return depth * nd.e; const s = Math.sign(roll), q = (1 - s * nd.t) / 2;
     if (nk !== 'soft') return Math.max(0, depth - tau * 1.5 * q);
     const te = Math.min(1, Math.abs(nd.t - s * tau)); return Math.max(0, depth * (0.22 + 0.78 * Math.pow(Math.cos(te * Math.PI / 2), 1.5)) - tau * 0.25 * q); };
@@ -862,9 +862,9 @@ TT.open = async (el, id) => {
         if (!pen.landed) { pen.dLand = Math.max(pen.dLand || 0, depth); if (pen.trav >= 1) { pen.landed = true; if (pen.dLand > 0.55 && pen.speed > 40 && (pen.pk || 0) >= 0.45) crash(pen.p0, pen.dLand, ev); } }
         pen.whip = pen.d0 < 0.35 && pen.speed > 50; pen.dEnd = depth; pen.evEnd = ev;
         /* Whip irritation: worked out from the distance covered, not the hits, so one pass over a spot adds the same
-           however fast the needle runs or the pen reports. At 100% about 5 passes redden skin, at 25% about 20; too fast
+           however fast the needle runs or the pen reports. The slider's upper half: at 100% about 5 passes redden skin; too fast
            (drag and tearing) or too slow at high voltage is up to twice that. Only while whipping, so packing is untouched. */
-        if (pen.whip && nlook.whip > 0) { const tooFast = Math.max(0, Math.min(1, (pen.speed - 150) / 150)), tooSlow = Math.max(0, Math.min(1, volt() - 7.5)) * Math.max(0, Math.min(1, (90 - pen.speed) / 40)), perPass = 0.06 * nlook.whip * (1 + Math.max(tooFast, tooSlow)) / (cal.tough || 1), wide = pen.foot * 2.5 + 2 * mm, n = Math.max(1, Math.ceil(d / pen.foot));
+        if (pen.whip && nlook.whip > 0.5) { const tooFast = Math.max(0, Math.min(1, (pen.speed - 150) / 150)), tooSlow = Math.max(0, Math.min(1, volt() - 7.5)) * Math.max(0, Math.min(1, (90 - pen.speed) / 40)), perPass = 0.06 * Math.max(0, nlook.whip - 0.5) * 2 * (1 + Math.max(tooFast, tooSlow)) / (cal.tough || 1), wide = pen.foot * 2.5 + 2 * mm, n = Math.max(1, Math.ceil(d / pen.foot));
           for (let i = 1; i <= n; i++) { const s = { x: pen.last.x + dx * i / n, y: pen.last.y + dy * i / n }; trAdd(s, pen.foot, perPass * (d / n) / pen.foot); trAdd(s, wide, perPass * 0.4 * (d / n) / wide); } }
       }
       if (EX?.cur && st.tool !== 'erase' && (EX.cur.n = (EX.cur.n || 0) + 1) % 3 === 0 && EX.cur.p.length < 1500) {
@@ -879,7 +879,7 @@ TT.open = async (el, id) => {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           // Light passes add up too (whipping over and over chews the skin), and skin already worked gets worse faster.
-          { const gs = Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1), wdt = Math.min(2, 1.1 * mm / pen.foot), vv = Math.pow(volt() / 7, 2) / (cal.tough || 1); trAdd(q, pen.foot, (0.0128 * depth * depth + 0.0036 * depth) * gs * wdt * vv * (1 + 1.4 * Math.min(2, t0))); }   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          { const gs = Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1), wdt = Math.min(2, 1.1 * mm / pen.foot), vv = Math.pow(volt() / 7, 2) / (cal.tough || 1); trAdd(q, pen.foot, (0.0128 * depth * depth + 0.0036 * depth) * gs * wdt * vv * (1 + 1.4 * Math.min(2, t0)) * (pen.whip ? Math.min(1, nlook.whip * 2) : 1)); }   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
@@ -1715,7 +1715,7 @@ TT.open = async (el, id) => {
       if (e.key === 'Escape') { if (lsel) selCancel(); else if (snapE) snapFinish(); }
       if ((e.key === 'Delete' || e.key === 'Backspace') && lsel) { e.preventDefault(); selCommit(true); } } };
   addEventListener('keydown', keys); addEventListener('keyup', keys);
-  document.addEventListener('input', (e) => { const n = e.target; if (n.matches?.('[data-nthin]')) { nlook.thin = +n.value / 100; Settings.set('tt_thin', n.value); const b = $('#tt-thinv'); if (b) b.textContent = n.value + '%'; drawCur(); } if (n.matches?.('[data-nwhip]')) { nlook.whip = +n.value / 100; Settings.set('tt_whipwear', n.value); const b = $('#tt-whipv'); if (b) b.textContent = n.value + '%'; } if (n.matches?.('[data-ntex]')) { nlook.tex = +n.value / 100; Settings.set('tt_tex', n.value); const b = $('#tt-texv'); if (b) b.textContent = n.value + '%'; } });
+  document.addEventListener('input', (e) => { const n = e.target; if (n.matches?.('[data-nthin]')) { nlook.thin = +n.value / 100; Settings.set('tt_thin', n.value); const b = $('#tt-thinv'); if (b) b.textContent = n.value + '%'; drawCur(); } if (n.matches?.('[data-nwhip]')) { nlook.whip = +n.value / 100; Settings.set('tt_whip2', n.value); const b = $('#tt-whipv'); if (b) b.textContent = n.value + '%'; } if (n.matches?.('[data-ntex]')) { nlook.tex = +n.value / 100; Settings.set('tt_tex', n.value); const b = $('#tt-texv'); if (b) b.textContent = n.value + '%'; } });
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; st.rot = 0; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
 
@@ -1911,7 +1911,7 @@ TT.open = async (el, id) => {
       <label class="dz-sl"><span>Skin stretch<b>${st.stretch}%</b></span><input type="range" min="0" max="100" step="1" value="${st.stretch}" data-stretch></label>
       ${fsec('Needle look (all needles, all pieces)', `<label class="dz-sl"><span>Needle thickness<b id="tt-thinv">${Math.round(nlook.thin * 100)}%</b></span><input type="range" min="40" max="100" step="5" value="${Math.round(nlook.thin * 100)}" data-nthin></label>
         <label class="dz-sl"><span>Magnum needle texture<b id="tt-texv">${Math.round(nlook.tex * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.tex * 100)}" data-ntex></label>
-        <label class="dz-sl" data-tip="How quickly repeated whip passes irritate the skin. At 100% about 5 passes redden it; at 0% whipping adds nothing extra. Packing isn't affected."><span>Whip irritation<b id="tt-whipv">${Math.round(nlook.whip * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.whip * 100)}" data-nwhip></label>
+        <label class="dz-sl" data-tip="How quickly whip passes irritate the skin. 50% is the plain wear; lower eases it, 0% is none while whipping; higher adds irritation. Packing isn't affected."><span>Whip irritation<b id="tt-whipv">${Math.round(nlook.whip * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.whip * 100)}" data-nwhip></label>
         <p class="muted" style="font-size:11px;margin:2px 0 6px">Thickness and texture both at 100% is how it looked before. Takes effect on your next stroke; what's already tattooed stays.</p>
         <button class="btn small" data-nold style="margin-bottom:6px">Back to before (100%)</button> <button class="btn small" data-nnew style="margin-bottom:6px">New look (65% / 45%)</button>`, { fold: true, open: true })}
       <div class="lbl">Needle size</div><div class="seg" style="margin-bottom:8px">${[[0.25, '#08'], [0.3, '#10'], [0.35, '#12']].map(([v, n]) => `<button data-sz="${v}" class="${f.size === v ? 'on' : ''}" style="flex:1">${n} · ${v} mm</button>`).join('')}</div>
