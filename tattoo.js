@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 245;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 246;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -402,7 +402,17 @@ const TT_LESSONS = [
       { title: 'Your grade', text: 'Press Done when you are ready for your score. Grade C (70) or higher unlocks the next lesson, and you can try as often as you like.',
         more: 'A is 90 or more, B is 80, C is 70, D is 60. Most of the score is the line itself: on the stencil, solid and even. The rest is the condition of the skin. Blowouts and extra undos take points off. More than 1 blowout is an instant fail.' }
     ] },
-    { id: '1-3', title: 'Next lesson', sum: 'To be designed.' }
+    { id: '1-3', title: 'Sharp corners', sum: 'Line a rectangle with crisp corners and consistent lines. Grade C or higher moves you on.', task: 'l-rect', steps: [
+      { title: 'A rectangle, same needle', pic: { needles: ['5RL'] }, text: 'Same 5RL, but now four lines that have to meet. The lines are judged as before, and now so are your four corners: sharp, not rounded, and not crossing over each other.' },
+      { title: 'Corners are two lines', text: 'Do not try to steer around a corner. Pull one side, ease out as you reach the corner, then start the next side from that same point. Each line gets its own clean start and finish.',
+        more: 'Turning the page with two fingers between sides lets you pull every line in the direction that feels best.' },
+      { title: 'Meet, do not cross', text: 'Land each new line right where the last one ended. Stop short and the corner has a gap; run past and it has an ugly tail. Slow down just slightly as you come in, without digging in.',
+        more: 'A rounded corner means you kept moving as you turned. An overlap means you carried on past the point. Going over a corner twice also darkens and widens it, so get it right the first time.' },
+      { title: 'Keep it consistent', text: 'All four sides should look like one line: the same darkness and the same width. Keep your speed and pressure the same on every side, and reload before the ink runs low.' },
+      { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher unlocks the next lesson, and more than 1 blowout is still an instant fail.',
+        more: 'Your score is your line score, the same as the last lesson, then reduced for poor corners, by up to 40% if all four are bad.' }
+    ] },
+    { id: '1-4', title: 'Next lesson', sum: 'To be designed.' }
   ] },
   { name: 'Chapter 2: Medium', lessons: [] },
   { name: 'Chapter 3: Advanced', lessons: [] }
@@ -410,7 +420,10 @@ const TT_LESSONS = [
 // Lesson tasks run in the real workspace like a challenge, but stay out of the challenge list, medals and trophies.
 const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: 'Your first line', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1,
   text: 'Black ink, 5RL. Load the needle, then pull one clean line down the stencil in a single pass. Leave the skin to settle for about a minute, then press Done. C or higher unlocks the next lesson.',
-  path: (g) => { g.moveTo(90, 35); g.lineTo(90, 95); } }];
+  path: (g) => { g.moveTo(90, 35); g.lineTo(90, 95); } },
+  { id: 'l-rect', lesson: '1-3', cat: 'line', diff: 1, title: 'Sharp corners', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, corners: [[60, 45, -1, -1], [120, 45, 1, -1], [120, 85, 1, 1], [60, 85, -1, 1]],
+    text: 'Black ink, 5RL. Line the rectangle: four clean sides with sharp corners, not rounded and not crossing. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
+    path: (g) => { g.moveTo(60, 45); g.lineTo(120, 45); g.lineTo(120, 85); g.lineTo(60, 85); g.closePath(); } }];
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
 const ttLessonRun = async (id) => { const T = TT_LS_CH.find(c => c.id === id), skin = TT_SKINS[ttChSkin()][1], exam = { v: 1, mode: 'ch', lesson: T.lesson, list: [id], i: 0, res: [], started: Date.now() };
@@ -2640,7 +2653,16 @@ TT.open = async (el, id) => {
   const boxIdx = (b) => { const x0 = Math.round(b[0] * mm), y0 = Math.round(b[1] * mm), x1 = Math.round((b[0] + b[2]) * mm), y1 = Math.round((b[1] + b[3]) * mm); return { x0, y0, x1, y1 }; };
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
+  /* Each corner, from [x, y, out x, out y]: ink has to reach the point itself, stay out of the diagonal just inside it
+     (a rounded corner cuts through there), and stay off the two lines' extensions just past it (a crossed corner). */
+  const cornerScore = (cs) => { const inkAt = (x, y) => { const X = Math.round(x * mm), Y = Math.round(y * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.28 ? 1 : 0; };
+    const frac = (x0, x1, y0, y1) => { let n = 0, c = 0; for (let x = x0; x <= x1 + 1e-6; x += 0.1) for (let y = y0; y <= y1 + 1e-6; y += 0.1) { n++; c += inkAt(x, y); } return c / Math.max(1, n); };
+    const one = ([x, y, sx, sy]) => { const box = (a0, a1, b0, b1) => frac(Math.min(x + sx * a0, x + sx * a1), Math.max(x + sx * a0, x + sx * a1), Math.min(y + sy * b0, y + sy * b1), Math.max(y + sy * b0, y + sy * b1));
+      const reach = Math.min(1, frac(x - 0.5, x + 0.5, y - 0.5, y + 0.5) / 0.5), cut = box(-2.4, -1, -2.4, -1), over = Math.max(box(1.2, 3.5, -0.6, 0.6), box(-0.6, 0.6, 1.2, 3.5));
+      return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(over * 1.6)); };
+    return Math.round(100 * cs.reduce((a, c) => a + one(c), 0) / cs.length); };
   const scoreOf = (T) => {
+    if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100)), corners: cr }; }
     if (T.kind === 'line') return lineScore(T.path, T.core, T.covEase);
     if (T.kind === 'grad') {   // judged on its shape (scaled to your own darkest) and on getting reasonably dark
       const { x0, y0, x1, y1 } = boxIdx(T.box), cs = [], ts = [];
