@@ -840,12 +840,7 @@ TT.open = async (el, id) => {
     const co = e.getCoalescedEvents?.(); pen.q.push(...(co?.length ? co : [e]));
     if (!pen.raf) pen.raf = requestAnimationFrame(strokeFlush);
   };
-  /* A crash is often over before the pen has moved: it hits hard in the first instant and bounces back. So the pressure
-     is watched from the moment of touch, whether or not the pen is moving yet. */
-  const crashWatch = (ev) => { if (!pen || pen.cw || CHEAT || st.tool === 'erase' || !pen.cx?.pig || ev.pointerType === 'mouse') { if (pen && ev.pointerType !== 'mouse') pen.pk = Math.max(pen.pk || 0, pNorm(ev)); return; }
-    const pr = pNorm(ev); pen.pk = Math.max(pen.pk || 0, pr);
-    if (pen.pk >= 0.62) { pen.cw = pen.landed = true; crash(pen.last, Math.max(0.62, pen.pk), ev); } else if (ev.timeStamp - pen.t0 > 90) pen.cw = true; };
-  const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return; evs.forEach(crashWatch);
+  const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
       if (pen.snapped) continue;
       const p = gridPt(rulerPt(smoothPt(toPage(ev)))), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
@@ -860,7 +855,7 @@ TT.open = async (el, id) => {
            deepest point is watched; already deep while moving fast is a crash (a dark spot and sore skin there).
            A stroke that came in softly and moves fast is whip shading, which the speed meter allows for. */
         if (pen.d0 == null) { pen.d0 = pNorm(ev); pen.p0 = { ...pen.last }; }   // d0: how hard the pen first touched
-        if (!pen.landed) { pen.dLand = Math.max(pen.dLand || 0, depth); if (pen.trav >= 1) { pen.landed = true; if (pen.dLand > 0.55 && pen.speed > 40 && (pen.pk || 0) >= 0.45) crash(pen.p0, pen.dLand, ev); } }
+        if (!pen.landed) { pen.dLand = Math.max(pen.dLand || 0, depth); if (pen.trav >= 1) { pen.landed = true; if (pen.dLand > 0.55 && pen.speed > 40) crash(pen.p0, pen.dLand, ev); } }
         pen.whip = pen.d0 < 0.35 && pen.speed > 50; pen.dEnd = depth; pen.evEnd = ev;
       }
       if (EX?.cur && st.tool !== 'erase' && (EX.cur.n = (EX.cur.n || 0) + 1) % 3 === 0 && EX.cur.p.length < 1500) {
@@ -875,11 +870,7 @@ TT.open = async (el, id) => {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           // Light passes add up too (whipping over and over chews the skin), and skin already worked gets worse faster.
-          { const gs = Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1), wdt = Math.min(2, 1.1 * mm / pen.foot), vv = Math.pow(volt() / 7, 2) / (cal.tough || 1); trAdd(q, pen.foot, (0.0128 * depth * depth + 0.0036 * depth) * gs * wdt * vv * (1 + 1.4 * Math.min(2, t0)));
-            /* Whipping scratches the skin non-stop: too many passes, too fast (the needles drag and tear) or too slow at
-               high voltage all irritate it, and the redness spreads around the area. Only while whipping, not packing. */
-            if (pen.whip) { const tooFast = Math.max(0, Math.min(2, (pen.speed - 120) / 120)), tooSlow = Math.max(0, Math.min(1, (volt() - 7.5))) * Math.max(0, Math.min(1, (90 - pen.speed) / 40)), sc2 = 0.012 * gs * wdt * vv * (1 + tooFast * 1.5 + tooSlow * 2);
-              trAdd(q, pen.foot, sc2); trAdd(q, pen.foot * 2.5 + 2 * mm, sc2 * 0.5); } }   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          { const gs = Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1), wdt = Math.min(2, 1.1 * mm / pen.foot), vv = Math.pow(volt() / 7, 2) / (cal.tough || 1); trAdd(q, pen.foot, (0.0128 * depth * depth + 0.0036 * depth) * gs * wdt * vv * (1 + 1.4 * Math.min(2, t0))); }   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
@@ -1491,7 +1482,7 @@ TT.open = async (el, id) => {
     const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     B.x0 = Math.min(B.x0, p.x - bp); B.y0 = Math.min(B.y0, p.y - bp); B.x1 = Math.max(B.x1, p.x + bp); B.y1 = Math.max(B.y1, p.y + bp);
     SS.crash = (SS.crash || 0) + 1; if (EX?.cur) EX.cur.crash = (EX.cur.crash || 0) + 1;
-    if (performance.now() - (told.crash || -1e9) > 6000) { told.crash = performance.now(); toast('Crash: come in and out of the skin like a plane landing and taking off, not straight down.', 4000); } };
+    if (!told.crash) { told.crash = 1; toast('Crash: come in and out of the skin like a plane landing and taking off, not straight down.', 4000); } };
   const strokeEnd = () => { clearTimeout(pen?.hold?.t); if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
     if (pen?.landed && pen.dEnd > 0.55 && pen.speed > 40 && pen.cx.pig && st.tool !== 'erase') {   // the take-off: still deep as it left at speed
       crash(pen.last, pen.dEnd, pen.evEnd); const u = flushPig(), pad = pen.foot * 2 + 4 * mm; if (u) paint({ x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad }); }
