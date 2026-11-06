@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 244;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 245;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -400,7 +400,7 @@ const TT_LESSONS = [
       { title: 'Then leave it to settle', text: 'One clean pass is the goal, because every extra pass wears the skin. When the line is done, leave the skin alone for about a minute before you press Done, so the redness can calm down.',
         more: 'Skin starts settling a few seconds after the needle moves away, and the redness halves about every 30 seconds. Your skin score counts for part of your grade, so waiting pays off.' },
       { title: 'Your grade', text: 'Press Done when you are ready for your score. Grade C (70) or higher unlocks the next lesson, and you can try as often as you like.',
-        more: 'A is 90 or more, B is 80, C is 70, D is 60. Most of the score is the line itself: on the stencil, solid and even. The rest is the condition of the skin. Blowouts and extra undos take points off. One small blowout is the limit: any more is an instant fail.' }
+        more: 'A is 90 or more, B is 80, C is 70, D is 60. Most of the score is the line itself: on the stencil, solid and even. The rest is the condition of the skin. Blowouts and extra undos take points off. More than 1 blowout is an instant fail.' }
     ] },
     { id: '1-3', title: 'Next lesson', sum: 'To be designed.' }
   ] },
@@ -691,7 +691,7 @@ TT.open = async (el, id) => {
   const skinOver = (g) => { g.globalAlpha = 0.3; g.drawImage(trRed, 0, 0, W, H); g.globalAlpha = 1; g.drawImage(trPuff, 0, 0, W, H); g.globalAlpha = 0.85; g.drawImage(trTex, 0, 0, W, H); g.globalAlpha = 1; };
   // Blowout: ink spread under the skin round p, bluer and softer than the line, and the skin raised over it.
   const blowAt = (p, risk, footR) => { if (CHEAT) return;
-    if (EX?.cur) { EX.cur.blow = (EX.cur.blow || 0) + 1; const sp = EX.cur.spots ||= []; if (!sp.some(q => Math.hypot(q[0] - p.x, q[1] - p.y) < 3 * mm)) sp.push([p.x, p.y]); } SS.blow++;   // one stall lands many hits, so spots count separately
+    if (EX?.cur) EX.cur.blow = (EX.cur.blow || 0) + 1; SS.blow++;
     // ink seen through the skin: bluer
     const c = st.ink.c.map((v, j) => Math.round((v * 0.45 + [0.34, 0.42, 0.68][j] * 0.55) * 255)), R = (footR + mm * (1.1 + risk * 1.8)) / 2, gx = p.x / 2, gy = p.y / 2;
     const gr = bx.createRadialGradient(gx, gy, 0, gx, gy, R); gr.addColorStop(0, `rgba(${c},${0.12 + risk * 0.16})`); gr.addColorStop(0.5, `rgba(${c},${0.05 + risk * 0.07})`); gr.addColorStop(1, `rgba(${c},0)`);
@@ -2688,11 +2688,11 @@ TT.open = async (el, id) => {
     let mx = 0, sum = 0, n = 0; for (const v of TR) if (v > 0.02) { mx = Math.max(mx, v); sum += v; n++; }
     const skin = Math.round(100 * (1 - clamp01((mx - 0.6) / 1.4))), blow = EX.cur?.blow || 0;
     const pen = exPen();
-    // A lesson can allow one small blowout (a single spot of a few hits); anything more fails it outright.
-    const spots = EX.cur?.spots?.length || 0, blowFail = T.maxBlow != null && (spots > T.maxBlow || blow > 5);
+    // A lesson can set a blowout limit; going over it fails outright, however good the line.
+    const blowFail = T.maxBlow != null && blow > T.maxBlow;
     const total0 = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5) - pen.pts)), total = blowFail ? Math.min(59, total0) : total0;
     const th = composite(Math.min(1, 220 / W)).toDataURL('image/jpeg', 0.7), c = EX.cur || {};
-    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, spots, blowFail, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
+    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, blowFail, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
     if (EX.cur) EX.cur.scored = true;
     EX.res = EX.res.filter(r => r.id !== T.id); EX.res.push(res); st.dirty = true; exBar(res);
@@ -2736,7 +2736,7 @@ TT.open = async (el, id) => {
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
-      ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `Blowouts in ${res.spots} spot${res.spots === 1 ? '' : 's'} (${res.blowouts} hits). One small blowout is the limit: more is an instant fail.` : 'One small blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
+      ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
       <img class="tt-chshot" src="${res.thumb}" alt="">
       <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lr="out">Lessons</button><button class="btn" data-lr="close">Close</button><span style="flex:1"></span><button class="btn ${pass ? '' : 'primary'}" data-lr="again">Try again</button>${pass ? '<button class="btn primary" data-lr="out">Continue</button>' : ''}</div></div>`;
     o.onclick = (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
