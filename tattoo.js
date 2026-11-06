@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 251;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 252;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -468,11 +468,12 @@ TT.lessons = (el) => { ttStyle();
   el.onclick = (e) => { const v = e.target.closest('[data-lres]'); if (v) return ttLessonResult(v.dataset.lres); const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
 };
 // A lesson's best passed attempt: the finished piece and its report card, and a copy for the portfolio that stays if a better score replaces it.
-const ttLessonResult = async (id) => { const R = ttLessonProg().results?.[id], l = ttLessonList().find(x => x.id === id); if (!R) return; const url = await Media.url(R.ref), when = new Date(R.when).toLocaleString(), rows = [...R.parts, ...(R.skin != null ? [['skin', R.skin]] : [])], cap = s => s[0].toUpperCase() + s.slice(1), o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
+const ttLessonResult = async (id) => { const R = ttLessonProg().results?.[id], l = ttLessonList().find(x => x.id === id); if (!R) return; const url = await Media.url(R.ref), hurl = R.heat ? await Media.url(R.heat) : null, when = new Date(R.when).toLocaleString(), rows = [...R.parts, ...(R.skin != null ? [['skin', R.skin]] : [])], cap = s => s[0].toUpperCase() + s.slice(1), o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
   o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${ttGrade(R.total)}</b><div><h2 style="margin:0">${esc(l.title)}</h2><span class="muted">${R.total} / 100 · ${when}</span></div></div>
     <div class="tt-cats">${rows.map(([k, v]) => `<div><span>${cap(k)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}</div>
     <p class="muted" style="margin:4px 0;font-size:12px">${R.blowouts || 0} blowouts · ${R.undos || 0} undos · ${R.strokes} strokes · build ${R.build}</p>
     <img class="tt-chshot" src="${url}" alt="">
+    ${hurl ? `<div class="lbl" style="margin-top:8px">Where it went</div><img class="tt-chshot tt-lsheat" src="${hurl}" alt="Heat map of the attempt"><div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div><ul class="tt-lsnotes">${(R.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lv="close">Close</button><span style="flex:1"></span><button class="btn primary" data-lv="pf">Save to portfolio</button></div></div>`;
   o.onclick = async (e) => { const a = e.target.closest('[data-lv]'); if (!a) return; if (a.dataset.lv === 'close') return o.remove(); if (a.disabled) return; a.disabled = true;
     try { const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; }), W2 = 1080, ih = Math.round(im.height * 1000 / im.width), c = document.createElement('canvas'); c.width = W2; c.height = 240 + ih + 60 + Math.ceil(rows.length / 2) * 50 + 70; const g = c.getContext('2d');
@@ -2692,14 +2693,16 @@ TT.open = async (el, id) => {
     if (ws.length < 10) return 0; const m = ws.reduce((a, b) => a + b, 0) / ws.length, sd = Math.sqrt(ws.reduce((a, b) => a + (b - m) * (b - m), 0) / ws.length); return Math.round(100 * (1 - clamp01(sd / m / 0.5))); };
   /* Each corner, from [x, y, out x, out y]: ink has to reach the point itself, stay out of the diagonal just inside it
      (a rounded corner cuts through there), and stay off the two lines' extensions just past it (a crossed corner). */
-  const cornerScore = (cs) => { const inkAt = (x, y) => { const X = Math.round(x * mm), Y = Math.round(y * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.28 ? 1 : 0; };
+  let cornerNotes = [];
+  const cornerScore = (cs) => { cornerNotes = []; const inkAt = (x, y) => { const X = Math.round(x * mm), Y = Math.round(y * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.28 ? 1 : 0; };
     const frac = (x0, x1, y0, y1) => { let n = 0, c = 0; for (let x = x0; x <= x1 + 1e-6; x += 0.1) for (let y = y0; y <= y1 + 1e-6; y += 0.1) { n++; c += inkAt(x, y); } return c / Math.max(1, n); };
     const one = ([x, y, sx, sy]) => { const box = (a0, a1, b0, b1) => frac(Math.min(x + sx * a0, x + sx * a1), Math.max(x + sx * a0, x + sx * a1), Math.min(y + sy * b0, y + sy * b1), Math.max(y + sy * b0, y + sy * b1));
       const reach = Math.min(1, frac(x - 0.7, x + 0.7, y - 0.7, y + 0.7) / 0.35), cut = box(-2.4, -1, -2.4, -1);
       // how far a line runs on past the corner: a clean end stops within 0.7 mm, and 2.2 mm past scores nothing. Any visible ink counts, across small gaps, so a faint, dotted whip-out still shows as running past.
       const faint = (X0, Y0) => { const X = Math.round(X0 * mm), Y = Math.round(Y0 * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.06; };
       const past = (ux, uy) => { let last = 0.7; for (let d = 0.7; d < 6 && d - last <= 0.5; d += 0.1) for (let o = -0.5; o <= 0.5; o += 0.1) if (faint(x + ux * d + uy * o, y + uy * d + ux * o)) { last = d; break; } return last - 0.7; };
-      return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(Math.max(past(sx, 0), past(0, sy)) / 1.5)); };
+      const run = Math.max(past(sx, 0), past(0, sy)), name = `${sy < 0 ? 'Top' : 'Bottom'} ${sx < 0 ? 'left' : 'right'}`; if (reach < 0.7) cornerNotes.push(`${name} corner stops short of the point.`); if (cut > 0.15) cornerNotes.push(`${name} corner is rounded: the line cuts inside it.`); if (run > 0.3) cornerNotes.push(`${name} corner runs ${(run + 0.7).toFixed(1)} mm past the point.`);
+      return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(run / 1.5)); };
     return Math.round(100 * Math.min(1, cs.reduce((a, c) => a + one(c), 0) / cs.length / 0.78)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
   const scoreOf = (T) => {
     if (T.arcs) { const ln = lineScore(T.path, T.core, T.covEase), wt = weightScore(T.arcs); return { ...ln, score: Math.round(ln.score * (0.7 + 0.3 * wt / 100)), weight: wt }; }
@@ -2793,18 +2796,42 @@ TT.open = async (el, id) => {
     if (a === 'again') { EX.res = []; EX.info = null; return exStart(true); }
     if (a === 'card') { const r = EX.res[EX.res.length - 1]; if (r) chReport(exList()[0], r, EX.info); } });
   // The report card for one challenge: score and medal, against the personal best, its parts, and trophies won.
+  /* The attempt as a heat map, zoomed to the stencil: green where the strip the score looks at has ink, red where it
+     hasn't, orange for ink outside the band that counts as spill, purple for skin worked into swelling, blue for blowouts.
+     Uses the same strip and band as the line score, so it shows what was actually judged. */
+  const heatOf = (T, res) => { const coreW = Math.min(T.core, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35)), core = maskOf(T.path, false, coreW), band = maskOf(T.path, false, coreW + 2.2);
+    let x0 = W, y0 = H, x1 = 0, y1 = 0; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (band[(y * W + x) * 4 + 3] > 30) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const m = Math.round(8 * mm); x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m); const cw = x1 - x0, ch = y1 - y0, c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
+    g.fillStyle = '#101314'; g.fillRect(0, 0, cw, ch); g.globalAlpha = 0.4; g.drawImage(composite(1), -x0, -y0); g.globalAlpha = 1;
+    const im = g.getImageData(0, 0, cw, ch), D = im.data, bl = (() => { const bc = document.createElement('canvas'); bc.width = W; bc.height = H; const bg = bc.getContext('2d'); bg.drawImage(blowC, 0, 0, W, H); return bg.getImageData(0, 0, W, H).data; })(), put = (i, r, gg, b) => { D[i] = r; D[i + 1] = gg; D[i + 2] = b; }, third = [0, 0, 0]; let miss = 0, cn = 0, sx = 0, sy = 0;
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const px = x + x0, py = y + y0, j = (py * W + px) * 4, i = (y * cw + x) * 4, d = densAt(j), tp = TP[Math.floor(py / TS) * tw + Math.floor(px / TS)];
+      if (tp > 1) put(i, 120, 60, 170);
+      if (bl[j + 3] > 40) put(i, 60, 130, 255);
+      if (d > 0.2 && band[j + 3] < 30) put(i, 255, 150, 40);
+      if (core[j + 3] > 128) { cn++; if (d > 0.28) put(i, 60, 220, 120); else { put(i, 240, 60, 60); miss++; sx += px; sy += py; third[Math.min(2, Math.floor((py - y0 - m) / Math.max(1, ch - 2 * m) * 3))]++; } } }
+    g.putImageData(im, 0, 0); const notes = [], P = res.parts, big = third.indexOf(Math.max(...third));
+    if (cn && miss / cn > 0.05) notes.push(`Red shows where the line left the stencil or went too light. Most of it is in the ${['top', 'middle', 'bottom'][big]} third. Keep your eye just ahead of the needle and hold your pressure there.`);
+    if (P.spill > 2) notes.push('Orange is ink well off the line. Slow your approach and land on the stencil before you pull.');
+    if (P.evenness < 75) notes.push('The darkness changes along the line. That usually means your speed or pressure changed, often at the start and end, or where you restarted.');
+    if (P.weight != null && P.weight < 75) notes.push('The thickness changes along the line. Watch for slowing down or pressing in through the curves.');
+    if (T.corners) notes.push(...cornerNotes);
+    if (res.blowouts) notes.push('Blue is blowout: pressing deep while moving slowly. Keep moving whenever the needle is in.');
+    if (res.skin != null && res.skin < 90) notes.push('Purple is overworked skin. Make fewer passes, and let it settle before pressing Done.');
+    if (!notes.length) notes.push('Nothing stands out: a clean attempt. To score higher, keep the line dead centre on the stencil and the speed steady from start to finish.');
+    return { c, notes }; };
   async function lessonReport(T, res) {
     const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
     const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now();
-    const old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
+    const heat = res.empty ? null : heatOf(T, res), hurl = heat?.c.toDataURL('image/jpeg', 0.85), old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
     if (pass && (!old || res.total > old.total)) { const sc = Math.min(1, 1600 / W), blob = await new Promise(r => composite(sc).toBlob(r, 'image/jpeg', 0.9));
-      p.results = p.results || {}; p.results[EX.lesson] = { ref: await Media.save(blob, 'jpg'), total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, penalty: res.penalty, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD }; if (old?.ref) await Media.release(old.ref); }
+      p.results = p.results || {}; p.results[EX.lesson] = { ref: await Media.save(blob, 'jpg'), total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, penalty: res.penalty, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, heat: await Media.save(await new Promise(r => heat.c.toBlob(r, 'image/jpeg', 0.85)), 'jpg'), notes: heat.notes }; if (old?.ref) await Media.release(old.ref); if (old?.heat) await Media.release(old.heat); }
     await Settings.set('tt_lessons', JSON.stringify(p));
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
       ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
       <img class="tt-chshot" src="${res.thumb}" alt="">
+      ${heat ? `<div class="lbl" style="margin-top:8px">Where it went</div><img class="tt-chshot tt-lsheat" src="${hurl}" alt="Heat map of the attempt"><div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div><ul class="tt-lsnotes">${heat.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
       <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lr="out">Lessons</button><button class="btn" data-lr="close">Close</button><span style="flex:1"></span><button class="btn ${pass ? '' : 'primary'}" data-lr="again">Try again</button>${pass ? '<button class="btn primary" data-lr="out">Continue</button>' : ''}</div></div>`;
     o.onclick = (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
     document.body.appendChild(o);
@@ -3022,6 +3049,7 @@ function ttStyle() {
 .tt-tsteps { display: flex; gap: 4px; margin-bottom: 8px; } .tt-tsteps i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); } .tt-tsteps i.on { background: var(--teal); } .tt-tsteps i.done { background: rgba(31,182,166,.45); }
 .tt-prof { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; } .tt-prof button { flex: 1 1 auto; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 10px; padding: 7px 8px; font: 600 12px var(--ui); cursor: pointer; }
 .tt-prof button.on { border-color: var(--teal); background: rgba(31,182,166,.15); color: var(--teal); } .tt-prof.big button { padding: 12px 10px; font-size: 14px; }
+.tt-chshot.tt-lsheat { max-height: 520px; image-rendering: auto; } .tt-lsleg { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12px; margin: 6px 0; } .tt-lsleg i { width: 11px; height: 11px; border-radius: 3px; margin-left: 6px; } .tt-lsnotes { margin: 6px 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
 .tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
