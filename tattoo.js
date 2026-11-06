@@ -1760,6 +1760,8 @@ TT.open = async (el, id) => {
     for (const nd of lay) { const pk = mg ? 1 : nlook.thin, px = curAt.x + nd.u * pk * s * -sa + nd.v * pk * s * ca, py = curAt.y + nd.u * pk * s * ca + nd.v * pk * s * sa, rc = mg ? magReach(nd, curD, curRoll) / curD : 1; if (rc > 0.004) hits++;
       cux.beginPath(); cux.arc(px, py, Math.max(0.8, rr * nlook.thin), 0, 7); cux.fillStyle = mg ? `rgba(255,255,255,${0.05 + 0.55 * Math.min(1, rc)})` : 'rgba(255,255,255,.35)'; cux.fill(); cux.strokeStyle = rc > 0.004 ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.2)'; cux.stroke(); }
     if (mg && Math.abs(curRoll) > 0.01) { const tx = curAt.x - 30, ty = curAt.y + Math.max(rr + 26, 26), tt = `${hits} of ${lay.length}`; cux.font = '600 11px Inter, sans-serif'; const tw = cux.measureText(tt).width + 10; cux.fillStyle = 'rgba(15,18,19,.85)'; cux.fillRect(tx, ty - 12, tw, 16); cux.fillStyle = '#fff'; cux.fillText(tt, tx + 5, ty); }
+    // A tag when the needle runs dry: low from the point its ink starts to flow less (see inkC in the stroke), then empty.
+    if (st.tool === 'needle' && !(CHEAT && st.endless) && st.ink.v < 0.625) { const tt = st.ink.v <= 0.01 ? 'Empty' : 'Low', tx = curAt.x + Math.max(26, rr + 22), ty = curAt.y - Math.max(4, rr); cux.font = '700 11px Inter, sans-serif'; const tw = cux.measureText(tt).width + 10; cux.fillStyle = 'rgba(15,18,19,.88)'; cux.fillRect(tx, ty - 12, tw, 16); cux.fillStyle = tt === 'Empty' ? '#ff7a66' : '#f2c14e'; cux.fillText(tt, tx + 5, ty); }
     // What's loaded: a drop of the needle's ink beside the cursor (paler when diluted), hidden while tattooing.
     if (!pen && st.ink.v > 0.01) { const dx = curAt.x + Math.max(14, rr + 10), dy = curAt.y - Math.max(14, rr + 10);
       cux.beginPath(); cux.moveTo(dx, dy - 9); cux.bezierCurveTo(dx + 7, dy - 1, dx + 6, dy + 6, dx, dy + 6); cux.bezierCurveTo(dx - 6, dy + 6, dx - 7, dy - 1, dx, dy - 9); cux.closePath();
@@ -2638,14 +2640,14 @@ TT.open = async (el, id) => {
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
   /* A straight lesson line, judged the way an artist would look at it: walk along the stencil and, at each point, find
-     the ink beside it. Coverage: no gaps along the length. On line: how far the ink's middle sits from the stencil (half
+     the ink beside it. Coverage: no gaps along the length, with 90% counting as full. On line: how far the ink's middle sits from the stencil (half
      a millimetre is a pass mark for a hand, 3 mm is off the line). Evenness: the darkness stays the same along it. */
   const segScore = ([x0, y0, x1, y1]) => { const len = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / len, uy = (y1 - y0) / len, reach = 3, ds = [], offs = []; let n = 0;
     for (let s = 0; s <= len; s += 0.5, n++) { let w = 0, wo = 0, top = 0;
-      for (let o = -reach; o <= reach; o += 1 / mm) { const X = Math.round((x0 + ux * s - uy * o) * mm), Y = Math.round((y0 + uy * s + ux * o) * mm); if (X < 0 || Y < 0 || X >= W || Y >= H) continue; const d = densAt((Y * W + X) * 4); if (d > 0.2) { w += d; wo += d * o; top = Math.max(top, d); } }
-      if (w > 0 && top > 0.28) { ds.push(top); offs.push(Math.abs(wo / w)); } }
+      for (let o = -reach; o <= reach; o += 1 / mm) { const X = Math.round((x0 + ux * s - uy * o) * mm), Y = Math.round((y0 + uy * s + ux * o) * mm); if (X < 0 || Y < 0 || X >= W || Y >= H) continue; const d = densAt((Y * W + X) * 4); if (d > 0.12) { w += d; wo += d * o; top = Math.max(top, d); } }
+      if (w > 0 && top > 0.18) { ds.push(top); offs.push(Math.abs(wo / w)); } }
     let ink = 0, stray = 0; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { if (densAt((y * W + x) * 4) <= 0.2) continue; ink++; const px = x / mm - x0, py = y / mm - y0, along = px * ux + py * uy, off = Math.abs(px * uy - py * ux); if (off > reach + 1 || along < -reach || along > len + reach) stray++; }
-    const cov = ds.length / Math.max(1, n), mean = ds.reduce((a, b) => a + b, 0) / Math.max(1, ds.length), sd = Math.sqrt(ds.reduce((a, b) => a + (b - mean) * (b - mean), 0) / Math.max(1, ds.length)), cons = 1 - clamp01(sd / 0.8);
+    const cov = Math.min(1, ds.length / Math.max(1, n) / 0.9), mean = ds.reduce((a, b) => a + b, 0) / Math.max(1, ds.length), sd = Math.sqrt(ds.reduce((a, b) => a + (b - mean) * (b - mean), 0) / Math.max(1, ds.length)), cons = 1 - clamp01(sd / 0.8);
     const off = offs.reduce((a, b) => a + b, 0) / Math.max(1, offs.length), acc = 1 - clamp01((off - 0.5) / 2.5), clean = 1 - stray / Math.max(1, ink);
     return { score: Math.round(100 * cov * (0.4 + 0.35 * acc + 0.25 * cons) * (0.5 + 0.5 * acc) * clean), coverage: Math.round(cov * 100), 'on line': Math.round(acc * 100), evenness: Math.round(cons * 100) }; };
   const scoreOf = (T) => {
