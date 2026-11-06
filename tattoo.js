@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 258;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 259;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -433,7 +433,21 @@ const TT_LESSONS = [
         more: 'Your score is your line score, reduced by up to 20% for poor corners and up to 10% for changing line weight. Both reductions apply together.' }
     ] }
   ] },
-  { name: 'Chapter 2: Medium', lessons: [] },
+  { name: 'Chapter 2: Medium', lessons: [
+    { id: '2-1', title: 'Solid black', sum: 'Line a small square, then pack it solid black with no patches. Grade C or higher moves you on.', task: 'l-pack', steps: [
+      { title: 'Two needles, one small square', pic: { needles: ['5RL', '7RS'] }, text: 'A 1.5 cm square. Line it first with a #10 5RL, then change to a #12 7RS and pack it solid black. You choose the needle in the workspace, so remember to change it.',
+        more: 'The outline gives you a wall to work up to. Line it the way you learned in Chapter 1, sharp corners included.' },
+      { title: 'The circular motion', pic: { motion: true }, text: 'There are a few ways to get solid colour, but the easiest to grasp is tight little circles. Stack 3 to 4 rows at once as you move across: 3 up, 1 to the right, 3 down, 1 to the right, and repeat to the far side. Then come back the same way.',
+        more: 'Every circle overlaps the one before, and each trip overlaps the previous row. The picture is stretched out so you can see the path; on skin the circles sit far tighter, with no skin showing between them.' },
+      { title: 'Keep it consistent', text: 'Your movement and depth must always stay the same. Keep the circles tight and do not dig. Consistency matters most here: patchy work is not allowed.',
+        more: 'A patch usually comes from speeding up, lifting a little, or running low on ink. Digging in to fix a light spot chews up the skin and makes it worse, so come back over it with the same steady motion.' },
+      { title: 'Stay inside the line', text: 'Work up to your outline without going over it. Slow your sweep slightly as you reach the edge and turn back, rather than running out past it.' },
+      { title: 'Take a break if you need to', text: 'You do not have to do it all in one go. If the skin is getting bruised, stop and let it settle, then carry on. With consistent work it can easily be done in one go.',
+        more: 'Skin starts settling a few seconds after the needle moves away, but badly overworked skin stays damaged and will not take ink well.' },
+      { title: 'Your grade', text: 'When it is solid and the skin has settled, press Done. Grade C (70) or higher moves you on, and more than 1 blowout is an instant fail.',
+        more: 'Consistency counts most, then saturation, how much of the square is solid, and staying inside the line. Skin condition is part of the grade, as always.' }
+    ] }
+  ] },
   { name: 'Chapter 3: Advanced', lessons: [] }
 ];
 // A flag on a pole, in mm: pole, ball, two waving edges (each an S) and the flag's end.
@@ -459,6 +473,9 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
     corners: [[110, 36, 1, -1, 0, 'Top right'], [110, 70, 1, 1, 0, 'Bottom right'], [45, 36, -1, -1, 1, 'Top edge at the pole'], [45, 70, -1, -1, 1, 'Bottom edge at the pole']],
     text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
     path: (g) => ttGeomDraw(g, TT_FLAG) }];
+const ttPackPath = (b) => (g) => { g.moveTo(b[0], b[1]); g.lineTo(b[0] + b[2], b[1]); g.lineTo(b[0] + b[2], b[1] + b[3]); g.lineTo(b[0], b[1] + b[3]); g.closePath(); };
+TT_LS_CH.push({ id: 'l-pack', lesson: '2-1', cat: 'pack', diff: 2, title: 'Solid black', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [82.5, 52.5, 15, 15], needles: ['5RL', '7RS'], path: ttPackPath([82.5, 52.5, 15, 15]),
+  text: 'Black ink. Line the square with the 5RL, then change to the 7RS and pack it solid with tight overlapping circles. Take a break if the skin bruises. Let it settle, then press Done.' });
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
 const TT_BLOW_SEVERE = 7, TT_BLOW_JOKES = ['Did you nod off with your foot on the pedal?', 'That is not shading. That is a bruise with ambition.', 'Your mentor felt that from across town.', 'Somewhere, a client just googled laser removal.', 'The ink has left the building. So has my faith in you.', 'Chores. So many chores.', 'Fat layer says hi. Nobody invited it.'];
@@ -474,7 +491,12 @@ const ttLessonOpen = (id, p) => { const a = ttLessonList(), n = a.findIndex(l =>
 // Needle tips from below, drawn from the same layout the simulator tattoos with.
 const ttNeedleSvg = (id, size) => { const nd = TT_NEEDLES.find(n => n.id === id), f = size ?? TT.feelBase(id).size, lay = ttLayout(nd, f), R = Math.max(0.5, ...lay.map(q => Math.hypot(q.u, q.v) + f)) * 1.1;
   return `<svg viewBox="${-R} ${-R} ${R * 2} ${R * 2}" role="img" aria-label="${esc(nd.name)}"><circle r="${(R * 0.99).toFixed(3)}" class="tt-lsbg"/>${lay.map(q => `<circle cx="${q.u.toFixed(3)}" cy="${q.v.toFixed(3)}" r="${(f * 0.42).toFixed(3)}" class="tt-lsdot"/>`).join('')}</svg>`; };
+// The packing path, neatly: tight loops stacked 3 rows high, stepping sideways up and down the column.
+const ttMotionSvg = () => { const pts = [], step = 11, r = 8; let cx = 22, cy = 74, dir = -1; for (let c = 0; c < 15; c++) { for (let i = 0; i < 3; i++) { for (let a = 0; a < 24; a++) { const f = a / 24, an = f * Math.PI * 2 + Math.PI / 2; pts.push([cx + (i === 0 ? 0 : 0) + r * Math.cos(an), cy + dir * step * (i + f) + r * Math.sin(an)]); } } cy += dir * step * 3; cx += step * 1.3; dir = -dir; }
+  const d = pts.map((q, i) => `${i ? 'L' : 'M'}${q[0].toFixed(1)} ${q[1].toFixed(1)}`).join(' ');
+  return `<svg class="tt-lsmotion" style="width:100%;height:auto;aspect-ratio:2.5" viewBox="0 0 250 100" role="img" aria-label="Tight overlapping circles moving up and down in columns, stepping from left to right"><path d="${d}" class="tt-lsmpath"/><path d="M14 94H236M228 89l8 5-8 5" class="tt-lsmarrow"/></svg>`; };
 const ttLessonPic = (pic) => { if (!pic) return '';
+  if (pic.motion) return ttMotionSvg();
   if (pic.needles) return `<div class="tt-lspics">${pic.needles.map(id => `<figure>${ttNeedleSvg(id)}<figcaption>${id}</figcaption></figure>`).join('')}</div>`;
   if (pic.sizes) return `<div class="tt-lspics">${[[0.25, '#08', '0.25 mm'], [0.3, '#10', '0.30 mm'], [0.35, '#12', '0.35 mm']].map(([s, n, m]) => `<figure>${ttNeedleSvg('3RL', s)}<figcaption>${n}<br><span class="muted">${m}</span></figcaption></figure>`).join('')}</div>`;
   if (pic.table) return `<div class="tt-sum tt-lstable">${pic.table.map(([a, b]) => `<b>${a}</b><span>${b}</span>`).join('')}</div>`;
@@ -491,7 +513,7 @@ TT.lessons = (el) => { ttStyle();
 };
 // A report's picture: the finished piece, with a toggle to the heat map and its notes; tap for full screen.
 const ttShotHtml = (pu, hu, notes) => `<div class="tt-lsshot">${hu ? '<div class="seg" style="margin:8px 0"><button class="on" data-shot="p" style="flex:1">Finished piece</button><button data-shot="h" style="flex:1">Heat map</button></div>' : ''}
-  <img class="tt-chshot tt-lsimg" src="${pu}" alt="The attempt" data-tip="Tap to view full screen"><div class="tt-lsheatinfo" hidden><div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div><ul class="tt-lsnotes">${(notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
+  <img class="tt-chshot tt-lsimg" src="${pu}" alt="The attempt" data-tip="Tap to view full screen"><div class="tt-lsheatinfo" hidden><div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#f0c83c"></i>Light (packing)<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div><ul class="tt-lsnotes">${(notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
 const ttShotBind = (root, pu, hu) => { const im = root.querySelector('.tt-lsimg'), info = root.querySelector('.tt-lsheatinfo'); let cur = 'p';
   root.querySelectorAll('[data-shot]').forEach(b => b.onclick = () => { cur = b.dataset.shot; root.querySelectorAll('[data-shot]').forEach(x => x.classList.toggle('on', x === b)); im.src = cur === 'h' ? hu : pu; info.hidden = cur !== 'h'; });
   im.onclick = () => ttZoom(pu, hu, cur); };
@@ -1032,7 +1054,7 @@ TT.open = async (el, id) => {
       cx = { pig: true, key, col, str: st.tool === 'erase' ? 1 : (st.ink.s ?? 1), lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; }
     else { cx = c.getContext('2d'); cx.globalCompositeOperation = 'destination-out'; cx.fillStyle = '#000'; }   // the stencil: only the laser
     const p = toPage(e);
-    if (EX?.cur) { EX.cur.strokes = (EX.cur.strokes || 0) + 1; EX.cur.t0 ||= Date.now(); EX.cur.t1 = Date.now(); }
+    if (EX?.cur) { if (st.tool !== 'erase') (EX.cur.used ||= {})[st.needle] = 1; EX.cur.strokes = (EX.cur.strokes || 0) + 1; EX.cur.t0 ||= Date.now(); EX.cur.t1 = Date.now(); }
     SS.strokes++; if (st.tool === 'erase') SS.erase++; else SS.layers[key] = (SS.layers[key] || 0) + 1;
     if (wsh > 0.04 && cx.pig) cx.alsoHi = { ...cx, key: 'high', w: wsh };
     pen = { cx, last: p, t: e.timeStamp, t0: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
@@ -2750,7 +2772,13 @@ TT.open = async (el, id) => {
       return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(run / 1.5)); };
     const main = cs.filter(c => !c[4]), side = cs.filter(c => c[4]), mean = (a) => a.reduce((s, c) => s + one(c), 0) / a.length;   // an edge ending on another line can only lose marks by crossing it: that line's own ink always reaches the point, so it can't earn any
     return Math.round(100 * Math.min(1, mean(main) / 0.78) * (side.length ? mean(side) : 1)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
+  // A packed square. Saturation: how dark. Coverage: how much is solid. Consistency: how alike 1 mm patches of it are, with patches well below the rest counting double. The outline's own 0.6 mm is left out.
+  const packScore = (b) => { const m = 0.6, cells = []; let n = 0, solid = 0, sum = 0; for (let cx = b[0] + m; cx < b[0] + b[2] - m; cx += 1) for (let cy = b[1] + m; cy < b[1] + b[3] - m; cy += 1) { let s = 0, c = 0; for (let x = Math.round(cx * mm); x < (cx + 1) * mm; x += 2) for (let y = Math.round(cy * mm); y < (cy + 1) * mm; y += 2) { const d = densAt((y * W + x) * 4); s += d; c++; n++; sum += d; if (d > 0.7) solid++; } cells.push(s / Math.max(1, c)); }
+    const mean = cells.reduce((a, v) => a + v, 0) / Math.max(1, cells.length), sd = Math.sqrt(cells.reduce((a, v) => a + (v - mean) * (v - mean), 0) / Math.max(1, cells.length)), low = cells.filter(v => v < mean - 0.15).length / Math.max(1, cells.length);
+    const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = clamp01(1 - sd / 0.25 - low) * Math.min(1, sat / 0.5), sp = spillOut(inBox(b), 1.2);
+    return { score: Math.round(100 * cov * (0.3 * sat + 0.55 * cons + 0.15 * (1 - sp))), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), spill: Math.round(sp * 100) }; };
   const scoreOf = (T) => {
+    if (T.pack) return packScore(T.pack);
     if (T.geom) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners), wt = weightScore(T.geom, T.joints); return { ...ln, score: Math.round(ln.score * (0.8 + 0.2 * cr / 100) * (0.9 + 0.1 * wt / 100)), corners: cr, weight: wt }; }
     if (T.arcs) { const ln = lineScore(T.path, T.core, T.covEase), wt = weightScore(T.arcs.map(a => ['a', ...a])); return { ...ln, score: Math.round(ln.score * (0.7 + 0.3 * wt / 100)), weight: wt }; }
     if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100)), corners: cr }; }
@@ -2846,7 +2874,7 @@ TT.open = async (el, id) => {
   /* The attempt as a heat map, zoomed to the stencil: green where the strip the score looks at has ink, red where it
      hasn't, orange for ink outside the band that counts as spill, purple for skin worked into swelling, blue for blowouts.
      Uses the same strip and band as the line score, so it shows what was actually judged. */
-  const heatOf = (T, res) => { const coreW = Math.min(T.core, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35)), core = maskOf(T.path, false, coreW), band = maskOf(T.path, false, coreW + 2.2);
+  const heatOf = (T, res) => { const coreW = Math.min(T.core, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35)), core = T.pack ? maskOf(T.path, true) : maskOf(T.path, false, coreW), band = T.pack ? (() => { const f = maskOf(T.path, true), e = maskOf(T.path, false, 2.4); for (let i = 3; i < f.length; i += 4) f[i] = Math.max(f[i], e[i]); return f; })() : maskOf(T.path, false, coreW + 2.2);
     let x0 = W, y0 = H, x1 = 0, y1 = 0; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (band[(y * W + x) * 4 + 3] > 30) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     const m = Math.round(8 * mm), spots = EX.cur?.spots || [], severe = spots.filter(s => s[2] >= TT_BLOW_SEVERE); for (const s of spots) { x0 = Math.min(x0, s[0]); y0 = Math.min(y0, s[1]); x1 = Math.max(x1, s[0]); y1 = Math.max(y1, s[1]); }
     x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m); if (severe.length) { const need = Math.round(90 * mm) - (x1 - x0); if (need > 0) { x0 = Math.max(0, x0 - Math.ceil(need / 2)); x1 = Math.min(W, x1 + Math.ceil(need / 2)); } } const cw = x1 - x0, ch = y1 - y0, c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
@@ -2856,7 +2884,8 @@ TT.open = async (el, id) => {
       if (tp > 1) put(i, 120, 60, 170);
       if (bl[j + 3] > 40) put(i, 60, 130, 255);
       if (d > 0.2 && band[j + 3] < 30) put(i, 255, 150, 40);
-      if (core[j + 3] > 128) { cn++; if (d > 0.28) put(i, 60, 220, 120); else { put(i, 240, 60, 60); miss++; sx += px; sy += py; third[Math.min(2, Math.floor((py - y0 - m) / Math.max(1, ch - 2 * m) * 3))]++; } } }
+      if (T.pack && core[j + 3] > 128) { cn++; if (d > 0.7) put(i, 60, 220, 120); else if (d > 0.4) put(i, 240, 200, 60); else { put(i, 240, 60, 60); miss++; } }
+      else if (core[j + 3] > 128) { cn++; if (d > 0.28) put(i, 60, 220, 120); else { put(i, 240, 60, 60); miss++; sx += px; sy += py; third[Math.min(2, Math.floor((py - y0 - m) / Math.max(1, ch - 2 * m) * 3))]++; } } }
     g.putImageData(im, 0, 0);
     // A ring around every blowout, and for a really bad one, an arrow and the level of disappointment.
     const u = mm, ringR = (s) => Math.min(6, 2.5 + s[2] * 0.1) * u; g.lineWidth = 0.4 * u; g.strokeStyle = '#fff'; for (const s of spots) { g.beginPath(); g.arc(s[0] - x0, s[1] - y0, ringR(s), 0, 7); g.stroke(); }
@@ -2867,8 +2896,9 @@ TT.open = async (el, id) => {
       g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx - Math.cos(ang - 0.45) * hd, ty - Math.sin(ang - 0.45) * hd); g.lineTo(tx - Math.cos(ang + 0.45) * hd, ty - Math.sin(ang + 0.45) * hd); g.closePath(); g.fill();
       g.fillStyle = 'rgba(15,18,19,.94)'; g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh); g.fillStyle = '#ffd24a'; lines.forEach((l, i) => g.fillText(l, bx + pad, by + pad + fs * (i + 0.85) * 1.15)); }
     const notes = [], P = res.parts, big = third.indexOf(Math.max(...third));
-    if (cn && miss / cn > 0.05) notes.push(`Red shows where the line left the stencil or went too light. Most of it is in the ${['top', 'middle', 'bottom'][big]} third. Keep your eye just ahead of the needle and hold your pressure there.`);
-    if (P.spill > 2) notes.push('Orange is ink well off the line. Slow your approach and land on the stencil before you pull.');
+    if (T.pack) { if (P.consistency < 80) notes.push('Yellow and red are patches: lighter than the solid green. Keep your circles tight and your speed and depth the same, and overlap every pass.'); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
+    else if (cn && miss / cn > 0.05) notes.push(`Red shows where the line left the stencil or went too light. Most of it is in the ${['top', 'middle', 'bottom'][big]} third. Keep your eye just ahead of the needle and hold your pressure there.`);
+    if (!T.pack && P.spill > 2) notes.push('Orange is ink well off the line. Slow your approach and land on the stencil before you pull.');
     if (P.evenness < 75) notes.push('The darkness changes along the line. That usually means your speed or pressure changed, often at the start and end, or where you restarted.');
     if (P.weight != null && P.weight < 75) notes.push('The thickness changes along the line. Watch for slowing down or pressing in through the curves.');
     if (T.corners) notes.push(...cornerNotes);
@@ -3109,6 +3139,7 @@ function ttStyle() {
 #tt-zoom { position: fixed; inset: 0; z-index: 120; background: #0b0d0e; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; } #tt-zoom img { max-width: 100%; max-height: 100%; touch-action: none; user-select: none; cursor: grab; }
 .tt-zbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; align-items: center; padding: 10px 12px; background: rgba(15,18,19,.85); }
 .tt-lsimg { cursor: zoom-in; } .tt-lsheatinfo[hidden] { display: none; } .tt-lsleg { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12px; margin: 6px 0; } .tt-lsleg i { width: 11px; height: 11px; border-radius: 3px; margin-left: 6px; } .tt-lsnotes { margin: 6px 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
+.tt-lsmotion { display: block; width: 100%; max-width: 480px; margin: 10px 0; } .tt-lsmotion .tt-lsmpath { fill: none; stroke: var(--teal); stroke-width: .9; } .tt-lsmotion .tt-lsmarrow { fill: none; stroke: var(--ink2, #999); stroke-width: 1.2; }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
 .tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
