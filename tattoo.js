@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 252;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 253;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -467,14 +467,31 @@ TT.lessons = (el) => { ttStyle();
       return `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="tt-lsrow ${can ? '' : 'off'}" style="flex:1" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>${p.results?.[l.id] ? `<button class="btn small" data-lres="${l.id}">Result</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
   el.onclick = (e) => { const v = e.target.closest('[data-lres]'); if (v) return ttLessonResult(v.dataset.lres); const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
 };
+// A report's picture: the finished piece, with a toggle to the heat map and its notes; tap for full screen.
+const ttShotHtml = (pu, hu, notes) => `<div class="tt-lsshot">${hu ? '<div class="seg" style="margin:8px 0"><button class="on" data-shot="p" style="flex:1">Finished piece</button><button data-shot="h" style="flex:1">Heat map</button></div>' : ''}
+  <img class="tt-chshot tt-lsimg" src="${pu}" alt="The attempt" data-tip="Tap to view full screen"><div class="tt-lsheatinfo" hidden><div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div><ul class="tt-lsnotes">${(notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
+const ttShotBind = (root, pu, hu) => { const im = root.querySelector('.tt-lsimg'), info = root.querySelector('.tt-lsheatinfo'); let cur = 'p';
+  root.querySelectorAll('[data-shot]').forEach(b => b.onclick = () => { cur = b.dataset.shot; root.querySelectorAll('[data-shot]').forEach(x => x.classList.toggle('on', x === b)); im.src = cur === 'h' ? hu : pu; info.hidden = cur !== 'h'; });
+  im.onclick = () => ttZoom(pu, hu, cur); };
+// Full screen, to get right up close: two fingers or the wheel to zoom, drag to move, double tap to reset.
+const ttZoom = (pu, hu, start) => { const o = document.createElement('div'); o.id = 'tt-zoom'; let cur = start, z = 1, x = 0, y = 0, pin = null, lastTap = 0; const P = new Map();
+  o.innerHTML = `<img alt="" draggable="false"><div class="tt-zbar">${hu ? `<div class="seg"><button data-z="p" class="${cur === 'p' ? 'on' : ''}">Piece</button><button data-z="h" class="${cur === 'h' ? 'on' : ''}">Heat map</button></div>` : ''}<span style="flex:1"></span><button class="btn small" data-z="out" aria-label="Zoom out">−</button><button class="btn small" data-z="in" aria-label="Zoom in">+</button><button class="btn small primary" data-z="close">Close</button></div>`;
+  const im = o.querySelector('img'), show = () => { im.style.transform = `translate(${x}px, ${y}px) scale(${z})`; }, setZ = (n, cx = innerWidth / 2, cy = innerHeight / 2) => { n = Math.max(1, Math.min(16, n)); const dx = cx - innerWidth / 2 - x, dy = cy - innerHeight / 2 - y; x += dx - dx * n / z; y += dy - dy * n / z; z = n; if (z === 1) x = y = 0; show(); };
+  const load = () => { im.src = cur === 'h' ? hu : pu; z = 1; x = y = 0; show(); }; load();
+  o.onclick = (e) => { const a = e.target.closest('[data-z]')?.dataset.z; if (!a) return; if (a === 'close') return o.remove(); if (a === 'in') return setZ(z * 1.5); if (a === 'out') return setZ(z / 1.5); cur = a; o.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.z === a)); load(); };
+  o.onwheel = (e) => { e.preventDefault(); setZ(z * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX, e.clientY); };
+  im.onpointerdown = (e) => { e.preventDefault(); im.setPointerCapture?.(e.pointerId); P.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (P.size === 2) { const [a, b] = [...P.values()]; pin = { d: Math.hypot(a.x - b.x, a.y - b.y), z }; } else { if (e.timeStamp - lastTap < 300) setZ(z > 1 ? 1 : 3, e.clientX, e.clientY); lastTap = e.timeStamp; } };
+  im.onpointermove = (e) => { const p = P.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; if (P.size >= 2 && pin) { const [a, b] = [...P.values()]; setZ(pin.z * Math.hypot(a.x - b.x, a.y - b.y) / pin.d, (a.x + b.x) / 2, (a.y + b.y) / 2); } else if (z > 1) { x += dx; y += dy; show(); } };
+  im.onpointerup = im.onpointercancel = (e) => { P.delete(e.pointerId); if (P.size < 2) pin = null; };
+  document.body.appendChild(o); };
 // A lesson's best passed attempt: the finished piece and its report card, and a copy for the portfolio that stays if a better score replaces it.
 const ttLessonResult = async (id) => { const R = ttLessonProg().results?.[id], l = ttLessonList().find(x => x.id === id); if (!R) return; const url = await Media.url(R.ref), hurl = R.heat ? await Media.url(R.heat) : null, when = new Date(R.when).toLocaleString(), rows = [...R.parts, ...(R.skin != null ? [['skin', R.skin]] : [])], cap = s => s[0].toUpperCase() + s.slice(1), o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
   o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${ttGrade(R.total)}</b><div><h2 style="margin:0">${esc(l.title)}</h2><span class="muted">${R.total} / 100 · ${when}</span></div></div>
     <div class="tt-cats">${rows.map(([k, v]) => `<div><span>${cap(k)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}</div>
     <p class="muted" style="margin:4px 0;font-size:12px">${R.blowouts || 0} blowouts · ${R.undos || 0} undos · ${R.strokes} strokes · build ${R.build}</p>
-    <img class="tt-chshot" src="${url}" alt="">
-    ${hurl ? `<div class="lbl" style="margin-top:8px">Where it went</div><img class="tt-chshot tt-lsheat" src="${hurl}" alt="Heat map of the attempt"><div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div><ul class="tt-lsnotes">${(R.notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+    ${ttShotHtml(url, hurl, R.notes)}
     <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lv="close">Close</button><span style="flex:1"></span><button class="btn primary" data-lv="pf">Save to portfolio</button></div></div>`;
+  ttShotBind(o, url, hurl);
   o.onclick = async (e) => { const a = e.target.closest('[data-lv]'); if (!a) return; if (a.dataset.lv === 'close') return o.remove(); if (a.disabled) return; a.disabled = true;
     try { const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; }), W2 = 1080, ih = Math.round(im.height * 1000 / im.width), c = document.createElement('canvas'); c.width = W2; c.height = 240 + ih + 60 + Math.ceil(rows.length / 2) * 50 + 70; const g = c.getContext('2d');
       g.fillStyle = '#121617'; g.fillRect(0, 0, W2, c.height); g.fillStyle = '#e9e3d6'; g.font = "64px 'Pirata One', serif"; g.fillText('Lesson: ' + l.title, 40, 100); g.font = '600 28px Inter, sans-serif'; g.fillStyle = '#9aa5a6'; g.fillText(when, 40, 150);
@@ -483,7 +500,10 @@ const ttLessonResult = async (id) => { const R = ttLessonProg().results?.[id], l
       const blobOf = (cv, q) => new Promise(r => cv.toBlob(r, 'image/jpeg', q)), tc = document.createElement('canvas'); tc.width = 520; tc.height = Math.round(c.height * 520 / W2); tc.getContext('2d').drawImage(c, 0, 0, tc.width, tc.height);
       const photo = await Media.save(await blobOf(c, 0.9), 'jpg'), thumb = await Media.save(await blobOf(tc, 0.85), 'jpg');
       await DB.run(`INSERT INTO portfolio_items (kind, title, description, tags, made_on) VALUES ('art', ?, ?, 'simulator', date('now'))`, ['Lesson: ' + l.title, `Lesson piece from the tattoo simulator: ${R.total} / 100, grade ${ttGrade(R.total)}.`]); const pid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
-      await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [pid, photo, thumb, 'Finished piece and report card']); a.textContent = 'Saved'; toast('Saved to Portfolio.'); } catch (err) { a.disabled = false; toast('Could not save: ' + err.message, 4000); } };
+      await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [pid, photo, thumb, 'Finished piece and report card']);
+      if (hurl) { const hm = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = hurl; }), hc = document.createElement('canvas'); hc.width = hm.width; hc.height = hm.height; hc.getContext('2d').drawImage(hm, 0, 0); const ht = document.createElement('canvas'), hs = Math.min(1, 520 / Math.max(hm.width, hm.height)); ht.width = Math.max(1, Math.round(hm.width * hs)); ht.height = Math.max(1, Math.round(hm.height * hs)); ht.getContext('2d').drawImage(hm, 0, 0, ht.width, ht.height);
+        await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 1)', [pid, await Media.save(await blobOf(hc, 0.92), 'jpg'), await Media.save(await blobOf(ht, 0.85), 'jpg'), 'Heat map']); }
+      a.textContent = 'Saved'; toast('Saved to Portfolio.'); } catch (err) { a.disabled = false; toast('Could not save: ' + err.message, 4000); } };
   document.body.appendChild(o); };
 TT.lesson = (el, id, i) => { const l = ttLessonList().find(x => x.id === id), S = l.steps; let more = false;
   const draw = () => { const s = S[i], tuned = !!Settings.get('tt_tuned'), last = i === S.length - 1;
@@ -2822,7 +2842,7 @@ TT.open = async (el, id) => {
   async function lessonReport(T, res) {
     const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
     const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now();
-    const heat = res.empty ? null : heatOf(T, res), hurl = heat?.c.toDataURL('image/jpeg', 0.85), old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
+    const heat = res.empty ? null : heatOf(T, res), hurl = heat?.c.toDataURL('image/jpeg', 0.85), purl = composite(Math.min(1, 1600 / W)).toDataURL('image/jpeg', 0.9), old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
     if (pass && (!old || res.total > old.total)) { const sc = Math.min(1, 1600 / W), blob = await new Promise(r => composite(sc).toBlob(r, 'image/jpeg', 0.9));
       p.results = p.results || {}; p.results[EX.lesson] = { ref: await Media.save(blob, 'jpg'), total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, penalty: res.penalty, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, heat: await Media.save(await new Promise(r => heat.c.toBlob(r, 'image/jpeg', 0.85)), 'jpg'), notes: heat.notes }; if (old?.ref) await Media.release(old.ref); if (old?.heat) await Media.release(old.heat); }
     await Settings.set('tt_lessons', JSON.stringify(p));
@@ -2830,9 +2850,9 @@ TT.open = async (el, id) => {
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
       ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
-      <img class="tt-chshot" src="${res.thumb}" alt="">
-      ${heat ? `<div class="lbl" style="margin-top:8px">Where it went</div><img class="tt-chshot tt-lsheat" src="${hurl}" alt="Heat map of the attempt"><div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div><ul class="tt-lsnotes">${heat.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      ${ttShotHtml(purl, hurl, heat?.notes)}
       <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lr="out">Lessons</button><button class="btn" data-lr="close">Close</button><span style="flex:1"></span><button class="btn ${pass ? '' : 'primary'}" data-lr="again">Try again</button>${pass ? '<button class="btn primary" data-lr="out">Continue</button>' : ''}</div></div>`;
+    ttShotBind(o, purl, hurl);
     o.onclick = (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
     document.body.appendChild(o);
   }
@@ -3049,7 +3069,9 @@ function ttStyle() {
 .tt-tsteps { display: flex; gap: 4px; margin-bottom: 8px; } .tt-tsteps i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); } .tt-tsteps i.on { background: var(--teal); } .tt-tsteps i.done { background: rgba(31,182,166,.45); }
 .tt-prof { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; } .tt-prof button { flex: 1 1 auto; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 10px; padding: 7px 8px; font: 600 12px var(--ui); cursor: pointer; }
 .tt-prof button.on { border-color: var(--teal); background: rgba(31,182,166,.15); color: var(--teal); } .tt-prof.big button { padding: 12px 10px; font-size: 14px; }
-.tt-chshot.tt-lsheat { max-height: 520px; image-rendering: auto; } .tt-lsleg { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12px; margin: 6px 0; } .tt-lsleg i { width: 11px; height: 11px; border-radius: 3px; margin-left: 6px; } .tt-lsnotes { margin: 6px 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
+#tt-zoom { position: fixed; inset: 0; z-index: 120; background: #0b0d0e; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; } #tt-zoom img { max-width: 100%; max-height: 100%; touch-action: none; user-select: none; cursor: grab; }
+.tt-zbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; align-items: center; padding: 10px 12px; background: rgba(15,18,19,.85); }
+.tt-lsimg { cursor: zoom-in; } .tt-lsheatinfo[hidden] { display: none; } .tt-lsleg { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12px; margin: 6px 0; } .tt-lsleg i { width: 11px; height: 11px; border-radius: 3px; margin-left: 6px; } .tt-lsnotes { margin: 6px 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
 .tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
