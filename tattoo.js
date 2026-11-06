@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 248;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 249;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -2659,8 +2659,9 @@ TT.open = async (el, id) => {
     const frac = (x0, x1, y0, y1) => { let n = 0, c = 0; for (let x = x0; x <= x1 + 1e-6; x += 0.1) for (let y = y0; y <= y1 + 1e-6; y += 0.1) { n++; c += inkAt(x, y); } return c / Math.max(1, n); };
     const one = ([x, y, sx, sy]) => { const box = (a0, a1, b0, b1) => frac(Math.min(x + sx * a0, x + sx * a1), Math.max(x + sx * a0, x + sx * a1), Math.min(y + sy * b0, y + sy * b1), Math.max(y + sy * b0, y + sy * b1));
       const reach = Math.min(1, frac(x - 0.7, x + 0.7, y - 0.7, y + 0.7) / 0.35), cut = box(-2.4, -1, -2.4, -1);
-      // how far a line runs on past the corner: a clean end stops within 0.7 mm, and 2.2 mm past scores nothing
-      const past = (ux, uy) => { let d = 0.7; for (; d < 4; d += 0.1) { let hit = false; for (let o = -0.5; o <= 0.5; o += 0.1) if (inkAt(x + ux * d + uy * o, y + uy * d + ux * o)) { hit = true; break; } if (!hit) break; } return d - 0.7; };
+      // how far a line runs on past the corner: a clean end stops within 0.7 mm, and 2.2 mm past scores nothing. Any visible ink counts, across small gaps, so a faint, dotted whip-out still shows as running past.
+      const faint = (X0, Y0) => { const X = Math.round(X0 * mm), Y = Math.round(Y0 * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.06; };
+      const past = (ux, uy) => { let last = 0.7; for (let d = 0.7; d < 6 && d - last <= 0.5; d += 0.1) for (let o = -0.5; o <= 0.5; o += 0.1) if (faint(x + ux * d + uy * o, y + uy * d + ux * o)) { last = d; break; } return last - 0.7; };
       return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(Math.max(past(sx, 0), past(0, sy)) / 1.5)); };
     return Math.round(100 * Math.min(1, cs.reduce((a, c) => a + one(c), 0) / cs.length / 0.78)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
   const scoreOf = (T) => {
