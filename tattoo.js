@@ -23,9 +23,9 @@ function ttLayout(nd, dia) {
     const gap = nd.kind === 'shader' ? 1.3 : 0.78;   // shaders are soldered looser; liners tight, so the line comes out solid
     if (n === 1) out.push({ u: 0, v: 0, e: 1 });
     else if (n <= 6) { const r = (dia / 2) / Math.sin(Math.PI / n) * gap; for (let i = 0; i < n; i++) { const a = i * 2 * Math.PI / n; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } }
-    else {   // bigger rounds: the n needles of a tight hexagonal bundle nearest its middle
-      const g = []; for (let i = -4; i <= 4; i++) for (let j = -4; j <= 4; j++) g.push({ u: (i + j / 2) * dia * gap, v: j * dia * gap * 0.866, e: 1 });
-      g.sort((p, q) => Math.hypot(p.u, p.v) - Math.hypot(q.u, q.v)); out.push(...g.slice(0, n));
+    else {   // bigger rounds: an even outer circle around a small core, so the bundle stays round
+      const core = n <= 9 ? 1 : n <= 11 ? 2 : 4, ring = (m, off) => { const r = m < 2 ? 0 : dia * gap / (2 * Math.sin(Math.PI / m)); for (let i = 0; i < m; i++) { const a = off + i * 2 * Math.PI / m; out.push({ u: r * Math.cos(a), v: r * Math.sin(a), e: 1 }); } };
+      ring(core, 0); ring(n - core, Math.PI / (n - core));
     }
   } else {   // magnums: two staggered rows, flat; the soft edge kind sits the same but its outer needles hit shallower (an airbrush-like fade)
     const a = Math.ceil(n / 2), b = n - a, w = (a - 1) * dia;
@@ -370,14 +370,14 @@ const TT_LESSONS = [
       { title: 'Tune in first', tune: true, text: 'Every tablet and pen reads pressure differently, so start by fitting the simulator to yours. It takes a few minutes and you only need to do it once on each device.',
         more: 'Tune in has you draw a few short tasks and sets the pressure range, hand speed and more from how you actually work. You can run it again whenever you like, under the sliders icon while tattooing.' },
       { title: 'Needles: what the code means', pic: { needles: ['3RL', '7RS', '7M1', '15CM'] }, text: 'A needle grouping is named by how many needles it has and how they are arranged. 7RL means 7 needles in a round liner. There are four kinds to know: RL, RS, M and CM.',
-        more: 'The pictures show the tips of the needles from below, as they meet the skin. In this simulator, the shape you see is the shape that lands on the skin with each hit.' },
+        more: 'There are many more variants out there, such as flat magnums with a single row of needles instead of two. Needles also differ in taper, the length of the narrowing point: a long taper is finer and gentler on the skin, while a short taper is blunter and puts down more ink with each hit. In this simulation we only show the most commonly used stacks and arrangements. The pictures show the tips of the needles from below, as they meet the skin. In this simulator, the shape you see is the shape that lands on the skin with each hit.' },
       { title: 'RL: round liner', pic: { needles: ['1RL', '3RL', '7RL', '14RL'] }, text: 'Needles packed tightly into a circle. They work together like one sharp point, which gives a solid, clean line. This is your needle for linework.',
-        more: 'Because all the force lands on a small area, a round liner is the easiest needle to blow out with. Pressing in deep while moving slowly pushes ink under the skin.' },
-      { title: 'RS: round shader', pic: { needles: ['5RS', '7RS', '9RS', '11RS'] }, text: 'The same circle, spaced a little looser. It is used for small areas of shading and colour, and it also pulls a lovely bold line.',
+        more: 'Because all the force lands on a small area, a round liner is the easiest needle to blow out with. Pressing in deep while moving slowly pushes past the dermis and into the hypodermis, which is mostly fat with no structure to hold ink in place, so the ink spreads under the skin.' },
+      { title: 'RS: round shader', pic: { needles: ['5RS', '7RS', '9RS', '11RS'] }, text: 'The same circle, spaced a little looser. It is used for small areas of shading and colour, and it also pulls a lovely bold line, known as a power line.',
         more: 'Looser does not mean safer. Lining with a round shader looks great, but it can blow out just like a liner if you press deep and move slowly.' },
       { title: 'M: magnum', pic: { needles: ['7M1', '9M1', '11M1', '15M1'] }, text: 'Needles in a flat, stacked row. A magnum covers a wide band with each pass, so it suits shading and packing colour across bigger areas.',
         more: 'Which way you hold the stack matters. Roll it onto one end and that end goes deepest while the rest feather away, which is how you get a soft edge.' },
-      { title: 'CM: curved magnum', pic: { needles: ['9CM', '15CM', '23CM', '31CM'] }, text: 'A magnum with its row curved, also called a soft edge. The ends sit higher than the middle, so it leaves softer edges and is gentler on the skin.',
+      { title: 'CM: curved magnum', pic: { needles: ['9CM', '15CM', '23CM', '31CM'] }, text: 'A magnum with its row curved, also called a soft edge, and some refer to it as a round mag. The ends sit higher than the middle, so it leaves softer edges and is gentler on the skin.',
         more: 'This is the go-to for smooth grey gradients and for packing large areas of colour, because its passes blend into each other without hard lines.' },
       { title: 'Thickness: #08, #10, #12', pic: { sizes: true }, text: 'The number is the thickness of each single needle: #08 is 0.25 mm, #10 is 0.30 mm and #12 is 0.35 mm. Thinner needles leave finer marks; thicker ones carry more ink and hit bolder.',
         more: 'Thin needles go into the skin more easily, so they blow out more easily too. You can change the size of each needle in its settings under the sliders icon.' },
