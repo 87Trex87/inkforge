@@ -1854,6 +1854,11 @@ TT.open = async (el, id) => {
     <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-c="${key}"></label>`;
   const CFMT = { curve: v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even', pMin: v => Math.round(v * 100) + '%', pMax: v => Math.round(v * 100) + '%', hand: v => '× ' + v, fade: v => '× ' + v, flow: v => '× ' + v, tilt0: v => v + '°', blow: v => +v ? '× ' + v : 'off', tough: v => '× ' + v };
   const curveSvg = (c) => `<svg class="tt-curve" viewBox="0 0 100 100"><path d="M0 100 ${[...Array(21)].map((_, i) => `L${i * 5} ${100 - curve(i / 20, c) * 100}`).join(' ')}"/></svg>`;
+  const copySettings = async () => {
+    const txt = JSON.stringify({ inkforge_tattoo_tune: 2, sw: (await caches.keys().catch(() => [])).find(k => k.startsWith('inkforge-')) || '', cal: { ...cal }, feel: JSON.parse(Settings.get('tt_feel', '{}')), look: { thin: Math.round(nlook.thin * 100), tex: Math.round(nlook.tex * 100) },
+      piece: { needle: st.needle, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, magRoll: st.magRoll || 0, magFlip: st.magFlip }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } });
+    try { await navigator.clipboard.writeText(txt); toast('Settings copied. Paste them into a message to send on.'); } catch { await askText('Copy these settings:', txt); }
+  };
   const drawSide = async () => {
     sel(st.panel); side.hidden = !st.panel; if (!st.panel) return;
     if (st.panel === 'refs') {
@@ -1885,7 +1890,7 @@ TT.open = async (el, id) => {
         <button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
       <canvas class="tt-pad" id="tt-pad" width="560" height="200"></canvas>
       <div class="tt-live" id="tt-live">Pressure – · Speed – · Tilt –</div>
-      <div class="row" style="gap:6px;margin:6px 0 10px"><button class="btn small" data-padclear>Clear the pad</button><button class="btn small primary" data-tune>Tune in (guided)</button></div>
+      <div class="row" style="gap:6px;margin:6px 0 10px"><button class="btn small" data-padclear>Clear the pad</button><button class="btn small primary" data-tune>Tune in (guided)</button><button class="btn small" data-copyset data-tip="Copies every calibration and needle setting as text, exactly as they are now">Copy my settings</button></div>
       ${fsec('All needles', `<p class="muted" style="font-size:11px;margin:0 0 6px">Your calibration for this device. Tune in sets these from a few short tasks.</p>
         <div class="lbl">Your hand speed</div><div class="tt-prof">${TT_PROFILES.map(([k, n]) => `<button data-prof="${k}" class="${cal.profile === k ? 'on' : ''}">${n}</button>`).join('')}</div>
         ${cslider('curve', 'Pressure curve', -100, 100, 1, cal.curve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
@@ -1942,6 +1947,7 @@ TT.open = async (el, id) => {
     if (t.closest('[data-feelreset]')) { TT.setFeel(st.needle, null); setNeedle(st.needle); return drawSide(); }
     if (t.closest('[data-padclear]')) return padInit();
     if (t.closest('[data-tune]')) return tuneIn();
+    if (t.closest('[data-copyset]')) return copySettings();
     if (t.closest('[data-prof]')) { setProfile(t.closest('[data-prof]').dataset.prof); TT.saveCal(cal); return drawSide(); }
     if (t.closest('[data-toolreset]')) return resetTools();
     if (t.closest('[data-calreset]')) { if (!await ask('Put the calibration for all needles back to the defaults?')) return; cal = { ...TT.calDefaults, penOnly: cal.penOnly }; TT.saveCal(cal); return drawSide(); }
@@ -2119,10 +2125,7 @@ TT.open = async (el, id) => {
       if (a === 'exit' || a === 'cancel') { Object.assign(cal, was); return finish(); }
       if (a === 'again') { Object.assign(cal, { ...TT.calDefaults, penOnly: cal.penOnly }); i = -1; msg = ''; return draw(); }
       if (a === 'save') { TT.saveCal(cal); Settings.set('tt_tuned', '1'); toast('Saved: every needle now uses your calibration.'); return finish(); }
-      if (a === 'copy') {
-        const txt = JSON.stringify({ inkforge_tattoo_tune: 1, cal: { ...cal }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio }, feel: JSON.parse(Settings.get('tt_feel', '{}')) });
-        try { await navigator.clipboard.writeText(txt); toast('Settings copied. Paste them into a message to send on.'); } catch { await askText('Copy these settings:', txt); }
-      }
+      if (a === 'copy') return copySettings();
     };
     draw();
   };
