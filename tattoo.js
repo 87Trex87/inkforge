@@ -359,6 +359,85 @@ TT.hub = async (el) => {
     const c = e.target.closest('[data-ch]'); if (c) return ttChStart(c.dataset.ch); if (e.target.closest('#tt-sheet')) return TT.sheet(); };
 };
 
+/* ---------- Lessons ----------
+   Chapters of lessons, each unlocked by completing and qualifying for the one before. A lesson is a list of steps like
+   the tour's stops: a short text, an optional "See more", and optionally a picture (`pic`: needles, sizes, caps, skins)
+   or an action (`tune`). A lesson with no steps yet shows as coming. Later lessons add a `qualify` test once they have
+   a drawing task; until then reaching the end completes it. Wording lives here, so it's easy to change. */
+const TT_LESSONS = [
+  { name: 'Chapter 1: Easy', lessons: [
+    { id: '1-1', title: 'Introduction', sum: 'Set up your tablet, then meet the needles, inks and skin.', steps: [
+      { title: 'Tune in first', tune: true, text: 'Every tablet and pen reads pressure differently, so start by fitting the simulator to yours. It takes a few minutes and you only need to do it once on each device.',
+        more: 'Tune in has you draw a few short tasks and sets the pressure range, hand speed and more from how you actually work. You can run it again whenever you like, under the sliders icon while tattooing.' },
+      { title: 'Needles: what the code means', pic: { needles: ['3RL', '7RS', '7M1', '15CM'] }, text: 'A needle grouping is named by how many needles it has and how they are arranged. 7RL means 7 needles in a round liner. There are four kinds to know: RL, RS, M and CM.',
+        more: 'The pictures show the tips of the needles from below, as they meet the skin. In this simulator, the shape you see is the shape that lands on the skin with each hit.' },
+      { title: 'RL: round liner', pic: { needles: ['1RL', '3RL', '7RL', '14RL'] }, text: 'Needles packed tightly into a circle. They work together like one sharp point, which gives a solid, clean line. This is your needle for linework.',
+        more: 'Because all the force lands on a small area, a round liner is the easiest needle to blow out with. Pressing in deep while moving slowly pushes ink under the skin.' },
+      { title: 'RS: round shader', pic: { needles: ['5RS', '7RS', '9RS', '11RS'] }, text: 'The same circle, spaced a little looser. It is used for small areas of shading and colour, and it also pulls a lovely bold line.',
+        more: 'Looser does not mean safer. Lining with a round shader looks great, but it can blow out just like a liner if you press deep and move slowly.' },
+      { title: 'M: magnum', pic: { needles: ['7M1', '9M1', '11M1', '15M1'] }, text: 'Needles in a flat, stacked row. A magnum covers a wide band with each pass, so it suits shading and packing colour across bigger areas.',
+        more: 'Which way you hold the stack matters. Roll it onto one end and that end goes deepest while the rest feather away, which is how you get a soft edge.' },
+      { title: 'CM: curved magnum', pic: { needles: ['9CM', '15CM', '23CM', '31CM'] }, text: 'A magnum with its row curved, also called a soft edge. The ends sit higher than the middle, so it leaves softer edges and is gentler on the skin.',
+        more: 'This is the go-to for smooth grey gradients and for packing large areas of colour, because its passes blend into each other without hard lines.' },
+      { title: 'Thickness: #08, #10, #12', pic: { sizes: true }, text: 'The number is the thickness of each single needle: #08 is 0.25 mm, #10 is 0.30 mm and #12 is 0.35 mm. Thinner needles leave finer marks; thicker ones carry more ink and hit bolder.',
+        more: 'Thin needles go into the skin more easily, so they blow out more easily too. You can change the size of each needle in its settings under the sliders icon.' },
+      { title: 'Groupings: where each is used', pic: { table: [['1RL to 3RL', 'Fine line, small detail, lettering'], ['5RL to 9RL', 'Everyday linework'], ['11RL to 14RL', 'Bold, heavy outlines'], ['5RS to 11RS', 'Small shading, colour in tight spots, bold lines'], ['7M to 15M', 'Shading and colour in medium areas'], ['9CM to 31CM', 'Smooth gradients, packing large areas']] }, text: 'More needles cover more skin with each pass, but they also make the fine control harder. Choose the smallest grouping that does the job comfortably.',
+        more: 'Bigger groupings usually run at different voltages too. Each needle here starts at a sensible voltage, shown beside it while you tattoo.' },
+      { title: 'Inks', pic: { caps: true }, text: 'Hold the pen in an ink cap to load the needle: the longer you hold it, the more ink you pick up. Dip into a second cap to mix the colours, as real pigment would.',
+        more: 'Grey wash is black thinned with water, so it gets lighter without turning chalky the way adding white does. A needle runs out as you work, so keep dipping.' },
+      { title: 'Skin', pic: { skins: true }, text: 'Skin is the part that fights back. Every pass wears it: first it goes red, then it swells, and overworked skin stops taking ink. Work it gently and leave it alone once it has had enough.',
+        more: 'Redness settles after a rest, but serious damage stays. Darker skin tones show less contrast and take no colour on the deepest tones, which you will plan for later on. Keep the skin stretched: loose skin moves under the needle.' }
+    ] },
+    { id: '1-2', title: 'Your first line', sum: 'Pull your first line with a liner.' }
+  ] },
+  { name: 'Chapter 2: Medium', lessons: [] },
+  { name: 'Chapter 3: Advanced', lessons: [] }
+];
+const ttLessonList = () => TT_LESSONS.flatMap(c => c.lessons);
+const ttLessonProg = () => { try { return { done: {}, ...JSON.parse(Settings.get('tt_lessons', '{}')) }; } catch { return { done: {} }; } };
+// A lesson opens once every lesson before it is done.
+const ttLessonOpen = (id, p) => { const a = ttLessonList(), n = a.findIndex(l => l.id === id); return a.slice(0, n).every(l => p.done[l.id]); };
+// Needle tips from below, drawn from the same layout the simulator tattoos with.
+const ttNeedleSvg = (id, size) => { const nd = TT_NEEDLES.find(n => n.id === id), f = size ?? TT.feelBase(id).size, lay = ttLayout(nd, f), R = Math.max(0.5, ...lay.map(q => Math.hypot(q.u, q.v) + f)) * 1.1;
+  return `<svg viewBox="${-R} ${-R} ${R * 2} ${R * 2}" role="img" aria-label="${esc(nd.name)}"><circle r="${(R * 0.99).toFixed(3)}" class="tt-lsbg"/>${lay.map(q => `<circle cx="${q.u.toFixed(3)}" cy="${q.v.toFixed(3)}" r="${(f * 0.42).toFixed(3)}" class="tt-lsdot"/>`).join('')}</svg>`; };
+const ttLessonPic = (pic) => { if (!pic) return '';
+  if (pic.needles) return `<div class="tt-lspics">${pic.needles.map(id => `<figure>${ttNeedleSvg(id)}<figcaption>${id}</figcaption></figure>`).join('')}</div>`;
+  if (pic.sizes) return `<div class="tt-lspics">${[[0.25, '#08', '0.25 mm'], [0.3, '#10', '0.30 mm'], [0.35, '#12', '0.35 mm']].map(([s, n, m]) => `<figure>${ttNeedleSvg('3RL', s)}<figcaption>${n}<br><span class="muted">${m}</span></figcaption></figure>`).join('')}</div>`;
+  if (pic.table) return `<div class="tt-sum tt-lstable">${pic.table.map(([a, b]) => `<b>${a}</b><span>${b}</span>`).join('')}</div>`;
+  if (pic.caps) return `<div class="tt-lsswatch">${TT_CAPS.map(c => `<i style="background:${c}"></i>`).join('')}</div>`;
+  if (pic.skins) return `<div class="tt-lsswatch">${TT_SKINS.map(([n, c]) => `<i style="background:${c}" data-tip="${n}"></i>`).join('')}</div>`;
+  return ''; };
+TT.lessons = (el) => { ttStyle();
+  if (TT.lessonBack) { const b = TT.lessonBack; TT.lessonBack = null; return TT.lesson(el, b.id, b.i); }
+  const p = ttLessonProg();
+  el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">Lessons</b></div>
+    ${TT_LESSONS.map(c => `<div class="letter">${c.name}</div>${c.lessons.length ? `<div class="tt-lslist">${c.lessons.map(l => { const open = ttLessonOpen(l.id, p), ready = !!l.steps?.length, can = open && ready;
+      return `<button class="tt-lsrow ${can ? '' : 'off'}" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
+  el.onclick = (e) => { const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
+};
+TT.lesson = (el, id, i) => { const l = ttLessonList().find(x => x.id === id), S = l.steps; let more = false;
+  const draw = () => { const s = S[i], tuned = !!Settings.get('tt_tuned'), last = i === S.length - 1;
+    el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-l="out" aria-label="Back" data-tip="Back to the lessons"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">${esc(l.title)}</b></div>
+      <div class="card tt-lscard"><div class="tt-tsteps">${S.map((_, j) => `<i class="${j < i ? 'done' : j === i ? 'on' : ''}"></i>`).join('')}</div>
+        <h2>${esc(s.title)}</h2>${ttLessonPic(s.pic)}<p>${esc(s.text)}</p>
+        ${s.more ? (more ? `<p class="muted">${esc(s.more)}</p>` : '<button class="btn small" data-l="more">See more</button>') : ''}
+        ${s.tune ? `<p class="tt-tmsg">${tuned ? 'This device is tuned in. You can run it again if you like.' : ''}</p><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn ${tuned ? '' : 'primary'}" data-l="tune">${tuned ? 'Tune in again' : 'Tune in now'}</button>${tuned ? '' : '<button class="btn" data-l="skip">Skip for now</button>'}</div>` : ''}
+        <div class="row" style="gap:6px;margin-top:14px"><button class="btn" data-l="prev" ${i ? '' : 'disabled'}>Back</button><span style="flex:1"></span><button class="btn primary" data-l="next" ${s.tune && !tuned ? 'disabled' : ''}>${last ? 'Finish lesson' : 'Next'}</button></div></div></div>`; };
+  el.onclick = async (e) => { const a = e.target.closest('[data-l]')?.dataset.l; if (!a) return;
+    if (a === 'out') return TT.lessons(el);
+    if (a === 'more') { more = true; return draw(); }
+    if (a === 'prev') { i--; more = false; return draw(); }
+    if (a === 'tune') { TT.lessonBack = { id, i }; return ttTuneOnly(); }
+    if (a === 'skip' || a === 'next') { if (i < S.length - 1) { i++; more = false; return draw(); }
+      const p = ttLessonProg(); p.done[id] = Date.now(); await Settings.set('tt_lessons', JSON.stringify(p)); toast('Lesson complete.'); return TT.lessons(el); } };
+  draw();
+};
+// Tune in lives inside an open piece, so the lessons reach it through one hidden piece kept for the purpose.
+const ttTuneOnly = async () => { const rows = await DB.all('SELECT id, meta FROM tattoo_pieces'), r = rows.find(x => { try { return JSON.parse(x.meta || '{}').tuneOnly; } catch { return false; } });
+  if (r) { location.hash = 'tattoo/' + r.id; return; }
+  await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Tune in', 18, 13, Settings.get('tt_skin', '#e2b493'), JSON.stringify({ tuneOnly: 1 })]);
+  location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id; };
+
 // The results sheet: every challenge with its stars, best, medal and tries, the trophies and exam grades, on an A4 page.
 TT.sheet = async () => {
   const a = TT.aw.get(), { cv, x, font, text, header } = await docCanvas(); await header();
@@ -392,9 +471,10 @@ TT.sheet = async () => {
 TT.list = async (el) => {
   ttStyle();
   const rows = (await DB.all('SELECT id, name, w_cm, h_cm, thumb_ref, updated_at, meta FROM tattoo_pieces ORDER BY updated_at DESC, id DESC'))
-    .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} let m2 = {}; try { m2 = JSON.parse(r.meta || '{}'); } catch {} return { ...r, ch: ex?.mode === 'ch', cheat: !!m2.cheat, exam: ex ? (ex.done ? 2 : 1) : 0 }; }).filter(r => !r.ch);
+    .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} let m2 = {}; try { m2 = JSON.parse(r.meta || '{}'); } catch {} return { ...r, ch: ex?.mode === 'ch', cheat: !!m2.cheat, exam: ex ? (ex.done ? 2 : 1) : 0, tuneOnly: !!m2.tuneOnly }; }).filter(r => !r.ch && !r.tuneOnly);
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Experimental: draw with needle groupings in ink on skin. Works best with a pressure pen (like an S Pen).</p>
+      <button class="btn" id="tt-less" data-go="tattoo/lessons" data-tip="Step-by-step lessons with tips and techniques; each one unlocks the next">Lessons</button>
       <button class="btn" id="tt-chal" data-go="tattoo/challenges" data-tip="Single challenges in every style and flash pieces to tattoo: medals, personal bests and trophies">Challenges</button>
       <button class="btn" id="tt-exam" data-tip="A set of challenges, from lines to a finished piece, with a report card">Apprentice exam</button>
       <button class="btn primary" id="tt-new">+ New piece</button></div>
@@ -2097,7 +2177,7 @@ TT.open = async (el, id) => {
     const o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98; document.body.appendChild(o);
     let i = -1, pad = null, msg = '', before = null, beforeLook = null;
     const saveLook = () => { Settings.set('tt_thin', String(Math.round(nlook.thin * 100))); Settings.set('tt_tex', String(Math.round(nlook.tex * 100))); };
-    const finish = () => { setNeedle(keep.needle); st.stretch = keep.stretch; st.ink = keep.ink; o.remove(); drawSide(); };
+    const finish = () => { setNeedle(keep.needle); st.stretch = keep.stretch; st.ink = keep.ink; o.remove(); if (meta.tuneOnly) { st.dirty = false; Dirty.set(false); location.hash = 'tattoo/lessons'; return; } drawSide(); };
     const draw = () => {
       if (i >= TUNE.length) {
         const D = TT.calDefaults, x = v => '× ' + v, cv = v => v > 0 ? 'firm ' + Math.round(v) : v < 0 ? 'soft ' + Math.round(-v) : 'even', pc = v => Math.round(v * 100) + '%';
@@ -2703,7 +2783,8 @@ TT.open = async (el, id) => {
   }
 
   if (!TT_NEEDLES.some(n => n.id === st.needle)) st.needle = '3RL';
-  if (!Settings.get('tt_tuned')) setTimeout(() => toast(migrated ? 'The needle defaults were updated (voltages and a hand speed setting). Run Tune in again under the sliders icon to set them to your hand.'
+  if (meta.tuneOnly) setTimeout(tuneIn, 0);
+  else if (!Settings.get('tt_tuned')) setTimeout(() => toast(migrated ? 'The needle defaults were updated (voltages and a hand speed setting). Run Tune in again under the sliders icon to set them to your hand.'
     : 'New here? Under the sliders icon, Tune in sets the needles to your pen and hand in a few short tasks.', 7000), 800);
   setNeedle(st.needle); st.dirty = false; drawTray(); sel(); drawView();
   const ttRO = new ResizeObserver(() => { fit(); drawRefs(); }); ttRO.observe(stage); fit(); drawRefs();
@@ -2831,6 +2912,14 @@ function ttStyle() {
 .tt-tsteps { display: flex; gap: 4px; margin-bottom: 8px; } .tt-tsteps i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); } .tt-tsteps i.on { background: var(--teal); } .tt-tsteps i.done { background: rgba(31,182,166,.45); }
 .tt-prof { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; } .tt-prof button { flex: 1 1 auto; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 10px; padding: 7px 8px; font: 600 12px var(--ui); cursor: pointer; }
 .tt-prof button.on { border-color: var(--teal); background: rgba(31,182,166,.15); color: var(--teal); } .tt-prof.big button { padding: 12px 10px; font-size: 14px; }
+.tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
+.tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
+.tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
+.tt-lstable { grid-template-columns: auto 1fr; margin: 10px 0; font-size: 13px; }
+.tt-lsswatch { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; } .tt-lsswatch i { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); }
+.tt-lslist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.tt-lsrow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-align: left; background: var(--card, transparent); color: inherit; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font: inherit; } .tt-lsrow.off { opacity: .55; cursor: default; }
+.tt-lsno { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: rgba(31,182,166,.15); color: var(--teal); font-weight: 700; } .tt-lsmeta { flex: 1; display: flex; flex-direction: column; font-size: 13px; } .tt-lsst { font-size: 12px; }
 .tt-sum3 { grid-template-columns: 1fr auto auto; } .tt-tpad[hidden] { display: none; }
 .tt-sum { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; font-size: 14px; } .tt-sum b { color: var(--teal); }
 .tt-ndg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 0 4px 4px; }
