@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 250;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 251;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -464,12 +464,29 @@ TT.lessons = (el) => { ttStyle();
   const p = ttLessonProg();
   el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">Lessons</b><span class="muted" style="font-size:12px">Build ${TT_BUILD}</span></div>
     ${TT_LESSONS.map(c => `<div class="letter">${c.name}</div>${c.lessons.length ? `<div class="tt-lslist">${c.lessons.map(l => { const open = ttLessonOpen(l.id, p), ready = !!l.steps?.length, can = open && ready;
-      return `<button class="tt-lsrow ${can ? '' : 'off'}" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
-  el.onclick = (e) => { const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
+      return `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="tt-lsrow ${can ? '' : 'off'}" style="flex:1" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>${p.results?.[l.id] ? `<button class="btn small" data-lres="${l.id}">Result</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
+  el.onclick = (e) => { const v = e.target.closest('[data-lres]'); if (v) return ttLessonResult(v.dataset.lres); const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
 };
+// A lesson's best passed attempt: the finished piece and its report card, and a copy for the portfolio that stays if a better score replaces it.
+const ttLessonResult = async (id) => { const R = ttLessonProg().results?.[id], l = ttLessonList().find(x => x.id === id); if (!R) return; const url = await Media.url(R.ref), when = new Date(R.when).toLocaleString(), rows = [...R.parts, ...(R.skin != null ? [['skin', R.skin]] : [])], cap = s => s[0].toUpperCase() + s.slice(1), o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
+  o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${ttGrade(R.total)}</b><div><h2 style="margin:0">${esc(l.title)}</h2><span class="muted">${R.total} / 100 · ${when}</span></div></div>
+    <div class="tt-cats">${rows.map(([k, v]) => `<div><span>${cap(k)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}</div>
+    <p class="muted" style="margin:4px 0;font-size:12px">${R.blowouts || 0} blowouts · ${R.undos || 0} undos · ${R.strokes} strokes · build ${R.build}</p>
+    <img class="tt-chshot" src="${url}" alt="">
+    <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lv="close">Close</button><span style="flex:1"></span><button class="btn primary" data-lv="pf">Save to portfolio</button></div></div>`;
+  o.onclick = async (e) => { const a = e.target.closest('[data-lv]'); if (!a) return; if (a.dataset.lv === 'close') return o.remove(); if (a.disabled) return; a.disabled = true;
+    try { const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; }), W2 = 1080, ih = Math.round(im.height * 1000 / im.width), c = document.createElement('canvas'); c.width = W2; c.height = 240 + ih + 60 + Math.ceil(rows.length / 2) * 50 + 70; const g = c.getContext('2d');
+      g.fillStyle = '#121617'; g.fillRect(0, 0, W2, c.height); g.fillStyle = '#e9e3d6'; g.font = "64px 'Pirata One', serif"; g.fillText('Lesson: ' + l.title, 40, 100); g.font = '600 28px Inter, sans-serif'; g.fillStyle = '#9aa5a6'; g.fillText(when, 40, 150);
+      g.textAlign = 'right'; g.fillStyle = '#1fb5a8'; g.font = '800 110px Inter, sans-serif'; g.fillText(String(R.total), 1040, 120); g.font = '700 30px Inter, sans-serif'; g.fillText('GRADE ' + ttGrade(R.total), 1040, 170); g.textAlign = 'left'; g.drawImage(im, 40, 220, 1000, ih);
+      let y = 220 + ih + 60; g.font = '500 28px Inter, sans-serif'; g.fillStyle = '#e9e3d6'; rows.forEach(([k, v], n) => g.fillText(`${cap(k)}  ${v}`, 40 + (n % 2) * 520, y + Math.floor(n / 2) * 50)); y += Math.ceil(rows.length / 2) * 50; g.fillStyle = '#9aa5a6'; g.font = '500 24px Inter, sans-serif'; g.fillText(`${R.blowouts || 0} blowouts  ·  ${R.undos || 0} undos  ·  ${R.strokes} strokes`, 40, y);
+      const blobOf = (cv, q) => new Promise(r => cv.toBlob(r, 'image/jpeg', q)), tc = document.createElement('canvas'); tc.width = 520; tc.height = Math.round(c.height * 520 / W2); tc.getContext('2d').drawImage(c, 0, 0, tc.width, tc.height);
+      const photo = await Media.save(await blobOf(c, 0.9), 'jpg'), thumb = await Media.save(await blobOf(tc, 0.85), 'jpg');
+      await DB.run(`INSERT INTO portfolio_items (kind, title, description, tags, made_on) VALUES ('art', ?, ?, 'simulator', date('now'))`, ['Lesson: ' + l.title, `Lesson piece from the tattoo simulator: ${R.total} / 100, grade ${ttGrade(R.total)}.`]); const pid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+      await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [pid, photo, thumb, 'Finished piece and report card']); a.textContent = 'Saved'; toast('Saved to Portfolio.'); } catch (err) { a.disabled = false; toast('Could not save: ' + err.message, 4000); } };
+  document.body.appendChild(o); };
 TT.lesson = (el, id, i) => { const l = ttLessonList().find(x => x.id === id), S = l.steps; let more = false;
   const draw = () => { const s = S[i], tuned = !!Settings.get('tt_tuned'), last = i === S.length - 1;
-    el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-l="out" aria-label="Back" data-tip="Back to the lessons"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">${esc(l.title)}</b></div>
+    el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-l="out" aria-label="Back" data-tip="Back to the lessons"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">${esc(l.title)}</b>${l.task ? '<button class="btn small" data-l="run">Skip to tattooing</button>' : ''}</div>
       <div class="card tt-lscard"><div class="tt-tsteps">${S.map((_, j) => `<i class="${j < i ? 'done' : j === i ? 'on' : ''}"></i>`).join('')}</div>
         <h2>${esc(s.title)}</h2>${ttLessonPic(s.pic)}<p>${esc(s.text)}</p>
         ${s.more ? (more ? `<p class="muted">${esc(s.more)}</p>` : '<button class="btn small" data-l="more">See more</button>') : ''}
@@ -1788,8 +1805,8 @@ TT.open = async (el, id) => {
     for (const nd of lay) { const pk = mg ? 1 : nlook.thin, px = curAt.x + nd.u * pk * s * -sa + nd.v * pk * s * ca, py = curAt.y + nd.u * pk * s * ca + nd.v * pk * s * sa, rc = mg ? magReach(nd, curD, curRoll) / curD : 1; if (rc > 0.004) hits++;
       cux.beginPath(); cux.arc(px, py, Math.max(0.8, rr * nlook.thin), 0, 7); cux.fillStyle = mg ? `rgba(255,255,255,${0.05 + 0.55 * Math.min(1, rc)})` : 'rgba(255,255,255,.35)'; cux.fill(); cux.strokeStyle = rc > 0.004 ? 'rgba(0,0,0,.55)' : 'rgba(0,0,0,.2)'; cux.stroke(); }
     if (mg && Math.abs(curRoll) > 0.01) { const tx = curAt.x - 30, ty = curAt.y + Math.max(rr + 26, 26), tt = `${hits} of ${lay.length}`; cux.font = '600 11px Inter, sans-serif'; const tw = cux.measureText(tt).width + 10; cux.fillStyle = 'rgba(15,18,19,.85)'; cux.fillRect(tx, ty - 12, tw, 16); cux.fillStyle = '#fff'; cux.fillText(tt, tx + 5, ty); }
-    // A tag when the needle runs dry, on the left and clear of a right hand's pen: low from the point its ink starts to flow less (see inkC in the stroke), then empty.
-    if (st.tool === 'needle' && !(CHEAT && st.endless) && st.ink.v < 0.625) { const tt = st.ink.v <= 0.01 ? 'Empty' : 'Low', ty = curAt.y - Math.max(14, rr + 10); cux.font = '700 14px Inter, sans-serif'; const tw = cux.measureText(tt).width + 14, tx = curAt.x - Math.max(16, rr + 12) - tw; cux.fillStyle = 'rgba(15,18,19,.92)'; cux.fillRect(tx, ty - 15, tw, 21); cux.fillStyle = tt === 'Empty' ? '#ff7a66' : '#f2c14e'; cux.fillText(tt, tx + 7, ty); }
+    // A tag when the needle runs dry, on the left and clear of a right hand's pen: low under 18% loaded, then empty.
+    if (st.tool === 'needle' && !(CHEAT && st.endless) && st.ink.v < 0.18) { const tt = st.ink.v <= 0.01 ? 'Empty' : 'Low', ty = curAt.y - Math.max(14, rr + 10); cux.font = '700 14px Inter, sans-serif'; const tw = cux.measureText(tt).width + 14, tx = curAt.x - Math.max(16, rr + 12) - tw; cux.fillStyle = 'rgba(15,18,19,.92)'; cux.fillRect(tx, ty - 15, tw, 21); cux.fillStyle = tt === 'Empty' ? '#ff7a66' : '#f2c14e'; cux.fillText(tt, tx + 7, ty); }
     // What's loaded: a drop of the needle's ink beside the cursor (paler when diluted), hidden while tattooing.
     if (!pen && st.ink.v > 0.01) { const dx = curAt.x + Math.max(14, rr + 10), dy = curAt.y - Math.max(14, rr + 10);
       cux.beginPath(); cux.moveTo(dx, dy - 9); cux.bezierCurveTo(dx + 7, dy - 1, dx + 6, dy + 6, dx, dy + 6); cux.bezierCurveTo(dx - 6, dy + 6, dx - 7, dy - 1, dx, dy - 9); cux.closePath();
@@ -2778,7 +2795,11 @@ TT.open = async (el, id) => {
   // The report card for one challenge: score and medal, against the personal best, its parts, and trophies won.
   async function lessonReport(T, res) {
     const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
-    const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now(); await Settings.set('tt_lessons', JSON.stringify(p));
+    const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now();
+    const old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
+    if (pass && (!old || res.total > old.total)) { const sc = Math.min(1, 1600 / W), blob = await new Promise(r => composite(sc).toBlob(r, 'image/jpeg', 0.9));
+      p.results = p.results || {}; p.results[EX.lesson] = { ref: await Media.save(blob, 'jpg'), total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, penalty: res.penalty, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD }; if (old?.ref) await Media.release(old.ref); }
+    await Settings.set('tt_lessons', JSON.stringify(p));
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
