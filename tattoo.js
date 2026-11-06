@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 249;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 250;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -412,7 +412,18 @@ const TT_LESSONS = [
       { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher unlocks the next lesson, and more than 1 blowout is still an instant fail.',
         more: 'Your score is your line score, the same as the last lesson, then reduced for poor corners, by up to 40% if all four are bad.' }
     ] },
-    { id: '1-4', title: 'Next lesson', sum: 'To be designed.' }
+    { id: '1-4', title: 'Curves', sum: 'An S that runs on into a circle, with the same weight of line all the way. Grade C or higher moves you on.', task: 'l-curve', steps: [
+      { title: 'An S that becomes a circle', pic: { needles: ['5RL'] }, text: 'Same 5RL. This time the line starts as an S, and its second curl carries on around to form a circle that does not quite close. No corners to hide in: just flowing curves.' },
+      { title: 'Move from the arm', text: 'Small curves can come from the fingers, but big ones need your whole arm and shoulder moving together. Fingers alone make flat spots and wobbles.',
+        more: 'Practise the shape in the air above the skin first, so your arm knows the path before the needle lands.' },
+      { title: 'Stop and restart if you need to', text: 'You do not have to pull it in one go. Stop where it is comfortable, turn the page with two fingers, then land while moving, just behind where you stopped, and carry on along the same line.',
+        more: 'A restart that lands too heavy leaves a dark spot, and one that misses the line leaves a step. Ease in so the join disappears.' },
+      { title: 'Consistent weight', text: 'This is what you are judged on. The line should be the same thickness and darkness the whole way around. Curves tempt you to slow down and dig in, so keep your speed and pressure steady.',
+        more: 'A thick patch usually means you slowed down or pressed in. A thin patch means you sped up or lifted. Going back over a line to fix it usually makes it thicker there.' },
+      { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher unlocks the next lesson, and more than 1 blowout is still an instant fail.',
+        more: 'Your score is your line score, then reduced by up to 30% if the thickness of the line changes along the way, shown as Weight on your report card.' }
+    ] },
+    { id: '1-5', title: 'Next lesson', sum: 'To be designed.' }
   ] },
   { name: 'Chapter 2: Medium', lessons: [] },
   { name: 'Chapter 3: Advanced', lessons: [] }
@@ -423,7 +434,10 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
   path: (g) => { g.moveTo(90, 35); g.lineTo(90, 95); } },
   { id: 'l-rect', lesson: '1-3', cat: 'line', diff: 1, title: 'Sharp corners', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, corners: [[60, 45, -1, -1], [120, 45, 1, -1], [120, 85, 1, 1], [60, 85, -1, 1]],
     text: 'Black ink, 5RL. Line the rectangle: four clean sides with sharp corners, not rounded and not crossing. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
-    path: (g) => { g.moveTo(60, 45); g.lineTo(120, 45); g.lineTo(120, 85); g.lineTo(60, 85); g.closePath(); } }];
+    path: (g) => { g.moveTo(60, 45); g.lineTo(120, 45); g.lineTo(120, 85); g.lineTo(60, 85); g.closePath(); } },
+  { id: 'l-curve', lesson: '1-4', cat: 'line', diff: 1, title: 'Curves', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, arcs: [[78, 42, 15, -30, -270], [78, 79, 22, -90, 245]],
+    text: 'Black ink, 5RL. Follow the S and on around the circle, with the same weight of line all the way. You can stop and restart. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
+    path: (g) => { g.moveTo(78 + 15 * Math.cos(-Math.PI / 6), 42 + 15 * Math.sin(-Math.PI / 6)); g.arc(78, 42, 15, -Math.PI / 6, -1.5 * Math.PI, true); g.arc(78, 79, 22, -Math.PI / 2, 245 * Math.PI / 180); } }];
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
 const ttLessonRun = async (id) => { const T = TT_LS_CH.find(c => c.id === id), skin = TT_SKINS[ttChSkin()][1], exam = { v: 1, mode: 'ch', lesson: T.lesson, list: [id], i: 0, res: [], started: Date.now() };
@@ -2653,6 +2667,12 @@ TT.open = async (el, id) => {
   const boxIdx = (b) => { const x0 = Math.round(b[0] * mm), y0 = Math.round(b[1] * mm), x1 = Math.round((b[0] + b[2]) * mm), y1 = Math.round((b[1] + b[3]) * mm); return { x0, y0, x1, y1 }; };
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
+  // How steady the line's thickness stays along arcs [cx, cy, r, from, to] (degrees): the ink's width across the line at each step.
+  const weightScore = (arcs) => { const ws = []; for (const [cx, cy, r, a0, a1] of arcs) { const n = Math.ceil(Math.abs(a1 - a0) * Math.PI / 180 * r / 0.5);
+      for (let i = 0; i <= n; i++) { const a = (a0 + (a1 - a0) * i / n) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a); let c = 0;
+        for (let o = -2.5; o <= 2.5; o += 1 / mm) { const X = Math.round((cx + (r + o) * ca) * mm), Y = Math.round((cy + (r + o) * sa) * mm); if (X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.2) c++; }
+        if (c) ws.push(c / mm); } }
+    if (ws.length < 10) return 0; const m = ws.reduce((a, b) => a + b, 0) / ws.length, sd = Math.sqrt(ws.reduce((a, b) => a + (b - m) * (b - m), 0) / ws.length); return Math.round(100 * (1 - clamp01(sd / m / 0.5))); };
   /* Each corner, from [x, y, out x, out y]: ink has to reach the point itself, stay out of the diagonal just inside it
      (a rounded corner cuts through there), and stay off the two lines' extensions just past it (a crossed corner). */
   const cornerScore = (cs) => { const inkAt = (x, y) => { const X = Math.round(x * mm), Y = Math.round(y * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.28 ? 1 : 0; };
@@ -2665,6 +2685,7 @@ TT.open = async (el, id) => {
       return reach * (1 - clamp01(cut * 2.5)) * (1 - clamp01(Math.max(past(sx, 0), past(0, sy)) / 1.5)); };
     return Math.round(100 * Math.min(1, cs.reduce((a, c) => a + one(c), 0) / cs.length / 0.78)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
   const scoreOf = (T) => {
+    if (T.arcs) { const ln = lineScore(T.path, T.core, T.covEase), wt = weightScore(T.arcs); return { ...ln, score: Math.round(ln.score * (0.7 + 0.3 * wt / 100)), weight: wt }; }
     if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100)), corners: cr }; }
     if (T.kind === 'line') return lineScore(T.path, T.core, T.covEase);
     if (T.kind === 'grad') {   // judged on its shape (scaled to your own darkest) and on getting reasonably dark
