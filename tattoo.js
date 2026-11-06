@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 263;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 264;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -1022,11 +1022,12 @@ TT.open = async (el, id) => {
   // The set tilt plus the way the pen is leaning along the row (leaning towards an end puts that end down).
   const setRoll = (ev, a) => { let lean = 0; if (isMag() && ev && st.magTilt) { const tx = ev.tiltX || 0, ty = ev.tiltY || 0, h = Math.hypot(tx, ty); if (h > 1) lean = tiltOf(ev) * (tx * -Math.sin(a) + ty * Math.cos(a)) / h; }
     rollNow = isMag() ? Math.max(-1, Math.min(1, (st.magRoll || 0) + lean)) : 0; };
+  // Round shaders take to the skin less readily, and less again the faster they move, so packing has to be worked in rather than scrubbed.
   const wideTex = () => isMag() ? nlook.tex : 1;
   const puncture = (cx, p, a, depth, tilt0, inkC, erase, sc = mm) => {
     const mag = isMag() && !erase, tilt = mag ? 0 : tilt0, hang = (feel.hang ?? 40) / 100, loose = 1 - st.stretch / 100;
     const thin = nlook.thin, posK = nk === 'liner' || nk === 'shader' ? thin : 1, tex = wideTex(), ca = Math.cos(a), sa = Math.sin(a), sp = 1 + tilt * feel.tiltSpread / 100 * 0.8 * (0.5 + hang);
-    const wide = lay.length > 4 && nk !== 'liner', rr = feel.size / 2 * sc * (wide ? 0.62 + depth * 0.45 : 0.45 + depth * 0.35) * sp * thin, flow = feel.flow / 100 * cal.flow, bleed = feel.bleed / 100 * (1 + loose * 0.8);
+    const wide = lay.length > 4 && nk !== 'liner', rr = feel.size / 2 * sc * (wide ? 0.62 + depth * 0.45 : 0.45 + depth * 0.35) * sp * thin, flow = feel.flow / 100 * cal.flow * (nk === 'shader' && !erase ? 0.75 * (1 - 0.6 * Math.max(0, Math.min(1, ((pen?.speed || 0) - 60) / 120))) : 1), bleed = feel.bleed / 100 * (1 + loose * 0.8);
     const hit = (1 - (feel.miss / 100) * (1 - depth)) * (1 - loose * 0.15), wob = loose * 0.12, wu = (Math.random() - 0.5) * wob, wv = (Math.random() - 0.5) * wob;
     for (const nd of lay) {
       const reach = mag ? magReach(nd, depth, rollNow) : depth * nd.e, ratio = depth > 0 ? reach / depth : 0; if (mag && reach <= 0.004) continue;   // up out of the skin
