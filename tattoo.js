@@ -785,7 +785,7 @@ TT.open = async (el, id) => {
   /* Needle look, for every piece: thickness scales each needle's mark (and how tight a round liner's needles sit); needle
      texture is how much a magnum's separate marks show, the rest of the ink going down as a soft haze. 100 and 100 are
      how the simulator used to draw. */
-  const nlook = { thin: +Settings.get('tt_thin', '65') / 100, tex: +Settings.get('tt_tex', '45') / 100, whip: +Settings.get('tt_whip2', '50') / 100 };   // 50% is the skin's plain wear; below eases it while whipping, above adds irritation
+  const nlook = { thin: +Settings.get('tt_thin', '65') / 100, tex: +Settings.get('tt_tex', '45') / 100 };
   const magReach = (nd, depth, roll) => { const tau = Math.abs(roll); if (tau < 0.01) return depth * nd.e; const s = Math.sign(roll), q = (1 - s * nd.t) / 2;
     if (nk !== 'soft') return Math.max(0, depth - tau * 1.5 * q);
     const te = Math.min(1, Math.abs(nd.t - s * tau)); return Math.max(0, depth * (0.22 + 0.78 * Math.pow(Math.cos(te * Math.PI / 2), 1.5)) - tau * 0.25 * q); };
@@ -840,11 +840,7 @@ TT.open = async (el, id) => {
     const co = e.getCoalescedEvents?.(); pen.q.push(...(co?.length ? co : [e]));
     if (!pen.raf) pen.raf = requestAnimationFrame(strokeFlush);
   };
-  /* A crash is often over before the pen has moved: it hits hard in the first instant and bounces back. So the pressure
-     is watched from the moment of touch, whether or not the pen is moving yet. */
-  const crashWatch = (ev) => { if (!pen || ev.pointerType === 'mouse') return; const pr = pNorm(ev); pen.pk = Math.max(pen.pk || 0, pr); if (pen.cw || CHEAT || st.tool === 'erase' || !pen.cx?.pig) return;
-    if (pen.pk >= 0.62) { pen.cw = pen.landed = true; crash(pen.last, Math.max(0.62, pen.pk), ev); } else if (ev.timeStamp - pen.t0 > 90) pen.cw = true; };
-  const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return; evs.forEach(crashWatch);
+  const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
     for (const ev of evs) {
       if (pen.snapped) continue;
       const p = gridPt(rulerPt(smoothPt(toPage(ev)))), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
@@ -859,13 +855,8 @@ TT.open = async (el, id) => {
            deepest point is watched; already deep while moving fast is a crash (a dark spot and sore skin there).
            A stroke that came in softly and moves fast is whip shading, which the speed meter allows for. */
         if (pen.d0 == null) { pen.d0 = pNorm(ev); pen.p0 = { ...pen.last }; }   // d0: how hard the pen first touched
-        if (!pen.landed) { pen.dLand = Math.max(pen.dLand || 0, depth); if (pen.trav >= 1) { pen.landed = true; if (pen.dLand > 0.55 && pen.speed > 40 && (pen.pk || 0) >= 0.45) crash(pen.p0, pen.dLand, ev); } }
+        if (!pen.landed) { pen.dLand = Math.max(pen.dLand || 0, depth); if (pen.trav >= 1) { pen.landed = true; if (pen.dLand > 0.55 && pen.speed > 40) crash(pen.p0, pen.dLand, ev); } }
         pen.whip = pen.d0 < 0.35 && pen.speed > 50; pen.dEnd = depth; pen.evEnd = ev;
-        /* Whip irritation: worked out from the distance covered, not the hits, so one pass over a spot adds the same
-           however fast the needle runs or the pen reports. The slider's upper half: at 100% about 5 passes redden skin; too fast
-           (drag and tearing) or too slow at high voltage is up to twice that. Only while whipping, so packing is untouched. */
-        if (pen.whip && nlook.whip > 0.5) { const tooFast = Math.max(0, Math.min(1, (pen.speed - 150) / 150)), tooSlow = Math.max(0, Math.min(1, volt() - 7.5)) * Math.max(0, Math.min(1, (90 - pen.speed) / 40)), perPass = 0.06 * Math.max(0, nlook.whip - 0.5) * 2 * (1 + Math.max(tooFast, tooSlow)) / (cal.tough || 1), wide = pen.foot * 2.5 + 2 * mm, n = Math.max(1, Math.ceil(d / pen.foot));
-          for (let i = 1; i <= n; i++) { const s = { x: pen.last.x + dx * i / n, y: pen.last.y + dy * i / n }; trAdd(s, pen.foot, perPass * (d / n) / pen.foot); trAdd(s, wide, perPass * 0.4 * (d / n) / wide); } }
       }
       if (EX?.cur && st.tool !== 'erase' && (EX.cur.n = (EX.cur.n || 0) + 1) % 3 === 0 && EX.cur.p.length < 1500) {
         EX.cur.p.push(+pNorm(ev).toFixed(3)); EX.cur.v.push(Math.round(pen.speed)); EX.cur.d.push(+depth.toFixed(3)); EX.cur.t.push(Math.round(Math.hypot(ev.tiltX || 0, ev.tiltY || 0))); }
@@ -878,17 +869,16 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          // Light passes add up too (whipping over and over chews the skin), and skin already worked gets worse faster.
-          { const gs = Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1), wdt = Math.min(2, 1.1 * mm / pen.foot), vv = Math.pow(volt() / 7, 2) / (cal.tough || 1); trAdd(q, pen.foot, (0.0128 * depth * depth + 0.0036 * depth) * gs * wdt * vv * (1 + 1.4 * Math.min(2, t0)) * (pen.whip ? Math.min(1, nlook.whip * 2) : 1)); }   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) / (cal.tough || 1));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
         }
         if (st.tool !== 'erase' && pen.cx.pig && !CHEAT) {   // too deep or too much voltage raises little red bumps
-          const bump = Math.max(0, Math.min(1, (depth - 0.85) / 0.2)) + Math.max(0, Math.min(1, (volt() - 8.2) / 1.8)) + Math.max(0, Math.min(1, (trAt(q) - 0.75) / 0.7));
+          const bump = Math.max(0, Math.min(1, (depth - 0.85) / 0.2)) + Math.max(0, Math.min(1, (volt() - 8.2) / 1.8));
           if (bump > 0 && Math.random() < 0.12 * bump) { buAdd({ x: q.x + (Math.random() - 0.5) * pen.foot * 2, y: q.y + (Math.random() - 0.5) * pen.foot * 2 }, 0.3 * bump); SS.bumps = (SS.bumps || 0) + 1;
-            if (!told.bump) { told.bump = 1; toast('Red bumps: too deep, too many passes or the machine running too hard irritates the skin.', 3500); } } }
+            if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or the machine running too hard irritates the skin.', 3500); } } }
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
         setRoll(ev, turnOf(pen.a, ev)); st.lastD = depth;
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
@@ -1491,7 +1481,7 @@ TT.open = async (el, id) => {
     const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     B.x0 = Math.min(B.x0, p.x - bp); B.y0 = Math.min(B.y0, p.y - bp); B.x1 = Math.max(B.x1, p.x + bp); B.y1 = Math.max(B.y1, p.y + bp);
     SS.crash = (SS.crash || 0) + 1; if (EX?.cur) EX.cur.crash = (EX.cur.crash || 0) + 1;
-    if (performance.now() - (told.crash || -1e9) > 6000) { told.crash = performance.now(); toast('Crash: come in and out of the skin like a plane landing and taking off, not straight down.', 4000); } };
+    if (!told.crash) { told.crash = 1; toast('Crash: come in and out of the skin like a plane landing and taking off, not straight down.', 4000); } };
   const strokeEnd = () => { clearTimeout(pen?.hold?.t); if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
     if (pen?.landed && pen.dEnd > 0.55 && pen.speed > 40 && pen.cx.pig && st.tool !== 'erase') {   // the take-off: still deep as it left at speed
       crash(pen.last, pen.dEnd, pen.evEnd); const u = flushPig(), pad = pen.foot * 2 + 4 * mm; if (u) paint({ x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad }); }
@@ -1715,7 +1705,7 @@ TT.open = async (el, id) => {
       if (e.key === 'Escape') { if (lsel) selCancel(); else if (snapE) snapFinish(); }
       if ((e.key === 'Delete' || e.key === 'Backspace') && lsel) { e.preventDefault(); selCommit(true); } } };
   addEventListener('keydown', keys); addEventListener('keyup', keys);
-  document.addEventListener('input', (e) => { const n = e.target; if (n.matches?.('[data-nthin]')) { nlook.thin = +n.value / 100; Settings.set('tt_thin', n.value); const b = $('#tt-thinv'); if (b) b.textContent = n.value + '%'; drawCur(); } if (n.matches?.('[data-nwhip]')) { nlook.whip = +n.value / 100; Settings.set('tt_whip2', n.value); const b = $('#tt-whipv'); if (b) b.textContent = n.value + '%'; } if (n.matches?.('[data-ntex]')) { nlook.tex = +n.value / 100; Settings.set('tt_tex', n.value); const b = $('#tt-texv'); if (b) b.textContent = n.value + '%'; } });
+  document.addEventListener('input', (e) => { const n = e.target; if (n.matches?.('[data-nthin]')) { nlook.thin = +n.value / 100; Settings.set('tt_thin', n.value); const b = $('#tt-thinv'); if (b) b.textContent = n.value + '%'; drawCur(); } if (n.matches?.('[data-ntex]')) { nlook.tex = +n.value / 100; Settings.set('tt_tex', n.value); const b = $('#tt-texv'); if (b) b.textContent = n.value + '%'; } });
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') { z = 1; vx = vy = 0; k = fitK; st.rot = 0; return paint(); } const r = stage.getBoundingClientRect(); zoomAt(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2); };
 
@@ -1911,8 +1901,7 @@ TT.open = async (el, id) => {
       <label class="dz-sl"><span>Skin stretch<b>${st.stretch}%</b></span><input type="range" min="0" max="100" step="1" value="${st.stretch}" data-stretch></label>
       ${fsec('Needle look (all needles, all pieces)', `<label class="dz-sl"><span>Needle thickness<b id="tt-thinv">${Math.round(nlook.thin * 100)}%</b></span><input type="range" min="40" max="100" step="5" value="${Math.round(nlook.thin * 100)}" data-nthin></label>
         <label class="dz-sl"><span>Magnum needle texture<b id="tt-texv">${Math.round(nlook.tex * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.tex * 100)}" data-ntex></label>
-        <label class="dz-sl" data-tip="How quickly whip passes irritate the skin. 50% is the plain wear; lower eases it, 0% is none while whipping; higher adds irritation. Packing isn't affected."><span>Whip irritation<b id="tt-whipv">${Math.round(nlook.whip * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.whip * 100)}" data-nwhip></label>
-        <p class="muted" style="font-size:11px;margin:2px 0 6px">Thickness and texture both at 100% is how it looked before. Takes effect on your next stroke; what's already tattooed stays.</p>
+        <p class="muted" style="font-size:11px;margin:2px 0 6px">Both at 100% is how it looked before. Takes effect on your next stroke; what's already tattooed stays.</p>
         <button class="btn small" data-nold style="margin-bottom:6px">Back to before (100%)</button> <button class="btn small" data-nnew style="margin-bottom:6px">New look (65% / 45%)</button>`, { fold: true, open: true })}
       <div class="lbl">Needle size</div><div class="seg" style="margin-bottom:8px">${[[0.25, '#08'], [0.3, '#10'], [0.35, '#12']].map(([v, n]) => `<button data-sz="${v}" class="${f.size === v ? 'on' : ''}" style="flex:1">${n} · ${v} mm</button>`).join('')}</div>
       <label class="toggle" style="display:inline-flex"><input type="checkbox" data-penonly ${TT.cal().penOnly ? 'checked' : ''}><span>Pen only (fingers move the page)</span></label>
