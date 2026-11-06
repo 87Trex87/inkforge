@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 257;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 258;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -430,7 +430,7 @@ const TT_LESSONS = [
       { title: 'Everything counts', text: 'Your line stays on the stencil, even and solid. Your corners are sharp, not rounded and not running past. Your weight is the same on the straight parts as on the curves.',
         more: 'Reload before the ink runs low, so a thin patch does not sneak into the last line. Keep the same speed and pressure on every line.' },
       { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher finishes the chapter, and more than 1 blowout is still an instant fail.',
-        more: 'Your score is your line score, reduced by up to 40% for poor corners and up to 30% for changing line weight. Both reductions apply together.' }
+        more: 'Your score is your line score, reduced by up to 20% for poor corners and up to 10% for changing line weight. Both reductions apply together.' }
     ] }
   ] },
   { name: 'Chapter 2: Medium', lessons: [] },
@@ -2751,7 +2751,7 @@ TT.open = async (el, id) => {
     const main = cs.filter(c => !c[4]), side = cs.filter(c => c[4]), mean = (a) => a.reduce((s, c) => s + one(c), 0) / a.length;   // an edge ending on another line can only lose marks by crossing it: that line's own ink always reaches the point, so it can't earn any
     return Math.round(100 * Math.min(1, mean(main) / 0.78) * (side.length ? mean(side) : 1)); };   // a hand's near perfect corners measure about 0.7, so 0.78 counts as full
   const scoreOf = (T) => {
-    if (T.geom) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners), wt = weightScore(T.geom, T.joints); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100) * (0.7 + 0.3 * wt / 100)), corners: cr, weight: wt }; }
+    if (T.geom) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners), wt = weightScore(T.geom, T.joints); return { ...ln, score: Math.round(ln.score * (0.8 + 0.2 * cr / 100) * (0.9 + 0.1 * wt / 100)), corners: cr, weight: wt }; }
     if (T.arcs) { const ln = lineScore(T.path, T.core, T.covEase), wt = weightScore(T.arcs.map(a => ['a', ...a])); return { ...ln, score: Math.round(ln.score * (0.7 + 0.3 * wt / 100)), weight: wt }; }
     if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.6 + 0.4 * cr / 100)), corners: cr }; }
     if (T.kind === 'line') return lineScore(T.path, T.core, T.covEase);
