@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 265;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 266;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -536,9 +536,9 @@ const ttLessonResult = async (id) => { const R = ttLessonProg().results?.[id], l
     <div class="tt-cats">${rows.map(([k, v]) => `<div><span>${cap(k)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}</div>
     <p class="muted" style="margin:4px 0;font-size:12px">${R.blowouts || 0} blowouts · ${R.undos || 0} undos · ${R.strokes} strokes · build ${R.build}</p>
     ${ttShotHtml(url, hurl, R.notes)}
-    <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lv="close">Close</button><span style="flex:1"></span><button class="btn primary" data-lv="pf">Save to portfolio</button></div></div>`;
+    <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lv="close">Close</button>${R.stats ? '<button class="btn" data-lv="copy">Copy stats</button>' : ''}<span style="flex:1"></span><button class="btn primary" data-lv="pf">Save to portfolio</button></div></div>`;
   ttShotBind(o, url, hurl);
-  o.onclick = async (e) => { const a = e.target.closest('[data-lv]'); if (!a) return; if (a.dataset.lv === 'close') return o.remove(); if (a.disabled) return; a.disabled = true;
+  o.onclick = async (e) => { const a = e.target.closest('[data-lv]'); if (!a) return; if (a.dataset.lv === 'close') return o.remove(); if (a.dataset.lv === 'copy') { try { await navigator.clipboard.writeText(R.stats); toast('Stats copied.'); } catch { await askText('Copy these stats:', R.stats); } return; } if (a.disabled) return; a.disabled = true;
     try { const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; }), W2 = 1080, ih = Math.round(im.height * 1000 / im.width), c = document.createElement('canvas'); c.width = W2; c.height = 240 + ih + 60 + Math.ceil(rows.length / 2) * 50 + 70; const g = c.getContext('2d');
       g.fillStyle = '#121617'; g.fillRect(0, 0, W2, c.height); g.fillStyle = '#e9e3d6'; g.font = "64px 'Pirata One', serif"; g.fillText('Lesson: ' + l.title, 40, 100); g.font = '600 28px Inter, sans-serif'; g.fillStyle = '#9aa5a6'; g.fillText(when, 40, 150);
       g.textAlign = 'right'; g.fillStyle = '#1fb5a8'; g.font = '800 110px Inter, sans-serif'; g.fillText(String(R.total), 1040, 120); g.font = '700 30px Inter, sans-serif'; g.fillText('GRADE ' + ttGrade(R.total), 1040, 170); g.textAlign = 'left'; g.drawImage(im, 40, 220, 1000, ih);
@@ -1057,10 +1057,10 @@ TT.open = async (el, id) => {
       cx = { pig: true, key, col, str: st.tool === 'erase' ? 1 : (st.ink.s ?? 1), lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; }
     else { cx = c.getContext('2d'); cx.globalCompositeOperation = 'destination-out'; cx.fillStyle = '#000'; }   // the stencil: only the laser
     const p = toPage(e);
-    if (EX?.cur) { if (st.tool !== 'erase') (EX.cur.used ||= {})[st.needle] = 1; EX.cur.strokes = (EX.cur.strokes || 0) + 1; EX.cur.t0 ||= Date.now(); EX.cur.t1 = Date.now(); }
+    if (EX?.cur) { if (st.tool !== 'erase') { (EX.cur.used ||= {})[st.needle] = 1; } EX.cur.strokes = (EX.cur.strokes || 0) + 1; EX.cur.t0 ||= Date.now(); EX.cur.t1 = Date.now(); }
     SS.strokes++; if (st.tool === 'erase') SS.erase++; else SS.layers[key] = (SS.layers[key] || 0) + 1;
     if (wsh > 0.04 && cx.pig) cx.alsoHi = { ...cx, key: 'high', w: wsh };
-    pen = { cx, last: p, t: e.timeStamp, t0: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
+    if (EX?.cur && st.tool !== 'erase') tmStrokeStart(); pen = { cx, last: p, t: e.timeStamp, t0: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm };
     if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('The needle is dry: dip into an ink cap first.', 1800);
     if (CHEAT) pen.sym = symMats();
     return true;
@@ -1073,6 +1073,26 @@ TT.open = async (el, id) => {
   };
   /* Packing: how many passes land on each half millimetre of the square (so a patch shows even where it already looks
      dark), and how steady the 7RS's speed and depth stay. Scrubbing tends to show up as rushing and uneven speed. */
+  /* Stats for comparing a right way against a cheat, per needle, in the hand's own millimetres on the screen so zoom
+     doesn't change them. Histograms hold milliseconds spent in each bucket (TM_EDGES gives the upper limits). They only
+     collect; grading reads what it needs. Saved with the attempt. */
+  const TM_EDGES = { speed: [10, 25, 50, 85, 110, 150, 200, 300], gap: [0.05, 0.1, 0.2, 0.4, 0.8, 1.3, 2.2], depth: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], pressure: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], tilt: [15, 30, 45, 60], zoom: [1, 1.5, 2, 3, 5, 8], radius: [1, 2, 4, 8, 16], run: [2, 5, 10, 20, 40], stroke: [2, 5, 10, 20, 50, 100, 200] };
+  const tmBin = (key, v) => { const E = TM_EDGES[key]; let i = 0; while (i < E.length && v >= E[i]) i++; return i; };
+  const tmPut = (o, key, v, w) => { const h = o[key] ||= new Array(TM_EDGES[key].length + 1).fill(0); h[tmBin(key, v)] += w; };
+  const tmAdd = (ev, d, dx, dy, depth, dtS) => { const c = EX.cur.tm ||= { by: {}, pauses: 0, pauseMs: 0 }, n = c.by[st.needle] ||= { ms: 0, mm: 0, strokes: 0, turn: 0, net: 0, abs: 0, cw: 0, ccw: 0, rev: 0, revDip: 0, flips: 0, n: 0, vm: 0, vs: 0, dm: 0, ds: 0, ws: 0, wa: 0, wl: 0, fs: 0, fl: 0, runL: 0 };
+    const ms = Math.min(250, dtS * 1000), sc = k / (96 / 25.4), l = d * sc, v = pen.speed || 0; n.ms += ms; n.mm += l; n.n++; const a = v - n.vm; n.vm += a / n.n; n.vs += a * (v - n.vm); const b = depth - n.dm; n.dm += b / n.n; n.ds += b * (depth - n.dm);
+    tmPut(n, 'speed', v, ms); tmPut(n, 'gap', gapMm(v), ms); tmPut(n, 'depth', depth, ms); tmPut(n, 'pressure', pNorm(ev), ms); tmPut(n, 'tilt', Math.hypot(ev.tiltX || 0, ev.tiltY || 0), ms); tmPut(c, 'zoom', z, ms);
+    pen.tx = (pen.tx || 0) + dx * sc; pen.ty = (pen.ty || 0) + dy * sc; const sl = Math.hypot(pen.tx, pen.ty); if (sl < 0.5) return; const an = Math.atan2(pen.ty, pen.tx); pen.tx = pen.ty = 0; pen.tv = pen.tv == null ? v : pen.tv * 0.9 + v * 0.1; n.runL += sl;
+    if (pen.ta != null) { let sd = an - pen.ta; while (sd > Math.PI) sd -= 2 * Math.PI; while (sd < -Math.PI) sd += 2 * Math.PI; const de = Math.abs(sd); n.turn += de; if (sd > 0) n.cw += de; else n.ccw += de; if (de > 0.02) tmPut(n, 'radius', sl / de, sl); if (de > 2.2) { n.rev++; if (v < pen.tv * 0.5) n.revDip++; }
+      if (de > 0.5) { tmPut(n, 'run', n.runL, 1); n.runL = 0; }
+      n.ws += sd; n.wa += de; n.wl += sl; if (n.wl >= 30) { n.net += Math.abs(n.ws); n.abs += n.wa; n.ws = n.wa = n.wl = 0; }
+      n.fs += sd; n.fl += sl; if (n.fl >= 5) { const s2 = Math.sign(n.fs); if (s2 && pen.tf && s2 !== pen.tf) n.flips++; if (s2) pen.tf = s2; n.fs = n.fl = 0; } } pen.ta = an; };
+  const tmStrokeEnd = () => { const c = EX?.cur?.tm, n = c?.by[st.needle]; if (!n) return; n.strokes++; tmPut(n, 'stroke', (pen.trav || 0), 1); c.lastEnd = Date.now(); };
+  const tmStrokeStart = () => { const c = EX?.cur?.tm; if (c?.lastEnd) { const gap = Date.now() - c.lastEnd; if (gap > 3000) { c.pauses++; c.pauseMs += gap; } } };
+  // Everything about an attempt as one block of text, to paste beside another attempt and compare.
+  const tmReport = (T, res) => { const c = EX.cur || {}, tm = c.tm || { by: {} }, r1 = (v) => Math.round(v * 10) / 10, by = {}; for (const id in tm.by) { const n = tm.by[id]; by[id] = { seconds: r1(n.ms / 1000), travelMm: Math.round(n.mm), mmPerSec: r1(n.mm / Math.max(0.001, n.ms / 1000)), speedAvg: r1(n.vm), speedSd: r1(Math.sqrt(n.vs / Math.max(1, n.n))), depthAvg: +n.dm.toFixed(3), depthSd: +Math.sqrt(n.ds / Math.max(1, n.n)).toFixed(3), strokes: n.strokes, turnPerMm: +(n.turn / Math.max(1, n.mm)).toFixed(3), sameWay30mm: n.abs ? +(n.net / n.abs).toFixed(3) : null, cw: Math.round(n.cw), ccw: Math.round(n.ccw), reversalsPer10mm: +(n.rev / Math.max(1, n.mm) * 10).toFixed(3), dipReversalsPer10mm: +(n.revDip / Math.max(1, n.mm) * 10).toFixed(3), turnFlipsPer10mm: +(n.flips / Math.max(1, n.mm) * 10).toFixed(3), hist: Object.fromEntries(['speed', 'gap', 'depth', 'pressure', 'tilt', 'radius', 'run', 'stroke'].filter(k => n[k]).map(k => [k, n[k].map(Math.round)])) }; }
+    const hm = c.hm || [], box = T.pack; let passes = null; if (box) { const v = []; for (let j = 2; j < box[3] * 2 - 2; j++) for (let i = 2; i < box[2] * 2 - 2; i++) v.push(hm[j * 30 + i] || 0); const s = [...v].sort((a, b) => a - b), m = v.reduce((a, b) => a + b, 0) / Math.max(1, v.length); passes = { mean: r1(m), sd: r1(Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / Math.max(1, v.length))), min: s[0], p10: s[Math.floor(s.length * 0.1)], median: s[Math.floor(s.length / 2)], p90: s[Math.floor(s.length * 0.9)], max: s[s.length - 1] }; }
+    return { inkforge_stats: 1, build: TT_BUILD, lesson: EX.lesson, task: T.id, when: new Date().toISOString(), grade: ttGrade(res.total), total: res.total, parts: res.parts, skin: res.skin, traumaMax: res.traumaMax, traumaAvg: res.traumaAvg, blowouts: res.blowouts, blowSpots: (c.spots || []).map(s => s[2]), undos: res.undos || 0, lasers: res.lasers || 0, penalty: res.penalty || 0, dips: c.dips || 0, needleSeconds: r1(Object.values(tm.by).reduce((a, n) => a + n.ms, 0) / 1000), pauses: tm.pauses || 0, pauseSeconds: Math.round((tm.pauseMs || 0) / 1000), zoomHist: (tm.zoom || []).map(Math.round), passes, needles: by, edges: TM_EDGES, settings: { cal: { ...cal }, look: { thin: nlook.thin, tex: nlook.tex }, stretch: st.stretch, skin: st.skin, feel: JSON.parse(Settings.get('tt_feel', '{}')) }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } }; };
   const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(b[2] * 2 - 1, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(b[3] * 2 - 1, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
   const packMotion = (d, depth) => { const m = EX.cur.mv ||= { all: 0, fast: 0, n: 0, vm: 0, vs: 0, dm: 0, ds: 0 }, l = d / mm, v = pen.speed || 0; m.all += l; if (v > 110) m.fast += l; m.n++; const a = v - m.vm; m.vm += a / m.n; m.vs += a * (v - m.vm); const b = depth - m.dm; m.dm += b / m.n; m.ds += b * (depth - m.dm); };
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
@@ -1096,7 +1116,7 @@ TT.open = async (el, id) => {
       if (EX?.cur && st.tool !== 'erase' && (EX.cur.n = (EX.cur.n || 0) + 1) % 3 === 0 && EX.cur.p.length < 1500) {
         EX.cur.p.push(+pNorm(ev).toFixed(3)); EX.cur.v.push(Math.round(pen.speed)); EX.cur.d.push(+depth.toFixed(3)); EX.cur.t.push(Math.round(Math.hypot(ev.tiltX || 0, ev.tiltY || 0))); }
       // punctures land every (hand speed / machine speed) along the skin; `hand` scales screen speed to a tattooing hand's
-      const packB = EX?.cur && st.tool !== 'erase' && pen.cx.pig ? exList()[EX.i]?.pack : null; if (packB && st.needle === '7RS' && d > 0) packMotion(d, depth);
+      const packB = EX?.cur && st.tool !== 'erase' && pen.cx.pig ? exList()[EX.i]?.pack : null; if (packB && st.needle === '7RS' && d > 0) packMotion(d, depth); if (EX?.cur && st.tool !== 'erase' && pen.cx.pig) tmAdd(ev, d, dx, dy, depth, dt);
       const gap = (fast ? Math.min(gapMm(pen.speed), 0.06) : gapMm(pen.speed)) / z * mm;
       let t = pen.carry;
       while (t <= d) {
@@ -1724,7 +1744,7 @@ TT.open = async (el, id) => {
     if (pen?.snapped && snapE) { if (pen.box) cropTop(pen.box); snapE.h = hist[hist.length - 1]; }
     if (pen) { if (pen.box) { if (!pen.snapped || !snapE) cropTop(pen.box); if (st.tool === 'erase' && pen.cx.pig) exLaser(); } else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
       const mmD = pen.trav || 0; SS.mm += mmD; SS.ms += Math.max(0, pen.t - pen.t0); if (st.tool !== 'erase') SS.needles[st.needle] = (SS.needles[st.needle] || 0) + mmD; }
-    pen = null; drawNeedleInk(); if (trDirty) paint(); TL.changed = true; tlGrab(); };
+    if (st.tool !== 'erase') tmStrokeEnd(); pen = null; drawNeedleInk(); if (trDirty) paint(); TL.changed = true; tlGrab(); };
 
   /* ---------- Skin marker ----------
      Freehand on the skin, on its own layer, like a felt-tip: solid at any speed, a touch wider with pressure, a
@@ -2922,14 +2942,15 @@ TT.open = async (el, id) => {
     if (pass && (!old || res.total > old.total)) { const sc = Math.min(1, 1600 / W), blob = await new Promise(r => composite(sc).toBlob(r, 'image/jpeg', 0.9));
       p.results = p.results || {}; p.results[EX.lesson] = { ref: await Media.save(blob, 'jpg'), total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, penalty: res.penalty, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, heat: await Media.save(await new Promise(r => heat.c.toBlob(r, 'image/jpeg', 0.85)), 'jpg'), notes: heat.notes }; if (old?.ref) await Media.release(old.ref); if (old?.heat) await Media.release(old.heat); }
     await Settings.set('tt_lessons', JSON.stringify(p));
+    const statsTxt = JSON.stringify(tmReport(T, res)); if (pass && p.results?.[EX.lesson]?.when && p.results[EX.lesson].total === res.total) { p.results[EX.lesson].stats = statsTxt; await Settings.set('tt_lessons', JSON.stringify(p)); }
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
       ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
       ${ttShotHtml(purl, hurl, heat?.notes)}
-      <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lr="out">Lessons</button><button class="btn" data-lr="close">Close</button><span style="flex:1"></span><button class="btn ${pass ? '' : 'primary'}" data-lr="again">Try again</button>${pass ? '<button class="btn primary" data-lr="out">Continue</button>' : ''}</div></div>`;
+      <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lr="out">Lessons</button><button class="btn" data-lr="close">Close</button><button class="btn" data-lr="copy" data-tip="Copy every stat from this attempt as text, to compare attempts">Copy stats</button><span style="flex:1"></span><button class="btn ${pass ? '' : 'primary'}" data-lr="again">Try again</button>${pass ? '<button class="btn primary" data-lr="out">Continue</button>' : ''}</div></div>`;
     ttShotBind(o, purl, hurl);
-    o.onclick = (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
+    o.onclick = async (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; if (a === 'copy') { try { await navigator.clipboard.writeText(statsTxt); toast('Stats copied.'); } catch { await askText('Copy these stats:', statsTxt); } return; } o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
     document.body.appendChild(o);
   }
   function chReport(T, res, info) {
