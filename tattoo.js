@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 253;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 254;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -440,6 +440,7 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
     path: (g) => { g.moveTo(78 + 15 * Math.cos(-Math.PI / 6), 42 + 15 * Math.sin(-Math.PI / 6)); g.arc(78, 42, 15, -Math.PI / 6, -1.5 * Math.PI, true); g.arc(78, 79, 22, -Math.PI / 2, 245 * Math.PI / 180); } }];
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
+const TT_BLOW_SEVERE = 7, TT_BLOW_JOKES = ['Did you nod off with your foot on the pedal?', 'That is not shading. That is a bruise with ambition.', 'Your mentor felt that from across town.', 'Somewhere, a client just googled laser removal.', 'The ink has left the building. So has my faith in you.', 'Chores. So many chores.', 'Fat layer says hi. Nobody invited it.'];
 const ttLessonRun = async (id) => { const T = TT_LS_CH.find(c => c.id === id), skin = TT_SKINS[ttChSkin()][1], exam = { v: 1, mode: 'ch', lesson: T.lesson, list: [id], i: 0, res: [], started: Date.now() };
   const rows = await DB.all(`SELECT id, meta FROM tattoo_pieces WHERE meta LIKE '%"mode":"ch"%'`), hit = rows.find(r => { try { return JSON.parse(r.meta).exam?.list?.[0] === id; } catch { return false; } });
   if (hit) { let m = {}; try { m = JSON.parse(hit.meta); } catch {} await DB.run(`UPDATE tattoo_pieces SET meta = ?, skin = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...m, exam }), skin, hit.id]); location.hash = 'tattoo/' + hit.id; return; }
@@ -756,7 +757,7 @@ TT.open = async (el, id) => {
   const skinOver = (g) => { g.globalAlpha = 0.3; g.drawImage(trRed, 0, 0, W, H); g.globalAlpha = 1; g.drawImage(trPuff, 0, 0, W, H); g.globalAlpha = 0.85; g.drawImage(trTex, 0, 0, W, H); g.globalAlpha = 1; };
   // Blowout: ink spread under the skin round p, bluer and softer than the line, and the skin raised over it.
   const blowAt = (p, risk, footR) => { if (CHEAT) return;
-    if (EX?.cur) EX.cur.blow = (EX.cur.blow || 0) + 1; SS.blow++;
+    if (EX?.cur) { EX.cur.blow = (EX.cur.blow || 0) + 1; const sp = EX.cur.spots ||= [], near = sp.find(q => Math.hypot(q[0] - p.x, q[1] - p.y) < 3 * mm); if (near) near[2]++; else sp.push([p.x, p.y, 1]); } SS.blow++;   // spots for the heat map; hits within 3 mm are one spot
     // ink seen through the skin: bluer
     const c = st.ink.c.map((v, j) => Math.round((v * 0.45 + [0.34, 0.42, 0.68][j] * 0.55) * 255)), R = (footR + mm * (1.1 + risk * 1.8)) / 2, gx = p.x / 2, gy = p.y / 2;
     const gr = bx.createRadialGradient(gx, gy, 0, gx, gy, R); gr.addColorStop(0, `rgba(${c},${0.12 + risk * 0.16})`); gr.addColorStop(0.5, `rgba(${c},${0.05 + risk * 0.07})`); gr.addColorStop(1, `rgba(${c},0)`);
@@ -2821,7 +2822,8 @@ TT.open = async (el, id) => {
      Uses the same strip and band as the line score, so it shows what was actually judged. */
   const heatOf = (T, res) => { const coreW = Math.min(T.core, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35)), core = maskOf(T.path, false, coreW), band = maskOf(T.path, false, coreW + 2.2);
     let x0 = W, y0 = H, x1 = 0, y1 = 0; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (band[(y * W + x) * 4 + 3] > 30) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-    const m = Math.round(8 * mm); x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m); const cw = x1 - x0, ch = y1 - y0, c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
+    const m = Math.round(8 * mm), spots = EX.cur?.spots || [], severe = spots.filter(s => s[2] >= TT_BLOW_SEVERE); for (const s of spots) { x0 = Math.min(x0, s[0]); y0 = Math.min(y0, s[1]); x1 = Math.max(x1, s[0]); y1 = Math.max(y1, s[1]); }
+    x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m); if (severe.length) { const need = Math.round(90 * mm) - (x1 - x0); if (need > 0) { x0 = Math.max(0, x0 - Math.ceil(need / 2)); x1 = Math.min(W, x1 + Math.ceil(need / 2)); } } const cw = x1 - x0, ch = y1 - y0, c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
     g.fillStyle = '#101314'; g.fillRect(0, 0, cw, ch); g.globalAlpha = 0.4; g.drawImage(composite(1), -x0, -y0); g.globalAlpha = 1;
     const im = g.getImageData(0, 0, cw, ch), D = im.data, bl = (() => { const bc = document.createElement('canvas'); bc.width = W; bc.height = H; const bg = bc.getContext('2d'); bg.drawImage(blowC, 0, 0, W, H); return bg.getImageData(0, 0, W, H).data; })(), put = (i, r, gg, b) => { D[i] = r; D[i + 1] = gg; D[i + 2] = b; }, third = [0, 0, 0]; let miss = 0, cn = 0, sx = 0, sy = 0;
     for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const px = x + x0, py = y + y0, j = (py * W + px) * 4, i = (y * cw + x) * 4, d = densAt(j), tp = TP[Math.floor(py / TS) * tw + Math.floor(px / TS)];
@@ -2829,13 +2831,22 @@ TT.open = async (el, id) => {
       if (bl[j + 3] > 40) put(i, 60, 130, 255);
       if (d > 0.2 && band[j + 3] < 30) put(i, 255, 150, 40);
       if (core[j + 3] > 128) { cn++; if (d > 0.28) put(i, 60, 220, 120); else { put(i, 240, 60, 60); miss++; sx += px; sy += py; third[Math.min(2, Math.floor((py - y0 - m) / Math.max(1, ch - 2 * m) * 3))]++; } } }
-    g.putImageData(im, 0, 0); const notes = [], P = res.parts, big = third.indexOf(Math.max(...third));
+    g.putImageData(im, 0, 0);
+    // A ring around every blowout, and for a really bad one, an arrow and the level of disappointment.
+    const u = mm, ringR = (s) => Math.min(6, 2.5 + s[2] * 0.1) * u; g.lineWidth = 0.4 * u; g.strokeStyle = '#fff'; for (const s of spots) { g.beginPath(); g.arc(s[0] - x0, s[1] - y0, ringR(s), 0, 7); g.stroke(); }
+    let nextY = 2 * u, jk = Math.floor(Math.random() * TT_BLOW_JOKES.length); for (const s of [...severe].sort((a, b) => a[1] - b[1])) { const sx0 = s[0] - x0, sy0 = s[1] - y0, onRight = sx0 < cw / 2, bw = Math.min(cw * 0.42, 30 * u), pad = 1.2 * u, fs = Math.round(2.6 * u); g.font = `700 ${fs}px Inter, sans-serif`;
+      const words = TT_BLOW_JOKES[jk++ % TT_BLOW_JOKES.length].split(' '), lines = ['']; for (const w of words) { const n = (lines[lines.length - 1] + ' ' + w).trim(); if (g.measureText(n).width > bw - pad * 2 && lines[lines.length - 1]) lines.push(w); else lines[lines.length - 1] = n; }
+      const bh = lines.length * fs * 1.25 + pad * 2, bx = onRight ? cw - bw - 2 * u : 2 * u, by = Math.min(ch - bh - 2 * u, Math.max(nextY, sy0 - bh / 2)); nextY = by + bh + 2 * u;
+      const ex = onRight ? bx : bx + bw, ey = by + bh / 2, ang = Math.atan2(sy0 - ey, sx0 - ex), R = ringR(s) + 0.6 * u, tx = sx0 - Math.cos(ang) * R, ty = sy0 - Math.sin(ang) * R, hd = 2 * u; g.strokeStyle = g.fillStyle = '#ffd24a'; g.lineWidth = 0.5 * u; g.beginPath(); g.moveTo(ex, ey); g.lineTo(tx, ty); g.stroke();
+      g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx - Math.cos(ang - 0.45) * hd, ty - Math.sin(ang - 0.45) * hd); g.lineTo(tx - Math.cos(ang + 0.45) * hd, ty - Math.sin(ang + 0.45) * hd); g.closePath(); g.fill();
+      g.fillStyle = 'rgba(15,18,19,.94)'; g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh); g.fillStyle = '#ffd24a'; lines.forEach((l, i) => g.fillText(l, bx + pad, by + pad + fs * (i + 0.85) * 1.15)); }
+    const notes = [], P = res.parts, big = third.indexOf(Math.max(...third));
     if (cn && miss / cn > 0.05) notes.push(`Red shows where the line left the stencil or went too light. Most of it is in the ${['top', 'middle', 'bottom'][big]} third. Keep your eye just ahead of the needle and hold your pressure there.`);
     if (P.spill > 2) notes.push('Orange is ink well off the line. Slow your approach and land on the stencil before you pull.');
     if (P.evenness < 75) notes.push('The darkness changes along the line. That usually means your speed or pressure changed, often at the start and end, or where you restarted.');
     if (P.weight != null && P.weight < 75) notes.push('The thickness changes along the line. Watch for slowing down or pressing in through the curves.');
     if (T.corners) notes.push(...cornerNotes);
-    if (res.blowouts) notes.push('Blue is blowout: pressing deep while moving slowly. Keep moving whenever the needle is in.');
+    if (res.blowouts) notes.push(`Blue with a white ring is blowout, ${spots.length} spot${spots.length === 1 ? '' : 's'}: pressing deep while moving slowly. Keep moving whenever the needle is in.`);
     if (res.skin != null && res.skin < 90) notes.push('Purple is overworked skin. Make fewer passes, and let it settle before pressing Done.');
     if (!notes.length) notes.push('Nothing stands out: a clean attempt. To score higher, keep the line dead centre on the stencil and the speed steady from start to finish.');
     return { c, notes }; };
