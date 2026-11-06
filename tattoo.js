@@ -528,9 +528,9 @@ TT.open = async (el, id) => {
     trDirty = true;
   };
   /* Skin settles once the needle moves away: after a few seconds' rest, redness and swelling halve about every 30 seconds.
-     Damage leaves a mark, though: skin worked past swollen only comes back down to a level set by the worst it reached
-     (TP), so bad damage never fully clears in the as-worked view. Only runs while the piece is open. */
-  const HEAL_REST = 3000, HEAL_HALF = 30000, healFloor = (pk) => pk < 1 ? 0 : Math.min(pk, (pk - 1) * 0.6 + 0.12);
+     Damage leaves a mark, though: once well into swelling, skin only comes down one stage, to a level set by the worst it
+     reached (TP), and stays there: it can get worse but never better. The healed views read TP too, so the timer doesn't change them. Only runs while the piece is open. */
+  const HEAL_REST = 3000, HEAL_HALF = 30000, healFloor = (pk) => pk < 1 ? 0 : pk < 1.4 ? 0.35 + (pk - 1) : 0.85 + (pk - 1.4) * 0.5;   // red heals away; just into swelling settles at red; overworked settles at swollen and stays
   let healT = performance.now();
   const healId = setInterval(() => { if (!cv.isConnected) return clearInterval(healId); if (CHEAT) return; const now = performance.now(), dt = now - healT; healT = now; if (document.hidden) return;
     const k = 1 - Math.pow(0.5, dt / HEAL_HALF); let moved = 0;
@@ -607,8 +607,8 @@ TT.open = async (el, id) => {
   /* An undo step is the layer and the skin before a change. Taken whole when a stroke starts, then cut down to the
      patch the stroke touched when it ends: whole copies of a big page are ~20 MB each and could run a tablet out of
      memory. `rc`: the patch in page px (none: the whole page). */
-  const state = (key, rc, hi) => rc ? { key, rc, data: L[key].getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h), hi: hi ? L.high.getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h) : null, tr: TR.slice(), bu: BU.slice(), blow: bx.getImageData(rc.x >> 1, rc.y >> 1, (rc.w >> 1) + 2, (rc.h >> 1) + 2) }
-    : { key, data: L[key].getContext('2d').getImageData(0, 0, W, H), hi: hi ? L.high.getContext('2d').getImageData(0, 0, W, H) : null, tr: TR.slice(), bu: BU.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) };
+  const state = (key, rc, hi) => rc ? { key, rc, data: L[key].getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h), hi: hi ? L.high.getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h) : null, tr: TR.slice(), tp: TP.slice(), bu: BU.slice(), blow: bx.getImageData(rc.x >> 1, rc.y >> 1, (rc.w >> 1) + 2, (rc.h >> 1) + 2) }
+    : { key, data: L[key].getContext('2d').getImageData(0, 0, W, H), hi: hi ? L.high.getContext('2d').getImageData(0, 0, W, H) : null, tr: TR.slice(), tp: TP.slice(), bu: BU.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) };
   const cropID = (src, x, y, w, h) => { const out = new ImageData(w, h), sw = src.width;
     for (let r = 0; r < h; r++) { const from = ((y + r) * sw + x) * 4; out.data.set(src.data.subarray(from, from + w * 4), r * w * 4); } return out; };
   const cropTop = (box) => { const h = hist[hist.length - 1]; if (!h || h.rc) return;
@@ -712,9 +712,9 @@ TT.open = async (el, id) => {
      was worked, broken up into blotches so it heals patchy rather than evenly lighter. The same blotches every
      time for a piece. */
   const falloutMask = (aged) => {
-    let any = false; for (let i = 0; i < TR.length; i++) if (TR[i] > 0.9) { any = true; break; } if (!any) return null;
+    let any = false; for (let i = 0; i < TP.length; i++) if (TP[i] > 0.9) { any = true; break; } if (!any) return null;
     const sev = document.createElement('canvas'); sev.width = tw; sev.height = th; const sg = sev.getContext('2d'), si = sg.createImageData(tw, th);
-    for (let i = 0; i < TR.length; i++) { const v = Math.max(0, Math.min(1, (TR[i] - 0.9) / 1.3)); si.data[i * 4 + 3] = Math.round(Math.min(1, v * (aged ? 1.1 : 1)) * 255); }
+    for (let i = 0; i < TR.length; i++) { const v = Math.max(0, Math.min(1, (TP[i] - 0.9) / 1.3)); si.data[i * 4 + 3] = Math.round(Math.min(1, v * (aged ? 1.1 : 1)) * 255); }
     sg.putImageData(si, 0, 0);
     let s = (id * 2654435761) >>> 0 || 7; const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let x = Math.imul(s ^ (s >>> 15), 1 | s); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
     const m = document.createElement('canvas'); m.width = Math.ceil(W / 2); m.height = Math.ceil(H / 2); const mg = m.getContext('2d');
@@ -1723,7 +1723,7 @@ TT.open = async (el, id) => {
   const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, h.rc?.x || 0, h.rc?.y || 0); syncIn(h.key); touched.add(h.key);
     if (h.more) for (const m of h.more) { L[m.key].getContext('2d').putImageData(m.data, h.rc?.x || 0, h.rc?.y || 0); syncIn(m.key); touched.add(m.key); }
     if (h.hi) { L.high.getContext('2d').putImageData(h.hi, h.rc?.x || 0, h.rc?.y || 0); syncIn('high'); touched.add('high'); }
-    if (h.tr) { TR.set(h.tr); trDirty = true; } if (h.bu) BU.set(h.bu); if (h.blow) bx.putImageData(h.blow, h.rc ? h.rc.x >> 1 : 0, h.rc ? h.rc.y >> 1 : 0); st.dirty = true; st.viewC = null; paint(); };
+    if (h.tr) { TR.set(h.tr); if (h.tp) TP.set(h.tp); trDirty = true; } if (h.bu) BU.set(h.bu); if (h.blow) bx.putImageData(h.blow, h.rc ? h.rc.x >> 1 : 0, h.rc ? h.rc.y >> 1 : 0); st.dirty = true; st.viewC = null; paint(); };
   const swap = (from, to) => { if (pen) return true; if (snapE) snapFinish(); if (lsel) { selCancel(); return true; }   // undo while something floats: put it back where it was
     const h = from.pop(); if (!h) return false; const s2 = state(h.key, h.rc, !!h.hi); if (h.more) s2.more = h.more.map(m => ({ key: m.key, data: L[m.key].getContext('2d').getImageData(h.rc?.x || 0, h.rc?.y || 0, h.rc?.w || W, h.rc?.h || H) })); to.push(s2); undoTo(h); return true; };
   const undo = () => { if (!swap(hist, fut)) return toast('Nothing to undo.'); exUndo(); };
@@ -2474,7 +2474,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } TR.fill(0); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0)); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
