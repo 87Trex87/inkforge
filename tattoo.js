@@ -399,7 +399,7 @@ const TT_LESSONS = [
       { title: 'Then leave it to settle', text: 'One clean pass is the goal, because every extra pass wears the skin. When the line is done, leave the skin alone for about a minute before you press Done, so the redness can calm down.',
         more: 'Skin starts settling a few seconds after the needle moves away, and the redness halves about every 30 seconds. Your skin score counts for part of your grade, so waiting pays off.' },
       { title: 'Your grade', text: 'Press Done when you are ready for your score. Grade C (70) or higher unlocks the next lesson, and you can try as often as you like.',
-        more: 'A is 90 or more, B is 80, C is 70, D is 60. Most of the score is the line itself: no gaps, on the stencil, and even. The rest is the condition of the skin. Blowouts, red bumps and extra undos take points off.' }
+        more: 'A is 90 or more, B is 80, C is 70, D is 60. Most of the score is the line itself: on the stencil, solid and even. The rest is the condition of the skin. Blowouts and extra undos take points off.' }
     ] },
     { id: '1-3', title: 'Next lesson', sum: 'To be designed.' }
   ] },
@@ -407,7 +407,7 @@ const TT_LESSONS = [
   { name: 'Chapter 3: Advanced', lessons: [] }
 ];
 // Lesson tasks run in the real workspace like a challenge, but stay out of the challenge list, medals and trophies.
-const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: 'Your first line', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', seg: [90, 35, 90, 95],
+const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: 'Your first line', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6,
   text: 'Black ink, 5RL. Load the needle, then pull one clean line down the stencil in a single pass. Leave the skin to settle for about a minute, then press Done. C or higher unlocks the next lesson.',
   path: (g) => { g.moveTo(90, 35); g.lineTo(90, 95); } }];
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
@@ -995,7 +995,7 @@ TT.open = async (el, id) => {
         }
         if (st.tool !== 'erase' && pen.cx.pig && !CHEAT) {   // too deep or too much voltage raises little red bumps
           const bump = Math.max(0, Math.min(1, (depth - 0.85) / 0.2)) + Math.max(0, Math.min(1, (volt() - 8.2) / 1.8));
-          if (bump > 0 && Math.random() < 0.12 * bump) { if (EX?.cur) EX.cur.bumps = (EX.cur.bumps || 0) + 1; buAdd({ x: q.x + (Math.random() - 0.5) * pen.foot * 2, y: q.y + (Math.random() - 0.5) * pen.foot * 2 }, 0.3 * bump); SS.bumps = (SS.bumps || 0) + 1;
+          if (bump > 0 && Math.random() < 0.12 * bump) { buAdd({ x: q.x + (Math.random() - 0.5) * pen.foot * 2, y: q.y + (Math.random() - 0.5) * pen.foot * 2 }, 0.3 * bump); SS.bumps = (SS.bumps || 0) + 1;
             if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or the machine running too hard irritates the skin.', 3500); } } }
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
         setRoll(ev, turnOf(pen.a, ev)); st.lastD = depth;
@@ -2639,19 +2639,7 @@ TT.open = async (el, id) => {
   const boxIdx = (b) => { const x0 = Math.round(b[0] * mm), y0 = Math.round(b[1] * mm), x1 = Math.round((b[0] + b[2]) * mm), y1 = Math.round((b[1] + b[3]) * mm); return { x0, y0, x1, y1 }; };
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
-  /* A straight lesson line, judged the way an artist would look at it: walk along the stencil and, at each point, find
-     the ink beside it. Coverage: no gaps along the length. On line: how far the ink's middle strays from the stencil, with
-     wobbles counting more than a steady small offset (0.2 mm is full marks, 2.5 mm is off the line). Evenness: the darkness stays the same along it. */
-  const segScore = ([x0, y0, x1, y1]) => { const len = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / len, uy = (y1 - y0) / len, reach = 3, ds = [], offs = [], wid = [], edge = [], hw = Math.max(...lay.map(q => Math.hypot(q.u, q.v))) + feel.size * 0.35 + 0.2; let n = 0;
-    for (let s = 0; s <= len; s += 0.5, n++) { let w = 0, wo = 0, top = 0, cnt = 0, far = 0;
-      for (let o = -reach; o <= reach; o += 1 / mm) { const X = Math.round((x0 + ux * s - uy * o) * mm), Y = Math.round((y0 + uy * s + ux * o) * mm); if (X < 0 || Y < 0 || X >= W || Y >= H) continue; const d = densAt((Y * W + X) * 4); if (d > 0.2) { w += d; wo += d * o; top = Math.max(top, d); cnt++; far = Math.max(far, Math.abs(o)); } }
-      if (w > 0 && top > 0.28) { ds.push(top); offs.push(wo / w); wid.push(cnt / mm); edge.push(Math.max(0, far - hw)); } }
-    let ink = 0, stray = 0; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { if (densAt((y * W + x) * 4) <= 0.2) continue; ink++; const px = x / mm - x0, py = y / mm - y0, along = px * ux + py * uy, off = Math.abs(px * uy - py * ux); if (off > reach + 1 || along < -reach || along > len + reach) stray++; }
-    const cov = Math.min(1, ds.length / Math.max(1, n) / 0.97), mean = ds.reduce((a, b) => a + b, 0) / Math.max(1, ds.length), sd = Math.sqrt(ds.reduce((a, b) => a + (b - mean) * (b - mean), 0) / Math.max(1, ds.length)), avg = a => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length), wm = avg(wid), wsd = Math.sqrt(avg(wid.map(v => (v - wm) * (v - wm)))), cons = (1 - clamp01(sd / 0.45)) * (1 - clamp01(wsd / 0.6));   // dark isn't enough: the width has to hold too, so a slow scribble can't look even
-    const off = Math.sqrt(offs.reduce((a, b) => a + b * b, 0) / Math.max(1, offs.length)), acc = 1 - clamp01((off + avg(edge) - 0.2) / 1.8), clean = 1 - stray / Math.max(1, ink);
-    return { score: Math.round(100 * cov * (0.4 + 0.35 * acc + 0.25 * cons) * (0.5 + 0.5 * acc) * clean), coverage: Math.round(cov * 100), 'on line': Math.round(acc * 100), evenness: Math.round(cons * 100) }; };
   const scoreOf = (T) => {
-    if (T.seg) return segScore(T.seg);
     if (T.kind === 'line') return lineScore(T.path, T.core);
     if (T.kind === 'grad') {   // judged on its shape (scaled to your own darkest) and on getting reasonably dark
       const { x0, y0, x1, y1 } = boxIdx(T.box), cs = [], ts = [];
@@ -2699,7 +2687,7 @@ TT.open = async (el, id) => {
     let mx = 0, sum = 0, n = 0; for (const v of TR) if (v > 0.02) { mx = Math.max(mx, v); sum += v; n++; }
     const skin = Math.round(100 * (1 - clamp01((mx - 0.6) / 1.4))), blow = EX.cur?.blow || 0;
     const pen = exPen();
-    const total = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - (T.seg ? Math.min(40, blow * 4) + Math.min(15, (EX.cur?.bumps || 0) * 0.5) : Math.min(15, blow * 0.5)) - pen.pts));   // a lesson line is one pass: damage costs far more
+    const total = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5) - pen.pts));
     const th = composite(Math.min(1, 220 / W)).toDataURL('image/jpeg', 0.7), c = EX.cur || {};
     const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
@@ -2745,7 +2733,7 @@ TT.open = async (el, id) => {
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
-      ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}</p>` : ''}${EX.cur?.bumps ? `<p class="muted" style="margin:4px 0">Red bumps: too deep or running too hard</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
+      ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
       <img class="tt-chshot" src="${res.thumb}" alt="">
       <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lr="out">Lessons</button><button class="btn" data-lr="close">Close</button><span style="flex:1"></span><button class="btn ${pass ? '' : 'primary'}" data-lr="again">Try again</button>${pass ? '<button class="btn primary" data-lr="out">Continue</button>' : ''}</div></div>`;
     o.onclick = (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
