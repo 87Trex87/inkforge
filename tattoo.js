@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 268;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 269;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -366,7 +366,7 @@ TT.hub = async (el) => {
    or an action (`tune`). A lesson with no steps yet shows as coming. Later lessons add a `qualify` test once they have
    a drawing task; until then reaching the end completes it. Wording lives here, so it's easy to change. */
 const TT_LESSONS = [
-  { name: 'Chapter 1: Easy', lessons: [
+  { name: 'Chapter 1: Beginner', lessons: [
     { id: '1-1', title: 'Introduction', sum: 'Set up your tablet, then meet the needles, inks and skin.', steps: [
       { title: 'Tune in first', tune: true, text: 'Every tablet and pen reads pressure differently, so start by fitting the simulator to yours. It takes a few minutes and you only need to do it once on each device.',
         more: 'Tune in has you draw a few short tasks and sets the pressure range, hand speed and more from how you actually work. You can run it again whenever you like, under the sliders icon while tattooing.' },
@@ -424,7 +424,7 @@ const TT_LESSONS = [
         more: 'Your score is your line score, then reduced by up to 30% if the thickness of the line changes along the way, shown as Weight on your report card.' }
     ] },
     { id: '1-5', title: 'The flag', sum: 'Everything so far in one piece: straight lines, sharp corners and S curves. Grade C or higher finishes the chapter.', task: 'l-flag', steps: [
-      { title: 'Putting it all together', pic: { needles: ['5RL'] }, text: 'Your last easy linework lesson: a flag on a pole, with the same 5RL. The pole is your straight line, the waving edges are your S curves, the corners are your corners, and the ball on top is your circle.' },
+      { title: 'Putting it all together', pic: { needles: ['5RL'] }, text: 'Your last beginner linework lesson: a flag on a pole, with the same 5RL. The pole is your straight line, the waving edges are your S curves, the corners are your corners, and the ball on top is your circle.' },
       { title: 'Plan your order', text: 'Think before you start. Pull the long pole first, then the flag edges into it, then the end of the flag. Turn the page with two fingers whenever a pull feels awkward.',
         more: 'Lines that meet another line should land right on it and stop. Do not cross the pole, and do not leave a gap.' },
       { title: 'Everything counts', text: 'Your line stays on the stencil, even and solid. Your corners are sharp, not rounded and not running past. Your weight is the same on the straight parts as on the curves.',
@@ -433,7 +433,7 @@ const TT_LESSONS = [
         more: 'Your score is your line score, reduced by up to 20% for poor corners and up to 10% for changing line weight. Both reductions apply together.' }
     ] }
   ] },
-  { name: 'Chapter 2: Medium', lessons: [
+  { name: 'Chapter 2: Intermediate', lessons: [
     { id: '2-1', title: 'Solid black', sum: 'Line a small square, then pack it solid black with no patches. Grade C or higher moves you on.', task: 'l-pack', steps: [
       { title: 'Two needles, one small square', pic: { needles: ['5RL', '7RS'] }, text: 'A 1 cm square. Line it first with a #10 5RL, then change to a #12 7RS and pack it solid black. You choose the needle in the workspace, so remember to change it.',
         more: 'The outline gives you a wall to work up to. Line it the way you learned in Chapter 1, sharp corners included.' },
@@ -514,8 +514,11 @@ TT.lessons = (el) => { ttStyle();
   el.onclick = (e) => { const v = e.target.closest('[data-lres]'); if (v) return ttLessonResult(v.dataset.lres); const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
 };
 // A report's picture: the finished piece, with a toggle to the heat map and its notes; tap for full screen.
-const ttShotHtml = (pu, hu, notes) => `<div class="tt-lsshot">${hu ? '<div class="seg" style="margin:8px 0"><button class="on" data-shot="p" style="flex:1">Finished piece</button><button data-shot="h" style="flex:1">Heat map</button></div>' : ''}
-  <img class="tt-chshot tt-lsimg" src="${pu}" alt="The attempt" data-tip="Tap to view full screen"><div class="tt-lsheatinfo" hidden><div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#f0c83c"></i>Light (packing)<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div><ul class="tt-lsnotes">${(notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
+const TT_LEG_LINE = '<div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div>', TT_LEG_PACK = '<div class="tt-lsgrad"><span>Fewer passes</span><i></i><span>More passes</span></div><div class="tt-lsleg"><i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div>';
+const ttShotHtml = (pu, hu, notes, pack) => `<div class="tt-lsshot">${hu ? '<div class="seg" style="margin:10px 0 8px"><button class="on" data-shot="p" style="flex:1">Finished piece</button><button data-shot="h" style="flex:1">Heat map</button></div>' : ''}
+  <img class="tt-chshot tt-lsimg" src="${pu}" alt="The attempt" data-tip="Tap to view full screen"><div class="tt-lsheatinfo" hidden>${pack ? TT_LEG_PACK : TT_LEG_LINE}<ul class="tt-lsnotes">${(notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
+// A row of plain numbers from the stats block, under the bars.
+const ttChips = (txt) => { let s = null; try { s = JSON.parse(txt); } catch {} if (!s) return ''; const m = Math.floor((s.needleSeconds || 0) / 60), sec = Math.round((s.needleSeconds || 0) % 60), c = [['Needle time', m ? `${m} m ${sec} s` : `${sec} s`], ...(s.passes ? [['Passes per spot', Math.round(s.passes.mean)]] : []), ['Blowouts', s.blowouts || 0], ['Undos', s.undos || 0]]; return `<div class="tt-lschips">${c.map(([k, v]) => `<div><b>${v}</b><span>${k}</span></div>`).join('')}</div>`; };
 const ttShotBind = (root, pu, hu) => { const im = root.querySelector('.tt-lsimg'), info = root.querySelector('.tt-lsheatinfo'); let cur = 'p';
   root.querySelectorAll('[data-shot]').forEach(b => b.onclick = () => { cur = b.dataset.shot; root.querySelectorAll('[data-shot]').forEach(x => x.classList.toggle('on', x === b)); im.src = cur === 'h' ? hu : pu; info.hidden = cur !== 'h'; });
   im.onclick = () => ttZoom(pu, hu, cur); };
@@ -533,9 +536,9 @@ const ttZoom = (pu, hu, start) => { const o = document.createElement('div'); o.i
 // A lesson's best passed attempt: the finished piece and its report card, and a copy for the portfolio that stays if a better score replaces it.
 const ttLessonResult = async (id) => { const R = ttLessonProg().results?.[id], l = ttLessonList().find(x => x.id === id); if (!R) return; const url = await Media.url(R.ref), hurl = R.heat ? await Media.url(R.heat) : null, when = new Date(R.when).toLocaleString(), rows = [...R.parts, ...(R.skin != null ? [['skin', R.skin]] : [])], cap = s => s[0].toUpperCase() + s.slice(1), o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
   o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${ttGrade(R.total)}</b><div><h2 style="margin:0">${esc(l.title)}</h2><span class="muted">${R.total} / 100 · ${when}</span></div></div>
-    <div class="tt-cats">${rows.map(([k, v]) => `<div><span>${cap(k)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}</div>
-    <p class="muted" style="margin:4px 0;font-size:12px">${R.blowouts || 0} blowouts · ${R.undos || 0} undos · ${R.strokes} strokes · build ${R.build}</p>
-    ${ttShotHtml(url, hurl, R.notes)}
+    <div class="tt-cats tt-lscats">${rows.map(([k, v]) => `<div><span>${cap(k)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}</div>
+    <p class="muted" style="margin:4px 0;font-size:12px">${R.strokes} strokes · build ${R.build}</p>
+    ${ttChips(R.stats)}${ttShotHtml(url, hurl, R.notes, l.task === 'l-pack')}
     <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lv="close">Close</button>${R.stats ? '<button class="btn" data-lv="copy">Copy stats</button>' : ''}<span style="flex:1"></span><button class="btn primary" data-lv="pf">Save to portfolio</button></div></div>`;
   ttShotBind(o, url, hurl);
   o.onclick = async (e) => { const a = e.target.closest('[data-lv]'); if (!a) return; if (a.dataset.lv === 'close') return o.remove(); if (a.dataset.lv === 'copy') { try { await navigator.clipboard.writeText(R.stats); toast('Stats copied.'); } catch { await askText('Copy these stats:', R.stats); } return; } if (a.disabled) return; a.disabled = true;
@@ -733,7 +736,7 @@ TT.open = async (el, id) => {
      close together (pressing hard and pulling slowly) pushes ink under the skin: a soft, bluish bruise that spreads
      past the line and raises the skin. Both are kept with the piece; a healed preview drops the redness and
      swelling but keeps the blowouts. */
-  const TS = 4, tw = Math.ceil(W / TS), th = Math.ceil(H / TS), TR = new Float32Array(tw * th), TP = new Float32Array(tw * th), THit = new Float64Array(tw * th);
+  const TS = 4, tw = Math.ceil(W / TS), th = Math.ceil(H / TS), TR = new Float32Array(tw * th), TP = new Float32Array(tw * th), THit = new Float64Array(tw * th), HC = new Float32Array(tw * th);   // HC: needle hits landed on each cell, however dark it already looks
   // Bumps: little red pimples where the needle went too deep or the machine ran too hard (fresh skin only).
   const BU = new Float32Array(tw * th);
   const buAdd = (p, v) => { if (CHEAT) return; const i = Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS))); BU[i] = Math.min(1, BU[i] + v); trDirty = true; };
@@ -811,6 +814,7 @@ TT.open = async (el, id) => {
   };
   { const bi = await loadImg(row.blow_ref); if (bi) bx.drawImage(bi, 0, 0, blowC.width, blowC.height);
     const ti = await loadImg(row.skin_ref); if (ti) { const c = document.createElement('canvas'); c.width = tw; c.height = th; const g = c.getContext('2d'); g.drawImage(ti, 0, 0, tw, th);
+      if (meta.hc) { const hu = await Media.url(meta.hc), him = hu && await new Promise(r => { const i2 = new Image(); i2.onload = () => r(i2); i2.onerror = () => r(null); i2.src = hu; }); if (him) { const hc = document.createElement('canvas'); hc.width = tw; hc.height = th; const hg = hc.getContext('2d'); hg.imageSmoothingEnabled = false; hg.drawImage(him, 0, 0, tw, th); const hd = hg.getImageData(0, 0, tw, th).data; for (let i = 0; i < HC.length; i++) HC[i] = Math.round(Math.pow(2, hd[i * 4] / 20) - 1); } }
       const d = g.getImageData(0, 0, tw, th).data; for (let i = 0; i < TR.length; i++) { TR[i] = d[i * 4] / 255 * 2; TP[i] = Math.max(TR[i], d[i * 4 + 1] / 255 * 2); if (meta.bu) BU[i] = d[i * 4 + 2] / 255; } } }
   let refs = (meta.refs || []).filter(Boolean), refSel = null;
   const EX = meta.exam || null;
@@ -908,7 +912,7 @@ TT.open = async (el, id) => {
       mg.filter = 'none'; mg.globalCompositeOperation = 'source-in'; mg.fillStyle = '#d4483e'; mg.fillRect(0, 0, W, H);
       g.globalCompositeOperation = 'multiply'; g.globalAlpha = 0.8; g.drawImage(m, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
     } else {
-      /* Healed: overworked skin has pushed ink out, so those parts come back patchy, more of it gone the harder
+      /* Healed: overworked skin has pushed ink out and under-packed areas don't hold it, so those parts come back patchy, more of it gone the harder
          they were worked; blowouts stay for good as a soft blue-grey haze that spreads a little with the years;
          ten years settles the edges only slightly (still crisp) and dulls the colour. */
       const aged = mode === 'aged', [b, a, sat] = aged ? [0.14, 0.8, 0.72] : [0.06, 0.92, 0.92], loss = falloutMask(aged);
@@ -930,10 +934,16 @@ TT.open = async (el, id) => {
   /* Where overworked skin lost ink, as a mask (opaque = ink gone): nothing below swollen, then more the harder it
      was worked, broken up into blotches so it heals patchy rather than evenly lighter. The same blotches every
      time for a piece. */
-  const falloutMask = (aged) => {
-    let any = false; for (let i = 0; i < TP.length; i++) if (TP[i] > 0.9) { any = true; break; } if (!any) return null;
+  /* Solid-looking areas heal by how well they were packed: a cell with few needle hits, or far fewer than the solid
+     area around it, drops out even though it looked saturated when fresh. Lines and light shading aren't affected. */
+  const underPacked = () => { const out = new Float32Array(tw * th), R0 = Math.max(2, Math.round(1.5 * mm / TS)); let any = false;
+    for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { const i = y * tw + x, h = HC[i]; if (h <= 0) continue; const j = (Math.min(H - 1, y * TS + 2) * W + Math.min(W - 1, x * TS + 2)) * 4; if (densAt(j) < 0.6) continue; let n = 0, on = 0, sum = 0; for (let b = Math.max(0, y - R0); b <= Math.min(th - 1, y + R0); b++) for (let a = Math.max(0, x - R0); a <= Math.min(tw - 1, x + R0); a++) { n++; const v = HC[b * tw + a]; if (v > 0) { on++; sum += v; } } if (on / n < 0.75) continue;
+      const v = Math.max(Math.max(0, Math.min(1, (180 - h) / 120)) * 0.55, Math.max(0, Math.min(1, (0.8 - h / (sum / on)) / 0.4)) * 0.8); if (v > 0) { out[i] = v; any = true; } }
+    return any ? out : null; };
+  const falloutMask = (aged) => { const patch = underPacked();
+    let any = !!patch; if (!any) for (let i = 0; i < TP.length; i++) if (TP[i] > 0.9) { any = true; break; } if (!any) return null;
     const sev = document.createElement('canvas'); sev.width = tw; sev.height = th; const sg = sev.getContext('2d'), si = sg.createImageData(tw, th);
-    for (let i = 0; i < TR.length; i++) { const v = Math.max(0, Math.min(1, (TP[i] - 0.9) / 1.3)); si.data[i * 4 + 3] = Math.round(Math.min(1, v * (aged ? 1.1 : 1)) * 255); }
+    for (let i = 0; i < TR.length; i++) { const v = Math.max(Math.max(0, Math.min(1, (TP[i] - 0.9) / 1.3)), patch ? patch[i] : 0); si.data[i * 4 + 3] = Math.round(Math.min(1, v * (aged ? 1.1 : 1)) * 255); }
     sg.putImageData(si, 0, 0);
     let s = (id * 2654435761) >>> 0 || 7; const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let x = Math.imul(s ^ (s >>> 15), 1 | s); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
     const m = document.createElement('canvas'); m.width = Math.ceil(W / 2); m.height = Math.ceil(H / 2); const mg = m.getContext('2d');
@@ -1093,6 +1103,7 @@ TT.open = async (el, id) => {
   const tmReport = (T, res) => { const c = EX.cur || {}, tm = c.tm || { by: {} }, r1 = (v) => Math.round(v * 10) / 10, by = {}; for (const id in tm.by) { const n = tm.by[id]; by[id] = { seconds: r1(n.ms / 1000), travelMm: Math.round(n.mm), mmPerSec: r1(n.mm / Math.max(0.001, n.ms / 1000)), speedAvg: r1(n.vm), speedSd: r1(Math.sqrt(n.vs / Math.max(1, n.n))), depthAvg: +n.dm.toFixed(3), depthSd: +Math.sqrt(n.ds / Math.max(1, n.n)).toFixed(3), strokes: n.strokes, turnPerMm: +(n.turn / Math.max(1, n.mm)).toFixed(3), sameWay30mm: n.abs ? +(n.net / n.abs).toFixed(3) : null, cw: Math.round(n.cw), ccw: Math.round(n.ccw), reversalsPer10mm: +(n.rev / Math.max(1, n.mm) * 10).toFixed(3), dipReversalsPer10mm: +(n.revDip / Math.max(1, n.mm) * 10).toFixed(3), turnFlipsPer10mm: +(n.flips / Math.max(1, n.mm) * 10).toFixed(3), hist: Object.fromEntries(['speed', 'gap', 'depth', 'pressure', 'tilt', 'radius', 'run', 'stroke'].filter(k => n[k]).map(k => [k, n[k].map(Math.round)])) }; }
     const hm = c.hm || [], box = T.pack; let passes = null; if (box) { const v = []; for (let j = 2; j < box[3] * 2 - 2; j++) for (let i = 2; i < box[2] * 2 - 2; i++) v.push(hm[j * 30 + i] || 0); const s = [...v].sort((a, b) => a - b), m = v.reduce((a, b) => a + b, 0) / Math.max(1, v.length); passes = { mean: r1(m), sd: r1(Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / Math.max(1, v.length))), min: s[0], p10: s[Math.floor(s.length * 0.1)], median: s[Math.floor(s.length / 2)], p90: s[Math.floor(s.length * 0.9)], max: s[s.length - 1] }; }
     return { inkforge_stats: 1, build: TT_BUILD, lesson: EX.lesson, task: T.id, when: new Date().toISOString(), grade: ttGrade(res.total), total: res.total, parts: res.parts, skin: res.skin, traumaMax: res.traumaMax, traumaAvg: res.traumaAvg, blowouts: res.blowouts, blowSpots: (c.spots || []).map(s => s[2]), undos: res.undos || 0, lasers: res.lasers || 0, penalty: res.penalty || 0, dips: c.dips || 0, needleSeconds: r1(Object.values(tm.by).reduce((a, n) => a + n.ms, 0) / 1000), pauses: tm.pauses || 0, pauseSeconds: Math.round((tm.pauseMs || 0) / 1000), zoomHist: (tm.zoom || []).map(Math.round), passes, needles: by, edges: TM_EDGES, settings: { cal: { ...cal }, look: { thin: nlook.thin, tex: nlook.tex }, stretch: st.stretch, skin: st.skin, feel: JSON.parse(Settings.get('tt_feel', '{}')) }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } }; };
+  const hcAdd = (q, r) => { const R0 = Math.max(TS, r), x0 = Math.max(0, Math.floor((q.x - R0) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + R0) / TS)), y0 = Math.max(0, Math.floor((q.y - R0) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + R0) / TS)); for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (Math.hypot((x + 0.5) * TS - q.x, (y + 0.5) * TS - q.y) <= R0) HC[y * tw + x]++; };
   const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(b[2] * 2 - 1, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(b[3] * 2 - 1, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
   const packMotion = (d, depth) => { const m = EX.cur.mv ||= { all: 0, fast: 0, n: 0, vm: 0, vs: 0, dm: 0, ds: 0 }, l = d / mm, v = pen.speed || 0; m.all += l; if (v > 110) m.fast += l; m.n++; const a = v - m.vm; m.vm += a / m.n; m.vs += a * (v - m.vm); const b = depth - m.dm; m.dm += b / m.n; m.ds += b * (depth - m.dm); };
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
@@ -1123,7 +1134,7 @@ TT.open = async (el, id) => {
         const q = { x: pen.last.x + dx * t / d, y: pen.last.y + dy * t / d };
         let inkC = st.tool === 'erase' ? 1 : Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake();
         if (st.tool !== 'erase' && pen.cx.pig) {
-          const t0 = trAt(q); if (packB) packHit(packB, q);
+          const t0 = trAt(q); hcAdd(q, pen.foot); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) / ((cal.tough || 1) * TT_TOUGH));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * 3 * Math.pow(0.3 / blowSize(), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
@@ -2447,13 +2458,14 @@ TT.open = async (el, id) => {
     const tc = document.createElement('canvas'); tc.width = tw; tc.height = th; const tg = tc.getContext('2d'), ti = tg.createImageData(tw, th);
     for (let i = 0; i < TR.length; i++) { const v = Math.min(255, Math.round(TR[i] / 2 * 255)); ti.data[i * 4] = v; ti.data[i * 4 + 1] = Math.min(255, Math.round(TP[i] / 2 * 255)); ti.data[i * 4 + 2] = Math.round(BU[i] * 255); ti.data[i * 4 + 3] = 255; }
     tg.putImageData(ti, 0, 0);
+    let hcRef = null; if (HC.some(v => v > 0)) { const hc = document.createElement('canvas'); hc.width = tw; hc.height = th; const hg = hc.getContext('2d'), hi = hg.createImageData(tw, th); for (let i = 0; i < HC.length; i++) { const v = Math.min(255, Math.round(20 * Math.log2(1 + HC[i]))); hi.data[i * 4] = hi.data[i * 4 + 1] = hi.data[i * 4 + 2] = v; hi.data[i * 4 + 3] = 255; } hg.putImageData(hi, 0, 0); hcRef = await Media.save(await blobOf(hc), 'png'); }
     const skinRef = TR.some(v => v > 0.004) ? await Media.save(await blobOf(tc), 'png') : null, blowRef = await Media.save(await blobOf(blowC), 'png');
     const tlDrop = [];
     if (TL.fresh.length) { for (const b of TL.fresh.splice(0)) TL.refs.push(await Media.save(b, 'jpg'));
       while (TL.refs.length > TL_MAX) { const n = TL.refs.length, odd = (i) => i % 2 && i !== n - 1; tlDrop.push(...TL.refs.filter((_, i) => odd(i))); TL.refs = TL.refs.filter((_, i) => !odd(i)); } }
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        (keepPrefs(), JSON.stringify({ layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
+        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined, tl: TL.refs, stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -2742,7 +2754,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0)); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0)); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
@@ -2910,14 +2922,17 @@ TT.open = async (el, id) => {
     const m = Math.round(8 * mm), spots = EX.cur?.spots || [], severe = spots.filter(s => s[2] >= TT_BLOW_SEVERE); for (const s of spots) { x0 = Math.min(x0, s[0]); y0 = Math.min(y0, s[1]); x1 = Math.max(x1, s[0]); y1 = Math.max(y1, s[1]); }
     x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(W, x1 + m); y1 = Math.min(H, y1 + m); if (severe.length) { const need = Math.round(90 * mm) - (x1 - x0); if (need > 0) { x0 = Math.max(0, x0 - Math.ceil(need / 2)); x1 = Math.min(W, x1 + Math.ceil(need / 2)); } } const cw = x1 - x0, ch = y1 - y0, c = document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
     g.fillStyle = '#101314'; g.fillRect(0, 0, cw, ch); g.globalAlpha = 0.4; g.drawImage(composite(1), -x0, -y0); g.globalAlpha = 1;
-    const im = g.getImageData(0, 0, cw, ch), D = im.data, bl = (() => { const bc = document.createElement('canvas'); bc.width = W; bc.height = H; const bg = bc.getContext('2d'); bg.drawImage(blowC, 0, 0, W, H); return bg.getImageData(0, 0, W, H).data; })(), put = (i, r, gg, b) => { D[i] = r; D[i + 1] = gg; D[i + 2] = b; }, third = [0, 0, 0], hm = EX.cur?.hm || [], hmN = hm.filter(v => v > 0), hmM = hmN.reduce((a, v) => a + v, 0) / Math.max(1, hmN.length), hmv = (x, y) => (hm[Math.floor(y * 2) * 30 + Math.floor(x * 2)] || 0) / Math.max(1, hmM); let miss = 0, cn = 0, sx = 0, sy = 0;
+    const im = g.createImageData(cw, ch), D = im.data, bl = (() => { const bc = document.createElement('canvas'); bc.width = W; bc.height = H; const bg = bc.getContext('2d'); bg.drawImage(blowC, 0, 0, W, H); return bg.getImageData(0, 0, W, H).data; })(), put = (i, r, gg, b) => { D[i] = r; D[i + 1] = gg; D[i + 2] = b; D[i + 3] = 255; }, third = [0, 0, 0], hm = EX.cur?.hm || [], hmN = hm.filter(v => v > 0), hmM = hmN.reduce((a, v) => a + v, 0) / Math.max(1, hmN.length), hmv = (x, y) => (hm[Math.floor(y * 2) * 30 + Math.floor(x * 2)] || 0) / Math.max(1, hmM); let miss = 0, cn = 0, sx = 0, sy = 0;
     for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const px = x + x0, py = y + y0, j = (py * W + px) * 4, i = (y * cw + x) * 4, d = densAt(j), tp = TP[Math.floor(py / TS) * tw + Math.floor(px / TS)];
       if (tp > 1) put(i, 120, 60, 170);
       if (bl[j + 3] > 40) put(i, 60, 130, 255);
       if (d > 0.2 && band[j + 3] < 30) put(i, 255, 150, 40);
-      if (T.pack && core[j + 3] > 128) { cn++; const hv = hmv((px / mm - T.pack[0]), (py / mm - T.pack[1])); if (d > 0.7 && hv >= 0.75) put(i, 60, 220, 120); else if (d > 0.4 && hv >= 0.5) put(i, 240, 200, 60); else { put(i, 240, 60, 60); miss++; } }
+      if (T.pack && core[j + 3] > 128) { cn++; const hv = hmv((px / mm - T.pack[0]), (py / mm - T.pack[1])); if (!(d > 0.7 && hv >= 0.75)) miss++; }
       else if (core[j + 3] > 128) { cn++; if (d > 0.28) put(i, 60, 220, 120); else { put(i, 240, 60, 60); miss++; sx += px; sy += py; third[Math.min(2, Math.floor((py - y0 - m) / Math.max(1, ch - 2 * m) * 3))]++; } } }
-    g.putImageData(im, 0, 0);
+    const ov = document.createElement('canvas'); ov.width = cw; ov.height = ch; ov.getContext('2d').putImageData(im, 0, 0); g.filter = `blur(${Math.max(2, mm * 0.5)}px)`; g.globalAlpha = 0.55; g.drawImage(ov, 0, 0); g.filter = 'none'; g.globalAlpha = 1; g.drawImage(ov, 0, 0);
+    if (T.pack) { const N = T.pack[2] * 2, pm = document.createElement('canvas'); pm.width = pm.height = N; const pg = pm.getContext('2d'), pi = pg.createImageData(N, N), mix = (a, b, f) => a.map((v, n) => v + (b[n] - v) * f), RED = [235, 60, 60], YEL = [240, 200, 60], GRN = [60, 220, 120], ORG = [255, 150, 40];
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const r = (hm[j * 30 + i] || 0) / Math.max(1, hmM), c0 = r < 0.7 ? RED : r < 0.9 ? mix(RED, YEL, (r - 0.7) / 0.2) : r < 1.05 ? mix(YEL, GRN, (r - 0.9) / 0.15) : r < 1.3 ? GRN : mix(GRN, ORG, Math.min(1, (r - 1.3) / 0.3)), q = (j * N + i) * 4; pi.data[q] = c0[0]; pi.data[q + 1] = c0[1]; pi.data[q + 2] = c0[2]; pi.data[q + 3] = 255; }
+      pg.putImageData(pi, 0, 0); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(pm, T.pack[0] * mm - x0, T.pack[1] * mm - y0, T.pack[2] * mm, T.pack[3] * mm); g.strokeStyle = 'rgba(255,255,255,.7)'; g.lineWidth = Math.max(1, mm * 0.1); g.strokeRect(T.pack[0] * mm - x0, T.pack[1] * mm - y0, T.pack[2] * mm, T.pack[3] * mm); }
     // A ring around every blowout, and for a really bad one, an arrow and the level of disappointment.
     const u = mm, ringR = (s) => Math.min(6, 2.5 + s[2] * 0.1) * u; g.lineWidth = 0.4 * u; g.strokeStyle = '#fff'; for (const s of spots) { g.beginPath(); g.arc(s[0] - x0, s[1] - y0, ringR(s), 0, 7); g.stroke(); }
     let nextY = 2 * u, jk = Math.floor(Math.random() * TT_BLOW_JOKES.length); for (const s of [...severe].sort((a, b) => a[1] - b[1])) { const sx0 = s[0] - x0, sy0 = s[1] - y0, onRight = sx0 < cw / 2, bw = Math.min(cw * 0.42, 30 * u), pad = 1.2 * u, fs = Math.round(2.6 * u); g.font = `700 ${fs}px Inter, sans-serif`;
@@ -2927,7 +2942,7 @@ TT.open = async (el, id) => {
       g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx - Math.cos(ang - 0.45) * hd, ty - Math.sin(ang - 0.45) * hd); g.lineTo(tx - Math.cos(ang + 0.45) * hd, ty - Math.sin(ang + 0.45) * hd); g.closePath(); g.fill();
       g.fillStyle = 'rgba(15,18,19,.94)'; g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh); g.fillStyle = '#ffd24a'; lines.forEach((l, i) => g.fillText(l, bx + pad, by + pad + fs * (i + 0.85) * 1.15)); }
     const notes = [], P = res.parts, big = third.indexOf(Math.max(...third));
-    if (T.pack) { if (P.consistency < 80) notes.push('Yellow and red are patches with fewer passes than the rest, even if they look dark. Keep your circles tight and your speed the same, and overlap every pass.'); if (P.technique < 70) notes.push('Your motion kept changing direction instead of circling one way. That is scrubbing: tight circles or ovals, always turning the same way, moving steadily across.'); if (P.control < 70) notes.push(`Your speed or depth was not steady${EX.cur?.mv?.n ? ` (you averaged about ${Math.round(EX.cur.mv.vm)} mm/s, and ${Math.round((EX.cur.mv.fast || 0) / Math.max(1, EX.cur.mv.all) * 100)}% of your travel was over 110 mm/s)` : ''}. Rushing usually means scrubbing: slow down and keep the same pace and depth.`); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
+    if (T.pack) { if (P.consistency < 80) notes.push('Red and yellow are patches with fewer passes than your average, even if they look dark, and they will heal patchy. Orange got more than the rest. Keep your circles tight and your speed the same, and overlap every pass.'); if (P.technique < 70) notes.push('Your motion kept changing direction instead of circling one way. That is scrubbing: tight circles or ovals, always turning the same way, moving steadily across.'); if (P.control < 70) notes.push(`Your speed or depth was not steady${EX.cur?.mv?.n ? ` (you averaged about ${Math.round(EX.cur.mv.vm)} mm/s, and ${Math.round((EX.cur.mv.fast || 0) / Math.max(1, EX.cur.mv.all) * 100)}% of your travel was over 110 mm/s)` : ''}. Rushing usually means scrubbing: slow down and keep the same pace and depth.`); if (P.saturation < 80) notes.push('It needs more ink overall. Slower, overlapping passes go in darker. Do not dig to get there.'); if (P.spill > 2) notes.push('Orange is ink outside your line. Slow your sweep as you reach the edge and turn back sooner.'); const unused = (T.needles || []).filter(n => !EX.cur?.used?.[n]); if (unused.length) notes.push(`You did not use the ${unused.join(' or ')} this lesson asks for.`); }
     else if (cn && miss / cn > 0.05) notes.push(`Red shows where the line left the stencil or went too light. Most of it is in the ${['top', 'middle', 'bottom'][big]} third. Keep your eye just ahead of the needle and hold your pressure there.`);
     if (!T.pack && P.spill > 2) notes.push('Orange is ink well off the line. Slow your approach and land on the stencil before you pull.');
     if (P.evenness < 75) notes.push('The darkness changes along the line. That usually means your speed or pressure changed, often at the start and end, or where you restarted.');
@@ -2947,10 +2962,11 @@ TT.open = async (el, id) => {
     const statsTxt = JSON.stringify(tmReport(T, res)); if (pass && p.results?.[EX.lesson]?.when && p.results[EX.lesson].total === res.total) { p.results[EX.lesson].stats = statsTxt; await Settings.set('tt_lessons', JSON.stringify(p)); }
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
-      <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
+      <div class="tt-cats tt-lscats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
       ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}
-      ${ttShotHtml(purl, hurl, heat?.notes)}
-      <div class="row" style="gap:6px;margin-top:12px;flex-wrap:wrap"><button class="btn" data-lr="out">Lessons</button><button class="btn" data-lr="close">Close</button><button class="btn" data-lr="copy" data-tip="Copy every stat from this attempt as text, to compare attempts">Copy stats</button><span style="flex:1"></span><button class="btn ${pass ? '' : 'primary'}" data-lr="again">Try again</button>${pass ? '<button class="btn primary" data-lr="out">Continue</button>' : ''}</div></div>`;
+      ${ttChips(statsTxt)}${ttShotHtml(purl, hurl, heat?.notes, !!T.pack)}
+      <div class="row" style="gap:6px;margin-top:12px"><button class="btn ${pass ? '' : 'primary'}" style="flex:1" data-lr="again">Try again</button>${pass ? '<button class="btn primary" style="flex:1" data-lr="out">Continue</button>' : ''}</div>
+      <div class="row" style="gap:6px;margin-top:6px;justify-content:center"><button class="btn small" data-lr="out">Lessons</button><button class="btn small" data-lr="close">Close</button><button class="btn small" data-lr="copy" data-tip="Copy every stat from this attempt as text, to compare attempts">Copy stats</button></div></div>`;
     ttShotBind(o, purl, hurl);
     o.onclick = async (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; if (a === 'copy') { try { await navigator.clipboard.writeText(statsTxt); toast('Stats copied.'); } catch { await askText('Copy these stats:', statsTxt); } return; } o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
     document.body.appendChild(o);
@@ -3120,8 +3136,9 @@ function ttStyle() {
 .tt-wcap { background: #fff; }
 .tt-szq { display: flex; flex-direction: column; gap: 2px; padding: 2px 0; } .tt-szq button { border: 0; border-radius: 6px; background: rgba(255,255,255,.05); color: var(--ink2); font: 700 10px var(--ui); padding: 4px 0; width: 38px; cursor: pointer; }
 .tt-szq button.on { background: rgba(31,182,166,.25); color: var(--teal); }
+#tt-rail { max-height: calc(100% - 20px); overflow-y: auto; scrollbar-width: none; } .dz-ed #tt-rail { max-height: calc(100% - 20px); }
 .tt-volt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0 2px; } .tt-volt b { font: 700 10px var(--ui); color: var(--teal); }
-.tt-volt input { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 110px; margin: 0; accent-color: var(--teal); touch-action: none; } .tt-tray { scrollbar-width: none; } .tt-tray::-webkit-scrollbar { display: none; } body:has(#tt-stage) #toast { top: calc(var(--safe-t, 0px) + 64px); bottom: auto; }
+.tt-volt input { writing-mode: vertical-lr; direction: rtl; width: 22px; height: clamp(56px, 14vh, 110px); margin: 0; accent-color: var(--teal); touch-action: none; } .tt-tray { scrollbar-width: none; } .tt-tray::-webkit-scrollbar { display: none; } body:has(#tt-stage) #toast { top: calc(var(--safe-t, 0px) + 64px); bottom: auto; }
 @media (max-height: 700px) { .tt-tray { top: 10px; transform: none; } } .tt-zoom { left: auto !important; right: 10px !important; bottom: 76px !important; }
 .tt-layers { display: grid; gap: 4px; }
 .tt-refs { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
@@ -3170,6 +3187,9 @@ function ttStyle() {
 .tt-prof button.on { border-color: var(--teal); background: rgba(31,182,166,.15); color: var(--teal); } .tt-prof.big button { padding: 12px 10px; font-size: 14px; }
 #tt-zoom { position: fixed; inset: 0; z-index: 120; background: #0b0d0e; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; } #tt-zoom img { max-width: 100%; max-height: 100%; touch-action: none; user-select: none; cursor: grab; }
 .tt-zbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; align-items: center; padding: 10px 12px; background: rgba(15,18,19,.85); }
+.tt-lsimg { cursor: zoom-in; max-height: 300px; } .tt-lscats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; } @media (max-width: 520px) { .tt-lscats { grid-template-columns: 1fr; } }
+.tt-lschips { display: flex; gap: 6px; margin-top: 10px; } .tt-lschips div { flex: 1; text-align: center; padding: 6px 2px; border: 1px solid var(--line); border-radius: 8px; } .tt-lschips b { display: block; font-size: 15px; } .tt-lschips span { font-size: 11px; color: var(--ink2, #9aa5a6); }
+.tt-lsgrad { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 6px 0 2px; } .tt-lsgrad i { flex: 1; height: 9px; border-radius: 5px; background: linear-gradient(90deg, #eb3c3c 0%, #f0c83c 35%, #3cdc78 55%, #3cdc78 75%, #ff9628 100%); }
 .tt-lsimg { cursor: zoom-in; } .tt-lsheatinfo[hidden] { display: none; } .tt-lsleg { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12px; margin: 6px 0; } .tt-lsleg i { width: 11px; height: 11px; border-radius: 3px; margin-left: 6px; } .tt-lsnotes { margin: 6px 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
 .tt-lsmotion { display: block; width: 100%; max-width: 480px; margin: 10px 0; } .tt-lsmotion .tt-lsmpath { fill: none; stroke: var(--teal); stroke-width: .9; } .tt-lsmotion .tt-lsmarrow { fill: none; stroke: var(--ink2, #999); stroke-width: 1.2; }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
