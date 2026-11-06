@@ -537,6 +537,7 @@ TT.open = async (el, id) => {
     return c; })();
   const trRed = document.createElement('canvas'), trMask = document.createElement('canvas'), trTex = document.createElement('canvas');
   trRed.width = trMask.width = tw; trRed.height = trMask.height = th; trTex.width = Math.ceil(W / 2); trTex.height = Math.ceil(H / 2);
+  const trGlow = document.createElement('canvas'), trPuff = document.createElement('canvas'); trGlow.width = trPuff.width = tw; trGlow.height = trPuff.height = th; const glowG = trGlow.getContext('2d'), puffG = trPuff.getContext('2d');
   const buildTrauma = () => {
     const rg = trRed.getContext('2d'), mg = trMask.getContext('2d'), ri = rg.createImageData(tw, th), mi = mg.createImageData(tw, th);
     for (let i = 0; i < TR.length; i++) { const t = TR[i], j = i * 4; if (!t) continue;
@@ -546,18 +547,29 @@ TT.open = async (el, id) => {
     const tg = trTex.getContext('2d'); tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, trTex.width, trTex.height);
     tg.fillStyle = tg.createPattern(patty, 'repeat'); tg.fillRect(0, 0, trTex.width, trTex.height);
     tg.globalCompositeOperation = 'destination-in'; tg.imageSmoothingEnabled = true; tg.drawImage(trMask, 0, 0, trTex.width, trTex.height); tg.globalCompositeOperation = 'source-over';
-    // the bumps: a raised red dot with a little shine, placed the same way each time
+    // Sores: tiny raised pimples, a pinprick with a flush round it and a speck of shine, each a little different.
     const bs = trTex.width / tw;
     for (let i = 0; i < BU.length; i++) { const b = BU[i]; if (b < 0.15) continue; const h = Math.imul(i, 2654435761) >>> 0;
-      const px = ((i % tw) + 0.2 + (h & 255) / 255 * 0.6) * bs, py = (Math.floor(i / tw) + 0.2 + ((h >> 8) & 255) / 255 * 0.6) * bs, r = (0.35 + b * 0.5) * mm / 2;
-      const gr = tg.createRadialGradient(px - r * 0.3, py - r * 0.3, 0, px, py, r); gr.addColorStop(0, 'rgba(240,150,140,.95)'); gr.addColorStop(0.45, 'rgba(200,62,55,.9)'); gr.addColorStop(1, 'rgba(170,40,36,0)');
-      tg.fillStyle = gr; tg.beginPath(); tg.arc(px, py, r, 0, 7); tg.fill(); }
+      const px = ((i % tw) + 0.2 + (h & 255) / 255 * 0.6) * bs, py = (Math.floor(i / tw) + 0.2 + ((h >> 8) & 255) / 255 * 0.6) * bs, r = (0.2 + b * 0.22 + ((h >> 16) & 255) / 255 * 0.14) * mm / 4;
+      let gr = tg.createRadialGradient(px, py, r * 0.4, px, py, r * 2.6); gr.addColorStop(0, 'rgba(205,60,52,.42)'); gr.addColorStop(1, 'rgba(205,60,52,0)'); tg.fillStyle = gr; tg.beginPath(); tg.arc(px, py, r * 2.6, 0, 7); tg.fill();
+      gr = tg.createRadialGradient(px - r * 0.3, py - r * 0.35, 0, px, py, r); gr.addColorStop(0, 'rgba(236,128,116,.95)'); gr.addColorStop(0.6, 'rgba(186,48,44,.95)'); gr.addColorStop(1, 'rgba(140,28,28,.85)'); tg.fillStyle = gr; tg.beginPath(); tg.arc(px, py, r, 0, 7); tg.fill();
+      tg.fillStyle = 'rgba(110,18,20,.85)'; tg.beginPath(); tg.arc(px, py, Math.max(0.35, r * 0.22), 0, 7); tg.fill();
+      tg.fillStyle = 'rgba(255,240,235,.75)'; tg.beginPath(); tg.arc(px - r * 0.38, py - r * 0.42, Math.max(0.25, r * 0.16), 0, 7); tg.fill(); }
+    // Swelling and the flush round it: the wear spread out a few mm (three box blurs), as a red halo and as raised, lit skin.
+    { const R = Math.max(2, Math.round(2.5 * mm / TS)), A = Float32Array.from(TR), B = new Float32Array(TR.length), blur = (S, D, n, step, lines, len) => { for (let l = 0; l < lines; l++) { let s = 0; const at = (k) => S[l * n + Math.max(0, Math.min(len - 1, k)) * step]; for (let k = -R; k <= R; k++) s += at(k); for (let k = 0; k < len; k++) { D[l * n + k * step] = s / (2 * R + 1); s += at(k + R + 1) - at(k - R); } } };
+      for (let p = 0; p < 2; p++) { blur(A, B, tw, 1, th, tw); blur(B, A, 1, tw, tw, th); }
+      const gi = glowG.createImageData(tw, th), pi = puffG.createImageData(tw, th);
+      for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { const i = y * tw + x, j = i * 4, v = A[i]; if (v < 0.01) continue;
+        gi.data[j] = 216; gi.data[j + 1] = 78; gi.data[j + 2] = 66; gi.data[j + 3] = Math.min(135, Math.max(0, v - 0.12) * 190);
+        const sh = ((A[i - 1] ?? v) - (A[i + 1] ?? v) + (A[i - tw] ?? v) - (A[i + tw] ?? v)) * 7 * Math.min(1, v * 1.5), lit = sh < 0; pi.data[j] = pi.data[j + 1] = pi.data[j + 2] = lit ? 255 : 60; pi.data[j + 3] = Math.min(70, Math.abs(sh) * 255); }
+      glowG.putImageData(gi, 0, 0); puffG.putImageData(pi, 0, 0); }
     trDirty = false; trT = performance.now();
   };
   // The skin under and over the ink: redness and blowouts beneath, the swollen, raw texture on top.
-  const skinUnder = (g, withTrauma) => { if (withTrauma) { g.globalCompositeOperation = 'multiply'; g.drawImage(trRed, 0, 0, W, H); }
+  const skinUnder = (g, withTrauma) => { if (withTrauma) { g.globalCompositeOperation = 'multiply'; g.drawImage(trGlow, 0, 0, W, H); g.drawImage(trRed, 0, 0, W, H); }
     g.globalCompositeOperation = 'multiply'; g.drawImage(blowC, 0, 0, W, H); g.globalCompositeOperation = 'source-over'; };
-  const skinOver = (g) => { g.globalAlpha = 0.85; g.drawImage(trTex, 0, 0, W, H); g.globalAlpha = 1; };
+  // Redness shows through the ink, the swelling lifts the skin, and the raw texture and sores sit on top.
+  const skinOver = (g) => { g.globalAlpha = 0.3; g.drawImage(trRed, 0, 0, W, H); g.globalAlpha = 1; g.drawImage(trPuff, 0, 0, W, H); g.globalAlpha = 0.85; g.drawImage(trTex, 0, 0, W, H); g.globalAlpha = 1; };
   // Blowout: ink spread under the skin round p, bluer and softer than the line, and the skin raised over it.
   const blowAt = (p, risk, footR) => { if (CHEAT) return;
     if (EX?.cur) EX.cur.blow = (EX.cur.blow || 0) + 1; SS.blow++;
@@ -857,16 +869,17 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) / (cal.tough || 1));   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          // Light passes add up too (whipping over and over chews the skin), and skin already worked gets worse faster.
+          { const gs = Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1), wdt = Math.min(2, 1.1 * mm / pen.foot), vv = Math.pow(volt() / 7, 2) / (cal.tough || 1); trAdd(q, pen.foot, (0.0128 * depth * depth + 0.0036 * depth) * gs * wdt * vv * (1 + 1.4 * Math.min(2, t0))); }   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * Math.pow(0.3 / (feel.size || 0.3), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
           if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
         }
         if (st.tool !== 'erase' && pen.cx.pig && !CHEAT) {   // too deep or too much voltage raises little red bumps
-          const bump = Math.max(0, Math.min(1, (depth - 0.85) / 0.2)) + Math.max(0, Math.min(1, (volt() - 8.2) / 1.8));
+          const bump = Math.max(0, Math.min(1, (depth - 0.85) / 0.2)) + Math.max(0, Math.min(1, (volt() - 8.2) / 1.8)) + Math.max(0, Math.min(1, (trAt(q) - 0.75) / 0.7));
           if (bump > 0 && Math.random() < 0.12 * bump) { buAdd({ x: q.x + (Math.random() - 0.5) * pen.foot * 2, y: q.y + (Math.random() - 0.5) * pen.foot * 2 }, 0.3 * bump); SS.bumps = (SS.bumps || 0) + 1;
-            if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or the machine running too hard irritates the skin.', 3500); } } }
+            if (!told.bump) { told.bump = 1; toast('Red bumps: too deep, too many passes or the machine running too hard irritates the skin.', 3500); } } }
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
         setRoll(ev, turnOf(pen.a, ev)); st.lastD = depth;
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
