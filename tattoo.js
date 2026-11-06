@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 255;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 256;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -455,7 +455,7 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
   { id: 'l-curve', lesson: '1-4', cat: 'line', diff: 1, title: 'Curves', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, arcs: [[78, 42, 15, -30, -270], [78, 79, 22, -90, 245]],
     text: 'Black ink, 5RL. Follow the S and on around the circle, with the same weight of line all the way. You can stop and restart. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
     path: (g) => { g.moveTo(78 + 15 * Math.cos(-Math.PI / 6), 42 + 15 * Math.sin(-Math.PI / 6)); g.arc(78, 42, 15, -Math.PI / 6, -1.5 * Math.PI, true); g.arc(78, 79, 22, -Math.PI / 2, 245 * Math.PI / 180); } },
-  { id: 'l-flag', lesson: '1-5', cat: 'line', diff: 1, title: 'The flag', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, geom: TT_FLAG, joints: [[45, 36], [45, 70], [45, 30], [77.5, 36], [77.5, 70]],
+  { id: 'l-flag', lesson: '1-5', cat: 'line', diff: 1, title: 'The flag', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, geom: TT_FLAG, joints: [[45, 36], [45, 70], [45, 30], [110, 36], [110, 70]],
     corners: [[110, 36, 1, -1, 0, 'Top right'], [110, 70, 1, 1, 0, 'Bottom right'], [45, 36, -1, -1, 1, 'Top edge at the pole'], [45, 70, -1, -1, 1, 'Bottom edge at the pole']],
     text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
     path: (g) => ttGeomDraw(g, TT_FLAG) }];
@@ -2728,8 +2728,12 @@ TT.open = async (el, id) => {
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
   // How steady the line's thickness stays along a shape: the ink's width across the line at each step, away from where lines meet.
-  const weightScore = (segs, joints = []) => { const ws = []; for (const q of ttGeomPts(segs)) { if (joints.some(j => Math.hypot(j[0] - q.x, j[1] - q.y) < 3.5)) continue; let c = 0;
-      for (let o = -2.5; o <= 2.5; o += 1 / mm) { const X = Math.round((q.x + o * q.nx) * mm), Y = Math.round((q.y + o * q.ny) * mm); if (X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.2) c++; }
+  const weightScore = (segs, joints = []) => { const ws = []; for (const q of ttGeomPts(segs)) { if (joints.some(j => Math.hypot(j[0] - q.x, j[1] - q.y) < 5)) continue; let c = 0;
+      const hit = (o) => { const X = Math.round((q.x + o * q.nx) * mm), Y = Math.round((q.y + o * q.ny) * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.2; };
+      if (joints.length) { // several lines close together: measure only the stroke nearest the stencil, so a neighbouring line isn't read as thickness
+        let o0 = null; for (let d = 0; d <= 2.5 && o0 == null; d += 1 / mm) { if (hit(d)) o0 = d; else if (hit(-d)) o0 = -d; }
+        if (o0 != null) { c = 1; for (let o = o0 + 1 / mm; o <= o0 + 2.5 && hit(o); o += 1 / mm) c++; for (let o = o0 - 1 / mm; o >= o0 - 2.5 && hit(o); o -= 1 / mm) c++; } }
+      else for (let o = -2.5; o <= 2.5; o += 1 / mm) if (hit(o)) c++;
       if (c) ws.push(c / mm); }
     if (ws.length < 10) return 0; const m = ws.reduce((a, b) => a + b, 0) / ws.length, sd = Math.sqrt(ws.reduce((a, b) => a + (b - m) * (b - m), 0) / ws.length); return Math.round(100 * (1 - clamp01(sd / m / 0.5))); };
   /* Each corner, from [x, y, out x, out y]: ink has to reach the point itself, stay out of the diagonal just inside it
