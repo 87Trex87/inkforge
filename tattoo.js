@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 267;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 268;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -2804,7 +2804,7 @@ TT.open = async (el, id) => {
   const packScore = (b) => { const m = 0.6; let n = 0, solid = 0, sum = 0; for (let cx = b[0] + m; cx < b[0] + b[2] - m; cx += 1) for (let cy = b[1] + m; cy < b[1] + b[3] - m; cy += 1) { for (let x = Math.round(cx * mm); x < (cx + 1) * mm; x += 2) for (let y = Math.round(cy * mm); y < (cy + 1) * mm; y += 2) { const d = densAt((y * W + x) * 4); n++; sum += d; if (d > 0.7) solid++; } }
     const hm = EX.cur?.hm || [], pc = []; for (let i = 2; i + 1 < b[2] * 2 - 2; i += 2) for (let j = 2; j + 1 < b[3] * 2 - 2; j += 2) pc.push((hm[j * 30 + i] || 0) + (hm[j * 30 + i + 1] || 0) + (hm[(j + 1) * 30 + i] || 0) + (hm[(j + 1) * 30 + i + 1] || 0));
     const mean = pc.reduce((a, v) => a + v, 0) / Math.max(1, pc.length), sd = Math.sqrt(pc.reduce((a, v) => a + (v - mean) * (v - mean), 0) / Math.max(1, pc.length)), low = pc.filter(v => v < mean * 0.6).length / Math.max(1, pc.length);
-    const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = mean > 0 ? clamp01(1 - sd / mean / 0.6 - low * 1.5) * Math.min(1, sat / 0.5) : 0, sp = spillOut(inBox(b), 1.2), mv = EX.cur?.mv, ctrl = mv?.n > 1 ? (1 - clamp01((Math.sqrt(mv.vs / mv.n) / Math.max(1, mv.vm) - 0.5) / 0.6)) * (1 - clamp01((Math.sqrt(mv.ds / mv.n) / Math.max(0.05, mv.dm) - 0.1) / 0.35)) * (1 - clamp01(mv.fast / mv.all)) : 0;
+    const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = mean > 0 ? clamp01(1 - sd / mean / 0.6 - low * 1.5) * Math.min(1, sat / 0.5) : 0, sp = spillOut(inBox(b), 1.2), mv = EX.cur?.mv, ctrl = mv?.n > 1 ? (1 - clamp01((Math.sqrt(mv.vs / mv.n) / Math.max(1, mv.vm) - 0.5) / 0.6)) * (1 - clamp01((Math.sqrt(mv.ds / mv.n) / Math.max(0.05, mv.dm) - 0.12) / 0.5)) * (1 - clamp01(mv.fast / mv.all)) : 0;
     // Technique, set from side by side stats: real circles turned the same way 0.90 of the time and flipped 0.13 times per 10 mm; a scrub at the same speed 0.17 and 1.15.
     const rs = EX.cur?.tm?.by?.['7RS'], same = rs?.abs ? rs.net / rs.abs : 0, flips = rs?.mm ? rs.flips / rs.mm * 10 : 9, tech = clamp01((same - 0.3) / 0.5) * clamp01(1 - (flips - 0.2) / 0.6);
     return { score: Math.round(100 * cov * (0.2 * sat + 0.65 * cons + 0.15 * (1 - sp)) * (0.5 + 0.5 * ctrl) * (0.3 + 0.7 * tech)), technique: Math.round(tech * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100) }; };
