@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 287, when: '2026-11-07T14:59', added: ['Open last lesson brings back your most recent finished lesson, even after closing the app, with its pictures, stats and PDF.', 'Open last challenge does the same for challenges.'],
+    test: ['Finish a lesson, close the app fully, reopen it and press Open last lesson. Is everything there?', 'Finish a challenge, close the app fully, reopen it and press Open last challenge. Does Save PDF work?'] },
   { build: 285, when: '2026-11-07T14:21', added: ['The main Settings screen is now split into tabs, so everything is easier to find with less scrolling.', 'The build number now shows on the workspace screen when you open the app.'],
     test: ['Go through each Settings tab. Can you find everything, and do your changes still save?', 'Open the app and check the build number on the workspace screen matches this note.'] },
   { build: 282, when: '2026-11-07T13:56', added: ['The simulator\'s sliders panel is now split into tabs, with the things you use most on the first one and less scrolling.'],
