@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 285, when: '2026-11-07T14:21', added: ['The main Settings screen is now split into tabs, so everything is easier to find with less scrolling.', 'The build number now shows on the workspace screen when you open the app.'],
+    test: ['Go through each Settings tab. Can you find everything, and do your changes still save?', 'Open the app and check the build number on the workspace screen matches this note.'] },
   { build: 282, when: '2026-11-07T13:56', added: ['The simulator\'s sliders panel is now split into tabs, with the things you use most on the first one and less scrolling.'],
     test: ['Open the sliders and go through each tab. Can you find everything, and does anything feel in the wrong place?'] },
   { build: 280, when: '2026-11-07T13:44', added: ['You can now reset a single lesson to start it over, or reset all lessons. A single reset keeps it unlocked, and your next try becomes the new best.', 'Challenges and the apprentice exam can be reset too, one challenge at a time or all at once.'],
