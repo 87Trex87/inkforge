@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 279;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 280;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -359,7 +359,7 @@ TT.hub = async (el) => {
   el.innerHTML = `<div class="tt-hub">
     <div class="row" style="margin-bottom:12px;gap:8px;flex-wrap:wrap"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
       <div class="tt-hubsum"><span><b>${done}</b> / ${TT_CH.length} done</span><span>${ttMedalIco(TT_MEDALS[0], 18)}<b>${golds}</b> gold</span><span>${ttCup('gold', 18)}<b>${cups}</b> / ${TT_TROPHIES.length} trophies</span></div>
-      <span style="flex:1"></span><button class="btn" id="tt-sheet">Results sheet</button></div>
+      <span style="flex:1"></span><button class="btn" id="tt-sheet">Results sheet</button>${done || a.exam.length ? '<button class="btn" id="tt-chreset" data-tip="Clear challenge scores or exam results">Reset…</button>' : ''}</div>
     <div class="tt-chskin"><span class="lbl" style="margin:0">Skin for challenges and the exam</span>
       <div class="tt-skins" style="margin:0">${TT_SKINS.map(([n, c], i) => `<button data-chskin="${i}" class="${i === si ? 'on' : ''}" style="background:${c}" data-tip="${n}${TT_SKIN_NOTE[i] ? ': ' + TT_SKIN_NOTE[i] : ''}" aria-label="${n}"></button>`).join('')}</div>
       <span class="muted" style="font-size:12px">${TT_SKINS[si][0]}${TT_SKIN_NOTE[si] ? ' · ' + TT_SKIN_NOTE[si] : ''}</span></div>
@@ -369,9 +369,15 @@ TT.hub = async (el) => {
       const off = noCol && ttIsColour(c);
       return `<button class="tt-chc ${off ? 'off' : ''}" data-ch="${c.id}" ${off ? 'data-tip="No colour on this skin"' : ''}><div class="tt-chimg"><img src="${ttExGen(c, skin)}" alt=""></div>
         <div class="tt-chmeta"><b>${esc(ttShort(c.title))}</b><span>${ttStars(c.diff)} ${c.needle}</span>
-        <span class="tt-chpb">${p ? `${ttMedalIco(m)} Best ${p.best}` : '<i class="muted">Not tried yet</i>'}</span></div></button>`; }).join('')}</div>`).join('')}
+        <span class="tt-chpb">${p ? `${ttMedalIco(m)} Best ${p.best} <i class="tt-chr" data-chr="${c.id}" data-tip="Clear this challenge's best score">Reset</i>` : '<i class="muted">Not tried yet</i>'}</span></div></button>`; }).join('')}</div>`).join('')}
   </div>`;
-  el.onclick = async (e) => { const k = e.target.closest('[data-chskin]'); if (k) { await Settings.set('tt_chskin', +k.dataset.chskin); return TT.hub(el); }
+  // After scores are cleared, trophies stay only if what's left still earns them.
+  const keepTrophies = (A) => { for (const tr of TT_TROPHIES) if (A.trophies[tr.id] && !tr.test(A)) delete A.trophies[tr.id]; };
+  const dropExamPieces = async () => { const rows = await DB.all('SELECT * FROM tattoo_pieces'); for (const r of rows) { let m = {}; try { m = JSON.parse(r.meta || '{}'); } catch {} if (!m.exam || m.exam.mode === 'ch') continue; await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]); for (const k2 of ['thumb_ref', 'skin_ref', 'blow_ref', ...TT_LAYERS.map(([l]) => l + '_ref')]) await Media.release(r[k2]); for (const f of m.tl || []) await Media.release(f); } };
+  el.onclick = async (e) => { const cr = e.target.closest('[data-chr]')?.dataset.chr; if (cr) { e.stopPropagation(); const T = TT_CH.find(c => c.id === cr); if (!await ask(`Reset "${ttShort(T.title)}"? Its best score and history are cleared. Your next attempt becomes the new best.`)) return; const A = TT.aw.get(); delete A.pb[cr]; A.log = A.log.filter(l => l.id !== cr); keepTrophies(A); TT.aw.put(A); return TT.hub(el); }
+    if (e.target.closest('#tt-chreset')) { const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.innerHTML = '<div class="card" style="margin:auto;max-width:380px"><h2 style="margin-top:0">Reset</h2><p class="muted" style="margin-top:0">Clears scores so you can start over. Copies in your portfolio stay.</p><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" data-pk="">Cancel</button><span style="flex:1"></span><button class="btn" data-pk="ch">Challenges</button><button class="btn" data-pk="exam">Exam</button></div></div>'; o.onclick = (ev) => { const b = ev.target.closest('[data-pk]'); if (b) { o.remove(); res(b.dataset.pk); } }; document.body.appendChild(o); }); if (!pick) return;
+      if (!await ask(pick === 'ch' ? 'Reset all challenges? Every best score, the history and the trophies they earned are cleared.' : 'Reset the apprentice exam? All exam results and exam pieces, finished or unfinished, are deleted.')) return; const A = TT.aw.get(); if (pick === 'ch') { A.pb = {}; A.log = []; } else { A.exam = []; await dropExamPieces(); } keepTrophies(A); TT.aw.put(A); return TT.hub(el); }
+    const k = e.target.closest('[data-chskin]'); if (k) { await Settings.set('tt_chskin', +k.dataset.chskin); return TT.hub(el); }
     const c = e.target.closest('[data-ch]'); if (c) return ttChStart(c.dataset.ch); if (e.target.closest('#tt-sheet')) return TT.sheet(); };
 };
 
@@ -523,10 +529,13 @@ const ttLessonPic = (pic) => { if (!pic) return '';
 TT.lessons = (el) => { ttStyle();
   if (TT.lessonBack) { const b = TT.lessonBack; TT.lessonBack = null; return TT.lesson(el, b.id, b.i); }
   const p = ttLessonProg();
-  el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">Lessons</b><span class="muted" style="font-size:12px">Build ${TT_BUILD}</span></div>
+  el.innerHTML = `<div class="tt-hub"><div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">Lessons</b><span class="muted" style="font-size:12px">Build ${TT_BUILD}</span>${Object.keys(p.done).length ? '<button class="btn small" data-lsall data-tip="Clear every lesson and lock them again">Reset all</button>' : ''}</div>
     ${TT_LESSONS.map(c => `<div class="letter">${c.name}</div>${c.lessons.length ? `<div class="tt-lslist">${c.lessons.map(l => { const open = ttLessonOpen(l.id, p), ready = !!l.steps?.length, can = open && ready;
-      return `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="tt-lsrow ${can ? '' : 'off'}" style="flex:1" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>${p.results?.[l.id] ? `<button class="btn small" data-lres="${l.id}">Result</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
-  el.onclick = (e) => { const v = e.target.closest('[data-lres]'); if (v) return ttLessonResult(v.dataset.lres); const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
+      return `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="tt-lsrow ${can ? '' : 'off'}" style="flex:1" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>${p.results?.[l.id] ? `<button class="btn small" data-lres="${l.id}">Result</button>` : ''}${p.best?.[l.id] != null || p.results?.[l.id] ? `<button class="btn small" data-lsone="${l.id}" data-tip="Clear this lesson's best and result, and keep it unlocked">Reset</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
+  const dropResult = async (P, id) => { const R = P.results?.[id]; if (R?.ref) await Media.release(R.ref); if (R?.heat) await Media.release(R.heat); if (P.results) delete P.results[id]; if (P.best) delete P.best[id]; };
+  el.onclick = async (e) => { const one = e.target.closest('[data-lsone]')?.dataset.lsone; if (one) { const l = ttLessonList().find(x => x.id === one); if (!await ask(`Reset "${l.title}"? Its best score and saved result are cleared, and it stays unlocked. Your next attempt becomes the new best, even if it's lower.`)) return; const P = ttLessonProg(); await dropResult(P, one); await Settings.set('tt_lessons', JSON.stringify(P)); return TT.lessons(el); }
+    if (e.target.closest('[data-lsall]')) { if (!await ask('Reset all lessons? Every score and saved result is cleared, and the lessons lock again from the start. Copies in your portfolio stay.')) return; const P = ttLessonProg(); for (const k of Object.keys(P.results || {})) await dropResult(P, k); await Settings.set('tt_lessons', '{}'); return TT.lessons(el); }
+    const v = e.target.closest('[data-lres]'); if (v) return ttLessonResult(v.dataset.lres); const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
 };
 // A report's picture: the finished piece, with a toggle to the heat map and its notes; tap for full screen.
 const TT_LEG_LINE = '<div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div>', TT_LEG_PACK = '<div class="tt-lsgrad"><span>Fewer passes</span><i></i><span>More passes</span></div><div class="tt-lsleg"><i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div>';
@@ -3257,6 +3266,7 @@ function ttStyle() {
 .tt-zwrap { position: relative; display: block; } .tt-zwrap input { display: block; width: 100%; } .tt-zone { position: absolute; bottom: -2px; height: 3px; border-radius: 2px; background: #3cdc78; pointer-events: none; } .dz-sl:has(> .tt-zone) { position: relative; } .dz-sl > .tt-zone { bottom: 0; }
 .tt-zwrapv { position: relative; display: block; } .tt-zonev { position: absolute; right: -3px; bottom: 0; width: 3px; border-radius: 2px; background: #3cdc78; pointer-events: none; }
 .tt-unsaved { font-size: 12px; color: #e8b44c; font-weight: 600; } .tt-unsaved[hidden] { display: none; }
+.tt-chr { font-style: normal; font-size: 11px; margin-left: 6px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink2, #9aa5a6); cursor: pointer; }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
 .tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
