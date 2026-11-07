@@ -7299,6 +7299,8 @@ async function notesRows() { return (await DB.all(`SELECT id, name, doc, thumb_r
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 282, when: '2026-11-07T13:56', added: ['The simulator\'s sliders panel is now split into tabs, with the things you use most on the first one and less scrolling.'],
+    test: ['Open the sliders and go through each tab. Can you find everything, and does anything feel in the wrong place?'] },
   { build: 280, when: '2026-11-07T13:44', added: ['You can now reset a single lesson to start it over, or reset all lessons. A single reset keeps it unlocked, and your next try becomes the new best.', 'Challenges and the apprentice exam can be reset too, one challenge at a time or all at once.'],
     test: ['Reset a lesson you\'ve done. Is it still unlocked, and does your next score become the new best even if it\'s lower?', 'Reset one challenge and check its best score clears. Do your trophies still look right?'] },
   { build: 279, when: '2026-11-07T13:12', added: [],
