@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 280;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 281;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -2163,7 +2163,7 @@ TT.open = async (el, id) => {
       piece: { needle: st.needle, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, magRoll: st.magRoll || 0, magFlip: st.magFlip }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } });
     try { await navigator.clipboard.writeText(txt); toast('Settings copied. Paste them into a message to send on.'); } catch { await askText('Copy these settings:', txt); }
   };
-  let sidePrev = null, askedFor = '';
+  let sidePrev = null, askedFor = '', feelTab = 'start';
   const drawSide = async () => {
     const leaving = sidePrev === 'feel' && st.panel !== 'feel'; sidePrev = st.panel;
     if (leaving && TT.changed() && askedFor !== TT.canon(TT.settingsNow())) { askedFor = TT.canon(TT.settingsNow()); if (await ask('You changed your settings. Replace your saved settings with these?\n\nIf not, the changes reset the next time the app loads.')) { await TT.saveSettings(); toast('Saved: these are your settings from now on.'); } }
@@ -2193,42 +2193,47 @@ TT.open = async (el, id) => {
       return;
     }
     const nd = TT_NEEDLES.find(n => n.id === st.needle), f = feel;
-    side.innerHTML = `<div class="dz-lh"><b>${nd.id} feel ${help('Every grouping keeps its own settings. Pressure sets depth (darker, wider, fewer missed punctures); hand speed sets how far apart the punctures land; tilt spreads the needles.')}</b>
-        <button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-      <canvas class="tt-pad" id="tt-pad" width="560" height="200"></canvas>
-      <div class="tt-live" id="tt-live">Pressure – · Speed – · Tilt –</div>
-      <div class="row" style="gap:6px;margin:6px 0 10px"><button class="btn small" data-padclear>Clear the pad</button><button class="btn small primary" data-tune>Tune in (guided)</button></div>
-      <div class="row" style="gap:6px;margin:-4px 0 10px;flex-wrap:wrap;align-items:center"><span class="tt-unsaved" ${TT.changed() ? '' : 'hidden'}>Unsaved changes</span><button class="btn small" data-setsave ${TT.changed() ? '' : 'disabled'} data-tip="Keep these as your settings from now on. Unsaved changes reset when the app next loads.">Save settings</button><button class="btn small" data-setexp data-tip="Save your settings to a file, to load in another workspace or on another device">Export</button><button class="btn small" data-setimp data-tip="Load settings from an exported file">Import</button></div>
-      ${fsec('All needles', `<p class="muted" style="font-size:11px;margin:0 0 6px">Your calibration for this device. Tune in sets these from a few short tasks. If your hand gets faster later, fine tune with the Hand speed slider or run Tune in again.</p>
+    const tab = (k, n) => `<button data-ftab="${k}" class="${feelTab === k ? 'on' : ''}">${n}</button>`, intro = (s) => `<p class="tt-fintro">${s}</p>`;
+    const pages = {
+      start: () => `<canvas class="tt-pad" id="tt-pad" width="560" height="200"></canvas>
+        <div class="tt-live" id="tt-live">Pressure – · Speed – · Tilt –</div>
+        <div class="row" style="gap:6px;margin:6px 0 12px"><button class="btn small primary" style="flex:1" data-tune>Tune in (guided)</button><button class="btn small" data-padclear>Clear the pad</button></div>
+        <div class="lbl">Needle size</div><div class="lbl">Needle size</div><div class="seg" style="margin-bottom:8px">${[[0.25, '#08'], [0.3, '#10'], [0.35, '#12']].map(([v, n]) => `<button data-sz="${v}" class="${f.size === v ? 'on' : ''}" style="flex:1">${n} · ${v} mm</button>`).join('')}</div>
+        <label class="dz-sl"><span>Skin stretch<b>${st.stretch}%</b></span><span class="tt-zwrap"><input type="range" min="50" max="100" step="1" value="${st.stretch}" data-stretch>${zoneHtml(50, 100, TT_STRETCH, TT_LIMITS.look.stretch)}</span></label>
+        <label class="toggle" style="display:inline-flex"><input type="checkbox" data-penonly ${TT.cal().penOnly ? 'checked' : ''}><span>Pen only (fingers move the page)</span></label>`,
+      needle: () => intro(`Only the ${nd.id}. How it runs and how it puts ink in.`) + `<div class="lbl">Speed</div>
+        ${fslider('volt', 'Voltage', 1.5, 0, 0.05, f.volt ?? 7, v => (+v).toFixed(2) + ' V')}
+        ${fslider('hand', 'Hand speed', 23, 2, 1, f.hand, v => v + '%')}
+        ${fslider('speedFade', 'Fast strokes lighten', 35, 0, 1, f.speedFade, v => v + '%')}
+        <div class="lbl">Ink</div>
+        ${fslider('flow', 'Ink flow', 40, 5, 1, f.flow, v => v + '%')}${fslider('bleed', 'Bleed into skin', 40, 0, 1, f.bleed, v => v + '%')}
+        ${fslider('miss', 'Missed punctures when light', 40, 0, 1, f.miss, v => v + '%')}
+        ${fslider('hang', 'Needle hang', 40, 0, 1, f.hang ?? 40, v => v + '%')}
+        <button class="btn small" data-feelreset>Reset ${nd.id}</button>`,
+      press: () => intro(`Only the ${nd.id}. How pressing and leaning the pen changes the mark.`) + `<div class="lbl">Pressure to depth</div>
+        <div class="tt-crow">${curveSvg(f.pCurve)}<div style="flex:1">${slider('pCurve', 'Curve', -100, 100, 1, f.pCurve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
+        ${fslider('dMin', 'Lightest', 0.12, 0, 0.01, f.dMin, v => Math.round(v * 100) + '%')}${fslider('dMax', 'Deepest', 0.3, 0, 0.01, f.dMax, v => Math.round(v * 100) + '%')}</div></div>
+        <div class="lbl">Tilt</div>
+        ${fslider('tiltSpread', 'Tilt spreads', 40, 0, 1, f.tiltSpread, v => v + '%')}${fslider('tiltFade', 'Tilt lightens', 30, 0, 1, f.tiltFade, v => v + '%')}`,
+      all: () => intro('Every needle, on this device. Tune in sets most of these. Fine tune here if your hand changes.') + `<div class="lbl">Your hand</div>
+        ${cslider('hand', 'Hand speed', 0.5, 5, 0.05, cal.hand, v => '× ' + v)}${cslider('fade', 'Fast strokes lighten', 0.05, 0.85, 0.05, cal.fade, v => '× ' + v)}
+        ${cslider('flow', 'Ink flow', 1, 3, 0.05, cal.flow, v => '× ' + v)}
+        <div class="lbl">Skin</div>
+        ${cslider('tough', 'Skin toughness', 0.1, 2.4, 0.05, cal.tough ?? 1, v => '× ' + v)}${cslider('blow', 'Blowout sensitivity', 0, 2.4, 0.05, cal.blow ?? 1, v => +v ? '× ' + v : 'off')}
+        <div class="lbl">Your pen</div>
         ${cslider('curve', 'Pressure curve', -150, 0, 1, cal.curve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
         ${cslider('pMin', 'Lightest pen reading', 0, 0.4, 0.01, cal.pMin, v => Math.round(v * 100) + '%')}${cslider('pMax', 'Hardest pen reading', 0.732, 1, 0.002, cal.pMax, v => Math.round(v * 100) + '%')}
-        ${cslider('hand', 'Hand speed', 0.5, 5, 0.05, cal.hand, v => '× ' + v)}${cslider('fade', 'Fast strokes lighten', 0.05, 0.85, 0.05, cal.fade, v => '× ' + v)}
-        ${cslider('flow', 'Ink flow', 1, 3, 0.05, cal.flow, v => '× ' + v)}${cslider('tilt0', 'Natural angle', 20, 50, 1, cal.tilt0, v => v + '°')}
-        ${cslider('blow', 'Blowout sensitivity', 0, 2.4, 0.05, cal.blow ?? 1, v => +v ? '× ' + v : 'off')}${cslider('tough', 'Skin toughness', 0.1, 2.4, 0.05, cal.tough ?? 1, v => '× ' + v)}
-        <button class="btn small" data-calreset>Reset all needles' calibration</button> <button class="btn small" data-toolreset>Reset tool settings</button>`, { fold: true })}
-      <div class="lbl" style="margin-top:8px">${nd.id} only</div>
-      <div class="lbl">Pressure → depth</div>
-      <div class="tt-crow">${curveSvg(f.pCurve)}<div style="flex:1">${slider('pCurve', 'Curve', -100, 100, 1, f.pCurve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
-        ${fslider('dMin', 'Lightest', 0.12, 0, 0.01, f.dMin, v => Math.round(v * 100) + '%')}${fslider('dMax', 'Deepest', 0.3, 0, 0.01, f.dMax, v => Math.round(v * 100) + '%')}</div></div>
-      <div class="lbl">Speed</div>
-      ${fslider('volt', 'Voltage', 1.5, 0, 0.05, f.volt ?? 7, v => (+v).toFixed(2) + ' V')}
-      ${fslider('hand', 'Hand speed', 23, 2, 1, f.hand, v => v + '%')}
-      ${fslider('speedFade', 'Fast strokes lighten', 35, 0, 1, f.speedFade, v => v + '%')}
-      <div class="lbl">Tilt</div>
-      ${fslider('tiltSpread', 'Tilt spreads', 40, 0, 1, f.tiltSpread, v => v + '%')}${fslider('tiltFade', 'Tilt lightens', 30, 0, 1, f.tiltFade, v => v + '%')}
-      <div class="lbl">Ink</div>
-      ${fslider('flow', 'Ink flow', 40, 5, 1, f.flow, v => v + '%')}${fslider('bleed', 'Bleed into skin', 40, 0, 1, f.bleed, v => v + '%')}
-      ${fslider('miss', 'Missed punctures when light', 40, 0, 1, f.miss, v => v + '%')}
-      ${fslider('hang', 'Needle hang', 40, 0, 1, f.hang ?? 40, v => v + '%')}
-      <div class="lbl">Skin</div>
-      <label class="dz-sl"><span>Skin stretch<b>${st.stretch}%</b></span><span class="tt-zwrap"><input type="range" min="50" max="100" step="1" value="${st.stretch}" data-stretch>${zoneHtml(50, 100, TT_STRETCH, TT_LIMITS.look.stretch)}</span></label>
-      ${fsec('Needle look (all needles, all pieces)', `<label class="dz-sl"><span>Needle thickness<b id="tt-thinv">${Math.round(nlook.thin * 100)}%</b></span><input type="range" min="20" max="70" step="5" value="${Math.round(nlook.thin * 100)}" data-nthin>${zoneHtml(20, 70, TT_LOOK.thin, TT_LIMITS.look.thin)}</label>
+        ${cslider('tilt0', 'Natural angle', 20, 50, 1, cal.tilt0, v => v + '°')}
+        <button class="btn small" data-calreset>Reset all needles</button> <button class="btn small" data-toolreset>Reset tool settings</button>`,
+      look: () => intro('How the needles look, for all needles and pieces. It takes effect on your next stroke.') + `<label class="dz-sl"><span>Needle thickness<b id="tt-thinv">${Math.round(nlook.thin * 100)}%</b></span><input type="range" min="20" max="70" step="5" value="${Math.round(nlook.thin * 100)}" data-nthin>${zoneHtml(20, 70, TT_LOOK.thin, TT_LIMITS.look.thin)}</label>
         <label class="dz-sl"><span>Magnum needle texture<b id="tt-texv">${Math.round(nlook.tex * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.tex * 100)}" data-ntex>${zoneHtml(0, 100, TT_LOOK.tex, TT_LIMITS.look.tex)}</label>
-        <p class="muted" style="font-size:11px;margin:2px 0 6px">Takes effect on your next stroke; what's already tattooed stays.</p>
-        <button class="btn small" data-nnew style="margin-bottom:6px">Back to default (45% / 100%)</button>`, { fold: true, open: true })}
-      <div class="lbl">Needle size</div><div class="seg" style="margin-bottom:8px">${[[0.25, '#08'], [0.3, '#10'], [0.35, '#12']].map(([v, n]) => `<button data-sz="${v}" class="${f.size === v ? 'on' : ''}" style="flex:1">${n} · ${v} mm</button>`).join('')}</div>
-      <label class="toggle" style="display:inline-flex"><input type="checkbox" data-penonly ${TT.cal().penOnly ? 'checked' : ''}><span>Pen only (fingers move the page)</span></label>
-      <div class="row" style="margin-top:8px"><button class="btn small" data-feelreset>Reset ${nd.id}</button></div>`;
+        <button class="btn small" data-nnew>Back to default (${TT_LOOK.thin}% / ${TT_LOOK.tex}%)</button>`
+    };
+    side.innerHTML = `<div class="dz-lh"><b>Settings · ${nd.id} ${help('Green under a slider is the safe range for lessons. Going past it gets noted on your report.')}</b>
+        <button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="tt-ftabs">${tab('start', 'Start')}${tab('needle', nd.id)}${tab('press', 'Pressure')}${tab('all', 'All needles')}${tab('look', 'Look')}</div>
+      <div class="tt-fpage">${pages[feelTab]()}</div>
+      <div class="tt-ffoot"><span class="tt-unsaved" ${TT.changed() ? '' : 'hidden'}>Unsaved changes</span><button class="btn small" data-setsave ${TT.changed() ? '' : 'disabled'} data-tip="Keep these as your settings from now on. Unsaved changes reset when the app next loads.">Save settings</button><button class="btn small" data-setexp data-tip="Save your settings to a file, to load in another workspace or on another device">Export</button><button class="btn small" data-setimp data-tip="Load settings from an exported file">Import</button></div>`;
     padInit();
   };
   side.addEventListener('click', async (e) => {
@@ -2253,6 +2258,7 @@ TT.open = async (el, id) => {
     if (t.closest('[data-sz]')) { feel.size = +t.closest('[data-sz]').dataset.sz; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawCur(); drawSz(); return drawSide(); }
     if (t.closest('[data-feelreset]')) { TT.setFeel(st.needle, null); setNeedle(st.needle); return drawSide(); }
     if (t.closest('[data-padclear]')) return padInit();
+    if (t.closest('[data-ftab]')) { feelTab = t.closest('[data-ftab]').dataset.ftab; return drawSide(); }
     if (t.closest('[data-tune]')) return tuneIn();
     if (t.closest('[data-setsave]')) { await TT.saveSettings(); toast('Saved: these are your settings from now on.'); return drawSide(); }
     if (t.closest('[data-setexp]')) { const txt = JSON.stringify({ inkforge_settings: 1, build: TT_BUILD, saved: TT.savedGet() || TT.settingsNow() }, null, 1); return saveFiles([new File([txt], `inkforge-tattoo-settings-${ymd(new Date())}.json`, { type: 'application/json' })]); }
@@ -3267,6 +3273,9 @@ function ttStyle() {
 .tt-zwrapv { position: relative; display: block; } .tt-zonev { position: absolute; right: -3px; bottom: 0; width: 3px; border-radius: 2px; background: #3cdc78; pointer-events: none; }
 .tt-unsaved { font-size: 12px; color: #e8b44c; font-weight: 600; } .tt-unsaved[hidden] { display: none; }
 .tt-chr { font-style: normal; font-size: 11px; margin-left: 6px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink2, #9aa5a6); cursor: pointer; }
+.tt-ftabs { display: flex; gap: 2px; margin: 2px 0 10px; padding: 3px; border-radius: 10px; background: rgba(127,127,127,.12); overflow-x: auto; scrollbar-width: none; } .tt-ftabs button { flex: 1 0 auto; padding: 7px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink2, #9aa5a6); font: 600 12px var(--ui); cursor: pointer; white-space: nowrap; } .tt-ftabs button.on { background: var(--teal); color: #06201d; }
+.tt-fintro { margin: 0 0 10px; font-size: 12px; line-height: 1.4; color: var(--ink2, #9aa5a6); } .tt-fpage .lbl { margin-top: 10px; } .tt-fpage .lbl:first-of-type { margin-top: 0; } .tt-fpage > .btn { margin-top: 10px; }
+.tt-ffoot { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
 .tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
