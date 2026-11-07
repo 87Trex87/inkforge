@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 276;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 277;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -86,6 +86,16 @@ const TT = {
   // on, and older ones are moved across.
   cal() { try { const s = JSON.parse(Settings.get('tt_cal', '{}')); if (s.tough != null && !s.t3) { s.tough = Math.round(s.tough / (s.t2 ? 2.5 : 6.25) * 100) / 100; s.t3 = 1; } if (s.tough != null && !s.t4) { s.tough = Math.round(s.tough / 1.8 * 100) / 100; s.t4 = 1; } if (s.tough === 1.5 && !s.t5) { s.tough = 1.25; s.t5 = 1; } if (s.blow != null && !s.b3) { s.blow = Math.round(s.blow / 3 * 100) / 100; s.b3 = 1; } return { ...TT.calDefaults, ...s }; } catch { return { ...TT.calDefaults }; } },
   saveCal(c) { Settings.set('tt_cal', JSON.stringify(c)); },
+  /* Your saved settings: what the simulator goes back to each time the app loads. Changes on the sliders work straight
+     away but stay temporary until saved over these. */
+  settingsNow() { let feel = {}; try { feel = JSON.parse(Settings.get('tt_feel', '{}')); } catch {} return { cal: TT.cal(), feel, look: { thin: +Settings.get('tt_thin', String(TT_LOOK.thin)), tex: +Settings.get('tt_tex', String(TT_LOOK.tex)) } }; },
+  savedGet() { try { return JSON.parse(Settings.get('tt_saved', 'null')); } catch { return null; } },
+  canon(s) { const sort = (v) => Array.isArray(v) || v === null || typeof v !== 'object' ? v : Object.fromEntries(Object.keys(v).sort().map(k => [k, sort(v[k])])); return JSON.stringify(sort(s)); },
+  changed() { const s = TT.savedGet(); return !s || TT.canon(s) !== TT.canon(TT.settingsNow()); },
+  async saveSettings() { await Settings.set('tt_saved', JSON.stringify(TT.settingsNow())); },
+  async applySettings(s) { await Settings.set('tt_cal', JSON.stringify(s.cal || {})); await Settings.set('tt_feel', JSON.stringify(s.feel || {})); await Settings.set('tt_thin', String(s.look?.thin ?? TT_LOOK.thin)); await Settings.set('tt_tex', String(s.look?.tex ?? TT_LOOK.tex)); },
+  // Once per app load: drop anything left unsaved. The first time, what's set now becomes the saved settings.
+  async loadSaved() { if (TT.savedDone) return; TT.savedDone = true; const s = TT.savedGet(); if (s) await TT.applySettings(s); else await TT.saveSettings(); },
   feel(id) { let o = {}; try { o = JSON.parse(Settings.get('tt_feel', '{}'))[id] || {}; } catch {} const nd = TT_NEEDLES.find(n => n.id === id);
     return { ...TT.feelBase(id), ...o }; },
   feelBase(id) { const nd = TT_NEEDLES.find(n => n.id === id); return { ...TT_FEEL, ...TT_FEEL_LIQ[nd.kind], ...TT_FEEL_ID[id], volt: TT_VOLT[id] ?? 7 }; },
@@ -685,7 +695,7 @@ function ttNewDlg() {
 
 /* ---------- The page ---------- */
 TT.open = async (el, id) => {
-  ttStyle(); const migrated = TT.migrate();
+  ttStyle(); const migrated = TT.migrate(); await TT.loadSaved();
   const row = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [id]); if (!row) { location.hash = 'tattoo'; return; }
   const R = Math.min(80, 2400 / Math.max(row.w_cm, row.h_cm)), W = Math.round(row.w_cm * R), H = Math.round(row.h_cm * R), mm = R / 10;   // page px per cm, per mm
   const L = {}; for (const [k] of TT_LAYERS) { const c = document.createElement('canvas'); c.width = W; c.height = H; L[k] = c; }
@@ -1123,7 +1133,7 @@ TT.open = async (el, id) => {
     return list.filter(([, v, d, dir, m]) => (v - d) * dir > m + 1e-6).map(([name, value, def]) => ({ name, value, default: def })); };
   const tmReport = (T, res) => { const c = EX.cur || {}, tm = c.tm || { by: {} }, r1 = (v) => Math.round(v * 10) / 10, by = {}; for (const id in tm.by) { const n = tm.by[id]; by[id] = { seconds: r1(n.ms / 1000), travelMm: Math.round(n.mm), mmPerSec: r1(n.mm / Math.max(0.001, n.ms / 1000)), speedAvg: r1(n.vm), speedSd: r1(Math.sqrt(n.vs / Math.max(1, n.n))), depthAvg: +n.dm.toFixed(3), depthSd: +Math.sqrt(n.ds / Math.max(1, n.n)).toFixed(3), strokes: n.strokes, turnPerMm: +(n.turn / Math.max(1, n.mm)).toFixed(3), sameWay30mm: n.abs ? +(n.net / n.abs).toFixed(3) : null, cw: Math.round(n.cw), ccw: Math.round(n.ccw), reversalsPer10mm: +(n.rev / Math.max(1, n.mm) * 10).toFixed(3), dipReversalsPer10mm: +(n.revDip / Math.max(1, n.mm) * 10).toFixed(3), turnFlipsPer10mm: +(n.flips / Math.max(1, n.mm) * 10).toFixed(3), hist: Object.fromEntries(['speed', 'gap', 'depth', 'pressure', 'tilt', 'radius', 'run', 'stroke'].filter(k => n[k]).map(k => [k, n[k].map(Math.round)])) }; }
     const hm = c.hm || [], box = T.pack; let passes = null; if (box) { const v = []; for (let j = 2; j < box[3] * 2 - 2; j++) for (let i = 2; i < box[2] * 2 - 2; i++) v.push(hm[j * 30 + i] || 0); const s = [...v].sort((a, b) => a - b), m = v.reduce((a, b) => a + b, 0) / Math.max(1, v.length); passes = { mean: r1(m), sd: r1(Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / Math.max(1, v.length))), min: s[0], p10: s[Math.floor(s.length * 0.1)], median: s[Math.floor(s.length / 2)], p90: s[Math.floor(s.length * 0.9)], max: s[s.length - 1] }; }
-    return { inkforge_stats: 1, build: TT_BUILD, lesson: EX.lesson, task: T.id, when: new Date().toISOString(), grade: ttGrade(res.total), total: res.total, parts: res.parts, skin: res.skin, traumaMax: res.traumaMax, traumaAvg: res.traumaAvg, blowouts: res.blowouts, blowSpots: (c.spots || []).map(s => s[2]), undos: res.undos || 0, lasers: res.lasers || 0, penalty: res.penalty || 0, dips: c.dips || 0, needleSeconds: r1(Object.values(tm.by).reduce((a, n) => a + n.ms, 0) / 1000), pauses: tm.pauses || 0, pauseSeconds: Math.round((tm.pauseMs || 0) / 1000), zoomHist: (tm.zoom || []).map(Math.round), passes, settingsFlags: settingsCheck(T), needles: by, edges: TM_EDGES, settings: { cal: { ...cal }, look: { thin: nlook.thin, tex: nlook.tex }, stretch: st.stretch, skin: st.skin, feel: JSON.parse(Settings.get('tt_feel', '{}')) }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } }; };
+    return { inkforge_stats: 1, build: TT_BUILD, lesson: EX.lesson, task: T.id, when: new Date().toISOString(), grade: ttGrade(res.total), total: res.total, parts: res.parts, skin: res.skin, traumaMax: res.traumaMax, traumaAvg: res.traumaAvg, blowouts: res.blowouts, blowSpots: (c.spots || []).map(s => s[2]), undos: res.undos || 0, lasers: res.lasers || 0, penalty: res.penalty || 0, dips: c.dips || 0, needleSeconds: r1(Object.values(tm.by).reduce((a, n) => a + n.ms, 0) / 1000), pauses: tm.pauses || 0, pauseSeconds: Math.round((tm.pauseMs || 0) / 1000), zoomHist: (tm.zoom || []).map(Math.round), passes, settingsFlags: settingsCheck(T), settingsUnsaved: TT.changed(), savedSettings: TT.savedGet(), needles: by, edges: TM_EDGES, settings: { cal: { ...cal }, look: { thin: nlook.thin, tex: nlook.tex }, stretch: st.stretch, skin: st.skin, feel: JSON.parse(Settings.get('tt_feel', '{}')) }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } }; };
   const hcAdd = (q, r) => { const R0 = Math.max(TS, r), x0 = Math.max(0, Math.floor((q.x - R0) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + R0) / TS)), y0 = Math.max(0, Math.floor((q.y - R0) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + R0) / TS)); for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (Math.hypot((x + 0.5) * TS - q.x, (y + 0.5) * TS - q.y) <= R0) HC[y * tw + x]++; };
   const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(b[2] * 2 - 1, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(b[3] * 2 - 1, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
   const packMotion = (d, depth) => { const m = EX.cur.mv ||= { all: 0, fast: 0, n: 0, vm: 0, vs: 0, dm: 0, ds: 0 }, l = d / mm, v = pen.speed || 0; m.all += l; if (v > 110) m.fast += l; m.n++; const a = v - m.vm; m.vm += a / m.n; m.vs += a * (v - m.vm); const b = depth - m.dm; m.dm += b / m.n; m.ds += b * (depth - m.dm); };
@@ -2144,7 +2154,10 @@ TT.open = async (el, id) => {
       piece: { needle: st.needle, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, magRoll: st.magRoll || 0, magFlip: st.magFlip }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } });
     try { await navigator.clipboard.writeText(txt); toast('Settings copied. Paste them into a message to send on.'); } catch { await askText('Copy these settings:', txt); }
   };
+  let sidePrev = null, askedFor = '';
   const drawSide = async () => {
+    const leaving = sidePrev === 'feel' && st.panel !== 'feel'; sidePrev = st.panel;
+    if (leaving && TT.changed() && askedFor !== TT.canon(TT.settingsNow())) { askedFor = TT.canon(TT.settingsNow()); if (await ask('You changed your settings. Replace your saved settings with these?\n\nIf not, the changes reset the next time the app loads.')) { await TT.saveSettings(); toast('Saved: these are your settings from now on.'); } }
     sel(st.panel); side.hidden = !st.panel; if (!st.panel) return;
     if (st.panel === 'refs') {
       const us = await Promise.all(refs.map(refUrl));
@@ -2175,7 +2188,8 @@ TT.open = async (el, id) => {
         <button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
       <canvas class="tt-pad" id="tt-pad" width="560" height="200"></canvas>
       <div class="tt-live" id="tt-live">Pressure – · Speed – · Tilt –</div>
-      <div class="row" style="gap:6px;margin:6px 0 10px"><button class="btn small" data-padclear>Clear the pad</button><button class="btn small primary" data-tune>Tune in (guided)</button><button class="btn small" data-copyset data-tip="Copies every calibration and needle setting as text, exactly as they are now">Copy my settings</button></div>
+      <div class="row" style="gap:6px;margin:6px 0 10px"><button class="btn small" data-padclear>Clear the pad</button><button class="btn small primary" data-tune>Tune in (guided)</button></div>
+      <div class="row" style="gap:6px;margin:-4px 0 10px;flex-wrap:wrap;align-items:center"><span class="tt-unsaved" ${TT.changed() ? '' : 'hidden'}>Unsaved changes</span><button class="btn small" data-setsave ${TT.changed() ? '' : 'disabled'} data-tip="Keep these as your settings from now on. Unsaved changes reset when the app next loads.">Save settings</button><button class="btn small" data-setexp data-tip="Save your settings to a file, to load in another workspace or on another device">Export</button><button class="btn small" data-setimp data-tip="Load settings from an exported file">Import</button></div>
       ${fsec('All needles', `<p class="muted" style="font-size:11px;margin:0 0 6px">Your calibration for this device. Tune in sets these from a few short tasks. If your hand gets faster later, fine tune with the Hand speed slider or run Tune in again.</p>
         ${cslider('curve', 'Pressure curve', -150, 0, 1, cal.curve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
         ${cslider('pMin', 'Lightest pen reading', 0, 0.4, 0.01, cal.pMin, v => Math.round(v * 100) + '%')}${cslider('pMax', 'Hardest pen reading', 0.732, 1, 0.002, cal.pMax, v => Math.round(v * 100) + '%')}
@@ -2231,7 +2245,9 @@ TT.open = async (el, id) => {
     if (t.closest('[data-feelreset]')) { TT.setFeel(st.needle, null); setNeedle(st.needle); return drawSide(); }
     if (t.closest('[data-padclear]')) return padInit();
     if (t.closest('[data-tune]')) return tuneIn();
-    if (t.closest('[data-copyset]')) return copySettings();
+    if (t.closest('[data-setsave]')) { await TT.saveSettings(); toast('Saved: these are your settings from now on.'); return drawSide(); }
+    if (t.closest('[data-setexp]')) { const txt = JSON.stringify({ inkforge_settings: 1, build: TT_BUILD, saved: TT.savedGet() || TT.settingsNow() }, null, 1); return saveFiles([new File([txt], `inkforge-tattoo-settings-${ymd(new Date())}.json`, { type: 'application/json' })]); }
+    if (t.closest('[data-setimp]')) { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json'; inp.onchange = async () => { try { const j = JSON.parse(await inp.files[0].text()); if (!j.inkforge_settings || !j.saved?.cal) throw new Error('not a settings file'); if (!await ask('Load these settings? They replace your saved settings.')) return; await TT.applySettings(j.saved); await TT.saveSettings(); await Settings.set('tt_tuned', '1'); cal = TT.cal(); Object.assign(nlook, { thin: +j.saved.look?.thin / 100 || nlook.thin, tex: +j.saved.look?.tex / 100 || nlook.tex }); setNeedle(st.needle); drawVolt(); drawCur(); drawSide(); toast('Settings loaded. You are tuned in.'); } catch (err) { toast('Could not load that file: ' + err.message, 4000); } }; return inp.click(); }
     if (t.closest('[data-prof]')) { setProfile(t.closest('[data-prof]').dataset.prof); TT.saveCal(cal); return drawSide(); }
     if (t.closest('[data-toolreset]')) return resetTools();
     if (t.closest('[data-calreset]')) { if (!await ask('Put the calibration for all needles back to the defaults?')) return; cal = { ...TT.calDefaults, penOnly: cal.penOnly }; TT.saveCal(cal); return drawSide(); }
@@ -2243,6 +2259,7 @@ TT.open = async (el, id) => {
     const t = e.target;
     if (t.matches('[data-rop]')) { const r = refs.find(x => x.id === t.closest('[data-rid]').dataset.rid); if (r) { r.op = +t.value; st.dirty = true; drawRefs(); } return; }
     if (t.matches('[data-lop]')) { const ly = t.closest('[data-ly]').dataset.ly; st.op[ly] = +t.value; st.dirty = true; st.viewC = null; return paint(); }
+    setTimeout(() => { const ch = TT.changed(), u = side.querySelector('.tt-unsaved'), b = side.querySelector('[data-setsave]'); if (u) u.hidden = !ch; if (b) b.disabled = !ch; }, 50);
     if (t.dataset.c) { cal[t.dataset.c] = +t.value; TT.saveCal(cal); t.closest('.dz-sl').querySelector('b').textContent = CFMT[t.dataset.c](+t.value); return; }
     if (t.matches('[data-stretch]')) { st.stretch = +t.value; st.dirty = true; t.closest('.dz-sl').querySelector('b').textContent = t.value + '%'; return; }
     const fk = t.dataset.f; if (!fk) return;
@@ -2425,7 +2442,7 @@ TT.open = async (el, id) => {
       if (a === 'redo') { Object.assign(cal, before); Object.assign(nlook, beforeLook); msg = ''; return draw(); }
       if (a === 'exit' || a === 'cancel') { Object.assign(cal, was); Object.assign(nlook, wasLook); return finish(); }
       if (a === 'again') { Object.assign(cal, { ...TT.calDefaults, penOnly: cal.penOnly }); nlook.thin = 0.45; nlook.tex = 1; i = -1; msg = ''; return draw(); }
-      if (a === 'save') { TT.saveCal(cal); saveLook(); Settings.set('tt_tuned', '1'); toast('Saved: every needle now uses your calibration.'); return finish(); }
+      if (a === 'save') { TT.saveCal(cal); saveLook(); Settings.set('tt_tuned', '1'); await TT.saveSettings(); toast('Saved: every needle now uses your calibration.'); return finish(); }
       if (a === 'copy') return copySettings();
     };
     draw();
@@ -3239,6 +3256,7 @@ function ttStyle() {
 .tt-lsmotion { display: block; width: 100%; max-width: 480px; margin: 10px 0; } .tt-lsmotion .tt-lsmpath { fill: none; stroke: var(--teal); stroke-width: .9; } .tt-lsmotion .tt-lsmarrow { fill: none; stroke: var(--ink2, #999); stroke-width: 1.2; }
 .tt-zwrap { position: relative; display: block; } .tt-zwrap input { display: block; width: 100%; } .tt-zone { position: absolute; bottom: -2px; height: 3px; border-radius: 2px; background: #3cdc78; pointer-events: none; } .dz-sl:has(> .tt-zone) { position: relative; } .dz-sl > .tt-zone { bottom: 0; }
 .tt-zwrapv { position: relative; display: block; } .tt-zonev { position: absolute; right: -3px; bottom: 0; width: 3px; border-radius: 2px; background: #3cdc78; pointer-events: none; }
+.tt-unsaved { font-size: 12px; color: #e8b44c; font-weight: 600; } .tt-unsaved[hidden] { display: none; }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
 .tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
