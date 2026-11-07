@@ -1962,6 +1962,8 @@ const VIEWS = {
         <button class="btn small" id="s-setup">Run setup</button></div>
       ${WS.cur?.test ? '' : `<div class="card su-again"><div><b>Practice workspace</b><span class="muted">A separate workspace full of made-up data to try things on.</span></div>
         <button class="btn small" id="s-practice">${Practice.get() ? 'Open' : 'Make one'}</button></div>`}
+      <div class="card su-again"><div><b>What's new notes</b><span class="muted">Update notes with things to test on the home screen.</span></div>
+        <label class="toggle"><input type="checkbox" id="s-news" ${Settings.get('news_off') === '1' ? '' : 'checked'}><span>Show</span></label></div>
       <div class="card su-again"><div><b>Take a tour</b><span class="muted">A guided look around with examples; all removed afterwards.</span></div>
         <button class="btn small" id="s-tour">Start</button></div>
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
@@ -2077,6 +2079,7 @@ const VIEWS = {
       $('#s-fb').addEventListener('change', save('artist_facebook'));
       $('#s-tt').addEventListener('change', save('artist_tiktok'));
       $('#s-gid').addEventListener('change', save('gcal_client_id'));
+      $('#s-news').addEventListener('change', (e) => Settings.set('news_off', e.target.checked ? '' : '1'));
       $('#s-gbusy').addEventListener('change', async (e) => { await Settings.set('gcal_busy', e.target.checked ? '1' : '0'); Gcal.soon(); });
       const gsync = async () => {
         try { await Gcal.sync({ interactive: true }); toast('Synced with Google Calendar.'); }
@@ -7292,27 +7295,36 @@ const noteImg = new Map();   // design id -> { at, url }
 let noteRun = 0, noteTop = 1;   // noteTop: raises the note last touched (without moving it in the page, which would cancel the tap)
 const notePos = () => { try { return JSON.parse(Settings.get('note_pos', '{}')); } catch { return {}; } };
 async function notesRows() { return (await DB.all(`SELECT id, name, doc, thumb_ref, updated_at FROM designs WHERE kind = 'note' ORDER BY id`)).map(r => { let doc = {}; try { doc = JSON.parse(r.doc); } catch {} return { ...r, doc }; }); }
-/* What's new: a note on the home screen about the latest build, with things to test. Update NEWS with every push (plain
-   English, short, for tattoo artists, not programmers). A new build number brings the note back even if it was deleted. */
-const NEWS = { build: 278,
-  added: ['Tune in now watches you colour in a circle and works out your hand speed for you. You no longer pick one.',
-    'Your settings can be saved. Slider changes are temporary until you save them, and the app asks when you close the sliders.',
-    'Export and Import move your settings to a new workspace or another device.',
-    'Green bars on the sliders show the safe range for lessons. Going past green gets noted on your report.',
-    'Solid black now marks your outline as well as your packing.',
-    'Save PDF on the report card makes one file with your results, pictures and stats to send on.'],
-  test: ['Run Tune in and press Save. Does the hand speed it picks feel right?',
-    'Change a slider, close the sliders, and check it asks to save.',
-    'Export your settings, then Import that file.',
-    'Do Solid black: Copy stats, then Save PDF, and send the file.',
-    'Check the Healed and 10 years views of your Solid black. Do thin or patchy spots show?'] };
-const newsState = () => { let s = {}; try { s = JSON.parse(Settings.get('news_state', '{}')); } catch {} return s.build === NEWS.build ? s : { build: NEWS.build, done: {} }; };
-const newsHtml = () => { const s = newsState(); if (s.deleted) return ''; if (s.hidden) return `<button class="news-mini" data-news="show">Build ${NEWS.build}: what's new</button>`;
-  return `<div class="card news-card"><div class="news-top"><h2>What's new in build ${NEWS.build}</h2><button class="btn small" data-news="hide">Hide</button><button class="btn small" data-news="del">Delete</button></div>
-    <ul class="news-list">${NEWS.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="lbl">Things to test</div>
-    ${NEWS.test.map((x, i) => `<label class="news-todo"><input type="checkbox" data-news-do="${i}" ${s.done?.[i] ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}</div>`; };
-document.addEventListener('click', async (e) => { const b = e.target.closest?.('[data-news]'); if (!b) return; const s = newsState(), a2 = b.dataset.news; if (a2 === 'hide') s.hidden = true; if (a2 === 'show') s.hidden = false; if (a2 === 'del') { if (!await ask('Delete this note? It comes back with the next update.')) return; s.deleted = true; } await Settings.set('news_state', JSON.stringify(s)); render(); });
-document.addEventListener('change', (e) => { const i = e.target.dataset?.newsDo; if (i == null) return; const s = newsState(); (s.done ||= {})[i] = e.target.checked; Settings.set('news_state', JSON.stringify(s)); });
+/* What's new: a stack on the home screen of the latest builds, newest first, with things to test. Add an entry to the top
+   of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
+   newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
+const NEWS = [
+  { build: 279, when: '2026-11-07T13:12', added: ['This note now keeps your last 15 updates. Use the arrows to flick back through any you missed.', 'Every update shows the date and time it went out.', 'Make sticky note turns an update\'s test list into a sticky note with tick boxes that stays on your home screen.', 'You can turn these notes off in Settings.'],
+    test: ['Flick through the older updates with the arrows.', 'Press Make sticky note, tick something, then close and reopen the app. Is the tick still there?', 'Turn the notes off in Settings, then back on.'] },
+  { build: 278, when: '2026-11-07T12:41', added: ['This What\'s new note on the home screen.'], test: ['Tick something here, hide the note and bring it back.'] },
+  { build: 277, when: '2026-11-07T12:26', added: ['Your settings can be saved. Slider changes are temporary until you save them, and the app asks when you close the sliders.', 'Export and Import move your settings to a new workspace or another device.'], test: ['Change a slider, close the sliders, and check it asks to save.', 'Export your settings, then Import that file.'] },
+  { build: 276, when: '2026-11-07T12:19', added: ['Tune in now watches you colour in a circle and works out your hand speed for you. You no longer pick one.'], test: ['Run Tune in and press Save. Does the hand speed it picks feel right?'] },
+  { build: 275, when: '2026-11-07T12:10', added: ['Green bars on the sliders show the safe range for lessons. Going past green gets noted on your report.'], test: ['Move a slider past green, do a lesson and check the report mentions it.'] },
+  { build: 273, when: '2026-11-07T11:41', added: ['Solid black now marks your outline as well as your packing.'], test: ['Do Solid black with a neat outline, then a shaky one. Does the Outline score make sense?'] },
+  { build: 272, when: '2026-11-07T11:08', added: ['Save PDF on the report card makes one file with your results, pictures and stats to send on.'], test: ['Finish a lesson, press Copy stats, then Save PDF, and open the file.', 'Check the Healed and 10 years views of your Solid black. Do thin or patchy spots show?'] }
+].slice(0, 15);
+const newsState = () => { let s = {}; try { s = JSON.parse(Settings.get('news_state', '{}')); } catch {} return { del: {}, done: {}, ...s }; };
+const newsList = () => { const s = newsState(); return NEWS.filter(n => !s.del[n.build]); };
+const newsWhen = (w) => new Date(w).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+let newsAt = 0;
+const newsHtml = () => { if (Settings.get('news_off') === '1') return ''; const s = newsState(), L = newsList(); if (!L.length) return ''; newsAt = Math.max(0, Math.min(L.length - 1, newsAt)); const n = L[newsAt]; if (s.hidden) return `<button class="news-mini" data-news="show">Build ${L[0].build}: what's new</button>`;
+  return `<div class="card news-card" id="news-card"><div class="news-top"><h2>What's new in build ${n.build}</h2><button class="btn small" data-news="hide">Hide</button><button class="btn small" data-news="del">Delete</button></div>
+    <div class="muted news-when">${esc(newsWhen(n.when))}</div>
+    <ul class="news-list">${n.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="lbl">Things to test</div>
+    ${n.test.map((x, i) => `<label class="news-todo"><input type="checkbox" data-news-do="${n.build}:${i}" ${s.done[n.build]?.[i] ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}
+    <div class="row news-nav"><button class="btn small" data-news="older" ${newsAt >= L.length - 1 ? 'disabled' : ''} aria-label="Older update">‹ Older</button><span class="muted">${newsAt + 1} of ${L.length}</span><button class="btn small" data-news="newer" ${newsAt ? '' : 'disabled'} aria-label="Newer update">Newer ›</button><span style="flex:1"></span><button class="btn small" data-news="sticky">Make sticky note</button></div></div>`; };
+const newsRefresh = () => { const c = document.querySelector('#news-card, .news-mini'), t = document.createElement('div'); t.innerHTML = newsHtml(); if (c) c.replaceWith(...t.childNodes); };
+// The test list as an ordinary sticky note: it stays on the menu screens until its owner removes it.
+async function newsSticky(n) { const items = n.test.map((x, i) => ({ s: x, on: !!newsState().done[n.build]?.[i] })), l = { t: 'check', id: dzId(), title: `Test build ${n.build}`, items, src: 'custom', size: 58, x: 40, y: 50, w: 820, h: 300 }, doc = dzNew('note', null, 'paper'); doc.bg = { c: DZ_NOTE_COLS[0] }; doc.note = { pin: true, links: [] }; l.h = Math.max(dzCheckH(l), items.reduce((h, i) => h + Math.ceil(i.s.length / 24) * 58 * 1.5 + 40, 110)); doc.h = Math.max(doc.h, l.y + l.h + 50); doc.layers = [l];
+  await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [`Test build ${n.build}`, 'note', JSON.stringify(doc)]); await dzThumb((await DB.one('SELECT last_insert_rowid() AS id')).id, doc); notesShow(); toast('Sticky note added. It stays here until you remove it.'); }
+document.addEventListener('click', async (e) => { const b = e.target.closest?.('[data-news]'); if (!b || b.disabled) return; const s = newsState(), act = b.dataset.news, L = newsList(), n = L[newsAt]; if (act === 'older') { newsAt++; return newsRefresh(); } if (act === 'newer') { newsAt--; return newsRefresh(); } if (act === 'sticky') { b.disabled = true; try { await newsSticky(n); } catch (err) { b.disabled = false; toast('Could not make the note: ' + err.message, 4000); } return; }
+  if (act === 'hide') s.hidden = true; if (act === 'show') s.hidden = false; if (act === 'del') { if (!await ask(`Delete the note for build ${n.build}?`)) return; s.del[n.build] = 1; } await Settings.set('news_state', JSON.stringify(s)); newsRefresh(); });
+document.addEventListener('change', (e) => { const k = e.target.dataset?.newsDo; if (k == null) return; const [bd, i] = k.split(':'), s = newsState(); (s.done[bd] ||= {})[i] = e.target.checked; Settings.set('news_state', JSON.stringify(s)); });
 async function notesShow() {
   const run = ++noteRun, key = (location.hash.slice(1) || 'home').split('/')[0];
   document.querySelectorAll('#notes-layer').forEach(x => x.remove());
