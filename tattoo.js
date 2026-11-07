@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 274;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 275;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -44,6 +44,8 @@ const TT_FEEL = {
 const TT_FEEL_LIQ = { liner: { flow: 80, miss: 25, size: 0.3, bleed: 60 }, shader: { flow: 60, miss: 40, bleed: 45 }, mag: { flow: 60, miss: 35, bleed: 45 }, soft: { flow: 60, miss: 35, bleed: 55, speedFade: 30, dMax: 0.95 } };
 /* Voltage by grouping, as set up for a relatively slow hand (liners higher as they get bigger; shaders and
    magnums lower). Voltage sets how fast the machine hits (about 98 a second at 7 V, rising steeply with voltage), how hard, and how fast the skin gets irritated. */
+// How far a setting can move towards easier before a lesson flags it: [direction that's easier, margin]. Shared by the check and the sliders' green zones.
+const TT_LIMITS = { cal: { flow: [1, 0.25], hand: [-1, 0.5], fade: [-1, 0.2], tough: [1, 0.25], blow: [-1, 0.25] }, look: { thin: [1, 10], tex: [-1, 25], stretch: [1, 15] }, feel: { volt: [1, 0.4], hand: [-1, 8], speedFade: [-1, 12], flow: [1, 12], bleed: [1, 12], miss: [-1, 10], dMax: [1, 0.1], dMin: [1, 0.08], size: [1, 0.03] } };
 const TT_LOOK = { thin: 45, tex: 100 }, TT_STRETCH = 75;
 const TT_TOUGH = 1.8;   // what Skin toughness 1 means
 const TT_VOLT = { '1RL': 7.0, '3RL': 7.55, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '11RL': 7.7, '14RL': 7.9, '5RS': 6.6, '7RS': 6.7, '9RS': 6.8, '11RS': 6.9, '14RS': 7,
@@ -878,7 +880,7 @@ TT.open = async (el, id) => {
         <button class="dz-ib" data-r="refs" data-tip="References: pictures that float over the skin to follow" aria-label="References"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/></svg></button>
         <button class="dz-ib" data-r="feel" data-tip="Needle feel and pen calibration" aria-label="Calibration"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
         <i class="sep"></i>
-        <div class="tt-volt" data-tip="Machine voltage for this needle: higher hits harder"><b id="tt-vl"></b><input type="range" id="tt-vs" min="5" max="10" step="0.05" aria-label="Voltage"></div>
+        <div class="tt-volt" data-tip="Machine voltage for this needle: higher hits harder"><b id="tt-vl"></b><span class="tt-zwrapv"><input type="range" id="tt-vs" min="5" max="10" step="0.05" aria-label="Voltage"><i id="tt-vz" class="tt-zonev" data-tip="Green stays inside the lesson limits"></i></span></div>
       </div>
       <div class="dz-pop" id="tt-pop" hidden></div><div class="tt-refs" id="tt-refs"></div><div class="tt-guides" id="tt-guides"></div><div class="tt-exam" id="tt-exbar" hidden></div>
       <div class="tt-tray" id="tt-tray"></div>
@@ -1021,7 +1023,7 @@ TT.open = async (el, id) => {
   function drawSz() { try { meterBuild(); meter(lastM); } catch { /* the meter isn't built yet on the first call */ } $('#tt-szq')?.querySelectorAll('[data-szq]').forEach(b => b.classList.toggle('on', +b.dataset.szq === feel.size)); }
   $('#tt-szq').onclick = (e) => { const b = e.target.closest('[data-szq]'); if (!b) return; feel.size = +b.dataset.szq; TT.setFeel(st.needle, feel);
     lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); st.dirty = true; drawSz(); drawCur(); if (st.panel === 'feel') drawSide(); };
-  const drawVolt = () => { const v = feel.volt ?? 7, b = TT.feelBase(st.needle).volt, vs = $('#tt-vs'); vs.min = +(b - 1.5).toFixed(2); vs.max = +(b + 1.5).toFixed(2); vs.value = v; $('#tt-vl').textContent = v.toFixed(1) + 'V'; };
+  const drawVolt = () => { const v = feel.volt ?? 7, b = TT.feelBase(st.needle).volt, vs = $('#tt-vs'); vs.min = +(b - 1.5).toFixed(2); vs.max = +(b + 1.5).toFixed(2); vs.value = v; { const z = $('#tt-vz'); if (z) { const m = TT_LIMITS.feel.volt[1], pc = (b + m - +vs.min) / (+vs.max - +vs.min) * 100; z.style.height = pc.toFixed(1) + '%'; } } $('#tt-vl').textContent = v.toFixed(1) + 'V'; };
   /* One puncture: every needle of the grouping into the skin at p (page px, `sc` px per mm), turned to angle a.
      Needle hang: a longer hang is softer (each needle lands a little off and at its own depth, and tilt spreads
      it more). Skin stretch: loose skin moves under the needles (a wobble shared by the whole puncture), takes
@@ -1114,8 +1116,8 @@ TT.open = async (el, id) => {
      defaults, so changing a default updates this too. Pen pressure and natural angle differ per tablet, so they're left
      out. Each entry: name, value, default, direction that's easier (+1 higher, -1 lower), allowed margin. This only
      reports; it doesn't change the grade. */
-  const settingsCheck = (T) => { const D = TT.calDefaults, pf = TT_PROFILES.find(p => p[0] === cal.profile), hand0 = pf ? pf[2] : D.hand, fade0 = pf ? pf[3] : D.fade, list = [['Ink flow', cal.flow, D.flow, 1, 0.25], ['Hand speed', cal.hand, hand0, -1, 0.5], ['Fast strokes lighten', cal.fade, fade0, -1, 0.2], ['Skin toughness', cal.tough, D.tough, 1, 0.25], ['Blowout sensitivity', cal.blow, D.blow, -1, 0.25], ['Needle thickness', Math.round(nlook.thin * 100), TT_LOOK.thin, 1, 10], ['Magnum texture', Math.round(nlook.tex * 100), TT_LOOK.tex, -1, 25], ['Skin stretch', st.stretch, TT_STRETCH, 1, 15]];
-    for (const id of T.needles || [T.needle]) { const f = TT.feel(id), b = TT.feelBase(id); list.push([id + ' voltage', f.volt, b.volt, 1, 0.4], [id + ' hand speed', f.hand, b.hand, -1, 8], [id + ' fast strokes lighten', f.speedFade, b.speedFade, -1, 12], [id + ' ink flow', f.flow, b.flow, 1, 12], [id + ' bleed', f.bleed, b.bleed, 1, 12], [id + ' missed punctures', f.miss, b.miss, -1, 10], [id + ' deepest', f.dMax, b.dMax, 1, 0.1], [id + ' lightest', f.dMin, b.dMin, 1, 0.08], [id + ' size', f.size, b.size, 1, 0.03]); }
+  const settingsCheck = (T) => { const D = TT.calDefaults, pf = TT_PROFILES.find(p => p[0] === cal.profile), hand0 = pf ? pf[2] : D.hand, fade0 = pf ? pf[3] : D.fade, C = TT_LIMITS.cal, L2 = TT_LIMITS.look, F = TT_LIMITS.feel, list = [['Ink flow', cal.flow, D.flow, ...C.flow], ['Hand speed', cal.hand, hand0, ...C.hand], ['Fast strokes lighten', cal.fade, fade0, ...C.fade], ['Skin toughness', cal.tough, D.tough, ...C.tough], ['Blowout sensitivity', cal.blow, D.blow, ...C.blow], ['Needle thickness', Math.round(nlook.thin * 100), TT_LOOK.thin, ...L2.thin], ['Magnum texture', Math.round(nlook.tex * 100), TT_LOOK.tex, ...L2.tex], ['Skin stretch', st.stretch, TT_STRETCH, ...L2.stretch]];
+    for (const id of T.needles || [T.needle]) { const f = TT.feel(id), b = TT.feelBase(id); list.push([id + ' voltage', f.volt, b.volt, ...F.volt], [id + ' hand speed', f.hand, b.hand, ...F.hand], [id + ' fast strokes lighten', f.speedFade, b.speedFade, ...F.speedFade], [id + ' ink flow', f.flow, b.flow, ...F.flow], [id + ' bleed', f.bleed, b.bleed, ...F.bleed], [id + ' missed punctures', f.miss, b.miss, ...F.miss], [id + ' deepest', f.dMax, b.dMax, ...F.dMax], [id + ' lightest', f.dMin, b.dMin, ...F.dMin], [id + ' size', f.size, b.size, ...F.size]); }
     return list.filter(([, v, d, dir, m]) => (v - d) * dir > m + 1e-6).map(([name, value, def]) => ({ name, value, default: def })); };
   const tmReport = (T, res) => { const c = EX.cur || {}, tm = c.tm || { by: {} }, r1 = (v) => Math.round(v * 10) / 10, by = {}; for (const id in tm.by) { const n = tm.by[id]; by[id] = { seconds: r1(n.ms / 1000), travelMm: Math.round(n.mm), mmPerSec: r1(n.mm / Math.max(0.001, n.ms / 1000)), speedAvg: r1(n.vm), speedSd: r1(Math.sqrt(n.vs / Math.max(1, n.n))), depthAvg: +n.dm.toFixed(3), depthSd: +Math.sqrt(n.ds / Math.max(1, n.n)).toFixed(3), strokes: n.strokes, turnPerMm: +(n.turn / Math.max(1, n.mm)).toFixed(3), sameWay30mm: n.abs ? +(n.net / n.abs).toFixed(3) : null, cw: Math.round(n.cw), ccw: Math.round(n.ccw), reversalsPer10mm: +(n.rev / Math.max(1, n.mm) * 10).toFixed(3), dipReversalsPer10mm: +(n.revDip / Math.max(1, n.mm) * 10).toFixed(3), turnFlipsPer10mm: +(n.flips / Math.max(1, n.mm) * 10).toFixed(3), hist: Object.fromEntries(['speed', 'gap', 'depth', 'pressure', 'tilt', 'radius', 'run', 'stroke'].filter(k => n[k]).map(k => [k, n[k].map(Math.round)])) }; }
     const hm = c.hm || [], box = T.pack; let passes = null; if (box) { const v = []; for (let j = 2; j < box[3] * 2 - 2; j++) for (let i = 2; i < box[2] * 2 - 2; i++) v.push(hm[j * 30 + i] || 0); const s = [...v].sort((a, b) => a - b), m = v.reduce((a, b) => a + b, 0) / Math.max(1, v.length); passes = { mean: r1(m), sd: r1(Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / Math.max(1, v.length))), min: s[0], p10: s[Math.floor(s.length * 0.1)], median: s[Math.floor(s.length / 2)], p90: s[Math.floor(s.length * 0.9)], max: s[s.length - 1] }; }
@@ -2124,13 +2126,15 @@ TT.open = async (el, id) => {
   function setAng(v) { st.magAng = ((Math.round(v) % 180) + 180) % 180; st.dirty = true; const l = $('#tt-angv'); if (l) l.textContent = st.magAng + '°'; const r = pop.querySelector('[data-angr]'); if (r) r.value = st.magAng; drawAng(); drawCur(); }
   function drawAng() { const b = $('#tt-rail [data-r="angle"]'); if (!b) return; b.hidden = !isMag();
     $('#tt-angi').setAttribute('transform', `rotate(${st.magAng} 12 12)`); $('#tt-angl').textContent = st.magTilt ? (st.magAng ? 'pen+' + st.magAng : 'pen') : st.magAng + '°'; }
+  // The part of a slider that stays inside a lesson's limits, shown in green under it.
+  const zoneHtml = (min, max, def, lim) => { if (!lim) return ''; const [dir, m] = lim, lo = Math.max(+min, dir > 0 ? +min : def - m), hi = Math.min(+max, dir > 0 ? def + m : +max), pc = (v) => (v - min) / (max - min) * 100; return hi > lo ? `<i class="tt-zone" style="left:${pc(lo).toFixed(1)}%;width:${(pc(hi) - pc(lo)).toFixed(1)}%" data-tip="Green stays inside the lesson limits"></i>` : ''; };
   const slider = (key, label, min, max, step, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt ? fmt(val) : val}</b></span>
-    <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-f="${key}"></label>`;
+    <span class="tt-zwrap"><input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-f="${key}">${zoneHtml(min, max, TT.feelBase(st.needle)[key], TT_LIMITS.feel[key])}</span></label>`;
   // A needle's slider, centred on that needle's default: `w` either way, less if the floor is nearer.
   const fslider = (key, label, w, floor, step, val, fmt) => { const b = TT.feelBase(st.needle)[key] ?? val, r = Math.min(w, b - floor), dp = step < 1 ? 2 : 0; return slider(key, label, +(b - r).toFixed(dp), +(b + r).toFixed(dp), step, val, fmt); };
   const setProfile = (k) => { const p = TT_PROFILES.find(x => x[0] === k); if (!p) return; cal.profile = k; cal.hand = p[2]; cal.fade = p[3]; cal.voltOff = p[4]; };
-  const cslider = (key, label, min, max, step, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt(val)}</b></span>
-    <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-c="${key}"></label>`;
+  const cslider = (key, label, min, max, step, val, fmt) => { const pf = TT_PROFILES.find(p => p[0] === cal.profile), def = key === 'hand' && pf ? pf[2] : key === 'fade' && pf ? pf[3] : TT.calDefaults[key]; return `<label class="dz-sl"><span>${label}<b>${fmt(val)}</b></span>
+    <span class="tt-zwrap"><input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-c="${key}">${zoneHtml(min, max, def, TT_LIMITS.cal[key])}</span></label>`; };
   const CFMT = { curve: v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even', pMin: v => Math.round(v * 100) + '%', pMax: v => Math.round(v * 100) + '%', hand: v => '× ' + v, fade: v => '× ' + v, flow: v => '× ' + v, tilt0: v => v + '°', blow: v => +v ? '× ' + v : 'off', tough: v => '× ' + v };
   const curveSvg = (c) => `<svg class="tt-curve" viewBox="0 0 100 100"><path d="M0 100 ${[...Array(21)].map((_, i) => `L${i * 5} ${100 - curve(i / 20, c) * 100}`).join(' ')}"/></svg>`;
   const copySettings = async () => {
@@ -2193,9 +2197,9 @@ TT.open = async (el, id) => {
       ${fslider('miss', 'Missed punctures when light', 40, 0, 1, f.miss, v => v + '%')}
       ${fslider('hang', 'Needle hang', 40, 0, 1, f.hang ?? 40, v => v + '%')}
       <div class="lbl">Skin</div>
-      <label class="dz-sl"><span>Skin stretch<b>${st.stretch}%</b></span><input type="range" min="50" max="100" step="1" value="${st.stretch}" data-stretch></label>
-      ${fsec('Needle look (all needles, all pieces)', `<label class="dz-sl"><span>Needle thickness<b id="tt-thinv">${Math.round(nlook.thin * 100)}%</b></span><input type="range" min="20" max="70" step="5" value="${Math.round(nlook.thin * 100)}" data-nthin></label>
-        <label class="dz-sl"><span>Magnum needle texture<b id="tt-texv">${Math.round(nlook.tex * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.tex * 100)}" data-ntex></label>
+      <label class="dz-sl"><span>Skin stretch<b>${st.stretch}%</b></span><span class="tt-zwrap"><input type="range" min="50" max="100" step="1" value="${st.stretch}" data-stretch>${zoneHtml(50, 100, TT_STRETCH, TT_LIMITS.look.stretch)}</span></label>
+      ${fsec('Needle look (all needles, all pieces)', `<label class="dz-sl"><span>Needle thickness<b id="tt-thinv">${Math.round(nlook.thin * 100)}%</b></span><input type="range" min="20" max="70" step="5" value="${Math.round(nlook.thin * 100)}" data-nthin>${zoneHtml(20, 70, TT_LOOK.thin, TT_LIMITS.look.thin)}</label>
+        <label class="dz-sl"><span>Magnum needle texture<b id="tt-texv">${Math.round(nlook.tex * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.tex * 100)}" data-ntex>${zoneHtml(0, 100, TT_LOOK.tex, TT_LIMITS.look.tex)}</label>
         <p class="muted" style="font-size:11px;margin:2px 0 6px">Takes effect on your next stroke; what's already tattooed stays.</p>
         <button class="btn small" data-nnew style="margin-bottom:6px">Back to default (45% / 100%)</button>`, { fold: true, open: true })}
       <div class="lbl">Needle size</div><div class="seg" style="margin-bottom:8px">${[[0.25, '#08'], [0.3, '#10'], [0.35, '#12']].map(([v, n]) => `<button data-sz="${v}" class="${f.size === v ? 'on' : ''}" style="flex:1">${n} · ${v} mm</button>`).join('')}</div>
@@ -3229,6 +3233,8 @@ function ttStyle() {
 .tt-lsgrad { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 6px 0 2px; } .tt-lsgrad i { flex: 1; height: 9px; border-radius: 5px; background: linear-gradient(90deg, #eb3c3c 0%, #f0c83c 35%, #3cdc78 55%, #3cdc78 75%, #ff9628 100%); }
 .tt-lsimg { cursor: zoom-in; } .tt-lsheatinfo[hidden] { display: none; } .tt-lsleg { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 12px; margin: 6px 0; } .tt-lsleg i { width: 11px; height: 11px; border-radius: 3px; margin-left: 6px; } .tt-lsnotes { margin: 6px 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
 .tt-lsmotion { display: block; width: 100%; max-width: 480px; margin: 10px 0; } .tt-lsmotion .tt-lsmpath { fill: none; stroke: var(--teal); stroke-width: .9; } .tt-lsmotion .tt-lsmarrow { fill: none; stroke: var(--ink2, #999); stroke-width: 1.2; }
+.tt-zwrap { position: relative; display: block; } .tt-zwrap input { display: block; width: 100%; } .tt-zone { position: absolute; bottom: -2px; height: 3px; border-radius: 2px; background: #3cdc78; pointer-events: none; } .dz-sl:has(> .tt-zone) { position: relative; } .dz-sl > .tt-zone { bottom: 0; }
+.tt-zwrapv { position: relative; display: block; } .tt-zonev { position: absolute; right: -3px; bottom: 0; width: 3px; border-radius: 2px; background: #3cdc78; pointer-events: none; }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
 .tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
