@@ -7299,7 +7299,7 @@ async function notesRows() { return (await DB.all(`SELECT id, name, doc, thumb_r
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
-  { build: 279, when: '2026-11-07T13:12', added: ['This note now keeps your last 15 updates. Use the arrows to flick back through any you missed.', 'Every update shows the date and time it went out.', 'Make sticky note turns an update\'s test list into a sticky note with tick boxes that stays on your home screen.', 'You can turn these notes off in Settings.'],
+  { build: 279, when: '2026-11-07T13:12', added: [],
     test: ['Flick through the older updates with the arrows.', 'Press Make sticky note, tick something, then close and reopen the app. Is the tick still there?', 'Turn the notes off in Settings, then back on.'] },
   { build: 278, when: '2026-11-07T12:41', added: ['This What\'s new note on the home screen.'], test: ['Tick something here, hide the note and bring it back.'] },
   { build: 277, when: '2026-11-07T12:26', added: ['Your settings can be saved. Slider changes are temporary until you save them, and the app asks when you close the sliders.', 'Export and Import move your settings to a new workspace or another device.'], test: ['Change a slider, close the sliders, and check it asks to save.', 'Export your settings, then Import that file.'] },
@@ -7315,7 +7315,7 @@ let newsAt = 0;
 const newsHtml = () => { if (Settings.get('news_off') === '1') return ''; const s = newsState(), L = newsList(); if (!L.length) return ''; newsAt = Math.max(0, Math.min(L.length - 1, newsAt)); const n = L[newsAt]; if (s.hidden) return `<button class="news-mini" data-news="show">Build ${L[0].build}: what's new</button>`;
   return `<div class="card news-card" id="news-card"><div class="news-top"><h2>What's new in build ${n.build}</h2><button class="btn small" data-news="hide">Hide</button><button class="btn small" data-news="del">Delete</button></div>
     <div class="muted news-when">${esc(newsWhen(n.when))}</div>
-    <ul class="news-list">${n.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="lbl">Things to test</div>
+    ${n.added.length ? `<ul class="news-list">${n.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}<div class="lbl">Things to test</div>
     ${n.test.map((x, i) => `<label class="news-todo"><input type="checkbox" data-news-do="${n.build}:${i}" ${s.done[n.build]?.[i] ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}
     <div class="row news-nav"><button class="btn small" data-news="older" ${newsAt >= L.length - 1 ? 'disabled' : ''} aria-label="Older update">‹ Older</button><span class="muted">${newsAt + 1} of ${L.length}</span><button class="btn small" data-news="newer" ${newsAt ? '' : 'disabled'} aria-label="Newer update">Newer ›</button><span style="flex:1"></span><button class="btn small" data-news="sticky">Make sticky note</button></div></div>`; };
 const newsRefresh = () => { const c = document.querySelector('#news-card, .news-mini'), t = document.createElement('div'); t.innerHTML = newsHtml(); if (c) c.replaceWith(...t.childNodes); };
