@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 273;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 274;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -44,6 +44,7 @@ const TT_FEEL = {
 const TT_FEEL_LIQ = { liner: { flow: 80, miss: 25, size: 0.3, bleed: 60 }, shader: { flow: 60, miss: 40, bleed: 45 }, mag: { flow: 60, miss: 35, bleed: 45 }, soft: { flow: 60, miss: 35, bleed: 55, speedFade: 30, dMax: 0.95 } };
 /* Voltage by grouping, as set up for a relatively slow hand (liners higher as they get bigger; shaders and
    magnums lower). Voltage sets how fast the machine hits (about 98 a second at 7 V, rising steeply with voltage), how hard, and how fast the skin gets irritated. */
+const TT_LOOK = { thin: 45, tex: 100 }, TT_STRETCH = 75;
 const TT_TOUGH = 1.8;   // what Skin toughness 1 means
 const TT_VOLT = { '1RL': 7.0, '3RL': 7.55, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '11RL': 7.7, '14RL': 7.9, '5RS': 6.6, '7RS': 6.7, '9RS': 6.8, '11RS': 6.9, '14RS': 7,
   '7M1': 6.5, '9M1': 6.55, '11M1': 5, '13M1': 8.25, '15M1': 6.55, '9CM': 6.5, '15CM': 7.45, '23CM': 6.7, '31CM': 6.75 };
@@ -697,7 +698,7 @@ TT.open = async (el, id) => {
   let lastVk = '';   // the view the guides were last placed for
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
-    stretch: meta.stretch ?? 75, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 75, magTilt: meta.magTilt ?? true, rot: meta.rot || 0 };
+    stretch: meta.stretch ?? TT_STRETCH, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 75, magTilt: meta.magTilt ?? true, rot: meta.rot || 0 };
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
      saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
      spot; ink lighter than what's there is held back in proportion to how saturated it is (a light value can't take
@@ -1034,7 +1035,7 @@ TT.open = async (el, id) => {
   /* Needle look, for every piece: thickness scales each needle's mark (and how tight a round liner's needles sit); needle
      texture is how much a magnum's separate marks show, the rest of the ink going down as a soft haze. 100 and 100 are
      how the simulator used to draw. */
-  const nlook = { thin: +Settings.get('tt_thin', '45') / 100, tex: +Settings.get('tt_tex', '100') / 100 };
+  const nlook = { thin: +Settings.get('tt_thin', String(TT_LOOK.thin)) / 100, tex: +Settings.get('tt_tex', String(TT_LOOK.tex)) / 100 };
   const magReach = (nd, depth, roll) => { const tau = Math.abs(roll); if (tau < 0.01) return depth * nd.e; const s = Math.sign(roll), q = (1 - s * nd.t) / 2;
     if (nk !== 'soft') return Math.max(0, depth - tau * 1.5 * q);
     const te = Math.min(1, Math.abs(nd.t - s * tau)); return Math.max(0, depth * (0.22 + 0.78 * Math.pow(Math.cos(te * Math.PI / 2), 1.5)) - tau * 0.25 * q); };
@@ -1109,9 +1110,16 @@ TT.open = async (el, id) => {
   const tmStrokeEnd = () => { const c = EX?.cur?.tm, n = c?.by[st.needle]; if (!n) return; n.strokes++; tmPut(n, 'stroke', (pen.trav || 0), 1); c.lastEnd = Date.now(); };
   const tmStrokeStart = () => { const c = EX?.cur?.tm; if (c?.lastEnd) { const gap = Date.now() - c.lastEnd; if (gap > 3000) { c.pauses++; c.pauseMs += gap; } } };
   // Everything about an attempt as one block of text, to paste beside another attempt and compare.
+  /* Settings moved well past their default in the direction that makes a lesson easier. Compared against the live
+     defaults, so changing a default updates this too. Pen pressure and natural angle differ per tablet, so they're left
+     out. Each entry: name, value, default, direction that's easier (+1 higher, -1 lower), allowed margin. This only
+     reports; it doesn't change the grade. */
+  const settingsCheck = (T) => { const D = TT.calDefaults, pf = TT_PROFILES.find(p => p[0] === cal.profile), hand0 = pf ? pf[2] : D.hand, fade0 = pf ? pf[3] : D.fade, list = [['Ink flow', cal.flow, D.flow, 1, 0.25], ['Hand speed', cal.hand, hand0, -1, 0.5], ['Fast strokes lighten', cal.fade, fade0, -1, 0.2], ['Skin toughness', cal.tough, D.tough, 1, 0.25], ['Blowout sensitivity', cal.blow, D.blow, -1, 0.25], ['Needle thickness', Math.round(nlook.thin * 100), TT_LOOK.thin, 1, 10], ['Magnum texture', Math.round(nlook.tex * 100), TT_LOOK.tex, -1, 25], ['Skin stretch', st.stretch, TT_STRETCH, 1, 15]];
+    for (const id of T.needles || [T.needle]) { const f = TT.feel(id), b = TT.feelBase(id); list.push([id + ' voltage', f.volt, b.volt, 1, 0.4], [id + ' hand speed', f.hand, b.hand, -1, 8], [id + ' fast strokes lighten', f.speedFade, b.speedFade, -1, 12], [id + ' ink flow', f.flow, b.flow, 1, 12], [id + ' bleed', f.bleed, b.bleed, 1, 12], [id + ' missed punctures', f.miss, b.miss, -1, 10], [id + ' deepest', f.dMax, b.dMax, 1, 0.1], [id + ' lightest', f.dMin, b.dMin, 1, 0.08], [id + ' size', f.size, b.size, 1, 0.03]); }
+    return list.filter(([, v, d, dir, m]) => (v - d) * dir > m + 1e-6).map(([name, value, def]) => ({ name, value, default: def })); };
   const tmReport = (T, res) => { const c = EX.cur || {}, tm = c.tm || { by: {} }, r1 = (v) => Math.round(v * 10) / 10, by = {}; for (const id in tm.by) { const n = tm.by[id]; by[id] = { seconds: r1(n.ms / 1000), travelMm: Math.round(n.mm), mmPerSec: r1(n.mm / Math.max(0.001, n.ms / 1000)), speedAvg: r1(n.vm), speedSd: r1(Math.sqrt(n.vs / Math.max(1, n.n))), depthAvg: +n.dm.toFixed(3), depthSd: +Math.sqrt(n.ds / Math.max(1, n.n)).toFixed(3), strokes: n.strokes, turnPerMm: +(n.turn / Math.max(1, n.mm)).toFixed(3), sameWay30mm: n.abs ? +(n.net / n.abs).toFixed(3) : null, cw: Math.round(n.cw), ccw: Math.round(n.ccw), reversalsPer10mm: +(n.rev / Math.max(1, n.mm) * 10).toFixed(3), dipReversalsPer10mm: +(n.revDip / Math.max(1, n.mm) * 10).toFixed(3), turnFlipsPer10mm: +(n.flips / Math.max(1, n.mm) * 10).toFixed(3), hist: Object.fromEntries(['speed', 'gap', 'depth', 'pressure', 'tilt', 'radius', 'run', 'stroke'].filter(k => n[k]).map(k => [k, n[k].map(Math.round)])) }; }
     const hm = c.hm || [], box = T.pack; let passes = null; if (box) { const v = []; for (let j = 2; j < box[3] * 2 - 2; j++) for (let i = 2; i < box[2] * 2 - 2; i++) v.push(hm[j * 30 + i] || 0); const s = [...v].sort((a, b) => a - b), m = v.reduce((a, b) => a + b, 0) / Math.max(1, v.length); passes = { mean: r1(m), sd: r1(Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / Math.max(1, v.length))), min: s[0], p10: s[Math.floor(s.length * 0.1)], median: s[Math.floor(s.length / 2)], p90: s[Math.floor(s.length * 0.9)], max: s[s.length - 1] }; }
-    return { inkforge_stats: 1, build: TT_BUILD, lesson: EX.lesson, task: T.id, when: new Date().toISOString(), grade: ttGrade(res.total), total: res.total, parts: res.parts, skin: res.skin, traumaMax: res.traumaMax, traumaAvg: res.traumaAvg, blowouts: res.blowouts, blowSpots: (c.spots || []).map(s => s[2]), undos: res.undos || 0, lasers: res.lasers || 0, penalty: res.penalty || 0, dips: c.dips || 0, needleSeconds: r1(Object.values(tm.by).reduce((a, n) => a + n.ms, 0) / 1000), pauses: tm.pauses || 0, pauseSeconds: Math.round((tm.pauseMs || 0) / 1000), zoomHist: (tm.zoom || []).map(Math.round), passes, needles: by, edges: TM_EDGES, settings: { cal: { ...cal }, look: { thin: nlook.thin, tex: nlook.tex }, stretch: st.stretch, skin: st.skin, feel: JSON.parse(Settings.get('tt_feel', '{}')) }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } }; };
+    return { inkforge_stats: 1, build: TT_BUILD, lesson: EX.lesson, task: T.id, when: new Date().toISOString(), grade: ttGrade(res.total), total: res.total, parts: res.parts, skin: res.skin, traumaMax: res.traumaMax, traumaAvg: res.traumaAvg, blowouts: res.blowouts, blowSpots: (c.spots || []).map(s => s[2]), undos: res.undos || 0, lasers: res.lasers || 0, penalty: res.penalty || 0, dips: c.dips || 0, needleSeconds: r1(Object.values(tm.by).reduce((a, n) => a + n.ms, 0) / 1000), pauses: tm.pauses || 0, pauseSeconds: Math.round((tm.pauseMs || 0) / 1000), zoomHist: (tm.zoom || []).map(Math.round), passes, settingsFlags: settingsCheck(T), needles: by, edges: TM_EDGES, settings: { cal: { ...cal }, look: { thin: nlook.thin, tex: nlook.tex }, stretch: st.stretch, skin: st.skin, feel: JSON.parse(Settings.get('tt_feel', '{}')) }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } }; };
   const hcAdd = (q, r) => { const R0 = Math.max(TS, r), x0 = Math.max(0, Math.floor((q.x - R0) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + R0) / TS)), y0 = Math.max(0, Math.floor((q.y - R0) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + R0) / TS)); for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (Math.hypot((x + 0.5) * TS - q.x, (y + 0.5) * TS - q.y) <= R0) HC[y * tw + x]++; };
   const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(b[2] * 2 - 1, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(b[3] * 2 - 1, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
   const packMotion = (d, depth) => { const m = EX.cur.mv ||= { all: 0, fast: 0, n: 0, vm: 0, vs: 0, dm: 0, ds: 0 }, l = d / mm, v = pen.speed || 0; m.all += l; if (v > 110) m.fast += l; m.n++; const a = v - m.vm; m.vm += a / m.n; m.vs += a * (v - m.vm); const b = depth - m.dm; m.dm += b / m.n; m.ds += b * (depth - m.dm); };
@@ -2962,6 +2970,7 @@ TT.open = async (el, id) => {
     if (T.corners) notes.push(...cornerNotes);
     if (res.blowouts) notes.push(`Blue with a white ring is blowout, ${spots.length} spot${spots.length === 1 ? '' : 's'}: pressing deep while moving slowly. Keep moving whenever the needle is in.`);
     if (res.skin != null && res.skin < 90) notes.push('Purple is overworked skin. Make fewer passes, and let it settle before pressing Done.');
+    const sf = settingsCheck(T); if (sf.length) notes.push(`Settings past their limit, which can make this easier: ${sf.map(s => `${s.name} ${s.value} (default ${s.default})`).join(', ')}.`);
     if (!notes.length) notes.push('Nothing stands out: a clean attempt. To score higher, keep the line dead centre on the stencil and the speed steady from start to finish.');
     return { c, notes, crop: [x0, y0, cw, ch] }; };
   // The attempt on one A4 page: report, finished piece and heat map, then fresh, healed and 10 years, cropped the same.
