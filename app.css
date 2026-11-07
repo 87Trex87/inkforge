@@ -1619,3 +1619,5 @@ textarea.ff-i { resize: none; }
 .note-pin .nk label { align-items: flex-start; } .note-pin .nk label span { white-space: normal; overflow: visible; text-overflow: clip; }
 .start-build { font-size: 12px; color: var(--ink2, #9aa5a6); margin-left: 4px; }
 .app-credit { margin: 22px 12px 10px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--ink2, #9aa5a6); }
+.set-tabs { display: flex; gap: 2px; margin-bottom: 10px; padding: 3px; border-radius: 10px; background: rgba(127,127,127,.12); overflow-x: auto; scrollbar-width: none; } .set-tabs button { flex: 1 0 auto; padding: 9px 12px; border: 0; border-radius: 8px; background: none; color: var(--ink2, #9aa5a6); font: 600 13px var(--ui); cursor: pointer; white-space: nowrap; } .set-tabs button.on { background: var(--teal); color: #06201d; }
+.set-intro { margin: 0 2px 10px; font-size: 13px; color: var(--ink2, #9aa5a6); } .card[hidden] { display: none; } .set-fixed > summary { cursor: default; list-style: none; } .set-fixed > summary::-webkit-details-marker { display: none; } .set-fixed > summary::after { display: none; }

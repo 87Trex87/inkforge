@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 284;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 285;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2038,9 +2038,11 @@ const VIEWS = {
         <div class="seg" id="s-pfsize">${PF_SIZES.map(([k, l]) => `<button type="button" data-sz="${k}" class="${pfSizeDefault() === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
         <div class="lbl" style="margin-top:14px">Storage on this device ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</div>
         <div id="storage-info" class="muted">Checking…</div>
-      </details>`;
+      </details>
+      <p class="app-credit">Designed and crafted by Trevor Schuster using vibe coding.<br>Over 15 years of experience in tattooing.</p>`;
     },
     async mount() {
+      settingsTabs();
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-setup').onclick = runSetup;
       $('#s-tour').onclick = () => tourOffer();
@@ -7297,6 +7299,12 @@ const noteImg = new Map();   // design id -> { at, url }
 let noteRun = 0, noteTop = 1;   // noteTop: raises the note last touched (without moving it in the page, which would cancel the tap)
 const notePos = () => { try { return JSON.parse(Settings.get('note_pos', '{}')); } catch { return {}; } };
 async function notesRows() { return (await DB.all(`SELECT id, name, doc, thumb_ref, updated_at FROM designs WHERE kind = 'note' ORDER BY id`)).map(r => { let doc = {}; try { doc = JSON.parse(r.doc); } catch {} return { ...r, doc }; }); }
+/* The Settings screen as tabs. The sections stay where they're built, so their controls keep working; a tab just shows its own. */
+let setTab = 'start';
+const SET_TABS = [['start', 'Start', 'Quick actions and helpers.'], ['profile', 'Profile', 'Your name, studio and logo.'], ['week', 'Your week', 'Your hours, days off and time between bookings.'], ['gcal', 'Google', 'Link your bookings to Google Calendar.'], ['backup', 'Backup', 'Keep your work safe: save it, restore it, and check your storage.']];
+function settingsTabs() { const cards = [...document.querySelectorAll('#view > .card')]; if (!cards.length) return; const tabOf = (c) => c.dataset.sec || (c.classList.contains('su-again') ? 'start' : 'profile'); const bar = document.createElement('div'); bar.className = 'set-tabs'; bar.innerHTML = SET_TABS.map(([k, n]) => `<button data-stab="${k}">${n}</button>`).join(''); const intro = document.createElement('p'); intro.className = 'set-intro'; cards[0].before(bar, intro);
+  cards.forEach(c => { if (c.tagName === 'DETAILS') { c.open = true; c.querySelector(':scope > summary').addEventListener('click', (e) => { if (!e.target.closest('button, a, .help')) e.preventDefault(); }); c.classList.add('set-fixed'); } });
+  const show = () => { cards.forEach(c => { c.hidden = tabOf(c) !== setTab; }); bar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.stab === setTab)); intro.textContent = SET_TABS.find(t => t[0] === setTab)[2]; }; bar.onclick = (e) => { const b = e.target.closest('[data-stab]'); if (b) { setTab = b.dataset.stab; show(); scrollTo(0, 0); } }; show(); }
 /* What's new: a stack on the home screen of the latest builds, newest first, with things to test. Add an entry to the top
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
