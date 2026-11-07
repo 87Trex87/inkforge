@@ -721,6 +721,7 @@ const VIEWS = {
       return `${WS.cur?.test ? `<div class="card practice-note"><b>Practice workspace</b><span>Everything here is made up: try printing, quotes, receipts and more.
           Phone numbers are fake, so nothing can be sent. Bookings move along each day you open it.</span>
           <button class="btn small" data-go-ws="${esc(WS.list.find(x => !x.test)?.id || '')}">Back to my workspace</button></div>` : ''}
+      ${newsHtml()}
       <div class="card hero">
         <div class="muted">${esc(today)}</div>
         <div class="big">${greet}${name ? ', ' + esc(name) : ''}</div>
@@ -7291,6 +7292,27 @@ const noteImg = new Map();   // design id -> { at, url }
 let noteRun = 0, noteTop = 1;   // noteTop: raises the note last touched (without moving it in the page, which would cancel the tap)
 const notePos = () => { try { return JSON.parse(Settings.get('note_pos', '{}')); } catch { return {}; } };
 async function notesRows() { return (await DB.all(`SELECT id, name, doc, thumb_ref, updated_at FROM designs WHERE kind = 'note' ORDER BY id`)).map(r => { let doc = {}; try { doc = JSON.parse(r.doc); } catch {} return { ...r, doc }; }); }
+/* What's new: a note on the home screen about the latest build, with things to test. Update NEWS with every push (plain
+   English, short, for tattoo artists, not programmers). A new build number brings the note back even if it was deleted. */
+const NEWS = { build: 278,
+  added: ['Tune in now watches you colour in a circle and works out your hand speed for you. You no longer pick one.',
+    'Your settings can be saved. Slider changes are temporary until you save them, and the app asks when you close the sliders.',
+    'Export and Import move your settings to a new workspace or another device.',
+    'Green bars on the sliders show the safe range for lessons. Going past green gets noted on your report.',
+    'Solid black now marks your outline as well as your packing.',
+    'Save PDF on the report card makes one file with your results, pictures and stats to send on.'],
+  test: ['Run Tune in and press Save. Does the hand speed it picks feel right?',
+    'Change a slider, close the sliders, and check it asks to save.',
+    'Export your settings, then Import that file.',
+    'Do Solid black: Copy stats, then Save PDF, and send the file.',
+    'Check the Healed and 10 years views of your Solid black. Do thin or patchy spots show?'] };
+const newsState = () => { let s = {}; try { s = JSON.parse(Settings.get('news_state', '{}')); } catch {} return s.build === NEWS.build ? s : { build: NEWS.build, done: {} }; };
+const newsHtml = () => { const s = newsState(); if (s.deleted) return ''; if (s.hidden) return `<button class="news-mini" data-news="show">Build ${NEWS.build}: what's new</button>`;
+  return `<div class="card news-card"><div class="news-top"><h2>What's new in build ${NEWS.build}</h2><button class="btn small" data-news="hide">Hide</button><button class="btn small" data-news="del">Delete</button></div>
+    <ul class="news-list">${NEWS.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="lbl">Things to test</div>
+    ${NEWS.test.map((x, i) => `<label class="news-todo"><input type="checkbox" data-news-do="${i}" ${s.done?.[i] ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}</div>`; };
+document.addEventListener('click', async (e) => { const b = e.target.closest?.('[data-news]'); if (!b) return; const s = newsState(), a2 = b.dataset.news; if (a2 === 'hide') s.hidden = true; if (a2 === 'show') s.hidden = false; if (a2 === 'del') { if (!await ask('Delete this note? It comes back with the next update.')) return; s.deleted = true; } await Settings.set('news_state', JSON.stringify(s)); render(); });
+document.addEventListener('change', (e) => { const i = e.target.dataset?.newsDo; if (i == null) return; const s = newsState(); (s.done ||= {})[i] = e.target.checked; Settings.set('news_state', JSON.stringify(s)); });
 async function notesShow() {
   const run = ++noteRun, key = (location.hash.slice(1) || 'home').split('/')[0];
   document.querySelectorAll('#notes-layer').forEach(x => x.remove());

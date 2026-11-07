@@ -1610,3 +1610,8 @@ textarea.ff-i { resize: none; }
 .ff-link { position: absolute; display: block; cursor: pointer; }
 .dz-ctx { scrollbar-color: var(--line) transparent; }
 .dz-ctx::-webkit-scrollbar { height: 5px; } .dz-ctx::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; } .dz-ctx::-webkit-scrollbar-track { background: transparent; }
+
+/* What's new note */
+.news-card { border-color: var(--teal); } .news-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; } .news-top h2 { flex: 1; margin: 0; }
+.news-list { margin: 8px 0; padding-left: 18px; font-size: 14px; line-height: 1.45; } .news-todo { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 14px; line-height: 1.4; } .news-todo input { margin-top: 3px; accent-color: var(--teal); flex: none; }
+.news-mini { display: block; width: 100%; margin-bottom: 10px; padding: 8px 12px; text-align: left; background: none; color: var(--teal); border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: 13px; cursor: pointer; }
