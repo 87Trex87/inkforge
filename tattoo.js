@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 271;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 272;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -2971,7 +2971,7 @@ TT.open = async (el, id) => {
     const y2 = top + h1 + 20; [['fresh', 'Fresh'], ['healed', 'Healed'], ['aged', '10 years']].forEach(([md, lb], i) => fit(viewOf(md), lb, m + i * (third + 20), y2, third, 400));
     const y3 = y2 + 420; g.fillStyle = ink; g.font = '400 21px Inter, sans-serif'; let yy = y3; for (const n of heat.notes) { const words = n.split(' '); let ln = ''; for (const w of words) { const nx = ln ? ln + ' ' + w : w; if (g.measureText(nx).width > P - 2 * m) { if (yy < Q - 30) g.fillText(ln, m, yy); yy += 27; ln = w; } else ln = nx; } if (yy < Q - 30) g.fillText(ln, m, yy); yy += 33; }
     return c; };
-  const shareStats = (T, res, heat, parts, statsTxt) => { const o = document.createElement('div'); o.id = 'tt-share'; o.className = 'tt-tune'; o.style.zIndex = 110;
+  const shareStats = (T, res, heat, parts, statsTxt) => { const o = document.createElement('div'); o.id = 'tt-share'; o.className = 'tt-tune'; o.style.cssText = 'position:fixed;inset:0;z-index:110;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.6)';
     o.innerHTML = `<div class="card tt-tcard" style="max-width:360px"><h2 style="margin-top:0">Share this attempt</h2><p class="muted" style="margin-top:0">Copy the stats as text, or save a PDF with the report, pictures, healed stages and stats.</p><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" data-sh="close">Cancel</button><span style="flex:1"></span><button class="btn" data-sh="copy">Copy stats</button><button class="btn primary" data-sh="pdf" ${heat ? '' : 'disabled'}>Save PDF</button></div></div>`;
     o.onclick = async (e) => { const b = e.target.closest('[data-sh]'); if (!b) return; const a = b.dataset.sh; if (a === 'close') return o.remove();
       if (a === 'copy') { try { await navigator.clipboard.writeText(statsTxt); toast('Stats copied.'); } catch { await askText('Copy these stats:', statsTxt); } return o.remove(); }
