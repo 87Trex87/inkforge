@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 283;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 284;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1296,6 +1296,7 @@ const VIEWS = {
       + tileGroup('App', [
         tile('settings', 'Settings & backup', 'Profile, your week, Google, backup', false, 'settings'),
         tile('tour', 'Take a tour', 'A guided look around InkForge', false, 'tour')])
+      + `<p class="app-credit">Designed and crafted by Trevor Schuster using vibe coding.<br>Over 15 years of experience in tattooing.</p>`
   },
   portfolio: {
     title: () => 'Portfolio',

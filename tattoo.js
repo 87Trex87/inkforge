@@ -2198,7 +2198,7 @@ TT.open = async (el, id) => {
       start: () => `<canvas class="tt-pad" id="tt-pad" width="560" height="200"></canvas>
         <div class="tt-live" id="tt-live">Pressure – · Speed – · Tilt –</div>
         <div class="row" style="gap:6px;margin:6px 0 12px"><button class="btn small primary" style="flex:1" data-tune>Tune in (guided)</button><button class="btn small" data-padclear>Clear the pad</button></div>
-        <div class="lbl">Needle size</div><div class="lbl">Needle size</div><div class="seg" style="margin-bottom:8px">${[[0.25, '#08'], [0.3, '#10'], [0.35, '#12']].map(([v, n]) => `<button data-sz="${v}" class="${f.size === v ? 'on' : ''}" style="flex:1">${n} · ${v} mm</button>`).join('')}</div>
+        <div class="lbl">Needle size</div><div class="seg" style="margin-bottom:8px">${[[0.25, '#08'], [0.3, '#10'], [0.35, '#12']].map(([v, n]) => `<button data-sz="${v}" class="${f.size === v ? 'on' : ''}" style="flex:1">${n} · ${v} mm</button>`).join('')}</div>
         <label class="dz-sl"><span>Skin stretch<b>${st.stretch}%</b></span><span class="tt-zwrap"><input type="range" min="50" max="100" step="1" value="${st.stretch}" data-stretch>${zoneHtml(50, 100, TT_STRETCH, TT_LIMITS.look.stretch)}</span></label>
         <label class="toggle" style="display:inline-flex"><input type="checkbox" data-penonly ${TT.cal().penOnly ? 'checked' : ''}><span>Pen only (fingers move the page)</span></label>`,
       needle: () => intro(`Only the ${nd.id}. How it runs and how it puts ink in.`) + `<div class="lbl">Speed</div>

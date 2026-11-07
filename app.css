@@ -1618,3 +1618,4 @@ textarea.ff-i { resize: none; }
 .news-when { font-size: 12px; margin-top: 2px; } .news-nav { gap: 6px; margin-top: 10px; align-items: center; flex-wrap: wrap; } .news-nav .muted { font-size: 12px; }
 .note-pin .nk label { align-items: flex-start; } .note-pin .nk label span { white-space: normal; overflow: visible; text-overflow: clip; }
 .start-build { font-size: 12px; color: var(--ink2, #9aa5a6); margin-left: 4px; }
+.app-credit { margin: 22px 12px 10px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--ink2, #9aa5a6); }
