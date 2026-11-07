@@ -10,7 +10,7 @@
    green. Layers are fixed: stencil (for tracing, never part of the piece), linework, shadow, mid tone, light tone
    and highlights. Ink darkens the skin under it (multiply); highlights sit on top. */
 const TATTOO_VERSION = 1;
-const TT_BUILD = 270;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
+const TT_BUILD = 271;   // shown on the lessons screen and report card, so a test can tell which build it really ran; keep with sw.js
 
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
@@ -517,6 +517,15 @@ TT.lessons = (el) => { ttStyle();
 const TT_LEG_LINE = '<div class="tt-lsleg"><i style="background:#3cdc78"></i>On the line<i style="background:#f03c3c"></i>Missed<i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div>', TT_LEG_PACK = '<div class="tt-lsgrad"><span>Fewer passes</span><i></i><span>More passes</span></div><div class="tt-lsleg"><i style="background:#ff9628"></i>Off the line<i style="background:#783caa"></i>Overworked<i style="background:#3c82ff"></i>Blowout</div>';
 const ttShotHtml = (pu, hu, notes, pack) => `<div class="tt-lsshot">${hu ? '<div class="seg" style="margin:10px 0 8px"><button class="on" data-shot="p" style="flex:1">Finished piece</button><button data-shot="h" style="flex:1">Heat map</button></div>' : ''}
   <img class="tt-chshot tt-lsimg" src="${pu}" alt="The attempt" data-tip="Tap to view full screen"><div class="tt-lsheatinfo" hidden>${pack ? TT_LEG_PACK : TT_LEG_LINE}<ul class="tt-lsnotes">${(notes || []).map(n => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
+// A small PDF: one A4 page holding a JPEG, then pages of real text, so the stats can be selected and copied back out.
+const ttStatsPdf = (jpeg, iw, ih, text) => { const enc = new TextEncoder(), wrap = []; let rest = text.replace(/[^\x20-\x7e]/g, '?'); while (rest.length) { if (rest.length <= 105) { wrap.push(rest); break; } let cut = rest.lastIndexOf(',', 105); if (cut < 40) cut = 104; wrap.push(rest.slice(0, cut + 1)); rest = rest.slice(cut + 1); }
+  const pages = []; for (let i = 0; i < wrap.length; i += 76) pages.push(wrap.slice(i, i + 76)); const objs = [], n = pages.length, kids = [3, ...pages.map((_, i) => 7 + i * 2)];
+  objs[1] = '<< /Type /Catalog /Pages 2 0 R >>'; objs[2] = `<< /Type /Pages /Count ${n + 1} /Kids [${kids.map(k => k + ' 0 R').join(' ')}] >>`; objs[3] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /I 5 0 R >> >> /Contents 4 0 R >>';
+  const pic = 'q 595 0 0 842 0 0 cm /I Do Q'; objs[4] = `<< /Length ${pic.length} >>\nstream\n${pic}\nendstream`; objs[6] = '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>';
+  pages.forEach((ls, i) => { const body = `BT /F 8 Tf 10 TL 30 806 Td ${i ? '' : '(Stats for comparing attempts) Tj T* T* '}${ls.map(l => `(${l.replace(/([\\()])/g, '\\$1')}) Tj T*`).join(' ')} ET`, a = 7 + i * 2; objs[a] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F 6 0 R >> >> /Contents ${a + 1} 0 R >>`; objs[a + 1] = `<< /Length ${body.length} >>\nstream\n${body}\nendstream`; });
+  const parts = [enc.encode('%PDF-1.4\n')], off = []; let pos = parts[0].length; const add = (b) => { parts.push(b); pos += b.length; };
+  for (let i = 1; i < objs.length; i++) { off[i] = pos; if (i === 5) { add(enc.encode(`5 0 obj\n<< /Type /XObject /Subtype /Image /Width ${iw} /Height ${ih} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`)); add(jpeg); add(enc.encode('\nendstream\nendobj\n')); } else add(enc.encode(`${i} 0 obj\n${objs[i]}\nendobj\n`)); }
+  const xref = pos; add(enc.encode(`xref\n0 ${objs.length}\n0000000000 65535 f \n${off.slice(1).map(v => String(v).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`)); return new Blob(parts, { type: 'application/pdf' }); };
 // A row of plain numbers from the stats block, under the bars.
 const ttChips = (txt) => { let s = null; try { s = JSON.parse(txt); } catch {} if (!s) return ''; const m = Math.floor((s.needleSeconds || 0) / 60), sec = Math.round((s.needleSeconds || 0) % 60), c = [['Needle time', m ? `${m} m ${sec} s` : `${sec} s`], ...(s.passes ? [['Passes per spot', Math.round(s.passes.mean)]] : []), ['Blowouts', s.blowouts || 0], ['Undos', s.undos || 0]]; return `<div class="tt-lschips">${c.map(([k, v]) => `<div><b>${v}</b><span>${k}</span></div>`).join('')}</div>`; };
 const ttShotBind = (root, pu, hu) => { const im = root.querySelector('.tt-lsimg'), info = root.querySelector('.tt-lsheatinfo'); let cur = 'p';
@@ -2951,7 +2960,23 @@ TT.open = async (el, id) => {
     if (res.blowouts) notes.push(`Blue with a white ring is blowout, ${spots.length} spot${spots.length === 1 ? '' : 's'}: pressing deep while moving slowly. Keep moving whenever the needle is in.`);
     if (res.skin != null && res.skin < 90) notes.push('Purple is overworked skin. Make fewer passes, and let it settle before pressing Done.');
     if (!notes.length) notes.push('Nothing stands out: a clean attempt. To score higher, keep the line dead centre on the stencil and the speed steady from start to finish.');
-    return { c, notes }; };
+    return { c, notes, crop: [x0, y0, cw, ch] }; };
+  // The attempt on one A4 page: report, finished piece and heat map, then fresh, healed and 10 years, cropped the same.
+  const reportPage = async (T, res, heat, parts) => { const P = 1240, Q = 1754, m = 60, c = document.createElement('canvas'); c.width = P; c.height = Q; const g = c.getContext('2d'), [x0, y0, cw, ch] = heat.crop; g.fillStyle = '#fff'; g.fillRect(0, 0, P, Q); const ink = '#171a1b', soft = '#5f6a6b', col = (v) => v >= 80 ? '#17a697' : v >= 65 ? '#d29a26' : '#d3524c';
+    g.fillStyle = ink; g.font = '700 44px Inter, sans-serif'; g.fillText(`Lesson ${EX.lesson}: ${T.title}`, m, 90); g.fillStyle = soft; g.font = '500 24px Inter, sans-serif'; g.fillText(`${new Date().toLocaleString()}  ·  Build ${TT_BUILD}  ·  ${res.blowouts || 0} blowouts  ·  ${res.undos || 0} undos`, m, 130);
+    g.textAlign = 'right'; g.fillStyle = col(res.total); g.font = '800 92px Inter, sans-serif'; g.fillText(ttGrade(res.total), P - m, 100); g.font = '700 28px Inter, sans-serif'; g.fillText(`${res.total} / 100`, P - m, 138); g.textAlign = 'left';
+    const rows = [...parts, ...(res.skin != null ? [['skin', res.skin]] : [])]; rows.forEach(([k, v], i) => { const cx = m + (i % 2) * 570, y = 178 + Math.floor(i / 2) * 42; g.fillStyle = ink; g.font = '500 24px Inter, sans-serif'; g.fillText(k[0].toUpperCase() + k.slice(1), cx, y + 18); g.fillStyle = '#e5e8e8'; g.fillRect(cx + 170, y, 300, 20); g.fillStyle = col(v); g.fillRect(cx + 170, y, 3 * v, 20); g.fillStyle = ink; g.textAlign = 'right'; g.fillText(String(v), cx + 530, y + 18); g.textAlign = 'left'; });
+    const top = 190 + Math.ceil(rows.length / 2) * 42, fit = (src, label, bx, by, bw, bh, sx = x0, sy = y0, sw = cw, sh = ch) => { const s = Math.min(bw / sw, (bh - 34) / sh), dw = sw * s, dh = sh * s; g.fillStyle = soft; g.font = '600 22px Inter, sans-serif'; g.fillText(label, bx, by + 22); g.drawImage(src, sx, sy, sw, sh, bx + (bw - dw) / 2, by + 34, dw, dh); };
+    const half = (P - 2 * m - 30) / 2, third = (P - 2 * m - 40) / 3, h1 = 640; g.imageSmoothingQuality = 'high'; fit(composite(1), 'Finished piece', m, top, half, h1); fit(heat.c, 'Heat map', m + half + 30, top, half, h1, 0, 0, heat.c.width, heat.c.height);
+    const y2 = top + h1 + 20; [['fresh', 'Fresh'], ['healed', 'Healed'], ['aged', '10 years']].forEach(([md, lb], i) => fit(viewOf(md), lb, m + i * (third + 20), y2, third, 400));
+    const y3 = y2 + 420; g.fillStyle = ink; g.font = '400 21px Inter, sans-serif'; let yy = y3; for (const n of heat.notes) { const words = n.split(' '); let ln = ''; for (const w of words) { const nx = ln ? ln + ' ' + w : w; if (g.measureText(nx).width > P - 2 * m) { if (yy < Q - 30) g.fillText(ln, m, yy); yy += 27; ln = w; } else ln = nx; } if (yy < Q - 30) g.fillText(ln, m, yy); yy += 33; }
+    return c; };
+  const shareStats = (T, res, heat, parts, statsTxt) => { const o = document.createElement('div'); o.id = 'tt-share'; o.className = 'tt-tune'; o.style.zIndex = 110;
+    o.innerHTML = `<div class="card tt-tcard" style="max-width:360px"><h2 style="margin-top:0">Share this attempt</h2><p class="muted" style="margin-top:0">Copy the stats as text, or save a PDF with the report, pictures, healed stages and stats.</p><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" data-sh="close">Cancel</button><span style="flex:1"></span><button class="btn" data-sh="copy">Copy stats</button><button class="btn primary" data-sh="pdf" ${heat ? '' : 'disabled'}>Save PDF</button></div></div>`;
+    o.onclick = async (e) => { const b = e.target.closest('[data-sh]'); if (!b) return; const a = b.dataset.sh; if (a === 'close') return o.remove();
+      if (a === 'copy') { try { await navigator.clipboard.writeText(statsTxt); toast('Stats copied.'); } catch { await askText('Copy these stats:', statsTxt); } return o.remove(); }
+      if (b.disabled) return; b.disabled = true; b.textContent = 'Saving…'; try { const pg = await reportPage(T, res, heat, parts), jb = await new Promise(r => pg.toBlob(r, 'image/jpeg', 0.88)), jpeg = new Uint8Array(await jb.arrayBuffer()), pdf = ttStatsPdf(jpeg, pg.width, pg.height, statsTxt), name = `lesson-${EX.lesson}-${ttGrade(res.total)}-${res.total}-${ymd(new Date())}.pdf`; await saveFiles([new File([pdf], name, { type: 'application/pdf' })]); o.remove(); } catch (err) { b.disabled = false; b.textContent = 'Save PDF'; toast('Could not save: ' + err.message, 4000); } };
+    document.body.appendChild(o); };
   async function lessonReport(T, res) {
     const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
     const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now();
@@ -2968,7 +2993,7 @@ TT.open = async (el, id) => {
       <div class="row" style="gap:6px;margin-top:12px"><button class="btn ${pass ? '' : 'primary'}" style="flex:1" data-lr="again">Try again</button>${pass ? '<button class="btn primary" style="flex:1" data-lr="out">Continue</button>' : ''}</div>
       <div class="row" style="gap:6px;margin-top:6px;justify-content:center"><button class="btn small" data-lr="out">Lessons</button><button class="btn small" data-lr="close">Close</button><button class="btn small" data-lr="copy" data-tip="Copy every stat from this attempt as text, to compare attempts">Copy stats</button></div></div>`;
     ttShotBind(o, purl, hurl);
-    o.onclick = async (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; if (a === 'copy') { try { await navigator.clipboard.writeText(statsTxt); toast('Stats copied.'); } catch { await askText('Copy these stats:', statsTxt); } return; } o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
+    o.onclick = async (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; if (a === 'copy') return shareStats(T, res, heat, parts, statsTxt); o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
     document.body.appendChild(o);
   }
   function chReport(T, res, info) {
