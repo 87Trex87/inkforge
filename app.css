@@ -1617,3 +1617,4 @@ textarea.ff-i { resize: none; }
 .news-mini { display: block; width: 100%; margin-bottom: 10px; padding: 8px 12px; text-align: left; background: none; color: var(--teal); border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: 13px; cursor: pointer; }
 .news-when { font-size: 12px; margin-top: 2px; } .news-nav { gap: 6px; margin-top: 10px; align-items: center; flex-wrap: wrap; } .news-nav .muted { font-size: 12px; }
 .note-pin .nk label { align-items: flex-start; } .note-pin .nk label span { white-space: normal; overflow: visible; text-overflow: clip; }
+.start-build { font-size: 12px; color: var(--ink2, #9aa5a6); margin-left: 4px; }

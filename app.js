@@ -1,5 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
+const APP_BUILD = 283;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7552,7 +7553,7 @@ function showStart() {
   const draw = () => {
     const list = [...WS.list].sort((a, b) => (b.opened || '').localeCompare(a.opened || ''));
     o.innerHTML = `<div class="start-in">
-      <div class="start-brand"><img src="icon.svg" alt=""><h1>InkForge</h1><span class="badge ea">Early Access</span></div>
+      <div class="start-brand"><img src="icon.svg" alt=""><h1>InkForge</h1><span class="badge ea">Early Access</span><span class="start-build">Build ${APP_BUILD}</span></div>
       <div class="start-acts">
         <button class="start-big" id="st-new"><b>+ New workspace</b><span>Start fresh, e.g. for another artist</span></button>
         <label class="start-big"><b>Open file…</b><span>A workspace or backup file (.inkforge)</span><input type="file" accept=".inkforge,.sqlite,.db" hidden id="st-file"></label>
