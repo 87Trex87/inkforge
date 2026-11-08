@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 306, when: '2026-11-08T15:43', added: ['In Solid black, your outline now counts as filled. Packing only needs to meet the line, so the heat map no longer shows a red edge.'],
+    test: ['Do Solid black and pack up to the line. Is the edge of the heat map green now?'] },
   { build: 305, when: '2026-11-08T14:42', added: ['Solid black now allows 8 strokes for the outline with the 5RL, two per side. Packing with the 7RS has no limit.', 'Trevor\'s The flag attempt is now in Compare.'],
     test: ['Do Solid black. Does the report count only your outline strokes?'] },
   { build: 303, when: '2026-11-08T14:28', added: ['The flag now allows 12 strokes.', 'The flag no longer marks you down where lines meet, like the edges landing on the pole.'],
