@@ -450,7 +450,7 @@ const TT_LESSONS = [
       { title: 'Plan your order', text: 'Think before you start. Pull the long pole first, then the flag edges into it, then the end of the flag. Turn the page with two fingers whenever a pull feels awkward.',
         more: 'Lines that meet another line should land right on it and stop. Do not cross the pole, and do not leave a gap.' },
       { title: 'Everything counts', text: 'Your line stays on the stencil, even and solid. Your corners are sharp, not rounded and not running past. Your weight is the same on the straight parts as on the curves.',
-        more: 'Reload before the ink runs low, so a thin patch does not sneak into the last line. Keep the same speed and pressure on every line. Up to 10 strokes are allowed; each one more costs 3 points.' },
+        more: 'Reload before the ink runs low, so a thin patch does not sneak into the last line. Keep the same speed and pressure on every line. Up to 12 strokes are allowed; each one more costs 3 points.' },
       { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher finishes the chapter, and more than 1 blowout is still an instant fail.',
         more: 'Your score is your line score, reduced by up to 20% for poor corners and up to 10% for changing line weight. Both reductions apply together.' }
     ] }
@@ -493,8 +493,8 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
     text: 'Black ink, 5RL. Follow the S and on around the circle, with the same weight of line all the way. You can stop and restart, in no more than 8 strokes. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
     path: (g) => { g.moveTo(78 + 15 * Math.cos(-Math.PI / 6), 42 + 15 * Math.sin(-Math.PI / 6)); g.arc(78, 42, 15, -Math.PI / 6, -1.5 * Math.PI, true); g.arc(78, 79, 22, -Math.PI / 2, 245 * Math.PI / 180); } },
   { id: 'l-flag', lesson: '1-5', cat: 'line', diff: 1, title: 'The flag', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, geom: TT_FLAG, joints: [[45, 36], [45, 70], [45, 30], [110, 36], [110, 70]],
-    maxStrokes: 10, corners: [[110, 36, 1, -1, 0, 'Top right'], [110, 70, 1, 1, 0, 'Bottom right'], [45, 36, -1, -1, 1, 'Top edge at the pole'], [45, 70, -1, -1, 1, 'Bottom edge at the pole']],
-    text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners, in no more than 10 strokes. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
+    maxStrokes: 12, corners: [[110, 36, 1, -1, 0, 'Top right'], [110, 70, 1, 1, 0, 'Bottom right'], [45, 36, -1, -1, 1, 'Top edge at the pole'], [45, 70, -1, -1, 1, 'Bottom edge at the pole']],
+    text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners, in no more than 12 strokes. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
     path: (g) => ttGeomDraw(g, TT_FLAG) }];
 const ttPackPath = (b) => (g) => { g.moveTo(b[0], b[1]); g.lineTo(b[0] + b[2], b[1]); g.lineTo(b[0] + b[2], b[1] + b[3]); g.lineTo(b[0], b[1] + b[3]); g.closePath(); };
 TT_LS_CH.push({ id: 'l-pack', lesson: '2-1', cat: 'pack', diff: 2, title: 'Solid black', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [85, 55, 10, 10], needles: ['5RL', '7RS'], path: ttPackPath([85, 55, 10, 10]),
@@ -2950,13 +2950,13 @@ TT.open = async (el, id) => {
   const colAt = (i) => { let r = 0, g2 = 0, b = 0, w = 0; for (const key of INK) { const D = imgd[key].data, a = D[i + 3] / 255; if (!a) continue; r += D[i] * a; g2 += D[i + 1] * a; b += D[i + 2] * a; w += a; } return w ? [r / w, g2 / w, b / w] : null; };
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 441;
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
-  const lineScore = (draw, coreW, covEase = 1) => {   // covEase: the share of the strip that counts as full coverage
+  const lineScore = (draw, coreW, covEase = 1, skip = null) => {   // covEase: the share of the strip that counts as full coverage
     coreW = Math.min(coreW, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35));   // never wider than the needle in use can make
     const core = maskOf(draw, false, coreW), band = maskOf(draw, false, coreW + 2.2), mid = maskOf(draw, false, Math.min(0.2, coreW * 0.4));
     let cn = 0, cin = 0, sum = 0, sum2 = 0, mn = 0, ink = 0, out = 0;
     for (let i = 3; i < core.length; i += 4) { const d = densAt(i - 3);
       if (core[i] > 128) { cn++; if (d > 0.28) cin++; }
-      if (mid[i] > 128) { mn++; sum += d; sum2 += d * d; }
+      if (mid[i] > 128 && !(skip && skip((i >> 2) % W, Math.floor((i >> 2) / W)))) { mn++; sum += d; sum2 += d * d; }   // skip: where lines meet, which is darker by design
       if (d > 0.2) { ink++; if (band[i] < 30) out++; } }
     const mean = sum / Math.max(1, mn), sd = Math.sqrt(Math.max(0, sum2 / Math.max(1, mn) - mean * mean));
     const cov = Math.min(1, cin / Math.max(1, cn) / covEase), spill = out / Math.max(1, ink), cons = 1 - clamp01(sd / 0.8);
@@ -3004,7 +3004,7 @@ TT.open = async (el, id) => {
     return { score: Math.round(100 * cov * (0.2 * sat + 0.65 * cons + 0.15 * (1 - sp)) * (0.5 + 0.5 * ctrl) * (0.3 + 0.7 * tech) * (0.9 + 0.1 * outl)), technique: Math.round(tech * 100), outline: Math.round(outl * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100) }; };
   const scoreOf = (T) => {
     if (T.pack) return packScore(T.pack);
-    if (T.geom) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners), wt = weightScore(T.geom, T.joints); return { ...ln, score: Math.round(ln.score * (0.8 + 0.2 * cr / 100) * (0.9 + 0.1 * wt / 100)), corners: cr, weight: wt }; }
+    if (T.geom) { const hv = ttGeomPts(T.geom).map(q => HC[Math.floor(q.y * mm / TS) * tw + Math.floor(q.x * mm / TS)] || 0).filter(v => v > 0).sort((a, b) => a - b), med = hv[Math.floor(hv.length / 2)] || 0, skip = (px, py) => T.joints.some(j => Math.hypot(j[0] * mm - px, j[1] * mm - py) < 3 * mm) || (med && (HC[Math.floor(py / TS) * tw + Math.floor(px / TS)] || 0) > med * 1.6); const ln = lineScore(T.path, T.core, T.covEase, skip), cr = cornerScore(T.corners), wt = weightScore(T.geom, T.joints); return { ...ln, score: Math.round(ln.score * (0.8 + 0.2 * cr / 100) * (0.9 + 0.1 * wt / 100)), corners: cr, weight: wt }; }
     if (T.arcs) { const ln = lineScore(T.path, T.core, T.covEase), wt = weightScore(T.arcs.map(a => ['a', ...a])); return { ...ln, score: Math.round(ln.score * (0.7 + 0.3 * wt / 100)), weight: wt }; }
     if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.75 + 0.25 * cr / 100)), corners: cr }; }
     if (T.kind === 'line') return lineScore(T.path, T.core, T.covEase);
