@@ -450,7 +450,7 @@ const TT_LESSONS = [
       { title: 'Plan your order', text: 'Think before you start. Pull the long pole first, then the flag edges into it, then the end of the flag. Turn the page with two fingers whenever a pull feels awkward.',
         more: 'Lines that meet another line should land right on it and stop. Do not cross the pole, and do not leave a gap.' },
       { title: 'Everything counts', text: 'Your line stays on the stencil, even and solid. Your corners are sharp, not rounded and not running past. Your weight is the same on the straight parts as on the curves.',
-        more: 'Reload before the ink runs low, so a thin patch does not sneak into the last line. Keep the same speed and pressure on every line.' },
+        more: 'Reload before the ink runs low, so a thin patch does not sneak into the last line. Keep the same speed and pressure on every line. Up to 10 strokes are allowed; each one more costs 3 points.' },
       { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher finishes the chapter, and more than 1 blowout is still an instant fail.',
         more: 'Your score is your line score, reduced by up to 20% for poor corners and up to 10% for changing line weight. Both reductions apply together.' }
     ] }
@@ -493,8 +493,8 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
     text: 'Black ink, 5RL. Follow the S and on around the circle, with the same weight of line all the way. You can stop and restart, in no more than 8 strokes. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
     path: (g) => { g.moveTo(78 + 15 * Math.cos(-Math.PI / 6), 42 + 15 * Math.sin(-Math.PI / 6)); g.arc(78, 42, 15, -Math.PI / 6, -1.5 * Math.PI, true); g.arc(78, 79, 22, -Math.PI / 2, 245 * Math.PI / 180); } },
   { id: 'l-flag', lesson: '1-5', cat: 'line', diff: 1, title: 'The flag', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, geom: TT_FLAG, joints: [[45, 36], [45, 70], [45, 30], [110, 36], [110, 70]],
-    corners: [[110, 36, 1, -1, 0, 'Top right'], [110, 70, 1, 1, 0, 'Bottom right'], [45, 36, -1, -1, 1, 'Top edge at the pole'], [45, 70, -1, -1, 1, 'Bottom edge at the pole']],
-    text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
+    maxStrokes: 10, corners: [[110, 36, 1, -1, 0, 'Top right'], [110, 70, 1, 1, 0, 'Bottom right'], [45, 36, -1, -1, 1, 'Top edge at the pole'], [45, 70, -1, -1, 1, 'Bottom edge at the pole']],
+    text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners, in no more than 10 strokes. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
     path: (g) => ttGeomDraw(g, TT_FLAG) }];
 const ttPackPath = (b) => (g) => { g.moveTo(b[0], b[1]); g.lineTo(b[0] + b[2], b[1]); g.lineTo(b[0] + b[2], b[1] + b[3]); g.lineTo(b[0], b[1] + b[3]); g.closePath(); };
 TT_LS_CH.push({ id: 'l-pack', lesson: '2-1', cat: 'pack', diff: 2, title: 'Solid black', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [85, 55, 10, 10], needles: ['5RL', '7RS'], path: ttPackPath([85, 55, 10, 10]),
@@ -2966,16 +2966,15 @@ TT.open = async (el, id) => {
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
   const inBox = (b) => (x, y, m = 0) => x >= b[0] - m && x <= b[0] + b[2] + m && y >= b[1] - m && y <= b[1] + b[3] + m;
   // How steady the line's thickness stays along a shape: the ink's width across the line at each step, away from where lines meet.
-  const weightScore = (segs, joints = []) => { const ws = [], hcAll = joints.length ? [] : ttGeomPts(segs).map(q => HC[Math.floor(q.y * mm / TS) * tw + Math.floor(q.x * mm / TS)] || 0).filter(v => v > 0).sort((a, b) => a - b), hcMed = hcAll.length ? hcAll[Math.floor(hcAll.length / 2)] : 0; for (const q of ttGeomPts(segs)) { if (joints.some(j => Math.hypot(j[0] - q.x, j[1] - q.y) < 5)) continue; let c = 0;
+  const weightScore = (segs, joints = []) => { const ws = [], hcAll = ttGeomPts(segs).map(q => HC[Math.floor(q.y * mm / TS) * tw + Math.floor(q.x * mm / TS)] || 0).filter(v => v > 0).sort((a, b) => a - b), hcMed = hcAll.length ? hcAll[Math.floor(hcAll.length / 2)] : 0; for (const q of ttGeomPts(segs)) { if (joints.some(j => Math.hypot(j[0] - q.x, j[1] - q.y) < 5)) continue; let c = 0; { const cell = HC[Math.floor(q.y * mm / TS) * tw + Math.floor(q.x * mm / TS)] || 0; if (hcMed && cell > hcMed * 1.6) continue; }
       const hit = (o) => { const X = Math.round((q.x + o * q.nx) * mm), Y = Math.round((q.y + o * q.ny) * mm); return X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.2; };
       if (joints.length) { // several lines close together: measure only the stroke nearest the stencil, so a neighbouring line isn't read as thickness
         let o0 = null; for (let d = 0; d <= 2.5 && o0 == null; d += 1 / mm) { if (hit(d)) o0 = d; else if (hit(-d)) o0 = -d; }
-        if (o0 != null) { c = 1; for (let o = o0 + 1 / mm; o <= o0 + 2.5 && hit(o); o += 1 / mm) c++; for (let o = o0 - 1 / mm; o >= o0 - 2.5 && hit(o); o -= 1 / mm) c++; } }
+        if (o0 != null) { const dAt = (o) => { const X = Math.round((q.x + o * q.nx) * mm), Y = Math.round((q.y + o * q.ny) * mm); return X >= 0 && Y >= 0 && X < W && Y < H ? densAt((Y * W + X) * 4) : 0; }; c = dAt(o0); for (let o = o0 + 1 / mm; o <= o0 + 2.5 && hit(o); o += 1 / mm) c += dAt(o); for (let o = o0 - 1 / mm; o >= o0 - 2.5 && hit(o); o -= 1 / mm) c += dAt(o); } }
       else { // the ink across the line, added up, so a few pixels either side don't jump the reading; joins, where a new stroke tapers back over the last one, are left out
-        const cell = HC[Math.floor(q.y * mm / TS) * tw + Math.floor(q.x * mm / TS)] || 0; if (hcMed && cell > hcMed * 1.6) continue;
         for (let o = -2.5; o <= 2.5; o += 1 / mm) { const X = Math.round((q.x + o * q.nx) * mm), Y = Math.round((q.y + o * q.ny) * mm); if (X >= 0 && Y >= 0 && X < W && Y < H) c += densAt((Y * W + X) * 4); } }
       if (c) ws.push(c / mm); }
-    if (!joints.length && ws.length > 10) { const sm = ws.map((_, i) => { const a = ws.slice(Math.max(0, i - 2), i + 3); return a.reduce((x, y) => x + y, 0) / a.length; }); ws.splice(0, ws.length, ...sm); }   // averaged over about 2.5 mm, as an eye would see it
+    if (ws.length > 10) { const sm = ws.map((_, i) => { const a = ws.slice(Math.max(0, i - 2), i + 3); return a.reduce((x, y) => x + y, 0) / a.length; }); ws.splice(0, ws.length, ...sm); }   // averaged over about 2.5 mm, as an eye would see it
     if (ws.length < 10) return 0; const m = ws.reduce((a, b) => a + b, 0) / ws.length, sd = Math.sqrt(ws.reduce((a, b) => a + (b - m) * (b - m), 0) / ws.length); return Math.round(100 * (1 - clamp01(sd / m / 0.5))); };
   /* Each corner, from [x, y, out x, out y]: ink has to reach the point itself, stay out of the diagonal just inside it
      (a rounded corner cuts through there), and stay off the two lines' extensions just past it (a crossed corner). */
