@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 309, when: '2026-11-08T16:59', added: ['New lesson in Intermediate: line a small circle in black, then pack it in orange you mix yourself. It has to heal solid.', 'In lessons, changing needle now starts it clean, so your colours don\'t get muddy.'],
+    test: ['Do Orange circle. Does your colour, healing and line score feel fair?'] },
   { build: 308, when: '2026-11-08T16:38', added: ['Trevor\'s Solid black attempt is now in Compare, so every lesson has one to compare against.', 'A clean Solid black now gets a packing tip instead of a line tip.'],
     test: ['Do Solid black and compare yourself to Trevor. Where are you furthest apart?'] },
   { build: 307, when: '2026-11-08T16:14', added: ['Solid black no longer marks you down for working with a light hand. Only real changes in depth count.'],
