@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 303, when: '2026-11-08T14:28', added: ['The flag now allows 12 strokes.', 'The flag no longer marks you down where lines meet, like the edges landing on the pole.'],
+    test: ['Do The flag again. Does your score feel fair now?'] },
   { build: 302, when: '2026-11-08T14:09', added: ['The flag now allows 10 strokes. Each one over costs 3 points.', 'The flag now judges line thickness the same fairer way as Curves, so tapered joins don\'t count against you.', 'Trevor\'s Curves attempt is now in Compare.'],
     test: ['Do The flag. Do the strokes count and Weight look fair?'] },
   { build: 300, when: '2026-11-08T13:47', added: ['Curves now judges line thickness more fairly. Tapering into a join no longer counts against you.', 'Curves now allows 8 strokes. Each one over costs 3 points.'],
