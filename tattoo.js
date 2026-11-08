@@ -484,10 +484,10 @@ const ttGeomPts = (segs) => segs.flatMap(s => { const out = [];
   return out; });
 // Lesson tasks run in the real workspace like a challenge, but stay out of the challenge list, medals and trophies.
 const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: 'Your first line', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, maxStrokes: 2,
-  text: 'Black ink, 5RL. Load the needle, then pull one clean line down the stencil in a single pass. Leave the skin to settle for about a minute, then press Done. C or higher unlocks the next lesson.',
+  text: 'Black ink, 5RL. Load the needle, then pull one clean line down the stencil in no more than 2 strokes. Leave the skin to settle for about a minute, then press Done. C or higher unlocks the next lesson.',
   path: (g) => { g.moveTo(90, 35); g.lineTo(90, 95); } },
   { id: 'l-rect', lesson: '1-3', cat: 'line', diff: 1, title: 'Sharp corners', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, maxStrokes: 8, corners: [[60, 45, -1, -1], [120, 45, 1, -1], [120, 85, 1, 1], [60, 85, -1, 1]],
-    text: 'Black ink, 5RL. Line the rectangle: four clean sides with sharp corners, not rounded and not crossing. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
+    text: 'Black ink, 5RL. Line the rectangle: four clean sides with sharp corners, not rounded and not crossing, in no more than 8 strokes. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
     path: (g) => { g.moveTo(60, 45); g.lineTo(120, 45); g.lineTo(120, 85); g.lineTo(60, 85); g.closePath(); } },
   { id: 'l-curve', lesson: '1-4', cat: 'line', diff: 1, title: 'Curves', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, arcs: [[78, 42, 15, -30, -270], [78, 79, 22, -90, 245]],
     text: 'Black ink, 5RL. Follow the S and on around the circle, with the same weight of line all the way. You can stop and restart. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
