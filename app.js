@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 317, when: '2026-11-08T21:57', added: ['New lesson in Intermediate: Stipple shading. Line a rectangle at full power, then turn the voltage right down and whip a smooth gradient out of dots.', 'Ink from a still needle now starts bleeding a little later and spreads more slowly.'],
+    test: ['Try Stipple shading. Does the grade match how good your gradient looks?'] },
   { build: 315, when: '2026-11-08T21:01', added: ['Compare now sits on each lesson and only compares attempts at that lesson. It opens with your best against Trevor\'s, with bigger pictures.'],
     test: ['Open Compare on a lesson you\'ve done. Is it clear what you\'re looking at?'] },
   { build: 314, when: '2026-11-08T20:37', added: ['Hold the needle still and the ink bleeds out into a soft blotch, like a marker pressed into paper.'],
