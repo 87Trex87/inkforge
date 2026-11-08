@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 314, when: '2026-11-08T20:37', added: ['Hold the needle still and the ink bleeds out into a soft blotch, like a marker pressed into paper.'],
+    test: ['Hold the needle still for a second or two. Does the blotch look right?'] },
   { build: 313, when: '2026-11-08T20:28', added: ['Trevor\'s Orange circle A 91 is now in Compare.', 'Your last 3 mixed colours sit in small caps under the needle\'s ink. Hold one to load that exact colour again.', 'Lessons show how many strokes you\'ve used. Holding the needle still in one spot now digs into the skin. Timelapse is gone, and the tilt count is quieter.'],
     test: ['Pack Orange circle. Does the cursor keep up, and do the recent caps give you the same orange back?'] },
   { build: 311, when: '2026-11-08T17:42', added: ['Orange circle no longer marks you down for extra passes where you turn the magnum. Only thin spots count against Consistency.'],
