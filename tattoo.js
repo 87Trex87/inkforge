@@ -68,7 +68,7 @@ function ttMix(a, b, t) {
 }
 // Grey wash: black ink thinned with water, not mixed with white; the strength is how much pigment it carries.
 const TT_WASH = [['Black', 1], ['Dark', 0.55], ['Mid', 0.3], ['Light', 0.14]];
-const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b', '#6b3f22', '#fbfbf8'];
+const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b', '#6b3f22', '#fbfbf8', '#c2185b'];   // new caps go on the end, so the fixed ones keep their places
 // Lettering fonts (the first is the app's own blackletter-style display face).
 const TT_FONTS = [["'Pirata One', serif", 'Old English'], ["'Brush Script MT', 'Segoe Script', cursive", 'Script'], ["Georgia, 'Times New Roman', serif", 'Serif'], ["Impact, 'Arial Black', sans-serif", 'Bold'], ["'Courier New', monospace", 'Type'], ["Arial, sans-serif", 'Plain']];
 const TT_SKINS = [['Light', '#f1d3bd'], ['Fair', '#e2b493'], ['Medium', '#c68c63'], ['Tan', '#a86b45'], ['Brown', '#7b4a2c'], ['Deep', '#4e2f1e']];
@@ -910,7 +910,7 @@ TT.open = async (el, id) => {
   const MKP = (() => { try { return JSON.parse(Settings.get('tt_mk', 'null')); } catch { return null; } })();
   let lastVk = '';   // the view the guides were last placed for
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
-    ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, caps: meta.caps || [...TT_CAPS], panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
+    ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, caps: meta.caps ? [...meta.caps, ...TT_CAPS.slice(meta.caps.length)] : [...TT_CAPS],   // a piece saved before a cap was added gets it too panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? TT_STRETCH, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 75, magTilt: meta.magTilt ?? true, rot: meta.rot || 0 };
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
      saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
