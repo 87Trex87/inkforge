@@ -1366,13 +1366,13 @@ TT.open = async (el, id) => {
   /* Dwelling: the machine keeps running while the needle sits in one spot, so after a moment there it digs a hole,
      even at a good depth: the skin there is overworked in about 2 s at a normal depth (faster deeper). Any needle. */
   const dwellRun = () => { let last = performance.now(); const id = setInterval(() => { if (!pen || !pen.dw || !cv.isConnected) return clearInterval(id);
-      const now = performance.now(), dt = Math.min(0.2, (now - last) / 1000); last = now; const held = (now - pen.dw.t) / 1000; if (held < 0.15) return;
+      const now = performance.now(), dt = Math.min(0.2, (now - last) / 1000); last = now; const held = (now - pen.dw.t) / 1000; if (held < 0.3) return;
       const d = st.lastD ?? 0.5; if (d < 0.15) return;
       /* Bleeding: ink held in one spot wicks out around it like a marker pressed into paper, a soft blotch that grows
-         to about 1.2 mm past the needle over 3 s, darker near the middle. Not a blowout: it sits at the surface. */
-      if (st.ink.v > 0.01) { const R = pen.foot + Math.min(1.2, (held - 0.15) * 0.4) * mm, ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake();
+         to about 1.2 mm past the needle over 6 s (after 0.35 s still), darker near the middle. Not a blowout: it sits at the surface. */
+      if (st.ink.v > 0.01 && held >= 0.35) { const R = pen.foot + Math.min(1.2, (held - 0.35) * 0.2) * mm, ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake();
         for (let n = 0; n < 6; n++) { const an = Math.random() * 6.283, rr = R * Math.sqrt(Math.random()), q = { x: pen.dw.x + Math.cos(an) * rr, y: pen.dw.y + Math.sin(an) * rr };
-          dotPig(pen.cx, q.x, q.y, 0.25 * mm + Math.random() * 0.2 * mm, 0.05 * ink * (1 - 0.6 * rr / R), false); }
+          dotPig(pen.cx, q.x, q.y, 0.25 * mm + Math.random() * 0.2 * mm, 0.025 * ink * (1 - 0.6 * rr / R), false); }
         const bp = R + 2 * mm, B = pen.box ||= { x0: pen.dw.x, y0: pen.dw.y, x1: pen.dw.x, y1: pen.dw.y };
         B.x0 = Math.min(B.x0, pen.dw.x - bp); B.y0 = Math.min(B.y0, pen.dw.y - bp); B.x1 = Math.max(B.x1, pen.dw.x + bp); B.y1 = Math.max(B.y1, pen.dw.y + bp);
         const u = flushPig(); if (u) paint({ x0: u.x0 - 4, y0: u.y0 - 4, x1: u.x1 + 4, y1: u.y1 + 4 }); }
