@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 300, when: '2026-11-08T13:47', added: ['Curves now judges line thickness more fairly. Tapering into a join no longer counts against you.', 'Curves now allows 8 strokes. Each one over costs 3 points.'],
+    test: ['Do Curves with a steady line and a join or two. Does Weight now look fair?'] },
   { build: 298, when: '2026-11-08T13:01', added: ['Sharp corners now takes off less for imperfect corners, so a clean rectangle can reach an A.'],
     test: ['Do Sharp corners with a clean rectangle. Does a good attempt now reach an A?'] },
   { build: 296, when: '2026-11-08T12:07', added: ['A progress bar now shows while your report card is being made after you press Done.', 'The lesson instructions now say how many strokes you\'re allowed.'],
