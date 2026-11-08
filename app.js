@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 323, when: '2026-11-09T00:41', added: ['There\'s a magenta ink cap now, and white sits last in the caps.', 'New lesson in Intermediate: Colour blend. Line a triangle in red, then blend from a dark red shadow at the point through red and orange to yellow.'],
+    test: ['Try Colour blend. Does the grade match how smooth your blend looks?'] },
   { build: 321, when: '2026-11-08T23:45', added: ['Whip shading now shows Trevor\'s finished piece beside you as an example, and his A 96 is in Compare.'],
     test: ['Do Whip shading with the example beside you. Can you get close to it?'] },
   { build: 320, when: '2026-11-08T23:17', added: ['New lesson in Intermediate: Whip shading. Line with a 9RL, then whip a smooth grey wash gradient with a curved mag, from Black down to Light.', 'There\'s now a 13 curved magnum (13CM) in the needles.'],
