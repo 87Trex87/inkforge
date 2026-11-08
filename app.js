@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 311, when: '2026-11-08T17:42', added: ['Orange circle no longer marks you down for extra passes where you turn the magnum. Only thin spots count against Consistency.'],
+    test: ['Do Orange circle again. Does Consistency feel fair now?'] },
   { build: 310, when: '2026-11-08T17:27', added: ['Magnums are gentler on skin, so you can pack colour solid without overworking it.', 'Healing now counts overworked skin too, so the score matches the healed view.'],
     test: ['Do Orange circle with the 7M turned up. Is it easier to heal solid now?'] },
   { build: 309, when: '2026-11-08T16:59', added: ['New lesson in Intermediate: line a small circle in black, then pack it in orange you mix yourself. It has to heal solid.', 'In lessons, changing needle now starts it clean, so your colours don\'t get muddy.'],
