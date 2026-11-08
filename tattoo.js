@@ -568,6 +568,9 @@ const ttZoom = (pu, hu, start) => { const o = document.createElement('div'); o.i
   im.onpointermove = (e) => { const p = P.get(e.pointerId); if (!p) return; const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; if (P.size >= 2 && pin) { const [a, b] = [...P.values()]; setZ(pin.z * Math.hypot(a.x - b.x, a.y - b.y) / pin.d, (a.x + b.x) / 2, (a.y + b.y) / 2); } else if (z > 1) { x += dx; y += dy; show(); } };
   im.onpointerup = im.onpointercancel = (e) => { P.delete(e.pointerId); if (P.size < 2) pin = null; };
   document.body.appendChild(o); };
+// A small progress card for the few seconds between pressing Done and the report card. ttFrame lets it paint first.
+const ttFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+const ttBusy = (label, frac) => { let o = document.getElementById('tt-busy'); if (label == null) { o?.remove(); return; } if (!o) { o = document.createElement('div'); o.id = 'tt-busy'; o.innerHTML = '<div class="card"><b></b><i><s></s></i></div>'; document.body.appendChild(o); } o.querySelector('b').textContent = label + '…'; o.querySelector('s').style.width = Math.round(frac * 100) + '%'; };
 /* ---------- Compare stats ----------
    Two attempts side by side: yours from this device, a pasted stats block, a file (the stats text, or a PDF this app
    made, which carries the stats as text and the report as a picture), or a reference artist's attempt that ships with
@@ -3084,7 +3087,7 @@ TT.open = async (el, id) => {
     return `<div class="tt-expen"><span>Free undos ${left} / ${free}${EX.mode === 'ch' ? '' : ' (whole exam)'}</span>${p.pts ? `<b>−${p.pts} points</b>` : ''}</div>`; }
   $('#tt-exbar').addEventListener('click', async (e) => { const a = e.target.closest('[data-ex]')?.dataset.ex; if (!a) return;
     if (a === 'fold') { EX.fold = !EX.fold; return exBar(); }
-    if (a === 'done') return exDone();
+    if (a === 'done') { ttBusy('Scoring your work', 0.1); await ttFrame(); return exDone(); }
     if (a === 'retry') { if (!await ask('Start this challenge again on clean skin?')) return; return exStart(true); }
     if (a === 'next') return exNext();
     if (a === 'report') return exReport();
@@ -3150,14 +3153,14 @@ TT.open = async (el, id) => {
   async function lessonReport(T, res) {
     const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
     const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now();
-    const heat = res.empty ? null : heatOf(T, res), hurl = heat?.c.toDataURL('image/jpeg', 0.92), purl = composite(Math.min(1, 1600 / W)).toDataURL('image/jpeg', 0.9), old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
+    ttBusy('Making the heat map', 0.35); await ttFrame(); const heat = res.empty ? null : heatOf(T, res), hurl = heat?.c.toDataURL('image/jpeg', 0.92), purl = composite(Math.min(1, 1600 / W)).toDataURL('image/jpeg', 0.9), old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
     if (pass && (!old || res.total > old.total)) { const sc = Math.min(1, 1600 / W), blob = await new Promise(r => composite(sc).toBlob(r, 'image/jpeg', 0.9));
       p.results = p.results || {}; p.results[EX.lesson] = { ref: await Media.save(blob, 'jpg'), total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, penalty: res.penalty, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, heat: await Media.save(await new Promise(r => heat.c.toBlob(r, 'image/jpeg', 0.92)), 'jpg'), notes: heat.notes }; if (old?.ref) await Media.release(old.ref); if (old?.heat) await Media.release(old.heat); }
     await Settings.set('tt_lessons', JSON.stringify(p));
     const statsTxt = JSON.stringify(tmReport(T, res)); if (pass && p.results?.[EX.lesson]?.when && p.results[EX.lesson].total === res.total) { p.results[EX.lesson].stats = statsTxt; await Settings.set('tt_lessons', JSON.stringify(p)); }
     /* The last attempt, pass or fail, kept so it can be reopened after leaving the app. Only one is kept. Saved at slightly
        different quality from the best result so the two never share a file (media files are named by their content). */
-    if (heat) { const jpg = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q)), prev = p.last, pg = await reportPage(T, res, heat, parts); p.last = { lesson: EX.lesson, ref: await Media.save(await jpg(composite(Math.min(1, 1600 / W)), 0.89), 'jpg'), heat: await Media.save(await jpg(heat.c, 0.91), 'jpg'), page: await Media.save(await jpg(pg, 0.87), 'jpg'), pw: pg.width, ph: pg.height, notes: heat.notes, total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, stats: statsTxt, pass };
+    ttBusy('Saving your attempt', 0.65); await ttFrame(); if (heat) { const jpg = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q)), prev = p.last, pg = await reportPage(T, res, heat, parts); p.last = { lesson: EX.lesson, ref: await Media.save(await jpg(composite(Math.min(1, 1600 / W)), 0.89), 'jpg'), heat: await Media.save(await jpg(heat.c, 0.91), 'jpg'), page: await Media.save(await jpg(pg, 0.87), 'jpg'), pw: pg.width, ph: pg.height, notes: heat.notes, total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, stats: statsTxt, pass };
       await Settings.set('tt_lessons', JSON.stringify(p)); for (const k of ['ref', 'heat', 'page']) if (prev?.[k] && prev[k] !== p.last[k]) await Media.release(prev[k]); }
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
@@ -3168,12 +3171,12 @@ TT.open = async (el, id) => {
       <div class="row" style="gap:6px;margin-top:6px;justify-content:center"><button class="btn small" data-lr="out">Lessons</button><button class="btn small" data-lr="close">Close</button><button class="btn small" data-lr="copy" data-tip="Copy every stat from this attempt as text, to compare attempts">Copy stats</button></div></div>`;
     ttShotBind(o, purl, hurl);
     o.onclick = async (e) => { const a = e.target.closest('[data-lr]')?.dataset.lr; if (!a) return; if (a === 'copy') return shareStats(T, res, heat, parts, statsTxt); o.remove(); if (a === 'out') location.hash = 'tattoo/lessons'; if (a === 'again') { EX.res = []; EX.info = null; exStart(true); } };
-    document.body.appendChild(o);
+    ttBusy(null); document.body.appendChild(o);
   }
   // The last challenge done, pass or fail, kept so it can be reopened after leaving the app. Only one is kept.
   const saveChLast = async (T, res) => { if (res.empty) return; const jpg = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q)), parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number'); let prev = null; try { prev = JSON.parse(Settings.get('tt_chlast', 'null')); } catch {} const pg = await reportPage(T, res, { none: true, c: composite(1), crop: [0, 0, W, H], notes: [] }, parts), next = { id: T.id, title: T.title, ref: await Media.save(await jpg(composite(Math.min(1, 1600 / W)), 0.89), 'jpg'), page: await Media.save(await jpg(pg, 0.87), 'jpg'), pw: pg.width, ph: pg.height, total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, stats: JSON.stringify(tmReport(T, res)) }; await Settings.set('tt_chlast', JSON.stringify(next)); for (const k of ['ref', 'page']) if (prev?.[k] && prev[k] !== next[k]) await Media.release(prev[k]); };
   function chReport(T, res, info) {
-    if (EX.lesson) return lessonReport(T, res);
+    if (EX.lesson) return lessonReport(T, res); ttBusy(null);
     if (!EX.savedLast || EX.savedLast !== res) { EX.savedLast = res; saveChLast(T, res).catch(() => {}); }
     const m = ttMedal(res.total), parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
     const all = TT_CH.filter(c => ttHubOf(c) === ttHubOf(T)).sort((x, y) => x.diff - y.diff), next = all[all.indexOf(T) + 1];
@@ -3410,6 +3413,7 @@ function ttStyle() {
 .tt-cmpchart { margin-top: 14px; } .tt-cmpbars { display: flex; gap: 4px; align-items: flex-end; height: 110px; } .tt-cmpbars > div { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; } .tt-cmpbars span { flex: 1; width: 100%; display: flex; gap: 2px; align-items: flex-end; } .tt-cmpbars i { flex: 1; display: block; border-radius: 3px 3px 0 0; min-height: 1px; } .tt-cmpbars em { font-style: normal; font-size: 10px; color: var(--ink2, #9aa5a6); margin-top: 3px; white-space: nowrap; }
 .ca { background: var(--teal); } .cb { background: #e8b44c; } .tt-cmpkey { display: flex; gap: 6px; align-items: center; font-size: 12px; margin-top: 8px; } .tt-cmpkey i { width: 11px; height: 11px; border-radius: 3px; margin-left: 6px; }
 .tt-trybar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 10px; border: 1px solid #e8b44c; border-radius: 10px; font-size: 13px; } .tt-trybar span { flex: 1; min-width: 160px; }
+#tt-busy { position: fixed; inset: 0; z-index: 130; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.45); } #tt-busy .card { width: min(320px, 86vw); text-align: center; } #tt-busy b { display: block; margin-bottom: 10px; font-size: 14px; } #tt-busy i { display: block; height: 8px; border-radius: 4px; background: rgba(127,127,127,.25); overflow: hidden; } #tt-busy s { display: block; height: 100%; background: var(--teal); transition: width .3s; }
 .tt-lscard { max-width: 620px; margin: 0 auto; } .tt-lscard p { line-height: 1.5; }
 .tt-lspics { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; } .tt-lspics figure { margin: 0; flex: 1; min-width: 70px; max-width: 120px; text-align: center; font-size: 13px; font-weight: 600; } .tt-lspics svg { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .tt-lspics .tt-lsbg { fill: var(--bg2, rgba(127,127,127,.1)); stroke: var(--line); stroke-width: 1px; vector-effect: non-scaling-stroke; } .tt-lspics .tt-lsdot { fill: var(--teal); stroke: none; }
