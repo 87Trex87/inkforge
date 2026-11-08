@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 308, when: '2026-11-08T16:38', added: ['Trevor\'s Solid black attempt is now in Compare, so every lesson has one to compare against.', 'A clean Solid black now gets a packing tip instead of a line tip.'],
+    test: ['Do Solid black and compare yourself to Trevor. Where are you furthest apart?'] },
   { build: 307, when: '2026-11-08T16:14', added: ['Solid black no longer marks you down for working with a light hand. Only real changes in depth count.'],
     test: ['Pack Solid black lightly but steadily. Do Control and Outline feel fair?'] },
   { build: 306, when: '2026-11-08T15:43', added: ['In Solid black, your outline now counts as filled. Packing only needs to meet the line, so the heat map no longer shows a red edge.'],
