@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 291, when: '2026-11-08T11:32', added: ['Compare now has Trevor\'s own attempts at Your first line and Sharp corners to compare yours against. More are on the way.', 'Opening a PDF saved from InkForge in Compare now works properly.'],
+    test: ['Do Your first line or Sharp corners, then open Compare and pick Trevor from the list. Do the tips make sense?', 'In Compare, open a PDF you saved from InkForge. Do the stats and picture load?'] },
   { build: 290, when: '2026-11-08T10:39', added: ['New Compare button in Lessons: put two attempts side by side, yours, an older one, an apprentice\'s or another artist\'s, and see where each can improve.', 'Save stats to your collection to compare again later, and save any comparison as a PDF.', 'Try their settings redoes the lesson with the other person\'s tattooing settings. Your pen settings stay yours, and you choose to keep theirs or go back.', 'PDFs saved from Open last challenge are now named as challenges.'],
     test: ['Compare your last lesson with stats someone sends you. Do the tabs and advice make sense?', 'Save a comparison as a PDF and open it.', 'Press Try their settings, do the lesson, then choose Back to mine. Are your own settings back?'] },
   { build: 287, when: '2026-11-07T14:59', added: ['Open last lesson brings back your most recent finished lesson, even after closing the app, with its pictures, stats and PDF.', 'Open last challenge does the same for challenges.'],
