@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 319, when: '2026-11-08T22:46', added: ['Stipple shading now shows Trevor\'s finished piece beside you as an example, and his A 96 is in Compare.', 'Stipple shading now fails on more than 1 crash landing or an uneven, patchy gradient.'],
+    test: ['Do Stipple shading with the example beside you. Is it in a good spot on your screen?'] },
   { build: 318, when: '2026-11-08T22:32', added: ['Stipple shading is now a 0.6 × 2 cm rectangle and starts you on a #08 3RL at 7.2 V. It has a new picture of how a whip should look.', 'Stipple shading now grades how even your dots are from side to side, and wants a darker dark end.'],
     test: ['Do Stipple shading again. Does a great gradient land in the A range, not 99?'] },
   { build: 317, when: '2026-11-08T21:57', added: ['New lesson in Intermediate: Stipple shading. Line a rectangle at full power, then turn the voltage right down and whip a smooth gradient out of dots.', 'Ink from a still needle now starts bleeding a little later and spreads more slowly.'],
