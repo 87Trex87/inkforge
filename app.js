@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 298, when: '2026-11-08T13:01', added: ['Sharp corners now takes off less for imperfect corners, so a clean rectangle can reach an A.'],
+    test: ['Do Sharp corners with a clean rectangle. Does a good attempt now reach an A?'] },
   { build: 296, when: '2026-11-08T12:07', added: ['A progress bar now shows while your report card is being made after you press Done.', 'The lesson instructions now say how many strokes you\'re allowed.'],
     test: ['Finish a lesson and press Done. Does the progress bar show and then the report card?'] },
   { build: 294, when: '2026-11-08T11:53', added: ['Your first line now allows 2 strokes, and Sharp corners 8 (two per side). Each stroke over costs 3 points.', 'Corner notes now only show up when a corner really costs you marks.', 'Your stats now record how many times you went over the line, and Compare shows it.'],
