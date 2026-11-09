@@ -2129,7 +2129,7 @@ TT.open = async (el, id) => {
   st.checkR ??= 6;
   /* While a lesson or challenge runs: what has gone wrong so far, under the meter, so a ruined attempt can be started
      over straight away. Red once it costs points. */
-  function tally() { const el = $('#tt-tally'); if (!el) return; const c = EX?.cur; if (!c) { el.hidden = true; return; } el.hidden = false; const T = exList()[EX.i] || {}, free = T.crashFree ?? 0;
+  function tally() { const el = $('#tt-tally'); if (!el) return; const c = EX?.cur; if (!c) { el.hidden = true; return; } el.hidden = false; let T = {}; try { T = exList()[EX.i] || {}; } catch { /* the editor is still starting: the lesson list isn't set up yet */ } const free = T.crashFree ?? 0;
     const it = [['Crashes', c.crash || 0, (c.crash || 0) > free], ['Blowouts', c.blow || 0, (c.blow || 0) > (T.maxBlow ?? 0)], ['Overworked', c.over || 0, (c.over || 0) > 0], ['Bumps', c.bumps || 0, (c.bumps || 0) > 0]];
     el.innerHTML = it.map(([n, v, bad]) => `<span class="${bad ? 'bad' : v ? 'warn' : ''}">${n} <b>${v}</b></span>`).join(''); }
   const chkRow = () => `<div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button><em id="tt-dmginfo">${st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
@@ -2316,10 +2316,10 @@ TT.open = async (el, id) => {
     tray.innerHTML = `<button class="tt-set" data-set data-tip="Ink palettes and grey wash" aria-label="Ink palettes">${st.wash ? 'Wash' : 'Inks'}</button>
       <button class="tt-cup" data-rinse data-tip="Rinse: clean the needle" aria-label="Rinse"></button>
       ${st.wash ? TT_WASH.map(([n, s], i) => `<button class="tt-cap tt-wcap" data-wash="${i}" style="--c:rgba(20,20,20,${s})" data-tip="${n} wash: ${Math.round(s * 100)}% black" aria-label="${n} wash"><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`).join('')
-        : st.caps.map((c, i) => { const s = st.capS?.[i] ?? 1; return `<button class="tt-cap" data-cap="${i}" style="--c:${c};--o:${Math.max(0.12, s)}" aria-label="Ink cap"${s < 1 ? ` data-tip="Diluted to ${Math.round(s * 100)}%"` : ''}><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`; }).join('')}
+        : st.caps.map((c, i) => { const s = st.capS?.[i] ?? 1; return `<button class="tt-cap" data-cap="${i}" style="--c:${c};--o:${Math.max(0.12, s)}" aria-label="Ink cap${s < 1 ? `, diluted to ${Math.round(s * 100)}%` : ''}"><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`; }).join('')}
       <button class="tt-cup tt-dil" data-dilute data-tip="Dilute: hold to thin the ink on the needle (keeps its colour, only lighter)" aria-label="Dilute"></button>
       <button class="tt-load" id="tt-load" data-tip="Ink on the needle" aria-label="Ink on the needle"><i></i><span></span></button>
-      ${st.wash ? '' : `<span class="tt-recent">${[0, 1, 2].map(i => { const r = st.recent[i]; return r ? `<button class="tt-cap tt-rcap" data-rc="${i}" style="--c:${ttToHex(r.c)};--o:${Math.max(0.15, r.s)}" data-tip="Your mix: hold to load this exact colour" aria-label="Recent colour"><i></i></button>` : '<span class="tt-rcap tt-rnone"></span>'; }).join('')}</span>`}
+      ${st.wash ? '' : `<span class="tt-recent">${[0, 1, 2].map(i => { const r = st.recent[i]; return r ? `<button class="tt-cap tt-rcap" data-rc="${i}" style="--c:${ttToHex(r.c)};--o:${Math.max(0.15, r.s)}" aria-label="Your recent mix: hold to load this exact colour"><i></i></button>` : '<span class="tt-rcap tt-rnone"></span>'; }).join('')}</span>`}
       <button class="dz-ib tt-capedit" ${st.wash || EX?.lesson ? 'hidden' : ''} data-capedit data-tip="Edit this palette" aria-label="Edit this palette"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/></svg></button>`;
     drawNeedleInk();
   };
@@ -2385,6 +2385,9 @@ TT.open = async (el, id) => {
   const palEdit = (P, fresh) => { let at = 0; const o = document.createElement('div'); o.id = 'tt-paled'; o.className = 'tt-tune';
     o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:12px;background:rgba(0,0,0,.6)';
     const M = { c: ttHex(P.caps[0].c), s: P.caps[0].s ?? 1, v: 1, tip: 'Pick a colour on the wheel, then hold black, white, water or another cap to mix into it.' };
+    // Undo and redo: every change to the caps or the cup is a step back.
+    const H = [], F = [], snap = () => JSON.stringify({ caps: P.caps, at, c: M.c, s: M.s, v: M.v }), push = () => { H.push(snap()); if (H.length > 60) H.shift(); F.length = 0; };
+    const restore = (j) => { const z = JSON.parse(j); P.caps = z.caps; at = Math.min(z.at, P.caps.length - 1); Object.assign(M, { c: z.c, s: z.s, v: z.v }); draw(); };
     const BENCH = [['Black', TT_CAPS[0], 1], ['White', TT_CAPS[TT_CAPS.length - 1], 1], ['Water', null, 0]];
     const hueOf = (c) => { const [r, g, b] = c, mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 0.08) return null; let H = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return (H * 60 + 360) % 360; };
     // A painter's red-yellow-blue wheel (how pigment mixes): red sits opposite green, blue opposite orange, yellow opposite purple.
@@ -2394,29 +2397,29 @@ TT.open = async (el, id) => {
     const ring = (cv) => { const g = cv.getContext('2d'), N = cv.width, im = g.createImageData(N, N), R = N / 2; for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const dx = x - R + 0.5, dy = y - R + 0.5, d = Math.hypot(dx, dy) / R, q = (y * N + x) * 4; if (d > 1 || d < 0.58) continue; const c = pureHue(ryb2rgb((Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360)); im.data[q] = c[0] * 255; im.data[q + 1] = c[1] * 255; im.data[q + 2] = c[2] * 255; im.data[q + 3] = 255; }
       g.putImageData(im, 0, 0); const h = hueOf(M.c); if (h != null) { const a = rgb2ryb(h) * Math.PI / 180, px = R + Math.cos(a) * R * 0.79, py = R + Math.sin(a) * R * 0.79; g.lineWidth = 2.5; g.strokeStyle = '#fff'; g.beginPath(); g.arc(px, py, 8, 0, 7); g.stroke(); }
       g.beginPath(); g.arc(R, R, R * 0.5, 0, 7); g.fillStyle = '#e9e9e9'; g.fill(); g.globalAlpha = Math.max(0.12, M.s); g.beginPath(); g.arc(R, R, R * 0.42, 0, 7); g.fillStyle = ttToHex(M.c); g.fill(); g.globalAlpha = 1; };
-    const capBtn = (c, s, attrs, label) => `<button class="tt-cap" ${attrs} style="--c:${c};--o:${Math.max(0.12, s)}" aria-label="${label}" data-tip="${label}"><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`;
-    const sync = () => { const cv = o.querySelector('[data-pw]'); if (cv) ring(cv); const hx = o.querySelector('[data-ph]'); if (hx && document.activeElement !== hx) hx.value = ttToHex(M.c); const sb = o.querySelector('[data-mixs]'); if (sb) sb.textContent = Math.round(M.s * 100) + '%'; const tp = o.querySelector('[data-tipbox]'); if (tp) tp.textContent = M.tip; };
+    const capBtn = (c, s, attrs, label) => `<button class="tt-cap" ${attrs} style="--c:${c};--o:${Math.max(0.12, s)}" aria-label="${label}"><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`;
+    const sync = () => { const cv = o.querySelector('[data-pw]'); if (cv) ring(cv); const hx = o.querySelector('[data-ph]'); if (hx && document.activeElement !== hx) hx.value = ttToHex(M.c); const sb = o.querySelector('[data-mixs]'); if (sb) sb.textContent = Math.round(M.s * 100) + '%'; const tp = o.querySelector('[data-tipbox]'); if (tp) tp.textContent = M.tip; const u = o.querySelector('[data-pe="undo"]'), r2 = o.querySelector('[data-pe="redo"]'); if (u) u.disabled = !H.length; if (r2) r2.disabled = !F.length; };
     const draw = () => {
       o.innerHTML = `<div class="card tt-pale"><div class="row" style="align-items:center;gap:6px"><input class="in" data-pn value="${esc(P.name)}" maxlength="40" aria-label="Palette name" style="flex:1;font-weight:700"><button class="btn small" data-pe="cancel">Cancel</button><button class="btn small primary" data-pe="save">Save</button></div>
         <div class="tt-pslots">${P.caps.map((x, i) => `<button class="tt-cap${i === at ? ' sel' : ''}" data-ps="${i}" style="--c:${x.c};--o:${Math.max(0.12, x.s)}" aria-label="Ink cap ${i + 1}"><i></i>${x.s < 1 ? `<em>${Math.round(x.s * 100)}</em>` : ''}</button>`).join('')}${P.caps.length < PAL_MAX ? '<button class="tt-padd" data-pe="add" aria-label="Add an ink cap">+</button>' : ''}</div>
-        <div class="row tt-pord"><button class="btn small" data-pe="left" ${at ? '' : 'disabled'} aria-label="Move left">◀</button><button class="btn small" data-pe="right" ${at < P.caps.length - 1 ? '' : 'disabled'} aria-label="Move right">▶</button><span class="muted" style="flex:1;text-align:center;font-size:12px">Cap ${at + 1} of ${P.caps.length} (up to ${PAL_MAX})</span><button class="btn small danger" data-pe="del" ${P.caps.length > 1 ? '' : 'disabled'}>Remove</button></div>
+        <div class="row tt-pord"><button class="btn small" data-pe="undo" ${H.length ? '' : 'disabled'} aria-label="Undo" data-tip="Undo">↶</button><button class="btn small" data-pe="redo" ${F.length ? '' : 'disabled'} aria-label="Redo" data-tip="Redo">↷</button><button class="btn small" data-pe="dup" ${P.caps.length < PAL_MAX ? '' : 'disabled'} data-tip="Copy this cap next to it, as a start for another tone">Duplicate</button><button class="btn small" data-pe="left" ${at ? '' : 'disabled'} aria-label="Move left">◀</button><button class="btn small" data-pe="right" ${at < P.caps.length - 1 ? '' : 'disabled'} aria-label="Move right">▶</button><span class="muted" style="flex:1;text-align:center;font-size:12px">${at + 1} / ${P.caps.length}</span><button class="btn small danger" data-pe="del" ${P.caps.length > 1 ? '' : 'disabled'}>Remove</button></div>
         <div class="lbl">Mixing bench</div>
         <div class="tt-pcol"><canvas width="168" height="168" data-pw aria-label="Pick a colour"></canvas><div class="tt-pctl">
           <p class="muted" style="font-size:11.5px;margin:0">Hold an ink to mix it into the cup in the middle. The longer you hold, the more goes in.</p>
-          <div class="tt-bench">${BENCH.map(([n, c, s], i) => c ? capBtn(c, s, `data-mix="b${i}"`, n) : `<button class="tt-cup tt-dil" data-mix="b${i}" aria-label="${n}" data-tip="Water: dilutes"></button>`).join('')}<i class="tt-qsep"></i>${P.caps.map((x, i) => i === at ? '' : capBtn(x.c, x.s, `data-mix="p${i}"`, 'Cap ' + (i + 1))).join('')}</div>
+          <div class="tt-bench">${BENCH.map(([n, c, s], i) => c ? capBtn(c, s, `data-mix="b${i}"`, n) : `<button class="tt-cup tt-dil" data-mix="b${i}" aria-label="${n}"></button>`).join('')}<i class="tt-qsep"></i>${P.caps.map((x, i) => i === at ? '' : capBtn(x.c, x.s, `data-mix="p${i}"`, 'Cap ' + (i + 1))).join('')}</div>
           <div class="row" style="gap:6px;align-items:center;margin-top:4px"><span class="muted" style="font-size:12px">Strength <b data-mixs>${Math.round(M.s * 100)}%</b></span><span style="flex:1"></span><input class="in" data-ph value="${ttToHex(M.c)}" maxlength="7" style="width:88px" aria-label="Colour code" data-tip="Type an exact colour code (the shortcut)"></div>
           <div class="tt-tipbox" data-tipbox>${esc(M.tip)}</div>
           <div class="row" style="gap:6px"><button class="btn small" data-pe="from">Start over from this cap</button><span style="flex:1"></span><button class="btn small primary" data-pe="use">Use for cap ${at + 1}</button></div></div></div>
         <div class="row" style="gap:6px;margin-top:8px">${fresh ? '' : '<button class="btn small danger" data-pe="delpal">Delete palette</button>'}<span style="flex:1"></span><button class="btn small" data-pe="share">Share file</button></div></div>`;
       sync(); };
     // the wheel: a pure colour to start from (fresh in the cup)
-    o.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-pw]')) return; e.preventDefault();
+    o.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-pw]')) return; e.preventDefault(); push();
       const pick = (ev) => { const cv = o.querySelector('[data-pw]'); if (!cv) return; const r = cv.getBoundingClientRect(), R = r.width / 2, dx = ev.clientX - r.left - R, dy = ev.clientY - r.top - R; if (Math.hypot(dx, dy) < R * 0.5) return;
         M.c = pureHue(ryb2rgb((Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360)); M.s = 1; M.v = 1; M.tip = 'A pure colour, straight from the bottle. Hold black to shade it, white to tint it, its opposite on the wheel to dull it, or water to dilute it.'; sync(); };
       pick(e); const mv = (ev) => pick(ev), up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); });
     // holding an ink on the bench: mixed in like dipping the needle, slower as the cup fills
     let mix = null;
-    o.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-mix]'); if (!b) return; e.preventDefault(); const k = b.dataset.mix, src = k[0] === 'b' ? BENCH[+k.slice(1)] : null, cap = k[0] === 'p' ? P.caps[+k.slice(1)] : null;
+    o.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-mix]'); if (!b) return; e.preventDefault(); push(); const k = b.dataset.mix, src = k[0] === 'b' ? BENCH[+k.slice(1)] : null, cap = k[0] === 'p' ? P.caps[+k.slice(1)] : null;
       const col = src ? (src[1] ? ttHex(src[1]) : null) : ttHex(cap.c), ws = src ? src[2] : cap.s ?? 1, h0 = hueOf(M.c), h1 = col ? hueOf(col) : null;
       M.tip = !col ? 'Water dilutes: same colour, lower strength. It goes into the skin lighter, like a grey wash.'
         : src && src[0] === 'Black' ? 'Black makes a shade: the same colour, darker. Too much and it just turns black.'
@@ -2427,17 +2430,21 @@ TT.open = async (el, id) => {
       const step = (now) => { if (!mix) return; const dt = Math.min(0.1, (now - t0) / 1000); t0 = now; const a = dt * 0.9, frac = a / (M.v + a);
         if (col) M.c = ttMix(M.c, col, frac); M.s = M.s * (1 - frac) + ws * frac; M.v += a; sync(); mix.raf = requestAnimationFrame(step); };
       mix = { b, raf: requestAnimationFrame(step) }; sync(); });
-    const mixEnd = () => { if (!mix) return; cancelAnimationFrame(mix.raf); mix.b.classList.remove('dip'); mix = null; };
+    const mixEnd = () => { if (!mix) return; cancelAnimationFrame(mix.raf); mix.b.classList.remove('dip'); mix = null; const u = o.querySelector('[data-pe="undo"]'); if (u) u.disabled = false; };
     ['pointerup', 'pointercancel'].forEach(ev => addEventListener(ev, mixEnd)); o.addEventListener('pointerleave', mixEnd);
     o.addEventListener('contextmenu', (e) => e.preventDefault());
     o.addEventListener('input', (e) => { if (e.target.matches('[data-pn]')) P.name = e.target.value.trim() || 'My palette'; });
-    o.addEventListener('change', (e) => { if (e.target.matches('[data-ph]') && /^#[0-9a-f]{6}$/i.test(e.target.value)) { M.c = ttHex(e.target.value.toLowerCase()); M.v = 1; M.tip = 'Typed in directly: the shortcut. Try mixing it yourself next time to see how it is made.'; sync(); } });
+    o.addEventListener('change', (e) => { if (e.target.matches('[data-ph]') && /^#[0-9a-f]{6}$/i.test(e.target.value)) { push(); M.c = ttHex(e.target.value.toLowerCase()); M.v = 1; M.tip = 'Typed in directly: the shortcut. Try mixing it yourself next time to see how it is made.'; sync(); } });
     o.addEventListener('click', async (e) => { const s = e.target.closest('[data-ps]'); if (s) { at = +s.dataset.ps; Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1 }); return draw(); }
       const a = e.target.closest('[data-pe]')?.dataset.pe; if (!a) return;
+      if (a === 'undo' && H.length) { F.push(snap()); return restore(H.pop()); }
+      if (a === 'redo' && F.length) { H.push(snap()); return restore(F.pop()); }
+      if (['add', 'dup', 'left', 'right', 'del', 'from', 'use'].includes(a)) push();
+      if (a === 'dup' && P.caps.length < PAL_MAX) { P.caps.splice(at + 1, 0, { ...P.caps[at] }); at++; Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1, tip: 'A copy to work from: hold white to lighten it or black to darken it for another tone, then Use.' }); return draw(); }
       if (a === 'add' && P.caps.length < PAL_MAX) { P.caps.push({ c: '#d23c3c', s: 1 }); at = P.caps.length - 1; Object.assign(M, { c: ttHex('#d23c3c'), s: 1, v: 1 }); return draw(); }
       if (a === 'left' || a === 'right') { const j = at + (a === 'left' ? -1 : 1); [P.caps[at], P.caps[j]] = [P.caps[j], P.caps[at]]; at = j; return draw(); }
       if (a === 'del' && P.caps.length > 1) { P.caps.splice(at, 1); at = Math.min(at, P.caps.length - 1); Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1 }); return draw(); }
-      if (a === 'from') { Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1, tip: 'Back to what this cap holds.' }); return sync(); }
+      if (a === 'from') { Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1, tip: 'Back to what this cap holds.' }); return draw(); }
       if (a === 'use') { P.caps[at] = { c: ttToHex(M.c), s: +Math.max(0.05, M.s).toFixed(2) }; M.v = 1; return draw(); }
       if (a === 'cancel') return o.remove();
       if (a === 'save') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; await palSave(P); o.remove(); palApply(P); return; }
