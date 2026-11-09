@@ -7311,6 +7311,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 334, when: '2026-11-09T13:40', added: ['Your outline score no longer drops for tapering the ends of a line or whipping out of a point.', 'Colour blend now shows Trevor\'s finished piece beside you, and his A 92 is in Compare.'],
+    test: ['Line Colour blend with tapered ends. Does Outline stay high?'] },
   { build: 330, when: '2026-11-09T12:50', added: ['Open InkForge in a second tab and a Take over button moves it there. The old tab stops and tells you it moved.'], test: [] },
   { build: 328, when: '2026-11-09T12:35', added: ['Darker colours now dominate: black packed over red goes black, blue over red mixes but blue wins. Close values mix evenly.', 'Stipple shading, Whip shading and Colour blend now have a heat map of your passes.', 'Colour blend no longer marks down a smooth fade that spreads over a longer stretch.'],
     test: ['Pack black over red, and blue over red. Does the darker colour win?'] },
