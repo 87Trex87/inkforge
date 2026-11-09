@@ -947,7 +947,7 @@ TT.open = async (el, id) => {
   /* How far each pixel has already been shifted by lighter ink packed over saturated darker ink, in 1/255 steps.
      Real pigment can't be covered by a lighter one: past about 5% the extra passes only work the skin. */
   const MUD = [66, 48, 36].map(v => ALOG[v]);   // the dark brown a cold colour churns a warm one towards
-  let LIT = null;   // the total colour shift so far per pixel (sum of each pass's share, x1000), to cap how far a covering colour can go
+  let LIT = null, LITC = null;   // per pixel: how far the ink now going over it has shifted it (sum of each pass's share, x1000), and which ink that is (a new ink starts its own count)
   const dotPig = (T, cx0, cy0, r, amt, erase) => {
     const x0 = Math.max(0, Math.floor(cx0 - r - 1)), x1 = Math.min(W - 1, Math.ceil(cx0 + r + 1)), y0 = Math.max(0, Math.floor(cy0 - r - 1)), y1 = Math.min(H - 1, Math.ceil(cy0 + r + 1));
     if (x0 > x1 || y0 > y1) return;
@@ -966,8 +966,8 @@ TT.open = async (el, id) => {
       let add = a * (1 - block); const d0 = D[i + 3] / 255, tint = add * dom + a * block * 0.12;
       if (T.str < 1) { add *= 0.35 + 0.65 * T.str; const sat = 1 - keep; if (sat > T.str) add *= 0.1 * T.str; }   // a thin wash builds slowly past its own tone
       if (add <= 0.0005) continue;
-      if (d0 > 0.004) { let t = Math.min(0.85, tint / (d0 + tint)); const sat0 = 1 - keep, cap = block > 0.4 ? 0.051 : sat0 > 0.7 && (lc > lwa - 0.15 || opp > 0.05) ? -Math.log(1 - Math.min(0.995, 0.65 + 2.3 * Math.max(0, lwa - lc))) : 0;   /* saturated skin: a lighter colour shifts it about 5% at most; one close in value mixes in, from 65% up to all but completely the darker it is (black over red) */
-        if (cap) { const p = y * W + x, used = (LIT ||= new Uint16Array(W * H))[p] / 1000; t = Math.min(t, Math.max(0, cap - used)); LIT[p] = Math.min(65535, Math.round((used + t) * 1000)); }
+      if (d0 > 0.004) { let t = Math.min(0.85, tint / (d0 + tint)); const sat0 = 1 - keep, cap = block > 0.4 ? 0.051 : sat0 > 0.7 && (lc > lwa - 0.15 || opp > 0.05) ? -Math.log(1 - Math.min(0.995, 0.65 + 2.3 * Math.max(0, lwa - lce))) : 0;   /* saturated skin: a lighter colour shifts it about 5% at most; one close in value mixes in, from 65% up to all but completely the darker it is (black over red) */
+        if (cap) { const p = y * W + x, ck = 1 + ((col[0] >> 3) << 10 | (col[1] >> 3) << 5 | col[2] >> 3); LIT ||= new Uint16Array(W * H); LITC ||= new Uint16Array(W * H); if (LITC[p] !== ck) { LITC[p] = ck; LIT[p] = 0; } const used = LIT[p] / 1000; t = Math.min(t, Math.max(0, cap - used)); LIT[p] = Math.min(65535, Math.round((used + t) * 1000)); }
         const m = Math.min(0.5, t * opp * 1.4); for (let c = 0; c < 3; c++) D[i + c] = Math.floor(255 * Math.exp(-(ALOG[D[i + c]] * (1 - t - m) + Ac[c] * t + MUD[c] * m)) + Math.random()); }   /* rounded at random, not to the nearest, so shifts smaller than a step still add up evenly on every channel */
       else { D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; }
       D[i + 3] = Math.min(255, Math.floor(D[i + 3] + add * 255 + Math.random()));
@@ -3002,7 +3002,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0)); LIT = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0)); LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
