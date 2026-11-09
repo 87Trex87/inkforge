@@ -944,6 +944,9 @@ TT.open = async (el, id) => {
   INK.forEach(syncIn);
   const ALOG = new Float32Array(256); for (let i = 0; i < 256; i++) ALOG[i] = -Math.log(Math.max(0.02, i / 255));
   const lumOf = (D, i) => (D[i] * 0.299 + D[i + 1] * 0.587 + D[i + 2] * 0.114) / 255;
+  /* How far each pixel has already been shifted by lighter ink packed over saturated darker ink, in 1/255 steps.
+     Real pigment can't be covered by a lighter one: past about 5% the extra passes only work the skin. */
+  let LIT = null; const LIT_MAX = 13;
   const dotPig = (T, cx0, cy0, r, amt, erase) => {
     const x0 = Math.max(0, Math.floor(cx0 - r - 1)), x1 = Math.min(W - 1, Math.ceil(cx0 + r + 1)), y0 = Math.max(0, Math.floor(cy0 - r - 1)), y1 = Math.min(H - 1, Math.ceil(cy0 + r + 1));
     if (x0 > x1 || y0 > y1) return;
@@ -959,7 +962,8 @@ TT.open = async (el, id) => {
       let add = a * (1 - block); const d0 = D[i + 3] / 255, tint = add + a * block * 0.12;
       if (T.str < 1) { add *= 0.35 + 0.65 * T.str; const sat = 1 - keep; if (sat > T.str) add *= 0.1 * T.str; }   // a thin wash builds slowly past its own tone
       if (add <= 0.0005) continue;
-      if (d0 > 0.004) { const t = Math.min(0.85, tint / (d0 + tint)); for (let c = 0; c < 3; c++) D[i + c] = Math.floor(255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)) + Math.random()); }   /* rounded at random, not to the nearest: each pass shifts a dark channel by under a step, so plain rounding threw it away and a lighter colour stopped taking over after a few passes */
+      if (d0 > 0.004) { let t = Math.min(0.85, tint / (d0 + tint)); if (block > 0.4) { const p = y * W + x, used = (LIT ||= new Uint8Array(W * H))[p]; t = Math.min(t, Math.max(0, LIT_MAX - used) / 255); LIT[p] = Math.min(255, used + Math.floor(t * 255 + Math.random())); }   /* a lighter colour over saturated darker ink only shifts it about 5% in all, however many passes */
+        for (let c = 0; c < 3; c++) D[i + c] = Math.floor(255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)) + Math.random()); }   /* rounded at random, not to the nearest, so shifts smaller than a step still add up evenly on every channel */
       else { D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; }
       D[i + 3] = Math.min(255, Math.floor(D[i + 3] + add * 255 + Math.random()));
     }
@@ -2993,7 +2997,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0)); trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0)); LIT = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
