@@ -1575,7 +1575,7 @@ textarea.ff-i { resize: none; }
 .dz-ctx .dz-ib { width: 32px; height: 34px; }
 .dz-ctx .dz-ib.on { color: var(--teal); background: rgba(40,180,165,.15); }
 .dz-ctx .in { min-height: 34px; height: 34px; padding: 0 6px; font-size: 13px; }
-.dz-cfont { width: 130px; flex: none; }
+.dz-cfont { width: 130px; flex: none; } .dz-cdash { width: 104px; flex: none; margin-left: 3px; }
 .dz-cnum { flex: none; margin-left: 3px; } .dz-cnum input { width: 58px; }
 .dz-csep { flex: none; width: 1px; height: 22px; margin: 0 5px; background: var(--line); }
 .dz-chint { font-size: 12px; padding-left: 6px; }

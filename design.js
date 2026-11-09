@@ -772,8 +772,9 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
         else if (dzSubs(L)) dzSubsTo(x, L, dzSubs(L));
         else x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, Math.min(L.r || 0, L.w / 2, L.h / 2));
         const pf = dzPaint(x, doc, L, tex);
-        if (L.shape === 'line') { x.strokeStyle = pf || st || f || '#000'; x.lineWidth = Math.max(1, sw || L.h); x.lineCap = 'round'; x.stroke(); }
-        else { if ((pf || f) && !(L.shape === 'vec' && L.subs?.every(sp => sp.closed === false))) { x.fillStyle = pf || f; x.fill(L.shape === 'path' || dzSubs(L) ? 'evenodd' : 'nonzero'); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; x.stroke(); } }
+        const dash = (w) => { if (L.dash === 'dash') x.setLineDash([w * 3, w * 2]); else if (L.dash === 'dot') { x.setLineDash([0, w * 2]); x.lineCap = 'round'; x.lineJoin = 'round'; } };   /* matches the SVG export */
+        if (L.shape === 'line') { x.strokeStyle = pf || st || f || '#000'; x.lineWidth = Math.max(1, sw || L.h); x.lineCap = 'round'; dash(x.lineWidth); x.stroke(); x.setLineDash([]); }
+        else { if ((pf || f) && !(L.shape === 'vec' && L.subs?.every(sp => sp.closed === false))) { x.fillStyle = pf || f; x.fill(L.shape === 'path' || dzSubs(L) ? 'evenodd' : 'nonzero'); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; dash(sw); x.stroke(); x.setLineDash([]); } }
         }
         x.restore();
       };
@@ -864,10 +865,12 @@ function dzSvg(doc, layers) {
   // One shape drawn in its own space: the box centred on 0, 0 (a crop draws the whole and clips to the box).
   const body = (L) => {
     const f = dzCol(doc, L.fill), st = dzCol(doc, L.stroke), sw = L.sw || 0, flip = L.fx || L.fy ? ` transform="scale(${L.fx ? -1 : 1} ${L.fy ? -1 : 1})"` : '';
+    /* Line style: dashes and dots spaced by the line's own width, so they stay in proportion at any thickness. */
+    const dash = (w) => L.dash === 'dash' ? ` stroke-dasharray="${_sf(w * 3)} ${_sf(w * 2)}"` : L.dash === 'dot' ? ` stroke-dasharray="0 ${_sf(w * 2)}" stroke-linecap="round" stroke-linejoin="round"` : '';
     const one = (S) => { const pf = paint(S), d = dzSvgPath(S);
-      if (S.shape === 'line') return `<path d="${d}" fill="none" stroke="${esc2(pf || st || f || '#000')}" stroke-width="${_sf(Math.max(1, sw || S.h))}" stroke-linecap="round"${flip}/>`;
+      if (S.shape === 'line') { const lw = Math.max(1, sw || S.h); return `<path d="${d}" fill="none" stroke="${esc2(pf || st || f || '#000')}" stroke-width="${_sf(lw)}"${L.dash === 'dot' ? '' : ' stroke-linecap="round"'}${dash(lw)}${flip}/>`; }
       const open = S.shape === 'vec' && S.subs?.every(sp => sp.closed === false), fill = !open && (pf || f);
-      return `<path d="${d}" fill="${fill ? esc2(fill) : 'none'}"${S.shape === 'path' || dzSubs(S) ? ' fill-rule="evenodd"' : ''}${st && sw ? ` stroke="${esc2(st)}" stroke-width="${_sf(sw)}"` : ''}${flip}/>`; };
+      return `<path d="${d}" fill="${fill ? esc2(fill) : 'none'}"${S.shape === 'path' || dzSubs(S) ? ' fill-rule="evenodd"' : ''}${st && sw ? ` stroke="${esc2(st)}" stroke-width="${_sf(sw)}"${dash(sw)}` : ''}${flip}/>`; };
     const c = L.crop;
     if (c && (c.w < 1 || c.h < 1)) {
       const FW = L.w / c.w, FH = L.h / c.h, ox = (0.5 - (c.x + c.w / 2)) * FW, oy = (0.5 - (c.y + c.h / 2)) * FH, id = 'c' + (++uid);
@@ -1683,7 +1686,8 @@ DZ.edit = async (id) => {
       + [['left', 'aleft'], ['center', 'acenter'], ['right', 'aright'], ...(l.frame ? [['justify', 'ajust']] : [])].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')
       + (l.frame ? sep + [['top', 'vtop', 'Top of the frame'], ['middle', 'vmid', 'Middle of the frame'], ['bottom', 'vbot', 'Bottom of the frame']].map(([a, ic, n]) => dzIB(`data-va="${a}"`, ic, n, (l.va || 'top') === a ? 'on' : '')).join('') : '')
       + sep + col('c', 'Text', 'Text colour');
-    else if (l.t === 'shape') own = (l.shape === 'ring' || l.qr ? '' : dzIB('data-curvetext', '<path d="M3 17C8 7 16 7 21 17"/><path d="M9 6V3h6v3M12 3v7"/>', 'Text on this curve') + sep) + (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40));
+    else if (l.t === 'shape') own = (l.shape === 'ring' || l.qr ? '' : dzIB('data-curvetext', '<path d="M3 17C8 7 16 7 21 17"/><path d="M9 6V3h6v3M12 3v7"/>', 'Text on this curve') + sep) + (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40))
+      + `<select class="in dz-cdash" data-dash aria-label="Line style" data-tip="Line style">${[['', 'Solid'], ['dash', 'Dashed'], ['dot', 'Dotted']].map(([v, n]) => `<option value="${v}" ${(l.dash || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
     else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
     const field = l.t === 'field';
@@ -2383,7 +2387,7 @@ DZ.edit = async (id) => {
     c.AddPaths(paths, C.PolyType.ptSubject, true); c.Execute(C.ClipType.ctUnion, tree, C.PolyFillType.pftNonZero, C.PolyFillType.pftNonZero);
     const out = [], walk = (nd) => { for (const o of nd.Childs()) { const pc = [o.Contour()]; for (const h of o.Childs()) { pc.push(h.Contour()); walk(h); } out.push(pc); } };
     walk(tree); return out; };
-  const styleOf = (l) => l.t === 'shape' ? { fill: l.fill, stroke: l.stroke, sw: l.sw, fm: l.fm, grad: l.grad && JSON.parse(JSON.stringify(l.grad)), tex: l.tex && { ...l.tex }, op: l.op ?? 1 }
+  const styleOf = (l) => l.t === 'shape' ? { fill: l.fill, stroke: l.stroke, sw: l.sw, dash: l.dash, fm: l.fm, grad: l.grad && JSON.parse(JSON.stringify(l.grad)), tex: l.tex && { ...l.tex }, op: l.op ?? 1 }
     : { fill: l.t === 'text' ? (l.c || '@fg') : '@accent', stroke: 'none', sw: 0, op: l.op ?? 1 };
   // Clipper paths (page pixels x DZ_CS) as a node shape styled like `l`.
   const vecFrom = (paths, l, nm) => {   // fitted back into smooth curves, so a circle stays a few nodes, not hundreds
@@ -3420,7 +3424,8 @@ DZ.edit = async (id) => {
     if (pick && l && (cpop === 'c' || cpop === 'fill')) l.fm = 'solid';
     if (pick) { const was = cpop; cpop = null; if (was !== 'c' && was !== 'fill' && pick.dataset.c !== 'none' && was === 'stroke' && !l.sw) l.sw = 4; }
     await sideClick(e); drawCtx(); });
-  ctxB.addEventListener('change', (e) => { if (e.target.dataset.ck) changed(true); else sideChange(e); });
+  ctxB.addEventListener('change', (e) => { if (e.target.hasAttribute('data-dash')) { const l = layer(); if (!l) return; if (e.target.value) l.dash = e.target.value; else delete l.dash; if (l.shape !== 'line' && e.target.value) { if (!l.sw) l.sw = 4; if (!l.stroke || l.stroke === 'none') l.stroke = '@fg'; }   /* a style needs a visible outline to show on */ changed(true); return drawCtx(); }
+    if (e.target.dataset.ck) changed(true); else sideChange(e); });
   ctxB.addEventListener('input', (e) => { const k = e.target.dataset.ck, l = layer(), v = +e.target.value; if (!k || !l || !(v >= 0) || (k === 'size' && v < 6)) return; l[k] = v; changed(); });
   stage.addEventListener('pointerdown', () => { if (cpop) { cpop = null; drawCtx(); } }, true);
   stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dz-pop, .dz-rail')) closePop(); }, true);
