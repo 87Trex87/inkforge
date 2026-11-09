@@ -493,7 +493,7 @@ const TT_LESSONS = [
         more: 'Work from the dark end outwards and shorten each layer a little, so the dots thin out gradually. Keep it dots: if the dark end turns solid you have packed it, not stippled it.' },
       { title: 'Stay inside the lines', text: 'Your whips must start and finish inside the rectangle. A whip that runs over the line, as it starts or as it finishes, leaves dots outside that cannot be taken back.',
         more: 'Aim the flick so it ends just short of the line, and turn the rectangle so you whip along its length if that helps.' },
-      { title: 'Your grade', text: 'When the gradient is done and the skin has settled, press Done. Grade C (70) or higher moves you on. An uneven or patchy gradient, more than 1 crash landing, or more than 1 blowout is an instant fail.',
+      { title: 'Your grade', text: 'When the gradient is done and the skin has settled, press Done. Grade C (70) or higher moves you on. An uneven or patchy gradient or more than 1 blowout is an instant fail. One crash landing is free; each one after costs a point.',
         more: 'Trevor\'s example sits beside you while you work: aim for that look. The gradient counts most: dark at one end, light at the other, smooth in between and even from side to side. Then keeping it to dots, staying inside the line, whipping, your voltage for each part, and how straight your outline is. Skin condition counts as always.' }
     ] }
 ,
@@ -510,7 +510,7 @@ const TT_LESSONS = [
         more: 'Whipping towards a line is risky: the flick runs on and crosses it. Starting at the line and whipping away keeps the edge clean.' },
       { title: 'Tilt for a hard edge', text: 'Where the shade meets a line, tilt the curved mag slightly so one end of it sits against the line. That gives a harder edge there and avoids holidays.',
         more: 'A holiday is a light gap between your line and your shade, about as thick as the line. This is your first lesson in tilting the needle: tilted, the mag makes a harder edge; flat, a soft one.' },
-      { title: 'Your grade', text: 'When the gradient is done and the skin has settled, press Done. Grade C (70) or higher moves you on. Packing, an uneven gradient, not using the lighter washes, more than 1 crash landing or more than 1 blowout is an instant fail.',
+      { title: 'Your grade', text: 'When the gradient is done and the skin has settled, press Done. Grade C (70) or higher moves you on. Packing, an uneven gradient, not using the lighter washes or more than 1 blowout is an instant fail. One crash landing is free; each one after costs a point.',
         more: 'The gradient counts most: dark to light, smooth and even from side to side. Then whipping instead of packing, using the washes in turn, hard edges with no holidays, staying inside the line, and your voltage on each needle. Skin condition counts as always.' }
     ] },
     { id: '2-5', title: 'Colour blend', sum: 'Line a long triangle in red, then blend it from a dark red shadow at the point, through red and orange, to yellow at the wide end. Grade C or higher moves you on.', task: 'l-blend', steps: [
@@ -526,7 +526,7 @@ const TT_LESSONS = [
         more: 'Overlap the red so the two blend; there should be no line where one colour stops and the next starts.' },
       { title: 'Yellow at the wide end', text: 'Rinse, take yellow and pack it smoothly into the last quarter, blending into the orange.',
         more: 'Yellow is light and shows every patch, so lay it evenly and keep going until it is solid.' },
-      { title: 'Your grade', text: 'When it is blended and the skin has settled, press Done. Grade C (70) or higher moves you on. More than 1 crash landing or more than 1 blowout is an instant fail.',
+      { title: 'Your grade', text: 'When it is blended and the skin has settled, press Done. Grade C (70) or higher moves you on. More than 1 blowout is an instant fail. One crash landing is free; each one after costs a point.',
         more: 'Judged on your linework and a sharp point, saturation, how evenly the colours blend, how close each part is to the colours asked for, and solid healing with no patches. Your voltage, staying inside the line and skin condition count too.' }
     ] }  ] },
   { name: 'Chapter 3: Advanced', lessons: [] }
@@ -555,11 +555,11 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
     text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners, in no more than 12 strokes. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
     path: (g) => ttGeomDraw(g, TT_FLAG) }];
 const ttPackPath = (b) => (g) => { g.moveTo(b[0], b[1]); g.lineTo(b[0] + b[2], b[1]); g.lineTo(b[0] + b[2], b[1] + b[3]); g.lineTo(b[0], b[1] + b[3]); g.closePath(); };
-TT_LS_CH.push({ id: 'l-stipple', lesson: '2-3', cat: 'pack', diff: 2, title: 'Stipple shading', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, stipple: [87, 50, 6, 20], needles: ['3RL'], size: 0.25, volt: 7.2, maxCrash: 1, refImg: 'img/ref/stipple-example.jpg', refAr: 420 / 220, maxStrokes: 8, linePhase: 6.4, lineVolt: [7.2, 0.4], shadeVolt: [4.8, 5.8], voltMin: 4.5, path: ttPackPath([87, 50, 6, 20]),
+TT_LS_CH.push({ id: 'l-stipple', lesson: '2-3', cat: 'pack', diff: 2, title: 'Stipple shading', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, stipple: [87, 50, 6, 20], needles: ['3RL'], size: 0.25, volt: 7.2, crashFree: 1, refImg: 'img/ref/stipple-example.jpg', refAr: 420 / 220, maxStrokes: 8, linePhase: 6.4, lineVolt: [7.2, 0.4], shadeVolt: [4.8, 5.8], voltMin: 4.5, path: ttPackPath([87, 50, 6, 20]),
   text: 'Line the rectangle with the #08 3RL at about 7.2 volts, in no more than 8 strokes. Then turn it down to 4.8 to 5.8 volts and shade a smooth gradient, dark at one end to light at the other, using only the dots from quick, even whips. Start and finish every whip inside the line. Aim for the look of the example beside you.' });
-TT_LS_CH.push({ id: 'l-whipgrey', lesson: '2-4', cat: 'shade', diff: 2, title: 'Whip shading', needle: '9RL', layer: 'line', ink: 'wash', wash: true, kind: 'line', core: 0.6, maxBlow: 1, maxCrash: 1, wgrad: [85, 47, 10, 25], needles: ['9RL', '13CM'], lineNeedle: '9RL', shadeNeedle: '13CM', presets: { '9RL': { size: 0.3, volt: 7.5 }, '13CM': { volt: 6.6 } }, refImg: 'img/ref/whip-example.jpg', refAr: 415 / 220, lineVolt: [7.5, 0.4], shadeVolt: [6.6, 0.4], path: ttPackPath([85, 47, 10, 25]),
+TT_LS_CH.push({ id: 'l-whipgrey', lesson: '2-4', cat: 'shade', diff: 2, title: 'Whip shading', needle: '9RL', layer: 'line', ink: 'wash', wash: true, kind: 'line', core: 0.6, maxBlow: 1, crashFree: 1, wgrad: [85, 47, 10, 25], needles: ['9RL', '13CM'], lineNeedle: '9RL', shadeNeedle: '13CM', presets: { '9RL': { size: 0.3, volt: 7.5 }, '13CM': { volt: 6.6 } }, refImg: 'img/ref/whip-example.jpg', refAr: 415 / 220, lineVolt: [7.5, 0.4], shadeVolt: [6.6, 0.4], path: ttPackPath([85, 47, 10, 25]),
   text: 'Line the rectangle with the #10 9RL at about 7.5 volts. Then change to the 13 curved mag at about 6.6 volts and whip a smooth gradient: Black at one end, then each lighter wash faded off the last, down to Light. Whips only, no packing. Tilt the mag against the line for a hard edge. Aim for the look of the example beside you.' });
-TT_LS_CH.push({ id: 'l-blend', lesson: '2-5', cat: 'pack', diff: 2, title: 'Colour blend', needle: '7RL', layer: 'line', ink: 'red', kind: 'line', core: 0.6, maxBlow: 1, maxCrash: 1, tri: [[90, 92.5], [82.5, 42.5], [97.5, 42.5]], needles: ['7RL', '11M1'], liner: '7RL', packNeedle: '11M1', presets: { '7RL': { size: 0.35, volt: 7.5 }, '11M1': { size: 0.3, volt: 6.6 } }, lineVolt: [7.5, 0.4],
+TT_LS_CH.push({ id: 'l-blend', lesson: '2-5', cat: 'pack', diff: 2, title: 'Colour blend', needle: '7RL', layer: 'line', ink: 'red', kind: 'line', core: 0.6, maxBlow: 1, crashFree: 1, tri: [[90, 92.5], [82.5, 42.5], [97.5, 42.5]], needles: ['7RL', '11M1'], liner: '7RL', packNeedle: '11M1', presets: { '7RL': { size: 0.35, volt: 7.5 }, '11M1': { size: 0.3, volt: 6.6 } }, lineVolt: [7.5, 0.4],
   path: (g) => { g.moveTo(90, 92.5); g.lineTo(82.5, 42.5); g.lineTo(97.5, 42.5); g.closePath(); },
   text: 'Line the triangle in red with the #12 7RL at about 7.5 volts. Then with the #10 11 magnum: a black and red shadow whipped into the point, red packed over it, orange feathered out to three quarters, and yellow packed into the wide end. Blend every change of colour.' });
 TT_LS_CH.push({ id: 'l-pack', lesson: '2-1', cat: 'pack', diff: 2, title: 'Solid black', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [85, 55, 10, 10], needles: ['5RL', '7RS'], maxStrokes: 8, strokeNeedle: '5RL', path: ttPackPath([85, 55, 10, 10]),
@@ -1047,7 +1047,7 @@ TT.open = async (el, id) => {
   const skinOver = (g) => { g.globalAlpha = 0.3; g.drawImage(trRed, 0, 0, W, H); g.globalAlpha = 1; g.drawImage(trPuff, 0, 0, W, H); g.globalAlpha = 0.85; g.drawImage(trTex, 0, 0, W, H); g.globalAlpha = 1; };
   // Blowout: ink spread under the skin round p, bluer and softer than the line, and the skin raised over it.
   const blowAt = (p, risk, footR) => { if (CHEAT) return;
-    if (EX?.cur) { EX.cur.blow = (EX.cur.blow || 0) + 1; const sp = EX.cur.spots ||= [], near = sp.find(q => Math.hypot(q[0] - p.x, q[1] - p.y) < 3 * mm); if (near) near[2]++; else sp.push([p.x, p.y, 1]); } SS.blow++;   // spots for the heat map; hits within 3 mm are one spot
+    if (EX?.cur) { EX.cur.blow = (EX.cur.blow || 0) + 1; tally(); const sp = EX.cur.spots ||= [], near = sp.find(q => Math.hypot(q[0] - p.x, q[1] - p.y) < 3 * mm); if (near) near[2]++; else sp.push([p.x, p.y, 1]); } SS.blow++;   // spots for the heat map; hits within 3 mm are one spot
     // ink seen through the skin: bluer
     const c = st.ink.c.map((v, j) => Math.round((v * 0.45 + [0.34, 0.42, 0.68][j] * 0.55) * 255)), R = (footR + mm * (1.1 + risk * 1.8)) / 2, gx = p.x / 2, gy = p.y / 2;
     const gr = bx.createRadialGradient(gx, gy, 0, gx, gy, R); gr.addColorStop(0, `rgba(${c},${0.12 + risk * 0.16})`); gr.addColorStop(0.5, `rgba(${c},${0.05 + risk * 0.07})`); gr.addColorStop(1, `rgba(${c},0)`);
@@ -1309,7 +1309,7 @@ TT.open = async (el, id) => {
     if (wsh > 0.04 && cx.pig) cx.alsoHi = { ...cx, key: 'high', w: wsh };
     if (EX?.cur && st.tool !== 'erase') tmStrokeStart(); pen = { cx, last: p, t: e.timeStamp, t0: e.timeStamp, carry: 0, speed: 0, a: 0, id: e.pointerId, q: [], raf: 0, foot: (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size) * mm, dw: { x: p.x, y: p.y, t: performance.now() }, s0: p };
     if (cx.pig && st.tool !== 'erase' && !CHEAT) dwellRun();
-    if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('The needle is dry: dip into an ink cap first.', 1800);
+    if (st.tool !== 'erase' && st.ink.v <= 0.02) toast('Needle dry: dip in ink.', 1500);
     if (CHEAT) pen.sym = symMats();
     return true;
   };
@@ -1371,7 +1371,7 @@ TT.open = async (el, id) => {
            deepest point is watched; already deep while moving fast is a crash (a dark spot and sore skin there).
            A stroke that came in softly and moves fast is whip shading, which the speed meter allows for. */
         if (pen.d0 == null) { pen.d0 = pNorm(ev); pen.p0 = { ...pen.last }; }   // d0: how hard the pen first touched
-        if (!pen.landed) { pen.dLand = Math.max(pen.dLand || 0, depth); if (pen.trav >= 1) { pen.landed = true; if (pen.dLand > 0.55 && pen.speed > 40) crash(pen.p0, pen.dLand, ev); } }
+        if (!pen.landed) { pen.dLand = Math.max(pen.dLand || 0, depth); if (pen.trav >= 1) { pen.landed = true; if (pen.dLand > CRASH_D && pen.speed > CRASH_V) crash(pen.p0, pen.dLand, ev); } }
         pen.whip = pen.d0 < 0.35 && pen.speed > 50; pen.dEnd = depth; pen.evEnd = ev;
       }
       if (EX?.cur && st.tool !== 'erase' && (EX.cur.n = (EX.cur.n || 0) + 1) % 3 === 0 && EX.cur.p.length < 1500) {
@@ -1389,13 +1389,13 @@ TT.open = async (el, id) => {
           trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH));   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * 3 * Math.pow(0.3 / blowSize(), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
-            if (!told.blow) { told.blow = 1; toast('Blowout: pressing too hard while pulling slowly pushes ink under the skin.', 3500); } }
-          if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked: the skin there is chewed up and won\u2019t take ink well.', 3500); }
+            if (!told.blow) { told.blow = 1; toast('Blowout: too deep, too slow.', 2500); } }
+          if (t0 > 1.6 && EX?.cur && !pen.overN) { pen.overN = 1; EX.cur.over = (EX.cur.over || 0) + 1; tally(); } if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked skin: move on.', 2500); }
         }
         if (st.tool !== 'erase' && pen.cx.pig && !CHEAT) {   // too deep or too much voltage raises little red bumps
           const bump = Math.max(0, Math.min(1, (depth - 0.85) / 0.2)) + Math.max(0, Math.min(1, (volt() - 8.2) / 1.8));
-          if (bump > 0 && Math.random() < 0.12 * bump) { buAdd({ x: q.x + (Math.random() - 0.5) * pen.foot * 2, y: q.y + (Math.random() - 0.5) * pen.foot * 2 }, 0.3 * bump); SS.bumps = (SS.bumps || 0) + 1;
-            if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or the machine running too hard irritates the skin.', 3500); } } }
+          if (bump > 0 && Math.random() < 0.12 * bump) { buAdd({ x: q.x + (Math.random() - 0.5) * pen.foot * 2, y: q.y + (Math.random() - 0.5) * pen.foot * 2 }, 0.3 * bump); SS.bumps = (SS.bumps || 0) + 1; if (EX?.cur) { EX.cur.bumps = (EX.cur.bumps || 0) + 1; tally(); }
+            if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or too much voltage.', 2500); } } }
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
         setRoll(ev, turnOf(pen.a, ev)); st.lastD = depth;
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
@@ -1428,7 +1428,7 @@ TT.open = async (el, id) => {
       if (held < 0.3) return;
       trAdd(pen.dw, pen.foot, 0.65 * dt * Math.pow(d / 0.6, 2) * (volt() / 7) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH));
       SS.dwell = (SS.dwell || 0) + dt; if (EX?.cur) EX.cur.dwell = +((EX.cur.dwell || 0) + dt).toFixed(2);
-      if (now - pen.dw.t > 900 && !told.dwell) { told.dwell = 1; toast('Keep moving: a needle held in one spot keeps hitting the same skin and digs a hole.', 3500); } }, 100); };   // the redness shows when the needle lifts
+      if (now - pen.dw.t > 900 && !told.dwell) { told.dwell = 1; toast('Keep moving: digging a hole.', 2500); } }, 100); };   // the redness shows when the needle lifts
   // A crash landing or take-off at p: the needle slams in, leaving a darker spot (a line of them along a shaded edge)
   // and working the skin hard there.
   /* Cheat mode: the stroke follows a point that trails the pen (more smoothing, more trail), so wobbles even out.
@@ -1711,7 +1711,7 @@ TT.open = async (el, id) => {
     const B = td.box; B.x0 = Math.min(B.x0, x0); B.y0 = Math.min(B.y0, y0); B.x1 = Math.max(B.x1, x1); B.y1 = Math.max(B.y1, y1); };
   // Fill: everything joined to the tapped spot that isn't inside ink (or a stencil line), packed with the needle's ink.
   // ps: the tapped point, plus its symmetry copies.
-  const fillAt = async (ps, key) => { if (st.ink.v <= 0.02) return toast('The needle is dry: dip into an ink cap first.', 1800);
+  const fillAt = async (ps, key) => { if (st.ink.v <= 0.02) return toast('Needle dry: dip in ink.', 1500);
     if (st.hide.has(key)) toast('That layer is hidden: show it to see the fill.');
     const SD = st.fillo.sten ? L.stencil.getContext('2d').getImageData(0, 0, W, H).data : null, Ds = INK.map(k2 => imgd[k2].data);
     const wall = (i) => { let keep = 1; for (const E of Ds) keep *= 1 - E[i * 4 + 3] / 255; return 1 - keep > 0.35 || (SD && SD[i * 4 + 3] > 60); };
@@ -1735,7 +1735,7 @@ TT.open = async (el, id) => {
     if (kind === 'star') for (let i = 0; i <= 10; i++) { const t2 = -Math.PI / 2 + Math.PI * i / 5, r = i % 2 ? 0.42 : 1; out.push({ x: cx + Math.cos(t2) * w / 2 * r, y: cy + Math.sin(t2) * h / 2 * r }); }
     if (kind === 'heart') for (let i = 0; i <= 120; i++) { const t2 = Math.PI * 2 * i / 120, hx = 16 * Math.sin(t2) ** 3, hy = -(13 * Math.cos(t2) - 5 * Math.cos(2 * t2) - 2 * Math.cos(3 * t2) - Math.cos(4 * t2)); out.push({ x: cx + hx / 32 * w, y: cy + (hy + 2.5) / 30 * h }); }
     return out; };
-  const shapeCommit = (a, b) => { const key = toolLayer(); if (!key) return; if (st.ink.v <= 0.02) return toast('The needle is dry: dip into an ink cap first.', 1800);
+  const shapeCommit = (a, b) => { const key = toolLayer(); if (!key) return; if (st.ink.v <= 0.02) return toast('Needle dry: dip in ink.', 1500);
     if (Math.hypot(b.x - a.x, b.y - a.y) < 1.5 * mm) return;
     const P = shapePts(st.shape.kind, a, b), wsh = key !== 'high' ? (st.ink.w || 0) : 0, cx = inkCx(key); if (wsh > 0.04) cx.alsoHi = { ...cx, key: 'high', w: wsh };
     snap(key, wsh > 0.04); touched.add(key); SS.strokes++;
@@ -1994,7 +1994,7 @@ TT.open = async (el, id) => {
   const pth = { a: [], closed: false };
   st.pathP = meta.pathP ?? CP.pathP ?? 0.6;
   const pathApply = () => { if (pth.a.length < 2) return toast('Place at least two points first.');
-    const key = toolLayer(); if (!key) return; if (st.ink.v <= 0.02 && !st.endless) return toast('The needle is dry: dip into an ink cap first.', 1800);
+    const key = toolLayer(); if (!key) return; if (st.ink.v <= 0.02 && !st.endless) return toast('Needle dry: dip in ink.', 1500);
     const wsh = key !== 'high' ? (st.ink.w || 0) : 0, cx = inkCx(key); if (wsh > 0.04) cx.alsoHi = { ...cx, key: 'high', w: wsh };
     snap(key, wsh > 0.04); touched.add(key); SS.strokes++; const h = hist[hist.length - 1];
     snapE = { key, base: h.data, baseHi: h.hi, anchors: pth.a.map(a => ({ ...a })), closed: pth.closed, kind: 'free', depth: depthOf(st.pathP, 20, 0),
@@ -2009,15 +2009,16 @@ TT.open = async (el, id) => {
     placeGuides(); }
   const nearSnap = (e) => { if (!snapE?.pts) return false; const r = stage.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
     for (let i = 0; i < snapE.pts.length; i += 4) { const q = toScreen(snapE.pts[i]); if (Math.hypot(q.x - sx, q.y - sy) < 16) return true; } return false; };
-  const crash = (p, d, ev) => { if (!pen || CHEAT) return; const sev = Math.max(0.2, Math.min(1, (d - 0.55) / 0.35));
+  const CRASH_D = 0.75, CRASH_V = 60;   // a crash: still this deep, moving at least this fast (mm/s), as the needle lands or leaves; normal working depth is about 0.4-0.65
+  const crash = (p, d, ev) => { if (!pen || CHEAT) return; const sev = Math.max(0.2, Math.min(1, (d - CRASH_D) / 0.3));
     trAdd(p, pen.foot * 1.4, 0.15 * sev / ((cal.tough || 1) * TT_TOUGH));
     const ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(); setRoll(ev, turnOf(pen.a, ev)); for (let i = 0; i < 3; i++) puncture(pen.cx, p, pen.a, Math.min(1.1, d + 0.25), tiltOf(ev), ink, false);
     const bp = pen.foot * 2 + 6 * mm, B = pen.box ||= { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     B.x0 = Math.min(B.x0, p.x - bp); B.y0 = Math.min(B.y0, p.y - bp); B.x1 = Math.max(B.x1, p.x + bp); B.y1 = Math.max(B.y1, p.y + bp);
-    SS.crash = (SS.crash || 0) + 1; if (EX?.cur) EX.cur.crash = (EX.cur.crash || 0) + 1;
-    if (!told.crash) { told.crash = 1; toast('Crash: come in and out of the skin like a plane landing and taking off, not straight down.', 4000); } };
+    SS.crash = (SS.crash || 0) + 1; if (EX?.cur) { EX.cur.crash = (EX.cur.crash || 0) + 1; tally(); }
+    if (!told.crash) { told.crash = 1; toast('Crash: land and lift off on the move.', 2500); } };
   const strokeEnd = () => { clearTimeout(pen?.hold?.t); if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
-    if (pen?.landed && pen.dEnd > 0.55 && pen.speed > 40 && pen.cx.pig && st.tool !== 'erase') {   // the take-off: still deep as it left at speed
+    if (pen?.landed && pen.dEnd > CRASH_D && pen.speed > CRASH_V && pen.cx.pig && st.tool !== 'erase') {   // the take-off: still deep as it left at speed
       crash(pen.last, pen.dEnd, pen.evEnd); const u = flushPig(), pad = pen.foot * 2 + 4 * mm; if (u) paint({ x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad }); }
     if (pen?.snapped && snapE) { if (pen.box) cropTop(pen.box); snapE.h = hist[hist.length - 1]; }
     if (pen) { if (pen.box) { if (!pen.snapped || !snapE) cropTop(pen.box); if (st.tool === 'erase' && pen.cx.pig) exLaser(); } else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
@@ -2091,7 +2092,12 @@ TT.open = async (el, id) => {
   /* Check: the cursor becomes a circle that reads the skin inside it (its average wear as a score out of 100,
      and how worked the worst spot is) instead of tattooing; the slider sets the circle's size in mm. */
   st.checkR ??= 6;
-  const chkRow = () => `<div class="tt-chkrow"><button class="${st.check ? 'on' : ''}" data-chk data-tip="Check the skin: the cursor reads the skin inside its circle instead of tattooing">Check</button>
+  /* While a lesson or challenge runs: what has gone wrong so far, under the meter, so a ruined attempt can be started
+     over straight away. Red once it costs points. */
+  function tally() { const el = $('#tt-tally'); if (!el) return; const c = EX?.cur; if (!c) { el.hidden = true; return; } el.hidden = false; const T = exList()[EX.i] || {}, free = T.crashFree ?? 0;
+    const it = [['Crashes', c.crash || 0, (c.crash || 0) > free], ['Blowouts', c.blow || 0, (c.blow || 0) > (T.maxBlow ?? 0)], ['Overworked', c.over || 0, (c.over || 0) > 0], ['Bumps', c.bumps || 0, (c.bumps || 0) > 0]];
+    el.innerHTML = it.map(([n, v, bad]) => `<span class="${bad ? 'bad' : v ? 'warn' : ''}">${n} <b>${v}</b></span>`).join(''); }
+  const chkRow = () => `<div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="${st.check ? 'on' : ''}" data-chk data-tip="Check the skin: the cursor reads the skin inside its circle instead of tattooing">Check</button>
     <input type="range" min="2" max="30" step="1" value="${st.checkR}" data-chkr aria-label="Check circle size" ${st.check ? '' : 'hidden'}><em>${st.check ? st.checkR + ' mm' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
   meterEl.addEventListener('click', (e) => { if (!e.target.closest('[data-chk]')) return; st.check = !st.check; meterBuild(); meter(lastM); drawCur(); });
   meterEl.addEventListener('input', (e) => { if (e.target.matches('[data-smooth]')) { st.smooth = +e.target.value; st.dirty = true; e.target.nextElementSibling.textContent = st.smooth + '%'; return; }
@@ -2107,7 +2113,7 @@ TT.open = async (el, id) => {
   const meterBuild = () => { meterBands(); meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
     const badZ = low ? `left:0;width:${P(bad)}%` : `left:${P(bad)}%;right:0`;
     return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('') + chkRow(); };
-  meterBuild(); if (CHEAT) meterEl.classList.add('cheat');   // no skin damage to show
+  meterBuild(); tally(); if (CHEAT) meterEl.classList.add('cheat');   // no skin damage to show
   const WHIP_GAP = 0.7;
   const meter = (m) => {
     const gr = meterEl.querySelector('[data-m="gap"]');
@@ -3002,7 +3008,7 @@ TT.open = async (el, id) => {
     if (T.presets) for (const [id, f] of Object.entries(T.presets)) TT.setFeel(id, { ...TT.feel(id), ...f });   // each needle the lesson uses, set up as it asks
     setNeedle(T.needle); if (T.size || T.volt) { if (T.size) feel.size = T.size; if (T.volt) feel.volt = T.volt; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawSz(); drawVolt(); }   // a lesson that asks for a size and voltage starts there
     st.layer = T.layer; st.caps = [...TT_CAPS]; st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
-    drawTray(); drawView(); drawRefs(); exBar(); paint(); st.dirty = true;
+    drawTray(); drawView(); drawRefs(); exBar(); tally(); paint(); st.dirty = true;
   };
   // ---- scoring ----
   const maskOf = (draw, fill, width) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.lineCap = g.lineJoin = 'round';
@@ -3209,15 +3215,15 @@ TT.open = async (el, id) => {
     const pen = exPen();
     // A lesson can set a blowout limit; going over it fails outright, however good the line.
     const blowFail = T.maxBlow != null && blow > T.maxBlow;
-    const crashes = EX.cur?.crash || 0, crashFail = T.maxCrash != null && crashes > T.maxCrash;
+    const crashes = EX.cur?.crash || 0, crashFail = false, crashPts = T.crashFree != null ? Math.max(0, crashes - T.crashFree) : 0;   // a free crash landing, then a point off each
     // Stipple: the point of the lesson is the gradient, so one that is uneven, patchy or barely there fails however clean the rest is.
     const gradFail = !!(T.stipple || T.wgrad) && !empty && (sc.gradient < 45 || sc.evenness < 55 || sc.smoothness < 50);
     const packFail = !!T.wgrad && !empty && +sc.packing >= 50, washFail = !!T.wgrad && !empty && sc.washes < 40;   // whip shading: no packing, and the lighter washes have to be used
     // A lesson can limit how many strokes the line is pulled in: each one over costs 3 points.
     const strokes = T.linePhase ? (EX.cur?.lineN || 0) : T.strokeNeedle ? (EX.cur?.tm?.by?.[T.strokeNeedle]?.strokes || 0) : Object.values(EX.cur?.tm?.by || {}).reduce((a, n) => a + (n.strokes || 0), 0), extraStrokes = T.maxStrokes ? Math.max(0, strokes - T.maxStrokes) : 0;
-    const total0 = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5) - pen.pts - extraStrokes * 3)), total = blowFail || crashFail || gradFail || packFail || washFail ? Math.min(59, total0) : total0;
+    const total0 = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5) - pen.pts - extraStrokes * 3 - crashPts)), total = blowFail || crashFail || gradFail || packFail || washFail ? Math.min(59, total0) : total0;
     const th = composite(Math.min(1, 220 / W)).toDataURL('image/jpeg', 0.7), c = EX.cur || {};
-    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, blowFail, crashFail, gradFail, packFail, washFail, crashes, strokesUsed: strokes, extraStrokes, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
+    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, blowFail, crashFail, crashPts, gradFail, packFail, washFail, crashes, strokesUsed: strokes, extraStrokes, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
     if (EX.cur) EX.cur.scored = true;
     EX.res = EX.res.filter(r => r.id !== T.id); EX.res.push(res); st.dirty = true; exBar(res);
@@ -3329,7 +3335,7 @@ TT.open = async (el, id) => {
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : res.crashFail ? 'Failed: too many crash landings' : res.gradFail ? 'Failed: the gradient is uneven' : res.packFail ? 'Failed: that was packed, not whipped' : res.washFail ? 'Failed: the lighter washes were not used' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats tt-lscats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
-      ${res.crashFail ? `<p class="muted" style="margin:4px 0">${res.crashes} crash landings. More than ${T.maxCrash} is an instant fail: land softly while already moving.</p>` : ''}${res.packFail ? '<p class="muted" style="margin:4px 0">The curved mag went round in circles: that is packing. In this lesson every stroke has to be a whip.</p>' : ''}${res.washFail ? '<p class="muted" style="margin:4px 0">The gradient has to be built from the washes in turn, Black down to Light, not from black alone.</p>' : ''}${res.gradFail ? '<p class="muted" style="margin:4px 0">The gradient has to run smoothly and evenly from dark to light to pass. Gradient needs 45, evenness 55 and smoothness 50.</p>' : ''}${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}${T.maxStrokes ? `<p class="muted" style="margin:4px 0">${res.strokesUsed} ${T.strokeNeedle ? T.strokeNeedle + ' ' : ''}stroke${res.strokesUsed === 1 ? '' : 's'} of ${T.maxStrokes} allowed${res.extraStrokes ? ` · −${res.extraStrokes * 3} points` : ''}</p>` : ''}
+      ${T.crashFree != null && res.crashes ? `<p class="muted" style="margin:4px 0">${res.crashes} crash landing${res.crashes === 1 ? '' : 's'}: ${T.crashFree} free${res.crashPts ? `, −${res.crashPts} point${res.crashPts === 1 ? '' : 's'}` : ''}. Land and lift off on the move.</p>` : ''}${res.packFail ? '<p class="muted" style="margin:4px 0">The curved mag went round in circles: that is packing. In this lesson every stroke has to be a whip.</p>' : ''}${res.washFail ? '<p class="muted" style="margin:4px 0">The gradient has to be built from the washes in turn, Black down to Light, not from black alone.</p>' : ''}${res.gradFail ? '<p class="muted" style="margin:4px 0">The gradient has to run smoothly and evenly from dark to light to pass. Gradient needs 45, evenness 55 and smoothness 50.</p>' : ''}${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}${T.maxStrokes ? `<p class="muted" style="margin:4px 0">${res.strokesUsed} ${T.strokeNeedle ? T.strokeNeedle + ' ' : ''}stroke${res.strokesUsed === 1 ? '' : 's'} of ${T.maxStrokes} allowed${res.extraStrokes ? ` · −${res.extraStrokes * 3} points` : ''}</p>` : ''}
       ${ttTryBar()}${ttChips(statsTxt)}${ttShotHtml(purl, hurl, heat?.notes, !!T.pack)}
       <div class="row" style="gap:6px;margin-top:12px"><button class="btn ${pass ? '' : 'primary'}" style="flex:1" data-lr="again">Try again</button>${pass ? '<button class="btn primary" style="flex:1" data-lr="out">Continue</button>' : ''}</div>
       <div class="row" style="gap:6px;margin-top:6px;justify-content:center"><button class="btn small" data-lr="out">Lessons</button><button class="btn small" data-lr="close">Close</button><button class="btn small" data-lr="copy" data-tip="Copy every stat from this attempt as text, to compare attempts">Copy stats</button></div></div>`;
@@ -3532,6 +3538,7 @@ function ttStyle() {
 @keyframes ttFlag { 0% { opacity: 0; transform: translate(-50%, 8px); } 8%, 80% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 .tt-meter { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5; width: min(300px, calc(100% - 220px)); min-width: 180px; padding: 6px 10px; border-radius: 12px;
   background: rgba(15,18,19,.82); display: grid; gap: 3px; }
+.tt-tally { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; font: 600 10px var(--ui); color: var(--ink2); } .tt-tally b { color: var(--ink); } .tt-tally .warn b { color: #f2c14e; } .tt-tally .bad, .tt-tally .bad b { color: #ff7a66; }
 .tt-chkrow { display: flex; align-items: center; gap: 8px; margin-top: 3px; } .tt-chkrow em { font: 600 10px var(--ui); color: var(--ink2); font-style: normal; min-width: 36px; }
 .tt-chkrow button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 700 11px var(--ui); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
 .tt-chkrow button.on { background: rgba(31,182,166,.25); color: var(--teal); border-color: var(--teal); } .tt-chkrow input { flex: 1; accent-color: var(--teal); }
