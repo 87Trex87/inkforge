@@ -1051,6 +1051,10 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
 .lib-tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; z-index: 1; }
 .dz-item .lib-tools .mini { position: static; display: grid; place-items: center; background: rgba(0,0,0,.55); }
 .lib-tools .lib-fav.on { color: #f2c14e; } .lib-tools .lib-mv.on { color: var(--teal); }
+.lib-cell { position: relative; min-width: 0; } .lib-cell > .pf-tile, .lib-cell > .ref-tile { width: 100%; }
+.lib-cell .lib-tools { top: 4px; right: 4px; } .lib-cell .lib-tools .mini { width: 26px; height: 26px; padding: 0; display: grid; place-items: center; background: rgba(0,0,0,.55); color: #fff; border: 0; }
+.lib-cell .lib-tools .lib-fav.on { color: #f2c14e; } .lib-cell .lib-tools .lib-mv.on { color: var(--teal); }
+.f-acts .lib-tools { position: static; margin-right: auto; } .f-acts .lib-tools .mini { display: grid; place-items: center; }
 .lib-move { display: flex; flex-direction: column; gap: 6px; min-width: 260px; } .lib-move .lib-chip { justify-content: flex-start; }
 /* New design picker */
 .dz-pick { max-width: 640px; }

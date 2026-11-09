@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 350;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 351;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -632,7 +632,7 @@ const Lib = {
   ui: {},
   org(key) { let o = {}; try { o = JSON.parse(Settings.get('lib_' + key, '{}')); } catch {} return { fav: o.fav || [], in: o.in || {}, folders: o.folders || [] }; },
   save(key, o) { return Settings.set('lib_' + key, JSON.stringify(o)); },
-  st(key) { return Lib.ui[key] ??= { q: '', view: '', kind: '', sort: Settings.get('lib_sort_' + key, 'new') }; },
+  st(key) { return Lib.ui[key] ??= { q: '', view: '', kind: '', sort: Settings.get('lib_sort_' + key, key === 'forms' ? 'az' : 'new') }; },
   apply(key, rows) {
     const o = Lib.org(key), s = Lib.st(key), q = s.q.trim().toLowerCase();
     if (s.view.startsWith('f:') && !o.folders.includes(s.view.slice(2))) s.view = '';
@@ -641,19 +641,20 @@ const Lib = {
     const by = { new: (a, b) => String(b.t).localeCompare(String(a.t)), old: (a, b) => String(a.t).localeCompare(String(b.t)), az: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base', numeric: true }) }[s.sort];
     return by ? out.sort(by) : out;
   },
-  bar(key, rows) {
+  bar(key, rows, opt = {}) {
     const o = Lib.org(key), s = Lib.st(key), kinds = [...new Set(rows.map(r => r.kind).filter(Boolean))].sort();
     const n = (f) => rows.filter(f).length, chip = (v, label, c) => `<button class="lib-chip ${s.view === v ? 'on' : ''}" data-libv="${esc(v)}">${label}<em>${c}</em></button>`;
-    return `<div class="lib-bar"><input class="in lib-q" data-libq type="search" placeholder="Search" value="${esc(s.q)}" aria-label="Search">
+    if (opt.fav === false && s.view === 'fav') s.view = '';
+    return `<div class="lib-bar">${opt.search === false ? '' : `<input class="in lib-q" data-libq type="search" placeholder="Search" value="${esc(s.q)}" aria-label="Search">`}
       ${kinds.length > 1 ? `<select class="in" data-libkind aria-label="Type"><option value="">All types</option>${kinds.map(k => `<option ${s.kind === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>` : ''}
       <select class="in" data-libsort aria-label="Sort">${[['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A to Z']].map(([v, t]) => `<option value="${v}" ${s.sort === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
-      <div class="lib-chips">${chip('', 'All', rows.length)}${chip('fav', '★ Favourites', n(r => o.fav.includes(r.id)))}${o.folders.length ? chip('loose', 'Not in a folder', n(r => !o.in[r.id])) : ''}
+      <div class="lib-chips">${chip('', 'All', rows.length)}${opt.fav === false ? '' : chip('fav', '★ Favourites', n(r => o.fav.includes(r.id)))}${o.folders.length ? chip('loose', 'Not in a folder', n(r => !o.in[r.id])) : ''}
         ${o.folders.map(f => chip('f:' + f, LIB_FOLDER + esc(f), n(r => o.in[r.id] === f))).join('')}
         <button class="lib-chip add" data-libnew data-tip="Make a folder to sort your work into">+ Folder</button>
         ${s.view.startsWith('f:') ? `<button class="lib-chip add" data-libren>Rename</button><button class="lib-chip add" data-libdelf>Delete folder</button>` : ''}</div>`;
   },
-  tools(key, id) { const o = Lib.org(key), on = o.fav.includes(id), f = o.in[id];
-    return `<div class="lib-tools"><button class="mini lib-fav ${on ? 'on' : ''}" data-libfav="${id}" aria-label="${on ? 'Remove from favourites' : 'Add to favourites'}" data-tip="${on ? 'Remove from favourites' : 'Add to favourites'}">${on ? '★' : '☆'}</button><button class="mini lib-mv ${f ? 'on' : ''}" data-libmove="${id}" aria-label="Move to a folder" data-tip="${f ? 'In ' + esc(f) + ': move' : 'Move to a folder'}">${LIB_FOLDER}</button></div>`; },
+  tools(key, id, opt = {}) { const o = Lib.org(key), on = o.fav.includes(id), f = o.in[id];
+    return `<div class="lib-tools">${opt.fav === false ? '' : `<button class="mini lib-fav ${on ? 'on' : ''}" data-libfav="${id}" aria-label="${on ? 'Remove from favourites' : 'Add to favourites'}" data-tip="${on ? 'Remove from favourites' : 'Add to favourites'}">${on ? '★' : '☆'}</button>`}<button class="mini lib-mv ${f ? 'on' : ''}" data-libmove="${id}" aria-label="Move to a folder" data-tip="${f ? 'In ' + esc(f) + ': move' : 'Move to a folder'}">${LIB_FOLDER}</button></div>`; },
   empty: '<div class="empty muted" style="padding:24px 0">Nothing here. Try another search, type or folder.</div>',
   async folderName(key, msg, def = '') { const v = (await askText(msg, def))?.trim(); if (!v) return null;
     if (Lib.org(key).folders.includes(v) && v !== def) { toast('There is already a folder called ' + v + '.'); return null; } return v.slice(0, 40); },
@@ -3550,7 +3551,7 @@ async function stKeep() {
 }
 async function renderStencils(el) {
   const q = PF.q.trim(), like = '%' + q + '%';
-  const rows = await DB.all(`SELECT id, name, thumb_ref, cm FROM stencils WHERE (? = '' OR name LIKE ?) ORDER BY created_at DESC, id DESC`, [q, like]);
+  const rows = await DB.all(`SELECT id, name, thumb_ref, cm, created_at AS t FROM stencils WHERE (? = '' OR name LIKE ?) ORDER BY created_at DESC, id DESC`, [q, like]);
   if ($('#pf-grid') !== el) return;
   if (!rows.length && !q) {
     el.innerHTML = `<div class="empty"><div class="empty-ico">${ICON.stencil}</div><div style="font:24px var(--display)">Your stencils</div>
@@ -3559,10 +3560,12 @@ async function renderStencils(el) {
     $('#sn-add').onclick = () => { ST.src = null; location.hash = 'stencil'; }; return;
   }
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
-  el.innerHTML = `${rows.length ? `<div class="ref-grid">${rows.map((r, i) => `<button class="ref-tile sn-tile" data-sn="${r.id}" title="${esc(r.name || '')}"><img src="${urls[i]}" alt="" loading="lazy"><span>${esc(r.name || '')}</span></button>`).join('')}</div>`
-      : '<div class="empty muted">No matches.</div>'}
-    <div class="muted count">${rows.length} stencil${rows.length === 1 ? '' : 's'}</div>`;
-  el.onclick = (e) => { const t = e.target.closest('[data-sn]'); if (t) stencilSheet(+t.dataset.sn); };
+  const all = rows.map((r, i) => ({ ...r, url: urls[i] })), shown = Lib.apply('stencils', all), redraw = () => renderStencils(el);
+  el.innerHTML = `${rows.length ? Lib.bar('stencils', all, { search: false }) : ''}${shown.length ? `<div class="ref-grid">${shown.map((r) => `<div class="lib-cell"><button class="ref-tile sn-tile" data-sn="${r.id}" title="${esc(r.name || '')}"><img src="${r.url}" alt="" loading="lazy"><span>${esc(r.name || '')}</span></button>${Lib.tools('stencils', r.id)}</div>`).join('')}</div>`
+      : rows.length ? Lib.empty : '<div class="empty muted">No matches.</div>'}
+    <div class="muted count">${shown.length} stencil${shown.length === 1 ? '' : 's'}</div>`;
+  Lib.wire(el, 'stencils', redraw);
+  el.onclick = async (e) => { if (await Lib.click(e, 'stencils', redraw)) return; const t = e.target.closest('[data-sn]'); if (t) stencilSheet(+t.dataset.sn); };
 }
 // One stencil: the stencil or its original, name and print width; print, save, open in the stencil maker, delete.
 async function stencilSheet(id) {
@@ -3759,7 +3762,7 @@ async function renderPfGrid() {
   const q = PF.q.trim(), like = '%' + q + '%';
   // Simulator: pieces saved from the tattoo simulator (art tagged "simulator")
   const where = PF.filter === 'fav' ? 'p.favourite = 1' : PF.filter === 'all' ? '1' : PF.filter === 'sim' ? "p.tags LIKE '%simulator%'" : 'p.kind = ?';
-  const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite, p.bg,
+  const rows = await DB.all(`SELECT p.id, p.kind, p.title, p.price, p.claimed, p.favourite, p.bg, coalesce(p.made_on, p.created_at) AS t,
       (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS thumb,
       (SELECT count(*) FROM portfolio_photos x WHERE x.item_id = p.id) AS n
     FROM portfolio_items p LEFT JOIN clients c ON c.id = p.client_id
@@ -3775,13 +3778,15 @@ async function renderPfGrid() {
     return;
   }
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb)));
-  el.innerHTML = '<div class="pf-grid">' + rows.map((r, i) => `
+  const all = rows.map((r, i) => ({ ...r, kind: '', name: r.title, url: urls[i] })), shown = Lib.apply('portfolio', all);   /* the tabs above already pick the type */
+  Lib.wire(el, 'portfolio', renderPfGrid); el.onclick = (e) => Lib.click(e, 'portfolio', renderPfGrid);
+  el.innerHTML = Lib.bar('portfolio', all, { search: false, fav: false }) + (shown.length ? '<div class="pf-grid">' + shown.map((r) => `<div class="lib-cell">
     <a class="pf-tile ${r.claimed ? 'claimed' : ''}${pfBg(r.bg)}" href="#pf/${r.id}" aria-label="${esc(r.title || PF_KIND[r.kind])}">
-      ${urls[i] ? `<img src="${urls[i]}" alt="" loading="lazy">` : ''}
+      ${r.url ? `<img src="${r.url}" alt="" loading="lazy">` : ''}
       ${r.kind === 'flash' ? `<span class="pf-badge">${r.claimed ? 'Claimed' : r.price != null ? esc(money(r.price)) : 'Flash'}</span>` : ''}
       ${r.favourite ? '<span class="pf-star">★</span>' : ''}
       ${r.n > 1 ? `<span class="pf-n">${r.n}</span>` : ''}
-    </a>`).join('') + '</div>' + `<div class="muted count">${rows.length} piece${rows.length === 1 ? '' : 's'}</div>`;
+    </a>${Lib.tools('portfolio', r.id, { fav: false })}</div>`).join('') + '</div>' + `<div class="muted count">${shown.length} piece${shown.length === 1 ? '' : 's'}</div>` : Lib.empty);
 }
 
 /* ---------- Quote calculator ----------
