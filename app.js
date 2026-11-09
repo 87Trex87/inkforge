@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 325, when: '2026-11-09T10:16', added: ['Crash landings only count when you really dig in at speed. In lessons the first one is free, then each costs a point instead of failing you.', 'A live tally under the meter shows crashes, blowouts, overworked skin and bumps, so you can start over straight away.', 'Pop-up warnings are now a few words, readable at a glance.'],
+    test: ['Pack a lesson normally. Do crashes only show when you really slam in?'] },
   { build: 324, when: '2026-11-09T02:03', added: ['The 11 magnum now runs at 6.6 V by default (it was 5 V), so colour packs in much faster.', 'Needle sizes a lesson sets for you are no longer flagged as making it easier.', 'Colour blend has a new tip: turn off "Follows the way the pen leans" so the magnum holds its angle, and turn the page to get into the point.'],
     test: ['Do Colour blend with less packing. Does it heal solid without overworking?'] },
   { build: 323, when: '2026-11-09T00:41', added: ['There\'s a magenta ink cap now, and white sits last in the caps.', 'New lesson in Intermediate: Colour blend. Line a triangle in red, then blend from a dark red shadow at the point through red and orange to yellow.'],
