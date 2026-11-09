@@ -66,6 +66,85 @@ function ttMix(a, b, t) {
   const A = (v) => -Math.log(Math.max(0.02, v));
   return a.map((v, i) => Math.exp(-(A(v) * (1 - t) + A(b[i]) * t)));
 }
+/* ---------- Colour match: a hidden minigame (the dot in the palette editor) ----------
+   Each round deals 2 or 3 random inks plus black and white, and a colour to copy that can really be made from them
+   (mixed from those inks the same way the needle mixes). Hold an ink to pour it into the empty cup; at least 80% full
+   and Done before the timer runs out. Accuracy is measured as the distance between the two colours in Lab, the space
+   that follows how far apart colours look: within MG_PASS it scores, further is game over. Over 100% full, every drop
+   is paid for out of your points. The timer shortens as the streak grows, down to MG_TMIN. Best score, streak and
+   accuracy are kept (setting tt_mixgame). The tuning numbers are all here, to balance after testing. */
+const MG_PASS = 14, MG_TMAX = 15, MG_TMIN = 6.5, MG_FILL = 0.38, MG_FEE = 2;   // ΔE pass limit, timer at start and floor (s), cup per second held, points per 1% overfilled
+const mgLab = (c) => { const L = c.map(v => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)), X = (L[0] * 0.4124 + L[1] * 0.3576 + L[2] * 0.1805) / 0.95047, Y = L[0] * 0.2126 + L[1] * 0.7152 + L[2] * 0.0722, Z = (L[0] * 0.0193 + L[1] * 0.1192 + L[2] * 0.9505) / 1.08883, f = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))]; };
+const mgDE = (a, b) => { const p = mgLab(a), q = mgLab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
+const mgHue = (c) => { const [r, g, b] = c, mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 0.03) return { h: 0, s: 0 }; const H = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return { h: (H * 60 + 360) % 360, s: d / mx }; };
+function ttMixGame() {
+  const best = (() => { try { return JSON.parse(Settings.get('tt_mixgame', '{}')); } catch { return {}; } })();
+  const G = { score: 0, streak: 0, accSum: 0, round: null, over: false }, o = document.createElement('div'); o.id = 'tt-mg'; o.className = 'tt-mg';
+  const pure = (h) => { const f = (n) => { const k = (n + h / 60) % 6; return 1 - Math.max(0, Math.min(k, 4 - k, 1)); }; return [f(5), f(3), f(1)]; };
+  const BLK = ttHex('#141414'), WHT = ttHex('#fbfbf8');
+  // A new round: random inks, and a target mixed from them the way the cup mixes, kept out of the very dark and very light.
+  const deal = () => { const n = Math.random() < 0.5 ? 2 : 3, h0 = Math.random() * 360, inks = [...Array(n)].map((_, i) => { const c = pure((h0 + i * (360 / n) + (Math.random() - 0.5) * 60 + 360) % 360); return c.map(v => v * (0.82 + Math.random() * 0.18)); });
+    const all = [...inks, BLK, WHT]; let tgt = null;
+    for (let tries = 0; tries < 200 && !tgt; tries++) { let c = null, v = 0; const pours = 2 + Math.floor(Math.random() * 2);
+      for (let k = 0; k < pours; k++) { const ink = k === 0 ? inks[Math.floor(Math.random() * n)] : all[Math.floor(Math.random() * all.length)], amt = 0.15 + Math.random() * 0.5; if (!c) { c = ink.slice(); v = amt; } else { c = ttMix(c, ink, amt / (v + amt)); v += amt; } }
+      const L = mgLab(c)[0]; if (L > 22 && L < 85 && mgHue(c).s > 0.12 && all.every(k => mgDE(k, c) > 12)) tgt = c; }   // a real mix: not just one of the inks straight from the cap
+    G.round = { inks: all, tgt: tgt || inks[0], c: null, v: 0, t: Math.max(MG_TMIN, MG_TMAX - G.streak * (MG_TMAX - MG_TMIN) / 100), t0: performance.now(), over: 0 }; play(); };
+  const cupStyle = () => { const R = G.round, pc = Math.min(100, R.v * 100); return `--fill:${pc}%;--ink:${R.c ? ttToHex(R.c) : 'transparent'}`; };
+  const play = () => { const R = G.round;
+    o.innerHTML = `<div class="tt-mgbox"><div class="tt-mghead"><b>Colour match</b><span>Streak <b>${G.streak}</b></span><span>Points <b data-mgp>${G.score}</b></span><span class="tt-mgt" data-mgt>${R.t.toFixed(1)}s</span><button class="mini" data-mg="quit" aria-label="Close">✕</button></div>
+      <div class="tt-mgarena"><div class="tt-mgtarget"><span class="muted">Match this</span><i style="background:${ttToHex(R.tgt)}"></i></div>
+        <div class="tt-mgcup" data-mgcup style="${cupStyle()}"><i></i><span data-mgpc>0%</span></div></div>
+      <div class="tt-mginks">${R.inks.map((c, i) => `<button class="tt-cap" data-mgi="${i}" style="--c:${ttToHex(c)}" aria-label="Ink ${i + 1}"><i></i></button>`).join('')}</div>
+      <p class="tt-mgmsg" data-mgmsg>Hold an ink to pour it in. Fill at least 80%, then Done.</p>
+      <div class="tt-pgrp" style="display:flex;justify-content:center"><button class="btn small" data-mg="empty">Empty the cup</button><button class="btn small primary" data-mg="done">Done</button></div></div>`;
+    tick(); };
+  let raf = 0, pour = null;
+  const tick = () => { cancelAnimationFrame(raf); const step = (now) => { const R = G.round; if (!R || R.done || G.over) return; const left = R.t - (now - R.t0) / 1000, el = o.querySelector('[data-mgt]');
+      if (el) { el.textContent = Math.max(0, left).toFixed(1) + 's'; el.classList.toggle('low', left < 4); }
+      if (pour) { const dt = Math.min(0.1, (now - pour.t) / 1000); pour.t = now; const a = dt * MG_FILL;
+        if (R.v >= 1) { const fee = Math.ceil(a * 100 * MG_FEE); if (G.score < fee) return end('You poured away every last point. The cup runneth over, and so does your game.'); G.score -= fee; R.over += fee; const m = o.querySelector('[data-mgmsg]'); if (m) m.textContent = ['Wasting ink! That comes out of your points.', 'Ink isn\'t free, you know. Points going down the drain.', 'Overfilling again? Your points are paying for it.'][Math.floor(R.over / 15) % 3] + ` (−${R.over})`; const p = o.querySelector('[data-mgp]'); if (p) p.textContent = G.score; }
+        R.c = R.c ? ttMix(R.c, R.inks[pour.i], a / (R.v + a)) : R.inks[pour.i].slice(); R.v += a; const cup = o.querySelector('[data-mgcup]'); if (cup) { cup.setAttribute('style', cupStyle()); o.querySelector('[data-mgpc]').textContent = Math.round(R.v * 100) + '%'; } }
+      if (left <= 0) return end('Out of time. The ink dried in the cup.');
+      raf = requestAnimationFrame(step); }; raf = requestAnimationFrame(step); };
+  const done = () => { const R = G.round; if (R.v < 0.8) { const m = o.querySelector('[data-mgmsg]'); if (m) m.textContent = 'Fill the cup at least 80% first.'; return; }
+    R.done = true; cancelAnimationFrame(raf); const de = mgDE(R.c, R.tgt), acc = Math.max(0, Math.round(100 * (1 - de / (MG_PASS * 2.2)))), time = (performance.now() - R.t0) / 1000;
+    if (de > MG_PASS) return end(`Too far off (ΔE ${de.toFixed(1)}, ${acc}% accurate). Close, but the client noticed.`, R);
+    const pts = Math.round(Math.pow(acc / 100, 2) * 100 * (1 + G.streak * 0.04)); G.score += pts; G.streak++; G.accSum += acc; result(R, de, acc, pts, time); };
+  // Where the two colours sit on a colour wheel (angle: hue, distance from the middle: how strong the colour is), and the stats.
+  const wheelSvg = (a, b) => { const pt = (c) => { const { h, s } = mgHue(c), r = 52 * Math.min(1, s * 1.1), t = h * Math.PI / 180; return [60 + Math.cos(t) * r, 60 + Math.sin(t) * r]; }, [ax, ay] = pt(a), [bx, by] = pt(b);
+    const seg = [...Array(36)].map((_, i) => { const t0 = i * 10 * Math.PI / 180, t1 = (i + 1) * 10 * Math.PI / 180, c = pure(i * 10 + 5); return `<path d="M60 60L${60 + Math.cos(t0) * 56} ${60 + Math.sin(t0) * 56}A56 56 0 0 1 ${60 + Math.cos(t1) * 56} ${60 + Math.sin(t1) * 56}Z" fill="${ttToHex(c)}"/>`; }).join('');
+    return `<svg viewBox="0 0 120 120" class="tt-mgwheel">${seg}<circle cx="60" cy="60" r="56" fill="url(#mgw)"/><defs><radialGradient id="mgw"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+      <line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#111" stroke-width="1.2" stroke-dasharray="2 2"/><circle cx="${ax}" cy="${ay}" r="5" fill="${ttToHex(a)}" stroke="#fff" stroke-width="2"/><circle cx="${bx}" cy="${by}" r="5" fill="${ttToHex(b)}" stroke="#111" stroke-width="2"/></svg>`; };
+  const result = (R, de, acc, pts, time) => { const [l1, l2] = [mgLab(R.tgt)[0], mgLab(R.c)[0]];
+    o.innerHTML = `<div class="tt-mgbox"><div class="tt-mghead"><b>Round ${G.streak} passed</b><span>Points <b>${G.score}</b></span><button class="mini" data-mg="quit" aria-label="Close">✕</button></div>
+      <div class="tt-mgres">${wheelSvg(R.tgt, R.c)}<div><div class="tt-mgsw"><span><i style="background:${ttToHex(R.tgt)}"></i>Target</span><span><i style="background:${ttToHex(R.c)}"></i>Yours</span></div>
+        <div class="stat"><span>Accuracy</span><span><b>${acc}%</b> (ΔE ${de.toFixed(1)})</span></div><div class="stat"><span>Points this round</span><span>+${pts}${R.over ? ` (−${R.over} wasted)` : ''}</span></div>
+        <div class="stat"><span>Time</span><span>${time.toFixed(1)}s of ${R.t.toFixed(1)}s</span></div><div class="stat"><span>Brightness</span><span>${Math.abs(l1 - l2) < 3 ? 'spot on' : l2 > l1 ? 'yours is lighter' : 'yours is darker'}</span></div></div></div>
+      <p class="muted" style="font-size:11.5px;text-align:center">White dot: the target. Dark ring: yours. The closer together on the wheel, the closer the colour; nearer the middle means duller.</p>
+      <div class="tt-pgrp" style="display:flex;justify-content:center"><button class="btn primary" data-mg="next">Next</button></div></div>`; };
+  const end = (why, R) => { G.over = true; cancelAnimationFrame(raf); pour = null; const avg = G.streak ? Math.round(G.accSum / G.streak) : 0, nb = { score: Math.max(best.score || 0, G.score), streak: Math.max(best.streak || 0, G.streak), acc: Math.max(best.acc || 0, G.streak >= 3 ? avg : 0) }, rec = G.score > (best.score || 0);
+    Settings.set('tt_mixgame', JSON.stringify(nb));
+    o.innerHTML = `<div class="tt-mgbox"><div class="tt-mghead"><b>Game over</b><button class="mini" data-mg="quit" aria-label="Close">✕</button></div><p style="text-align:center;margin:6px 0 10px">${esc(why)}</p>
+      ${R?.c ? `<div class="tt-mgres">${wheelSvg(R.tgt, R.c)}<div class="tt-mgsw"><span><i style="background:${ttToHex(R.tgt)}"></i>Target</span><span><i style="background:${ttToHex(R.c)}"></i>Yours</span></div></div>` : ''}
+      <div class="stat"><span>Points</span><span><b>${G.score}</b>${rec ? ' · new best!' : ''}</span></div><div class="stat"><span>Streak</span><span>${G.streak}</span></div><div class="stat"><span>Average accuracy</span><span>${avg}%</span></div>
+      <div class="stat muted"><span>Your best</span><span>${nb.score} points · ${nb.streak} streak · ${nb.acc}% accuracy</span></div>
+      <div class="tt-pgrp" style="display:flex;justify-content:center;margin-top:10px"><button class="btn" data-mg="quit">Close</button><button class="btn primary" data-mg="again">Play again</button></div></div>`; };
+  const intro = () => { o.innerHTML = `<div class="tt-mgbox"><div class="tt-mghead"><b>You found it: Colour match</b><button class="mini" data-mg="quit" aria-label="Close">✕</button></div>
+    <p style="font-size:13px;line-height:1.45">You get a few random inks, plus black and white. Hold them to pour into the empty cup and match the colour in the box. Fill it at least 80% and press Done before the timer runs out.</p>
+    <p style="font-size:13px;line-height:1.45">Close enough scores points, too far off is game over. Overfill the cup and you pay for the wasted ink with your points. Every round the timer gets a little shorter.</p>
+    <div class="stat muted"><span>Your best</span><span>${best.score || 0} points · ${best.streak || 0} streak · ${best.acc || 0}% accuracy</span></div>
+    <div class="tt-pgrp" style="display:flex;justify-content:center;margin-top:10px"><button class="btn primary" data-mg="start">Start</button></div></div>`; };
+  o.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-mgi]'); if (!b || !G.round || G.round.done || G.over) return; e.preventDefault(); pour = { i: +b.dataset.mgi, t: performance.now(), b }; b.classList.add('dip'); });
+  const stop = () => { if (pour) { pour.b.classList.remove('dip'); pour = null; } }; ['pointerup', 'pointercancel'].forEach(ev => addEventListener(ev, stop)); o.addEventListener('contextmenu', (e) => e.preventDefault());
+  o.addEventListener('click', (e) => { const a = e.target.closest('[data-mg]')?.dataset.mg; if (!a) return;
+    if (a === 'quit') { cancelAnimationFrame(raf); G.over = true; ['pointerup', 'pointercancel'].forEach(ev => removeEventListener(ev, stop)); return o.remove(); }
+    if (a === 'start' || a === 'next') return deal();
+    if (a === 'again') { Object.assign(G, { score: 0, streak: 0, accSum: 0, over: false }); return deal(); }
+    if (a === 'empty' && G.round && !G.round.done) { G.round.c = null; G.round.v = 0; const cup = o.querySelector('[data-mgcup]'); cup.setAttribute('style', cupStyle()); o.querySelector('[data-mgpc]').textContent = '0%'; return; }
+    if (a === 'done' && G.round && !G.round.done) return done(); });
+  intro(); document.body.appendChild(o);
+}
 // Grey wash: black ink thinned with water, not mixed with white; the strength is how much pigment it carries.
 const TT_WASH = [['Black', 1], ['Dark', 0.55], ['Mid', 0.3], ['Light', 0.14]];
 const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b', '#6b3f22', '#c2185b', '#fbfbf8'];   // white stays last; a new cap goes in just before it
@@ -2400,17 +2479,22 @@ TT.open = async (el, id) => {
     const capBtn = (c, s, attrs, label) => `<button class="tt-cap" ${attrs} style="--c:${c};--o:${Math.max(0.12, s)}" aria-label="${label}"><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`;
     const sync = () => { const cv = o.querySelector('[data-pw]'); if (cv) ring(cv); const hx = o.querySelector('[data-ph]'); if (hx && document.activeElement !== hx) hx.value = ttToHex(M.c); const sb = o.querySelector('[data-mixs]'); if (sb) sb.textContent = Math.round(M.s * 100) + '%'; const tp = o.querySelector('[data-tipbox]'); if (tp) tp.textContent = M.tip; const u = o.querySelector('[data-pe="undo"]'), r2 = o.querySelector('[data-pe="redo"]'); if (u) u.disabled = !H.length; if (r2) r2.disabled = !F.length; };
     const draw = () => {
-      o.innerHTML = `<div class="card tt-pale"><div class="row" style="align-items:center;gap:6px"><input class="in" data-pn value="${esc(P.name)}" maxlength="40" aria-label="Palette name" style="flex:1;font-weight:700"><button class="btn small" data-pe="cancel">Cancel</button><button class="btn small primary" data-pe="save">Save</button></div>
-        <div class="tt-pslots">${P.caps.map((x, i) => `<button class="tt-cap${i === at ? ' sel' : ''}" data-ps="${i}" style="--c:${x.c};--o:${Math.max(0.12, x.s)}" aria-label="Ink cap ${i + 1}"><i></i>${x.s < 1 ? `<em>${Math.round(x.s * 100)}</em>` : ''}</button>`).join('')}${P.caps.length < PAL_MAX ? '<button class="tt-padd" data-pe="add" aria-label="Add an ink cap">+</button>' : ''}</div>
-        <div class="row tt-pord"><button class="btn small" data-pe="undo" ${H.length ? '' : 'disabled'} aria-label="Undo" data-tip="Undo">↶</button><button class="btn small" data-pe="redo" ${F.length ? '' : 'disabled'} aria-label="Redo" data-tip="Redo">↷</button><button class="btn small" data-pe="dup" ${P.caps.length < PAL_MAX ? '' : 'disabled'} data-tip="Copy this cap next to it, as a start for another tone">Duplicate</button><button class="btn small" data-pe="left" ${at ? '' : 'disabled'} aria-label="Move left">◀</button><button class="btn small" data-pe="right" ${at < P.caps.length - 1 ? '' : 'disabled'} aria-label="Move right">▶</button><span class="muted" style="flex:1;text-align:center;font-size:12px">${at + 1} / ${P.caps.length}</span><button class="btn small danger" data-pe="del" ${P.caps.length > 1 ? '' : 'disabled'}>Remove</button></div>
-        <div class="lbl">Mixing bench</div>
-        <div class="tt-pcol"><canvas width="168" height="168" data-pw aria-label="Pick a colour"></canvas><div class="tt-pctl">
-          <p class="muted" style="font-size:11.5px;margin:0">Hold an ink to mix it into the cup in the middle. The longer you hold, the more goes in.</p>
-          <div class="tt-bench">${BENCH.map(([n, c, s], i) => c ? capBtn(c, s, `data-mix="b${i}"`, n) : `<button class="tt-cup tt-dil" data-mix="b${i}" aria-label="${n}"></button>`).join('')}<i class="tt-qsep"></i>${P.caps.map((x, i) => i === at ? '' : capBtn(x.c, x.s, `data-mix="p${i}"`, 'Cap ' + (i + 1))).join('')}</div>
-          <div class="row" style="gap:6px;align-items:center;margin-top:4px"><span class="muted" style="font-size:12px">Strength <b data-mixs>${Math.round(M.s * 100)}%</b></span><span style="flex:1"></span><input class="in" data-ph value="${ttToHex(M.c)}" maxlength="7" style="width:88px" aria-label="Colour code" data-tip="Type an exact colour code (the shortcut)"></div>
-          <div class="tt-tipbox" data-tipbox>${esc(M.tip)}</div>
-          <div class="row" style="gap:6px"><button class="btn small" data-pe="from">Start over from this cap</button><span style="flex:1"></span><button class="btn small primary" data-pe="use">Use for cap ${at + 1}</button></div></div></div>
-        <div class="row" style="gap:6px;margin-top:8px">${fresh ? '' : '<button class="btn small danger" data-pe="delpal">Delete palette</button>'}<span style="flex:1"></span><button class="btn small" data-pe="share">Share file</button></div></div>`;
+      o.innerHTML = `<div class="card tt-pale">
+        <div class="tt-phead"><input class="in" data-pn value="${esc(P.name)}" maxlength="40" aria-label="Palette name"><div class="tt-pgrp"><button class="btn small" data-pe="cancel">Cancel</button><button class="btn small primary" data-pe="save">Save</button></div></div>
+        <div class="tt-pslots">${P.caps.map((x, i) => `<button class="tt-cap${i === at ? ' sel' : ''}" data-ps="${i}" style="--c:${x.c};--o:${Math.max(0.12, x.s)}" aria-label="Ink cap ${i + 1}"><i></i>${x.s < 1 ? `<em>${Math.round(x.s * 100)}</em>` : ''}</button>`).join('')}${P.caps.length < PAL_MAX ? '<button class="tt-padd" data-pe="add" aria-label="Add an ink cap">+</button>' : ''}<span class="tt-pcount">${at + 1} / ${P.caps.length}</span></div>
+        <div class="tt-ptools">
+          <div class="tt-pgrp"><button class="btn small" data-pe="undo" ${H.length ? '' : 'disabled'} aria-label="Undo" data-tip="Undo">↶</button><button class="btn small" data-pe="redo" ${F.length ? '' : 'disabled'} aria-label="Redo" data-tip="Redo">↷</button></div>
+          <div class="tt-pgrp"><button class="btn small" data-pe="left" ${at ? '' : 'disabled'} aria-label="Move left" data-tip="Move left">◀</button><button class="btn small" data-pe="right" ${at < P.caps.length - 1 ? '' : 'disabled'} aria-label="Move right" data-tip="Move right">▶</button></div>
+          <div class="tt-pgrp"><button class="btn small" data-pe="dup" ${P.caps.length < PAL_MAX ? '' : 'disabled'} data-tip="Copy this cap next to it, as a start for another tone">Duplicate</button><button class="btn small danger" data-pe="del" ${P.caps.length > 1 ? '' : 'disabled'}>Remove</button></div></div>
+        <div class="tt-pbench">
+          <canvas width="168" height="168" data-pw aria-label="Pick a colour"></canvas>
+          <div class="tt-pctl">
+            <div class="lbl" style="margin:0">Mixing bench <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">· hold an ink to pour it in</span></div>
+            <div class="tt-bench">${BENCH.map(([n, c, s], i) => c ? capBtn(c, s, `data-mix="b${i}"`, n) : `<button class="tt-cup tt-dil" data-mix="b${i}" aria-label="${n}"></button>`).join('')}<i class="tt-qsep"></i>${P.caps.map((x, i) => i === at ? '' : capBtn(x.c, x.s, `data-mix="p${i}"`, 'Cap ' + (i + 1))).join('')}</div>
+            <div class="tt-pline"><span class="muted">Strength <b data-mixs>${Math.round(M.s * 100)}%</b></span><input class="in" data-ph value="${ttToHex(M.c)}" maxlength="7" aria-label="Colour code" data-tip="Type an exact colour code (the shortcut)"></div>
+            <div class="tt-tipbox" data-tipbox>${esc(M.tip)}</div>
+            <div class="tt-pgrp tt-pact"><button class="btn small" data-pe="from">Start over</button><button class="btn small primary" data-pe="use">Use for cap ${at + 1}</button></div></div></div>
+        <div class="tt-pfoot"><button class="tt-egg" data-pe="egg" data-tip="What's this?" aria-label="What's this?"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg></button>${fresh ? '' : '<button class="btn small danger" data-pe="delpal">Delete palette</button>'}<span style="flex:1"></span><button class="btn small" data-pe="share">Share file</button></div></div>`;
       sync(); };
     // the wheel: a pure colour to start from (fresh in the cup)
     o.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-pw]')) return; e.preventDefault(); push();
@@ -2446,6 +2530,7 @@ TT.open = async (el, id) => {
       if (a === 'del' && P.caps.length > 1) { P.caps.splice(at, 1); at = Math.min(at, P.caps.length - 1); Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1 }); return draw(); }
       if (a === 'from') { Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1, tip: 'Back to what this cap holds.' }); return draw(); }
       if (a === 'use') { P.caps[at] = { c: ttToHex(M.c), s: +Math.max(0.05, M.s).toFixed(2) }; M.v = 1; return draw(); }
+      if (a === 'egg') return ttMixGame();
       if (a === 'cancel') return o.remove();
       if (a === 'save') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; await palSave(P); o.remove(); palApply(P); return; }
       if (a === 'share') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; const f = new File([JSON.stringify({ inkforge_palette: 1, name: P.name, caps: P.caps }, null, 1)], `${P.name.replace(/[^\w-]+/g, '-')}.inkpalette.json`, { type: 'application/json' }); return shareFiles([f], P.name); }
@@ -3774,6 +3859,28 @@ function ttStyle() {
 .tt-qsb { position: absolute; z-index: 9; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; background: rgba(22,27,28,.97); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); font: 600 11px var(--ui); color: var(--ink2); }
 .tt-qsb[hidden] { display: none; } .tt-qsb b { color: var(--teal); } .tt-qsb input { width: 160px; accent-color: var(--teal); touch-action: none; }
 .tt-pdots { display: inline-flex; gap: 2px; min-width: 40px; } .tt-pdots i { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); } .tt-qp .tt-pdots { min-width: 0; }
+.tt-phead { display: flex; gap: 8px; align-items: center; } .tt-phead input { flex: 1; min-width: 0; font-weight: 700; }
+.tt-pgrp { display: inline-flex; gap: 4px; align-items: center; } .tt-pgrp .btn.small { min-height: 0; }
+.tt-pcount { margin-left: auto; font: 600 11px var(--ui); color: var(--ink2); align-self: center; }
+.tt-ptools { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.tt-pbench { display: grid; grid-template-columns: 168px 1fr; gap: 14px; align-items: start; } .tt-pbench canvas { width: 168px; height: 168px; border-radius: 50%; touch-action: none; cursor: crosshair; }
+@media (max-width: 480px) { .tt-pbench { grid-template-columns: 1fr; justify-items: center; } }
+.tt-pline { display: flex; align-items: center; gap: 8px; font-size: 12px; } .tt-pline input { margin-left: auto; width: 92px; } .tt-pact { justify-content: flex-end; }
+.tt-pfoot { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tt-egg { width: 16px; height: 16px; padding: 0; border: 0; background: none; color: var(--ink2); opacity: .35; cursor: pointer; display: grid; place-items: center; } .tt-egg:hover { opacity: .9; } .tt-egg svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2.5; }
+.tt-mg { position: fixed; inset: 0; z-index: 130; display: grid; place-items: center; padding: 14px; background: rgba(6,8,9,.88); }
+.tt-mgbox { width: min(520px, 100%); max-height: 94dvh; overflow-y: auto; padding: 14px 16px; border-radius: 18px; background: var(--bg2, #161b1c); border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.tt-mghead { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--ink2); } .tt-mghead > b:first-child { flex: 1; font-size: 15px; color: var(--ink); } .tt-mghead span b { color: var(--teal); }
+.tt-mgt { font: 700 16px var(--ui); color: var(--ink); min-width: 52px; text-align: right; } .tt-mgt.low { color: #ff7a66; }
+.tt-mgarena { position: relative; height: 230px; margin: 12px 0; border-radius: 14px; background: rgba(255,255,255,.03); border: 1px solid var(--line); }
+.tt-mgtarget { position: absolute; right: 14px; top: 14px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; } .tt-mgtarget i { width: 74px; height: 74px; border-radius: 12px; border: 2px solid rgba(255,255,255,.25); }
+.tt-mgcup { position: absolute; left: 22px; bottom: 16px; width: 86px; height: 104px; border-radius: 8px 8px 30px 30px; border: 2px solid #9fb3b8; background: rgba(255,255,255,.05); overflow: hidden; }
+.tt-mgcup i { position: absolute; left: 0; right: 0; bottom: 0; height: var(--fill); background: var(--ink); transition: height .08s linear; } .tt-mgcup span { position: absolute; top: -20px; left: 0; right: 0; text-align: center; font: 700 11px var(--ui); color: var(--ink2); } .tt-mgcup { margin-top: 20px; }
+.tt-mgcup span { top: 4px; color: #fff; text-shadow: 0 1px 3px #000; }
+.tt-mginks { display: flex; justify-content: center; gap: 12px; margin: 6px 0 4px; } .tt-mginks .tt-cap { width: 46px; height: 46px; } .tt-mginks .tt-cap.dip { transform: scale(.9); outline: 3px solid var(--teal); outline-offset: 2px; }
+.tt-mgmsg { text-align: center; font-size: 12.5px; min-height: 18px; margin: 4px 0 10px; color: var(--ink2); }
+.tt-mgres { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; justify-content: center; margin: 10px 0; } .tt-mgres > div { flex: 1; min-width: 200px; } .tt-mgwheel { width: 150px; height: 150px; }
+.tt-mgsw { display: flex; gap: 12px; margin-bottom: 8px; font-size: 12px; } .tt-mgsw span { display: flex; align-items: center; gap: 6px; } .tt-mgsw i { width: 28px; height: 28px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); }
 .tt-pale { max-width: 470px; width: 100%; max-height: 92dvh; overflow-y: auto; } .tt-pslots { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; } .tt-pslots .tt-cap.sel { outline: 2px solid var(--teal); outline-offset: 2px; }
 .tt-padd { width: 30px; height: 30px; border-radius: 50%; border: 1.5px dashed var(--ink2); background: none; color: var(--ink2); font: 700 16px var(--ui); cursor: pointer; } .tt-pord { gap: 6px; align-items: center; margin-bottom: 8px; }
 .tt-pcol { display: flex; gap: 14px; flex-wrap: wrap; } .tt-pcol canvas { width: 168px; height: 168px; border-radius: 50%; touch-action: none; cursor: crosshair; flex: none; } .tt-pctl { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
