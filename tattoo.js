@@ -2267,7 +2267,7 @@ TT.open = async (el, id) => {
     if (EX.lesson) flag('Laser used: this attempt fails', true); else flag(`Laser on the skin: −${EX.cur.laser === 1 ? LASER_PTS[0] : LASER_PTS[1]} points`, true); st.dirty = true; exBar(); }
 
   const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
-  const drawCur = (e) => {
+  const drawCur = (e) => { cv.style.cursor = st.check ? "crosshair" : "";   /* the damage map draws no needle, so show the mouse */
     const r = stage.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
     if (cur.width !== Math.round(r.width * dpr)) { cur.width = Math.round(r.width * dpr); cur.height = Math.round(r.height * dpr); cur.style.width = r.width + 'px'; cur.style.height = r.height + 'px'; }
     cux.setTransform(1, 0, 0, 1, 0, 0); cux.clearRect(0, 0, cur.width, cur.height); drawGuides();
@@ -3946,7 +3946,7 @@ function ttStyle() {
   background: rgba(15,18,19,.82); display: grid; gap: 3px; }
 .tt-chkrow #tt-dmginfo { font-style: normal; }
 .tt-tally { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; font: 600 10px var(--ui); color: var(--ink2); } .tt-tally b { color: var(--ink); } .tt-tally .warn b { color: #f2c14e; } .tt-tally .bad, .tt-tally .bad b { color: #ff7a66; }
-.tt-peek { width: 26px; height: 24px; padding: 0; display: grid; place-items: center; touch-action: none; } .tt-peek svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-peek.on { color: var(--teal); border-color: var(--teal); }
+.tt-peek { width: 26px; height: 24px; padding: 0; display: grid; place-items: center; touch-action: none; } .tt-peek svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-peek.on { color: var(--teal); border-color: var(--teal); } .tt-chkrow .tt-peek { padding: 0; }
 .tt-chkrow { display: flex; align-items: center; gap: 8px; margin-top: 3px; } .tt-chkrow em { font: 600 10px var(--ui); color: var(--ink2); font-style: normal; min-width: 36px; }
 .tt-chkrow button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 700 11px var(--ui); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
 .tt-chkrow button.on { background: rgba(31,182,166,.25); color: var(--teal); border-color: var(--teal); } .tt-chkrow input { flex: 1; accent-color: var(--teal); }
