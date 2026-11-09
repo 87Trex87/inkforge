@@ -959,7 +959,7 @@ TT.open = async (el, id) => {
       let add = a * (1 - block); const d0 = D[i + 3] / 255, tint = add + a * block * 0.12;
       if (T.str < 1) { add *= 0.35 + 0.65 * T.str; const sat = 1 - keep; if (sat > T.str) add *= 0.1 * T.str; }   // a thin wash builds slowly past its own tone
       if (add <= 0.0005) continue;
-      if (d0 > 0.004) { const t = Math.min(0.85, tint / (d0 + tint)); for (let c = 0; c < 3; c++) D[i + c] = 255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)); }
+      if (d0 > 0.004) { const t = Math.min(0.85, tint / (d0 + tint)); for (let c = 0; c < 3; c++) D[i + c] = Math.floor(255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)) + Math.random()); }   /* rounded at random, not to the nearest: each pass shifts a dark channel by under a step, so plain rounding threw it away and a lighter colour stopped taking over after a few passes */
       else { D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; }
       D[i + 3] = Math.min(255, Math.floor(D[i + 3] + add * 255 + Math.random()));
     }
@@ -1175,7 +1175,7 @@ TT.open = async (el, id) => {
      area around it, drops out even though it looked saturated when fresh. Lines and light shading aren't affected. */
   const underPacked = () => { const out = new Float32Array(tw * th), R0 = Math.max(2, Math.round(1.5 * mm / TS)), pT = EX && exList()[EX.i], pb = pT?.pack, inBand = (x, y) => { if (!pb) return false; if (pT.circle) { const dd = Math.hypot((x + 0.5) * TS / mm - pT.circle[0], (y + 0.5) * TS / mm - pT.circle[1]); return Math.abs(dd - pT.circle[2]) < 1; } const X = (x + 0.5) * TS / mm - pb[0], Y = (y + 0.5) * TS / mm - pb[1]; return X > -1 && Y > -1 && X < pb[2] + 1 && Y < pb[3] + 1 && Math.min(X, Y, pb[2] - X, pb[3] - Y) < 1; }; let any = false;
     for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { const i = y * tw + x, h = HC[i]; if (h <= 0 || inBand(x, y)) continue; const j = (Math.min(H - 1, y * TS + 2) * W + Math.min(W - 1, x * TS + 2)) * 4; if (densAt(j) < 0.6) continue; let n = 0, on = 0, sum = 0; for (let b = Math.max(0, y - R0); b <= Math.min(th - 1, y + R0); b++) for (let a = Math.max(0, x - R0); a <= Math.min(tw - 1, x + R0); a++) { n++; const v = HC[b * tw + a]; if (v > 0) { on++; sum += v; } } if (on / n < 0.75) continue;
-      const v = Math.max(Math.max(0, Math.min(1, (180 - h) / 120)) * 0.55, Math.max(0, Math.min(1, (0.8 - h / (sum / on)) / 0.4)) * 0.8); if (v > 0) { out[i] = v; any = true; } }
+      const v = Math.max(Math.max(0, Math.min(1, (120 - h) / 90)) * 0.55, Math.max(0, Math.min(1, (0.65 - h / (sum / on)) / 0.35)) * 0.8) * (densAt(j) > 0.9 ? 0.4 : 1); if (v > 0) { out[i] = v; any = true; } }   // fewer passes than before count as packed, and dense, well saturated ink (a whipped-in dark corner) far less likely to drop out
     return any ? out : null; };
   const falloutMask = (aged) => { const patch = underPacked();
     let any = !!patch; if (!any) for (let i = 0; i < TP.length; i++) if (TP[i] > 0.9) { any = true; break; } if (!any) return null;
@@ -2112,7 +2112,7 @@ TT.open = async (el, id) => {
   const meterBands = () => { const d = blowD(); MTR[0][5] = d; MTR[0][6] = d + 0.12; };
   const meterBuild = () => { meterBands(); meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
     const badZ = low ? `left:0;width:${P(bad)}%` : `left:${P(bad)}%;right:0`;
-    return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('') + chkRow(); };
+    return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('') + chkRow(); tally(); };
   meterBuild(); tally(); if (CHEAT) meterEl.classList.add('cheat');   // no skin damage to show
   const WHIP_GAP = 0.7;
   const meter = (m) => {
