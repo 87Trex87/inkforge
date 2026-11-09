@@ -1072,6 +1072,25 @@ TT.open = async (el, id) => {
       u = u ? { x0: Math.min(u.x0, b.x0), y0: Math.min(u.y0, b.y0), x1: Math.max(u.x1, b.x1), y1: Math.max(u.y1, b.y1) } : { ...b }; }
     return u; };
   // One mark: into pigment (the page), or painted on a canvas (the test pad).
+  /* Stencil wear: working the skin wipes the stencil off around the needle, as the wiping and the ink do on a real
+     arm. A map on a 1 mm grid (1 = gone) that the stencil is drawn through; it reaches about half a centimetre past
+     the needle, and lining wears it far less than packing and shading. Never in cheat mode; Refresh in Layers puts
+     the stencil back. Counted once a puncture (not per needle), so a spot is gone after roughly 15 to 25 passes. Not saved: a reopened piece starts with a fresh stencil. */
+  const WEAR_R = 5, WEAR_K = 0.002, WEAR_LINE = 0.25, GW = Math.ceil(W / mm), GH = Math.ceil(H / mm), wear = new Float32Array(GW * GH);
+  const wearC = document.createElement('canvas'); wearC.width = GW; wearC.height = GH; const wearX = wearC.getContext('2d'), wearI = wearX.createImageData(GW, GH);
+  const stenV = document.createElement('canvas'); stenV.width = W; stenV.height = H; const stenX = stenV.getContext('2d');
+  let wearAny = false, wearDirty = false, wearR = null;
+  const wearAdd = (x, y, al, key) => { if (CHEAT || key === 'stencil' || key === 'marker') return;
+    const gx = x / mm, gy = y / mm, a = al * WEAR_K * (key === 'line' ? WEAR_LINE : 1);
+    for (let j = Math.max(0, Math.floor(gy - WEAR_R)); j <= Math.min(GH - 1, Math.ceil(gy + WEAR_R)); j++)
+      for (let i = Math.max(0, Math.floor(gx - WEAR_R)); i <= Math.min(GW - 1, Math.ceil(gx + WEAR_R)); i++) {
+        const d = Math.hypot(i + 0.5 - gx, j + 0.5 - gy) / WEAR_R; if (d >= 1) continue; const n = j * GW + i; wear[n] = Math.min(1, wear[n] + a * (1 - d * d)); }
+    wearAny = wearDirty = true; const m = (WEAR_R + 1) * mm, rc = { x0: x - m, y0: y - m, x1: x + m, y1: y + m };
+    wearR = wearR ? { x0: Math.min(wearR.x0, rc.x0), y0: Math.min(wearR.y0, rc.y0), x1: Math.max(wearR.x1, rc.x1), y1: Math.max(wearR.y1, rc.y1) } : rc; };
+  const stenBuild = () => { const D = wearI.data; for (let n = 0; n < wear.length; n++) D[n * 4 + 3] = Math.round(wear[n] * 255); wearX.putImageData(wearI, 0, 0);
+    stenX.globalCompositeOperation = 'source-over'; stenX.clearRect(0, 0, W, H); stenX.drawImage(L.stencil, 0, 0);
+    stenX.globalCompositeOperation = 'destination-out'; stenX.imageSmoothingEnabled = true; stenX.drawImage(wearC, 0, 0, W, H); stenX.globalCompositeOperation = 'source-over'; wearDirty = false; };
+  const stenRefresh = () => { wear.fill(0); wearAny = wearDirty = false; wearR = null; compAll = true; paint(); };
   const put = (cx, x, y, r, al, erase) => { if (cx.pig) return dotPig(cx, x, y, r, al, erase);
     cx.globalAlpha = al; cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill(); };
   /* The skin itself. Trauma: every puncture works the skin a little (deeper, more needles: more), on a map at a
@@ -1307,7 +1326,8 @@ TT.open = async (el, id) => {
   const recomp = (x0, y0, w, h) => { cg.save(); cg.beginPath(); cg.rect(x0, y0, w, h); cg.clip(); cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over';
     cg.clearRect(x0, y0, w, h); cg.drawImage(skin, 0, 0); skinUnder(cg, true);
     for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
-      cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? (key === 'marker' ? 0.9 : 1)); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; cg.drawImage(L[key], 0, 0);
+      cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? (key === 'marker' ? 0.9 : 1)); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply';
+      if (key === 'stencil' && wearAny && !CHEAT) { if (wearDirty || (x0 === 0 && y0 === 0 && w === W && h === H)) stenBuild(); cg.drawImage(stenV, 0, 0); } else cg.drawImage(L[key], 0, 0);
       if (key === 'high') cg.drawImage(L[key], 0, 0); }   // white laid twice: fresh white ink reads bright, not grey
     cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); if (CHEAT && st.letters?.length && !st.hide.has('stencil')) cg.drawImage(LT, 0, 0); cg.restore(); };
   /* Damage map: every patch of skin that has been worked, coloured by how irritated it is now and how worn it is from
@@ -1319,7 +1339,7 @@ TT.open = async (el, id) => {
       D[q] = c0[0] + (c1[0] - c0[0]) * f; D[q + 1] = c0[1] + (c1[1] - c0[1]) * f; D[q + 2] = c0[2] + (c1[2] - c0[2]) * f; D[q + 3] = 200; }
     g.putImageData(im, 0, 0); const el = $('#tt-dmginfo'), pc = (v) => Math.round(v / Math.max(1, n) * 100) + '%';
     if (el) el.textContent = n ? `Overworked ${pc(ow)} · Swollen ${pc(sw)} · Red ${pc(red)} · worst: ${skinWord(worst)}` : 'Nothing worked yet'; };
-  const paint = (rect) => { if (rect) compR = compR ? { x0: Math.min(compR.x0, rect.x0), y0: Math.min(compR.y0, rect.y0), x1: Math.max(compR.x1, rect.x1), y1: Math.max(compR.y1, rect.y1) } : rect; else compAll = true;
+  const paint = (rect) => { if (rect && wearR) { const a = wearR; wearR = null; paint(a); } if (rect) compR = compR ? { x0: Math.min(compR.x0, rect.x0), y0: Math.min(compR.y0, rect.y0), x1: Math.max(compR.x1, rect.x1), y1: Math.max(compR.y1, rect.y1) } : rect; else compAll = true;
     cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
     const dpr = cv.width / (stage.clientWidth || 1), { cx, cy } = org();
     x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
@@ -1406,6 +1426,7 @@ TT.open = async (el, id) => {
       else put(cx, px, py, r1, al, erase);
       if (bleed && !erase) put(cx, px, py, r1 * 1.6, al * bleed * 0.25, false);
     }
+    if (!erase && cx.key) wearAdd(p.x, p.y, depth, cx.key);
     cx.globalAlpha = 1;
   };
   const strokeStart = (e) => {
@@ -2774,12 +2795,13 @@ TT.open = async (el, id) => {
       side.innerHTML = `<div class="dz-lh"><b>Layers</b><button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
         <div class="tt-layers">${[...TT_LAYERS].map(([key, n]) => `<div class="tt-lr ${st.layer === key ? 'on' : ''}" data-ly="${key}">
           <span class="nm">${n}</span>
+          ${key === 'stencil' && !CHEAT ? `<button class="dz-ib ${wearAny ? 'tt-wear' : ''}" data-stref data-tip="Refresh the stencil: put back what working the skin has wiped off" aria-label="Refresh stencil"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>` : ''}
           ${key === 'stencil' ? `<button class="dz-ib" data-stl data-tip="Load a picture to trace" aria-label="Load stencil"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>` : ''}
           <button class="dz-ib" data-hide data-tip="${st.hide.has(key) ? 'Show' : 'Hide'}" aria-label="Hide">${st.hide.has(key) ? '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1"/></svg>'
             : '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'}</button>
           <button class="dz-ib" data-clear data-tip="Clear this layer" aria-label="Clear"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
           <input type="range" min="0" max="1" step="0.05" value="${key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1)}" data-lop aria-label="Opacity"></div>`).join('')}</div>
-        <p class="muted dz-hint">Tap a layer to work on it. The stencil is only a guide: it isn't saved into PNGs or sent to the stencil maker.</p>`;
+        <p class="muted dz-hint">Tap a layer to work on it. The stencil is only a guide: it isn't saved into PNGs or sent to the stencil maker.${CHEAT ? '' : ' Like on skin, packing and shading wipe the stencil off around where you work; the refresh button puts it back.'}</p>`;
       return;
     }
     const nd = TT_NEEDLES.find(n => n.id === st.needle), f = feel;
@@ -2841,6 +2863,7 @@ TT.open = async (el, id) => {
       if (t.closest('[data-clear]')) { if (!await ask('Clear everything on this layer? Undo brings it back.')) return;
         const c = L[ly]; snap(ly); c.getContext('2d').clearRect(0, 0, W, H); syncIn(ly); touched.add(ly); st.dirty = true; st.viewC = null; paint(); return; }
       if (t.closest('[data-stl]')) return loadStencil();
+      if (t.closest('[data-stref]')) { stenRefresh(); drawSide(); return toast('Stencil refreshed.', 1200); }
       if (t.matches('input')) return;
       st.layer = ly; st.dirty = true; return drawSide();
     }
@@ -3950,7 +3973,7 @@ function ttStyle() {
   background: rgba(15,18,19,.82); display: grid; gap: 3px; }
 .tt-chkrow #tt-dmginfo { font-style: normal; }
 .tt-tally { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; font: 600 10px var(--ui); color: var(--ink2); } .tt-tally b { color: var(--ink); } .tt-tally .warn b { color: #f2c14e; } .tt-tally .bad, .tt-tally .bad b { color: #ff7a66; }
-.tt-peek { width: 26px; height: 24px; padding: 0; display: grid; place-items: center; touch-action: none; } .tt-peek svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-peek.on { color: var(--teal); border-color: var(--teal); } .tt-chkrow .tt-peek { padding: 0; }
+.dz-ib.tt-wear { color: var(--teal); } .tt-peek { width: 26px; height: 24px; padding: 0; display: grid; place-items: center; touch-action: none; } .tt-peek svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-peek.on { color: var(--teal); border-color: var(--teal); } .tt-chkrow .tt-peek { padding: 0; }
 .tt-chkrow { display: flex; align-items: center; gap: 8px; margin-top: 3px; } .tt-chkrow em { font: 600 10px var(--ui); color: var(--ink2); font-style: normal; min-width: 36px; }
 .tt-chkrow button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 700 11px var(--ui); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
 .tt-chkrow button.on { background: rgba(31,182,166,.25); color: var(--teal); border-color: var(--teal); } .tt-chkrow input { flex: 1; accent-color: var(--teal); }
