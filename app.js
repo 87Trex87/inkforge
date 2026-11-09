@@ -7311,6 +7311,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 336, when: '2026-11-09T14:14', added: ['Hold the eye in the meter to see your work healed. Let go and it\'s back.', 'Using the laser in a lesson now fails the attempt. You get a warning when you pick it.', 'Skin remembers being worked: each time you go back over a spot it gets irritated faster, faster still where it\'s already full of ink.'],
+    test: ['Pack a spot, let it settle, then pack it again. Does it swell faster the second time?'] },
   { build: 334, when: '2026-11-09T13:40', added: ['Your outline score no longer drops for tapering the ends of a line or whipping out of a point.', 'Colour blend now shows Trevor\'s finished piece beside you, and his A 92 is in Compare.'],
     test: ['Line Colour blend with tapered ends. Does Outline stay high?'] },
   { build: 330, when: '2026-11-09T12:50', added: ['Open InkForge in a second tab and a Take over button moves it there. The old tab stops and tells you it moved.'], test: [] },
