@@ -943,14 +943,15 @@ TT.list = async (el) => {
   const rows = (await DB.all('SELECT id, name, w_cm, h_cm, thumb_ref, updated_at, meta FROM tattoo_pieces ORDER BY updated_at DESC, id DESC'))
     .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} let m2 = {}; try { m2 = JSON.parse(r.meta || '{}'); } catch {} return { ...r, ch: ex?.mode === 'ch', cheat: !!m2.cheat, exam: ex ? (ex.done ? 2 : 1) : 0, tuneOnly: !!m2.tuneOnly }; }).filter(r => !r.ch && !r.tuneOnly);
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+  const all = rows.map((r, i) => ({ ...r, url: urls[i], kind: r.exam ? 'Exam' : r.cheat ? 'Cheat mode' : 'Piece', t: r.updated_at })), shown = Lib.apply('tattoo', all), redraw = () => TT.list(el);
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Experimental: draw with needle groupings in ink on skin. Works best with a pressure pen (like an S Pen).</p>
       <button class="btn" id="tt-less" data-go="tattoo/lessons" data-tip="Step-by-step lessons with tips and techniques; each one unlocks the next">Lessons</button>
       <button class="btn" id="tt-chal" data-go="tattoo/challenges" data-tip="Single challenges in every style and flash pieces to tattoo: medals, personal bests and trophies">Challenges</button>
       <button class="btn" id="tt-exam" data-tip="A set of challenges, from lines to a finished piece, with a report card">Apprentice exam</button>
       <button class="btn primary" id="tt-new">+ New piece</button></div>
-    ${rows.length ? `<div class="dz-grid">${rows.map((r, i) => `<div class="dz-item" data-open="${r.id}"><div class="dz-thumb">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</div>
+    ${rows.length ? Lib.bar('tattoo', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('tattoo', r.id)}<div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
       <div class="dz-meta"><b>${esc(r.name || 'Piece')}</b><span class="muted">${r.exam ? (r.exam === 2 ? 'Exam · finished' : 'Exam · in progress') : `${+r.w_cm} × ${+r.h_cm} cm`}${r.cheat ? ' <span class="tt-cheat" style="display:inline-block;margin-left:4px">Cheat</span>' : ''}</span></div>
-      <button class="mini" data-del="${r.id}" aria-label="Delete" data-tip="Delete">✕</button></div>`).join('')}</div>`
+      <button class="mini" data-del="${r.id}" aria-label="Delete" data-tip="Delete">✕</button></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.needle}</div><div style="font:24px var(--display)">Tattoo simulator</div>
         <div class="muted">Pick a page size and skin tone, load a stencil to trace, dip into the ink caps and tattoo in layers: linework, shadow, mid and light tones, highlights.</div></div>`}`;
   $('#tt-new').onclick = () => ttNewDlg();
@@ -962,7 +963,9 @@ TT.list = async (el) => {
     await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Apprentice exam', 18, 13, TT_SKINS[si][1], JSON.stringify({ exam: { v: 1, i: 0, res: [], started: Date.now(), ...(list ? { list } : {}) } })]);
     location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
   };
+  Lib.wire(el, 'tattoo', redraw);
   el.onclick = async (e) => {
+    if (await Lib.click(e, 'tattoo', redraw)) return;
     const d = e.target.closest('[data-del]');
     if (d) { e.stopPropagation(); const r = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [+d.dataset.del]); if (!r || !await ask(`Delete "${r.name || 'this piece'}"?`)) return;
       await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]); for (const k of ['thumb_ref', 'skin_ref', 'blow_ref', ...TT_LAYERS.map(([l]) => l + '_ref')]) await Media.release(r[k]);

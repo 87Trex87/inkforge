@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 349;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 350;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -622,6 +622,69 @@ function ask(msg, def) {
   });
 }
 const askText = (msg, def = '') => ask(msg, def);
+
+/* Library organiser for the grids of saved work (designs, simulator pieces, reels): search, a type filter, sort,
+   favourites and folders. Kept in settings as lib_<key> by item id (not carried over by a merge, where ids change).
+   A list passes its rows as { id, name, sub, kind, t } and gets back the ones to show; Lib.bar draws the controls,
+   Lib.tools the star and folder buttons on a card, Lib.wire the handlers (call it after each render). */
+const LIB_FOLDER = '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const Lib = {
+  ui: {},
+  org(key) { let o = {}; try { o = JSON.parse(Settings.get('lib_' + key, '{}')); } catch {} return { fav: o.fav || [], in: o.in || {}, folders: o.folders || [] }; },
+  save(key, o) { return Settings.set('lib_' + key, JSON.stringify(o)); },
+  st(key) { return Lib.ui[key] ??= { q: '', view: '', kind: '', sort: Settings.get('lib_sort_' + key, 'new') }; },
+  apply(key, rows) {
+    const o = Lib.org(key), s = Lib.st(key), q = s.q.trim().toLowerCase();
+    if (s.view.startsWith('f:') && !o.folders.includes(s.view.slice(2))) s.view = '';
+    const out = rows.filter(r => (!q || `${r.name || ''} ${r.sub || ''}`.toLowerCase().includes(q)) && (!s.kind || r.kind === s.kind)
+      && (s.view === '' || (s.view === 'fav' ? o.fav.includes(r.id) : s.view === 'loose' ? !o.in[r.id] : o.in[r.id] === s.view.slice(2))));
+    const by = { new: (a, b) => String(b.t).localeCompare(String(a.t)), old: (a, b) => String(a.t).localeCompare(String(b.t)), az: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base', numeric: true }) }[s.sort];
+    return by ? out.sort(by) : out;
+  },
+  bar(key, rows) {
+    const o = Lib.org(key), s = Lib.st(key), kinds = [...new Set(rows.map(r => r.kind).filter(Boolean))].sort();
+    const n = (f) => rows.filter(f).length, chip = (v, label, c) => `<button class="lib-chip ${s.view === v ? 'on' : ''}" data-libv="${esc(v)}">${label}<em>${c}</em></button>`;
+    return `<div class="lib-bar"><input class="in lib-q" data-libq type="search" placeholder="Search" value="${esc(s.q)}" aria-label="Search">
+      ${kinds.length > 1 ? `<select class="in" data-libkind aria-label="Type"><option value="">All types</option>${kinds.map(k => `<option ${s.kind === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>` : ''}
+      <select class="in" data-libsort aria-label="Sort">${[['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A to Z']].map(([v, t]) => `<option value="${v}" ${s.sort === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      <div class="lib-chips">${chip('', 'All', rows.length)}${chip('fav', '★ Favourites', n(r => o.fav.includes(r.id)))}${o.folders.length ? chip('loose', 'Not in a folder', n(r => !o.in[r.id])) : ''}
+        ${o.folders.map(f => chip('f:' + f, LIB_FOLDER + esc(f), n(r => o.in[r.id] === f))).join('')}
+        <button class="lib-chip add" data-libnew data-tip="Make a folder to sort your work into">+ Folder</button>
+        ${s.view.startsWith('f:') ? `<button class="lib-chip add" data-libren>Rename</button><button class="lib-chip add" data-libdelf>Delete folder</button>` : ''}</div>`;
+  },
+  tools(key, id) { const o = Lib.org(key), on = o.fav.includes(id), f = o.in[id];
+    return `<div class="lib-tools"><button class="mini lib-fav ${on ? 'on' : ''}" data-libfav="${id}" aria-label="${on ? 'Remove from favourites' : 'Add to favourites'}" data-tip="${on ? 'Remove from favourites' : 'Add to favourites'}">${on ? '★' : '☆'}</button><button class="mini lib-mv ${f ? 'on' : ''}" data-libmove="${id}" aria-label="Move to a folder" data-tip="${f ? 'In ' + esc(f) + ': move' : 'Move to a folder'}">${LIB_FOLDER}</button></div>`; },
+  empty: '<div class="empty muted" style="padding:24px 0">Nothing here. Try another search, type or folder.</div>',
+  async folderName(key, msg, def = '') { const v = (await askText(msg, def))?.trim(); if (!v) return null;
+    if (Lib.org(key).folders.includes(v) && v !== def) { toast('There is already a folder called ' + v + '.'); return null; } return v.slice(0, 40); },
+  moveDlg(key, id) { return new Promise((res) => { const o = Lib.org(key), cur = o.in[id] || '';
+    const d = document.createElement('div'); d.className = 'ask-dlg';
+    d.innerHTML = `<div class="card lib-move" role="dialog" aria-modal="true"><p class="ask-q">Move to a folder</p>
+      ${['', ...o.folders].map(f => `<button class="lib-chip ${f === cur ? 'on' : ''}" data-mf="${esc(f)}">${f ? LIB_FOLDER + esc(f) : 'Not in a folder'}</button>`).join('')}
+      <button class="lib-chip add" data-mf-new>+ New folder</button>
+      <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" data-ask="0">Cancel</button></div></div>`;
+    d.onclick = async (e) => { const b = e.target.closest('[data-mf], [data-mf-new], [data-ask]'); if (!b && e.target !== d) return;
+      if (b?.hasAttribute('data-mf-new')) { d.remove(); const n = await Lib.folderName(key, 'New folder name'); if (n == null) return res(false); const o2 = Lib.org(key); o2.folders.push(n); o2.in[id] = n; await Lib.save(key, o2); return res(true); }
+      d.remove(); if (!b || b.dataset.ask === '0') return res(false);
+      const o2 = Lib.org(key); if (b.dataset.mf) o2.in[id] = b.dataset.mf; else delete o2.in[id]; await Lib.save(key, o2); res(true); };
+    document.body.appendChild(d); }); },
+  // Handles the bar and card buttons; true when the click was the organiser's (the list then stops there).
+  async click(e, key, redraw) { const t = e.target, s = Lib.st(key), b = (k) => t.closest(`[data-${k}]`);
+    if (b('libv')) { s.view = b('libv').dataset.libv; redraw(); return true; }
+    if (b('libfav')) { e.stopPropagation(); const id = +b('libfav').dataset.libfav, o = Lib.org(key); o.fav = o.fav.includes(id) ? o.fav.filter(x => x !== id) : [...o.fav, id]; await Lib.save(key, o); redraw(); return true; }
+    if (b('libmove')) { e.stopPropagation(); if (await Lib.moveDlg(key, +b('libmove').dataset.libmove)) redraw(); return true; }
+    if (b('libnew')) { const n = await Lib.folderName(key, 'New folder name\n\nThen move work into it with the folder button on each one.'); if (n == null) return true; const o = Lib.org(key); o.folders.push(n); await Lib.save(key, o); s.view = 'f:' + n; redraw(); return true; }
+    if (b('libren')) { const was = s.view.slice(2), n = await Lib.folderName(key, 'Rename the folder', was); if (n == null || n === was) return true; const o = Lib.org(key);
+      o.folders = o.folders.map(f => f === was ? n : f); for (const k in o.in) if (o.in[k] === was) o.in[k] = n; await Lib.save(key, o); s.view = 'f:' + n; redraw(); return true; }
+    if (b('libdelf')) { const was = s.view.slice(2); if (!await ask(`Delete the folder "${was}"?\n\nThe work in it stays; it just isn't in a folder any more.`)) return true; const o = Lib.org(key);
+      o.folders = o.folders.filter(f => f !== was); for (const k in o.in) if (o.in[k] === was) delete o.in[k]; await Lib.save(key, o); s.view = ''; redraw(); return true; }
+    if (t.closest('.lib-bar')) return true;
+    return false; },
+  // Search, type and sort; the search box keeps its focus and caret across the redraw.
+  wire(el, key, redraw) { const s = Lib.st(key);
+    el.oninput = async (e) => { if (!e.target.matches('[data-libq]')) return; s.q = e.target.value; const at = e.target.selectionStart; await redraw(); const i = el.querySelector('[data-libq]'); if (i) { i.focus(); try { i.setSelectionRange(at, at); } catch {} } };
+    el.onchange = (e) => { if (e.target.matches('[data-libkind]')) { s.kind = e.target.value; redraw(); } else if (e.target.matches('[data-libsort]')) { s.sort = e.target.value; Settings.set('lib_sort_' + key, s.sort); redraw(); } }; },
+};
 
 /* While a pop-up is open the page behind it is off limits: its keyboard shortcuts are held back (the pop-up's own
    keys still work), Escape closes the top pop-up, and Android's back button closes it rather than leaving the
@@ -2651,7 +2714,7 @@ const MERGE_TABLES = {
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'signed_form_pages', 'portfolio_items',
   'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
-const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_)/;
+const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_|lib_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
 
 function parseBackup(bytes) {
@@ -5795,19 +5858,22 @@ async function reelOpen(id) {
 // The list of saved reels, like the designs and the simulator's pieces.
 async function reelList() {
   const el = $('#reel-list'); if (!el) return;
-  const rows = await DB.all('SELECT id, name, doc, thumb_ref FROM reels ORDER BY updated_at DESC, id DESC');
+  const rows = await DB.all('SELECT id, name, doc, thumb_ref, updated_at FROM reels ORDER BY updated_at DESC, id DESC');
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   const info = (r) => { try { const d = JSON.parse(r.doc || '{}'), n = (d.clips || []).length; return n ? `${n} clip${n > 1 ? 's' : ''}` : 'Empty'; } catch { return ''; } };
+  const all = rows.map((r, i) => ({ ...r, url: urls[i], t: r.updated_at })), shown = Lib.apply('reels', all);
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Vertical reels from your photos and videos, in your own style. Saved as you go, so you can come back to edit them.</p>
       <button class="btn primary" id="reel-new">+ New reel</button></div>
-    ${rows.length ? `<div class="dz-grid">${rows.map((r, i) => `<div class="dz-item" data-open="${r.id}">
-        <div class="dz-thumb reel-thumb">${urls[i] ? `<img src="${urls[i]}" alt="">` : ICON.reels}</div>
+    ${rows.length ? Lib.bar('reels', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('reels', r.id)}
+        <div class="dz-thumb reel-thumb">${r.url ? `<img src="${r.url}" alt="">` : ICON.reels}</div>
         <div class="dz-meta"><b>${esc(r.name || 'Reel')}</b><span class="muted">${info(r)}</span></div>
         <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate">⧉</button>
-        <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>`
+        <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.reels}</div><div style="font:24px var(--display)">Make a reel</div>
          <div class="muted">Add photos and videos of your work; your intro and outro cards, watermark and style are added for you.</div></div>`}`;
+  Lib.wire(el, 'reels', reelList);
   el.onclick = async (e) => {
+    if (await Lib.click(e, 'reels', reelList)) return;
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('#reel-new')) {
       const n = (await DB.one('SELECT COUNT(*) AS n FROM reels')).n;

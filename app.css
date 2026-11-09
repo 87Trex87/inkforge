@@ -1042,6 +1042,16 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
 .dz-meta { padding: 8px 10px; display: flex; flex-direction: column; gap: 1px; font-size: 13px; padding-right: 64px; }
 .dz-meta .muted { font-size: 11px; }
 .dz-item .mini { position: absolute; bottom: 8px; } .dz-item [data-dup] { right: 40px; } .dz-item [data-del] { right: 8px; }
+/* Library organiser: search, type, sort, favourites and folders above a grid of saved work */
+.lib-bar { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; } .lib-bar .lib-q { flex: 1 1 180px; min-width: 0; } .lib-bar select { flex: none; width: auto; }
+.lib-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.lib-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--bg2); color: var(--ink2); font: 600 12.5px var(--ui); cursor: pointer; }
+.lib-chip.on { border-color: var(--teal); color: var(--teal); background: rgba(31,182,166,.14); } .lib-chip.add { border-style: dashed; }
+.lib-chip em { font-style: normal; font-size: 11px; opacity: .7; } .lib-chip svg, .lib-tools svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.lib-tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; z-index: 1; }
+.dz-item .lib-tools .mini { position: static; display: grid; place-items: center; background: rgba(0,0,0,.55); }
+.lib-tools .lib-fav.on { color: #f2c14e; } .lib-tools .lib-mv.on { color: var(--teal); }
+.lib-move { display: flex; flex-direction: column; gap: 6px; min-width: 260px; } .lib-move .lib-chip { justify-content: flex-start; }
 /* New design picker */
 .dz-pick { max-width: 640px; }
 .dz-kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

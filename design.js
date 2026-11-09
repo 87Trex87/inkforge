@@ -1236,16 +1236,20 @@ DZ.list = async () => {
   const el = $('#dz-list'); if (!el) return;
   const rows = await DB.all('SELECT id, name, kind, thumb_ref, updated_at, CASE WHEN kind = ? THEN doc END AS doc FROM designs ORDER BY updated_at DESC, id DESC', ['page']);
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+  const all = rows.map((r, i) => { const sub = r.kind === 'page' ? (JSON.parse(r.doc || '{}').paper || 'Blank page').split(',')[0] + ' page' : DZ_KINDS[r.kind]?.label || '';
+    return { ...r, url: urls[i], sub, kind: r.kind === 'page' ? 'Page' : DZ_KINDS[r.kind]?.label || r.kind, t: r.updated_at }; }), shown = Lib.apply('designs', all);
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Vouchers, business cards, flyers and posts with your studio's details.</p>
       <button class="btn primary" id="dz-new">+ New design</button></div>
-    ${rows.length ? `<div class="dz-grid">${rows.map((r, i) => `<div class="dz-item" data-open="${r.id}">
-        <div class="dz-thumb">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</div>
-        <div class="dz-meta"><b>${esc(r.name)}</b><span class="muted">${esc(r.kind === 'page' ? (JSON.parse(r.doc || '{}').paper || 'Blank page').split(',')[0] + ' page' : DZ_KINDS[r.kind]?.label || '')}</span></div>
+    ${rows.length ? Lib.bar('designs', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('designs', r.id)}
+        <div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
+        <div class="dz-meta"><b>${esc(r.name)}</b><span class="muted">${esc(r.sub)}</span></div>
         <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate">⧉</button>
-        <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>`
+        <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.design}</div><div style="font:24px var(--display)">Make something</div>
          <div class="muted">Start from a template; your studio name, logo and details fill in for you.</div></div>`}`;
+  Lib.wire(el, 'designs', DZ.list);
   el.onclick = async (e) => {
+    if (await Lib.click(e, 'designs', DZ.list)) return;
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('#dz-new')) return dzPicker();
     if (d('del')) {
