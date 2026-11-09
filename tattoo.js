@@ -1217,6 +1217,15 @@ TT.open = async (el, id) => {
       cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? (key === 'marker' ? 0.9 : 1)); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; cg.drawImage(L[key], 0, 0);
       if (key === 'high') cg.drawImage(L[key], 0, 0); }   // white laid twice: fresh white ink reads bright, not grey
     cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); if (CHEAT && st.letters?.length && !st.hide.has('stencil')) cg.drawImage(LT, 0, 0); cg.restore(); };
+  /* Damage map: every patch of skin that has been worked, coloured by how irritated it is now and how worn it is from
+     earlier work (the skin memory): green fine, yellow red, orange swollen, red overworked. Untouched skin stays clear. */
+  const dmgC = document.createElement('canvas'); dmgC.width = tw; dmgC.height = th;
+  const dmgDraw = () => { const g = dmgC.getContext('2d'), im = g.createImageData(tw, th), D = im.data, stops = [[0, [60, 220, 120]], [0.3, [60, 220, 120]], [0.8, [240, 200, 60]], [1.1, [255, 140, 40]], [1.4, [235, 50, 50]], [2, [150, 20, 60]]]; let n = 0, red = 0, sw = 0, ow = 0, worst = 0;
+    for (let i = 0; i < TR.length; i++) { if (HC[i] <= 0 && TR[i] < 0.02 && WK[i] < 0.01) continue; const v = Math.max(TR[i], WK[i] * 0.8); n++; if (v >= 1.4) ow++; else if (v >= 0.8) sw++; else if (v >= 0.3) red++; if (v > worst) worst = v;
+      let j = 1; while (j < stops.length - 1 && v > stops[j][0]) j++; const [a0, c0] = stops[j - 1], [a1, c1] = stops[j], f = Math.max(0, Math.min(1, (v - a0) / Math.max(1e-6, a1 - a0))), q = i * 4;
+      D[q] = c0[0] + (c1[0] - c0[0]) * f; D[q + 1] = c0[1] + (c1[1] - c0[1]) * f; D[q + 2] = c0[2] + (c1[2] - c0[2]) * f; D[q + 3] = 200; }
+    g.putImageData(im, 0, 0); const el = $('#tt-dmginfo'), pc = (v) => Math.round(v / Math.max(1, n) * 100) + '%';
+    if (el) el.textContent = n ? `Overworked ${pc(ow)} · Swollen ${pc(sw)} · Red ${pc(red)} · worst: ${skinWord(worst)}` : 'Nothing worked yet'; };
   const paint = (rect) => { if (rect) compR = compR ? { x0: Math.min(compR.x0, rect.x0), y0: Math.min(compR.y0, rect.y0), x1: Math.max(compR.x1, rect.x1), y1: Math.max(compR.y1, rect.y1) } : rect; else compAll = true;
     cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
     const dpr = cv.width / (stage.clientWidth || 1), { cx, cy } = org();
@@ -1228,6 +1237,7 @@ TT.open = async (el, id) => {
       if (compAll) recomp(0, 0, W, H);
       else if (compR) { const x0 = Math.max(0, Math.floor(compR.x0)), y0 = Math.max(0, Math.floor(compR.y0)); recomp(x0, y0, Math.min(W, Math.ceil(compR.x1)) - x0 + 1, Math.min(H, Math.ceil(compR.y1)) - y0 + 1); }
       compAll = false; compR = null; x.drawImage(comp, 0, 0); }
+    if (st.check) { dmgDraw(); x.imageSmoothingEnabled = true; x.globalAlpha = 0.75; x.drawImage(dmgC, 0, 0, tw * TS, th * TS); }
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     const deg = Math.round(((st.rot * 180 / Math.PI) % 360 + 360) % 360);
     $('#tt-zl') && ($('#tt-zl').textContent = Math.abs(z - 1) < 0.01 && !vx && !vy && !deg ? 'Fit' : Math.round(z * 100) + '%' + (deg ? ' · ' + deg + '°' : ''));
@@ -2113,14 +2123,13 @@ TT.open = async (el, id) => {
   function tally() { const el = $('#tt-tally'); if (!el) return; const c = EX?.cur; if (!c) { el.hidden = true; return; } el.hidden = false; const T = exList()[EX.i] || {}, free = T.crashFree ?? 0;
     const it = [['Crashes', c.crash || 0, (c.crash || 0) > free], ['Blowouts', c.blow || 0, (c.blow || 0) > (T.maxBlow ?? 0)], ['Overworked', c.over || 0, (c.over || 0) > 0], ['Bumps', c.bumps || 0, (c.bumps || 0) > 0]];
     el.innerHTML = it.map(([n, v, bad]) => `<span class="${bad ? 'bad' : v ? 'warn' : ''}">${n} <b>${v}</b></span>`).join(''); }
-  const chkRow = () => `<div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="${st.check ? 'on' : ''}" data-chk data-tip="Check the skin: the cursor reads the skin inside its circle instead of tattooing">Check</button>
-    <input type="range" min="2" max="30" step="1" value="${st.checkR}" data-chkr aria-label="Check circle size" ${st.check ? '' : 'hidden'}><em>${st.check ? st.checkR + ' mm' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
+  const chkRow = () => `<div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button><em id="tt-dmginfo">${st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
   /* The eye: held down, the piece shows as healed; let go and it is back as it was. */
   let peekWas = null; const peekEnd = () => { if (peekWas == null) return; st.view = peekWas; peekWas = null; st.viewC = null; drawView(); paint(); meterEl.querySelector('[data-peek]')?.classList.remove('on'); };
   meterEl.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-peek]'); if (!b || peekWas != null) return; e.preventDefault(); b.setPointerCapture?.(e.pointerId); peekWas = st.view; st.view = 'healed'; st.viewC = null; b.classList.add('on'); drawView(); paint(); });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => meterEl.addEventListener(ev, peekEnd));
   meterEl.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-peek]')) e.preventDefault(); });
-  meterEl.addEventListener('click', (e) => { if (!e.target.closest('[data-chk]')) return; st.check = !st.check; meterBuild(); meter(lastM); drawCur(); });
+  meterEl.addEventListener('click', (e) => { if (!e.target.closest('[data-chk]')) return; st.check = !st.check; meterBuild(); meter(lastM); drawCur(); paint(); if (st.check) toast('Damage map: tap it again to carry on tattooing.', 2000); });
   meterEl.addEventListener('input', (e) => { if (e.target.matches('[data-smooth]')) { st.smooth = +e.target.value; st.dirty = true; e.target.nextElementSibling.textContent = st.smooth + '%'; return; }
     if (!e.target.matches('[data-chkr]')) return; st.checkR = +e.target.value; e.target.nextElementSibling.textContent = st.checkR + ' mm'; drawCur(); });
   // Skin inside a circle round page point p (radius in page px): average wear, the worst spot, and a score.
@@ -2186,7 +2195,8 @@ TT.open = async (el, id) => {
       cux.lineWidth = 1.5; cux.strokeStyle = '#ff8a7a'; cux.beginPath(); cux.moveTo(curAt.x - 8, curAt.y); cux.lineTo(curAt.x + 8, curAt.y); cux.moveTo(curAt.x, curAt.y - 8); cux.lineTo(curAt.x, curAt.y + 8); cux.stroke(); return; }
     if (st.tool === 'marker') { const r = (st.mk.wipe ? Math.max(3, st.mk.r * 5) : st.mk.r) * s / 2; cux.beginPath(); cux.arc(curAt.x, curAt.y, Math.max(2, r), 0, 7); cux.lineWidth = 2.5; cux.strokeStyle = 'rgba(0,0,0,.4)'; cux.stroke();
       cux.lineWidth = 1.5; cux.strokeStyle = st.mk.wipe ? '#9fd3e0' : st.mk.col; cux.stroke(); return; }
-    if (st.check) { const R = st.checkR * s, c = skinCheck(fromScreen(curAt.x, curAt.y), st.checkR * mm), col = c.score >= 80 ? '#6fe39a' : c.score >= 55 ? '#f2c14e' : '#ff7a66';
+    if (st.check) return;   // the damage map is up: no needle under the cursor
+    if (false) { const R = st.checkR * s, c = skinCheck(fromScreen(curAt.x, curAt.y), st.checkR * mm), col = c.score >= 80 ? '#6fe39a' : c.score >= 55 ? '#f2c14e' : '#ff7a66';
       cux.beginPath(); cux.arc(curAt.x, curAt.y, R, 0, 7); cux.lineWidth = 3; cux.strokeStyle = 'rgba(0,0,0,.5)'; cux.stroke(); cux.lineWidth = 1.5; cux.strokeStyle = col; cux.stroke();
       cux.beginPath(); cux.arc(curAt.x, curAt.y, 1.5, 0, 7); cux.fillStyle = col; cux.fill();
       const tx = curAt.x + R * 0.72 + 8, ty = curAt.y - R * 0.72 - 8, l1 = `Skin ${c.score}`, l2 = `${skinWord(c.avg)} · worst ${skinWord(c.mx)}`;
@@ -3573,6 +3583,7 @@ function ttStyle() {
 @keyframes ttFlag { 0% { opacity: 0; transform: translate(-50%, 8px); } 8%, 80% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
 .tt-meter { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5; width: min(300px, calc(100% - 220px)); min-width: 180px; padding: 6px 10px; border-radius: 12px;
   background: rgba(15,18,19,.82); display: grid; gap: 3px; }
+.tt-chkrow #tt-dmginfo { font-style: normal; }
 .tt-tally { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; font: 600 10px var(--ui); color: var(--ink2); } .tt-tally b { color: var(--ink); } .tt-tally .warn b { color: #f2c14e; } .tt-tally .bad, .tt-tally .bad b { color: #ff7a66; }
 .tt-peek { width: 26px; height: 24px; padding: 0; display: grid; place-items: center; touch-action: none; } .tt-peek svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-peek.on { color: var(--teal); border-color: var(--teal); }
 .tt-chkrow { display: flex; align-items: center; gap: 8px; margin-top: 3px; } .tt-chkrow em { font: 600 10px var(--ui); color: var(--ink2); font-style: normal; min-width: 36px; }
