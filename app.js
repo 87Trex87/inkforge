@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 328;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 329;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -26,7 +26,8 @@ const DB = (() => {
     drop: (path) => call('drop', { path }),
     exportBytes: async (path) => (await call('export', { path })).bytes,
     importBytes: (bytes) => call('import', { bytes }, [bytes.buffer]).finally(() => Snapshot.soon()),
-    peek: async (bytes) => (await call('peek', { bytes }, [bytes.buffer])).tables
+    peek: async (bytes) => (await call('peek', { bytes }, [bytes.buffer])).tables,
+    release: () => worker.terminate()   // lets go of the database (and its lock) for good: only when another tab takes over
   };
 })();
 
@@ -7579,6 +7580,37 @@ $('#nav').addEventListener('click', e => {
 $('#view').addEventListener('click', e => {
   const t = e.target.closest('[data-go]'); if (t) location.hash = t.dataset.go;
 });
+/* ---------- One tab at a time ----------
+   The database belongs to one tab (a Web Lock held by the database worker). A tab opened while
+   another has it shows a card instead of waiting blind: Take over asks the other tab, over a
+   BroadcastChannel, to let go. That tab stops its database worker, which frees the lock, and shows
+   a card saying InkForge moved, with a button to take it back. A browser won't let one tab close
+   another, so the old tab stays open but idle. */
+const TabLock = {
+  bc: 'BroadcastChannel' in self ? new BroadcastChannel('inkforge-tabs') : null,
+  card(html) { let o = document.getElementById('tab-lock'); if (!o) { o = document.createElement('div'); o.id = 'tab-lock'; o.style.cssText = 'position:fixed;inset:0;z-index:300;display:grid;place-items:center;padding:16px;background:rgba(10,12,13,.92)'; document.body.appendChild(o); }
+    o.innerHTML = `<div class="card" style="max-width:420px">${html}</div>`; return o; },
+  async claim() {
+    this.bc?.addEventListener('message', (e) => { if (e.data === 'takeover' && !this.gone) this.leave(); });
+    if (!navigator.locks) return;
+    // Our own worker asks for the lock as it starts. If the database answers, the lock is ours; if our request
+    // is left waiting, another tab has it.
+    let mine = false; const ready = DB.info().then(() => { mine = true; }, () => { mine = true; });
+    for (let i = 0; i < 80 && !mine; i++) { let q = null; try { q = await navigator.locks.query(); } catch { return; }
+      if (q.pending.some(l => l.name === 'inkforge-db')) break; await new Promise(r => setTimeout(r, 100)); }
+    if (mine) return;
+    await new Promise((done) => {
+      const o = this.card(`<h2>Open in another tab</h2><p class="muted">InkForge can only run in one tab or window at a time, and it is open in another one right now.</p>
+        <p class="muted" style="font-size:13px">Take over moves it here. Anything not yet saved in the other tab is lost, so finish up there first if you were in the middle of something.</p>
+        <div class="row" style="gap:8px;margin-top:14px"><button class="btn primary" id="tl-take" style="flex:1">Take over</button></div>`);
+      ready.then(() => { o.remove(); done(); });   // the other tab was closed instead
+      o.querySelector('#tl-take').onclick = () => { this.bc?.postMessage('takeover');
+        o.querySelector('.card').innerHTML = '<h2>Taking over…</h2><p class="muted">Waiting for the other tab to let go. If nothing happens, close the other tab yourself.</p>'; }; });
+  },
+  leave() { this.gone = true; booted = false; try { DB.release(); } catch {}
+    this.card(`<h2>InkForge moved to another tab</h2><p class="muted">It is running in another tab or window now, so this one has stopped. You can close this tab.</p>
+      <div class="row" style="gap:8px;margin-top:14px"><button class="btn primary" id="tl-back" style="flex:1">Use it here instead</button></div>`).querySelector('#tl-back').onclick = () => location.reload(); }
+};
 let booted = false;   // no view touches the database before boot has opened and migrated it
 addEventListener('hashchange', () => { if (booted) render(); });
 
@@ -7596,6 +7628,7 @@ addEventListener('hashchange', () => { if (booted) render(); });
   }
   try { sessionStorage.removeItem('if-reload'); } catch {}
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
+  await TabLock.claim();
   try { await WS.load(); } catch (err) { console.error(err); }
   await storageProtect();
   let openId = '', forceStart = false;
