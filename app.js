@@ -7310,6 +7310,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 327, when: '2026-11-09T11:31', added: ['Packing a lighter colour over saturated darker ink now only lightens it slightly, however many passes, like real skin. Extra passes just work the skin.'],
+    test: ['Pack red over solid black. Does it stay black with just a slight tint?'] },
   { build: 326, when: '2026-11-09T10:48', added: ['Packing a lighter colour over a darker one now keeps taking over with more passes, instead of stopping after a few.', 'Colour heals solid with fewer passes, and a well saturated, whipped-in dark area no longer heals patchy.', 'The tally under the meter stays when you change needle.'],
     test: ['Do Colour blend with your normal packing. Does it heal solid now?'] },
   { build: 325, when: '2026-11-09T10:16', added: ['Crash landings only count when you really dig in at speed. In lessons the first one is free, then each costs a point instead of failing you.', 'A live tally under the meter shows crashes, blowouts, overworked skin and bumps, so you can start over straight away.', 'Pop-up warnings are now a few words, readable at a glance.'],
