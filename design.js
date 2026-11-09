@@ -3414,7 +3414,8 @@ DZ.edit = async (id) => {
   xfB.addEventListener('input', (e) => { const k = e.target.dataset.xf; if (!k) return; xfSet(k, dzFromU(doc, +e.target.value)); placeSel(); changed(); });
   xfB.addEventListener('change', (e) => { if (e.target.hasAttribute('data-unit')) return sideChange(e); if (e.target.dataset.xf) { changed(true); drawXf(); } });
   const ctxB = $('#dz-ctx');
-  ctxB.addEventListener('click', async (e) => { const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
+  ctxB.addEventListener('click', async (e) => { if (e.target.closest('input, select, textarea, .dz-cnum')) return;   /* a box or dropdown: redrawing the strip would throw the click away */
+    const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
     const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
     if (pick && l && (cpop === 'c' || cpop === 'fill')) l.fm = 'solid';
     if (pick) { const was = cpop; cpop = null; if (was !== 'c' && was !== 'fill' && pick.dataset.c !== 'none' && was === 'stroke' && !l.sw) l.sw = 4; }
