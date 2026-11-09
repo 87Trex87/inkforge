@@ -71,9 +71,10 @@ function ttMix(a, b, t) {
    (mixed from those inks the same way the needle mixes). Hold an ink to pour it into the empty cup; at least 80% full
    and Done before the timer runs out. Accuracy is measured as the distance between the two colours in Lab, the space
    that follows how far apart colours look: within MG_PASS it scores, further is game over. Over 100% full, every drop
-   is paid for out of your points. The timer shortens as the streak grows, down to MG_TMIN. Best score, streak and
+   is paid for out of your points (the first few rounds get some free overfill). The timer shortens as the streak grows,
+   from MG_TMAX down to MG_TMIN after 100 rounds. Best score, streak and
    accuracy are kept (setting tt_mixgame). The tuning numbers are all here, to balance after testing. */
-const MG_PASS = 14, MG_TMAX = 15, MG_TMIN = 6.5, MG_FILL = 0.38, MG_FEE = 2;   // ΔE pass limit, timer at start and floor (s), cup per second held, points per 1% overfilled
+const MG_PASS = 14, MG_TMAX = 90, MG_TMIN = 20, MG_FILL = 0.38, MG_FEE = 2, MG_FREE_ROUNDS = 4, MG_FREE_FILL = 1.3;   // ΔE pass limit; timer at start and floor (s); cup per second held; points per 1% overfilled; the first rounds may overfill to 130% for free, before there is a bank to pay from
 const mgLab = (c) => { const L = c.map(v => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)), X = (L[0] * 0.4124 + L[1] * 0.3576 + L[2] * 0.1805) / 0.95047, Y = L[0] * 0.2126 + L[1] * 0.7152 + L[2] * 0.0722, Z = (L[0] * 0.0193 + L[1] * 0.1192 + L[2] * 0.9505) / 1.08883, f = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
   return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))]; };
 const mgDE = (a, b) => { const p = mgLab(a), q = mgLab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
@@ -87,7 +88,7 @@ function ttMixGame() {
   const deal = () => { const n = Math.random() < 0.5 ? 2 : 3, h0 = Math.random() * 360, inks = [...Array(n)].map((_, i) => { const c = pure((h0 + i * (360 / n) + (Math.random() - 0.5) * 60 + 360) % 360); return c.map(v => v * (0.82 + Math.random() * 0.18)); });
     const all = [...inks, BLK, WHT]; let tgt = null;
     for (let tries = 0; tries < 200 && !tgt; tries++) { let c = null, v = 0; const pours = 2 + Math.floor(Math.random() * 2);
-      for (let k = 0; k < pours; k++) { const ink = k === 0 ? inks[Math.floor(Math.random() * n)] : all[Math.floor(Math.random() * all.length)], amt = 0.15 + Math.random() * 0.5; if (!c) { c = ink.slice(); v = amt; } else { c = ttMix(c, ink, amt / (v + amt)); v += amt; } }
+      for (let k = 0; k < pours; k++) { const ink = k === 0 ? inks[Math.floor(Math.random() * n)] : all[Math.floor(Math.random() * all.length)], amt = 0.6 + Math.random() * 0.9;   /* roughly equal parts, up to about 2.5 to 1, so no colour needs a wild imbalance */ if (!c) { c = ink.slice(); v = amt; } else { c = ttMix(c, ink, amt / (v + amt)); v += amt; } }
       const L = mgLab(c)[0]; if (L > 22 && L < 85 && mgHue(c).s > 0.12 && all.every(k => mgDE(k, c) > 12)) tgt = c; }   // a real mix: not just one of the inks straight from the cap
     G.round = { inks: all, tgt: tgt || inks[0], c: null, v: 0, t: Math.max(MG_TMIN, MG_TMAX - G.streak * (MG_TMAX - MG_TMIN) / 100), t0: performance.now(), over: 0 }; play(); };
   const cupStyle = () => { const R = G.round, pc = Math.min(100, R.v * 100); return `--fill:${pc}%;--ink:${R.c ? ttToHex(R.c) : 'transparent'}`; };
@@ -96,14 +97,14 @@ function ttMixGame() {
       <div class="tt-mgarena"><div class="tt-mgtarget"><span class="muted">Match this</span><i style="background:${ttToHex(R.tgt)}"></i></div>
         <div class="tt-mgcup" data-mgcup style="${cupStyle()}"><i></i><span data-mgpc>0%</span></div></div>
       <div class="tt-mginks">${R.inks.map((c, i) => `<button class="tt-cap" data-mgi="${i}" style="--c:${ttToHex(c)}" aria-label="Ink ${i + 1}"><i></i></button>`).join('')}</div>
-      <p class="tt-mgmsg" data-mgmsg>Hold an ink to pour it in. Fill at least 80%, then Done.</p>
+      <p class="tt-mgmsg" data-mgmsg>Hold an ink to pour it in. Fill at least 80%, then Done.${G.streak < MG_FREE_ROUNDS ? ' Overfilling is free for now; from round 5 it costs points.' : ''}</p>
       <div class="tt-pgrp" style="display:flex;justify-content:center"><button class="btn small" data-mg="empty">Empty the cup</button><button class="btn small primary" data-mg="done">Done</button></div></div>`;
     tick(); };
   let raf = 0, pour = null;
   const tick = () => { cancelAnimationFrame(raf); const step = (now) => { const R = G.round; if (!R || R.done || G.over) return; const left = R.t - (now - R.t0) / 1000, el = o.querySelector('[data-mgt]');
       if (el) { el.textContent = Math.max(0, left).toFixed(1) + 's'; el.classList.toggle('low', left < 4); }
       if (pour) { const dt = Math.min(0.1, (now - pour.t) / 1000); pour.t = now; const a = dt * MG_FILL;
-        if (R.v >= 1) { const fee = Math.ceil(a * 100 * MG_FEE); if (G.score < fee) return end('You poured away every last point. The cup runneth over, and so does your game.'); G.score -= fee; R.over += fee; const m = o.querySelector('[data-mgmsg]'); if (m) m.textContent = ['Wasting ink! That comes out of your points.', 'Ink isn\'t free, you know. Points going down the drain.', 'Overfilling again? Your points are paying for it.'][Math.floor(R.over / 15) % 3] + ` (−${R.over})`; const p = o.querySelector('[data-mgp]'); if (p) p.textContent = G.score; }
+        if (R.v >= (G.streak < MG_FREE_ROUNDS ? MG_FREE_FILL : 1)) { const fee = Math.ceil(a * 100 * MG_FEE); if (G.score < fee) return end('You poured away every last point. The cup runneth over, and so does your game.'); G.score -= fee; R.over += fee; const m = o.querySelector('[data-mgmsg]'); if (m) m.textContent = ['Wasting ink! That comes out of your points.', 'Ink isn\'t free, you know. Points going down the drain.', 'Overfilling again? Your points are paying for it.'][Math.floor(R.over / 15) % 3] + ` (−${R.over})`; const p = o.querySelector('[data-mgp]'); if (p) p.textContent = G.score; }
         R.c = R.c ? ttMix(R.c, R.inks[pour.i], a / (R.v + a)) : R.inks[pour.i].slice(); R.v += a; const cup = o.querySelector('[data-mgcup]'); if (cup) { cup.setAttribute('style', cupStyle()); o.querySelector('[data-mgpc]').textContent = Math.round(R.v * 100) + '%'; } }
       if (left <= 0) return end('Out of time. The ink dried in the cup.');
       raf = requestAnimationFrame(step); }; raf = requestAnimationFrame(step); };
@@ -132,7 +133,7 @@ function ttMixGame() {
       <div class="tt-pgrp" style="display:flex;justify-content:center;margin-top:10px"><button class="btn" data-mg="quit">Close</button><button class="btn primary" data-mg="again">Play again</button></div></div>`; };
   const intro = () => { o.innerHTML = `<div class="tt-mgbox"><div class="tt-mghead"><b>You found it: Colour match</b><button class="mini" data-mg="quit" aria-label="Close">✕</button></div>
     <p style="font-size:13px;line-height:1.45">You get a few random inks, plus black and white. Hold them to pour into the empty cup and match the colour in the box. Fill it at least 80% and press Done before the timer runs out.</p>
-    <p style="font-size:13px;line-height:1.45">Close enough scores points, too far off is game over. Overfill the cup and you pay for the wasted ink with your points. Every round the timer gets a little shorter.</p>
+    <p style="font-size:13px;line-height:1.45">Close enough scores points, too far off is game over. For the first four rounds you can overfill a little for free; from round five, wasted ink is paid for with your points. You start with a minute and a half, and every round the timer gets a little shorter, down to 20 seconds.</p>
     <div class="stat muted"><span>Your best</span><span>${best.score || 0} points · ${best.streak || 0} streak · ${best.acc || 0}% accuracy</span></div>
     <div class="tt-pgrp" style="display:flex;justify-content:center;margin-top:10px"><button class="btn primary" data-mg="start">Start</button></div></div>`; };
   o.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-mgi]'); if (!b || !G.round || G.round.done || G.over) return; e.preventDefault(); pour = { i: +b.dataset.mgi, t: performance.now(), b }; b.classList.add('dip'); });
