@@ -1108,6 +1108,7 @@ TT.open = async (el, id) => {
       <button class="dz-ib dz-go" id="tt-save" data-tip="Save" aria-label="Save"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>
     </div>
     <div class="dz-body"><div class="dz-stage tt-stage" id="tt-stage"><canvas id="tt-cv"></canvas><canvas id="tt-cur"></canvas>
+      <div class="tt-qs" id="tt-qs"></div><div class="tt-qsb" id="tt-qsb" hidden></div>
       <div class="dz-rail" id="tt-rail">
         <button class="dz-ib tt-needle" data-r="needles" data-tip="Needle grouping" aria-label="Needle"><b id="tt-nl"></b></button>
         <div class="tt-szq" id="tt-szq">${[[0.25, '08'], [0.3, '10'], [0.35, '12']].map(([v, n]) => `<button data-szq="${v}" data-tip="Needle size #${n} (${v} mm)" aria-label="Needle size ${n}">#${n}</button>`).join('')}</div>
@@ -1118,7 +1119,7 @@ TT.open = async (el, id) => {
         <i class="sep"></i>
         <button class="dz-ib" data-r="layers" data-tip="Layers" aria-label="Layers"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/></svg></button>
         ${CHEAT ? `<button class="dz-ib tt-cheatb" data-r="tools" data-tip="Cheat tools: ruler, symmetry, blend, fill, shapes, lasso, fast lines" aria-label="Cheat tools"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></button>` : ''}
-        <button class="dz-ib" data-r="refs" data-tip="References: pictures that float over the skin to follow" aria-label="References"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/></svg></button>
+        <button class="dz-ib" data-r="refs" hidden data-tip="References: pictures that float over the skin to follow" aria-label="References"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/></svg></button>
         <button class="dz-ib" data-r="feel" data-tip="Needle feel and pen calibration" aria-label="Calibration"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
         <i class="sep"></i>
         <div class="tt-volt" data-tip="Machine voltage for this needle: higher hits harder"><b id="tt-vl"></b><span class="tt-zwrapv"><input type="range" id="tt-vs" min="5" max="10" step="0.05" aria-label="Voltage"><i id="tt-vz" class="tt-zonev" data-tip="Green stays inside the lesson limits"></i></span></div>
@@ -1269,7 +1270,7 @@ TT.open = async (el, id) => {
   st.magFlip = Settings.get('tt_magflip', '1') === '1';
   const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 + (st.magFlip ? Math.PI : 0) : strokeA;
   const pageTurn = (strokeA, ev) => turnOf(strokeA, ev) - (isMag() ? st.rot : 0);   // a magnum's angle is held on the screen, whatever the page's rotation
-  const setNeedle = (id) => { st.needle = id; nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); drawVolt(); drawSz(); };
+  const setNeedle = (id) => { st.needle = id; setTimeout(() => typeof qsDraw === 'function' && qsDraw()); nk = TT_NEEDLES.find(n => n.id === id)?.kind; feel = TT.feel(id); lay = ttLayout(TT_NEEDLES.find(n => n.id === id), feel.size); $('#tt-nl').textContent = id; st.dirty = true; drawAng(); drawCur(); drawVolt(); drawSz(); };
   // Quick needle size (#08, #10, #12) under the grouping: kept with this needle's feel, the selected one lit.
   function drawSz() { try { meterBuild(); meter(lastM); } catch { /* the meter isn't built yet on the first call */ } $('#tt-szq')?.querySelectorAll('[data-szq]').forEach(b => b.classList.toggle('on', +b.dataset.szq === feel.size)); }
   $('#tt-szq').onclick = (e) => { const b = e.target.closest('[data-szq]'); if (!b) return; feel.size = +b.dataset.szq; TT.setFeel(st.needle, feel);
@@ -2420,7 +2421,69 @@ TT.open = async (el, id) => {
   function setRoll2(v) { st.magRoll = Math.max(-1, Math.min(1, Math.round(v * 20) / 20)); st.dirty = true; const b = $('#tt-rollv'); if (b) b.textContent = rollText(); const r = pop.querySelector('[data-angroll]'); if (r) r.value = Math.round(st.magRoll * 100); drawCur(); }
   pop.addEventListener('click', (e) => { if (e.target.closest('[data-rollzero]')) setRoll2(0); });
   function setAng(v) { st.magAng = ((Math.round(v) % 180) + 180) % 180; st.dirty = true; const l = $('#tt-angv'); if (l) l.textContent = st.magAng + '°'; const r = pop.querySelector('[data-angr]'); if (r) r.value = st.magAng; drawAng(); drawCur(); }
-  function drawAng() { const b = $('#tt-rail [data-r="angle"]'); if (!b) return; b.hidden = !isMag();
+  /* ---------- Quick strip ----------
+     A row of shortcuts across the top of the skin, like a painting app's top bar. What it holds is chosen in its +
+     window and kept for every piece (setting tt_strip): the pen lean and the offset by default, then any of the angle
+     presets, stack tilt, favourite needles and tools. Offset and stack tilt: tap for a slider, or hold and drag
+     sideways. */
+  const QS_DEF = ['lean', 'offset', 'refs']; let qsDrag = null;
+  const qsIcon = { lean: '<svg viewBox="0 0 24 24"><path d="M6 20l3-1 10-10-2-2L7 17z"/><path d="M15 5l4 4"/><path d="M4 8a8 8 0 0 1 4-4" stroke-dasharray="2 2"/></svg>',
+    offset: '<svg viewBox="0 0 24 24"><path d="M12 12L19 7" stroke-width="2.6"/><path d="M5 12h14" opacity=".35"/><path d="M15 12a3 3 0 0 0-1-2.3"/></svg>',
+    roll: '<svg viewBox="0 0 24 24"><path d="M4 16l16-6"/><circle cx="6" cy="15" r="1.6"/><circle cx="12" cy="12.8" r="1.6"/><circle cx="18" cy="10.6" r="1.6"/></svg>',
+    refs: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/></svg>',
+    layers: '<svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/></svg>',
+    feel: '<svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
+    marker: '<svg viewBox="0 0 24 24"><path d="M15 4l5 5-9 9H6v-5z"/><path d="M13 6l5 5M4 21h7"/></svg>',
+    rinse: '<svg viewBox="0 0 24 24"><path d="M7 4h10l-1 16H8z"/><path d="M8 10h8"/></svg>' };
+  const QS_ITEMS = [['Magnum', [['lean', 'Follows the way the pen leans'], ['offset', 'Offset angle (on the lean)'], ['roll', 'Stack tilt'], ...[0, 30, 45, 60, 90, 120, 135, 150].map(v => ['a' + v, `Angle ${v}°`])]],
+    ['Tools', [['refs', 'References'], ['layers', 'Layers'], ['feel', 'Needle feel'], ['marker', 'Skin marker'], ['rinse', 'Rinse the needle']]],
+    ['Favourite needles', TT_NEEDLES.map(n => ['n:' + n.id, n.name])]];
+  const qsList = () => { try { const a = JSON.parse(Settings.get('tt_strip', 'null')); return Array.isArray(a) ? a : QS_DEF; } catch { return QS_DEF; } };
+  const qsName = (id) => QS_ITEMS.flatMap(g => g[1]).find(x => x[0] === id)?.[1] || id;
+  function qsDraw() { const el = $('#tt-qs'); if (!el) return; const mg = isMag();
+    if (qsDrag) { const o = el.querySelector('[data-q="offset"] b'), r = el.querySelector('[data-q="roll"] b'); if (o) o.textContent = st.magAng + '°'; if (r) r.textContent = Math.round((st.magRoll || 0) * 100); return; }   // mid-drag: relabel only, so the drag isn't lost
+    el.innerHTML = qsList().map(id => { const nm = esc(qsName(id)), dim = (['lean', 'offset', 'roll'].includes(id) || /^a\d/.test(id)) && !mg ? ' dim' : '';
+      if (id === 'lean') return `<button class="tt-qb${st.magTilt ? ' on' : ''}${dim}" data-q="lean" data-tip="${nm}: ${st.magTilt ? 'on' : 'off'}" aria-label="${nm}">${qsIcon.lean}</button>`;
+      if (id === 'offset') return `<button class="tt-qb wide${dim}" data-q="offset" data-tip="${st.magTilt ? 'Offset on the lean' : 'Magnum angle'}: tap for a slider, or hold and drag" aria-label="Magnum angle">${qsIcon.offset}<b>${st.magAng}°</b></button>`;
+      if (id === 'roll') return `<button class="tt-qb wide${dim}${st.magRoll ? ' on' : ''}" data-q="roll" data-tip="Stack tilt: tap for a slider, or hold and drag" aria-label="Stack tilt">${qsIcon.roll}<b>${Math.round((st.magRoll || 0) * 100)}</b></button>`;
+      if (/^a\d/.test(id)) { const v = +id.slice(1); return `<button class="tt-qb${st.magAng === v ? ' on' : ''}${dim}" data-q="${id}" data-tip="Magnum angle ${v}°" aria-label="Angle ${v}"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg></button>`; }
+      if (id.startsWith('n:')) { const n = id.slice(2); return `<button class="tt-qb wide tt-qn${st.needle === n ? ' on' : ''}" data-q="${id}" data-tip="${nm}" aria-label="${nm}"><b>${esc(n)}</b></button>`; }
+      return qsIcon[id] ? `<button class="tt-qb" data-q="${id}" data-tip="${nm}" aria-label="${nm}">${qsIcon[id]}</button>` : ''; }).join('')
+      + `<i class="tt-qsep"></i><button class="tt-qb tt-qadd" data-q="add" data-tip="Choose what this strip shows" aria-label="Customise the strip"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`; }
+  const qsBubble = (kind, at) => { const b = $('#tt-qsb'), sr = stage.getBoundingClientRect(), r = at.getBoundingClientRect(); b.dataset.k = kind;
+    b.innerHTML = kind === 'offset' ? `<span>${st.magTilt ? 'Offset on the lean' : 'Angle'} <b>${st.magAng}°</b></span><input type="range" min="0" max="179" step="1" value="${st.magAng}" data-qsr>`
+      : `<span>Stack tilt <b>${rollText()}</b></span><input type="range" min="-100" max="100" step="5" value="${Math.round((st.magRoll || 0) * 100)}" data-qsr><button class="btn small" data-qflat>Flat</button>`;
+    b.style.left = Math.max(8, r.left - sr.left) + 'px'; b.style.top = (r.bottom - sr.top + 6) + 'px'; b.hidden = false; };
+  const qsBubbleSync = () => { const b = $('#tt-qsb'); if (b.hidden) return; const k = b.dataset.k, s = b.querySelector('span b'), r = b.querySelector('input'); if (k === 'offset') { s.textContent = st.magAng + '°'; r.value = st.magAng; } else { s.textContent = rollText(); r.value = Math.round((st.magRoll || 0) * 100); } };
+  $('#tt-qs').addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-q="offset"], [data-q="roll"]'); if (!b) return; e.preventDefault(); try { $('#tt-qs').setPointerCapture(e.pointerId); } catch {}
+    qsDrag = { b, k: b.dataset.q, x0: e.clientX, v0: b.dataset.q === 'offset' ? st.magAng : (st.magRoll || 0), moved: false }; });
+  $('#tt-qs').addEventListener('pointermove', (e) => { if (!qsDrag) return; const dx = e.clientX - qsDrag.x0; if (!qsDrag.moved && Math.abs(dx) < 5) return;
+    if (!qsDrag.moved) { qsDrag.moved = true; qsBubble(qsDrag.k, qsDrag.b); }
+    if (qsDrag.k === 'offset') setAng(qsDrag.v0 + dx * 0.5); else setRoll2(qsDrag.v0 + dx / 150); qsBubbleSync(); });
+  const qsUp = () => { if (!qsDrag) return; const d = qsDrag; qsDrag = null; const b = $('#tt-qsb');
+    if (d.moved) { b.hidden = true; qsDraw(); return; } if (!b.hidden && b.dataset.k === d.k) { b.hidden = true; return; } qsBubble(d.k, d.b); };
+  ['pointerup', 'pointercancel'].forEach(ev => $('#tt-qs').addEventListener(ev, qsUp));
+  $('#tt-qsb').addEventListener('input', (e) => { if (!e.target.matches('[data-qsr]')) return; if ($('#tt-qsb').dataset.k === 'offset') setAng(+e.target.value); else setRoll2(+e.target.value / 100); qsBubbleSync(); qsDraw(); });
+  $('#tt-qsb').addEventListener('click', (e) => { if (e.target.closest('[data-qflat]')) { setRoll2(0); qsBubbleSync(); qsDraw(); } });
+  document.addEventListener('pointerdown', (e) => { const b = $('#tt-qsb'); if (b && !b.hidden && !e.target.closest('#tt-qsb, #tt-qs')) b.hidden = true; }, true);
+  $('#tt-qs').addEventListener('click', (e) => { const b = e.target.closest('[data-q]'); if (!b) return; const q = b.dataset.q;
+    if (q === 'offset' || q === 'roll') return;
+    if (q === 'lean') { if (!isMag()) return toast('Only a magnum leans.', 1500); st.magTilt = !st.magTilt; st.dirty = true; drawAng(); return toast(st.magTilt ? 'Follows the pen\'s lean' : 'Fixed angle', 1300); }
+    if (/^a\d/.test(q)) { if (!isMag()) return toast('Only a magnum has an angle.', 1500); return setAng(+q.slice(1)); }
+    if (q.startsWith('n:')) { const id = q.slice(2); if (EX?.lesson && id !== st.needle) { st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; drawNeedleInk(); } setNeedle(id); st.tool = 'needle'; closePop(); sel(); return; }
+    if (q === 'rinse') return $('#tt-tray [data-rinse]')?.click();
+    if (q === 'add') return qsEdit();
+    $(`#tt-rail [data-r="${q}"]`)?.click(); });
+  // The + window: tick what the strip shows. Saved for every piece.
+  const qsEdit = () => { const on = new Set(qsList()), o = document.createElement('div'); o.id = 'tt-qsedit'; o.className = 'tt-tune'; o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55)';
+    const draw = () => { o.innerHTML = `<div class="card tt-qse"><div class="row" style="align-items:center"><h2 style="margin:0;flex:1">Quick strip</h2><button class="btn small" data-qe="reset">Default</button><button class="btn small primary" data-qe="done">Done</button></div>
+      <p class="muted" style="margin:4px 0 8px;font-size:12px">Tap to show or hide a shortcut on the strip above the tools.</p>
+      ${QS_ITEMS.map(([g, items]) => `<div class="lbl">${g}</div><div class="tt-qsg">${items.map(([id, nm]) => `<button class="${on.has(id) ? 'on' : ''}" data-qi="${esc(id)}">${id.startsWith('n:') ? esc(id.slice(2)) : esc(nm)}</button>`).join('')}</div>`).join('')}</div>`; };
+    o.onclick = async (e) => { const i = e.target.closest('[data-qi]'); if (i) { const id = i.dataset.qi; on.has(id) ? on.delete(id) : on.add(id); i.classList.toggle('on'); return; }
+      const a = e.target.closest('[data-qe]')?.dataset.qe; if (a === 'reset') { on.clear(); QS_DEF.forEach(x => on.add(x)); return draw(); }
+      if (a === 'done' || e.target === o) { const order = QS_ITEMS.flatMap(g => g[1].map(x => x[0])).filter(x => on.has(x)); await Settings.set('tt_strip', JSON.stringify(order)); o.remove(); qsDraw(); } };
+    draw(); document.body.appendChild(o); };
+  function drawAng() { qsDraw(); const b = $('#tt-rail [data-r="angle"]'); if (!b) return; b.hidden = !isMag();
     $('#tt-angi').setAttribute('transform', `rotate(${st.magAng} 12 12)`); $('#tt-angl').textContent = st.magTilt ? (st.magAng ? 'pen+' + st.magAng : 'pen') : st.magAng + '°'; }
   // The part of a slider that stays inside a lesson's limits, shown in green under it.
   const zoneHtml = (min, max, def, lim) => { if (!lim) return ''; const [dir, m] = lim, lo = Math.max(+min, dir > 0 ? +min : def - m), hi = Math.min(+max, dir > 0 ? def + m : +max), pc = (v) => (v - min) / (max - min) * 100; return hi > lo ? `<i class="tt-zone" style="left:${pc(lo).toFixed(1)}%;width:${(pc(hi) - pc(lo)).toFixed(1)}%" data-tip="Green stays inside the lesson limits"></i>` : ''; };
@@ -3033,7 +3096,7 @@ TT.open = async (el, id) => {
     refs = refs.filter(r => !r.gen);
     if (T.kind !== 'line') { const cr = exCrop(T), sr = stage.getBoundingClientRect(), w = Math.max(140, Math.min(280, sr.width * 0.28)), h = w * cr[3] / cr[2];
       refNew({ gen: T.id, ar: cr[3] / cr[2], w, op: 1, x: sr.width - w / 2 - 14, y: Math.min(sr.height - 90 - h / 2, Math.max(150 + h / 2, sr.height / 2)) }); }
-    if (T.refImg) { const sr = stage.getBoundingClientRect(), eb = $('#tt-exbar')?.getBoundingClientRect(), top = eb?.height ? eb.bottom - sr.top + 10 : 150, h = Math.max(110, Math.min(260, sr.height - top - 120)), w = h / T.refAr;   // an example of the finished look, under the instructions
+    if (T.refImg) { const sr = stage.getBoundingClientRect(), eb = $('#tt-exbar')?.getBoundingClientRect(), top = eb?.height ? eb.bottom - sr.top + 10 : 150, h = Math.max(100, Math.min(260, sr.height - top - 140)), w = h / T.refAr;   // an example of the finished look, under the instructions
       refNew({ gen: T.id, src: T.refImg, ar: T.refAr, w, op: 1, x: sr.width - w / 2 - 14, y: top + h / 2 }); }
     refSel = null;
     st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; st.wash = !!T.wash;   // each challenge starts with a clean, empty needle
@@ -3540,18 +3603,30 @@ function ttStyle() {
 .tt-angs button.on { background: rgba(31,182,166,.25); color: var(--teal); } .tt-angs svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; }
 .tt-needle b { font: 700 10px var(--ui); letter-spacing: -.02em; color: var(--teal); }
 .dz-pop .mi.on { background: rgba(31,182,166,.15); } .tt-nb { display: inline-block; min-width: 40px; font: 700 12px var(--ui); color: var(--teal); }
-.tt-tray { position: absolute; left: 66px; top: 50%; transform: translateY(-50%); z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 8px 6px; max-height: calc(100% - 20px); overflow-y: auto;
+.tt-qs { position: absolute; left: 10px; top: 10px; z-index: 7; display: flex; align-items: center; gap: 2px; padding: 3px; max-width: calc(100% - min(260px, 100% - 150px) - 34px); overflow-x: auto; scrollbar-width: none;
+  border-radius: 12px; background: rgba(22,27,28,.92); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); } .tt-qs::-webkit-scrollbar { display: none; }
+.tt-qb { flex: none; height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 5px; border: 0; border-radius: 9px; background: none; color: var(--ink); cursor: pointer; touch-action: none; }
+.tt-qb svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .tt-qb b { font: 700 10px var(--ui); color: var(--teal); }
+.tt-qb:hover { background: rgba(255,255,255,.06); } .tt-qb.on { background: rgba(31,182,166,.2); color: var(--teal); } .tt-qb.dim { opacity: .35; } .tt-qn b { color: var(--ink); } .tt-qn.on b { color: var(--teal); }
+.tt-qsep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line); } .tt-qadd { color: var(--ink2); }
+.tt-qsb { position: absolute; z-index: 9; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; background: rgba(22,27,28,.97); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); font: 600 11px var(--ui); color: var(--ink2); }
+.tt-qsb[hidden] { display: none; } .tt-qsb b { color: var(--teal); } .tt-qsb input { width: 160px; accent-color: var(--teal); touch-action: none; }
+.tt-qse { max-width: 560px; width: 100%; max-height: 86dvh; overflow-y: auto; } .tt-qsg { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.tt-qsg button { border: 1px solid var(--line); background: rgba(255,255,255,.04); color: var(--ink); border-radius: 8px; padding: 5px 9px; font: 600 12px var(--ui); cursor: pointer; } .tt-qsg button.on { background: rgba(31,182,166,.22); border-color: var(--teal); color: var(--teal); }
+.tt-ed .dz-rail { top: 56px !important; transform: none !important; max-height: calc(100% - 66px) !important; overflow-y: auto; scrollbar-width: none; padding: 3px; }
+.tt-ed .dz-rail .dz-ib { width: 34px; height: 32px; }
+.tt-tray { position: absolute; left: 58px; top: 56px; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 5px; max-height: calc(100% - 66px); overflow-y: auto;
   border-radius: 18px; background: rgba(22,27,28,.92); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); touch-action: none; user-select: none; -webkit-user-select: none; }
-.tt-cap { width: 38px; height: 38px; flex: none; border-radius: 50%; border: 2px solid #c8c8c8; background: #e9e9e9; padding: 0; cursor: pointer; position: relative; box-shadow: inset 0 -3px 0 rgba(0,0,0,.15); }
-.tt-cap i { position: absolute; inset: 5px; border-radius: 50%; background: var(--c); box-shadow: inset 0 2px 4px rgba(0,0,0,.35); }
+.tt-cap { width: 30px; height: 30px; flex: none; border-radius: 50%; border: 2px solid #c8c8c8; background: #e9e9e9; padding: 0; cursor: pointer; position: relative; box-shadow: inset 0 -3px 0 rgba(0,0,0,.15); }
+.tt-cap i { position: absolute; inset: 4px; border-radius: 50%; background: var(--c); box-shadow: inset 0 2px 4px rgba(0,0,0,.35); }
 .tt-cap.dip { transform: scale(.92); outline: 3px solid var(--teal); outline-offset: 2px; }
-.tt-cup { width: 34px; height: 38px; flex: none; border-radius: 6px 6px 12px 12px; border: 2px solid #9fb3b8; background: linear-gradient(transparent 35%, rgba(150,200,220,.45) 35%); cursor: pointer; padding: 0; }
-.tt-recent { display: flex; gap: 3px; align-items: center; } .tt-cap.tt-rcap, .tt-rnone { width: 24px; height: 24px; border-width: 1.5px; } .tt-cap.tt-rcap i { inset: 3px; opacity: var(--o, 1); } .tt-rnone { flex: none; border-radius: 50%; border: 1.5px dashed rgba(255,255,255,.18); box-sizing: border-box; }
+.tt-cup { width: 28px; height: 30px; flex: none; border-radius: 6px 6px 12px 12px; border: 2px solid #9fb3b8; background: linear-gradient(transparent 35%, rgba(150,200,220,.45) 35%); cursor: pointer; padding: 0; }
+.tt-recent { display: flex; gap: 3px; align-items: center; } .tt-cap.tt-rcap, .tt-rnone { width: 20px; height: 20px; border-width: 1.5px; } .tt-cap.tt-rcap i { inset: 3px; opacity: var(--o, 1); } .tt-rnone { flex: none; border-radius: 50%; border: 1.5px dashed rgba(255,255,255,.18); box-sizing: border-box; }
 .tt-strk { margin-left: 10px; } .tt-strk.over { color: #ff8a7a; font-weight: 700; }
 .tt-whip { margin: 6px 0 10px; } .tt-whip svg { width: 100%; max-width: 460px; height: auto; display: block; } .tt-whip p { margin: 4px 0 0; font-size: 12px; }
 .tt-cup.tt-dil { border-color: #b9c4c7; background: linear-gradient(transparent 35%, rgba(235,240,242,.3) 35%); }
 .tt-cup.tt-dil.dip { transform: scale(.92); outline: 3px solid var(--teal); outline-offset: 2px; }
-.tt-load { width: 46px; height: 46px; flex: none; border-radius: 50%; border: 0; padding: 0; position: relative; cursor: default; display: grid; place-items: center;
+.tt-load { width: 38px; height: 38px; flex: none; border-radius: 50%; border: 0; padding: 0; position: relative; cursor: default; display: grid; place-items: center;
   background: conic-gradient(var(--teal) var(--v, 0%), rgba(255,255,255,.12) 0); }
 .tt-load i { position: absolute; inset: 5px; border-radius: 50%; border: 2px solid #222; } .tt-load span { position: relative; font: 700 9px var(--ui); color: #fff; text-shadow: 0 1px 2px #000; }
 .tt-capedit { flex: none; }
@@ -3562,7 +3637,7 @@ function ttStyle() {
 #tt-rail { max-height: calc(100% - 20px); overflow-y: auto; scrollbar-width: none; } .dz-ed #tt-rail { max-height: calc(100% - 20px); }
 .tt-volt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0 2px; } .tt-volt b { font: 700 10px var(--ui); color: var(--teal); }
 .tt-volt input { writing-mode: vertical-lr; direction: rtl; width: 22px; height: clamp(56px, 14vh, 110px); margin: 0; accent-color: var(--teal); touch-action: none; } .tt-tray { scrollbar-width: none; } .tt-tray::-webkit-scrollbar { display: none; } body:has(#tt-stage) #toast { top: calc(var(--safe-t, 0px) + 64px); bottom: auto; }
-@media (max-height: 700px) { .tt-tray { top: 10px; transform: none; } } .tt-zoom { left: auto !important; right: 10px !important; bottom: 76px !important; }
+ .tt-zoom { left: auto !important; right: 10px !important; bottom: 76px !important; }
 .tt-layers { display: grid; gap: 4px; }
 .tt-refs { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
 .tt-ref { position: absolute; pointer-events: auto; touch-action: none; cursor: move; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
@@ -3574,7 +3649,7 @@ function ttStyle() {
 .tt-ref i[data-rh=rot] { left: 50%; top: -26px; border-radius: 50%; cursor: grab; }
 .tt-rr { grid-template-columns: 44px 1fr auto auto auto; grid-template-areas: "a n b c d" "r r r r r"; } .tt-rr img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; grid-area: a; }
 .tt-addr { display: flex; flex-wrap: wrap; gap: 4px; }
-.tt-exam { position: absolute; right: 10px; top: 10px; z-index: 6; width: min(290px, calc(100% - 150px)); padding: 6px 10px; border-radius: 12px;
+.tt-exam { position: absolute; right: 10px; top: 10px; z-index: 6; width: min(260px, calc(100% - 150px)); padding: 5px 9px; border-radius: 12px;
   background: rgba(22,27,28,.95); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
 .tt-expen { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink2); margin: 2px 0 6px; } .tt-expen b { color: #ff8a7a; }
 .tt-flag { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); z-index: 8; pointer-events: none; padding: 10px 18px; border-radius: 12px; font: 700 15px var(--ui);
@@ -3596,8 +3671,8 @@ function ttStyle() {
 .tt-mb b { position: absolute; top: -1px; bottom: -1px; width: 3px; margin-left: -1.5px; background: #fff; border-radius: 2px; box-shadow: 0 0 3px #000; transition: left .08s linear; }
 .tt-exam[hidden] { display: none; } .tt-exh { display: flex; align-items: center; gap: 8px; } .tt-exh b { font-size: 13px; flex: 1; }
 .tt-exdots { display: flex; gap: 3px; } .tt-exdots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); } .tt-exdots i.on { background: var(--teal); } .tt-exdots i.done { background: rgba(31,182,166,.45); }
-.tt-exam .tt-exdots { display: none; } .tt-exam .btn.small { padding: 5px 10px; font-size: 12px; } .tt-exres b { font-size: 20px !important; }
-.tt-ext { font-size: 11.5px; line-height: 1.35; margin: 3px 0 6px; color: var(--ink2); } .tt-exres { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
+.tt-exam .tt-exdots { display: none; } .tt-exam .btn.small { padding: 4px 8px; font-size: 11.5px; min-height: 0; } .tt-exres b { font-size: 20px !important; }
+.tt-ext { font-size: 11px; line-height: 1.3; margin: 2px 0 5px; color: var(--ink2); } .tt-exres { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; }
 .tt-exres b { font: 700 26px var(--ui); color: var(--teal); } .tt-exres span { font-size: 11.5px; color: var(--ink2); }
 .tt-grade { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; } .tt-grade > b { font: 800 40px var(--ui); color: var(--teal); width: 64px; height: 64px; display: grid; place-items: center; border: 2px solid var(--teal); border-radius: 16px; }
 .tt-cats { display: grid; gap: 6px; margin-bottom: 10px; } .tt-cats div { display: grid; grid-template-columns: 90px 1fr 34px; gap: 8px; align-items: center; font-size: 13px; }

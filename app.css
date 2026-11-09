@@ -9,7 +9,7 @@
   --teal2: #14857c;
   --red: #d2453b;
   --radius: 14px;
-  --nav-h: 64px;
+  --nav-h: 56px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --display: 'Pirata One', 'Georgia', serif;
   --ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -50,12 +50,12 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 /* Side rail (tablet landscape / PC) */
 @media (min-width: 900px) {
   #app { flex-direction: row; }
-  #nav { flex-direction: column; justify-content: flex-start; width: 96px; height: 100%;
-         border-top: 0; border-right: 1px solid var(--line); padding: 16px 0; gap: 6px; }
-  #nav .brand { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 18px;
-                font: 20px var(--display); color: var(--teal); }
-  #nav .brand img { width: 44px; height: 44px; }
-  .nav-btn { flex: 0 0 72px; }
+  #nav { flex-direction: column; justify-content: flex-start; width: 76px; height: 100%;
+         border-top: 0; border-right: 1px solid var(--line); padding: 12px 0; gap: 4px; }
+  #nav .brand { display: flex; flex-direction: column; align-items: center; gap: 3px; margin-bottom: 12px;
+                font: 16px var(--display); color: var(--teal); }
+  #nav .brand img { width: 34px; height: 34px; }
+  .nav-btn { flex: 0 0 60px; font-size: 10px; }
   #main { padding: 0 32px 32px; }
 }
 
