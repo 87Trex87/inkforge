@@ -2315,7 +2315,7 @@ TT.open = async (el, id) => {
   const drawTray = () => {
     tray.innerHTML = `<button class="tt-set" data-set data-tip="Ink palettes and grey wash" aria-label="Ink palettes">${st.wash ? 'Wash' : 'Inks'}</button>
       <button class="tt-cup" data-rinse data-tip="Rinse: clean the needle" aria-label="Rinse"></button>
-      ${st.wash ? TT_WASH.map(([n, s], i) => `<button class="tt-cap tt-wcap" data-wash="${i}" style="--c:rgba(20,20,20,${s})" data-tip="${n} wash" aria-label="${n} wash"><i></i></button>`).join('')
+      ${st.wash ? TT_WASH.map(([n, s], i) => `<button class="tt-cap tt-wcap" data-wash="${i}" style="--c:rgba(20,20,20,${s})" data-tip="${n} wash: ${Math.round(s * 100)}% black" aria-label="${n} wash"><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`).join('')
         : st.caps.map((c, i) => { const s = st.capS?.[i] ?? 1; return `<button class="tt-cap" data-cap="${i}" style="--c:${c};--o:${Math.max(0.12, s)}" aria-label="Ink cap"${s < 1 ? ` data-tip="Diluted to ${Math.round(s * 100)}%"` : ''}><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`; }).join('')}
       <button class="tt-cup tt-dil" data-dilute data-tip="Dilute: hold to thin the ink on the needle (keeps its colour, only lighter)" aria-label="Dilute"></button>
       <button class="tt-load" id="tt-load" data-tip="Ink on the needle" aria-label="Ink on the needle"><i></i><span></span></button>
@@ -2379,42 +2379,66 @@ TT.open = async (el, id) => {
       inp.onchange = async () => { try { const j = JSON.parse(await inp.files[0].text()); if (!j.inkforge_palette || !Array.isArray(j.caps)) throw new Error('not an InkForge palette');
         const P = { id: 'p' + Date.now().toString(36), name: String(j.name || 'Imported').slice(0, 40), caps: j.caps.slice(0, PAL_MAX).map(x => ({ c: /^#[0-9a-f]{6}$/i.test(x.c) ? x.c : '#141414', s: Math.max(0.05, Math.min(1, +x.s || 1)) })) };
         await palSave(P); palApply(P); toast(`Imported "${P.name}".`); } catch (err) { toast('Could not import: ' + err.message, 3500); } }; inp.click(); } });
-  /* The palette editor: up to 10 caps in order; for the chosen cap a colour wheel with brightness, its dilution, and
-     mixing in another cap's colour. Save keeps it; Share sends the file on. */
-  const palEdit = (P, fresh) => { let at = 0, mixWith = P.caps.length > 1 ? 1 : 0, mixAmt = 0.5, hsv = null; const o = document.createElement('div'); o.id = 'tt-paled'; o.className = 'tt-tune';
+  /* The palette editor: up to 10 caps in order. A cap's colour is made on the mixing bench like on the needle: pick a
+     pure colour on the wheel, then hold black, white, water or any other cap to mix it in (the longer, the more), and
+     Use it when it's right. Typing a colour code is the only shortcut. Tips explain what each mix does. */
+  const palEdit = (P, fresh) => { let at = 0; const o = document.createElement('div'); o.id = 'tt-paled'; o.className = 'tt-tune';
     o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:12px;background:rgba(0,0,0,.6)';
-    const toHsv = (h) => { const [r, g, b] = ttHex(h), mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; let H = 0; if (d) H = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return [(H * 60 + 360) % 360, mx ? d / mx : 0, mx]; };
-    const fromHsv = ([h, s, v]) => { const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); }; return ttToHex([f(5), f(3), f(1)]); };
-    const wheel = (cv) => { const g = cv.getContext('2d'), N = cv.width, im = g.createImageData(N, N), R = N / 2; for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const dx = x - R + 0.5, dy = y - R + 0.5, d = Math.hypot(dx, dy) / R, q = (y * N + x) * 4; if (d > 1) continue; const c = ttHex(fromHsv([(Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, d, hsv[2]])); im.data[q] = c[0] * 255; im.data[q + 1] = c[1] * 255; im.data[q + 2] = c[2] * 255; im.data[q + 3] = 255; }
-      g.putImageData(im, 0, 0); const a = hsv[0] * Math.PI / 180, px = R + Math.cos(a) * hsv[1] * R, py = R + Math.sin(a) * hsv[1] * R; g.lineWidth = 2; g.strokeStyle = '#fff'; g.beginPath(); g.arc(px, py, 6, 0, 7); g.stroke(); g.strokeStyle = '#000'; g.beginPath(); g.arc(px, py, 8, 0, 7); g.stroke(); };
-    const draw = () => { const C = P.caps[at]; hsv ||= toHsv(C.c);
+    const M = { c: ttHex(P.caps[0].c), s: P.caps[0].s ?? 1, v: 1, tip: 'Pick a colour on the wheel, then hold black, white, water or another cap to mix into it.' };
+    const BENCH = [['Black', TT_CAPS[0], 1], ['White', TT_CAPS[TT_CAPS.length - 1], 1], ['Water', null, 0]];
+    const hueOf = (c) => { const [r, g, b] = c, mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 0.08) return null; let H = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return (H * 60 + 360) % 360; };
+    // A painter's red-yellow-blue wheel (how pigment mixes): red sits opposite green, blue opposite orange, yellow opposite purple.
+    const RYB = [[0, 0], [120, 60], [180, 120], [210, 180], [240, 240], [300, 300], [360, 360]], lerpMap = (v, from, to) => { for (let i = 1; i < RYB.length; i++) if (v <= RYB[i][from]) { const a = RYB[i - 1], b = RYB[i], f = (v - a[from]) / ((b[from] - a[from]) || 1); return a[to] + (b[to] - a[to]) * f; } return v; };
+    const ryb2rgb = (h) => lerpMap(((h % 360) + 360) % 360, 0, 1), rgb2ryb = (h) => lerpMap(((h % 360) + 360) % 360, 1, 0);
+    const pureHue = (h) => { const f = (n) => { const k = (n + h / 60) % 6; return 1 - Math.max(0, Math.min(k, 4 - k, 1)); }; return [f(5), f(3), f(1)]; };
+    const ring = (cv) => { const g = cv.getContext('2d'), N = cv.width, im = g.createImageData(N, N), R = N / 2; for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const dx = x - R + 0.5, dy = y - R + 0.5, d = Math.hypot(dx, dy) / R, q = (y * N + x) * 4; if (d > 1 || d < 0.58) continue; const c = pureHue(ryb2rgb((Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360)); im.data[q] = c[0] * 255; im.data[q + 1] = c[1] * 255; im.data[q + 2] = c[2] * 255; im.data[q + 3] = 255; }
+      g.putImageData(im, 0, 0); const h = hueOf(M.c); if (h != null) { const a = rgb2ryb(h) * Math.PI / 180, px = R + Math.cos(a) * R * 0.79, py = R + Math.sin(a) * R * 0.79; g.lineWidth = 2.5; g.strokeStyle = '#fff'; g.beginPath(); g.arc(px, py, 8, 0, 7); g.stroke(); }
+      g.beginPath(); g.arc(R, R, R * 0.5, 0, 7); g.fillStyle = '#e9e9e9'; g.fill(); g.globalAlpha = Math.max(0.12, M.s); g.beginPath(); g.arc(R, R, R * 0.42, 0, 7); g.fillStyle = ttToHex(M.c); g.fill(); g.globalAlpha = 1; };
+    const capBtn = (c, s, attrs, label) => `<button class="tt-cap" ${attrs} style="--c:${c};--o:${Math.max(0.12, s)}" aria-label="${label}" data-tip="${label}"><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`;
+    const sync = () => { const cv = o.querySelector('[data-pw]'); if (cv) ring(cv); const hx = o.querySelector('[data-ph]'); if (hx && document.activeElement !== hx) hx.value = ttToHex(M.c); const sb = o.querySelector('[data-mixs]'); if (sb) sb.textContent = Math.round(M.s * 100) + '%'; const tp = o.querySelector('[data-tipbox]'); if (tp) tp.textContent = M.tip; };
+    const draw = () => {
       o.innerHTML = `<div class="card tt-pale"><div class="row" style="align-items:center;gap:6px"><input class="in" data-pn value="${esc(P.name)}" maxlength="40" aria-label="Palette name" style="flex:1;font-weight:700"><button class="btn small" data-pe="cancel">Cancel</button><button class="btn small primary" data-pe="save">Save</button></div>
-        <div class="tt-pslots">${P.caps.map((x, i) => `<button class="tt-cap${i === at ? ' sel' : ''}" data-ps="${i}" style="--c:${x.c};--o:${Math.max(0.12, x.s)}" aria-label="Ink cap ${i + 1}"><i></i>${x.s < 1 ? `<em>${Math.round(x.s * 100)}%</em>` : ''}</button>`).join('')}${P.caps.length < PAL_MAX ? '<button class="tt-padd" data-pe="add" aria-label="Add an ink cap">+</button>' : ''}</div>
+        <div class="tt-pslots">${P.caps.map((x, i) => `<button class="tt-cap${i === at ? ' sel' : ''}" data-ps="${i}" style="--c:${x.c};--o:${Math.max(0.12, x.s)}" aria-label="Ink cap ${i + 1}"><i></i>${x.s < 1 ? `<em>${Math.round(x.s * 100)}</em>` : ''}</button>`).join('')}${P.caps.length < PAL_MAX ? '<button class="tt-padd" data-pe="add" aria-label="Add an ink cap">+</button>' : ''}</div>
         <div class="row tt-pord"><button class="btn small" data-pe="left" ${at ? '' : 'disabled'} aria-label="Move left">◀</button><button class="btn small" data-pe="right" ${at < P.caps.length - 1 ? '' : 'disabled'} aria-label="Move right">▶</button><span class="muted" style="flex:1;text-align:center;font-size:12px">Cap ${at + 1} of ${P.caps.length} (up to ${PAL_MAX})</span><button class="btn small danger" data-pe="del" ${P.caps.length > 1 ? '' : 'disabled'}>Remove</button></div>
-        <div class="tt-pcol"><canvas width="168" height="168" data-pw></canvas><div class="tt-pctl">
-          <label class="dz-sl"><span>Brightness</span><input type="range" min="0" max="100" value="${Math.round(hsv[2] * 100)}" data-pv></label>
-          <label class="dz-sl"><span>Strength <b>${Math.round(C.s * 100)}%</b></span><input type="range" min="5" max="100" step="5" value="${Math.round(C.s * 100)}" data-pd></label>
-          <div class="row" style="gap:6px;align-items:center"><span class="tt-pswatch" style="--c:${C.c};--o:${C.s}"></span><input class="in" data-ph value="${C.c}" maxlength="7" style="width:92px" aria-label="Colour code"></div>
-          <div class="lbl" style="margin-top:6px">Mix in</div>
-          <div class="row" style="gap:6px;align-items:center"><select class="in" data-pmw style="flex:1">${P.caps.map((x, i) => i === at ? '' : `<option value="${i}" ${i === mixWith ? 'selected' : ''}>Cap ${i + 1}</option>`).join('')}</select><button class="btn small" data-pe="mix" ${P.caps.length > 1 ? '' : 'disabled'}>Mix</button></div>
-          <label class="dz-sl"><span>Amount <b>${Math.round(mixAmt * 100)}%</b></span><input type="range" min="5" max="95" step="5" value="${Math.round(mixAmt * 100)}" data-pma></label></div></div>
+        <div class="lbl">Mixing bench</div>
+        <div class="tt-pcol"><canvas width="168" height="168" data-pw aria-label="Pick a colour"></canvas><div class="tt-pctl">
+          <p class="muted" style="font-size:11.5px;margin:0">Hold an ink to mix it into the cup in the middle. The longer you hold, the more goes in.</p>
+          <div class="tt-bench">${BENCH.map(([n, c, s], i) => c ? capBtn(c, s, `data-mix="b${i}"`, n) : `<button class="tt-cup tt-dil" data-mix="b${i}" aria-label="${n}" data-tip="Water: dilutes"></button>`).join('')}<i class="tt-qsep"></i>${P.caps.map((x, i) => i === at ? '' : capBtn(x.c, x.s, `data-mix="p${i}"`, 'Cap ' + (i + 1))).join('')}</div>
+          <div class="row" style="gap:6px;align-items:center;margin-top:4px"><span class="muted" style="font-size:12px">Strength <b data-mixs>${Math.round(M.s * 100)}%</b></span><span style="flex:1"></span><input class="in" data-ph value="${ttToHex(M.c)}" maxlength="7" style="width:88px" aria-label="Colour code" data-tip="Type an exact colour code (the shortcut)"></div>
+          <div class="tt-tipbox" data-tipbox>${esc(M.tip)}</div>
+          <div class="row" style="gap:6px"><button class="btn small" data-pe="from">Start over from this cap</button><span style="flex:1"></span><button class="btn small primary" data-pe="use">Use for cap ${at + 1}</button></div></div></div>
         <div class="row" style="gap:6px;margin-top:8px">${fresh ? '' : '<button class="btn small danger" data-pe="delpal">Delete palette</button>'}<span style="flex:1"></span><button class="btn small" data-pe="share">Share file</button></div></div>`;
-      wheel(o.querySelector('[data-pw]')); };
-    const setC = (hex, keepHsv) => { P.caps[at].c = hex; if (!keepHsv) hsv = toHsv(hex); draw(); };
-    o.addEventListener('pointerdown', (e) => { const cv = e.target.closest('[data-pw]'); if (!cv) return; const pick = (ev) => { const r = cv.getBoundingClientRect(), R = r.width / 2, dx = ev.clientX - r.left - R, dy = ev.clientY - r.top - R; hsv = [(Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, Math.min(1, Math.hypot(dx, dy) / R), hsv[2]]; setC(fromHsv(hsv), true); };
-      pick(e); const mv = (ev) => { const c2 = o.querySelector('[data-pw]'); if (c2) pick(ev); }, up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); });
-    o.addEventListener('input', (e) => { const t = e.target;
-      if (t.matches('[data-pv]')) { hsv[2] = +t.value / 100; P.caps[at].c = fromHsv(hsv); wheel(o.querySelector('[data-pw]')); o.querySelector('.tt-pswatch').style.setProperty('--c', P.caps[at].c); o.querySelector('[data-ph]').value = P.caps[at].c; o.querySelector(`[data-ps="${at}"]`).style.setProperty('--c', P.caps[at].c); }
-      if (t.matches('[data-pd]')) { P.caps[at].s = +t.value / 100; t.previousElementSibling.querySelector('b').textContent = t.value + '%'; const s = o.querySelector(`[data-ps="${at}"]`); s.style.setProperty('--o', Math.max(0.12, P.caps[at].s)); s.innerHTML = '<i></i>' + (P.caps[at].s < 1 ? `<em>${t.value}%</em>` : ''); o.querySelector('.tt-pswatch').style.setProperty('--o', P.caps[at].s); }
-      if (t.matches('[data-pma]')) { mixAmt = +t.value / 100; t.previousElementSibling.querySelector('b').textContent = t.value + '%'; }
-      if (t.matches('[data-pn]')) P.name = t.value.trim() || 'My palette'; });
-    o.addEventListener('change', (e) => { if (e.target.matches('[data-ph]') && /^#[0-9a-f]{6}$/i.test(e.target.value)) setC(e.target.value.toLowerCase()); if (e.target.matches('[data-pmw]')) mixWith = +e.target.value; });
-    o.addEventListener('click', async (e) => { const s = e.target.closest('[data-ps]'); if (s) { at = +s.dataset.ps; hsv = null; if (mixWith === at) mixWith = at ? 0 : 1; return draw(); }
+      sync(); };
+    // the wheel: a pure colour to start from (fresh in the cup)
+    o.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-pw]')) return; e.preventDefault();
+      const pick = (ev) => { const cv = o.querySelector('[data-pw]'); if (!cv) return; const r = cv.getBoundingClientRect(), R = r.width / 2, dx = ev.clientX - r.left - R, dy = ev.clientY - r.top - R; if (Math.hypot(dx, dy) < R * 0.5) return;
+        M.c = pureHue(ryb2rgb((Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360)); M.s = 1; M.v = 1; M.tip = 'A pure colour, straight from the bottle. Hold black to shade it, white to tint it, its opposite on the wheel to dull it, or water to dilute it.'; sync(); };
+      pick(e); const mv = (ev) => pick(ev), up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); });
+    // holding an ink on the bench: mixed in like dipping the needle, slower as the cup fills
+    let mix = null;
+    o.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-mix]'); if (!b) return; e.preventDefault(); const k = b.dataset.mix, src = k[0] === 'b' ? BENCH[+k.slice(1)] : null, cap = k[0] === 'p' ? P.caps[+k.slice(1)] : null;
+      const col = src ? (src[1] ? ttHex(src[1]) : null) : ttHex(cap.c), ws = src ? src[2] : cap.s ?? 1, h0 = hueOf(M.c), h1 = col ? hueOf(col) : null;
+      M.tip = !col ? 'Water dilutes: same colour, lower strength. It goes into the skin lighter, like a grey wash.'
+        : src && src[0] === 'Black' ? 'Black makes a shade: the same colour, darker. Too much and it just turns black.'
+        : src && src[0] === 'White' ? 'White makes a tint: lighter and softer. Mixes heavy in white heal paler in the skin.'
+        : h0 == null || h1 == null ? 'Mixing with a grey or near-black ink darkens and dulls the colour.'
+        : (() => { const d = Math.abs(((rgb2ryb(h1) - rgb2ryb(h0) + 540) % 360) - 180); return d > 150 ? 'Opposite colours on the wheel cancel each other out: the mix turns muddy brown or grey. A touch of the opposite dulls a colour more naturally than black.' : d < 40 ? 'Neighbouring colours mix cleanly and stay bright.' : 'Two colours mix to the one between them on the wheel: red and yellow make orange, blue and yellow make green.'; })();
+      b.classList.add('dip'); let t0 = performance.now();
+      const step = (now) => { if (!mix) return; const dt = Math.min(0.1, (now - t0) / 1000); t0 = now; const a = dt * 0.9, frac = a / (M.v + a);
+        if (col) M.c = ttMix(M.c, col, frac); M.s = M.s * (1 - frac) + ws * frac; M.v += a; sync(); mix.raf = requestAnimationFrame(step); };
+      mix = { b, raf: requestAnimationFrame(step) }; sync(); });
+    const mixEnd = () => { if (!mix) return; cancelAnimationFrame(mix.raf); mix.b.classList.remove('dip'); mix = null; };
+    ['pointerup', 'pointercancel'].forEach(ev => addEventListener(ev, mixEnd)); o.addEventListener('pointerleave', mixEnd);
+    o.addEventListener('contextmenu', (e) => e.preventDefault());
+    o.addEventListener('input', (e) => { if (e.target.matches('[data-pn]')) P.name = e.target.value.trim() || 'My palette'; });
+    o.addEventListener('change', (e) => { if (e.target.matches('[data-ph]') && /^#[0-9a-f]{6}$/i.test(e.target.value)) { M.c = ttHex(e.target.value.toLowerCase()); M.v = 1; M.tip = 'Typed in directly: the shortcut. Try mixing it yourself next time to see how it is made.'; sync(); } });
+    o.addEventListener('click', async (e) => { const s = e.target.closest('[data-ps]'); if (s) { at = +s.dataset.ps; Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1 }); return draw(); }
       const a = e.target.closest('[data-pe]')?.dataset.pe; if (!a) return;
-      if (a === 'add' && P.caps.length < PAL_MAX) { P.caps.push({ c: '#d23c3c', s: 1 }); at = P.caps.length - 1; hsv = null; return draw(); }
+      if (a === 'add' && P.caps.length < PAL_MAX) { P.caps.push({ c: '#d23c3c', s: 1 }); at = P.caps.length - 1; Object.assign(M, { c: ttHex('#d23c3c'), s: 1, v: 1 }); return draw(); }
       if (a === 'left' || a === 'right') { const j = at + (a === 'left' ? -1 : 1); [P.caps[at], P.caps[j]] = [P.caps[j], P.caps[at]]; at = j; return draw(); }
-      if (a === 'del' && P.caps.length > 1) { P.caps.splice(at, 1); at = Math.min(at, P.caps.length - 1); hsv = null; mixWith = at ? 0 : Math.min(1, P.caps.length - 1); return draw(); }
-      if (a === 'mix') { const other = P.caps[mixWith]; if (!other || mixWith === at) return; const c = ttMix(ttHex(P.caps[at].c), ttHex(other.c), mixAmt); P.caps[at].s = +(P.caps[at].s * (1 - mixAmt) + (other.s ?? 1) * mixAmt).toFixed(2); return setC(ttToHex(c)); }
+      if (a === 'del' && P.caps.length > 1) { P.caps.splice(at, 1); at = Math.min(at, P.caps.length - 1); Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1 }); return draw(); }
+      if (a === 'from') { Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1, tip: 'Back to what this cap holds.' }); return sync(); }
+      if (a === 'use') { P.caps[at] = { c: ttToHex(M.c), s: +Math.max(0.05, M.s).toFixed(2) }; M.v = 1; return draw(); }
       if (a === 'cancel') return o.remove();
       if (a === 'save') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; await palSave(P); o.remove(); palApply(P); return; }
       if (a === 'share') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; const f = new File([JSON.stringify({ inkforge_palette: 1, name: P.name, caps: P.caps }, null, 1)], `${P.name.replace(/[^\w-]+/g, '-')}.inkpalette.json`, { type: 'application/json' }); return shareFiles([f], P.name); }
@@ -3746,6 +3770,8 @@ function ttStyle() {
 .tt-pale { max-width: 470px; width: 100%; max-height: 92dvh; overflow-y: auto; } .tt-pslots { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; } .tt-pslots .tt-cap.sel { outline: 2px solid var(--teal); outline-offset: 2px; }
 .tt-padd { width: 30px; height: 30px; border-radius: 50%; border: 1.5px dashed var(--ink2); background: none; color: var(--ink2); font: 700 16px var(--ui); cursor: pointer; } .tt-pord { gap: 6px; align-items: center; margin-bottom: 8px; }
 .tt-pcol { display: flex; gap: 14px; flex-wrap: wrap; } .tt-pcol canvas { width: 168px; height: 168px; border-radius: 50%; touch-action: none; cursor: crosshair; flex: none; } .tt-pctl { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+.tt-bench { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } .tt-bench .tt-cap.dip, .tt-bench .tt-cup.dip { transform: scale(.9); outline: 2px solid var(--teal); outline-offset: 2px; }
+.tt-tipbox { font-size: 12px; line-height: 1.35; padding: 7px 9px; border-radius: 9px; background: rgba(31,182,166,.08); border: 1px solid rgba(31,182,166,.3); color: var(--ink); min-height: 34px; }
 .tt-pswatch { width: 34px; height: 34px; border-radius: 50%; background: #e9e9e9; position: relative; flex: none; } .tt-pswatch::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--c); opacity: var(--o, 1); }
 .tt-qse { max-width: 440px; width: 100%; max-height: 86dvh; overflow-y: auto; } .tt-qn small { font: 600 9px var(--ui); color: var(--ink2); }
 .tt-qrows { display: flex; flex-direction: column; gap: 2px; } .tt-qrow { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: 9px; background: none; color: var(--ink); font: 500 13px var(--ui); text-align: left; cursor: pointer; }
