@@ -7311,6 +7311,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 345, when: '2026-11-09T16:00', added: ['Check is now a skin damage map: green is fine, red is overworked.', 'A quick strip across the top holds pen lean, offset, presets, up to 5 favourite needles and tools. Tap + to choose what\'s on it.', 'Focus hides every panel for a clear view, and Panels lets you show or hide each one.', 'Ink palettes: built-in sets or your own (up to 10 caps), mixed on a bench with a colour wheel, diluted for washes, and shared as a file. Up to 3 on the quick strip.'],
+    test: ['Make a palette of your own, put it on the quick strip and pack with it.'] },
   { build: 336, when: '2026-11-09T14:14', added: ['Hold the eye in the meter to see your work healed. Let go and it\'s back.', 'Using the laser in a lesson now fails the attempt. You get a warning when you pick it.', 'Skin remembers being worked: each time you go back over a spot it gets irritated faster, faster still where it\'s already full of ink.'],
     test: ['Pack a spot, let it settle, then pack it again. Does it swell faster the second time?'] },
   { build: 334, when: '2026-11-09T13:40', added: ['Your outline score no longer drops for tapering the ends of a line or whipping out of a point.', 'Colour blend now shows Trevor\'s finished piece beside you, and his A 92 is in Compare.'],
