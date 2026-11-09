@@ -7382,6 +7382,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 352, when: '2026-11-09T19:30', added: ['Design studio: shapes and lines can be solid, dashed or dotted, from the top strip.', 'Search, sort, favourites and folders in the design studio, simulator, reels, portfolio, stencils and forms, to keep a year of work tidy.', 'Simulator: packing and shading wear the stencil off around the needle, like on skin. Refresh it from Layers. Never in cheat mode.'],
+    test: ['Shade over part of a stencil. Does it fade at a realistic pace?'] },
   { build: 348, when: '2026-11-09T17:30', added: ['Design studio: you can click and type in the line width, text size and font boxes along the top again.'], test: ['Select a shape and change its line width from the top strip.'] },
   { build: 346, when: '2026-11-09T16:30', added: ['The healed and damage map buttons under the meter now line up neatly.', 'Your mouse shows as a crosshair while the damage map is on.'], test: [] },
   { build: 345, when: '2026-11-09T16:00', added: ['Check is now a skin damage map: green is fine, red is overworked.', 'A quick strip across the top holds pen lean, offset, presets, up to 5 favourite needles and tools. Tap + to choose what\'s on it.', 'Focus hides every panel for a clear view, and Panels lets you show or hide each one.', 'Ink palettes: built-in sets or your own (up to 10 caps), mixed on a bench with a colour wheel, diluted for washes, and shared as a file. Up to 3 on the quick strip.'],
