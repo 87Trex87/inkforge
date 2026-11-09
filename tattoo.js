@@ -1097,6 +1097,8 @@ TT.open = async (el, id) => {
     <div class="dz-top">
       <button class="dz-ib" id="tt-back" data-tip="Back to your pieces" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
       <input class="dz-name" id="tt-name" value="${esc(row.name || 'Piece')}" aria-label="Name">${CHEAT ? '<span class="tt-cheat" data-tip="Cheat mode: no skin damage, drawing helpers. Saved pictures say so.">Cheat mode</span>' : ''}<span class="dz-tsp"></span>
+      <button class="dz-ib" id="tt-focus" data-tip="Focus: hide all the panels" aria-label="Focus"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.5"/></svg></button>
+      <button class="dz-ib" id="tt-panels" data-tip="Panels: show or hide each one" aria-label="Panels"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 9h6"/></svg></button>
       <button class="dz-ib" id="tt-undo" data-tip="Undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
       <button class="dz-ib" id="tt-redo" data-tip="Redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
       <button class="dz-ib tt-viewb" id="tt-view" data-tip="Preview: as worked, fresh, healed or after 10 years" aria-label="Preview"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><b></b></button>
@@ -2127,7 +2129,7 @@ TT.open = async (el, id) => {
   const chkRow = () => `<div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button><em id="tt-dmginfo">${st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
   /* The eye: held down, the piece shows as healed; let go and it is back as it was. */
   let peekWas = null; const peekEnd = () => { if (peekWas == null) return; st.view = peekWas; peekWas = null; st.viewC = null; drawView(); paint(); meterEl.querySelector('[data-peek]')?.classList.remove('on'); };
-  meterEl.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-peek]'); if (!b || peekWas != null) return; e.preventDefault(); b.setPointerCapture?.(e.pointerId); peekWas = st.view; st.view = 'healed'; st.viewC = null; b.classList.add('on'); drawView(); paint(); });
+  meterEl.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-peek]'); if (!b || peekWas != null) return; e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch {} peekWas = st.view; st.view = 'healed'; st.viewC = null; b.classList.add('on'); drawView(); paint(); });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => meterEl.addEventListener(ev, peekEnd));
   meterEl.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-peek]')) e.preventDefault(); });
   meterEl.addEventListener('click', (e) => { if (!e.target.closest('[data-chk]')) return; st.check = !st.check; meterBuild(); meter(lastM); drawCur(); paint(); if (st.check) toast('Damage map: tap it again to carry on tattooing.', 2000); });
@@ -2423,66 +2425,114 @@ TT.open = async (el, id) => {
   function setAng(v) { st.magAng = ((Math.round(v) % 180) + 180) % 180; st.dirty = true; const l = $('#tt-angv'); if (l) l.textContent = st.magAng + '°'; const r = pop.querySelector('[data-angr]'); if (r) r.value = st.magAng; drawAng(); drawCur(); }
   /* ---------- Quick strip ----------
      A row of shortcuts across the top of the skin, like a painting app's top bar. What it holds is chosen in its +
-     window and kept for every piece (setting tt_strip): the pen lean and the offset by default, then any of the angle
-     presets, stack tilt, favourite needles and tools. Offset and stack tilt: tap for a slider, or hold and drag
-     sideways. */
+     window and kept for every piece (setting tt_strip): the pen lean and the offset by default, then magnum angles,
+     tools and favourite needles (a needle with its size, "n:7RL@0.3"). Offset and stack tilt: tap for a slider, or
+     hold and drag sideways. */
   const QS_DEF = ['lean', 'offset', 'refs']; let qsDrag = null;
+  const SZN = { 0.25: '#08', 0.3: '#10', 0.35: '#12' };
   const qsIcon = { lean: '<svg viewBox="0 0 24 24"><path d="M6 20l3-1 10-10-2-2L7 17z"/><path d="M15 5l4 4"/><path d="M4 8a8 8 0 0 1 4-4" stroke-dasharray="2 2"/></svg>',
     offset: '<svg viewBox="0 0 24 24"><path d="M12 12L19 7" stroke-width="2.6"/><path d="M5 12h14" opacity=".35"/><path d="M15 12a3 3 0 0 0-1-2.3"/></svg>',
     roll: '<svg viewBox="0 0 24 24"><path d="M4 16l16-6"/><circle cx="6" cy="15" r="1.6"/><circle cx="12" cy="12.8" r="1.6"/><circle cx="18" cy="10.6" r="1.6"/></svg>',
+    needle: '<svg viewBox="0 0 24 24"><path d="M4 20l5-5M9 15l8-8 2 2-8 8zM14 6l4 4"/></svg>',
+    erase: '<svg viewBox="0 0 24 24"><path d="M7 21h10M5 15l9-9 5 5-9 9H8z"/></svg>',
+    marker: '<svg viewBox="0 0 24 24"><path d="M15 4l5 5-9 9H6v-5z"/><path d="M13 6l5 5M4 21h7"/></svg>',
+    rinse: '<svg viewBox="0 0 24 24"><path d="M7 4h10l-1 16H8z"/><path d="M8 10h8"/></svg>',
+    undo: '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>',
+    redo: '<svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>',
+    view: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>',
+    peek: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    dmg: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+    fit: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
     refs: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/></svg>',
     layers: '<svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12.5l9 5 9-5"/></svg>',
-    feel: '<svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
-    marker: '<svg viewBox="0 0 24 24"><path d="M15 4l5 5-9 9H6v-5z"/><path d="M13 6l5 5M4 21h7"/></svg>',
-    rinse: '<svg viewBox="0 0 24 24"><path d="M7 4h10l-1 16H8z"/><path d="M8 10h8"/></svg>' };
-  const QS_ITEMS = [['Magnum', [['lean', 'Follows the way the pen leans'], ['offset', 'Offset angle (on the lean)'], ['roll', 'Stack tilt'], ...[0, 30, 45, 60, 90, 120, 135, 150].map(v => ['a' + v, `Angle ${v}°`])]],
-    ['Tools', [['refs', 'References'], ['layers', 'Layers'], ['feel', 'Needle feel'], ['marker', 'Skin marker'], ['rinse', 'Rinse the needle']]],
-    ['Favourite needles', TT_NEEDLES.map(n => ['n:' + n.id, n.name])]];
+    feel: '<svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>' };
+  const QS_MAG = [['lean', 'Follows the way the pen leans'], ['offset', 'Offset angle'], ['roll', 'Stack tilt'], ...[0, 30, 45, 60, 90, 120, 135, 150].map(v => ['a' + v, `Angle ${v}°`])];
+  const QS_TOOLS = [['needle', 'Tattoo'], ['erase', 'Laser'], ['marker', 'Skin marker'], ['rinse', 'Rinse the needle'], ['undo', 'Undo'], ['redo', 'Redo'], ['view', 'Preview: fresh, healed, 10 years'], ['peek', 'Hold to see it healed'], ['dmg', 'Skin damage map'], ['fit', 'Fit the skin to the screen'], ['refs', 'References'], ['layers', 'Layers'], ['feel', 'Needle feel']];
   const qsList = () => { try { const a = JSON.parse(Settings.get('tt_strip', 'null')); return Array.isArray(a) ? a : QS_DEF; } catch { return QS_DEF; } };
-  const qsName = (id) => QS_ITEMS.flatMap(g => g[1]).find(x => x[0] === id)?.[1] || id;
+  const qsFav = (id) => { const [n, s] = id.slice(2).split('@'); return { n, s: s ? +s : null }; };
+  const qsName = (id) => id.startsWith('n:') ? (({ n, s }) => `${TT_NEEDLES.find(x => x.id === n)?.name || n}${s ? ' ' + SZN[s] : ''}`)(qsFav(id)) : [...QS_MAG, ...QS_TOOLS].find(x => x[0] === id)?.[1] || id;
   function qsDraw() { const el = $('#tt-qs'); if (!el) return; const mg = isMag();
     if (qsDrag) { const o = el.querySelector('[data-q="offset"] b'), r = el.querySelector('[data-q="roll"] b'); if (o) o.textContent = st.magAng + '°'; if (r) r.textContent = Math.round((st.magRoll || 0) * 100); return; }   // mid-drag: relabel only, so the drag isn't lost
-    el.innerHTML = qsList().map(id => { const nm = esc(qsName(id)), dim = (['lean', 'offset', 'roll'].includes(id) || /^a\d/.test(id)) && !mg ? ' dim' : '';
-      if (id === 'lean') return `<button class="tt-qb${st.magTilt ? ' on' : ''}${dim}" data-q="lean" data-tip="${nm}: ${st.magTilt ? 'on' : 'off'}" aria-label="${nm}">${qsIcon.lean}</button>`;
-      if (id === 'offset') return `<button class="tt-qb wide${dim}" data-q="offset" data-tip="${st.magTilt ? 'Offset on the lean' : 'Magnum angle'}: tap for a slider, or hold and drag" aria-label="Magnum angle">${qsIcon.offset}<b>${st.magAng}°</b></button>`;
-      if (id === 'roll') return `<button class="tt-qb wide${dim}${st.magRoll ? ' on' : ''}" data-q="roll" data-tip="Stack tilt: tap for a slider, or hold and drag" aria-label="Stack tilt">${qsIcon.roll}<b>${Math.round((st.magRoll || 0) * 100)}</b></button>`;
-      if (/^a\d/.test(id)) { const v = +id.slice(1); return `<button class="tt-qb${st.magAng === v ? ' on' : ''}${dim}" data-q="${id}" data-tip="Magnum angle ${v}°" aria-label="Angle ${v}"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg></button>`; }
-      if (id.startsWith('n:')) { const n = id.slice(2); return `<button class="tt-qb wide tt-qn${st.needle === n ? ' on' : ''}" data-q="${id}" data-tip="${nm}" aria-label="${nm}"><b>${esc(n)}</b></button>`; }
-      return qsIcon[id] ? `<button class="tt-qb" data-q="${id}" data-tip="${nm}" aria-label="${nm}">${qsIcon[id]}</button>` : ''; }).join('')
+    let last = '';
+    el.innerHTML = qsList().map(id => { const grp = id.startsWith('n:') ? 'n' : QS_MAG.some(x => x[0] === id) ? 'm' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
+      const nm = esc(qsName(id)), dim = grp === 'm' && !mg ? ' dim' : '';
+      if (id === 'lean') return sep + `<button class="tt-qb${st.magTilt ? ' on' : ''}${dim}" data-q="lean" data-tip="${nm}: ${st.magTilt ? 'on' : 'off'}" aria-label="${nm}">${qsIcon.lean}</button>`;
+      if (id === 'offset') return sep + `<button class="tt-qb wide${dim}" data-q="offset" data-tip="${st.magTilt ? 'Offset on the lean' : 'Magnum angle'}: tap for a slider, or hold and drag" aria-label="Magnum angle">${qsIcon.offset}<b>${st.magAng}°</b></button>`;
+      if (id === 'roll') return sep + `<button class="tt-qb wide${dim}${st.magRoll ? ' on' : ''}" data-q="roll" data-tip="Stack tilt: tap for a slider, or hold and drag" aria-label="Stack tilt">${qsIcon.roll}<b>${Math.round((st.magRoll || 0) * 100)}</b></button>`;
+      if (/^a\d/.test(id)) { const v = +id.slice(1); return sep + `<button class="tt-qb${st.magAng === v ? ' on' : ''}${dim}" data-q="${id}" data-tip="${nm}" aria-label="${nm}"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg></button>`; }
+      if (grp === 'n') { const { n, s } = qsFav(id), on = st.needle === n && (!s || Math.abs(feel.size - s) < 0.01); return sep + `<button class="tt-qb tt-qn${on ? ' on' : ''}" data-q="${esc(id)}" data-tip="${nm}" aria-label="${nm}"><b>${esc(n)}</b>${s ? `<small>${SZN[s] || ''}</small>` : ''}</button>`; }
+      const on = (id === 'needle' || id === 'erase' || id === 'marker') && st.tool === id || id === 'dmg' && st.check;
+      return qsIcon[id] ? sep + `<button class="tt-qb${on ? ' on' : ''}" data-q="${id}" data-tip="${nm}" aria-label="${nm}">${qsIcon[id]}</button>` : ''; }).join('')
       + `<i class="tt-qsep"></i><button class="tt-qb tt-qadd" data-q="add" data-tip="Choose what this strip shows" aria-label="Customise the strip"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`; }
   const qsBubble = (kind, at) => { const b = $('#tt-qsb'), sr = stage.getBoundingClientRect(), r = at.getBoundingClientRect(); b.dataset.k = kind;
     b.innerHTML = kind === 'offset' ? `<span>${st.magTilt ? 'Offset on the lean' : 'Angle'} <b>${st.magAng}°</b></span><input type="range" min="0" max="179" step="1" value="${st.magAng}" data-qsr>`
       : `<span>Stack tilt <b>${rollText()}</b></span><input type="range" min="-100" max="100" step="5" value="${Math.round((st.magRoll || 0) * 100)}" data-qsr><button class="btn small" data-qflat>Flat</button>`;
     b.style.left = Math.max(8, r.left - sr.left) + 'px'; b.style.top = (r.bottom - sr.top + 6) + 'px'; b.hidden = false; };
   const qsBubbleSync = () => { const b = $('#tt-qsb'); if (b.hidden) return; const k = b.dataset.k, s = b.querySelector('span b'), r = b.querySelector('input'); if (k === 'offset') { s.textContent = st.magAng + '°'; r.value = st.magAng; } else { s.textContent = rollText(); r.value = Math.round((st.magRoll || 0) * 100); } };
-  $('#tt-qs').addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-q="offset"], [data-q="roll"]'); if (!b) return; e.preventDefault(); try { $('#tt-qs').setPointerCapture(e.pointerId); } catch {}
+  $('#tt-qs').addEventListener('pointerdown', (e) => {
+    const pk = e.target.closest('[data-q="peek"]'); if (pk) { e.preventDefault(); return meterEl.querySelector('[data-peek]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: e.pointerId })); }
+    const b = e.target.closest('[data-q="offset"], [data-q="roll"]'); if (!b) return; e.preventDefault(); try { $('#tt-qs').setPointerCapture(e.pointerId); } catch {}
     qsDrag = { b, k: b.dataset.q, x0: e.clientX, v0: b.dataset.q === 'offset' ? st.magAng : (st.magRoll || 0), moved: false }; });
   $('#tt-qs').addEventListener('pointermove', (e) => { if (!qsDrag) return; const dx = e.clientX - qsDrag.x0; if (!qsDrag.moved && Math.abs(dx) < 5) return;
     if (!qsDrag.moved) { qsDrag.moved = true; qsBubble(qsDrag.k, qsDrag.b); }
     if (qsDrag.k === 'offset') setAng(qsDrag.v0 + dx * 0.5); else setRoll2(qsDrag.v0 + dx / 150); qsBubbleSync(); });
-  const qsUp = () => { if (!qsDrag) return; const d = qsDrag; qsDrag = null; const b = $('#tt-qsb');
+  const qsUp = (e) => { if (e && e.target.closest?.('[data-q="peek"]')) meterEl.querySelector('[data-peek]')?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    if (!qsDrag) return; const d = qsDrag; qsDrag = null; const b = $('#tt-qsb');
     if (d.moved) { b.hidden = true; qsDraw(); return; } if (!b.hidden && b.dataset.k === d.k) { b.hidden = true; return; } qsBubble(d.k, d.b); };
-  ['pointerup', 'pointercancel'].forEach(ev => $('#tt-qs').addEventListener(ev, qsUp));
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => $('#tt-qs').addEventListener(ev, qsUp));
   $('#tt-qsb').addEventListener('input', (e) => { if (!e.target.matches('[data-qsr]')) return; if ($('#tt-qsb').dataset.k === 'offset') setAng(+e.target.value); else setRoll2(+e.target.value / 100); qsBubbleSync(); qsDraw(); });
   $('#tt-qsb').addEventListener('click', (e) => { if (e.target.closest('[data-qflat]')) { setRoll2(0); qsBubbleSync(); qsDraw(); } });
   document.addEventListener('pointerdown', (e) => { const b = $('#tt-qsb'); if (b && !b.hidden && !e.target.closest('#tt-qsb, #tt-qs')) b.hidden = true; }, true);
   $('#tt-qs').addEventListener('click', (e) => { const b = e.target.closest('[data-q]'); if (!b) return; const q = b.dataset.q;
-    if (q === 'offset' || q === 'roll') return;
+    if (q === 'offset' || q === 'roll' || q === 'peek') return;
     if (q === 'lean') { if (!isMag()) return toast('Only a magnum leans.', 1500); st.magTilt = !st.magTilt; st.dirty = true; drawAng(); return toast(st.magTilt ? 'Follows the pen\'s lean' : 'Fixed angle', 1300); }
     if (/^a\d/.test(q)) { if (!isMag()) return toast('Only a magnum has an angle.', 1500); return setAng(+q.slice(1)); }
-    if (q.startsWith('n:')) { const id = q.slice(2); if (EX?.lesson && id !== st.needle) { st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; drawNeedleInk(); } setNeedle(id); st.tool = 'needle'; closePop(); sel(); return; }
+    if (q.startsWith('n:')) { const { n, s } = qsFav(q); if (EX?.lesson && n !== st.needle) { st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; drawNeedleInk(); } setNeedle(n);
+      if (s) { feel.size = s; TT.setFeel(n, feel); lay = ttLayout(TT_NEEDLES.find(x => x.id === n), feel.size); drawSz(); drawCur(); } st.tool = 'needle'; closePop(); sel(); return qsDraw(); }
     if (q === 'rinse') return $('#tt-tray [data-rinse]')?.click();
+    if (q === 'undo') return $('#tt-undo').click(); if (q === 'redo') return $('#tt-redo').click(); if (q === 'view') return $('#tt-view').click();
+    if (q === 'dmg') { meterEl.querySelector('[data-chk]')?.click(); return qsDraw(); } if (q === 'fit') return $('.tt-zoom [data-z="fit"]')?.click();
     if (q === 'add') return qsEdit();
-    $(`#tt-rail [data-r="${q}"]`)?.click(); });
-  // The + window: tick what the strip shows. Saved for every piece.
-  const qsEdit = () => { const on = new Set(qsList()), o = document.createElement('div'); o.id = 'tt-qsedit'; o.className = 'tt-tune'; o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55)';
-    const draw = () => { o.innerHTML = `<div class="card tt-qse"><div class="row" style="align-items:center"><h2 style="margin:0;flex:1">Quick strip</h2><button class="btn small" data-qe="reset">Default</button><button class="btn small primary" data-qe="done">Done</button></div>
-      <p class="muted" style="margin:4px 0 8px;font-size:12px">Tap to show or hide a shortcut on the strip above the tools.</p>
-      ${QS_ITEMS.map(([g, items]) => `<div class="lbl">${g}</div><div class="tt-qsg">${items.map(([id, nm]) => `<button class="${on.has(id) ? 'on' : ''}" data-qi="${esc(id)}">${id.startsWith('n:') ? esc(id.slice(2)) : esc(nm)}</button>`).join('')}</div>`).join('')}</div>`; };
-    o.onclick = async (e) => { const i = e.target.closest('[data-qi]'); if (i) { const id = i.dataset.qi; on.has(id) ? on.delete(id) : on.add(id); i.classList.toggle('on'); return; }
-      const a = e.target.closest('[data-qe]')?.dataset.qe; if (a === 'reset') { on.clear(); QS_DEF.forEach(x => on.add(x)); return draw(); }
-      if (a === 'done' || e.target === o) { const order = QS_ITEMS.flatMap(g => g[1].map(x => x[0])).filter(x => on.has(x)); await Settings.set('tt_strip', JSON.stringify(order)); o.remove(); qsDraw(); } };
+    $(`#tt-rail [data-r="${q}"]`)?.click(); qsDraw(); });
+  /* The + window, in three tabs: magnum shortcuts and tools as rows to switch on or off, and favourite needles,
+     each with its size, added from a picker. Saved for every piece. */
+  const qsEdit = () => { let list = qsList().slice(), tab = 'mag', addN = st.needle, addS = SZN[feel.size] ? feel.size : 0.3; const o = document.createElement('div'); o.id = 'tt-qsedit'; o.className = 'tt-tune';
+    o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55)';
+    const row = (id, nm) => `<button class="tt-qrow${list.includes(id) ? ' on' : ''}" data-qi="${id}"><span class="tt-qri">${/^a\d/.test(id) ? `<svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${id.slice(1)} 12 12)"/></svg>` : qsIcon[id] || ''}</span><span>${esc(nm)}</span><i class="tt-qsw"></i></button>`;
+    const favs = () => list.filter(x => x.startsWith('n:'));
+    const draw = () => { const body = tab === 'mag' ? `<div class="tt-qrows">${QS_MAG.map(([id, nm]) => row(id, nm)).join('')}</div>`
+        : tab === 'tools' ? `<div class="tt-qrows">${QS_TOOLS.map(([id, nm]) => row(id, nm)).join('')}</div>`
+        : `<div class="tt-qadd2"><select class="in" data-qn>${Object.entries(TT_KINDS).map(([kind, [, label]]) => `<optgroup label="${esc(label)}">${TT_NEEDLES.filter(n => n.kind === kind).map(n => `<option value="${n.id}" ${n.id === addN ? 'selected' : ''}>${n.id}</option>`).join('')}</optgroup>`).join('')}</select>
+            <div class="seg">${Object.entries(SZN).map(([v, l]) => `<button data-qs="${v}" class="${+v === addS ? 'on' : ''}">${l}</button>`).join('')}</div><button class="btn small primary" data-qe="addn">Add</button></div>
+          ${favs().length ? `<div class="tt-qrows">${favs().map(id => { const { n, s } = qsFav(id); return `<div class="tt-qrow on"><span class="tt-qri"><b>${esc(n)}</b></span><span>${esc(TT_NEEDLES.find(x => x.id === n)?.name || n)}${s ? ` · ${SZN[s]}` : ''}</span><button class="mini" data-qdel="${esc(id)}" aria-label="Remove">✕</button></div>`; }).join('')}</div>` : '<p class="muted" style="font-size:12px;margin:8px 2px">No favourites yet: pick a needle and its size, then Add.</p>'}`;
+      o.innerHTML = `<div class="card tt-qse"><div class="row" style="align-items:center;gap:6px"><h2 style="margin:0;flex:1">Quick strip</h2><button class="btn small" data-qe="reset">Default</button><button class="btn small primary" data-qe="done">Done</button></div>
+        <div class="tt-ftabs" style="margin:10px 0 8px">${[['mag', 'Magnum'], ['tools', 'Tools'], ['needles', 'Needles']].map(([k, n]) => `<button data-qt="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>${body}</div>`; };
+    const order = () => [...QS_MAG, ...QS_TOOLS].map(x => x[0]).filter(x => list.includes(x)).concat(favs());
+    o.onclick = async (e) => { const t2 = e.target.closest('[data-qt]'); if (t2) { tab = t2.dataset.qt; return draw(); }
+      const i = e.target.closest('[data-qi]'); if (i) { const id = i.dataset.qi; list = list.includes(id) ? list.filter(x => x !== id) : [...list, id]; list = order(); i.classList.toggle('on'); return; }
+      const sz = e.target.closest('[data-qs]'); if (sz) { addS = +sz.dataset.qs; return draw(); }
+      const dl = e.target.closest('[data-qdel]'); if (dl) { list = list.filter(x => x !== dl.dataset.qdel); return draw(); }
+      const a = e.target.closest('[data-qe]')?.dataset.qe;
+      if (a === 'addn') { const id = `n:${addN}@${addS}`; if (!list.includes(id)) list = [...list, id]; return draw(); }
+      if (a === 'reset') { list = QS_DEF.slice(); return draw(); }
+      if (a === 'done' || e.target === o) { await Settings.set('tt_strip', JSON.stringify(order())); o.remove(); qsDraw(); } };
+    o.onchange = (e) => { if (e.target.matches('[data-qn]')) addN = e.target.value; };
     draw(); document.body.appendChild(o); };
+  /* ---------- Panels: hide or show each one, or all at once for a clean, distraction-free view ----------
+     Kept in the setting tt_panels (a list of hidden panel names). Focus hides them all; any can then be brought
+     back on its own from the Panels menu. */
+  const PANELS = [['qs', 'Quick strip'], ['rail', 'Tools'], ['tray', 'Inks'], ['meter', 'Meter'], ['exam', 'Lesson card'], ['zoom', 'Zoom'], ['refs', 'Reference pictures']];
+  let panHide = (() => { try { return new Set(JSON.parse(Settings.get('tt_panels', '[]'))); } catch { return new Set(); } })();
+  const panApply = () => { stage.dataset.hide = [...panHide].join(' '); const f = $('#tt-focus'); if (f) { const all = PANELS.every(([k]) => panHide.has(k)); f.classList.toggle('on', all); f.dataset.tip = all ? 'Show all the panels' : 'Focus: hide all the panels'; } Settings.set('tt_panels', JSON.stringify([...panHide])); };
+  $('#tt-focus').onclick = () => { const all = PANELS.every(([k]) => panHide.has(k)); panHide = all ? new Set() : new Set(PANELS.map(([k]) => k)); $('#tt-qsb').hidden = true; closePop(); panApply(); };
+  $('#tt-panels').onclick = (e) => { e.stopPropagation(); let m = $('#tt-panm'); if (m) return m.remove(); m = document.createElement('div'); m.id = 'tt-panm'; m.className = 'tt-panm';
+    const draw = () => { m.innerHTML = `<div class="gh">Panels</div>${PANELS.map(([k, n]) => `<button class="tt-qrow${panHide.has(k) ? '' : ' on'}" data-pn="${k}"><span>${n}</span><i class="tt-qsw"></i></button>`).join('')}
+      <div class="row" style="gap:6px;margin-top:6px"><button class="btn small" data-pall="hide" style="flex:1">Hide all</button><button class="btn small" data-pall="show" style="flex:1">Show all</button></div>`; };
+    m.onclick = (ev) => { ev.stopPropagation(); const p = ev.target.closest('[data-pn]')?.dataset.pn; if (p) { panHide.has(p) ? panHide.delete(p) : panHide.add(p); panApply(); return draw(); }
+      const a = ev.target.closest('[data-pall]')?.dataset.pall; if (a) { panHide = a === 'hide' ? new Set(PANELS.map(([k]) => k)) : new Set(); panApply(); draw(); } };
+    draw(); $('.tt-ed').appendChild(m); const r = $('#tt-panels').getBoundingClientRect(); m.style.top = (r.bottom + 6) + 'px'; m.style.right = Math.max(8, innerWidth - r.right) + 'px';
+    setTimeout(() => document.addEventListener('pointerdown', function off(ev) { if (!ev.target.closest('#tt-panm, #tt-panels')) { m.remove(); document.removeEventListener('pointerdown', off, true); } }, true)); };
+  panApply();
   function drawAng() { qsDraw(); const b = $('#tt-rail [data-r="angle"]'); if (!b) return; b.hidden = !isMag();
     $('#tt-angi').setAttribute('transform', `rotate(${st.magAng} 12 12)`); $('#tt-angl').textContent = st.magTilt ? (st.magAng ? 'pen+' + st.magAng : 'pen') : st.magAng + '°'; }
   // The part of a slider that stays inside a lesson's limits, shown in green under it.
@@ -3611,7 +3661,15 @@ function ttStyle() {
 .tt-qsep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line); } .tt-qadd { color: var(--ink2); }
 .tt-qsb { position: absolute; z-index: 9; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; background: rgba(22,27,28,.97); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); font: 600 11px var(--ui); color: var(--ink2); }
 .tt-qsb[hidden] { display: none; } .tt-qsb b { color: var(--teal); } .tt-qsb input { width: 160px; accent-color: var(--teal); touch-action: none; }
-.tt-qse { max-width: 560px; width: 100%; max-height: 86dvh; overflow-y: auto; } .tt-qsg { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.tt-qse { max-width: 440px; width: 100%; max-height: 86dvh; overflow-y: auto; } .tt-qn small { font: 600 9px var(--ui); color: var(--ink2); }
+.tt-qrows { display: flex; flex-direction: column; gap: 2px; } .tt-qrow { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: 9px; background: none; color: var(--ink); font: 500 13px var(--ui); text-align: left; cursor: pointer; }
+.tt-qrow:hover { background: rgba(255,255,255,.05); } .tt-qrow > span:nth-child(2), .tt-qrow > span:first-child:not(.tt-qri) { flex: 1; } .tt-qri { width: 26px; display: grid; place-items: center; color: var(--ink2); } .tt-qri svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-qri b { font: 700 10px var(--ui); color: var(--teal); }
+.tt-qsw { width: 30px; height: 17px; border-radius: 9px; background: rgba(255,255,255,.15); position: relative; flex: none; } .tt-qsw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #cfd6d8; transition: left .15s; }
+.tt-qrow.on .tt-qsw { background: var(--teal); } .tt-qrow.on .tt-qsw::after { left: 15px; background: #fff; }
+.tt-qadd2 { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; } .tt-qadd2 select { flex: 1; min-width: 0; } .tt-qadd2 .seg { flex: none; } .tt-qadd2 .seg button { padding: 5px 8px; }
+.tt-panm { position: fixed; z-index: 60; width: 210px; padding: 6px; border-radius: 14px; background: rgba(22,27,28,.97); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); }
+.tt-stage[data-hide~="qs"] #tt-qs, .tt-stage[data-hide~="qs"] #tt-qsb, .tt-stage[data-hide~="rail"] #tt-rail, .tt-stage[data-hide~="tray"] #tt-tray, .tt-stage[data-hide~="meter"] #tt-meter, .tt-stage[data-hide~="exam"] #tt-exbar, .tt-stage[data-hide~="zoom"] .tt-zoom, .tt-stage[data-hide~="refs"] #tt-refs { display: none !important; }
+.tt-stage[data-hide~="qs"] .dz-rail, .tt-stage[data-hide~="qs"] .tt-tray { top: 10px !important; max-height: calc(100% - 20px) !important; } .tt-stage[data-hide~="rail"] .tt-tray { left: 10px; }
 .tt-qsg button { border: 1px solid var(--line); background: rgba(255,255,255,.04); color: var(--ink); border-radius: 8px; padding: 5px 9px; font: 600 12px var(--ui); cursor: pointer; } .tt-qsg button.on { background: rgba(31,182,166,.22); border-color: var(--teal); color: var(--teal); }
 .tt-ed .dz-rail { top: 56px !important; transform: none !important; max-height: calc(100% - 66px) !important; overflow-y: auto; scrollbar-width: none; padding: 3px; }
 .tt-ed .dz-rail .dz-ib { width: 34px; height: 32px; }
