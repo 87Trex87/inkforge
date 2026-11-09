@@ -946,6 +946,7 @@ TT.open = async (el, id) => {
   const lumOf = (D, i) => (D[i] * 0.299 + D[i + 1] * 0.587 + D[i + 2] * 0.114) / 255;
   /* How far each pixel has already been shifted by lighter ink packed over saturated darker ink, in 1/255 steps.
      Real pigment can't be covered by a lighter one: past about 5% the extra passes only work the skin. */
+  const MUD = [66, 48, 36].map(v => ALOG[v]);   // the dark brown a cold colour churns a warm one towards
   let LIT = null;   // the total colour shift so far per pixel (sum of each pass's share, x1000), to cap how far a covering colour can go
   const dotPig = (T, cx0, cy0, r, amt, erase) => {
     const x0 = Math.max(0, Math.floor(cx0 - r - 1)), x1 = Math.min(W - 1, Math.ceil(cx0 + r + 1)), y0 = Math.max(0, Math.floor(cy0 - r - 1)), y1 = Math.min(H - 1, Math.ceil(cy0 + r + 1));
@@ -958,13 +959,16 @@ TT.open = async (el, id) => {
       let keep = 1, lw = 0, dw = 0;   // the ink already here, in every layer: how saturated, and how light
       for (const key of INK) { const E = imgd[key].data, d2 = E[i + 3] / 255; if (!d2) continue; keep *= 1 - d2; lw += lumOf(E, i) * d2; dw += d2; }
       // lighter ink over saturated ink: mostly held back, but never fully, and it still tints what's there a little
-      const lwa = dw ? lw / dw : 0, block = Math.pow(1 - keep, 1.4) * (dw ? Math.max(0, Math.min(1, (lc - lwa - 0.02) / 0.1)) : 0) * 0.88, dom = dw ? 1 + 4 * Math.max(0, lwa - lc) : 1;   // close values mix evenly; a darker ink takes over (black over red completely), a lighter one is held back
+      /* A cold colour (blue, green) over a warm one (red, orange) muddies it: it acts darker than its value, and the
+         mix goes dark and brownish, more the more saturated the warm ink under it is. */
+      const d0w = D[i + 3] / 255, opp = d0w > 0.004 ? Math.max(0, Math.min(1, (D[i] - D[i + 2]) / 255 * 1.6)) * Math.max(0, Math.min(1, (col[2] + col[1] / 2 - col[0]) / 255 * 1.6)) * (1 - keep) : 0, lce = lc - 0.6 * opp;
+      const lwa = dw ? lw / dw : 0, block = Math.pow(1 - keep, 1.4) * (dw ? Math.max(0, Math.min(1, (lce - lwa - 0.02) / 0.1)) : 0) * 0.88, dom = dw ? 1 + 4 * Math.max(0, lwa - lce) : 1;   // close values mix evenly; a darker ink takes over (black over red completely), a lighter one is held back
       let add = a * (1 - block); const d0 = D[i + 3] / 255, tint = add * dom + a * block * 0.12;
       if (T.str < 1) { add *= 0.35 + 0.65 * T.str; const sat = 1 - keep; if (sat > T.str) add *= 0.1 * T.str; }   // a thin wash builds slowly past its own tone
       if (add <= 0.0005) continue;
-      if (d0 > 0.004) { let t = Math.min(0.85, tint / (d0 + tint)); const sat0 = 1 - keep, cap = block > 0.4 ? 0.051 : sat0 > 0.7 && lc > lwa - 0.15 ? -Math.log(1 - Math.min(0.995, 0.65 + 2.3 * Math.max(0, lwa - lc))) : 0;   /* saturated skin: a lighter colour shifts it about 5% at most; one close in value mixes in, from 65% up to all but completely the darker it is (black over red) */
+      if (d0 > 0.004) { let t = Math.min(0.85, tint / (d0 + tint)); const sat0 = 1 - keep, cap = block > 0.4 ? 0.051 : sat0 > 0.7 && (lc > lwa - 0.15 || opp > 0.05) ? -Math.log(1 - Math.min(0.995, 0.65 + 2.3 * Math.max(0, lwa - lc))) : 0;   /* saturated skin: a lighter colour shifts it about 5% at most; one close in value mixes in, from 65% up to all but completely the darker it is (black over red) */
         if (cap) { const p = y * W + x, used = (LIT ||= new Uint16Array(W * H))[p] / 1000; t = Math.min(t, Math.max(0, cap - used)); LIT[p] = Math.min(65535, Math.round((used + t) * 1000)); }
-        for (let c = 0; c < 3; c++) D[i + c] = Math.floor(255 * Math.exp(-(ALOG[D[i + c]] * (1 - t) + Ac[c] * t)) + Math.random()); }   /* rounded at random, not to the nearest, so shifts smaller than a step still add up evenly on every channel */
+        const m = Math.min(0.5, t * opp * 1.4); for (let c = 0; c < 3; c++) D[i + c] = Math.floor(255 * Math.exp(-(ALOG[D[i + c]] * (1 - t - m) + Ac[c] * t + MUD[c] * m)) + Math.random()); }   /* rounded at random, not to the nearest, so shifts smaller than a step still add up evenly on every channel */
       else { D[i] = col[0]; D[i + 1] = col[1]; D[i + 2] = col[2]; }
       D[i + 3] = Math.min(255, Math.floor(D[i + 3] + add * 255 + Math.random()));
     }
