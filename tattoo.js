@@ -79,6 +79,7 @@ const mgLab = (c) => { const L = c.map(v => v <= 0.04045 ? v / 12.92 : Math.pow(
   return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))]; };
 const mgDE = (a, b) => { const p = mgLab(a), q = mgLab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
 const mgHue = (c) => { const [r, g, b] = c, mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 0.03) return { h: 0, s: 0 }; const H = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return { h: (H * 60 + 360) % 360, s: d / mx }; };
+const MG_EMPTY = 5;   /* seconds taken off the clock for emptying the cup */
 function ttMixGame() {
   const best = (() => { try { return JSON.parse(Settings.get('tt_mixgame', '{}')); } catch { return {}; } })();
   const G = { score: 0, streak: 0, accSum: 0, round: null, over: false }, o = document.createElement('div'); o.id = 'tt-mg'; o.className = 'tt-mg';
@@ -98,7 +99,7 @@ function ttMixGame() {
         <div class="tt-mgcup" data-mgcup style="${cupStyle()}"><i></i><span data-mgpc>0%</span></div></div>
       <div class="tt-mginks">${R.inks.map((c, i) => `<button class="tt-cap" data-mgi="${i}" style="--c:${ttToHex(c)}" aria-label="Ink ${i + 1}"><i></i></button>`).join('')}</div>
       <p class="tt-mgmsg" data-mgmsg>Hold an ink to pour it in. Fill at least 80%, then Done.${G.streak < MG_FREE_ROUNDS ? ' Overfilling is free for now; from round 5 it costs points.' : ''}</p>
-      <div class="tt-pgrp" style="display:flex;justify-content:center"><button class="btn small" data-mg="empty">Empty the cup</button><button class="btn small primary" data-mg="done">Done</button></div></div>`;
+      <div class="tt-pgrp" style="display:flex;justify-content:center"><button class="btn small" data-mg="empty" data-tip="Pour it away and start the mix again. Costs 5 seconds">Empty the cup (−5s)</button><button class="btn small primary" data-mg="done">Done</button></div></div>`;
     tick(); };
   let raf = 0, pour = null;
   const tick = () => { cancelAnimationFrame(raf); const step = (now) => { const R = G.round; if (!R || R.done || G.over) return; const left = R.t - (now - R.t0) / 1000, el = o.querySelector('[data-mgt]');
@@ -132,7 +133,7 @@ function ttMixGame() {
       <div class="stat muted"><span>Your best</span><span>${nb.score} points · ${nb.streak} streak · ${nb.acc}% accuracy</span></div>
       <div class="tt-pgrp" style="display:flex;justify-content:center;margin-top:10px"><button class="btn" data-mg="quit">Close</button><button class="btn primary" data-mg="again">Play again</button></div></div>`; };
   const intro = () => { o.innerHTML = `<div class="tt-mgbox"><div class="tt-mghead"><b>You found it: Colour match</b><button class="mini" data-mg="quit" aria-label="Close">✕</button></div>
-    <p style="font-size:13px;line-height:1.45">You get a few random inks, plus black and white. Hold them to pour into the empty cup and match the colour in the box. Fill it at least 80% and press Done before the timer runs out.</p>
+    <p style="font-size:13px;line-height:1.45">You get a few random inks, plus black and white. Hold them to pour into the empty cup and match the colour in the box. Fill it at least 80% and press Done before the timer runs out. Poured the wrong ink? Empty the cup and start the mix again, for 5 seconds off the clock.</p>
     <p style="font-size:13px;line-height:1.45">Close enough scores points, too far off is game over. For the first four rounds you can overfill a little for free; from round five, wasted ink is paid for with your points. You start with a minute and a half, and every round the timer gets a little shorter, down to 20 seconds.</p>
     <div class="stat muted"><span>Your best</span><span>${best.score || 0} points · ${best.streak || 0} streak · ${best.acc || 0}% accuracy</span></div>
     <div class="tt-pgrp" style="display:flex;justify-content:center;margin-top:10px"><button class="btn primary" data-mg="start">Start</button></div></div>`; };
@@ -142,7 +143,7 @@ function ttMixGame() {
     if (a === 'quit') { cancelAnimationFrame(raf); G.over = true; ['pointerup', 'pointercancel'].forEach(ev => removeEventListener(ev, stop)); return o.remove(); }
     if (a === 'start' || a === 'next') return deal();
     if (a === 'again') { Object.assign(G, { score: 0, streak: 0, accSum: 0, over: false }); return deal(); }
-    if (a === 'empty' && G.round && !G.round.done) { G.round.c = null; G.round.v = 0; const cup = o.querySelector('[data-mgcup]'); cup.setAttribute('style', cupStyle()); o.querySelector('[data-mgpc]').textContent = '0%'; return; }
+    if (a === 'empty' && G.round && !G.round.done) { if (!G.round.v) return; G.round.t0 -= MG_EMPTY * 1000; G.round.c = null; G.round.v = 0; const m = o.querySelector('[data-mgmsg]'); if (m) m.textContent = 'Cup emptied. That cost you ' + MG_EMPTY + ' seconds.'; const cup = o.querySelector('[data-mgcup]'); cup.setAttribute('style', cupStyle()); o.querySelector('[data-mgpc]').textContent = '0%'; return; }
     if (a === 'done' && G.round && !G.round.done) return done(); });
   intro(); document.body.appendChild(o);
 }
