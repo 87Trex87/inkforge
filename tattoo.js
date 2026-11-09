@@ -517,7 +517,7 @@ const TT_LESSONS = [
       { title: 'Line it in red', pic: { needles: ['7RL', '11M1'] }, text: 'A triangle 1.5 cm wide and 5 cm long. Line it in red with a #12 7RL at about 7.5 volts. The lesson starts you on it, set up.',
         more: 'For a really sharp point, give the line a slight whip as you pull out of the corner, so it tapers off a little.' },
       { title: 'The shadow at the point', text: 'Change to the #10 11 magnum. Mix black and red for the shadow and start at the sharp point: whip into it, angling and tilting the magnum to squeeze into the corner without going over the line. Whip it out to a little past a quarter of the way along.',
-        more: 'This starts the same way as the grey wash: dark at the end, whipped out so it fades.' },
+        more: 'This starts the same way as the grey wash: dark at the end, whipped out so it fades. Tip: in the magnum angle settings, turn off "Follows the way the pen leans" so the magnum stays in one position, then turn the page with two fingers until the point sits where you can squeeze the magnum into it comfortably.' },
       { title: 'Pack the red on top', pic: { motion: true }, text: 'Rinse, load red, and pack it over the shadow and on past it, so everything is nicely saturated. Do not overwork it.',
         more: 'Pack with tight overlapping ovals and blend the red into the shadow rather than stopping at a hard edge.' },
       { title: 'Optional: deepen the point', text: 'With the red in, you can switch to straight black and lightly brush it onto the point, over your black and red mix, until you see a gradient. Do not go crazy.',
