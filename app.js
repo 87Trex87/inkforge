@@ -7311,6 +7311,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 330, when: '2026-11-09T12:50', added: ['Open InkForge in a second tab and a Take over button moves it there. The old tab stops and tells you it moved.'], test: [] },
   { build: 328, when: '2026-11-09T12:35', added: ['Darker colours now dominate: black packed over red goes black, blue over red mixes but blue wins. Close values mix evenly.', 'Stipple shading, Whip shading and Colour blend now have a heat map of your passes.', 'Colour blend no longer marks down a smooth fade that spreads over a longer stretch.'],
     test: ['Pack black over red, and blue over red. Does the darker colour win?'] },
   { build: 327, when: '2026-11-09T11:31', added: ['Packing a lighter colour over saturated darker ink now only lightens it slightly, however many passes, like real skin. Extra passes just work the skin.'],
@@ -7393,7 +7394,7 @@ let newsAt = 0;
 const newsHtml = () => { if (Settings.get('news_off') === '1') return ''; const s = newsState(), L = newsList(); if (!L.length) return ''; newsAt = Math.max(0, Math.min(L.length - 1, newsAt)); const n = L[newsAt]; if (s.hidden) return `<button class="news-mini" data-news="show">Build ${L[0].build}: what's new</button>`;
   return `<div class="card news-card" id="news-card"><div class="news-top"><h2>What's new in build ${n.build}</h2><button class="btn small" data-news="hide">Hide</button><button class="btn small" data-news="del">Delete</button></div>
     <div class="muted news-when">${esc(newsWhen(n.when))}</div>
-    ${n.added.length ? `<ul class="news-list">${n.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}<div class="lbl">Things to test</div>
+    ${n.added.length ? `<ul class="news-list">${n.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}${n.test.length ? '<div class="lbl">Things to test</div>' : ''}
     ${n.test.map((x, i) => `<label class="news-todo"><input type="checkbox" data-news-do="${n.build}:${i}" ${s.done[n.build]?.[i] ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}
     <div class="row news-nav"><button class="btn small" data-news="older" ${newsAt >= L.length - 1 ? 'disabled' : ''} aria-label="Older update">‹ Older</button><span class="muted">${newsAt + 1} of ${L.length}</span><button class="btn small" data-news="newer" ${newsAt ? '' : 'disabled'} aria-label="Newer update">Newer ›</button><span style="flex:1"></span><button class="btn small" data-news="sticky">Make sticky note</button></div></div>`; };
 const newsRefresh = () => { const c = document.querySelector('#news-card, .news-mini'), t = document.createElement('div'); t.innerHTML = newsHtml(); if (c) c.replaceWith(...t.childNodes); };
