@@ -2109,8 +2109,13 @@ TT.open = async (el, id) => {
   function tally() { const el = $('#tt-tally'); if (!el) return; const c = EX?.cur; if (!c) { el.hidden = true; return; } el.hidden = false; const T = exList()[EX.i] || {}, free = T.crashFree ?? 0;
     const it = [['Crashes', c.crash || 0, (c.crash || 0) > free], ['Blowouts', c.blow || 0, (c.blow || 0) > (T.maxBlow ?? 0)], ['Overworked', c.over || 0, (c.over || 0) > 0], ['Bumps', c.bumps || 0, (c.bumps || 0) > 0]];
     el.innerHTML = it.map(([n, v, bad]) => `<span class="${bad ? 'bad' : v ? 'warn' : ''}">${n} <b>${v}</b></span>`).join(''); }
-  const chkRow = () => `<div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="${st.check ? 'on' : ''}" data-chk data-tip="Check the skin: the cursor reads the skin inside its circle instead of tattooing">Check</button>
+  const chkRow = () => `<div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="${st.check ? 'on' : ''}" data-chk data-tip="Check the skin: the cursor reads the skin inside its circle instead of tattooing">Check</button>
     <input type="range" min="2" max="30" step="1" value="${st.checkR}" data-chkr aria-label="Check circle size" ${st.check ? '' : 'hidden'}><em>${st.check ? st.checkR + ' mm' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
+  /* The eye: held down, the piece shows as healed; let go and it is back as it was. */
+  let peekWas = null; const peekEnd = () => { if (peekWas == null) return; st.view = peekWas; peekWas = null; st.viewC = null; drawView(); paint(); meterEl.querySelector('[data-peek]')?.classList.remove('on'); };
+  meterEl.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-peek]'); if (!b || peekWas != null) return; e.preventDefault(); b.setPointerCapture?.(e.pointerId); peekWas = st.view; st.view = 'healed'; st.viewC = null; b.classList.add('on'); drawView(); paint(); });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => meterEl.addEventListener(ev, peekEnd));
+  meterEl.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-peek]')) e.preventDefault(); });
   meterEl.addEventListener('click', (e) => { if (!e.target.closest('[data-chk]')) return; st.check = !st.check; meterBuild(); meter(lastM); drawCur(); });
   meterEl.addEventListener('input', (e) => { if (e.target.matches('[data-smooth]')) { st.smooth = +e.target.value; st.dirty = true; e.target.nextElementSibling.textContent = st.smooth + '%'; return; }
     if (!e.target.matches('[data-chkr]')) return; st.checkR = +e.target.value; e.target.nextElementSibling.textContent = st.checkR + ' mm'; drawCur(); });
@@ -2157,7 +2162,7 @@ TT.open = async (el, id) => {
     else flag(`Undo: −${UNDO_PTS} points`, true);
     st.dirty = true; exBar(); }
   function exLaser() { if (!exLive()) return; EX.cur.laser = (EX.cur.laser || 0) + 1;
-    flag(`Laser on the skin: −${EX.cur.laser === 1 ? LASER_PTS[0] : LASER_PTS[1]} points`, true); st.dirty = true; exBar(); }
+    if (EX.lesson) flag('Laser used: this attempt fails', true); else flag(`Laser on the skin: −${EX.cur.laser === 1 ? LASER_PTS[0] : LASER_PTS[1]} points`, true); st.dirty = true; exBar(); }
 
   const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
   const drawCur = (e) => {
@@ -2365,6 +2370,7 @@ TT.open = async (el, id) => {
     }
     closePop();
     if (r === 'marker') { if (st.tool === 'marker' && !pop.hidden) return closePop(); if (typeof lsel !== 'undefined' && lsel) selCommit(); st.tool = 'marker'; sel(); drawCur(); return markerPop(b); }
+    if (r === 'erase' && EX?.lesson && EX.cur && st.tool !== 'erase') toast('Laser in a lesson: using it fails the attempt.', 3500);
     if (r === 'needle' || r === 'erase') { st.tool = r === 'erase' ? 'erase' : 'needle'; if (CHEAT) placeGuides(); return sel(); }
     if (r === 'text' && st.letSel) { st.tool = 'text'; sel(); return letPanel(); }
     if (r === 'path') { closePop(); if (lsel) selCommit(); if (snapE) snapFinish(); st.tool = 'path'; sel(); placeGuides(); return toast('Tap to place points. Drag a point to move it, tap it for a corner. Apply tattoos it with the needle.', 3200); }
@@ -3232,15 +3238,16 @@ TT.open = async (el, id) => {
     const pen = exPen();
     // A lesson can set a blowout limit; going over it fails outright, however good the line.
     const blowFail = T.maxBlow != null && blow > T.maxBlow;
+    const laserFail = !!EX.lesson && (EX.cur?.laser || 0) > 0;   // lessons don't allow the laser
     const crashes = EX.cur?.crash || 0, crashFail = false, crashPts = T.crashFree != null ? Math.max(0, crashes - T.crashFree) : 0;   // a free crash landing, then a point off each
     // Stipple: the point of the lesson is the gradient, so one that is uneven, patchy or barely there fails however clean the rest is.
     const gradFail = !!(T.stipple || T.wgrad) && !empty && (sc.gradient < 45 || sc.evenness < 55 || sc.smoothness < 50);
     const packFail = !!T.wgrad && !empty && +sc.packing >= 50, washFail = !!T.wgrad && !empty && sc.washes < 40;   // whip shading: no packing, and the lighter washes have to be used
     // A lesson can limit how many strokes the line is pulled in: each one over costs 3 points.
     const strokes = T.linePhase ? (EX.cur?.lineN || 0) : T.strokeNeedle ? (EX.cur?.tm?.by?.[T.strokeNeedle]?.strokes || 0) : Object.values(EX.cur?.tm?.by || {}).reduce((a, n) => a + (n.strokes || 0), 0), extraStrokes = T.maxStrokes ? Math.max(0, strokes - T.maxStrokes) : 0;
-    const total0 = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5) - pen.pts - extraStrokes * 3 - crashPts)), total = blowFail || crashFail || gradFail || packFail || washFail ? Math.min(59, total0) : total0;
+    const total0 = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5) - pen.pts - extraStrokes * 3 - crashPts)), total = blowFail || crashFail || gradFail || packFail || washFail || laserFail ? Math.min(59, total0) : total0;
     const th = composite(Math.min(1, 220 / W)).toDataURL('image/jpeg', 0.7), c = EX.cur || {};
-    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, blowFail, crashFail, crashPts, gradFail, packFail, washFail, crashes, strokesUsed: strokes, extraStrokes, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
+    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, blowFail, crashFail, crashPts, laserFail, gradFail, packFail, washFail, crashes, strokesUsed: strokes, extraStrokes, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
     if (EX.cur) EX.cur.scored = true;
     EX.res = EX.res.filter(r => r.id !== T.id); EX.res.push(res); st.dirty = true; exBar(res);
@@ -3357,7 +3364,7 @@ TT.open = async (el, id) => {
     ttBusy('Saving your attempt', 0.65); await ttFrame(); if (heat) { const jpg = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q)), prev = p.last, pg = await reportPage(T, res, heat, parts); p.last = { lesson: EX.lesson, ref: await Media.save(await jpg(composite(Math.min(1, 1600 / W)), 0.89), 'jpg'), heat: await Media.save(await jpg(heat.c, 0.91), 'jpg'), page: await Media.save(await jpg(pg, 0.87), 'jpg'), pw: pg.width, ph: pg.height, notes: heat.notes, total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, stats: statsTxt, pass };
       await Settings.set('tt_lessons', JSON.stringify(p)); for (const k of ['ref', 'heat', 'page']) if (prev?.[k] && prev[k] !== p.last[k]) await Media.release(prev[k]); }
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
-    o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : res.crashFail ? 'Failed: too many crash landings' : res.gradFail ? 'Failed: the gradient is uneven' : res.packFail ? 'Failed: that was packed, not whipped' : res.washFail ? 'Failed: the lighter washes were not used' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
+    o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : res.laserFail ? 'Failed: the laser was used' : res.crashFail ? 'Failed: too many crash landings' : res.gradFail ? 'Failed: the gradient is uneven' : res.packFail ? 'Failed: that was packed, not whipped' : res.washFail ? 'Failed: the lighter washes were not used' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats tt-lscats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
       ${T.crashFree != null && res.crashes ? `<p class="muted" style="margin:4px 0">${res.crashes} crash landing${res.crashes === 1 ? '' : 's'}: ${T.crashFree} free${res.crashPts ? `, −${res.crashPts} point${res.crashPts === 1 ? '' : 's'}` : ''}. Land and lift off on the move.</p>` : ''}${res.packFail ? '<p class="muted" style="margin:4px 0">The curved mag went round in circles: that is packing. In this lesson every stroke has to be a whip.</p>' : ''}${res.washFail ? '<p class="muted" style="margin:4px 0">The gradient has to be built from the washes in turn, Black down to Light, not from black alone.</p>' : ''}${res.gradFail ? '<p class="muted" style="margin:4px 0">The gradient has to run smoothly and evenly from dark to light to pass. Gradient needs 45, evenness 55 and smoothness 50.</p>' : ''}${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}${T.maxStrokes ? `<p class="muted" style="margin:4px 0">${res.strokesUsed} ${T.strokeNeedle ? T.strokeNeedle + ' ' : ''}stroke${res.strokesUsed === 1 ? '' : 's'} of ${T.maxStrokes} allowed${res.extraStrokes ? ` · −${res.extraStrokes * 3} points` : ''}</p>` : ''}
       ${ttTryBar()}${ttChips(statsTxt)}${ttShotHtml(purl, hurl, heat?.notes, !!(T.pack || T.tri || T.wgrad || T.stipple))}
@@ -3563,6 +3570,7 @@ function ttStyle() {
 .tt-meter { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5; width: min(300px, calc(100% - 220px)); min-width: 180px; padding: 6px 10px; border-radius: 12px;
   background: rgba(15,18,19,.82); display: grid; gap: 3px; }
 .tt-tally { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 3px; font: 600 10px var(--ui); color: var(--ink2); } .tt-tally b { color: var(--ink); } .tt-tally .warn b { color: #f2c14e; } .tt-tally .bad, .tt-tally .bad b { color: #ff7a66; }
+.tt-peek { width: 26px; height: 24px; padding: 0; display: grid; place-items: center; touch-action: none; } .tt-peek svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-peek.on { color: var(--teal); border-color: var(--teal); }
 .tt-chkrow { display: flex; align-items: center; gap: 8px; margin-top: 3px; } .tt-chkrow em { font: 600 10px var(--ui); color: var(--ink2); font-style: normal; min-width: 36px; }
 .tt-chkrow button { border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--ink); font: 700 11px var(--ui); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
 .tt-chkrow button.on { background: rgba(31,182,166,.25); color: var(--teal); border-color: var(--teal); } .tt-chkrow input { flex: 1; accent-color: var(--teal); }
