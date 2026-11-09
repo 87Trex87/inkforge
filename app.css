@@ -664,7 +664,7 @@ body.pfit .sheet-aftercare .f-bullet { break-inside: avoid; }
 .help { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); background: none;
         color: var(--ink2); font: 600 12px var(--ui); cursor: help; display: inline-grid; place-items: center; padding: 0; }
 #tip {
-  position: fixed; z-index: 50; max-width: 260px; padding: 8px 12px; border-radius: 10px;
+  position: fixed; z-index: 10000; max-width: 260px; padding: 8px 12px; border-radius: 10px;   /* above every window, dialog and panel */
   background: #e9e3d6; color: #0c0f10; font-size: 13px; line-height: 1.35; pointer-events: none;
   box-shadow: 0 8px 24px rgba(0,0,0,.5);
 }

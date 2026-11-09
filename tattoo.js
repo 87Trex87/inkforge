@@ -2495,7 +2495,7 @@ TT.open = async (el, id) => {
             <div class="tt-pline"><span class="muted">Strength <b data-mixs>${Math.round(M.s * 100)}%</b></span><input class="in" data-ph value="${ttToHex(M.c)}" maxlength="7" aria-label="Colour code" data-tip="Type an exact colour code (the shortcut)"></div>
             <div class="tt-tipbox" data-tipbox>${esc(M.tip)}</div>
             <div class="tt-pgrp tt-pact"><button class="btn small" data-pe="from">Start over</button><button class="btn small primary" data-pe="use">Use for cap ${at + 1}</button></div></div></div>
-        <div class="tt-pfoot"><button class="tt-egg" data-pe="egg" data-tip="What's this?" aria-label="What's this?"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg></button>${fresh ? '' : '<button class="btn small danger" data-pe="delpal">Delete palette</button>'}<span style="flex:1"></span><button class="btn small" data-pe="share">Share file</button></div></div>`;
+        <div class="tt-pfoot"><button class="tt-egg" data-pe="egg" data-tip="What's this?" aria-label="What's this?"><svg viewBox="0 0 24 24"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg></button>${fresh ? '' : '<button class="btn small danger" data-pe="delpal">Delete palette</button>'}<span style="flex:1"></span><button class="btn small" data-pe="share">Share file</button></div></div>`;
       sync(); };
     // the wheel: a pure colour to start from (fresh in the cup)
     o.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-pw]')) return; e.preventDefault(); push();
