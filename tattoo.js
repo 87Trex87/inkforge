@@ -993,14 +993,18 @@ TT.open = async (el, id) => {
   const TS = 4, tw = Math.ceil(W / TS), th = Math.ceil(H / TS), TR = new Float32Array(tw * th), TP = new Float32Array(tw * th), THit = new Float64Array(tw * th), HC = new Float32Array(tw * th);   // HC: needle hits landed on each cell, however dark it already looks
   // Bumps: little red pimples where the needle went too deep or the machine ran too hard (fresh skin only).
   const BU = new Float32Array(tw * th);
+  /* Skin memory: every bit of work a spot has taken, never healing. Worked skin gets irritated faster each time it is
+     gone over again (WK_GAIN), and skin already full of ink takes damage faster still (WK_INK). Settled redness
+     doesn't fully clear from skin that has been worked a lot either. */
+  const WK = new Float32Array(tw * th), WK_GAIN = 2, WK_INK = 0.6, WK_KEEP = 0.5;
   const buAdd = (p, v) => { if (CHEAT) return; const i = Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS))); BU[i] = Math.min(1, BU[i] + v); trDirty = true; };
   const blowC = document.createElement('canvas'); blowC.width = Math.ceil(W / 2); blowC.height = Math.ceil(H / 2); const bx = blowC.getContext('2d');
   let trDirty = true, trT = 0; const told = {};
   const trAdd = (p, r, v) => { if (CHEAT) return;
-    const cx0 = p.x / TS, cy0 = p.y / TS, R2 = Math.max(1, r / TS), now = performance.now();
+    const cx0 = p.x / TS, cy0 = p.y / TS, R2 = Math.max(1, r / TS), now = performance.now(), px = Math.min(W - 1, Math.max(0, Math.round(p.x))), py = Math.min(H - 1, Math.max(0, Math.round(p.y))), inkHere = densAt((py * W + px) * 4);
     for (let y = Math.max(0, Math.floor(cy0 - R2)); y <= Math.min(th - 1, Math.ceil(cy0 + R2)); y++)
       for (let x2 = Math.max(0, Math.floor(cx0 - R2)); x2 <= Math.min(tw - 1, Math.ceil(cx0 + R2)); x2++) {
-        const f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (f > 0) { const c = y * tw + x2; TR[c] += v * f; if (TR[c] > TP[c]) TP[c] = TR[c]; THit[c] = now; } }
+        const f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (f > 0) { const c = y * tw + x2, dv = v * f * (1 + WK_GAIN * WK[c] + WK_INK * inkHere); TR[c] += dv; WK[c] += dv * WK_KEEP; if (TR[c] > TP[c]) TP[c] = TR[c]; THit[c] = now; } }
     trDirty = true;
   };
   /* Skin settles once the needle moves away: after a few seconds' rest, redness and swelling halve about every 30 seconds.
@@ -1010,7 +1014,7 @@ TT.open = async (el, id) => {
   let healT = performance.now();
   const healId = setInterval(() => { if (!cv.isConnected) return clearInterval(healId); if (CHEAT) return; const now = performance.now(), dt = now - healT; healT = now; if (document.hidden) return;
     const k = 1 - Math.pow(0.5, dt / HEAL_HALF); let moved = 0;
-    for (let i = 0; i < TR.length; i++) { const v = TR[i]; if (v <= 0 || now - THit[i] < HEAL_REST) continue; const fl = healFloor(TP[i]); if (v <= fl) continue; const nv = v - (v - fl) * k; TR[i] = nv < 0.005 ? 0 : nv; moved = Math.max(moved, v - nv);
+    for (let i = 0; i < TR.length; i++) { const v = TR[i]; if (v <= 0 || now - THit[i] < HEAL_REST) continue; const fl = Math.max(healFloor(TP[i]), Math.min(0.5, WK[i] * 0.3)); if (v <= fl) continue; const nv = v - (v - fl) * k; TR[i] = nv < 0.005 ? 0 : nv; moved = Math.max(moved, v - nv);
       if (BU[i] && TP[i] < 1) BU[i] = Math.max(0, BU[i] - k * 0.8); }
     if (moved > 0.002) { trDirty = true; if (!pen && st.view === 'work') paint(); } }, 2000);
   const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
@@ -1068,7 +1072,7 @@ TT.open = async (el, id) => {
   };
   { const bi = await loadImg(row.blow_ref); if (bi) bx.drawImage(bi, 0, 0, blowC.width, blowC.height);
     const ti = await loadImg(row.skin_ref); if (ti) { const c = document.createElement('canvas'); c.width = tw; c.height = th; const g = c.getContext('2d'); g.drawImage(ti, 0, 0, tw, th);
-      if (meta.hc) { const hu = await Media.url(meta.hc), him = hu && await new Promise(r => { const i2 = new Image(); i2.onload = () => r(i2); i2.onerror = () => r(null); i2.src = hu; }); if (him) { const hc = document.createElement('canvas'); hc.width = tw; hc.height = th; const hg = hc.getContext('2d'); hg.imageSmoothingEnabled = false; hg.drawImage(him, 0, 0, tw, th); const hd = hg.getImageData(0, 0, tw, th).data; for (let i = 0; i < HC.length; i++) HC[i] = Math.round(Math.pow(2, hd[i * 4] / 20) - 1); } }
+      if (meta.hc) { const hu = await Media.url(meta.hc), him = hu && await new Promise(r => { const i2 = new Image(); i2.onload = () => r(i2); i2.onerror = () => r(null); i2.src = hu; }); if (him) { const hc = document.createElement('canvas'); hc.width = tw; hc.height = th; const hg = hc.getContext('2d'); hg.imageSmoothingEnabled = false; hg.drawImage(him, 0, 0, tw, th); const hd = hg.getImageData(0, 0, tw, th).data; for (let i = 0; i < HC.length; i++) { HC[i] = Math.round(Math.pow(2, hd[i * 4] / 20) - 1); if (meta.wk) WK[i] = hd[i * 4 + 1] / 64; } } }
       const d = g.getImageData(0, 0, tw, th).data; for (let i = 0; i < TR.length; i++) { TR[i] = d[i * 4] / 255 * 2; TP[i] = Math.max(TR[i], d[i * 4 + 1] / 255 * 2); if (meta.bu) BU[i] = d[i * 4 + 2] / 255; } } }
   let refs = (meta.refs || []).filter(Boolean), refSel = null;
   const EX = meta.exam || null;
@@ -1079,8 +1083,8 @@ TT.open = async (el, id) => {
   /* An undo step is the layer and the skin before a change. Taken whole when a stroke starts, then cut down to the
      patch the stroke touched when it ends: whole copies of a big page are ~20 MB each and could run a tablet out of
      memory. `rc`: the patch in page px (none: the whole page). */
-  const state = (key, rc, hi) => rc ? { key, rc, data: L[key].getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h), hi: hi ? L.high.getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h) : null, tr: TR.slice(), tp: TP.slice(), bu: BU.slice(), blow: bx.getImageData(rc.x >> 1, rc.y >> 1, (rc.w >> 1) + 2, (rc.h >> 1) + 2) }
-    : { key, data: L[key].getContext('2d').getImageData(0, 0, W, H), hi: hi ? L.high.getContext('2d').getImageData(0, 0, W, H) : null, tr: TR.slice(), tp: TP.slice(), bu: BU.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) };
+  const state = (key, rc, hi) => rc ? { key, rc, data: L[key].getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h), hi: hi ? L.high.getContext('2d').getImageData(rc.x, rc.y, rc.w, rc.h) : null, tr: TR.slice(), tp: TP.slice(), wk: WK.slice(), bu: BU.slice(), blow: bx.getImageData(rc.x >> 1, rc.y >> 1, (rc.w >> 1) + 2, (rc.h >> 1) + 2) }
+    : { key, data: L[key].getContext('2d').getImageData(0, 0, W, H), hi: hi ? L.high.getContext('2d').getImageData(0, 0, W, H) : null, tr: TR.slice(), tp: TP.slice(), wk: WK.slice(), bu: BU.slice(), blow: bx.getImageData(0, 0, blowC.width, blowC.height) };
   const cropID = (src, x, y, w, h) => { const out = new ImageData(w, h), sw = src.width;
     for (let r = 0; r < h; r++) { const from = ((y + r) * sw + x) * 4; out.data.set(src.data.subarray(from, from + w * 4), r * w * 4); } return out; };
   const cropTop = (box) => { const h = hist[hist.length - 1]; if (!h || h.rc) return;
@@ -2274,7 +2278,7 @@ TT.open = async (el, id) => {
   const undoTo = (h) => { L[h.key].getContext('2d').putImageData(h.data, h.rc?.x || 0, h.rc?.y || 0); syncIn(h.key); touched.add(h.key);
     if (h.more) for (const m of h.more) { L[m.key].getContext('2d').putImageData(m.data, h.rc?.x || 0, h.rc?.y || 0); syncIn(m.key); touched.add(m.key); }
     if (h.hi) { L.high.getContext('2d').putImageData(h.hi, h.rc?.x || 0, h.rc?.y || 0); syncIn('high'); touched.add('high'); }
-    if (h.tr) { TR.set(h.tr); if (h.tp) TP.set(h.tp); trDirty = true; } if (h.bu) BU.set(h.bu); if (h.blow) bx.putImageData(h.blow, h.rc ? h.rc.x >> 1 : 0, h.rc ? h.rc.y >> 1 : 0); st.dirty = true; st.viewC = null; paint(); };
+    if (h.tr) { TR.set(h.tr); if (h.tp) TP.set(h.tp); if (h.wk) WK.set(h.wk); trDirty = true; } if (h.bu) BU.set(h.bu); if (h.blow) bx.putImageData(h.blow, h.rc ? h.rc.x >> 1 : 0, h.rc ? h.rc.y >> 1 : 0); st.dirty = true; st.viewC = null; paint(); };
   const swap = (from, to) => { if (pen) return true; if (snapE) snapFinish(); if (lsel) { selCancel(); return true; }   // undo while something floats: put it back where it was
     const h = from.pop(); if (!h) return false; const s2 = state(h.key, h.rc, !!h.hi); if (h.more) s2.more = h.more.map(m => ({ key: m.key, data: L[m.key].getContext('2d').getImageData(h.rc?.x || 0, h.rc?.y || 0, h.rc?.w || W, h.rc?.h || H) })); to.push(s2); undoTo(h); return true; };
   const undo = () => { if (!swap(hist, fut)) return toast('Nothing to undo.'); exUndo(); };
@@ -2776,13 +2780,13 @@ TT.open = async (el, id) => {
     const tc = document.createElement('canvas'); tc.width = tw; tc.height = th; const tg = tc.getContext('2d'), ti = tg.createImageData(tw, th);
     for (let i = 0; i < TR.length; i++) { const v = Math.min(255, Math.round(TR[i] / 2 * 255)); ti.data[i * 4] = v; ti.data[i * 4 + 1] = Math.min(255, Math.round(TP[i] / 2 * 255)); ti.data[i * 4 + 2] = Math.round(BU[i] * 255); ti.data[i * 4 + 3] = 255; }
     tg.putImageData(ti, 0, 0);
-    let hcRef = null; if (HC.some(v => v > 0)) { const hc = document.createElement('canvas'); hc.width = tw; hc.height = th; const hg = hc.getContext('2d'), hi = hg.createImageData(tw, th); for (let i = 0; i < HC.length; i++) { const v = Math.min(255, Math.round(20 * Math.log2(1 + HC[i]))); hi.data[i * 4] = hi.data[i * 4 + 1] = hi.data[i * 4 + 2] = v; hi.data[i * 4 + 3] = 255; } hg.putImageData(hi, 0, 0); hcRef = await Media.save(await blobOf(hc), 'png'); }
+    let hcRef = null; if (HC.some(v => v > 0)) { const hc = document.createElement('canvas'); hc.width = tw; hc.height = th; const hg = hc.getContext('2d'), hi = hg.createImageData(tw, th); for (let i = 0; i < HC.length; i++) { const v = Math.min(255, Math.round(20 * Math.log2(1 + HC[i]))); hi.data[i * 4] = hi.data[i * 4 + 2] = v; hi.data[i * 4 + 1] = Math.min(255, Math.round(WK[i] * 64)); hi.data[i * 4 + 3] = 255; } hg.putImageData(hi, 0, 0); hcRef = await Media.save(await blobOf(hc), 'png'); }
     const skinRef = TR.some(v => v > 0.004) ? await Media.save(await blobOf(tc), 'png') : null, blowRef = await Media.save(await blobOf(blowC), 'png');
     const tlDrop = [];
     tlDrop.push(...TL.refs.splice(0));
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
+        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -3011,7 +3015,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0)); LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
