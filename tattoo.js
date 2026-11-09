@@ -69,6 +69,12 @@ function ttMix(a, b, t) {
 // Grey wash: black ink thinned with water, not mixed with white; the strength is how much pigment it carries.
 const TT_WASH = [['Black', 1], ['Dark', 0.55], ['Mid', 0.3], ['Light', 0.14]];
 const TT_CAPS = ['#141414', '#5a5a5a', '#b3261e', '#f2c21b', '#1f4fa8', '#2e7d3b', '#6b3f22', '#c2185b', '#fbfbf8'];   // white stays last; a new cap goes in just before it
+// Built-in ink palettes (the standard one is the caps above). Each cap: colour and strength (below 1: diluted).
+const TT_PALS = [['default', 'Standard', TT_CAPS],
+  ['oldschool', 'Old school', ['#141414', '#b3261e', '#e8b21a', '#1f6b3a', '#6b3f22', '#fbfbf8']],
+  ['skin', 'Skin tones', ['#f6dcc6', '#eac2a2', '#d9a27c', '#c08560', '#9c6644', '#7a4b31', '#5a3423', '#3b2219']],
+  ['pgrey', 'Pastel greys', ['#ebe7e3', '#d9d4cf', '#c4beb8', '#d3d9de', '#bcc5cc', '#a9a5a1', '#908b87', '#fbfbf8']],
+  ['pastel', 'Pastel colours', ['#f4b6c2', '#e8a0bf', '#c9b6e4', '#aedff7', '#b8e6c9', '#fff1a8', '#ffd1a9', '#fbfbf8']]].map(([id, name, cs]) => ({ id, name, caps: cs.map(c => ({ c, s: 1 })) }));
 // Lettering fonts (the first is the app's own blackletter-style display face).
 const TT_FONTS = [["'Pirata One', serif", 'Old English'], ["'Brush Script MT', 'Segoe Script', cursive", 'Script'], ["Georgia, 'Times New Roman', serif", 'Serif'], ["Impact, 'Arial Black', sans-serif", 'Bold'], ["'Courier New', monospace", 'Type'], ["Arial, sans-serif", 'Plain']];
 const TT_SKINS = [['Light', '#f1d3bd'], ['Fair', '#e2b493'], ['Medium', '#c68c63'], ['Tan', '#a86b45'], ['Brown', '#7b4a2c'], ['Deep', '#4e2f1e']];
@@ -930,7 +936,7 @@ TT.open = async (el, id) => {
   const MKP = (() => { try { return JSON.parse(Settings.get('tt_mk', 'null')); } catch { return null; } })();
   let lastVk = '';   // the view the guides were last placed for
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
-    ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, caps: meta.caps ? (meta.caps.length < TT_CAPS.length ? [...meta.caps.slice(0, -1), ...TT_CAPS.slice(meta.caps.length - 1, -1), meta.caps[meta.caps.length - 1]] : meta.caps) : [...TT_CAPS] /* a piece saved before a cap was added gets it too, in before its white */, panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
+    ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, capS: meta.capS || null, pal: meta.pal || 'default', caps: meta.caps ? (meta.caps.length < TT_CAPS.length ? [...meta.caps.slice(0, -1), ...TT_CAPS.slice(meta.caps.length - 1, -1), meta.caps[meta.caps.length - 1]] : meta.caps) : [...TT_CAPS] /* a piece saved before a cap was added gets it too, in before its white */, panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? TT_STRETCH, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 75, magTilt: meta.magTilt ?? true, rot: meta.rot || 0 };
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
      saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
@@ -2307,14 +2313,14 @@ TT.open = async (el, id) => {
   /* ---------- Ink caps: hold to dip (the longer, the more of that colour), tap the cup to rinse ---------- */
   const tray = $('#tt-tray');
   const drawTray = () => {
-    tray.innerHTML = `<button class="tt-set" data-set data-tip="Switch between colour inks and grey wash" aria-label="Ink set">${st.wash ? 'Wash' : 'Inks'}</button>
+    tray.innerHTML = `<button class="tt-set" data-set data-tip="Ink palettes and grey wash" aria-label="Ink palettes">${st.wash ? 'Wash' : 'Inks'}</button>
       <button class="tt-cup" data-rinse data-tip="Rinse: clean the needle" aria-label="Rinse"></button>
       ${st.wash ? TT_WASH.map(([n, s], i) => `<button class="tt-cap tt-wcap" data-wash="${i}" style="--c:rgba(20,20,20,${s})" data-tip="${n} wash" aria-label="${n} wash"><i></i></button>`).join('')
-        : st.caps.map((c, i) => `<button class="tt-cap" data-cap="${i}" style="--c:${c}" aria-label="Ink cap"><i></i></button>`).join('')}
+        : st.caps.map((c, i) => { const s = st.capS?.[i] ?? 1; return `<button class="tt-cap" data-cap="${i}" style="--c:${c};--o:${Math.max(0.12, s)}" aria-label="Ink cap"${s < 1 ? ` data-tip="Diluted to ${Math.round(s * 100)}%"` : ''}><i></i>${s < 1 ? `<em>${Math.round(s * 100)}</em>` : ''}</button>`; }).join('')}
       <button class="tt-cup tt-dil" data-dilute data-tip="Dilute: hold to thin the ink on the needle (keeps its colour, only lighter)" aria-label="Dilute"></button>
       <button class="tt-load" id="tt-load" data-tip="Ink on the needle" aria-label="Ink on the needle"><i></i><span></span></button>
       ${st.wash ? '' : `<span class="tt-recent">${[0, 1, 2].map(i => { const r = st.recent[i]; return r ? `<button class="tt-cap tt-rcap" data-rc="${i}" style="--c:${ttToHex(r.c)};--o:${Math.max(0.15, r.s)}" data-tip="Your mix: hold to load this exact colour" aria-label="Recent colour"><i></i></button>` : '<span class="tt-rcap tt-rnone"></span>'; }).join('')}</span>`}
-      <button class="dz-ib tt-capedit ${st.capEdit ? 'on' : ''}" ${st.wash ? 'hidden' : ''} data-capedit data-tip="Change the ink colours" aria-label="Change ink colours"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/></svg></button>`;
+      <button class="dz-ib tt-capedit" ${st.wash || EX?.lesson ? 'hidden' : ''} data-capedit data-tip="Edit this palette" aria-label="Edit this palette"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/></svg></button>`;
     drawNeedleInk();
   };
   const drawNeedleInk = () => { const b = $('#tt-load'); if (!b) return; b.querySelector('i').style.background = st.ink.v > 0.01 ? ttToHex(st.ink.c) : 'transparent'; b.querySelector('i').style.opacity = st.ink.s ?? 1;
@@ -2325,11 +2331,9 @@ TT.open = async (el, id) => {
     const cap = e.target.closest('[data-cap], [data-wash], [data-dilute], [data-rc]'); if (!cap) return;
     const rc = cap.dataset.rc != null ? st.recent[+cap.dataset.rc] : null;
     // The dilute cup is clear water: it adds volume of the needle's own colour at no strength, so a hold thins it.
-    const dil = cap.dataset.dilute != null, i = +(cap.dataset.cap ?? cap.dataset.wash ?? 0), ws = dil ? 0 : rc ? rc.s : cap.dataset.wash != null ? TT_WASH[i][1] : 1;
-    if (st.capEdit && !st.wash && !dil && !rc) { const inp = document.createElement('input'); inp.type = 'color'; inp.value = st.caps[i];
-      inp.oninput = () => { st.caps[i] = inp.value; st.dirty = true; drawTray(); }; inp.click(); return; }
-    e.preventDefault(); const capW = rc ? rc.w : (() => { const c = ttHex(ws < 1 ? TT_CAPS[0] : st.caps[i]); return Math.min(...c) > 0.85 ? 1 : 0; })();   // a white cap
-    const col = dil ? st.ink.c : rc ? rc.c.slice() : ws < 1 ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1; SS.dips++;
+    const dil = cap.dataset.dilute != null, i = +(cap.dataset.cap ?? cap.dataset.wash ?? 0), isW = cap.dataset.wash != null, ws = dil ? 0 : rc ? rc.s : isW ? TT_WASH[i][1] : (st.capS?.[i] ?? 1);
+    e.preventDefault(); const capW = rc ? rc.w : (() => { const c = ttHex(isW || dil ? TT_CAPS[0] : st.caps[i]); return Math.min(...c) > 0.85 ? 1 : 0; })();   // a white cap
+    const col = dil ? st.ink.c : rc ? rc.c.slice() : isW ? ttHex(TT_CAPS[0]) : ttHex(st.caps[i]); cap.classList.add('dip'); let t0 = performance.now(); if (EX?.cur) EX.cur.dips = (EX.cur.dips || 0) + 1; SS.dips++;
     const step = (now) => { if (!dip) return; const dt = Math.min(0.1, (now - t0) / 1000); t0 = now;
       const a = dt * 0.9, frac = a / (st.ink.v + a);   // ink added this moment, and how much of the mix it is
       const wet = st.ink.v > 0.005; st.ink.c = wet ? ttMix(st.ink.c, col, frac) : col; st.ink.s = wet ? (st.ink.s ?? 1) * (1 - frac) + ws * frac : ws; st.ink.v = Math.min(1, st.ink.v + a);
@@ -2341,15 +2345,87 @@ TT.open = async (el, id) => {
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => tray.addEventListener(t, dipEnd));
   tray.addEventListener('click', (e) => {
     if (e.target.closest('[data-rinse]')) { st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; drawNeedleInk(); return toast('Needle rinsed.', 1200); }
-    if (e.target.closest('[data-set]')) { st.wash = !st.wash; st.capEdit = false; st.dirty = true; return drawTray(); }
-    if (e.target.closest('[data-capedit]')) { st.capEdit = !st.capEdit; toast(st.capEdit ? 'Tap a cap to change its colour. Tap the pencil again when done.' : 'Done changing colours.', 2200); return drawTray(); }
+    if (e.target.closest('[data-set]')) return palMenu(e.target.closest('[data-set]'));
+    if (e.target.closest('[data-capedit]')) { pop.dataset.k = ''; const b2 = document.createElement('button'); b2.dataset.paled = ''; pop.appendChild(b2); b2.click(); b2.remove(); return; }
   });
   tray.addEventListener('contextmenu', (e) => e.preventDefault());
+  /* ---------- Ink palettes ----------
+     A palette is up to 10 ink caps, each a colour and a strength (below 100% it is pre-diluted with water; the cap
+     shows the percentage). The built-in sets come with the app; your own are kept in the setting tt_pals, can be
+     shared as a file (Share sends it to Drive and the like) and brought into any piece. Lessons keep the standard
+     inks and grey wash, since they are graded against those. */
+  const PAL_MAX = 10;
+  const palMine = () => { try { const a = JSON.parse(Settings.get('tt_pals', '[]')); return Array.isArray(a) ? a : []; } catch { return []; } };
+  const palAll = () => [...TT_PALS, ...palMine()];
+  const palApply = (P) => { st.caps = P.caps.map(x => x.c); st.capS = P.caps.map(x => x.s ?? 1); st.pal = P.id; st.wash = false; st.dirty = true; closePop(); drawTray(); qsDraw(); toast(P.name, 1200); };
+  const palSave = async (P) => { const mine = palMine().filter(x => x.id !== P.id); mine.push(P); await Settings.set('tt_pals', JSON.stringify(mine)); };
+  const palDots = (P, n = 4) => `<span class="tt-pdots">${P.caps.slice(0, n).map(x => `<i style="background:${x.c};opacity:${Math.max(0.25, x.s ?? 1)}"></i>`).join('')}</span>`;
+  const palMenu = (at) => {
+    if (!pop.hidden && pop.dataset.k === 'pal') return closePop();
+    const L = EX?.lesson ? TT_PALS.slice(0, 1) : palAll(), cur = st.wash ? 'wash' : st.pal || 'default';
+    pop.dataset.k = 'pal'; pop.innerHTML = `<div class="gh">Inks</div>${L.map(P => `<button class="mi${cur === P.id ? ' on' : ''}" data-pal="${esc(P.id)}">${palDots(P)}<span>${esc(P.name)}</span></button>`).join('')}
+      <button class="mi${cur === 'wash' ? ' on' : ''}" data-pal="wash"><span class="tt-pdots">${TT_WASH.map(([, s]) => `<i style="background:rgba(20,20,20,${s})"></i>`).join('')}</span><span>Grey wash</span></button>
+      ${EX?.lesson ? '<p class="muted" style="font-size:11px;margin:4px 8px">Lessons use the standard inks.</p>' : `<i class="sep" style="display:block;height:1px;background:var(--line);margin:4px 6px"></i>
+      <button class="mi" data-palnew><span class="tt-pdots"><i style="background:none;border:1px dashed var(--ink2)"></i></span><span>New palette</span></button>
+      <button class="mi" data-paled><span class="tt-pdots"></span><span>${palMine().some(x => x.id === cur) ? 'Edit this palette' : 'Copy this palette to edit'}</span></button>
+      <button class="mi" data-palimp><span class="tt-pdots"></span><span>Import a palette file</span></button>`}`;
+    pop.hidden = false; const r = at.getBoundingClientRect(), sr = stage.getBoundingClientRect(); pop.style.left = (r.right - sr.left + 8) + 'px'; pop.style.top = Math.max(8, r.top - sr.top) + 'px'; };
+  pop.addEventListener('click', async (e) => {
+    const p = e.target.closest('[data-pal]')?.dataset.pal; if (p) { if (p === 'wash') { st.wash = true; st.dirty = true; closePop(); drawTray(); return qsDraw(); } const P = palAll().find(x => x.id === p); if (P) palApply(P); return; }
+    if (e.target.closest('[data-palnew]')) { closePop(); return palEdit({ id: 'p' + Date.now().toString(36), name: 'My palette', caps: [{ c: '#141414', s: 1 }] }, true); }
+    if (e.target.closest('[data-paled]')) { closePop(); const cur = palAll().find(x => x.id === (st.pal || 'default')) || TT_PALS[0], mine = palMine().some(x => x.id === cur.id);
+      return palEdit(mine ? JSON.parse(JSON.stringify(cur)) : { id: 'p' + Date.now().toString(36), name: 'My ' + cur.name.toLowerCase(), caps: JSON.parse(JSON.stringify(cur.caps)) }, !mine); }
+    if (e.target.closest('[data-palimp]')) { closePop(); const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,application/json';
+      inp.onchange = async () => { try { const j = JSON.parse(await inp.files[0].text()); if (!j.inkforge_palette || !Array.isArray(j.caps)) throw new Error('not an InkForge palette');
+        const P = { id: 'p' + Date.now().toString(36), name: String(j.name || 'Imported').slice(0, 40), caps: j.caps.slice(0, PAL_MAX).map(x => ({ c: /^#[0-9a-f]{6}$/i.test(x.c) ? x.c : '#141414', s: Math.max(0.05, Math.min(1, +x.s || 1)) })) };
+        await palSave(P); palApply(P); toast(`Imported "${P.name}".`); } catch (err) { toast('Could not import: ' + err.message, 3500); } }; inp.click(); } });
+  /* The palette editor: up to 10 caps in order; for the chosen cap a colour wheel with brightness, its dilution, and
+     mixing in another cap's colour. Save keeps it; Share sends the file on. */
+  const palEdit = (P, fresh) => { let at = 0, mixWith = P.caps.length > 1 ? 1 : 0, mixAmt = 0.5, hsv = null; const o = document.createElement('div'); o.id = 'tt-paled'; o.className = 'tt-tune';
+    o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:12px;background:rgba(0,0,0,.6)';
+    const toHsv = (h) => { const [r, g, b] = ttHex(h), mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; let H = 0; if (d) H = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return [(H * 60 + 360) % 360, mx ? d / mx : 0, mx]; };
+    const fromHsv = ([h, s, v]) => { const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); }; return ttToHex([f(5), f(3), f(1)]); };
+    const wheel = (cv) => { const g = cv.getContext('2d'), N = cv.width, im = g.createImageData(N, N), R = N / 2; for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const dx = x - R + 0.5, dy = y - R + 0.5, d = Math.hypot(dx, dy) / R, q = (y * N + x) * 4; if (d > 1) continue; const c = ttHex(fromHsv([(Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, d, hsv[2]])); im.data[q] = c[0] * 255; im.data[q + 1] = c[1] * 255; im.data[q + 2] = c[2] * 255; im.data[q + 3] = 255; }
+      g.putImageData(im, 0, 0); const a = hsv[0] * Math.PI / 180, px = R + Math.cos(a) * hsv[1] * R, py = R + Math.sin(a) * hsv[1] * R; g.lineWidth = 2; g.strokeStyle = '#fff'; g.beginPath(); g.arc(px, py, 6, 0, 7); g.stroke(); g.strokeStyle = '#000'; g.beginPath(); g.arc(px, py, 8, 0, 7); g.stroke(); };
+    const draw = () => { const C = P.caps[at]; hsv ||= toHsv(C.c);
+      o.innerHTML = `<div class="card tt-pale"><div class="row" style="align-items:center;gap:6px"><input class="in" data-pn value="${esc(P.name)}" maxlength="40" aria-label="Palette name" style="flex:1;font-weight:700"><button class="btn small" data-pe="cancel">Cancel</button><button class="btn small primary" data-pe="save">Save</button></div>
+        <div class="tt-pslots">${P.caps.map((x, i) => `<button class="tt-cap${i === at ? ' sel' : ''}" data-ps="${i}" style="--c:${x.c};--o:${Math.max(0.12, x.s)}" aria-label="Ink cap ${i + 1}"><i></i>${x.s < 1 ? `<em>${Math.round(x.s * 100)}%</em>` : ''}</button>`).join('')}${P.caps.length < PAL_MAX ? '<button class="tt-padd" data-pe="add" aria-label="Add an ink cap">+</button>' : ''}</div>
+        <div class="row tt-pord"><button class="btn small" data-pe="left" ${at ? '' : 'disabled'} aria-label="Move left">◀</button><button class="btn small" data-pe="right" ${at < P.caps.length - 1 ? '' : 'disabled'} aria-label="Move right">▶</button><span class="muted" style="flex:1;text-align:center;font-size:12px">Cap ${at + 1} of ${P.caps.length} (up to ${PAL_MAX})</span><button class="btn small danger" data-pe="del" ${P.caps.length > 1 ? '' : 'disabled'}>Remove</button></div>
+        <div class="tt-pcol"><canvas width="168" height="168" data-pw></canvas><div class="tt-pctl">
+          <label class="dz-sl"><span>Brightness</span><input type="range" min="0" max="100" value="${Math.round(hsv[2] * 100)}" data-pv></label>
+          <label class="dz-sl"><span>Strength <b>${Math.round(C.s * 100)}%</b></span><input type="range" min="5" max="100" step="5" value="${Math.round(C.s * 100)}" data-pd></label>
+          <div class="row" style="gap:6px;align-items:center"><span class="tt-pswatch" style="--c:${C.c};--o:${C.s}"></span><input class="in" data-ph value="${C.c}" maxlength="7" style="width:92px" aria-label="Colour code"></div>
+          <div class="lbl" style="margin-top:6px">Mix in</div>
+          <div class="row" style="gap:6px;align-items:center"><select class="in" data-pmw style="flex:1">${P.caps.map((x, i) => i === at ? '' : `<option value="${i}" ${i === mixWith ? 'selected' : ''}>Cap ${i + 1}</option>`).join('')}</select><button class="btn small" data-pe="mix" ${P.caps.length > 1 ? '' : 'disabled'}>Mix</button></div>
+          <label class="dz-sl"><span>Amount <b>${Math.round(mixAmt * 100)}%</b></span><input type="range" min="5" max="95" step="5" value="${Math.round(mixAmt * 100)}" data-pma></label></div></div>
+        <div class="row" style="gap:6px;margin-top:8px">${fresh ? '' : '<button class="btn small danger" data-pe="delpal">Delete palette</button>'}<span style="flex:1"></span><button class="btn small" data-pe="share">Share file</button></div></div>`;
+      wheel(o.querySelector('[data-pw]')); };
+    const setC = (hex, keepHsv) => { P.caps[at].c = hex; if (!keepHsv) hsv = toHsv(hex); draw(); };
+    o.addEventListener('pointerdown', (e) => { const cv = e.target.closest('[data-pw]'); if (!cv) return; const pick = (ev) => { const r = cv.getBoundingClientRect(), R = r.width / 2, dx = ev.clientX - r.left - R, dy = ev.clientY - r.top - R; hsv = [(Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, Math.min(1, Math.hypot(dx, dy) / R), hsv[2]]; setC(fromHsv(hsv), true); };
+      pick(e); const mv = (ev) => { const c2 = o.querySelector('[data-pw]'); if (c2) pick(ev); }, up = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); }; addEventListener('pointermove', mv); addEventListener('pointerup', up); });
+    o.addEventListener('input', (e) => { const t = e.target;
+      if (t.matches('[data-pv]')) { hsv[2] = +t.value / 100; P.caps[at].c = fromHsv(hsv); wheel(o.querySelector('[data-pw]')); o.querySelector('.tt-pswatch').style.setProperty('--c', P.caps[at].c); o.querySelector('[data-ph]').value = P.caps[at].c; o.querySelector(`[data-ps="${at}"]`).style.setProperty('--c', P.caps[at].c); }
+      if (t.matches('[data-pd]')) { P.caps[at].s = +t.value / 100; t.previousElementSibling.querySelector('b').textContent = t.value + '%'; const s = o.querySelector(`[data-ps="${at}"]`); s.style.setProperty('--o', Math.max(0.12, P.caps[at].s)); s.innerHTML = '<i></i>' + (P.caps[at].s < 1 ? `<em>${t.value}%</em>` : ''); o.querySelector('.tt-pswatch').style.setProperty('--o', P.caps[at].s); }
+      if (t.matches('[data-pma]')) { mixAmt = +t.value / 100; t.previousElementSibling.querySelector('b').textContent = t.value + '%'; }
+      if (t.matches('[data-pn]')) P.name = t.value.trim() || 'My palette'; });
+    o.addEventListener('change', (e) => { if (e.target.matches('[data-ph]') && /^#[0-9a-f]{6}$/i.test(e.target.value)) setC(e.target.value.toLowerCase()); if (e.target.matches('[data-pmw]')) mixWith = +e.target.value; });
+    o.addEventListener('click', async (e) => { const s = e.target.closest('[data-ps]'); if (s) { at = +s.dataset.ps; hsv = null; if (mixWith === at) mixWith = at ? 0 : 1; return draw(); }
+      const a = e.target.closest('[data-pe]')?.dataset.pe; if (!a) return;
+      if (a === 'add' && P.caps.length < PAL_MAX) { P.caps.push({ c: '#d23c3c', s: 1 }); at = P.caps.length - 1; hsv = null; return draw(); }
+      if (a === 'left' || a === 'right') { const j = at + (a === 'left' ? -1 : 1); [P.caps[at], P.caps[j]] = [P.caps[j], P.caps[at]]; at = j; return draw(); }
+      if (a === 'del' && P.caps.length > 1) { P.caps.splice(at, 1); at = Math.min(at, P.caps.length - 1); hsv = null; mixWith = at ? 0 : Math.min(1, P.caps.length - 1); return draw(); }
+      if (a === 'mix') { const other = P.caps[mixWith]; if (!other || mixWith === at) return; const c = ttMix(ttHex(P.caps[at].c), ttHex(other.c), mixAmt); P.caps[at].s = +(P.caps[at].s * (1 - mixAmt) + (other.s ?? 1) * mixAmt).toFixed(2); return setC(ttToHex(c)); }
+      if (a === 'cancel') return o.remove();
+      if (a === 'save') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; await palSave(P); o.remove(); palApply(P); return; }
+      if (a === 'share') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; const f = new File([JSON.stringify({ inkforge_palette: 1, name: P.name, caps: P.caps }, null, 1)], `${P.name.replace(/[^\w-]+/g, '-')}.inkpalette.json`, { type: 'application/json' }); return shareFiles([f], P.name); }
+      if (a === 'delpal') { if (!await ask(`Delete the palette "${P.name}"? Pieces keep the colours they already have.`)) return; await Settings.set('tt_pals', JSON.stringify(palMine().filter(x => x.id !== P.id))); if (st.pal === P.id) palApply(TT_PALS[0]); o.remove(); } });
+    draw(); document.body.appendChild(o); };
+
 
   /* ---------- Rail, needles menu and the side panel ---------- */
   new MutationObserver(() => { if (pop.hidden) return; const sh = stage.clientHeight; pop.style.maxHeight = (sh - 16) + 'px'; pop.style.overflowY = 'auto';
     if (pop.offsetTop + pop.offsetHeight > sh - 8) pop.style.top = Math.max(8, sh - pop.offsetHeight - 8) + 'px'; }).observe(pop, { childList: true, attributes: true, attributeFilter: ['hidden'] });
-  const closePop = () => { pop.hidden = true; if (adjS) adjEnd(false); };   // leaving colour adjustments unapplied puts them back
+  const closePop = () => { pop.hidden = true; pop.dataset.k = ''; if (adjS) adjEnd(false); };   // leaving colour adjustments unapplied puts them back
   const sel = (r) => $('#tt-rail').querySelectorAll('[data-r]').forEach(b => b.classList.toggle('on', b.dataset.r === r || (b.dataset.r === st.tool && !['layers', 'feel', 'refs'].includes(r))
     || (b.dataset.r === st.panel)));
   $('#tt-rail').onclick = (e) => {
@@ -2449,17 +2525,19 @@ TT.open = async (el, id) => {
   const QS_MAG = [['lean', 'Follows the way the pen leans'], ['offset', 'Offset angle'], ['roll', 'Stack tilt'], ...[0, 30, 45, 60, 90, 120, 135, 150].map(v => ['a' + v, `Angle ${v}°`])];
   const QS_TOOLS = [['needle', 'Tattoo'], ['erase', 'Laser'], ['marker', 'Skin marker'], ['rinse', 'Rinse the needle'], ['undo', 'Undo'], ['redo', 'Redo'], ['view', 'Preview: fresh, healed, 10 years'], ['peek', 'Hold to see it healed'], ['dmg', 'Skin damage map'], ['fit', 'Fit the skin to the screen'], ['refs', 'References'], ['layers', 'Layers'], ['feel', 'Needle feel']];
   const qsList = () => { try { const a = JSON.parse(Settings.get('tt_strip', 'null')); return Array.isArray(a) ? a : QS_DEF; } catch { return QS_DEF; } };
+  const QS_NMAX = 5, QS_PMAX = 3;
   const qsFav = (id) => { const [n, s] = id.slice(2).split('@'); return { n, s: s ? +s : null }; };
-  const qsName = (id) => id.startsWith('n:') ? (({ n, s }) => `${TT_NEEDLES.find(x => x.id === n)?.name || n}${s ? ' ' + SZN[s] : ''}`)(qsFav(id)) : [...QS_MAG, ...QS_TOOLS].find(x => x[0] === id)?.[1] || id;
+  const qsName = (id) => id.startsWith('p:') ? (palAll().find(P => P.id === id.slice(2))?.name || 'Palette') : id.startsWith('n:') ? (({ n, s }) => `${TT_NEEDLES.find(x => x.id === n)?.name || n}${s ? ' ' + SZN[s] : ''}`)(qsFav(id)) : [...QS_MAG, ...QS_TOOLS].find(x => x[0] === id)?.[1] || id;
   function qsDraw() { const el = $('#tt-qs'); if (!el) return; const mg = isMag();
     if (qsDrag) { const o = el.querySelector('[data-q="offset"] b'), r = el.querySelector('[data-q="roll"] b'); if (o) o.textContent = st.magAng + '°'; if (r) r.textContent = Math.round((st.magRoll || 0) * 100); return; }   // mid-drag: relabel only, so the drag isn't lost
     let last = '';
-    el.innerHTML = qsList().map(id => { const grp = id.startsWith('n:') ? 'n' : QS_MAG.some(x => x[0] === id) ? 'm' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
+    el.innerHTML = qsList().filter(id => !id.startsWith('p:') || palAll().some(P => P.id === id.slice(2))).map(id => { const grp = id.startsWith('p:') ? 'p' : id.startsWith('n:') ? 'n' : QS_MAG.some(x => x[0] === id) ? 'm' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
       const nm = esc(qsName(id)), dim = grp === 'm' && !mg ? ' dim' : '';
       if (id === 'lean') return sep + `<button class="tt-qb${st.magTilt ? ' on' : ''}${dim}" data-q="lean" data-tip="${nm}: ${st.magTilt ? 'on' : 'off'}" aria-label="${nm}">${qsIcon.lean}</button>`;
       if (id === 'offset') return sep + `<button class="tt-qb wide${dim}" data-q="offset" data-tip="${st.magTilt ? 'Offset on the lean' : 'Magnum angle'}: tap for a slider, or hold and drag" aria-label="Magnum angle">${qsIcon.offset}<b>${st.magAng}°</b></button>`;
       if (id === 'roll') return sep + `<button class="tt-qb wide${dim}${st.magRoll ? ' on' : ''}" data-q="roll" data-tip="Stack tilt: tap for a slider, or hold and drag" aria-label="Stack tilt">${qsIcon.roll}<b>${Math.round((st.magRoll || 0) * 100)}</b></button>`;
       if (/^a\d/.test(id)) { const v = +id.slice(1); return sep + `<button class="tt-qb${st.magAng === v ? ' on' : ''}${dim}" data-q="${id}" data-tip="${nm}" aria-label="${nm}"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg></button>`; }
+      if (grp === 'p') { const P = palAll().find(x => x.id === id.slice(2)); return sep + `<button class="tt-qb tt-qp${!st.wash && st.pal === P.id ? ' on' : ''}" data-q="${esc(id)}" data-tip="${nm}" aria-label="${nm}">${palDots(P, 3)}</button>`; }
       if (grp === 'n') { const { n, s } = qsFav(id), on = st.needle === n && (!s || Math.abs(feel.size - s) < 0.01); return sep + `<button class="tt-qb tt-qn${on ? ' on' : ''}" data-q="${esc(id)}" data-tip="${nm}" aria-label="${nm}"><b>${esc(n)}</b>${s ? `<small>${SZN[s] || ''}</small>` : ''}</button>`; }
       const on = (id === 'needle' || id === 'erase' || id === 'marker') && st.tool === id || id === 'dmg' && st.check;
       return qsIcon[id] ? sep + `<button class="tt-qb${on ? ' on' : ''}" data-q="${id}" data-tip="${nm}" aria-label="${nm}">${qsIcon[id]}</button>` : ''; }).join('')
@@ -2487,6 +2565,7 @@ TT.open = async (el, id) => {
     if (q === 'offset' || q === 'roll' || q === 'peek') return;
     if (q === 'lean') { if (!isMag()) return toast('Only a magnum leans.', 1500); st.magTilt = !st.magTilt; st.dirty = true; drawAng(); return toast(st.magTilt ? 'Follows the pen\'s lean' : 'Fixed angle', 1300); }
     if (/^a\d/.test(q)) { if (!isMag()) return toast('Only a magnum has an angle.', 1500); return setAng(+q.slice(1)); }
+    if (q.startsWith('p:')) { if (EX?.lesson) return toast('Lessons use the standard inks.', 1600); const P = palAll().find(x => x.id === q.slice(2)); if (P) palApply(P); return; }
     if (q.startsWith('n:')) { const { n, s } = qsFav(q); if (EX?.lesson && n !== st.needle) { st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; drawNeedleInk(); } setNeedle(n);
       if (s) { feel.size = s; TT.setFeel(n, feel); lay = ttLayout(TT_NEEDLES.find(x => x.id === n), feel.size); drawSz(); drawCur(); } st.tool = 'needle'; closePop(); sel(); return qsDraw(); }
     if (q === 'rinse') return $('#tt-tray [data-rinse]')?.click();
@@ -2499,21 +2578,23 @@ TT.open = async (el, id) => {
   const qsEdit = () => { let list = qsList().slice(), tab = 'mag', addN = st.needle, addS = SZN[feel.size] ? feel.size : 0.3; const o = document.createElement('div'); o.id = 'tt-qsedit'; o.className = 'tt-tune';
     o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55)';
     const row = (id, nm) => `<button class="tt-qrow${list.includes(id) ? ' on' : ''}" data-qi="${id}"><span class="tt-qri">${/^a\d/.test(id) ? `<svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${id.slice(1)} 12 12)"/></svg>` : qsIcon[id] || ''}</span><span>${esc(nm)}</span><i class="tt-qsw"></i></button>`;
-    const favs = () => list.filter(x => x.startsWith('n:'));
+    const favs = () => list.filter(x => x.startsWith('n:')), pals = () => list.filter(x => x.startsWith('p:'));
     const draw = () => { const body = tab === 'mag' ? `<div class="tt-qrows">${QS_MAG.map(([id, nm]) => row(id, nm)).join('')}</div>`
         : tab === 'tools' ? `<div class="tt-qrows">${QS_TOOLS.map(([id, nm]) => row(id, nm)).join('')}</div>`
-        : `<div class="tt-qadd2"><select class="in" data-qn>${Object.entries(TT_KINDS).map(([kind, [, label]]) => `<optgroup label="${esc(label)}">${TT_NEEDLES.filter(n => n.kind === kind).map(n => `<option value="${n.id}" ${n.id === addN ? 'selected' : ''}>${n.id}</option>`).join('')}</optgroup>`).join('')}</select>
+        : tab === 'inks' ? `<p class="muted" style="font-size:12px;margin:0 2px 6px">Up to ${QS_PMAX} palettes on the strip for quick switching (${pals().length} / ${QS_PMAX}).</p><div class="tt-qrows">${palAll().map(P => `<button class="tt-qrow${list.includes('p:' + P.id) ? ' on' : ''}" data-qp="${esc(P.id)}"><span class="tt-qri">${palDots(P, 3)}</span><span>${esc(P.name)}</span><i class="tt-qsw"></i></button>`).join('')}</div>`
+        : `<p class="muted" style="font-size:12px;margin:0 2px 6px">Pick a needle and its size, then Add. Repeat for more, up to ${QS_NMAX} (${favs().length} / ${QS_NMAX}).</p><div class="tt-qadd2"><select class="in" data-qn>${Object.entries(TT_KINDS).map(([kind, [, label]]) => `<optgroup label="${esc(label)}">${TT_NEEDLES.filter(n => n.kind === kind).map(n => `<option value="${n.id}" ${n.id === addN ? 'selected' : ''}>${n.id}</option>`).join('')}</optgroup>`).join('')}</select>
             <div class="seg">${Object.entries(SZN).map(([v, l]) => `<button data-qs="${v}" class="${+v === addS ? 'on' : ''}">${l}</button>`).join('')}</div><button class="btn small primary" data-qe="addn">Add</button></div>
           ${favs().length ? `<div class="tt-qrows">${favs().map(id => { const { n, s } = qsFav(id); return `<div class="tt-qrow on"><span class="tt-qri"><b>${esc(n)}</b></span><span>${esc(TT_NEEDLES.find(x => x.id === n)?.name || n)}${s ? ` · ${SZN[s]}` : ''}</span><button class="mini" data-qdel="${esc(id)}" aria-label="Remove">✕</button></div>`; }).join('')}</div>` : '<p class="muted" style="font-size:12px;margin:8px 2px">No favourites yet: pick a needle and its size, then Add.</p>'}`;
       o.innerHTML = `<div class="card tt-qse"><div class="row" style="align-items:center;gap:6px"><h2 style="margin:0;flex:1">Quick strip</h2><button class="btn small" data-qe="reset">Default</button><button class="btn small primary" data-qe="done">Done</button></div>
-        <div class="tt-ftabs" style="margin:10px 0 8px">${[['mag', 'Magnum'], ['tools', 'Tools'], ['needles', 'Needles']].map(([k, n]) => `<button data-qt="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>${body}</div>`; };
-    const order = () => [...QS_MAG, ...QS_TOOLS].map(x => x[0]).filter(x => list.includes(x)).concat(favs());
+        <div class="tt-ftabs" style="margin:10px 0 8px">${[['mag', 'Magnum'], ['tools', 'Tools'], ['needles', 'Needles'], ['inks', 'Inks']].map(([k, n]) => `<button data-qt="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>${body}</div>`; };
+    const order = () => [...QS_MAG, ...QS_TOOLS].map(x => x[0]).filter(x => list.includes(x)).concat(pals(), favs());
     o.onclick = async (e) => { const t2 = e.target.closest('[data-qt]'); if (t2) { tab = t2.dataset.qt; return draw(); }
       const i = e.target.closest('[data-qi]'); if (i) { const id = i.dataset.qi; list = list.includes(id) ? list.filter(x => x !== id) : [...list, id]; list = order(); i.classList.toggle('on'); return; }
+      const pq = e.target.closest('[data-qp]'); if (pq) { const id = 'p:' + pq.dataset.qp; if (list.includes(id)) list = list.filter(x => x !== id); else { if (pals().length >= QS_PMAX) return toast(`Up to ${QS_PMAX} palettes on the strip.`, 1800); list = [...list, id]; } list = order(); return draw(); }
       const sz = e.target.closest('[data-qs]'); if (sz) { addS = +sz.dataset.qs; return draw(); }
       const dl = e.target.closest('[data-qdel]'); if (dl) { list = list.filter(x => x !== dl.dataset.qdel); return draw(); }
       const a = e.target.closest('[data-qe]')?.dataset.qe;
-      if (a === 'addn') { const id = `n:${addN}@${addS}`; if (!list.includes(id)) list = [...list, id]; return draw(); }
+      if (a === 'addn') { const id = `n:${addN}@${addS}`; if (list.includes(id)) return toast('That one is already a favourite.', 1500); if (favs().length >= QS_NMAX) return toast(`Up to ${QS_NMAX} favourite needles: remove one first.`, 2000); list = [...list, id]; return draw(); }
       if (a === 'reset') { list = QS_DEF.slice(); return draw(); }
       if (a === 'done' || e.target === o) { await Settings.set('tt_strip', JSON.stringify(order())); o.remove(); qsDraw(); } };
     o.onchange = (e) => { if (e.target.matches('[data-qn]')) addN = e.target.value; };
@@ -2909,7 +2990,7 @@ TT.open = async (el, id) => {
     tlDrop.push(...TL.refs.splice(0));
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
+        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -3152,7 +3233,7 @@ TT.open = async (el, id) => {
     st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; st.wash = !!T.wash;   // each challenge starts with a clean, empty needle
     if (T.presets) for (const [id, f] of Object.entries(T.presets)) TT.setFeel(id, { ...TT.feel(id), ...f });   // each needle the lesson uses, set up as it asks
     setNeedle(T.needle); if (T.size || T.volt) { if (T.size) feel.size = T.size; if (T.volt) feel.volt = T.volt; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawSz(); drawVolt(); }   // a lesson that asks for a size and voltage starts there
-    st.layer = T.layer; st.caps = [...TT_CAPS]; st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
+    st.layer = T.layer; st.caps = [...TT_CAPS]; st.capS = null; st.pal = 'default'; st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
     drawTray(); drawView(); drawRefs(); exBar(); tally(); paint(); st.dirty = true;
   };
   // ---- scoring ----
@@ -3661,6 +3742,11 @@ function ttStyle() {
 .tt-qsep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line); } .tt-qadd { color: var(--ink2); }
 .tt-qsb { position: absolute; z-index: 9; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; background: rgba(22,27,28,.97); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); font: 600 11px var(--ui); color: var(--ink2); }
 .tt-qsb[hidden] { display: none; } .tt-qsb b { color: var(--teal); } .tt-qsb input { width: 160px; accent-color: var(--teal); touch-action: none; }
+.tt-pdots { display: inline-flex; gap: 2px; min-width: 40px; } .tt-pdots i { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(255,255,255,.25); } .tt-qp .tt-pdots { min-width: 0; }
+.tt-pale { max-width: 470px; width: 100%; max-height: 92dvh; overflow-y: auto; } .tt-pslots { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; } .tt-pslots .tt-cap.sel { outline: 2px solid var(--teal); outline-offset: 2px; }
+.tt-padd { width: 30px; height: 30px; border-radius: 50%; border: 1.5px dashed var(--ink2); background: none; color: var(--ink2); font: 700 16px var(--ui); cursor: pointer; } .tt-pord { gap: 6px; align-items: center; margin-bottom: 8px; }
+.tt-pcol { display: flex; gap: 14px; flex-wrap: wrap; } .tt-pcol canvas { width: 168px; height: 168px; border-radius: 50%; touch-action: none; cursor: crosshair; flex: none; } .tt-pctl { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+.tt-pswatch { width: 34px; height: 34px; border-radius: 50%; background: #e9e9e9; position: relative; flex: none; } .tt-pswatch::after { content: ''; position: absolute; inset: 4px; border-radius: 50%; background: var(--c); opacity: var(--o, 1); }
 .tt-qse { max-width: 440px; width: 100%; max-height: 86dvh; overflow-y: auto; } .tt-qn small { font: 600 9px var(--ui); color: var(--ink2); }
 .tt-qrows { display: flex; flex-direction: column; gap: 2px; } .tt-qrow { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: 9px; background: none; color: var(--ink); font: 500 13px var(--ui); text-align: left; cursor: pointer; }
 .tt-qrow:hover { background: rgba(255,255,255,.05); } .tt-qrow > span:nth-child(2), .tt-qrow > span:first-child:not(.tt-qri) { flex: 1; } .tt-qri { width: 26px; display: grid; place-items: center; color: var(--ink2); } .tt-qri svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-qri b { font: 700 10px var(--ui); color: var(--teal); }
@@ -3676,7 +3762,8 @@ function ttStyle() {
 .tt-tray { position: absolute; left: 58px; top: 56px; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 5px; max-height: calc(100% - 66px); overflow-y: auto;
   border-radius: 18px; background: rgba(22,27,28,.92); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); touch-action: none; user-select: none; -webkit-user-select: none; }
 .tt-cap { width: 30px; height: 30px; flex: none; border-radius: 50%; border: 2px solid #c8c8c8; background: #e9e9e9; padding: 0; cursor: pointer; position: relative; box-shadow: inset 0 -3px 0 rgba(0,0,0,.15); }
-.tt-cap i { position: absolute; inset: 4px; border-radius: 50%; background: var(--c); box-shadow: inset 0 2px 4px rgba(0,0,0,.35); }
+.tt-cap em { position: absolute; right: -5px; bottom: -4px; font: 700 8px var(--ui); font-style: normal; color: #fff; background: #1f6f8b; border-radius: 6px; padding: 0 3px; line-height: 12px; pointer-events: none; }
+.tt-cap i { opacity: var(--o, 1); position: absolute; inset: 4px; border-radius: 50%; background: var(--c); box-shadow: inset 0 2px 4px rgba(0,0,0,.35); }
 .tt-cap.dip { transform: scale(.92); outline: 3px solid var(--teal); outline-offset: 2px; }
 .tt-cup { width: 28px; height: 30px; flex: none; border-radius: 6px 6px 12px 12px; border: 2px solid #9fb3b8; background: linear-gradient(transparent 35%, rgba(150,200,220,.45) 35%); cursor: pointer; padding: 0; }
 .tt-recent { display: flex; gap: 3px; align-items: center; } .tt-cap.tt-rcap, .tt-rnone { width: 20px; height: 20px; border-width: 1.5px; } .tt-cap.tt-rcap i { inset: 3px; opacity: var(--o, 1); } .tt-rnone { flex: none; border-radius: 50%; border: 1.5px dashed rgba(255,255,255,.18); box-sizing: border-box; }
