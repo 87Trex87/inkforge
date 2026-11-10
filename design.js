@@ -1725,6 +1725,7 @@ DZ.edit = async (id) => {
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
     else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
     const field = l.t === 'field';
+    if (bendOK(l)) own += dzIB('data-bend', '<path d="M3 16c4-8 14-8 18 0"/><path d="M6 19c3-5 9-5 12 0"/>', 'Bend into an arc, as in the bend tool') + sep;
     if (doc.grid?.on && doc.grid.type === 'iso' && l.t === 'shape' && l.shape !== 'line' && !l.qr)   // isometric planes, as in Affinity Designer
       own += ISO_PL.map(([v, n]) => `<button class="dz-ib dz-isob ${l.isoP === v ? 'on' : ''}" data-iso="${v}" data-tip="Fit to the ${n.toLowerCase()} plane" aria-label="${n} plane"><b>${n[0]}</b></button>`).join('')
         + (l.isoP ? dzIB('data-iso="rl"', '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/>', 'Turn 15° left in the plane') + dzIB('data-iso="rr"', '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>', 'Turn 15° right in the plane')
@@ -3477,6 +3478,7 @@ DZ.edit = async (id) => {
   const ctxB = $('#dz-ctx');
   ctxB.addEventListener('click', async (e) => { if (e.target.closest('input, select, textarea, .dz-cnum')) return;   /* a box or dropdown: redrawing the strip would throw the click away */
     const iso = e.target.closest('[data-iso]'); if (iso) return isoAct(layer(), iso.dataset.iso);
+    if (e.target.closest('[data-bend]')) return bendOpen(layer());
     const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
     const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
     if (pick && l && (cpop === 'c' || cpop === 'fill')) l.fm = 'solid';
@@ -3752,6 +3754,55 @@ DZ.edit = async (id) => {
     else if (act === 'rl' || act === 'rr') { const a = (act === 'rl' ? -15 : 15) * Math.PI / 180; M = inP([Math.cos(a), -Math.sin(a), Math.sin(a), Math.cos(a)]); }
     else if (act === 'fh') M = inP([-1, 0, 0, 1]); else if (act === 'fv') M = inP([1, 0, 0, -1]); else return;
     if (isoXf(l, M)) { changed(true); drawSide(); } };
+  /* ---------- Bend (the studio's bend tool, inside the design studio) ----------
+     The same arc as the bend tool (btWarp): the width is laid along an arc of `deg` degrees, up like a rainbow or
+     down like a smile, the middle keeping its length. A shape's outline is bent point by point (each curve is cut
+     into short pieces first so it follows the arc smoothly) and stays an editable vector; a picture is bent into a
+     new picture. The slider previews live; Apply keeps it (one undo step), Cancel puts it back. */
+  const bendOK = (l) => !!l && !l.lock && ((l.t === 'shape' && l.shape !== 'line' && !l.qr && (l.shape === 'vec' || DZ_GEN[l.shape])) || (l.t === 'image' && l.ref && !l.logo));
+  const bendVec = (l, deg) => { const a = Math.min(360, Math.abs(deg)) * Math.PI / 180; if (a < 0.001) return;
+    isoXf(l, [1, 0, 0, 1]); delete l.isoP;   // a free shape with its turn and flips baked in
+    const W = l.w, H = l.h || 1, down = deg < 0, Ri = Math.max(H * 0.05, W / a - H / 2), Ro = Ri + H;
+    const map = (u, v) => { if (down) v = H - v; const f = (u / W - 0.5) * a, r = Ro - v / H * (Ro - Ri); return [r * Math.sin(f), down ? r * Math.cos(f) : -r * Math.cos(f)]; };
+    const lerp = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t], M = 8;
+    const subs = l.subs.map(sp => { const N = sp.nodes, P = (n) => [n.x * W, n.y * H], segN = sp.closed === false ? N.length - 1 : N.length, out = [];
+      for (let i = 0; i < segN; i++) { const A = N[i], B = N[(i + 1) % N.length]; let q0 = P(A), q1 = [q0[0] + A.ox * W, q0[1] + A.oy * H], q3 = P(B), q2 = [q3[0] + B.ix * W, q3[1] + B.iy * H];
+        for (let j = 0; j < M; j++) { const t = 1 / (M - j);   // split off the next piece (de Casteljau)
+          const a1 = lerp(q0, q1, t), b1 = lerp(q1, q2, t), c1 = lerp(q2, q3, t), a2 = lerp(a1, b1, t), b2 = lerp(b1, c1, t), m = lerp(a2, b2, t);
+          out.push({ p0: q0, p1: a1, p2: a2, p3: m, t: j ? 'smooth' : A.t || 'corner' }); q0 = m; q1 = b2; q2 = c1; } }
+      const nodes = out.map((pc, i) => { const prev = out[i - 1] || (sp.closed === false ? null : out[out.length - 1]), [x, y] = map(...pc.p0), [hx, hy] = map(...pc.p1);
+        let ix = 0, iy = 0; if (prev) { const [gx, gy] = map(...prev.p2); ix = gx - x; iy = gy - y; } return { x, y, ix, iy, ox: hx - x, oy: hy - y, t: pc.t }; });
+      if (sp.closed === false && out.length) { const lp = out[out.length - 1], [x, y] = map(...lp.p3), [gx, gy] = map(...lp.p2); nodes.push({ x, y, ix: gx - x, iy: gy - y, ox: 0, oy: 0, t: N[N.length - 1].t || 'corner' }); }
+      return { ...sp, nodes }; });
+    const pts = subs.flatMap(sp => sp.nodes.flatMap(n => [[n.x, n.y], [n.x + n.ix, n.y + n.iy], [n.x + n.ox, n.y + n.oy]]));
+    const x0 = Math.min(...pts.map(q => q[0])), x1 = Math.max(...pts.map(q => q[0])), y0 = Math.min(...pts.map(q => q[1])), y1 = Math.max(...pts.map(q => q[1]));
+    const nw = Math.max(1, x1 - x0), nh = Math.max(1, y1 - y0), cx = l.x + W / 2, cy = l.y + H / 2;
+    for (const sp of subs) for (const n of sp.nodes) { n.x = (n.x - x0) / nw; n.y = (n.y - y0) / nh; n.ix /= nw; n.iy /= nh; n.ox /= nw; n.oy /= nh; }
+    l.subs = subs; l.w = nw; l.h = nh; l.x = cx - nw / 2; l.y = cy - nh / 2; };
+  let bendS = null;   // { l, snap, deg, img }
+  const bendClose = (keep) => { const b = bendS; bendS = null; $('#dz-bend')?.remove(); if (!b) return;
+    if (!keep) { for (const kk of Object.keys(b.l)) delete b.l[kk]; Object.assign(b.l, JSON.parse(b.snap)); redraw(); drawSide(); } };
+  const bendOpen = async (l) => { if (!bendOK(l)) return toast(l?.lock ? 'Unlock it first.' : 'Bend works on shapes and pictures.', 1800);
+    if (l.t === 'image' && (l.crop || l.rot || l.fx || l.fy || (l.op ?? 1) < 1)) return toast('Flatten the picture first (in this strip), so the bend uses what you see.', 3500);
+    bendClose(false); bendS = { l, snap: JSON.stringify(l), deg: 0, img: l.t === 'image' ? await dzImg(l.ref) : null };
+    if (l.t === 'image' && !bendS.img) { bendS = null; return toast('Could not load that picture.'); }
+    const d = document.createElement('div'); d.id = 'dz-bend'; d.className = 'dz-bendp';
+    d.innerHTML = `<div class="row" style="align-items:center;gap:6px"><b style="flex:1">Bend <span class="muted" data-bl>Straight</span></b><button class="btn small" data-bx="0">Cancel</button><button class="btn small primary" data-bx="1">Apply</button></div>
+      <input type="range" min="-360" max="360" step="1" value="0" data-bd style="width:100%;accent-color:var(--teal)">
+      <div class="bt-fine">${[[-5, '−5'], [-1, '−1'], [0, 'Straight'], [1, '+1'], [5, '+5']].map(([v, n]) => `<button class="btn small" data-bf="${v}">${n}</button>`).join('')}</div>
+      ${bendS.img ? '<canvas class="dz-bendpv"></canvas>' : ''}<p class="muted" style="font-size:11px;margin:6px 0 0">Up bends like a rainbow, down like a smile. ${bendS.img ? 'The picture is redrawn bent when you apply.' : 'The shape stays editable.'}</p>`;
+    $('.dz-ed').appendChild(d); if (innerWidth <= 700) { const r = $('#dz-ctx').getBoundingClientRect(); d.style.top = (r.bottom + 6) + 'px'; }   /* phones: under the strip (the side sheet is at the bottom); otherwise along the bottom, clear of the design */
+    const set = (v) => { const b = bendS; if (!b) return; b.deg = Math.max(-360, Math.min(360, Math.round(v))); d.querySelector('[data-bd]').value = b.deg; d.querySelector('[data-bl]').textContent = btLabel(b.deg);
+      if (b.img) { const c = d.querySelector('.dz-bendpv'), w = btWarp(b.img, b.deg, 320); c.width = w.width; c.height = w.height; c.getContext('2d').drawImage(w, 0, 0); return; }
+      for (const kk of Object.keys(b.l)) delete b.l[kk]; Object.assign(b.l, JSON.parse(b.snap)); bendVec(b.l, b.deg); redraw(); placeSel(); };
+    d.oninput = (e) => { if (e.target.matches('[data-bd]')) set(+e.target.value); };
+    d.onclick = async (e) => { const f = e.target.closest('[data-bf]'); if (f) return set(+f.dataset.bf === 0 ? 0 : bendS.deg + +f.dataset.bf);
+      const x = e.target.closest('[data-bx]'); if (!x) return; if (x.dataset.bx === '0') return bendClose(false);
+      const b = bendS; if (!b.deg) return bendClose(false);
+      if (b.img) { const im = b.img, s = Math.min(1, 2400 / Math.max(im.naturalWidth, im.naturalHeight)), out = btWarp(im, b.deg, 2400), per = b.l.w / (im.naturalWidth * s), cx = b.l.x + b.l.w / 2, cy = b.l.y + b.l.h / 2;
+        b.l.ref = await Media.save(await new Promise(res => out.toBlob(res, 'image/png')), 'png'); b.l.w = out.width * per; b.l.h = out.height * per; b.l.x = cx - b.l.w / 2; b.l.y = cy - b.l.h / 2; }
+      bendClose(true); changed(true); drawSide(); };
+    set(0); };
   /* ---------- Quick strip (as in the tattoo simulator) ----------
      A row of shortcuts across the top of the page. Its + window picks tools, actions on what's selected (they
      work through the context strip's own buttons, so they behave exactly the same), favourite colours (up to 8)
@@ -3760,7 +3811,7 @@ DZ.edit = async (id) => {
   const DQ_TOOLS = [['select', 'select', 'Select and move'], ['text', 'text', 'Text'], ['image', 'picture', 'Picture'], ['shape', 'shape', 'Shape'], ['pen', 'pen', 'Pen'], ['pencil', 'pencil', 'Pencil'],
     ['layers', 'layers', 'Layers'], ['doc', 'page', 'Page: theme, background and sides'], ['undo', DQ_SVG.undo, 'Undo'], ['redo', DQ_SVG.redo, 'Redo'], ['fit', DQ_SVG.fit, 'Show the whole design'], ['export', 'export', 'Export'], ['grid', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective']];
   const DQ_ACTS = [['dup', 'copy', 'Duplicate'], ['del', 'del', 'Delete'], ['up', 'fwd', 'Bring forward'], ['down', 'back', 'Send back'], ['fx', 'fx', 'Flip left to right'], ['fy', 'fy', 'Flip upside down'],
-    ['lock', 'lock', 'Lock or unlock'], ['crop', 'crop', 'Crop'], ['cut', 'area', 'Select area'], ['nodes', 'nodes', 'Edit nodes'], ['flatten1', 'flatten', 'Flatten into a picture'],
+    ['lock', 'lock', 'Lock or unlock'], ['crop', 'crop', 'Crop'], ['cut', 'area', 'Select area'], ['nodes', 'nodes', 'Edit nodes'], ['flatten1', 'flatten', 'Flatten into a picture'], ['bend', '<path d="M3 16c4-8 14-8 18 0"/><path d="M6 19c3-5 9-5 12 0"/>', 'Bend into an arc'],
     ...AL.map(([a, tp, ic]) => ['al:' + a, ic, 'Align: ' + tp]), ...['add', 'subtract', 'intersect', 'contour'].map(v => ['bool:' + v, DZ_BOOL_ICON[v], { add: 'Add: weld into one outline', subtract: 'Subtract', intersect: 'Intersect', contour: 'Contour' }[v]])];
   const DQ_DEF = ['select', 'text', 'image', 'shape', 'undo', 'redo'], DQ_CMAX = 8, DQ_FMAX = 5;
   const dqIcon = (ic) => String(ic).startsWith('<svg') ? ic : `<svg viewBox="0 0 24 24">${DZ_UI[ic] || ic}</svg>`;
@@ -3789,7 +3840,7 @@ DZ.edit = async (id) => {
     if (q === 'fit') return $('.dz-ed .dz-zoom [data-z="fit"]')?.click(); if (q === 'export') return $('#dz-export').click();
     if (q === 'pen' || q === 'pencil') return $(`#dz-rail [data-add="${q}"]`)?.click();
     if (DQ_TOOLS.some(x => x[0] === q)) return $(`#dz-rail [data-rail="${q}"]`)?.click();
-    const sel2 = q.startsWith('al:') ? `[data-align="${q.slice(3)}"]` : q.startsWith('bool:') ? `[data-bool="${q.slice(5)}"]` : `[data-act="${q}"], [data-mact="${q}"]`;
+    const sel2 = q === 'bend' ? '[data-bend]' : q.startsWith('al:') ? `[data-align="${q.slice(3)}"]` : q.startsWith('bool:') ? `[data-bool="${q.slice(5)}"]` : `[data-act="${q}"], [data-mact="${q}"]`;
     const t = $('#dz-ctx').querySelector(sel2); if (!t) return toast(layer() || many() ? 'Not for this item.' : 'Select something first.', 1500); if (t.disabled) return toast('Not right now: select more, or something else.', 1600); t.click(); });
   const dqEdit = () => { let list = dqList().slice(), tab2 = 'tools', addC = '#1fb6a6', addF = ''; const o = document.createElement('div'); o.id = 'dz-qsedit';
     o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55)';
