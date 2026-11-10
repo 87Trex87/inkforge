@@ -24,6 +24,15 @@ const DZ_KINDS = {
   story: { label: 'Story / reel cover', sub: '1080 × 1920 (9:16)', w: 1080, h: 1920, per: 0, social: 1 }
 };
 // An icon for each kind in the New design window.
+/* The design studio's clipboard: copies of layers, kept while the app is open so they paste into any design. */
+let DZ_CLIP = null;
+/* Drag to reorder: items marked data-<attr>="index" inside root. A tap still taps; past a small move it is a drag, and
+   move(from, to) runs each time it passes over another item (start() once, done() at the end). */
+function dzDragOrder(root, attr, move, done, start) { let d = null;
+  root.addEventListener('pointerdown', (e) => { const b = e.target.closest(`[data-${attr}]`); if (!b || b.dataset[attr] === '') return; d = { i: +b.dataset[attr], x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; });
+  addEventListener('pointermove', (e) => { if (!d || e.pointerId !== d.id) return; if (!d.moved) { if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) return; d.moved = true; start?.(); }
+    e.preventDefault(); const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(`[data-${attr}]`); if (!over || !root.contains(over) || over.dataset[attr] === '') return; const j = +over.dataset[attr]; if (j !== d.i) { move(d.i, j); d.i = j; } });
+  addEventListener('pointerup', (e) => { if (!d || e.pointerId !== d.id) return; const m = d.moved; d = null; if (m) { root.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); }, { capture: true, once: true }); done?.(); } }); }
 const DZ_KIND_IC = { note: '<path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5"/>', form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>', page: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/>',
   pattern: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="3" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/>',
   challenge: '<path d="M6 3h12v5a6 6 0 0 1-12 0z"/><path d="M12 14v4M8 21h8"/>', fold: '<path d="M3 5l6 2 6-2 6 2v12l-6-2-6 2-6-2z"/><path d="M9 7v12M15 5v12"/>', voucher: '<rect x="2" y="7" width="20" height="10" rx="2"/><path d="M8 7v10" stroke-dasharray="2 2"/><path d="M13 12h5"/>',
@@ -1931,7 +1940,7 @@ DZ.edit = async (id) => {
       + `<select class="in dz-cdash" data-dash aria-label="Line style" data-tip="Line style">${[['', 'Solid'], ['dash', 'Dashed'], ['dot', 'Dotted']].map(([v, n]) => `<option value="${v}" ${(l.dash || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
     else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
-    if (doc.chal && l.t === 'shape') own = `<button class="btn small dz-chrole ${l.role ? 'on' : ''}" data-chrole data-tip="What this shape is in the challenge, and how it is graded">${l.role ? CH_ROLES.find(r => r[0] === l.role)[1] + (l.nd ? ' · ' + dzChNds(l).join('/') : '') : 'Grade as…'}</button>` + sep + own;
+    if (doc.chal && l.t === 'shape') own = `<button class="btn small" data-chcopy data-tip="An exact copy on top of this shape, to grade as something else: shading over the outline, say">Copy as…</button>` + sep + `<button class="btn small dz-chrole ${l.role ? 'on' : ''}" data-chrole data-tip="What this shape is in the challenge, and how it is graded">${l.role ? CH_ROLES.find(r => r[0] === l.role)[1] + (l.nd ? ' · ' + dzChNds(l).join('/') : '') : 'Grade as…'}</button>` + sep + own;
     const field = l.t === 'field';
     if (doc.chal && l.t === 'image' && !l.lock) own = `<button class="btn small dz-chrole" data-chvs data-tip="Turn this picture into a shading zone: its light and dark posterized into value steps, to shade like a portrait study">Value study</button>` + sep + own;
     if (l.t === 'image' && l.ref && !l.logo && !l.lock) own += dzIB('data-adjc', '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M12 4a8 8 0 0 1 0 16"/>', 'Adjust colour: exposure, contrast, saturation, hue and more');
@@ -1941,7 +1950,7 @@ DZ.edit = async (id) => {
         + (l.isoP ? dzIB('data-iso="rl"', '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/>', 'Turn 15° left in the plane') + dzIB('data-iso="rr"', '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>', 'Turn 15° right in the plane')
           + dzIB('data-iso="fh"', 'fx', 'Flip across in the plane') + dzIB('data-iso="fv"', 'fy', 'Flip upside down in the plane') + `<button class="dz-ib dz-isob" data-iso="flat" data-tip="Put it back flat, off the plane" aria-label="Flat"><b>⊟</b></button>` : '') + sep;
     b.innerHTML = (own ? own + sep : '')
-      + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="up"', 'fwd', 'Bring forward') + dzIB('data-act="down"', 'back', 'Send back') + sep
+      + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="dupin"', '<rect x="7" y="7" width="12" height="12" rx="2"/><rect x="5" y="5" width="12" height="12" rx="2" stroke-dasharray="2 2"/>', 'Duplicate in place: an exact copy on top (Ctrl+D)') + dzIB('data-act="up"', 'fwd', 'Bring forward') + dzIB('data-act="down"', 'back', 'Send back') + sep
       + (field ? '' : dzIB('data-act="fx"', 'fx', 'Flip left to right', l.fx ? 'on' : '') + dzIB('data-act="fy"', 'fy', 'Flip upside down', l.fy ? 'on' : '') + dzIB(`data-act="clip" ${F().indexOf(l) ? '' : 'disabled'}`, 'clip', 'Clip to the layer below: only shows inside it', clipped(l) ? 'on' : '') + sep
         + `${l.t !== 'text' ? dzIB('data-act="crop"', 'crop', 'Crop', cropping ? 'on' : '') : ''}
         ${dzIB('data-act="cut"', 'area', 'Select area: part of it by box, ellipse, lasso or colour, to delete, split or move')}
@@ -3165,6 +3174,21 @@ DZ.edit = async (id) => {
     changed(true); placeSel(); drawSide();
   };
 
+  /* Duplicate in place, copy, cut and paste. Copies go above the highest original, keep their order and anything
+     they sit on (text on a curve). Paste puts them a little down and right of the last paste; paste in place, on the
+     very spot they were copied from. */
+  const dupInPlace = (ids) => { const L = doc.layers.filter(l => ids.includes(l.id)), top = Math.max(...L.map(l => doc.layers.indexOf(l))), cs = L.map(l => ({ ...JSON.parse(JSON.stringify(l)), id: dzId(), lock: undefined }));
+    const idm = new Map(L.map((l, j) => [l.id, cs[j].id])); for (const c of cs) if (c.on) { delete c._bx; if (idm.has(c.on)) c.on = idm.get(c.on); }
+    doc.layers.splice(top + 1, 0, ...cs); if (cs.length === 1) select(cs[0].id); else setPicks(cs.map(c => c.id)); changed(true); drawSide(); return cs; };
+  const clipCopy = (cut) => { const ids = targets(); if (!ids.length) return false; const L = doc.layers.filter(l => ids.includes(l.id));
+    DZ_CLIP = { layers: JSON.parse(JSON.stringify(L)), n: 0 }; if (cut) { if (L.some(l => l.lock)) { toast('Unlock it first.'); return true; } doc.layers = doc.layers.filter(l => !ids.includes(l.id)); select(null); changed(true); drawSide(); }
+    toast(`${cut ? 'Cut' : 'Copied'} ${L.length === 1 ? '1 item' : L.length + ' items'}. Ctrl+V pastes, Ctrl+Shift+V pastes in place.`, 2200); return true; };
+  const clipPaste = (inPlace) => { if (!DZ_CLIP?.layers.length) return toast('Nothing copied yet.', 1500); const off = inPlace ? 0 : 30 * ++DZ_CLIP.n;
+    const cs = DZ_CLIP.layers.map(l => ({ ...JSON.parse(JSON.stringify(l)), id: dzId(), lock: undefined, x: l.x + off, y: l.y + off, ...(doc.sides ? { side: face !== 'f' ? face : l.side } : {}) }));
+    const idm = new Map(DZ_CLIP.layers.map((l, j) => [l.id, cs[j].id])); for (const c of cs) if (c.on) { delete c._bx; c.on = idm.get(c.on) || (doc.layers.some(o => o.id === c.on) ? c.on : undefined); }
+    if (!doc.chal) for (const c of cs) { delete c.role; delete c.nds; delete c.sh; }   /* grading only means something in a challenge */
+    doc.layers.push(...cs); if (cs.length === 1) select(cs[0].id); else setPicks(cs.map(c => c.id)); changed(true); drawSide(); };
+
   /* Adding things */
   const center = (w, h) => ({ x: (doc.w - w) / 2, y: (doc.h - h) / 2, w, h });
   const add = (l) => { doc.layers.push({ id: dzId(), op: 1, rot: 0, ...l, ...(doc.sides && face !== 'f' ? { side: face } : {}) }); sel = doc.layers.at(-1).id; changed(true); drawSide(); };
@@ -3479,6 +3503,11 @@ DZ.edit = async (id) => {
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); if (targets().length) merge(targets()); return; }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !nodes && !cut) { const k2 = e.key.toLowerCase();
+      if (k2 === 'c' && targets().length) { e.preventDefault(); return void clipCopy(false); }
+      if (k2 === 'x' && targets().length) { e.preventDefault(); return void clipCopy(true); }
+      if (k2 === 'v' && DZ_CLIP) { e.preventDefault(); return clipPaste(e.shiftKey); }
+      if (k2 === 'd' && targets().length) { e.preventDefault(); return void dupInPlace(targets()); } }
     if (many()) {
       if (e.key === 'Escape') { picking = false; return setPicks([]); }
       if (e.key === 'Delete' || e.key === 'Backspace') return multiAct('del');
@@ -3614,6 +3643,7 @@ DZ.edit = async (id) => {
       if (a === 'nodes') return startNodes(l);
       if (a === 'clip') { if (F().indexOf(l) > 0) l.clip = !l.clip || undefined; }
       if (a === 'del') { doc.layers.splice(i, 1); sel = null; }
+      if (a === 'dupin') return void dupInPlace([l.id]);
       if (a === 'dup') { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), x: l.x + 30, y: l.y + 30 }; doc.layers.splice(i + 1, 0, c); sel = c.id;
         // text on a curve brings a copy of its curve, so the copy can be seen and moved on its own
         if (c.on) { delete c._bx; const S = doc.layers.find(s => s.id === c.on); if (S) { const c2 = { ...JSON.parse(JSON.stringify(S)), id: dzId(), x: S.x + 30, y: S.y + 30 }; doc.layers.splice(doc.layers.indexOf(S) + 1, 0, c2); c.on = c2.id; } } }
@@ -3700,6 +3730,9 @@ DZ.edit = async (id) => {
   ctxB.addEventListener('click', async (e) => { if (e.target.closest('input, select, textarea, .dz-cnum')) return;   /* a box or dropdown: redrawing the strip would throw the click away */
     const iso = e.target.closest('[data-iso]'); if (iso) return isoAct(layer(), iso.dataset.iso);
     if (e.target.closest('[data-chrole]')) return chOpen('role');
+    if (e.target.closest('[data-chcopy]') && layer()) { const l0 = layer(), [c] = dupInPlace([l0.id]); delete c.nds; delete c.sh; delete c.mixOf; delete c.ink; c.fill = 'none';
+      c.role = l0.role === 'outline' || l0.role === 'detail' ? 'shade' : l0.role || 'shade'; if (c.role === 'shade') c.sh = { tech: 'stipple', grad: 'linear', ang: 90, dark: 0.85, light: 0.05, bias: 1 }; c.nd = c.role === 'shade' ? CH_SHADE.stipple[2] : c.nd; if (c.role === 'pack') { c.mixOf = [chCaps()[0]]; chInk(c); } chDefN(c);
+      c.name = (l0.name || 'Shape') + ' (copy)'; select(c.id); changed(true); chTab.role = 'role'; return chOpen('role'); }
     if (e.target.closest('[data-chvs]')) return chStudy(layer());
     if (e.target.closest('[data-bend]')) return bendOpen(layer());
     if (e.target.closest('[data-adjc]')) return adjOpen(layer());
@@ -3952,7 +3985,7 @@ DZ.edit = async (id) => {
       <div class="gh" style="margin-top:8px">Mixing cup <span style="text-transform:none;letter-spacing:0;font-weight:500">· hold a cap to pour it in</span></div>
       <div class="dz-chcup"><i data-chcupc style="background:${chCup.c ? ttToHex(chCup.c) : 'transparent'}"></i><div class="dz-chsw">${chCaps().map(c => `<button data-chpour="${c}" style="background:${c}" aria-label="Pour ${c}"></button>`).join('')}</div></div>
       <div class="dz-gk" style="grid-template-columns:1fr 1fr 1fr"><button data-chcup="add" ${chCup.c && cs.length < 10 ? '' : 'disabled'}>Add it</button><button data-chcup="use" ${chCup.c ? '' : 'disabled'}>Use for ${i + 1}</button><button data-chcup="empty" ${chCup.c ? '' : 'disabled'}>Empty</button></div>
-      ${chNote('Mix like on the needle: the longer you hold a cap, the more of it goes in. Add it puts the mix after colour ' + (i + 1) + '. Blended in order along the gradient, from the dark end; up to 10 colours, all from the palette.')}`; };
+      ${chNote('Mix like on the needle: the longer you hold a cap, the more of it goes in. Add it puts the mix after colour ' + (i + 1) + '. Drag the colours along the strip to change their order. Blended in order along the gradient, from the dark end; up to 10 colours, all from the palette.')}`; };
   /* The mixing cup: pours like dipping the needle in the simulator (the fuller the cup, the slower a colour changes it). */
   const chCup = { c: null, v: 0 }; let chPour = null;
   const chPourEnd = () => { if (!chPour) return; cancelAnimationFrame(chPour.raf); chPour = null; chRe(); };
@@ -4053,6 +4086,7 @@ DZ.edit = async (id) => {
     else { changed(true); chAreaDraw(); }
     toast('Challenge set up. Change any of it from the Challenge menu, or Setup again.', 3500); }
   setTimeout(() => { try { if (doc.chal) { chAreaDraw(); if (doc.chal.setup === false) chSetup(); } } catch {} }, 500);
+  dzDragOrder($('#dz-pop'), 'chst', (i, j) => { const l = layer(); if (!l?.sh) return; const S = l.sh; chStopFix(S); const [c] = S.cols.splice(i, 1), [m] = S.mixs.splice(i, 1); S.cols.splice(j, 0, c); S.mixs.splice(j, 0, m); chStop = j; redraw(); chRe(); }, () => changed(true));   /* drag a colour along the strip */
   const chStopFix = (S) => { S.cols ||= []; S.mixs = S.cols.map((c, k) => S.mixs?.[k] || [c]); };
   const chStopSet = (S, i) => { const m = S.mixs[i] || [S.cols[i]]; S.cols[i] = m[1] ? chMix(m[0], m[1], m[2] ?? 0.5) : m[0]; };
   const chInk = (l) => { const m = l.mixOf || ['#141414']; l.ink = m[1] ? chMix(m[0], m[1], l.mixT ?? 0.5) : m[0]; };

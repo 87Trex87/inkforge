@@ -641,6 +641,7 @@ function ttPalEdit(P, fresh, onSave, onDelete) { let at = 0; const o = document.
       if (a === 'save') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; await ttPalSave(P); o.remove(); onSave?.(P); return; }
       if (a === 'share') { P.name = (o.querySelector('[data-pn]').value || '').trim() || 'My palette'; const f = new File([JSON.stringify({ inkforge_palette: 1, name: P.name, caps: P.caps }, null, 1)], `${P.name.replace(/[^\w-]+/g, '-')}.inkpalette.json`, { type: 'application/json' }); return shareFiles([f], P.name); }
       if (a === 'delpal') { if (!await ask(`Delete the palette "${P.name}"? Pieces keep the colours they already have.`)) return; await Settings.set('tt_pals', JSON.stringify(ttPalMine().filter(x => x.id !== P.id))); o.remove(); onDelete?.(P); } });
+    if (typeof dzDragOrder === 'function') dzDragOrder(o, 'ps', (i, j) => { const [c] = P.caps.splice(i, 1); P.caps.splice(j, 0, c); at = j; Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1 }); draw(); }, null, () => push());   /* drag the caps into order */
     draw(); document.body.appendChild(o); }
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;

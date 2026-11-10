@@ -1790,3 +1790,4 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 @media (max-width: 700px) { .dz-pk2 { grid-template-columns: 1fr; overflow-y: auto; } .dz-pkL, .dz-pkR { overflow: visible; } .dz-kinds { grid-template-columns: 1fr 1fr; } }
 #merge-dlg .card.dz-pick2 { max-width: min(920px, calc(100vw - 24px)); width: min(920px, calc(100vw - 24px)); }
 .dz-pkL, .dz-pkR, .dz-pick { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.dz-chstops button[data-chst], .tt-pslots .tt-cap { touch-action: none; cursor: grab; }
