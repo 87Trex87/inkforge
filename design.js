@@ -1427,6 +1427,7 @@ DZ.edit = async (id) => {
           ${dzIB('data-rail="shape"', 'shape', 'Shape')}
           ${dzIB('data-add="pen"', 'pen', 'Pen (P)')}
           ${dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
+          ${dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
           <i class="sep"></i>
           ${dzIB('data-rail="layers"', 'layers', 'Layers')}
           ${dzIB('data-rail="doc"', 'page', 'Page: theme, background, sides and details')}
@@ -1768,13 +1769,21 @@ DZ.edit = async (id) => {
     const nh = sheetH(stage.clientHeight); if (nh !== sheetWas) { sheetWas = nh; fit(); redraw(); }
   };
   const drawRail = () => { const r = $('#dz-rail'); if (!r) return;
-    const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc' };
+    const on = { select: !toolOn() && !nodeArm && tab === 'edit', pen: penOn, pencil: pclOn, nodes: !!nodes || nodeArm, layers: tab === 'layers', doc: tab === 'doc' };
     r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); try { dqDraw(); } catch {} };   /* the strip is set up further down; before then there's nothing to redraw */
   /* The tool rail. Text, Picture and Shape open a small menu beside it; the rest act straight away. */
   const pop = () => $('#dz-pop');
   const closePop = () => { const p = pop(); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
   const mi = (attr, ic, label) => `<button class="mi" ${attr}><svg viewBox="0 0 24 24">${DZ_UI[ic]}</svg><span>${label}</span></button>`;
+  /* Nodes: with a shape selected it opens its nodes; with none, the next shape tapped opens (nodeArm). A shape is
+     also opened for node editing by double-tapping it. */
+  let nodeArm = false, itemTap = null;
+  const canNodes = (l) => l?.t === 'shape' && l.shape !== 'line' && !l.qr;
   const railAct = (a, btn) => {
+    nodeArm = false;
+    // Every tool on the rail leaves the pen, pencil and other edit modes first, so they can be switched straight away.
+    if (a !== 'select' && a !== 'close' && toolOn()) { endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); }
+    if (a === 'nodes') { closePop(); const l = layer(); if (canNodes(l)) return startNodes(l); nodeArm = true; drawRail(); return toast('Tap a shape to edit its nodes.', 2000); }
     if (a === 'select') { closePop(); endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); tab = 'edit'; return select(null); }
     if (a === 'layers' || a === 'doc') { closePop(); if (a === 'doc' && tab !== 'doc') { sel = null; picks = new Set(); picking = false; placeSel(); } tab = tab === a ? 'edit' : a; return drawSide(); }
     if (a === 'close') { tab = 'edit'; return drawSide(); }
@@ -3115,6 +3124,11 @@ DZ.edit = async (id) => {
     if (nodes) return nodeDown(e);
     if (cont) return contDown(e);
     const h = e.target.closest('[data-h]')?.dataset.h, p = toPage(e);
+    if (!h && !many()) { const hl0 = hit(p), now = Date.now();
+      // A double-tap on a shape, or a tap with the Nodes tool waiting, opens its nodes.
+      const twice = hl0 && itemTap?.id === hl0.id && now - itemTap.t < 350; itemTap = hl0 ? { id: hl0.id, t: now } : null;
+      if (canNodes(hl0) && !hl0.lock && (twice || nodeArm)) { nodeArm = false; itemTap = null; cancelPress(); e.dzHit = true; e.preventDefault(); select(hl0.id); return startNodes(hl0); }
+      if (nodeArm && !hl0) { nodeArm = false; drawRail(); } }
     if (!h || many()) {
       const hl = hit(p);
       if (hl && e.ctrlKey && e.altKey && !many() && !hl.lock) { const c = JSON.parse(JSON.stringify(hl)); c.id = dzId(); if (c.on) { const S = doc.layers.find(s => s.id === c.on); if (S) { const c2 = { ...JSON.parse(JSON.stringify(S)), id: dzId() }; doc.layers.splice(doc.layers.indexOf(S) + 1, 0, c2); c.on = c2.id; } } doc.layers.splice(doc.layers.indexOf(hl) + 1, 0, c); select(c.id); dupDrag = true; }
