@@ -122,7 +122,7 @@ const TOUR_STEPS = [
     more: 'A backup holds all your data, photos and reel videos: Save workspace file puts it in your Downloads, Share sends it to Drive or email. You can merge another backup in, keep a workspace in your own Google Drive to use on several devices, and run first-time setup or this tour again from Settings.' },
   { id: 'workspace', route: 'settings', sel: '#db-badge', title: 'Workspaces',
     text: 'Tap here to switch between studios or artists.',
-    more: 'Each workspace has its own clients, bookings and settings. Keep one per artist, and give any of them a password in Settings so others can\'t open it.' },
+    more: 'Each workspace has its own clients, bookings and settings. Keep one per artist, and give any of them a password in Settings so others can\'t open it. A new workspace can be a full studio or design only (just the design tools, forms, notes and portfolio); switch it any time under Settings, Workspace type.' },
   { id: 'end', basic: 1, title: 'That\'s the tour',
     text: 'Keep playing in this practice workspace, or go back to yours and this one is deleted.',
     more: 'The practice workspace is full of made-up clients, bookings, quotes, portfolio pieces and stock, so you can try printing, quoting, receipts and everything else without touching your real data. It shows in orange and never syncs with Google. Only one is kept: delete it or start it fresh from Settings, and taking the tour again makes a new one.' }

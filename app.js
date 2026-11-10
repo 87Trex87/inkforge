@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 410;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 411;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -866,6 +866,8 @@ const VIEWS = {
       const h = new Date().getHours();
       const greet = h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
       const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+      if (wsDesign()) return `${newsHtml()}<div class="card hero"><div class="muted">${esc(today)}</div><div class="big">${greet}${name ? ', ' + esc(name) : ''}</div>
+        <p class="muted" style="margin:6px 0 0">A design workspace: everything for making art, stencils and posts.</p></div>` + VIEWS.studio.render();
       return `${WS.cur?.test ? `<div class="card practice-note"><b>Practice workspace</b><span>Everything here is made up: try printing, quotes, receipts and more.
           Phone numbers are fake, so nothing can be sent. Bookings move along each day you open it.</span>
           <button class="btn small" data-go-ws="${esc(WS.list.find(x => !x.test)?.id || '')}">Back to my workspace</button></div>` : ''}
@@ -885,6 +887,7 @@ const VIEWS = {
       </div>`;
     },
     async mount() {
+      if (wsDesign()) return;   /* no bookings or birthdays here */
       const t = new Date(); t.setHours(0, 0, 0, 0);
       const rows = await bookingsBetween(t, addDays(t, 1));
       const el = $('#home-today'); if (!el) return;
@@ -1433,15 +1436,15 @@ const VIEWS = {
   },
   more: {
     title: () => 'More',
-    render: () => tileGroup('Quotes and earnings', [
+    render: () => (wsDesign() ? '' : tileGroup('Quotes and earnings', [
         tile('quote', 'Quote calculator', 'Price a piece from your own rates', false, 'quote'),
         tile('saved', 'Saved quotes', 'Pick a quote up again, book it or compare', false, 'quotes'),
         tile('stats', 'Stats', 'Tattoos, hours and earnings over time', false, 'stats')])
       + tileGroup('Running the studio', [
         tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory'),
-        tile('rules', 'Rule book', 'Your studio rules', false, 'rules')])
+        tile('rules', 'Rule book', 'Your studio rules', false, 'rules')]))
       + tileGroup('App', [
-        tile('settings', 'Settings & backup', 'Profile, your week, Google, backup', false, 'settings'),
+        tile('settings', 'Settings & backup', wsDesign() ? 'Profile, workspace and backup' : 'Profile, your week, Google, backup', false, 'settings'),
         tile('tour', 'Take a tour', 'A guided look around InkForge', false, 'tour')])
       + `<p class="app-credit">Designed and crafted by Trevor Schuster using vibe coding.<br>Over 15 years of experience in tattooing.</p>`
   },
@@ -2115,16 +2118,18 @@ const VIEWS = {
     title: () => 'Settings',
     render() {
       return `
-      <div class="card su-again"><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
+      <div class="card su-again"><div><b>Workspace type</b><span class="muted">${wsDesign() ? 'Design only: the design tools, forms, notes and portfolio, without clients, bookings, quotes, stats and stock.' : 'Full studio: everything, from clients and bookings to design.'}</span></div>
+        <span class="seg" style="flex:none">${[['full', 'Full studio'], ['design', 'Design only']].map(([v, n]) => `<button data-wsmode="${v}" class="${(wsDesign() ? 'design' : 'full') === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
+      <div class="card su-again" data-biz><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
         <button class="btn small" id="s-setup">Run setup</button></div>
-      <div class="card su-again"><div><b>Practice workspace</b><span class="muted">${WS.cur?.test ? 'You\'re in it: made-up data to try things on. Only one is kept.' : 'A separate workspace full of made-up data to try things on. Only one is kept.'}</span></div>
+      <div class="card su-again" data-biz><div><b>Practice workspace</b><span class="muted">${WS.cur?.test ? 'You\'re in it: made-up data to try things on. Only one is kept.' : 'A separate workspace full of made-up data to try things on. Only one is kept.'}</span></div>
         <span class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end">${WS.cur?.test ? '<button class="btn small" id="s-pback">Back to my workspace</button>' : `<button class="btn small" id="s-practice">${Practice.get() ? 'Open' : 'Make one'}</button>`}
           ${Practice.get() ? '<button class="btn small" id="s-pfresh" data-tip="Replace it with a new one, full of fresh made-up data">Start fresh</button><button class="btn small danger" id="s-pdel">Delete</button>' : ''}</span></div>
       <div class="card su-again"><div><b>What's new notes</b><span class="muted">Update notes with things to test on the home screen.</span></div>
         <label class="toggle"><input type="checkbox" id="s-news" ${Settings.get('news_off') === '1' ? '' : 'checked'}><span>Show</span></label></div>
       <div class="card su-again"><div><b>Workspace password</b><span class="muted">${WsPass.on() ? 'On: asked each time this workspace opens.' : 'Off. Add one so others can\'t open this workspace.'}</span></div>
         <button class="btn small" id="s-pass">${WsPass.on() ? 'Change' : 'Set'}</button></div>
-      <div class="card su-again"><div><b>Quote calibration</b><span class="muted">Your rates, speeds, pain, styles and more, used by every quote. Export it or load one here too.</span></div>
+      <div class="card su-again" data-biz><div><b>Quote calibration</b><span class="muted">Your rates, speeds, pain, styles and more, used by every quote. Export it or load one here too.</span></div>
         <a class="btn small" href="#quote-cal">Open</a></div>
       <div class="card su-again"><div><b>Take a tour</b><span class="muted">A guided look around with examples; all removed afterwards.</span></div>
         <button class="btn small" id="s-tour">Start</button></div>
@@ -2150,7 +2155,7 @@ const VIEWS = {
           <label class="field"><span>TikTok</span><input class="in" id="s-tt" value="${esc(Settings.get('artist_tiktok'))}" placeholder="tiktok.com/@…" autocapitalize="off"></label>
         </div>
       </div>
-      <details class="card qc-sec" data-sec="week" ${SET_OPEN.has('week') ? 'open' : ''}><summary><h2>Your week ${help('Your normal day and days off. Used for new bookings and for the open times clients see. Longer sessions can still run past the end time.')}</h2></summary>
+      <details class="card qc-sec" data-biz data-sec="week" ${SET_OPEN.has('week') ? 'open' : ''}><summary><h2>Your week ${help('Your normal day and days off. Used for new bookings and for the open times clients see. Longer sessions can still run past the end time.')}</h2></summary>
         <div class="two">
           <label class="field"><span>Start</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
           <label class="field"><span>Finish</span><input class="in" id="s-end" type="time" value="${esc(Settings.get('day_end', '17:00'))}"></label>
@@ -2162,7 +2167,7 @@ const VIEWS = {
         <div class="lbl" style="margin-top:6px">Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</div>
         <div id="off-card"></div>
       </details>
-      <details class="card qc-sec" data-sec="gcal" ${SET_OPEN.has('gcal') ? 'open' : ''}><summary><h2>Google Calendar ${help('Bookings sync both ways with an "InkForge" calendar in your Google account. Only time, title and the labelled note lines are used; everything else in Google is ignored.')}</h2></summary>
+      <details class="card qc-sec" data-biz data-sec="gcal" ${SET_OPEN.has('gcal') ? 'open' : ''}><summary><h2>Google Calendar ${help('Bookings sync both ways with an "InkForge" calendar in your Google account. Only time, title and the labelled note lines are used; everything else in Google is ignored.')}</h2></summary>
         <div id="gcal-status" style="margin-bottom:12px"></div>
         <label class="field"><span>OAuth client ID ${help('Created once in Google Cloud. See the setup guide below.')}</span>
           <input class="in" id="s-gid" value="${esc(Settings.get('gcal_client_id'))}" placeholder="…apps.googleusercontent.com" autocapitalize="off" spellcheck="false"></label>
@@ -2202,6 +2207,9 @@ const VIEWS = {
       <p class="app-credit">Designed and crafted by Trevor Schuster using vibe coding.<br>Over 15 years of experience in tattooing.</p>`;
     },
     async mount() {
+      document.querySelectorAll('[data-wsmode]').forEach(b => b.onclick = async () => { const m = b.dataset.wsmode; if ((wsDesign() ? 'design' : 'full') === m) return;
+        if (m === 'design' && !await ask('Make this a design-only workspace?\n\nClients, bookings, quotes, stats, stock and rules are hidden (nothing is deleted), and the design tools come to the front. You can switch back any time.')) return;
+        await Settings.set('ws_mode', m); if (WS.cur) { WS.cur.mode = m; await WS.save(); } render(); toast(m === 'design' ? 'Design workspace.' : 'Full studio workspace.', 1800); });
       settingsTabs();
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-setup').onclick = runSetup;
@@ -2824,7 +2832,7 @@ const MERGE_TABLES = {
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'signed_form_pages', 'portfolio_items',
   'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
-const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_|lib_|ws_pass$|dz_refs_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
+const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_|lib_|ws_pass$|ws_mode$|dz_refs_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
 
 function parseBackup(bytes) {
@@ -7846,6 +7854,13 @@ const Dirty = {
 };
 addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
 
+/* ---------- Design workspaces ----------
+   A workspace made only for design: the Studio's tools (design studio, stencil maker, bend tool, simulator, split,
+   reel maker), forms, notes and the portfolio, without the tools for running a studio (clients, bookings, quotes,
+   stats, stock, rules). Kept in the workspace (setting ws_mode, so backups carry it) and on its list entry; the
+   body gets the class ws-design, which hides what is marked data-biz, and those pages lead home. */
+const WS_BIZ = new Set(['clients', 'client', 'client-edit', 'book', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
+const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) === 'design'; } catch { return WS.cur?.mode === 'design'; } };
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book',
   quote: 'more', 'quote-cal': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
@@ -7855,6 +7870,8 @@ let currentHash = location.hash;
 function render() {
   if (location.hash !== currentHash && !Dirty.ok()) { history.replaceState(null, '', currentHash || '#'); return; }
   Dirty.set(false);
+  const dsg = wsDesign(); document.body.classList.toggle('ws-design', dsg);
+  if (dsg && WS_BIZ.has((location.hash.slice(1) || 'home').split('/')[0])) { toast('Not in a design workspace. Change the workspace type in More › Settings.', 3500); location.replace('#home'); return; }
   currentHash = location.hash;
   const [key, arg] = (location.hash.slice(1) || 'home').split('/');
   if (R.playing && key !== 'reel') reelPause();
@@ -7962,7 +7979,7 @@ function showStart() {
       <div class="row" style="align-items:center"><div class="letter" style="flex:1">Recent</div>
         <button class="btn small" id="st-saveall" data-tip="Save every workspace as a file in your Downloads folder">Save all</button></div>
       <div class="card list">${list.map(w => `<div class="c-row ws-row">
-          <button class="c-main ws-open" data-ws="${w.id}"><span class="c-n">${w.cloud ? '<span class="ws-cloud" data-tip="Kept in Google Drive">☁</span> ' : ''}${esc(w.name)}${w.test ? ' <span class="ws-practice">practice</span>' : ''}</span><span class="muted c-sub">${w.cloud ? 'Google Drive · ' : ''}${ago(w.opened)}</span></button>
+          <button class="c-main ws-open" data-ws="${w.id}"><span class="c-n">${w.cloud ? '<span class="ws-cloud" data-tip="Kept in Google Drive">☁</span> ' : ''}${esc(w.name)}${w.test ? ' <span class="ws-practice">practice</span>' : ''}${w.mode === 'design' ? ' <span class="ws-practice ws-dsg">design</span>' : ''}</span><span class="muted c-sub">${w.cloud ? 'Google Drive · ' : ''}${ago(w.opened)}</span></button>
           <button class="btn small icon-btn ${menu === w.id ? 'on' : ''}" data-wsmenu="${w.id}" aria-label="More">⋯</button>
           ${menu === w.id ? `<div class="row tpl-acts">
             <button class="btn small" data-wsren="${w.id}">Rename</button>
@@ -8047,7 +8064,14 @@ function showStart() {
     if (t.closest('#st-new')) {
       const n = await askText('Name for the new workspace (e.g. the artist\'s name):', '');
       if (!n?.trim()) return;
-      const nw = await WS.create(n.trim()); nw.fresh = true; await WS.save(); o.remove(); return startWorkspace(nw);
+      const mode = await new Promise((res) => { const d = document.createElement('div'); d.id = 'merge-dlg'; d.style.zIndex = 99;
+        d.innerHTML = `<div class="card"><h2>What is it for?</h2><div class="dz-ex">
+          <button data-wm="full"><b>Full studio</b><small>Clients, bookings, quotes, stats, stock and rules, with all the design tools too</small></button>
+          <button data-wm="design"><b>Design only</b><small>Just the design side: design studio, stencil maker, bend tool, simulator, split, reel maker, forms, notes and portfolio</small></button></div>
+          <p class="muted" style="font-size:12px;margin:8px 2px 0">You can change it later in More › Settings.</p><button class="btn" data-wm="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+        d.onclick = (e) => { const b = e.target.closest('[data-wm]'); if (!b && e.target !== d) return; d.remove(); res(b?.dataset.wm || null); }; document.body.appendChild(d); });
+      if (!mode) return;
+      const nw = await WS.create(n.trim()); nw.fresh = true; if (mode === 'design') nw.mode = 'design'; await WS.save(); o.remove(); return startWorkspace(nw);
     }
   });
   o.addEventListener('change', async (e) => {
@@ -8139,6 +8163,8 @@ async function startWorkspace(w, fileBytes) {
       render(); }
     else { await Practice.refresh(); render(); }
   }
+  if (w.mode && !Settings.get('ws_mode')) await Settings.set('ws_mode', w.mode);   /* the type chosen when it was made, kept in the workspace itself */
+  if (w.fresh && wsDesign()) { delete w.fresh; await WS.save(); render(); }   /* a design workspace needs no hours or prices */
   if (w.fresh && Settings.get('setup_done') !== '1') runSetup();
   Practice.tidy().catch(() => {}); Tour.resume();
   if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
