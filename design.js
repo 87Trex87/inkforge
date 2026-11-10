@@ -4050,11 +4050,15 @@ DZ.edit = async (id) => {
     if (d('chcb') != null && l) { const b = d('chcb'); l.mixOf = [l.mixOf?.[0] || chCaps()[0], b || undefined]; chInk(l); changed(true); return chRe(); }
     if (d('chpal')) { doc.chal.pal = d('chpal'); changed(true); return chRe(); }
     if (t.closest('[data-chplay]')) { const T = dzChSpec(doc, $('#dz-name').value.trim() || name, id); if (T.err) return toast(T.err, 3500); await flush(); closePop();
-      { const P = T.lines.flat().concat(T.pack ? [T.pack[0], T.pack[1], T.pack[0] + T.pack[2], T.pack[1] + T.pack[3]] : []), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2), m = 6;   /* the example: the design, cropped round the challenge */
-        const x0 = Math.max(0, Math.min(...xs) - m), y0 = Math.max(0, Math.min(...ys) - m), x1 = Math.min(180, Math.max(...xs) + m), y1 = Math.min(130, Math.max(...ys) + m), full = document.createElement('canvas'), sc = 0.6;
-        full.width = Math.round(doc.w * sc); full.height = Math.round(doc.h * sc); await dzDraw(full, doc, sc); const c = document.createElement('canvas'), k2 = CH_PX * sc;
+      { const box = (q) => [q[0], q[1], q[0] + q[2], q[1] + q[3]], P = T.lines.flat().concat(T.pack ? box(T.pack) : [], ...(T.shades || []).map(z => box(z.box))), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
+        /* the example: for a value study its own picture (as it shows, the study unhidden) cropped to the zone; otherwise the design, cropped round the challenge (lines, packing and shading) */
+        const st = doc.layers.find(o => o.role === 'shade' && o.sh?.src && !o.hide), pic = st && doc.layers.find(o => o.t === 'image' && o.ref === st.sh.src), m = pic ? 0 : 6, zb = pic && T.shades?.find(z => z.mapN)?.box;
+        const [X0, Y0, X1, Y1] = zb ? box(zb) : [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+        const x0 = Math.max(0, X0 - m), y0 = Math.max(0, Y0 - m), x1 = Math.min(180, X1 + m), y1 = Math.min(130, Y1 + m), full = document.createElement('canvas'), sc = pic ? 1.2 : 0.6;
+        if (x1 > x0 && y1 > y0) { full.width = Math.round(doc.w * sc); full.height = Math.round(doc.h * sc); if (pic) { const g0 = full.getContext('2d'); g0.fillStyle = '#fff'; g0.fillRect(0, 0, full.width, full.height); }
+        await dzDraw(full, pic ? { ...doc, layers: doc.layers.map(o => o === pic ? { ...o, hide: false } : o) } : doc, sc, pic ? { only: new Set([pic.id]), noBg: true, noStencil: true } : {}); const c = document.createElement('canvas'), k2 = CH_PX * sc;
         c.width = Math.round((x1 - x0) * k2); c.height = Math.round((y1 - y0) * k2); c.getContext('2d').drawImage(full, x0 * k2, y0 * k2, c.width, c.height, 0, 0, c.width, c.height);
-        T.refImg = c.toDataURL('image/jpeg', 0.85); T.refAr = c.height / c.width; }
+        T.refImg = c.toDataURL('image/jpeg', 0.85); T.refAr = c.height / c.width; } }
       const skin = TT_SKINS[ttChSkin()][1], exam = { v: 1, mode: 'ch', list: [T.id], i: 0, res: [], started: Date.now(), custom: T };
       const rows = await DB.all(`SELECT id, meta FROM tattoo_pieces WHERE meta LIKE ?`, ['%"' + T.id + '"%']), hit = rows.find(r => { try { return JSON.parse(r.meta).exam?.custom?.id === T.id; } catch { return false; } });
       if (hit) { let m = {}; try { m = JSON.parse(hit.meta); } catch {} await DB.run(`UPDATE tattoo_pieces SET meta = ?, skin = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...m, exam }), skin, hit.id]); location.hash = 'tattoo/' + hit.id; return; }
@@ -4317,7 +4321,7 @@ DZ.edit = async (id) => {
     const sr = stage.getBoundingClientRect(), rb = $('#dz-rail [data-rail="refs"]'); if (rb) rb.hidden = !refs.length;
     refLay.innerHTML = refs.filter(r => r.on).map(r => { r.x = Math.max(20, Math.min(sr.width - 20, r.x)); r.y = Math.max(20, Math.min(sr.height - 20, r.y));
       return `<div class="tt-ref ${r.lock ? 'lock' : ''} ${refSel === r.id && !r.lock ? 'sel' : ''}" data-rf="${r.id}" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.w * r.ar}px;opacity:${r.op};transform:translate(-50%,-50%) rotate(${r.rot || 0}deg)">
-        <img src="${r._u}" alt="" draggable="false" style="${r.flip ? 'transform:scaleX(-1)' : ''}">${refSel === r.id && !r.lock ? '<i data-rh="nw"></i><i data-rh="ne"></i><i data-rh="sw"></i><i data-rh="se"></i><i data-rh="rot"></i>' : ''}</div>`; }).join(''); }
+        <img src="${r._u}" alt="" draggable="false" style="${r.flip ? 'transform:scaleX(-1);' : ''}${r.bw ? 'filter:grayscale(1)' : ''}">${refSel === r.id && !r.lock ? '<i data-rh="nw"></i><i data-rh="ne"></i><i data-rh="sw"></i><i data-rh="se"></i><i data-rh="rot"></i>' : ''}</div>`; }).join(''); }
   const refNew = (o) => { const sr = stage.getBoundingClientRect(); const r = { id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), x: Math.round(Math.max(170, sr.width * 0.3)), y: Math.round(Math.max(170, sr.height * 0.4)), w: 220, ar: 1, rot: 0, flip: false, op: 0.9, on: true, lock: false, ...o };
     refs.push(r); refSel = r.id; refSave(); drawRefs(); tab = 'refs'; drawSide(); toast('Reference added: drag to move, pinch or a corner to size, the dot to turn.', 2600); return r; };
   // Where a picture goes: into the design, or floating over it as a reference.
@@ -4334,10 +4338,11 @@ DZ.edit = async (id) => {
     if (ref) refNew({ ref, ar }); };
   const drawRefsSide = async () => { const us = await Promise.all(refs.map(refUrl));
     side.innerHTML = `<div class="dz-lh"><b>References <small>${refs.length}</small></b>${dzIB('data-rail="close"', 'close', 'Close')}</div>
-      <div class="tt-layers">${refs.map((r, i) => `<div class="tt-lr tt-rr ${refSel === r.id ? 'on' : ''}" data-rid="${r.id}"><img src="${us[i] || ''}" alt="">
+      <div class="tt-layers">${refs.map((r, i) => `<div class="tt-lr tt-rr ${refSel === r.id ? 'on' : ''}" data-rid="${r.id}"><img src="${us[i] || ''}" alt="" style="${r.bw ? 'filter:grayscale(1)' : ''}">
         <button class="dz-ib" data-rhide data-tip="${r.on ? 'Hide' : 'Show'}" aria-label="${r.on ? 'Hide' : 'Show'}">${r.on ? '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'}</button>
         <button class="dz-ib ${r.lock ? 'on' : ''}" data-rlock data-tip="${r.lock ? 'Unlock' : 'Lock: work straight through it'}" aria-label="Lock">${r.lock ? '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>'}</button>
         <button class="dz-ib" data-rflip data-tip="Flip" aria-label="Flip"><svg viewBox="0 0 24 24">${DZ_UI.fx}</svg></button>
+        <button class="dz-ib ${r.bw ? 'on' : ''}" data-rbw data-tip="${r.bw ? 'Back to colour' : 'Black and white: see the values without the colour'}" aria-label="Black and white"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
         <button class="dz-ib" data-rdel data-tip="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         <input type="range" min="0.1" max="1" step="0.05" value="${r.op}" data-rop aria-label="See-through"></div>`).join('') || '<p class="muted" style="margin:4px 2px">No references yet.</p>'}</div>
       <div class="lbl" style="margin-top:10px">Add a picture</div>
@@ -4348,7 +4353,7 @@ DZ.edit = async (id) => {
   side.addEventListener('click', async (e) => { if (tab !== 'refs') return; const t = e.target, rid = t.closest('[data-rid]')?.dataset.rid;
     if (rid) { const r = refs.find(x => x.id === rid); if (!r) return; e.stopPropagation();
       if (t.closest('[data-rhide]')) r.on = !r.on; else if (t.closest('[data-rlock]')) { r.lock = !r.lock; if (r.lock && refSel === r.id) refSel = null; }
-      else if (t.closest('[data-rflip]')) r.flip = !r.flip; else if (t.closest('[data-rdel]')) refs = refs.filter(x => x !== r); else if (!t.matches('input')) { refSel = r.id; r.on = true; } else return;
+      else if (t.closest('[data-rflip]')) r.flip = !r.flip; else if (t.closest('[data-rbw]')) r.bw = !r.bw; else if (t.closest('[data-rdel]')) refs = refs.filter(x => x !== r); else if (!t.matches('input')) { refSel = r.id; r.on = true; } else return;
       refSave(); drawRefs(); return drawRefsSide(); }
     const ad = t.closest('[data-radd]'); if (ad) { e.stopPropagation(); return refAdd(ad.dataset.radd); } }, true);
   side.addEventListener('input', (e) => { if (tab !== 'refs' || !e.target.matches('[data-rop]')) return; const r = refs.find(x => x.id === e.target.closest('[data-rid]').dataset.rid); if (!r) return; r.op = +e.target.value; refSave();

@@ -2770,10 +2770,11 @@ TT.open = async (el, id) => {
     if (st.panel === 'refs') {
       const us = await Promise.all(refs.map(refUrl));
       side.innerHTML = `<div class="dz-lh"><b>References ${help('Pictures that float over the skin to follow. Drag to move, a corner to resize, the dot to turn, double tap to flip. Lock one to tattoo through it.')}</b><button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-        <div class="tt-layers">${refs.map((r, i) => `<div class="tt-lr tt-rr ${refSel === r.id ? 'on' : ''}" data-rid="${r.id}"><img src="${us[i] || ''}" alt="">
+        <div class="tt-layers">${refs.map((r, i) => `<div class="tt-lr tt-rr ${refSel === r.id ? 'on' : ''}" data-rid="${r.id}"><img src="${us[i] || ''}" alt="" style="${r.bw ? 'filter:grayscale(1)' : ''}">
           <button class="dz-ib" data-rhide data-tip="${r.on ? 'Hide' : 'Show'}" aria-label="Hide">${r.on ? '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1"/></svg>'}</button>
           <button class="dz-ib ${r.lock ? 'on' : ''}" data-rlock data-tip="${r.lock ? 'Unlock' : 'Lock: tattoo straight through it'}" aria-label="Lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 ${r.lock ? '8 0v3' : '7.5-2'}"/></svg></button>
-          <button class="dz-ib" data-rdel data-tip="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <button class="dz-ib ${r.bw ? 'on' : ''}" data-rbw data-tip="${r.bw ? 'Back to colour' : 'Black and white: see the values without the colour'}" aria-label="Black and white"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
+        <button class="dz-ib" data-rdel data-tip="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
           <input type="range" min="0.1" max="1" step="0.05" value="${r.op}" data-rop aria-label="See-through"></div>`).join('') || '<p class="muted" style="margin:4px 2px">No references yet.</p>'}</div>
         <div class="lbl" style="margin-top:10px">Add a picture</div>
         <div class="tt-addr"><button class="btn small" data-radd="file">This device</button><button class="btn small" data-radd="refs">References</button><button class="btn small" data-radd="sten">Stencils</button><button class="btn small" data-radd="pf">Portfolio</button></div>`;
@@ -2842,7 +2843,7 @@ TT.open = async (el, id) => {
     const rid = t.closest('[data-rid]')?.dataset.rid;
     if (rid) { const r = refs.find(x => x.id === rid); if (!r) return;
       if (t.closest('[data-rhide]')) r.on = !r.on; else if (t.closest('[data-rlock]')) r.lock = !r.lock;
-      else if (t.closest('[data-rdel]')) refs = refs.filter(x => x !== r); else if (!t.matches('input')) { refSel = r.id; r.on = true; } else return;
+      else if (t.closest('[data-rbw]')) r.bw = !r.bw; else if (t.closest('[data-rdel]')) refs = refs.filter(x => x !== r); else if (!t.matches('input')) { refSel = r.id; r.on = true; } else return;
       st.dirty = true; drawRefs(); return drawSide(); }
     if (t.closest('[data-radd]')) return refAdd(t.closest('[data-radd]').dataset.radd);
     const ly = t.closest('[data-ly]')?.dataset.ly;
@@ -3254,7 +3255,7 @@ TT.open = async (el, id) => {
     const sr = stage.getBoundingClientRect();
     refLay.innerHTML = refs.filter(r => r.on).map(r => { r.x = Math.max(20, Math.min(sr.width - 20, r.x)); r.y = Math.max(20, Math.min(sr.height - 20, r.y));
       return `<div class="tt-ref ${r.lock ? 'lock' : ''} ${refSel === r.id && !r.lock ? 'sel' : ''}" data-rf="${r.id}" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.w * r.ar}px;opacity:${r.op};transform:translate(-50%,-50%) rotate(${r.rot || 0}deg)">
-        <img src="${r._u}" alt="" draggable="false" style="${r.flip ? 'transform:scaleX(-1)' : ''}">${refSel === r.id && !r.lock ? '<i data-rh="nw"></i><i data-rh="ne"></i><i data-rh="sw"></i><i data-rh="se"></i><i data-rh="rot"></i>' : ''}</div>`; }).join('');
+        <img src="${r._u}" alt="" draggable="false" style="${r.flip ? 'transform:scaleX(-1);' : ''}${r.bw ? 'filter:grayscale(1)' : ''}">${refSel === r.id && !r.lock ? '<i data-rh="nw"></i><i data-rh="ne"></i><i data-rh="sw"></i><i data-rh="se"></i><i data-rh="rot"></i>' : ''}</div>`; }).join('');
   }
   const refNew = (o) => { const sr = stage.getBoundingClientRect(); const r = { id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), x: sr.width - 150, y: 140, w: 220, ar: 1, rot: 0, flip: false, op: 0.9, on: true, lock: false, ...o };
     refs.push(r); refSel = r.id; st.dirty = true; drawRefs(); return r; };
