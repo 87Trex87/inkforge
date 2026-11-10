@@ -1214,19 +1214,38 @@ async function dzThumb(id, doc) {
 function dzPortfolioPick(photos) {
   return new Promise(async (res) => {
     const rows = photos === 'refs'
-      ? await DB.all(`SELECT photo_ref AS v, thumb_ref AS t, title FROM ref_images ORDER BY category COLLATE NOCASE, created_at DESC LIMIT 400`)
+      ? await DB.all(`SELECT photo_ref AS v, thumb_ref AS t, title, category AS f FROM ref_images ORDER BY created_at DESC`)
       : photos
-      ? await DB.all(`SELECT x.photo_ref AS v, x.thumb_ref AS t, p.title FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id ORDER BY coalesce(p.made_on, p.created_at) DESC, x.sort LIMIT 240`)
-      : await DB.all(`SELECT p.id AS v, p.title, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS t
-          FROM portfolio_items p WHERE EXISTS (SELECT 1 FROM portfolio_photos x WHERE x.item_id = p.id) ORDER BY coalesce(p.made_on, p.created_at) DESC LIMIT 240`);
+      ? await DB.all(`SELECT x.photo_ref AS v, x.thumb_ref AS t, p.title, p.id AS pid FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id ORDER BY coalesce(p.made_on, p.created_at) DESC, x.sort`)
+      : await DB.all(`SELECT p.id AS v, p.id AS pid, p.title, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS t
+          FROM portfolio_items p WHERE EXISTS (SELECT 1 FROM portfolio_photos x WHERE x.item_id = p.id) ORDER BY coalesce(p.made_on, p.created_at) DESC`);
     if (!rows.length) { toast(photos === 'refs' ? 'No references yet: add some in Portfolio › References.' : 'Add tattoos with photos to your portfolio first.'); return res(null); }
-    const urls = await Promise.all(rows.map(r => Media.url(r.t)));
+    /* Folders, as in an explorer: reference categories, or the folders made in the portfolio's organiser. */
+    if (photos !== 'refs') { const o = Lib.org('portfolio'); for (const r of rows) r.f = o.in[r.pid] || ''; }
+    for (const r of rows) r.f = (r.f || '').trim();
+    const folders = [...new Set(rows.map(r => r.f).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+    const urls = new Map(), url = async (r) => { if (!urls.has(r.t)) urls.set(r.t, await Media.url(r.t)); return urls.get(r.t); };
+    let at = '', q = '';
     const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
     o.innerHTML = `<div class="card dz-pick"><h2>${photos === 'refs' ? 'Choose a reference' : photos ? 'Choose a photo' : 'Choose a portfolio piece'}</h2>
-      <div class="dz-pf">${rows.map((r, i) => `<button data-v="${esc(r.v)}" title="${esc(r.title || '')}"><img src="${urls[i]}" alt=""></button>`).join('')}</div>
+      <input class="in dz-pfq" type="search" placeholder="Search everything" aria-label="Search">
+      <div class="dz-pfpath"></div><div class="dz-pf"></div>
       <button class="btn" data-v="" style="width:100%;margin-top:10px">Cancel</button></div>`;
-    o.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v ? (photos ? b.dataset.v : +b.dataset.v) : null); };
-    document.body.appendChild(o);
+    const grid = o.querySelector('.dz-pf'), path = o.querySelector('.dz-pfpath');
+    const draw = async () => { const ql = q.trim().toLowerCase();
+      const list = ql ? rows.filter(r => `${r.title || ''} ${r.f}`.toLowerCase().includes(ql)) : rows.filter(r => r.f === at);
+      const dirs = ql || at ? [] : folders;
+      path.innerHTML = ql ? `<span class="muted">${list.length} found</span>` : at ? `<button class="lib-chip" data-up>‹ All folders</button><b>${LIB_FOLDER}${esc(at)}</b>` : '';
+      const u = await Promise.all(list.map(url));
+      grid.innerHTML = dirs.map(f => `<button class="dz-pfdir" data-dir="${esc(f)}">${LIB_FOLDER}<span>${esc(f)}</span><em>${rows.filter(r => r.f === f).length}</em></button>`).join('')
+        + list.map((r, i) => `<button data-v="${esc(r.v)}" title="${esc(r.title || '')}"><img src="${u[i]}" alt="" loading="lazy"></button>`).join('')
+        + (!dirs.length && !list.length ? '<p class="muted" style="grid-column:1/-1">Nothing here.</p>' : ''); };
+    o.oninput = (e) => { if (e.target.matches('.dz-pfq')) { q = e.target.value; draw(); } };
+    o.onclick = (e) => { const t = e.target;
+      if (t.closest('[data-up]')) { at = ''; return draw(); }
+      const d = t.closest('[data-dir]'); if (d) { at = d.dataset.dir; return draw(); }
+      const b = t.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v ? (photos ? b.dataset.v : +b.dataset.v) : null); };
+    document.body.appendChild(o); await draw();
   });
 }
 

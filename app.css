@@ -1137,6 +1137,10 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
 .dz-pf { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; max-height: 60vh; overflow-y: auto; }
 .dz-pf button { aspect-ratio: 1; padding: 0; border: 0; border-radius: 8px; overflow: hidden; cursor: pointer; background: var(--bg3); }
 .dz-pf img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dz-pfq { width: 100%; margin-bottom: 8px; } .dz-pfpath { display: flex; align-items: center; gap: 8px; min-height: 0; margin-bottom: 8px; } .dz-pfpath:empty { display: none; }
+.dz-pfpath b { display: inline-flex; align-items: center; gap: 5px; font: 600 13px var(--ui); } .dz-pfpath svg, .dz-pfdir svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.dz-pf .dz-pfdir { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 6px; color: var(--ink2); border: 1px solid var(--line); font: 600 12px var(--ui); }
+.dz-pf .dz-pfdir svg { width: 30px; height: 30px; color: var(--teal); } .dz-pfdir span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .dz-pfdir em { font-style: normal; font-size: 11px; opacity: .6; }
 
 /* Design studio: Design / Layers tabs and the layers list */
 .dz-tabs { margin-bottom: 12px; } .dz-tabs button { flex: 1; } .dz-tabs small { opacity: .7; margin-left: 4px; }
