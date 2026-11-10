@@ -1407,15 +1407,18 @@ DZ.edit = async (id) => {
       <button class="dz-ib" id="dz-back" aria-label="Back" data-tip="Back to your designs"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
       <input class="dz-name" id="dz-name" value="${esc(name)}" aria-label="Design name">
       <span class="dz-tsp"></span>
+      <button class="dz-ib" id="dz-hide" data-tip="Focus: hide all the panels" aria-label="Focus"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.5"/></svg></button>
+      <button class="dz-ib" id="dz-panels" data-tip="Panels: show or hide each one" aria-label="Panels"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 9h6"/></svg></button>
       <button class="dz-ib" id="dz-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
       <button class="dz-ib" id="dz-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
-      <button class="dz-ib" id="dz-focus" aria-label="Full screen design" data-tip="Full screen: the design fills the screen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <button class="dz-ib" id="dz-focus" aria-label="Full screen design" data-tip="Full screen: the design fills the screen (Focus hides the panels)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       <button class="dz-ib" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24">${DZ_UI.tpl}</svg></button>
       <button class="dz-ib dz-go" id="dz-export" aria-label="Export" data-tip="Export: print, save or share"><svg viewBox="0 0 24 24">${DZ_UI.export}</svg></button>
     </div>
     <div class="dz-ctxw"><div class="dz-ctx" id="dz-ctx"></div><div class="dz-csnap" id="dz-csnap"></div></div>
     <div class="dz-body">
       <div class="dz-stage" id="dz-stage">
+        <div class="tt-qs dz-qstrip" id="dz-qstrip"></div>
         <div class="dz-rail" id="dz-rail">
           ${dzIB('data-rail="select"', 'select', 'Select and move')}
           ${doc.kind === 'form' ? dzIB('data-rail="fields"', 'frametext', 'Form fields') : ''}
@@ -1766,7 +1769,7 @@ DZ.edit = async (id) => {
   };
   const drawRail = () => { const r = $('#dz-rail'); if (!r) return;
     const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc' };
-    r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); };
+    r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); try { dqDraw(); } catch {} };   /* the strip is set up further down; before then there's nothing to redraw */
   /* The tool rail. Text, Picture and Shape open a small menu beside it; the rest act straight away. */
   const pop = () => $('#dz-pop');
   const closePop = () => { const p = pop(); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
@@ -3621,6 +3624,84 @@ DZ.edit = async (id) => {
   };
   $('#dz-name').onchange = (e) => { name = e.target.value.trim() || name; save(); };
   $('#dz-undo').onclick = () => undo(-1); $('#dz-redo').onclick = () => undo(1);
+  /* ---------- Quick strip (as in the tattoo simulator) ----------
+     A row of shortcuts across the top of the page. Its + window picks tools, actions on what's selected (they
+     work through the context strip's own buttons, so they behave exactly the same), favourite colours (up to 8)
+     and favourite fonts (up to 5). Kept for every design (setting dz_strip). */
+  const DQ_SVG = { undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>', redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>', fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>' };
+  const DQ_TOOLS = [['select', 'select', 'Select and move'], ['text', 'text', 'Text'], ['image', 'picture', 'Picture'], ['shape', 'shape', 'Shape'], ['pen', 'pen', 'Pen'], ['pencil', 'pencil', 'Pencil'],
+    ['layers', 'layers', 'Layers'], ['doc', 'page', 'Page: theme, background and sides'], ['undo', DQ_SVG.undo, 'Undo'], ['redo', DQ_SVG.redo, 'Redo'], ['fit', DQ_SVG.fit, 'Show the whole design'], ['export', 'export', 'Export']];
+  const DQ_ACTS = [['dup', 'copy', 'Duplicate'], ['del', 'del', 'Delete'], ['up', 'fwd', 'Bring forward'], ['down', 'back', 'Send back'], ['fx', 'fx', 'Flip left to right'], ['fy', 'fy', 'Flip upside down'],
+    ['lock', 'lock', 'Lock or unlock'], ['crop', 'crop', 'Crop'], ['cut', 'area', 'Select area'], ['nodes', 'nodes', 'Edit nodes'], ['flatten1', 'flatten', 'Flatten into a picture'],
+    ...AL.map(([a, tp, ic]) => ['al:' + a, ic, 'Align: ' + tp]), ...['add', 'subtract', 'intersect', 'contour'].map(v => ['bool:' + v, DZ_BOOL_ICON[v], { add: 'Add: weld into one outline', subtract: 'Subtract', intersect: 'Intersect', contour: 'Contour' }[v]])];
+  const DQ_DEF = ['select', 'text', 'image', 'shape', 'undo', 'redo'], DQ_CMAX = 8, DQ_FMAX = 5;
+  const dqIcon = (ic) => String(ic).startsWith('<svg') ? ic : `<svg viewBox="0 0 24 24">${DZ_UI[ic] || ic}</svg>`;
+  const dqList = () => { try { const a = JSON.parse(Settings.get('dz_strip', 'null')); return Array.isArray(a) ? a : DQ_DEF; } catch { return DQ_DEF; } };
+  const dqFont = (v) => { const s = document.createElement('select'); s.innerHTML = fontOpts(v); return s.selectedOptions[0]?.textContent || v; };
+  function dqDraw() { const el = $('#dz-qstrip'); if (!el) return; let last = '';
+    const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc' };
+    el.innerHTML = dqList().map(id => { const grp = id.startsWith('c:') ? 'c' : id.startsWith('f:') ? 'f' : DQ_ACTS.some(x => x[0] === id) ? 'a' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
+      if (grp === 'c') return sep + `<button class="tt-qb dz-qc" data-dq="${esc(id)}" data-tip="Colour ${esc(id.slice(2))}: on what's selected" aria-label="Colour ${esc(id.slice(2))}"><i style="background:${esc(id.slice(2))}"></i></button>`;
+      if (grp === 'f') { const v = id.slice(2), n = dqFont(v); return sep + `<button class="tt-qb dz-qf" data-dq="${esc(id)}" data-tip="Font ${esc(n)}: on the selected text" aria-label="Font ${esc(n)}"><b style="font-family:'${esc((v === '@1' || v === '@2' ? (DZ_THEMES[doc.theme] || DZ_THEMES.ink)['f' + v[1]] : v).replace(/'/g, ''))}'">Aa</b></button>`; }
+      const it = [...DQ_TOOLS, ...DQ_ACTS].find(x => x[0] === id); if (!it) return '';
+      return sep + `<button class="tt-qb${on[id] ? ' on' : ''}" data-dq="${id}" data-tip="${esc(it[2])}" aria-label="${esc(it[2])}">${dqIcon(it[1])}</button>`; }).join('')
+      + `<i class="tt-qsep"></i><button class="tt-qb tt-qadd" data-dq="add" data-tip="Choose what this strip shows" aria-label="Customise the strip"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`; }
+  const dqApply = (key, v) => { const L = many() ? picked() : layer() ? [layer()] : []; if (!L.length) return toast('Select something first.', 1500);
+    let n = 0; for (const l of L) { if (l.lock) continue;
+      if (key === 'font') { if (l.t === 'text' || l.t === 'field') { l.font = v; n++; } }
+      else if (l.t === 'text' || l.t === 'field') { l.c = v; if (l.t === 'text') l.fm = 'solid'; n++; } else if (l.t === 'shape') { if (l.shape === 'line') l.fill = v; else { l.fill = v; l.fm = 'solid'; } n++; } }
+    if (!n) return toast(key === 'font' ? 'Fonts go on text.' : 'Colours go on text and shapes.', 1600); changed(true); drawSide(); };
+  $('#dz-qstrip').addEventListener('click', (e) => { const b = e.target.closest('[data-dq]'); if (!b) return; const q = b.dataset.dq;
+    if (q === 'add') return dqEdit();
+    if (q.startsWith('c:')) return dqApply('colour', q.slice(2)); if (q.startsWith('f:')) return dqApply('font', q.slice(2));
+    if (q === 'undo' || q === 'redo') return undo(q === 'undo' ? -1 : 1);
+    if (q === 'fit') return $('.dz-ed .dz-zoom [data-z="fit"]')?.click(); if (q === 'export') return $('#dz-export').click();
+    if (q === 'pen' || q === 'pencil') return $(`#dz-rail [data-add="${q}"]`)?.click();
+    if (DQ_TOOLS.some(x => x[0] === q)) return $(`#dz-rail [data-rail="${q}"]`)?.click();
+    const sel2 = q.startsWith('al:') ? `[data-align="${q.slice(3)}"]` : q.startsWith('bool:') ? `[data-bool="${q.slice(5)}"]` : `[data-act="${q}"], [data-mact="${q}"]`;
+    const t = $('#dz-ctx').querySelector(sel2); if (!t) return toast(layer() || many() ? 'Not for this item.' : 'Select something first.', 1500); if (t.disabled) return toast('Not right now: select more, or something else.', 1600); t.click(); });
+  const dqEdit = () => { let list = dqList().slice(), tab2 = 'tools', addC = '#1fb6a6', addF = ''; const o = document.createElement('div'); o.id = 'dz-qsedit';
+    o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55)';
+    const row = (id, ic, nm) => `<button class="tt-qrow${list.includes(id) ? ' on' : ''}" data-qi="${esc(id)}"><span class="tt-qri">${dqIcon(ic)}</span><span>${esc(nm)}</span><i class="tt-qsw"></i></button>`;
+    const cols = () => list.filter(x => x.startsWith('c:')), fonts = () => list.filter(x => x.startsWith('f:'));
+    const draw = () => { const body = tab2 === 'tools' ? `<div class="tt-qrows">${DQ_TOOLS.map(([id, ic, nm]) => row(id, ic, nm)).join('')}</div>`
+        : tab2 === 'acts' ? `<p class="muted" style="font-size:12px;margin:0 2px 6px">These work on what's selected, like the strip under the top bar.</p><div class="tt-qrows">${DQ_ACTS.map(([id, ic, nm]) => row(id, ic, nm)).join('')}</div>`
+        : tab2 === 'cols' ? `<p class="muted" style="font-size:12px;margin:0 2px 6px">Tap one on the strip to colour what's selected (text, or a shape's fill). Up to ${DQ_CMAX} (${cols().length} / ${DQ_CMAX}).</p>
+            <div class="tt-qadd2"><input type="color" data-qcol value="${addC}" style="width:48px;height:34px;padding:0;border:0;background:none"><span class="muted" style="flex:1">${esc(addC)}</span><button class="btn small primary" data-qe="addc">Add</button></div>
+            <div class="tt-qrows">${cols().map(id => `<div class="tt-qrow on"><span class="tt-qri"><i class="dz-qcdot" style="background:${esc(id.slice(2))}"></i></span><span>${esc(id.slice(2))}</span><button class="mini" data-qdel="${esc(id)}" aria-label="Remove">✕</button></div>`).join('') || '<p class="muted" style="font-size:12px;margin:8px 2px">No colours yet.</p>'}</div>`
+        : `<p class="muted" style="font-size:12px;margin:0 2px 6px">Tap one on the strip to set the font of the selected text. Up to ${DQ_FMAX} (${fonts().length} / ${DQ_FMAX}).</p>
+            <div class="tt-qadd2"><select class="in" data-qfont>${fontOpts(addF)}</select><button class="btn small primary" data-qe="addf">Add</button></div>
+            <div class="tt-qrows">${fonts().map(id => `<div class="tt-qrow on"><span class="tt-qri"><b>Aa</b></span><span>${esc(dqFont(id.slice(2)))}</span><button class="mini" data-qdel="${esc(id)}" aria-label="Remove">✕</button></div>`).join('') || '<p class="muted" style="font-size:12px;margin:8px 2px">No fonts yet.</p>'}</div>`;
+      o.innerHTML = `<div class="card tt-qse"><div class="row" style="align-items:center;gap:6px"><h2 style="margin:0;flex:1">Quick strip</h2><button class="btn small" data-qe="reset">Default</button><button class="btn small primary" data-qe="done">Done</button></div>
+        <div class="tt-ftabs" style="margin:10px 0 8px">${[['tools', 'Tools'], ['acts', 'Actions'], ['cols', 'Colours'], ['fonts', 'Fonts']].map(([k2, n]) => `<button data-qt="${k2}" class="${tab2 === k2 ? 'on' : ''}">${n}</button>`).join('')}</div>${body}</div>`;
+      if (tab2 === 'fonts') { const s = o.querySelector('[data-qfont]'); addF = s.value; } };
+    const order = () => [...DQ_TOOLS, ...DQ_ACTS].map(x => x[0]).filter(x => list.includes(x)).concat(cols(), fonts());
+    o.onclick = async (e) => { const t2 = e.target.closest('[data-qt]'); if (t2) { tab2 = t2.dataset.qt; return draw(); }
+      const i = e.target.closest('[data-qi]'); if (i) { const id = i.dataset.qi; list = list.includes(id) ? list.filter(x => x !== id) : [...list, id]; list = order(); i.classList.toggle('on'); return; }
+      const dl = e.target.closest('[data-qdel]'); if (dl) { list = list.filter(x => x !== dl.dataset.qdel); return draw(); }
+      const a = e.target.closest('[data-qe]')?.dataset.qe;
+      if (a === 'addc') { const id = 'c:' + addC; if (list.includes(id)) return toast('That colour is already there.', 1500); if (cols().length >= DQ_CMAX) return toast(`Up to ${DQ_CMAX} colours: remove one first.`, 1800); list = [...list, id]; return draw(); }
+      if (a === 'addf') { const id = 'f:' + addF; if (!addF || addF[0] === '+') return toast('Pick a font from the list.', 1500); if (list.includes(id)) return toast('That font is already there.', 1500); if (fonts().length >= DQ_FMAX) return toast(`Up to ${DQ_FMAX} fonts: remove one first.`, 1800); list = [...list, id]; return draw(); }
+      if (a === 'reset') { list = DQ_DEF.slice(); return draw(); }
+      if (a === 'done' || e.target === o) { await Settings.set('dz_strip', JSON.stringify(order())); o.remove(); dqDraw(); } };
+    o.oninput = (e) => { if (e.target.matches('[data-qcol]')) { addC = e.target.value; const s = e.target.nextElementSibling; if (s) s.textContent = addC; } };
+    o.onchange = (e) => { if (e.target.matches('[data-qfont]')) addF = e.target.value; };
+    draw(); document.body.appendChild(o); };
+  /* ---------- Panels: hide or show each one, or all at once (Focus), as in the simulator ----------
+     Kept in the setting dz_panels (a list of hidden panel names). */
+  const DPANELS = [['qs', 'Quick strip'], ['rail', 'Tools'], ['ctx', 'Selection strip'], ['side', 'Side panel'], ['zoom', 'Zoom']];
+  let dpHide = (() => { try { return new Set(JSON.parse(Settings.get('dz_panels', '[]'))); } catch { return new Set(); } })();
+  const dpApply = () => { const ed = $('.dz-ed'); if (!ed) return; ed.dataset.hide = [...dpHide].join(' '); Settings.set('dz_panels', JSON.stringify([...dpHide]));
+    const f = $('#dz-hide'), all = DPANELS.every(([k2]) => dpHide.has(k2)); if (f) { f.classList.toggle('on', all); f.dataset.tip = all ? 'Show all the panels' : 'Focus: hide all the panels'; } };
+  $('#dz-hide').onclick = () => { const all = DPANELS.every(([k2]) => dpHide.has(k2)); dpHide = all ? new Set() : new Set(DPANELS.map(([k2]) => k2)); closePop(); dpApply(); };
+  $('#dz-panels').onclick = (e) => { e.stopPropagation(); let m = $('#dz-panm'); if (m) return m.remove(); m = document.createElement('div'); m.id = 'dz-panm'; m.className = 'tt-panm';
+    const draw = () => { m.innerHTML = `<div class="gh">Panels</div>${DPANELS.map(([k2, n]) => `<button class="tt-qrow${dpHide.has(k2) ? '' : ' on'}" data-pn="${k2}"><span>${n}</span><i class="tt-qsw"></i></button>`).join('')}
+      <div class="row" style="gap:6px;margin-top:6px"><button class="btn small" data-pall="hide" style="flex:1">Hide all</button><button class="btn small" data-pall="show" style="flex:1">Show all</button></div>`; };
+    m.onclick = (ev) => { ev.stopPropagation(); const p = ev.target.closest('[data-pn]')?.dataset.pn; if (p) { if (dpHide.has(p)) dpHide.delete(p); else dpHide.add(p); dpApply(); return draw(); }
+      const a = ev.target.closest('[data-pall]')?.dataset.pall; if (a) { dpHide = a === 'hide' ? new Set(DPANELS.map(([k2]) => k2)) : new Set(); dpApply(); draw(); } };
+    draw(); document.body.appendChild(m); const r = $('#dz-panels').getBoundingClientRect(); m.style.top = (r.bottom + 6) + 'px'; m.style.right = Math.max(8, innerWidth - r.right) + 'px';
+    setTimeout(() => document.addEventListener('pointerdown', function off(ev) { if (!ev.target.closest('#dz-panm, #dz-panels')) { m.remove(); document.removeEventListener('pointerdown', off, true); } }, true)); };
+  dpApply(); dqDraw();
   $('#dz-export').onclick = () => { select(null); dzExport(doc, name); };
   dzRO = new ResizeObserver(() => { fit(); redraw(); }); dzRO.observe(stage);
   fit(); drawSide(); await redraw();

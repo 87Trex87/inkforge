@@ -1643,3 +1643,28 @@ textarea.ff-i { resize: none; }
 .app-credit { margin: 22px 12px 10px; text-align: center; font-size: 12px; line-height: 1.5; color: var(--ink2, #9aa5a6); }
 .set-tabs { display: flex; gap: 2px; margin-bottom: 10px; padding: 3px; border-radius: 10px; background: rgba(127,127,127,.12); overflow-x: auto; scrollbar-width: none; } .set-tabs button { flex: 1 0 auto; padding: 9px 12px; border: 0; border-radius: 8px; background: none; color: var(--ink2, #9aa5a6); font: 600 13px var(--ui); cursor: pointer; white-space: nowrap; } .set-tabs button.on { background: var(--teal); color: #06201d; }
 .set-intro { margin: 0 2px 10px; font-size: 13px; color: var(--ink2, #9aa5a6); } .card[hidden] { display: none; } .set-fixed > summary { cursor: default; list-style: none; } .set-fixed > summary::-webkit-details-marker { display: none; } .set-fixed > summary::after { display: none; }
+
+/* Quick strip, its + window and the Panels menu: shared by the tattoo simulator and the design studio */
+.tt-qs { position: absolute; left: 10px; top: 10px; z-index: 7; display: flex; align-items: center; gap: 2px; padding: 3px; max-width: calc(100% - min(260px, 100% - 150px) - 34px); overflow-x: auto; scrollbar-width: none;
+  border-radius: 12px; background: rgba(22,27,28,.92); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0,0,0,.45); } .tt-qs::-webkit-scrollbar { display: none; }
+.tt-qb { flex: none; height: 32px; min-width: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 5px; border: 0; border-radius: 9px; background: none; color: var(--ink); cursor: pointer; touch-action: none; }
+.tt-qb svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .tt-qb b { font: 700 10px var(--ui); color: var(--teal); }
+.tt-qb:hover { background: rgba(255,255,255,.06); } .tt-qb.on { background: rgba(31,182,166,.2); color: var(--teal); }
+.tt-qsep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line); } .tt-qadd { color: var(--ink2); }
+.tt-qse { max-width: 440px; width: 100%; max-height: 86dvh; overflow-y: auto; }
+.tt-qrows { display: flex; flex-direction: column; gap: 2px; } .tt-qrow { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: 9px; background: none; color: var(--ink); font: 500 13px var(--ui); text-align: left; cursor: pointer; }
+.tt-qrow:hover { background: rgba(255,255,255,.05); } .tt-qrow > span:nth-child(2), .tt-qrow > span:first-child:not(.tt-qri) { flex: 1; } .tt-qri { width: 26px; display: grid; place-items: center; color: var(--ink2); } .tt-qri svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; } .tt-qri b { font: 700 10px var(--ui); color: var(--teal); }
+.tt-qsw { width: 30px; height: 17px; border-radius: 9px; background: rgba(255,255,255,.15); position: relative; flex: none; } .tt-qsw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #cfd6d8; transition: left .15s; }
+.tt-qrow.on .tt-qsw { background: var(--teal); } .tt-qrow.on .tt-qsw::after { left: 15px; background: #fff; }
+.tt-qadd2 { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; } .tt-qadd2 select { flex: 1; min-width: 0; }
+.tt-panm { position: fixed; z-index: 60; width: 210px; padding: 6px; border-radius: 14px; background: rgba(22,27,28,.97); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.55); }
+.tt-ftabs { display: flex; gap: 2px; margin: 2px 0 10px; padding: 3px; border-radius: 10px; background: rgba(127,127,127,.12); overflow-x: auto; scrollbar-width: none; } .tt-ftabs button { flex: 1 0 auto; padding: 7px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink2, #9aa5a6); font: 600 12px var(--ui); cursor: pointer; white-space: nowrap; } .tt-ftabs button.on { background: var(--teal); color: #06201d; }
+/* Design studio: the strip sits above the tools, panels hide one by one */
+.dz-qstrip .dz-qc i, .dz-qcdot { display: block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); }
+.dz-qstrip .dz-qf b { font-size: 14px; font-weight: 400; color: var(--ink); }
+.dz-ed:not([data-hide~="qs"]) .dz-stage > .dz-rail { top: 56px; transform: none; max-height: calc(100% - 66px); overflow-y: auto; scrollbar-width: none; }
+@media (min-width: 701px) { .dz-ed:not([data-hide~="qs"]) .dz-stage > .dz-rail { max-height: calc(100% - 260px); } }
+@media (max-width: 700px) { .dz-ed .dz-qstrip { max-width: calc(100% - 150px); } }
+.dz-ed[data-hide~="qs"] #dz-qstrip, .dz-ed[data-hide~="rail"] #dz-rail, .dz-ed[data-hide~="ctx"] .dz-ctxw, .dz-ed[data-hide~="side"] #dz-side, .dz-ed[data-hide~="zoom"] .dz-zoom { display: none !important; }
+/* The selection strip in the simulator's button style */
+.dz-ctx .dz-ib { border-radius: 9px; } .dz-ctx .dz-ib:hover:not(:disabled) { background: rgba(255,255,255,.06); } .dz-ctx .dz-ib.on { background: rgba(31,182,166,.2); color: var(--teal); }
