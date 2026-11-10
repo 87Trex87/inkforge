@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 377;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 378;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -622,6 +622,16 @@ function ask(msg, def) {
   });
 }
 const askText = (msg, def = '') => ask(msg, def);
+/* A short list that drops down under a button (the quick strips' favourite fonts): items [value, label, css font],
+   each shown in its own font. Resolves the picked value, or null. */
+function stripMenu(btn, items, title) { return new Promise((res) => { document.getElementById('strip-menu')?.remove();
+  const m = document.createElement('div'); m.id = 'strip-menu'; m.className = 'tt-panm strip-menu';
+  m.innerHTML = `<div class="gh">${esc(title)}</div>` + items.map(([v, n, f]) => `<button class="tt-qrow" data-sv="${esc(v)}"><span style="font-family:${esc(f || v)};font-size:16px">${esc(n)}</span></button>`).join('');
+  const r = btn.getBoundingClientRect(); document.body.appendChild(m); m.style.top = (r.bottom + 6) + 'px'; m.style.left = Math.max(8, Math.min(innerWidth - m.offsetWidth - 8, r.left)) + 'px';
+  const done = (v) => { m.remove(); document.removeEventListener('pointerdown', off, true); res(v); };
+  const off = (e) => { if (!e.target.closest('#strip-menu')) done(null); };
+  m.onclick = (e) => { const b = e.target.closest('[data-sv]'); if (b) done(b.dataset.sv); };
+  setTimeout(() => document.addEventListener('pointerdown', off, true)); }); }
 /* Workspace password: a light lock so a casual person can't open a workspace. Kept as a hash in the workspace's
    own settings (ws_pass), so it travels with its backups. Not encryption: the data itself is not scrambled, and
    anyone who opens the database file can read it or clear the setting. There is no reset: a forgotten password

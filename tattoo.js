@@ -2668,13 +2668,13 @@ TT.open = async (el, id) => {
     ['c:endless', 'Ink never runs out', '<svg viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/><path d="M9.5 15c.6.9 1.4 1.3 2.5 1.3s1.9-.4 2.5-1.3c-.6-.9-1.4-1.3-2.5-1.3S10.1 14.1 9.5 15z"/></svg>']]) : [];
   for (const [id, , svg] of QS_CHEAT) qsIcon[id] = svg;
   const qsList = () => { try { const a = JSON.parse(Settings.get(QS_KEY, 'null')); return Array.isArray(a) ? a.filter(x => !x.startsWith('c:') || QS_CHEAT.some(c => c[0] === x)) : QS_DEF; } catch { return QS_DEF; } };
-  const QS_NMAX = 5, QS_PMAX = 3;
+  const QS_NMAX = 5, QS_PMAX = 3, QS_FMAX = 5;
   const qsFav = (id) => { const [n, s] = id.slice(2).split('@'); return { n, s: s ? +s : null }; };
   const qsName = (id) => id.startsWith('c:') ? (QS_CHEAT.find(x => x[0] === id)?.[1] || id) : id.startsWith('p:') ? (palAll().find(P => P.id === id.slice(2))?.name || 'Palette') : id.startsWith('n:') ? (({ n, s }) => `${TT_NEEDLES.find(x => x.id === n)?.name || n}${s ? ' ' + SZN[s] : ''}`)(qsFav(id)) : [...QS_MAG, ...QS_TOOLS].find(x => x[0] === id)?.[1] || id;
-  function qsDraw() { const el = $('#tt-qs'); if (!el) return; const mg = isMag();
+  function qsDraw() { const el = $('#tt-qs'); if (!el) return; const mg = isMag(); let fdone = false;
     if (qsDrag) { const o = el.querySelector('[data-q="offset"] b'), r = el.querySelector('[data-q="roll"] b'); if (o) o.textContent = st.magAng + '°'; if (r) r.textContent = Math.round((st.magRoll || 0) * 100); return; }   // mid-drag: relabel only, so the drag isn't lost
     let last = '';
-    el.innerHTML = qsList().filter(id => !id.startsWith('p:') || palAll().some(P => P.id === id.slice(2))).map(id => { const grp = id.startsWith('c:') ? 'c' : id.startsWith('p:') ? 'p' : id.startsWith('n:') ? 'n' : QS_MAG.some(x => x[0] === id) ? 'm' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
+    el.innerHTML = qsList().filter(id => !id.startsWith('p:') || palAll().some(P => P.id === id.slice(2))).map(id => { const grp = id.startsWith('f:') ? 'f' : id.startsWith('c:') ? 'c' : id.startsWith('p:') ? 'p' : id.startsWith('n:') ? 'n' : QS_MAG.some(x => x[0] === id) ? 'm' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
       const nm = esc(qsName(id)), dim = grp === 'm' && !mg ? ' dim' : '';
       if (id === 'lean') return sep + `<button class="tt-qb${st.magTilt ? ' on' : ''}${dim}" data-q="lean" data-tip="${nm}: ${st.magTilt ? 'on' : 'off'}" aria-label="${nm}">${qsIcon.lean}</button>`;
       if (id === 'offset') return sep + `<button class="tt-qb wide${dim}" data-q="offset" data-tip="${st.magTilt ? 'Offset on the lean' : 'Magnum angle'}: tap for a slider, or hold and drag" aria-label="Magnum angle">${qsIcon.offset}<b>${st.magAng}°</b></button>`;
@@ -2682,6 +2682,7 @@ TT.open = async (el, id) => {
       if (/^a\d/.test(id)) { const v = +id.slice(1); return sep + `<button class="tt-qb${st.magAng === v ? ' on' : ''}${dim}" data-q="${id}" data-tip="${nm}" aria-label="${nm}"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg></button>`; }
       if (grp === 'p') { const P = palAll().find(x => x.id === id.slice(2)); return sep + `<button class="tt-qb tt-qp${!st.wash && st.pal === P.id ? ' on' : ''}" data-q="${esc(id)}" data-tip="${nm}" aria-label="${nm}">${palDots(P, 3)}</button>`; }
       if (grp === 'n') { const { n, s } = qsFav(id), on = st.needle === n && (!s || Math.abs(feel.size - s) < 0.01); return sep + `<button class="tt-qb tt-qn${on ? ' on' : ''}" data-q="${esc(id)}" data-tip="${nm}" aria-label="${nm}"><b>${esc(n)}</b>${s ? `<small>${SZN[s] || ''}</small>` : ''}</button>`; }
+      if (grp === 'f') { if (!CHEAT || fdone) return ''; fdone = true; return sep + `<button class="tt-qb" data-q="fonts" data-tip="Your lettering fonts" aria-label="Your lettering fonts"><b style="color:var(--ink);font-size:13px;font-weight:400">Aa</b><svg viewBox="0 0 24 24" style="width:10px;height:10px"><path d="M6 9l6 6 6-6"/></svg></button>`; }
       if (grp === 'c') { const r = id.slice(2), on = st.tool === r || r === 'fast' && !!st.fast || r === 'endless' && !!st.endless || r === 'grid' && st.grid.on || r === 'ruler' && st.ruler.on || r === 'sym' && st.sym.mode !== 'off';
         return sep + `<button class="tt-qb${on ? ' on' : ''}" data-q="${id}" data-r="${r}" data-tip="${nm}" aria-label="${nm}">${qsIcon[id]}</button>`; }
       const on = (id === 'needle' || id === 'erase' || id === 'marker') && st.tool === id || id === 'dmg' && st.check;
@@ -2717,6 +2718,10 @@ TT.open = async (el, id) => {
     if (q === 'undo') return $('#tt-undo').click(); if (q === 'redo') return $('#tt-redo').click(); if (q === 'view') return $('#tt-view').click();
     if (q === 'dmg') { meterEl.querySelector('[data-chk]')?.click(); return qsDraw(); } if (q === 'fit') return $('.tt-zoom [data-z="fit"]')?.click();
     if (q === 'add') return qsEdit();
+    if (q === 'fonts') { const fl = letFonts();
+      return stripMenu(b, qsList().filter(x => x.startsWith('f:')).map(x => { const v = x.slice(2); return [v, fl.find(f => f[0] === v)?.[1] || v, v]; }), 'Lettering font').then(async (v) => { if (!v) return;
+        st.letDef = { ...st.letDef, font: v }; st.dirty = true; await letLoadFont(v); const Lt = letCur();
+        if (Lt) { Lt.font = v; letDraw(); placeGuides(); letPanel(); } else toast('Lettering font set. Pick Lettering in the cheat tools and tap the skin.', 2400); }); }
     if (q === 'c:fast' || q === 'c:endless') { const k = q.slice(2); st[k] = !st[k]; st.dirty = true; toast(k === 'fast' ? (st.fast ? 'Fast lines on: pull lines as quick as you like.' : 'Fast lines off.') : (st.endless ? 'Endless ink: the needle stays loaded.' : 'Ink runs out again as you work.'), 1600); return qsDraw(); }
     if (q.startsWith('c:')) { $('#tt-rail').onclick({ target: b, preventDefault() {}, stopPropagation() {} }); return qsDraw(); }
     $(`#tt-rail [data-r="${q}"]`)?.click(); qsDraw(); });
@@ -2725,17 +2730,20 @@ TT.open = async (el, id) => {
   const qsEdit = () => { let list = qsList().slice(), tab = 'mag', addN = st.needle, addS = SZN[feel.size] ? feel.size : 0.3; const o = document.createElement('div'); o.id = 'tt-qsedit'; o.className = 'tt-tune';
     o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55)';
     const row = (id, nm) => `<button class="tt-qrow${list.includes(id) ? ' on' : ''}" data-qi="${id}"><span class="tt-qri">${/^a\d/.test(id) ? `<svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${id.slice(1)} 12 12)"/></svg>` : qsIcon[id] || ''}</span><span>${esc(nm)}</span><i class="tt-qsw"></i></button>`;
-    const favs = () => list.filter(x => x.startsWith('n:')), pals = () => list.filter(x => x.startsWith('p:'));
+    const favs = () => list.filter(x => x.startsWith('n:')), pals = () => list.filter(x => x.startsWith('p:')), fnts = () => list.filter(x => x.startsWith('f:')); let addF = st.letDef?.font || '';
     const draw = () => { const body = tab === 'mag' ? `<div class="tt-qrows">${QS_MAG.map(([id, nm]) => row(id, nm)).join('')}</div>`
         : tab === 'tools' ? `<div class="tt-qrows">${QS_TOOLS.map(([id, nm]) => row(id, nm)).join('')}</div>`
         : tab === 'cheat' ? `<div class="tt-qrows">${QS_CHEAT.map(([id, nm]) => row(id, nm)).join('')}</div>`
+        : tab === 'fonts' ? `<p class="muted" style="font-size:12px;margin:0 2px 6px">Lettering fonts you use most, up to ${QS_FMAX} (${fnts().length} / ${QS_FMAX}). They share one Aa button on the strip.</p>
+            <div class="tt-qadd2"><select class="in" data-qfont>${letFonts().map(([f, n2]) => `<option value="${esc(f)}" ${f === addF ? 'selected' : ''}>${esc(n2)}</option>`).join('')}</select><button class="btn small primary" data-qe="addf">Add</button></div>
+            ${fnts().length ? `<div class="tt-qrows">${fnts().map(id => `<div class="tt-qrow on"><span class="tt-qri"><b style="font-family:${esc(id.slice(2))};color:var(--ink);font-weight:400">Aa</b></span><span>${esc(letFonts().find(f => f[0] === id.slice(2))?.[1] || id.slice(2))}</span><button class="mini" data-qdel="${esc(id)}" aria-label="Remove">✕</button></div>`).join('')}</div>` : '<p class="muted" style="font-size:12px;margin:8px 2px">No fonts yet.</p>'}`
         : tab === 'inks' ? `<p class="muted" style="font-size:12px;margin:0 2px 6px">Up to ${QS_PMAX} palettes on the strip for quick switching (${pals().length} / ${QS_PMAX}).</p><div class="tt-qrows">${palAll().map(P => `<button class="tt-qrow${list.includes('p:' + P.id) ? ' on' : ''}" data-qp="${esc(P.id)}"><span class="tt-qri">${palDots(P, 3)}</span><span>${esc(P.name)}</span><i class="tt-qsw"></i></button>`).join('')}</div>`
         : `<p class="muted" style="font-size:12px;margin:0 2px 6px">Pick a needle and its size, then Add. Repeat for more, up to ${QS_NMAX} (${favs().length} / ${QS_NMAX}).</p><div class="tt-qadd2"><select class="in" data-qn>${Object.entries(TT_KINDS).map(([kind, [, label]]) => `<optgroup label="${esc(label)}">${TT_NEEDLES.filter(n => n.kind === kind).map(n => `<option value="${n.id}" ${n.id === addN ? 'selected' : ''}>${n.id}</option>`).join('')}</optgroup>`).join('')}</select>
             <div class="seg">${Object.entries(SZN).map(([v, l]) => `<button data-qs="${v}" class="${+v === addS ? 'on' : ''}">${l}</button>`).join('')}</div><button class="btn small primary" data-qe="addn">Add</button></div>
           ${favs().length ? `<div class="tt-qrows">${favs().map(id => { const { n, s } = qsFav(id); return `<div class="tt-qrow on"><span class="tt-qri"><b>${esc(n)}</b></span><span>${esc(TT_NEEDLES.find(x => x.id === n)?.name || n)}${s ? ` · ${SZN[s]}` : ''}</span><button class="mini" data-qdel="${esc(id)}" aria-label="Remove">✕</button></div>`; }).join('')}</div>` : '<p class="muted" style="font-size:12px;margin:8px 2px">No favourites yet: pick a needle and its size, then Add.</p>'}`;
       o.innerHTML = `<div class="card tt-qse"><div class="row" style="align-items:center;gap:6px"><h2 style="margin:0;flex:1">Quick strip${CHEAT ? ' <small class="muted" style="font:500 12px var(--ui)">cheat mode</small>' : ''}</h2><button class="btn small" data-qe="reset">Default</button><button class="btn small primary" data-qe="done">Done</button></div>
-        <div class="tt-ftabs" style="margin:10px 0 8px">${[['mag', 'Magnum'], ['tools', 'Tools'], ...(CHEAT ? [['cheat', 'Cheat']] : []), ['needles', 'Needles'], ['inks', 'Inks']].map(([k, n]) => `<button data-qt="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>${body}</div>`; };
-    const order = () => [...QS_MAG, ...QS_TOOLS, ...QS_CHEAT].map(x => x[0]).filter(x => list.includes(x)).concat(pals(), favs());
+        <div class="tt-ftabs" style="margin:10px 0 8px">${[['mag', 'Magnum'], ['tools', 'Tools'], ...(CHEAT ? [['cheat', 'Cheat']] : []), ['needles', 'Needles'], ['inks', 'Inks'], ...(CHEAT ? [['fonts', 'Fonts']] : [])].map(([k, n]) => `<button data-qt="${k}" class="${tab === k ? 'on' : ''}">${n}</button>`).join('')}</div>${body}</div>`; };
+    const order = () => [...QS_MAG, ...QS_TOOLS, ...QS_CHEAT].map(x => x[0]).filter(x => list.includes(x)).concat(pals(), favs(), fnts());
     o.onclick = async (e) => { const t2 = e.target.closest('[data-qt]'); if (t2) { tab = t2.dataset.qt; return draw(); }
       const i = e.target.closest('[data-qi]'); if (i) { const id = i.dataset.qi; list = list.includes(id) ? list.filter(x => x !== id) : [...list, id]; list = order(); i.classList.toggle('on'); return; }
       const pq = e.target.closest('[data-qp]'); if (pq) { const id = 'p:' + pq.dataset.qp; if (list.includes(id)) list = list.filter(x => x !== id); else { if (pals().length >= QS_PMAX) return toast(`Up to ${QS_PMAX} palettes on the strip.`, 1800); list = [...list, id]; } list = order(); return draw(); }
@@ -2743,6 +2751,7 @@ TT.open = async (el, id) => {
       const dl = e.target.closest('[data-qdel]'); if (dl) { list = list.filter(x => x !== dl.dataset.qdel); return draw(); }
       const a = e.target.closest('[data-qe]')?.dataset.qe;
       if (a === 'addn') { const id = `n:${addN}@${addS}`; if (list.includes(id)) return toast('That one is already a favourite.', 1500); if (favs().length >= QS_NMAX) return toast(`Up to ${QS_NMAX} favourite needles: remove one first.`, 2000); list = [...list, id]; return draw(); }
+      if (a === 'addf') { const s2 = o.querySelector('[data-qfont]'); addF = s2?.value || addF; const id = 'f:' + addF; if (!addF) return; if (list.includes(id)) return toast('That font is already there.', 1500); if (fnts().length >= QS_FMAX) return toast(`Up to ${QS_FMAX} fonts: remove one first.`, 1800); list = [...list, id]; return draw(); }
       if (a === 'reset') { list = QS_DEF.slice(); return draw(); }
       if (a === 'done' || e.target === o) { await Settings.set(QS_KEY, JSON.stringify(order())); o.remove(); qsDraw(); } };
     o.onchange = (e) => { if (e.target.matches('[data-qn]')) addN = e.target.value; };

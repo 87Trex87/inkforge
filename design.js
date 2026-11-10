@@ -3840,11 +3840,11 @@ DZ.edit = async (id) => {
   const dqIcon = (ic) => String(ic).startsWith('<svg') ? ic : `<svg viewBox="0 0 24 24">${DZ_UI[ic] || ic}</svg>`;
   const dqList = () => { try { const a = JSON.parse(Settings.get('dz_strip', 'null')); return Array.isArray(a) ? a : DQ_DEF; } catch { return DQ_DEF; } };
   const dqFont = (v) => { const s = document.createElement('select'); s.innerHTML = fontOpts(v); return s.selectedOptions[0]?.textContent || v; };
-  function dqDraw() { const el = $('#dz-qstrip'); if (!el) return; let last = '';
+  function dqDraw() { const el = $('#dz-qstrip'); if (!el) return; let last = '', fdone = false;
     const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc', grid: !!doc.grid?.on };
     const html = dqList().map(id => { const grp = id.startsWith('c:') ? 'c' : id.startsWith('f:') ? 'f' : DQ_ACTS.some(x => x[0] === id) ? 'a' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
       if (grp === 'c') return sep + `<button class="tt-qb dz-qc" data-dq="${esc(id)}" data-tip="Colour ${esc(id.slice(2))}: on what's selected" aria-label="Colour ${esc(id.slice(2))}"><i style="background:${esc(id.slice(2))}"></i></button>`;
-      if (grp === 'f') { const v = id.slice(2), n = dqFont(v); return sep + `<button class="tt-qb dz-qf" data-dq="${esc(id)}" data-tip="Font ${esc(n)}: on the selected text" aria-label="Font ${esc(n)}"><b style="font-family:'${esc((v === '@1' || v === '@2' ? (DZ_THEMES[doc.theme] || DZ_THEMES.ink)['f' + v[1]] : v).replace(/'/g, ''))}'">Aa</b></button>`; }
+      if (grp === 'f') { if (fdone) return ''; fdone = true; return sep + `<button class="tt-qb dz-qf" data-dq="fonts" data-tip="Your fonts: pick one for the selected text" aria-label="Your fonts"><b>Aa</b><svg viewBox="0 0 24 24" style="width:10px;height:10px"><path d="M6 9l6 6 6-6"/></svg></button>`; }
       const it = [...DQ_TOOLS, ...DQ_ACTS].find(x => x[0] === id); if (!it) return '';
       return sep + `<button class="tt-qb${on[id] ? ' on' : ''}" data-dq="${id}" data-tip="${esc(it[2])}" aria-label="${esc(it[2])}">${dqIcon(it[1])}</button>`; }).join('')
       + `<i class="tt-qsep"></i><button class="tt-qb tt-qadd" data-dq="add" data-tip="Choose what this strip shows" aria-label="Customise the strip"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`;
@@ -3859,6 +3859,8 @@ DZ.edit = async (id) => {
   $('#dz-qstrip').addEventListener('click', (e) => { const b = e.target.closest('[data-dq]'); if (!b) return; const q = b.dataset.dq;
     if (q === 'add') return dqEdit();
     if (q.startsWith('c:')) return dqApply('colour', q.slice(2)); if (q.startsWith('f:')) return dqApply('font', q.slice(2));
+    if (q === 'fonts') { const fam = (v) => "'" + (v === '@1' || v === '@2' ? (DZ_THEMES[doc.theme] || DZ_THEMES.ink)['f' + v[1]] : v).replace(/'/g, '') + "'";
+      return stripMenu(b, dqList().filter(x => x.startsWith('f:')).map(x => { const v = x.slice(2); return [v, dqFont(v), fam(v)]; }), 'Your fonts').then(v => { if (v) dqApply('font', v); }); }
     if (q === 'undo' || q === 'redo') return undo(q === 'undo' ? -1 : 1);
     if (q === 'fit') return $('.dz-ed .dz-zoom [data-z="fit"]')?.click(); if (q === 'export') return $('#dz-export').click();
     if (q === 'pen' || q === 'pencil') return $(`#dz-rail [data-add="${q}"]`)?.click();
@@ -3874,7 +3876,7 @@ DZ.edit = async (id) => {
         : tab2 === 'cols' ? `<p class="muted" style="font-size:12px;margin:0 2px 6px">Tap one on the strip to colour what's selected (text, or a shape's fill). Up to ${DQ_CMAX} (${cols().length} / ${DQ_CMAX}).</p>
             <div class="tt-qadd2"><input type="color" data-qcol value="${addC}" style="width:48px;height:34px;padding:0;border:0;background:none"><span class="muted" style="flex:1">${esc(addC)}</span><button class="btn small primary" data-qe="addc">Add</button></div>
             <div class="tt-qrows">${cols().map(id => `<div class="tt-qrow on"><span class="tt-qri"><i class="dz-qcdot" style="background:${esc(id.slice(2))}"></i></span><span>${esc(id.slice(2))}</span><button class="mini" data-qdel="${esc(id)}" aria-label="Remove">✕</button></div>`).join('') || '<p class="muted" style="font-size:12px;margin:8px 2px">No colours yet.</p>'}</div>`
-        : `<p class="muted" style="font-size:12px;margin:0 2px 6px">Tap one on the strip to set the font of the selected text. Up to ${DQ_FMAX} (${fonts().length} / ${DQ_FMAX}).</p>
+        : `<p class="muted" style="font-size:12px;margin:0 2px 6px">They share one Aa button on the strip: tap it, then a font, to set the font of the selected text. Up to ${DQ_FMAX} (${fonts().length} / ${DQ_FMAX}).</p>
             <div class="tt-qadd2"><select class="in" data-qfont>${fontOpts(addF)}</select><button class="btn small primary" data-qe="addf">Add</button></div>
             <div class="tt-qrows">${fonts().map(id => `<div class="tt-qrow on"><span class="tt-qri"><b>Aa</b></span><span>${esc(dqFont(id.slice(2)))}</span><button class="mini" data-qdel="${esc(id)}" aria-label="Remove">✕</button></div>`).join('') || '<p class="muted" style="font-size:12px;margin:8px 2px">No fonts yet.</p>'}</div>`;
       o.innerHTML = `<div class="card tt-qse"><div class="row" style="align-items:center;gap:6px"><h2 style="margin:0;flex:1">Quick strip</h2><button class="btn small" data-qe="reset">Default</button><button class="btn small primary" data-qe="done">Done</button></div>
