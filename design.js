@@ -1672,8 +1672,9 @@ DZ.edit = async (id) => {
         <button data-lclip class="${cl ? 'on' : ''}" ${i ? '' : 'disabled'} title="${cl ? 'Unclip' : 'Clip to the layer below: only shows inside it'}" aria-label="Clip to layer below"><svg viewBox="0 0 24 24"><path d="M7 4v10a3 3 0 0 0 3 3h10"/><path d="M16 13l4 4-4 4"/></svg></button>
         <button data-lhide title="${l.hide ? 'Show' : 'Hide'}" aria-label="${l.hide ? 'Show' : 'Hide'}">${l.hide ? EYE_OFF : EYE}</button>
         <button data-llock class="${l.lock ? 'on' : ''}" title="${l.lock ? 'Unlock' : 'Lock'}" aria-label="Lock">${LOCK(l.lock)}</button>
-        <button data-ldel ${l.lock ? 'disabled' : ''} title="${l.lock ? 'Unlock it to delete' : 'Delete'}" aria-label="Delete">✕</button></div>`; }).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
-      <p class="muted dz-hint">Top of the list is in front. Drag ⠿ to reorder; tap a name again to rename; hold a layer to select several.</p>`;
+        <button data-ldel ${l.lock ? 'disabled' : ''} title="${l.lock ? 'Unlock it to delete' : 'Delete'}" aria-label="Delete">✕</button>
+        ${l.id === sel ? `<input type="range" class="dz-lop" min="0" max="1" step="0.05" value="${l.op ?? 1}" data-lop aria-label="Opacity" title="How much it shows">` : ''}</div>`; }).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
+      <p class="muted dz-hint">Top of the list is in front. The slider on the selected layer sets how much it shows. Drag ⠿ to reorder; tap a name again to rename; hold a layer to select several.</p>`;
   };
   let mini = Settings.get('dz_panel_min', '') === '1';
   const toolOn = () => !!(penOn || pclOn || cont || cut || nodes || cropping);
@@ -3299,6 +3300,7 @@ DZ.edit = async (id) => {
   /* Side panel events */
   const sideClick = async (e) => {
     const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
+    if (t.matches('[data-lop]')) return;   // the layer's opacity slider: handled as it moves
     if (t.closest('[data-collapse]')) { mini = !mini; Settings.set('dz_panel_min', mini ? '1' : ''); return drawSide(); }
     if (d('rail')) return railAct(d('rail'), t.closest('[data-rail]'));
     if (t.closest('[data-ffupd]')) { const n = await ffUpdateLists(doc); toast(n ? `Updated ${n} field${n > 1 ? 's' : ''}.` : 'Already up to date.'); if (n) changed(true); return drawSide(); }
@@ -3518,6 +3520,9 @@ DZ.edit = async (id) => {
   });
   const gup = () => { if (!gdrag) return; gdrag = null; changed(true); drawSide(); };
   side.addEventListener('pointerup', gup); side.addEventListener('pointercancel', gup);
+  // The selected layer's opacity slider in Layers: live while it moves, one undo step when let go.
+  side.addEventListener('input', (e) => { if (!e.target.matches('[data-lop]')) return; const l = layer(); if (!l) return; l.op = +e.target.value; redraw(); });
+  side.addEventListener('change', (e) => { if (e.target.matches('[data-lop]')) changed(true); });
   let ldrag = null, rowPress = null, rowHeld = false;
   side.addEventListener('pointerdown', (e) => {
     const r = e.target.closest('.dz-lr'); rowHeld = false;

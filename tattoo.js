@@ -1019,7 +1019,7 @@ TT.open = async (el, id) => {
   const CP = (() => { try { return CHEAT ? JSON.parse(Settings.get('tt_cheat_prefs', '{}')) : {}; } catch { return {}; } })();
   const MKP = (() => { try { return JSON.parse(Settings.get('tt_mk', 'null')); } catch { return null; } })();
   let lastVk = '';   // the view the guides were last placed for
-  const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), op: { stencil: 0.45, ...(meta.op || {}) },
+  const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), lockL: new Set(meta.lockL || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, capS: meta.capS || null, pal: meta.pal || 'default', caps: meta.caps ? (meta.caps.length < TT_CAPS.length ? [...meta.caps.slice(0, -1), ...TT_CAPS.slice(meta.caps.length - 1, -1), meta.caps[meta.caps.length - 1]] : meta.caps) : [...TT_CAPS] /* a piece saved before a cap was added gets it too, in before its white */, panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? TT_STRETCH, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 75, magTilt: meta.magTilt ?? true, rot: meta.rot || 0 };
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
@@ -2385,6 +2385,7 @@ TT.open = async (el, id) => {
     if (space || e.button === 1 || (touch && cal.penOnly)) { pan = { x: e.clientX, y: e.clientY, vx, vy }; return; }
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     if (st.check) return drawCur(e);   // checking the skin, not tattooing
+    if (st.lockL.has(st.layer) && !['marker', 'pick', 'text'].includes(st.tool)) return toast('This layer is locked: unlock it in Layers.', 1600);
     if (lsel && st.tool !== 'lasso') selCommit();
     if (snapE) { if (!snapE.live && (st.tool === 'needle' || st.tool === 'marker') && nearSnap(e)) { snapE.live = true; placeGuides(); return; } snapFinish(); }
     if (st.tool === 'marker') return mkDown(e);
@@ -2849,16 +2850,16 @@ TT.open = async (el, id) => {
       return;
     }
     if (st.panel === 'layers') {
-      side.innerHTML = `<div class="dz-lh"><b>Layers</b><button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      side.innerHTML = `<div class="dz-lh"><b>Layers <small>${TT_LAYERS.length}</small></b><button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
         <div class="tt-layers">${[...TT_LAYERS].map(([key, n]) => `<div class="tt-lr ${st.layer === key ? 'on' : ''}" data-ly="${key}">
           <span class="nm">${n}</span>
           ${key === 'stencil' && !CHEAT ? `<button class="dz-ib ${wearAny ? 'tt-wear' : ''}" data-stref data-tip="Refresh the stencil: put back what working the skin has wiped off" aria-label="Refresh stencil"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>` : ''}
           ${key === 'stencil' ? `<button class="dz-ib" data-stl data-tip="Load a picture to trace" aria-label="Load stencil"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>` : ''}
-          <button class="dz-ib" data-hide data-tip="${st.hide.has(key) ? 'Show' : 'Hide'}" aria-label="Hide">${st.hide.has(key) ? '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1"/></svg>'
-            : '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'}</button>
-          <button class="dz-ib" data-clear data-tip="Clear this layer" aria-label="Clear"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+          <button class="dz-ib" data-hide data-tip="${st.hide.has(key) ? 'Show' : 'Hide'}" aria-label="${st.hide.has(key) ? 'Show' : 'Hide'}">${st.hide.has(key) ? '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'}</button>
+          <button class="dz-ib ${st.lockL.has(key) ? 'on' : ''}" data-llock data-tip="${st.lockL.has(key) ? 'Unlock' : 'Lock: nothing can change on this layer'}" aria-label="Lock">${st.lockL.has(key) ? '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>'}</button>
+          <button class="dz-ib" data-clear ${st.lockL.has(key) ? 'disabled' : ''} data-tip="${st.lockL.has(key) ? 'Unlock it to clear' : 'Clear this layer'}" aria-label="Clear"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
           <input type="range" min="0" max="1" step="0.05" value="${key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1)}" data-lop aria-label="Opacity"></div>`).join('')}</div>
-        <p class="muted dz-hint">Tap a layer to work on it. The stencil is only a guide: it isn't saved into PNGs or sent to the stencil maker.${CHEAT ? '' : ' Like on skin, packing and shading wipe the stencil off around where you work; the refresh button puts it back.'}</p>`;
+        <p class="muted dz-hint">Tap a layer to work on it; the slider sets how much it shows, the lock stops it changing. The stencil is only a guide: it isn't saved into PNGs or sent to the stencil maker.${CHEAT ? '' : ' Like on skin, packing and shading wipe the stencil off around where you work; the refresh button puts it back.'}</p>`;
       return;
     }
     const nd = TT_NEEDLES.find(n => n.id === st.needle), f = feel;
@@ -2917,7 +2918,8 @@ TT.open = async (el, id) => {
     const ly = t.closest('[data-ly]')?.dataset.ly;
     if (ly) {
       if (t.closest('[data-hide]')) { st.hide.has(ly) ? st.hide.delete(ly) : st.hide.add(ly); st.dirty = true; paint(); return drawSide(); }
-      if (t.closest('[data-clear]')) { if (!await ask('Clear everything on this layer? Undo brings it back.')) return;
+      if (t.closest('[data-llock]')) { st.lockL.has(ly) ? st.lockL.delete(ly) : st.lockL.add(ly); st.dirty = true; return drawSide(); }
+      if (t.closest('[data-clear]')) { if (st.lockL.has(ly)) return; if (!await ask('Clear everything on this layer? Undo brings it back.')) return;
         const c = L[ly]; snap(ly); c.getContext('2d').clearRect(0, 0, W, H); syncIn(ly); touched.add(ly); st.dirty = true; st.viewC = null; paint(); return; }
       if (t.closest('[data-stl]')) return loadStencil();
       if (t.closest('[data-stref]')) { stenRefresh(); drawSide(); return toast('Stencil refreshed.', 1200); }
@@ -3184,7 +3186,7 @@ TT.open = async (el, id) => {
     tlDrop.push(...TL.refs.splice(0));
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
+        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], lockL: st.lockL.size ? [...st.lockL] : undefined, op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
