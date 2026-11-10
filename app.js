@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 407;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 408;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7560,6 +7560,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 408, when: '2026-11-11T12:00', added: ['Challenges are now the 9 lessons, each played on its own for medals and personal bests, with your own attempts as the card pictures and 5 trophies. The old challenges and the apprentice exam are gone.', 'New in the design studio: Challenge maker. Grade shapes as an outline, detail lines, packing or shading (stipple, whip, grey wash, or a colour blend of up to 10 colours), with the needles allowed, palettes, an airbrush, auto shading, judging focus sliders, every lesson as a template, and a setup to start a blank one. Play it straight in the simulator.', 'Portraits: Value study turns a photo into shading posterized into value steps, with a stencil made from the photo in the stencil maker and the photo as the reference.', 'Packing and shading can allow several needles. A needle that is not allowed costs up to 25 points, in lessons too, and the needles needed get a green tick. Reference pictures can be flicked to black and white.'],
+    test: ['Start a blank challenge, run the setup for a black and grey portrait with a photo to work from, make its stencil, then play it. Is the stencil there, and do the needle ticks match the setup?'] },
   { build: 391, when: '2026-11-11T12:00', added: ['Pattern tiles in the design studio and cheat mode: a seamless cell with its neighbours shown round it, saved to References (Patterns) for texture fills.', 'Design studio grids: square, isometric, perspective and radial, with snapping, opacity and lock. On isometric, fit a shape to the top, front or side plane.', 'Design studio: Bend arcs shapes (kept tidy and editable) and pictures; Adjust colour for pictures, as in the simulator.', 'Design studio: add a picture as a reference that floats over the design (move, size, turn, fade, hide, lock), as in the simulator.', 'Design studio: a Nodes tool under Select, double-tap a shape to edit its nodes, and tools switch straight from the pen or pencil.', 'Hold to snap, then keep holding and drag to resize, in the design studio and cheat mode.', 'Cheat mode: the grid, shapes, lettering, lasso (now with box and ellipse) and layers (now with lock) work like the design studio, with icons in its menus.', 'Favourite fonts share one Aa button on both quick strips; the cheat lasso shows the piece as it moves and takes its white along.'],
     test: ['Make a pattern tile, save it to References, then use it as a texture fill on a shape in the design studio. Does it repeat without seams?'] },
   { build: 368, when: '2026-11-10T22:00', added: ['Design studio: the quick strip\'s buttons work again.'],

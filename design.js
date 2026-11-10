@@ -177,6 +177,7 @@ function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 's
   const C0 = doc.chal || {}; if (C0.base && C0.lessonJudge !== false && C0.sig === dzChSig(doc)) T.base = C0.base;   /* an unchanged lesson template: the lesson's own judging */
   else { T.zones = true; T.focus = Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C0.focus?.[k] ?? v])); }
   if (doc.chal?.pal === 'wash') { T.wash = true; T.ink = 'wash'; }
+  if (doc.chal?.needles?.length) T.needles = [...new Set([...doc.chal.needles, ...T.needles])];   /* the setup's needles: ticked and allowed in the simulator */
   if (doc.chal?.refs?.length) T.refs = doc.chal.refs.map(r => ({ ref: r.ref, ar: r.ar || 1 }));
   const shs = S.filter(l => l.role === 'shade');
   if (shs.length) { T.shades = shs.map(l => { const pts = dzChPts(l), P = pts.flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
@@ -3963,7 +3964,7 @@ DZ.edit = async (id) => {
     let lo = 255, hi = 0; for (let i = 0; i < N * N; i++) { const a = D[i * 4 + 3] / 255, lum = (D[i * 4] * 0.3 + D[i * 4 + 1] * 0.59 + D[i * 4 + 2] * 0.11) / 255, v = 255 * a * (1 - lum); raw[i] = v; if (a > 0.5) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
     if (hi > lo) for (let i = 0; i < N * N; i++) raw[i] = Math.max(0, Math.min(255, (raw[i] - lo) / (hi - lo) * 255));   /* stretched so the picture's darkest is the darkest step */
     z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1 }; chQuant(z.sh);
-    const i = doc.layers.indexOf(l); doc.layers.splice(i + 1, 0, z); l.hide = true; changed(true); select(z.id); chTab.role = 'grad'; await chOpen('role');
+    chDefN(z); const i = doc.layers.indexOf(l); doc.layers.splice(i + 1, 0, z); l.hide = true; changed(true); select(z.id); chTab.role = 'grad'; await chOpen('role');
     toast('Value study made. The picture is hidden: show it from Layers to compare.', 3500); }
   // The value study's picture, as it shows and cropped to the zone, into the stencil maker at the zone's width.
   async function chStencil(l) { const pic = doc.layers.find(o => o.t === 'image' && o.ref === l.sh.src); if (!pic) return toast('The picture this study was made from is gone.', 3000);
