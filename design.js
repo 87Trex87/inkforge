@@ -2116,7 +2116,7 @@ DZ.edit = async (id) => {
         const last = d.pts.at(-1); if (Math.hypot(d.lp.x - last[0], d.lp.y - last[1]) * k > 1.5) d.pts.push([d.lp.x, d.lp.y]); }
       d.cur = L ? p : null;
       holdWatch(d, p, () => { const g = dzGuess(d.pts.map(([x2, y2]) => ({ x: x2, y: y2 }))); if (!g || !g.subs[0].closed) return;
-        d.snap = holdStart(g, p); d.pts = d.snap.cur.map(q => [q.x, q.y]); d.cur = null; drawCut(); toast(g.label + ': keep holding and move to resize.', 2500); });
+        d.snap = holdStart(g, p); d.pts = d.snap.cur.map(q => [q.x, q.y]); d.cur = null; drawCut(); toast(g.label + ': keep holding and drag to resize, then let go.', 2500); });
     } else {   // box or ellipse. Shift: square or circle. Ctrl: from the centre.
       d.o ||= d.p0; let q = p;
       if (e.shiftKey) { const s = Math.max(Math.abs(p.x - d.o.x), Math.abs(p.y - d.o.y)); q = { x: d.o.x + Math.sign(p.x - d.o.x || 1) * s, y: d.o.y + Math.sign(p.y - d.o.y || 1) * s }; }
@@ -2754,7 +2754,8 @@ DZ.edit = async (id) => {
     st.hp = p; clearTimeout(st.ht); st.ht = setTimeout(fire, pcl.ms);
   };
   const holdStart = (g, p) => { const S = dzSample(g.subs, 24); let cx = 0, cy = 0; for (const q of S) { cx += q.x; cy += q.y; } cx /= S.length; cy /= S.length;
-    return { g, base: JSON.parse(JSON.stringify(g.subs)), cx, cy, d0: Math.max(1, Math.hypot(p.x - cx, p.y - cy)), f: 1, g0: { ...g, subs: JSON.parse(JSON.stringify(g.subs)) }, cur: S }; };
+    return { g, base: JSON.parse(JSON.stringify(g.subs)), cx, cy, d0: Math.max(1, Math.hypot(p.x - cx, p.y - cy)), f: 1, g0: { ...g, subs: JSON.parse(JSON.stringify(g.subs)) }, cur: S, p0: p, armed: false }; };
+  const SNAP_DEAD = 12;   // screen px the pen can wander after a snap before dragging starts to resize it (same in the simulator)
   /* ---------- After a snap: Yours ... Cleaner ----------
      A bar under the drawing. The middle is the shape it snapped to. Left keeps the stroke as drawn, following the
      hand more closely the further it goes; right makes the shape plainer (an ellipse rounder, a rectangle squarer,
@@ -2792,7 +2793,9 @@ DZ.edit = async (id) => {
     if (keep && q.pend && doc.layers.some(x => x.id === q.id)) { penLast = q.id; await penCombine(q.pend); penLast = null; }
     drawSide();
   };
-  const holdScale = (sn, p) => { const f = Math.max(0.05, Math.hypot(p.x - sn.cx, p.y - sn.cy) / sn.d0); sn.f = f;
+  const holdScale = (sn, p) => {
+    if (!sn.armed) { if (Math.hypot((p.x - sn.p0.x) * k, (p.y - sn.p0.y) * k) < SNAP_DEAD) return; sn.armed = true; sn.d0 = Math.max(1, Math.hypot(p.x - sn.cx, p.y - sn.cy)); }   // past the dead zone: resizing starts from here, without a jump
+    const f = Math.max(0.05, Math.hypot(p.x - sn.cx, p.y - sn.cy) / sn.d0); sn.f = f;
     sn.g.subs = sn.base.map(sp => ({ closed: sp.closed, nodes: sp.nodes.map(n => ({ ...n, x: sn.cx + (n.x - sn.cx) * f, y: sn.cy + (n.y - sn.cy) * f, ix: n.ix * f, iy: n.iy * f, ox: n.ox * f, oy: n.oy * f })) }));
     sn.cur = dzSample(sn.g.subs, 24); };
   const holdUI = () => `<div class="row" style="gap:8px;align-items:center;margin:4px 0"><label class="toggle" style="display:inline-flex"><input type="checkbox" data-holdon ${pcl.hold ? 'checked' : ''}><span>Hold to snap</span></label></div>
@@ -2817,7 +2820,7 @@ DZ.edit = async (id) => {
     const L = pcl.lazy * 0.6 / k, dx = p.x - d.lp.x, dy = p.y - d.lp.y, dist = Math.hypot(dx, dy);
     if (dist > L) { const t = (dist - L) / dist; d.lp = { x: d.lp.x + dx * t, y: d.lp.y + dy * t }; const last = d.pts.at(-1); if (Math.hypot(d.lp.x - last.x, d.lp.y - last.y) * k > 1.2) d.pts.push(d.lp); }
     d.cur = L ? p : null;
-    holdWatch(d, p, () => { if (!stroke) return; const g = dzGuess(stroke.pts); if (!g) return; stroke.snap = holdStart(g, p); drawPen(); toast(g.label + ': keep holding and move to resize.', 2500); });
+    holdWatch(d, p, () => { if (!stroke) return; const g = dzGuess(stroke.pts); if (!g) return; stroke.snap = holdStart(g, p); drawPen(); toast(g.label + ': keep holding and drag to resize, then let go.', 2500); });
     drawPen();
   };
   const pclUp = async () => {

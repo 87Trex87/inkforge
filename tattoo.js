@@ -2153,13 +2153,24 @@ TT.open = async (el, id) => {
       puncture(S.cx, q, a, S.depth, 0, S.ink, false); if (S.cx.alsoHi) puncture(S.cx.alsoHi, q, a, S.depth, 0, S.ink * S.cx.alsoHi.w, false); if (pen.sym) symPunc(q, a, S.depth, 0, S.ink, false);
       const B = pen.box ||= { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; B.x0 = Math.min(B.x0, q.x - bp); B.y0 = Math.min(B.y0, q.y - bp); B.x1 = Math.max(B.x1, q.x + bp); B.y1 = Math.max(B.y1, q.y + bp); }
     S.box = { ...pen.box }; S.pts = pts; if (own) pen = null; flushPig(); st.dirty = true; paint(); };
+  /* After a snap, still holding: drag to resize it about its middle, as in the design studio. A small dead zone
+     first (the same 12 screen px), so the snap isn't nudged by accident; then it scales from where the pen is. */
+  const SNAP_DEAD = 12;
+  const snapGrab = (h) => { const S = snapE; if (!S || !h) return; const A = S.anchors, c = { x: A.reduce((t, a) => t + a.x, 0) / A.length, y: A.reduce((t, a) => t + a.y, 0) / A.length };
+    S.grab = { sx: h.x, sy: h.y, base: A.map(a => ({ ...a })), c, armed: false, d0: 1 }; };
+  const snapDrag = (e) => { const G = snapE?.grab; if (!G) return;
+    if (!G.armed && Math.hypot(e.clientX - G.sx, e.clientY - G.sy) < SNAP_DEAD) return;
+    const r = stage.getBoundingClientRect(), p = fromScreen(e.clientX - r.left, e.clientY - r.top), d = Math.hypot(p.x - G.c.x, p.y - G.c.y);
+    if (!G.armed) { G.armed = true; G.d0 = Math.max(1, d); }
+    const f = Math.max(0.05, d / G.d0); snapE.anchors = G.base.map(a => ({ ...a, x: G.c.x + (a.x - G.c.x) * f, y: G.c.y + (a.y - G.c.y) * f })); snapE.moved = true;
+    if (!snapRaf) snapRaf = requestAnimationFrame(() => { snapRaf = 0; renderSnap(); }); };
   const snapNow = () => { if (!CHEAT || !pen || pen.snapped || !pen.cx.pig || st.tool === 'erase') return;
     const fit = fitPath(pen.raw || []); if (!fit) { if ((pen.raw || []).length > 12) toast('Hold to snap: draw a little more, then hold still.', 2000); return; }
     const h = hist[hist.length - 1]; if (!h || h.rc) return;
     snapE = { key: h.key, base: h.data, baseHi: h.hi, anchors: fit.anchors, closed: fit.closed, kind: fit.kind, depth: pen.dn ? pen.dsum / pen.dn : 0.6,
       ink: Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(), cx: pen.cx, sym: pen.sym, foot: pen.foot, live: false };
-    renderSnap(); pen.snapped = true; pen.q = []; navigator.vibrate?.(15);
-    toast(fit.kind === 'line' ? 'Snapped to a straight line. Tap it to adjust.' : fit.kind === 'circle' ? 'Snapped to a circle. Tap it to adjust.' : 'Snapped and smoothed. Tap it to adjust its anchors.', 1800); };
+    renderSnap(); pen.snapped = true; pen.q = []; navigator.vibrate?.(15); snapGrab(pen.hold);
+    toast((fit.kind === 'line' ? 'Straight line' : fit.kind === 'circle' ? 'Circle' : 'Smoothed') + ': keep holding and drag to resize, then let go. Tap it after to adjust.', 2500); };
   /* Path (pen): tap to lay anchors, which curve smoothly through (tap one for a sharp corner, drag one to move it,
      tap the first to close the shape). Apply tattoos it with the current needle at the chosen pressure, as one
      stroke, and leaves it adjustable like a snapped line until Done. */
@@ -2192,7 +2203,7 @@ TT.open = async (el, id) => {
   const strokeEnd = () => { clearTimeout(pen?.hold?.t); if (pen?.raf) cancelAnimationFrame(pen.raf); strokeFlush();
     if (pen?.landed && pen.dEnd > CRASH_D && pen.speed > CRASH_V && pen.cx.pig && st.tool !== 'erase') {   // the take-off: still deep as it left at speed
       crash(pen.last, pen.dEnd, pen.evEnd); const u = flushPig(), pad = pen.foot * 2 + 4 * mm; if (u) paint({ x0: u.x0 - pad, y0: u.y0 - pad, x1: u.x1 + pad, y1: u.y1 + pad }); }
-    if (pen?.snapped && snapE) { if (pen.box) cropTop(pen.box); snapE.h = hist[hist.length - 1]; }
+    if (pen?.snapped && snapE) { if (snapRaf) { cancelAnimationFrame(snapRaf); snapRaf = 0; renderSnap(); } snapE.grab = null; if (pen.box) cropTop(pen.box); snapE.h = hist[hist.length - 1]; }
     if (pen) { if (pen.box) { if (!pen.snapped || !snapE) cropTop(pen.box); if (st.tool === 'erase' && pen.cx.pig) exLaser(); } else { hist.pop(); SS.strokes--; }   // a tap that left nothing: no undo step, no stroke
       const mmD = pen.trav || 0; SS.mm += mmD; SS.ms += Math.max(0, pen.t - pen.t0); if (st.tool !== 'erase') SS.needles[st.needle] = (SS.needles[st.needle] || 0) + mmD; }
     if (pen?.box && pen.cx.pig && st.tool !== 'erase') recentAdd(pen.cx); if (st.tool !== 'erase') tmStrokeEnd(); pen = null; drawNeedleInk(); if (trDirty) paint(); };
@@ -2238,10 +2249,10 @@ TT.open = async (el, id) => {
   const mkSnap = () => { if (!mk || mk.snapped) return; const fit = fitPath(mk.raw); if (!fit) { if (mk.raw.length > 12) toast('Hold to snap: draw a little more, then hold still.', 2000); return; }
     const h = hist[hist.length - 1]; if (!h || h.rc || h.key !== 'marker') return;
     snapE = { key: 'marker', base: h.data, anchors: fit.anchors, closed: fit.closed, kind: fit.kind, mk: { col: st.mk.col, r: mk.rn ? mk.rs / mk.rn : st.mk.r * mm / 2 }, live: false };
-    renderSnap(); mk.snapped = true; navigator.vibrate?.(15);
-    toast(fit.kind === 'line' ? 'Snapped to a straight line. Tap it to adjust.' : fit.kind === 'circle' ? 'Snapped to a circle. Tap it to adjust.' : 'Snapped and smoothed. Tap it to adjust its anchors.', 1800); };
+    renderSnap(); mk.snapped = true; navigator.vibrate?.(15); snapGrab(mk.hold);
+    toast((fit.kind === 'line' ? 'Straight line' : fit.kind === 'circle' ? 'Circle' : 'Smoothed') + ': keep holding and drag to resize, then let go. Tap it after to adjust.', 2500); };
   const mkUp = () => { if (!mk) return; clearTimeout(mk.hold?.t); mk.g.globalAlpha = 1; mk.g.globalCompositeOperation = 'source-over';
-    if (mk.snapped && snapE) { cropTop(snapE.box); snapE.h = hist[hist.length - 1]; } else cropTop(mk.box); mk = null; };
+    if (mk.snapped && snapE) { if (snapRaf) { cancelAnimationFrame(snapRaf); snapRaf = 0; renderSnap(); } snapE.grab = null; cropTop(snapE.box); snapE.h = hist[hist.length - 1]; } else cropTop(mk.box); mk = null; };
 
   /* Skin meter: depth, speed (how close the punctures land) and how worked the skin under the needle is, each a
      bar with its safe band in green, so a stroke going wrong shows before the damage does. Shows the last values
@@ -2404,8 +2415,8 @@ TT.open = async (el, id) => {
       st.rot = rot; pinTo(pinch.p, mx, my); st.dirty = true; return paint(); }
     if (pan) { vx = pan.vx + e.clientX - pan.x; vy = pan.vy + e.clientY - pan.y; return paint(); }
     if (td && e.pointerId === td.id) toolMove(e);
-    if (mk && e.pointerId === mk.id) mkMove(e);
-    if (pen && e.pointerId === pen.id) { strokeMove(e);
+    if (mk && e.pointerId === mk.id) { if (mk.snapped && snapE?.grab) snapDrag(e); else mkMove(e); }
+    if (pen && e.pointerId === pen.id) { if (pen.snapped && snapE?.grab) snapDrag(e); else strokeMove(e);
       if (CHEAT && !pen.snapped) { const h0 = pen.hold; if (!h0 || Math.hypot(e.clientX - h0.x, e.clientY - h0.y) > 4) { clearTimeout(h0?.t); pen.hold = { x: e.clientX, y: e.clientY, t: setTimeout(snapNow, 550) }; } } }
     if (e.pointerType !== 'touch' || ((st.check || td || mk) && !pan)) { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
     calLive(e);
