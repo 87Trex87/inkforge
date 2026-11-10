@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 408;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 409;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -772,6 +772,27 @@ function toast(msg, ms = 2600) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, ms);
 }
+// A toast with one button (Undo after a delete).
+function toastAct(msg, label, fn, ms = 10000) {
+  const t = $('#toast'); t.textContent = msg + ' '; const b = document.createElement('button'); b.className = 'btn small toast-act'; b.textContent = label;
+  b.onclick = () => { t.hidden = true; fn(); }; t.append(b); t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, ms);
+}
+/* Undo for deletes in the libraries (designs, tattoo pieces, reels, quotes, stencils, references, portfolio items).
+   The rows are copied before the delete (the item first, then any rows that go with it), and the files they used are
+   released only once the Undo has gone: 10 seconds, or the next delete. Undo puts the rows back as they were. */
+const Undel = {
+  cur: null,
+  async snap(parts) { const out = []; for (const [table, where, params] of parts) out.push({ table, rows: await DB.all(`SELECT * FROM ${table} WHERE ${where}`, params) }); return out; },
+  async offer(msg, snap, refs, redraw, extra) {
+    await this.finish();
+    const me = { snap, refs: (refs || []).filter(Boolean), redraw, extra }; this.cur = me;
+    toastAct(msg, 'Undo', async () => { if (this.cur !== me) return; this.cur = null; clearTimeout(me.t);
+      try { for (const { table, rows } of snap) for (const r of rows) { const k = Object.keys(r); await DB.run(`INSERT INTO ${table} (${k.join(', ')}) VALUES (${k.map(() => '?').join(', ')})`, k.map(c => r[c])); }
+        await extra?.(); toast('Put back.', 1600); } catch (err) { toast('Could not put it back: ' + err.message, 4000); }
+      try { await redraw?.(); } catch {} });
+    me.t = setTimeout(() => this.finish(), 10500); },
+  async finish() { const me = this.cur; if (!me) return; this.cur = null; clearTimeout(me.t); for (const r of new Set(me.refs)) await Media.release(r); }
+};
 
 /* ---------- Tooltips: hover on mouse, tap on touch ---------- */
 (() => {
@@ -1526,9 +1547,9 @@ const VIEWS = {
       $('#pf-save').onclick = async () => { const file = await photoFile(); download(file); toast(`Saved ${file.name}`); };
       $('#pf-del').onclick = async () => {
         if (!await ask(`Delete "${it.title || PF_KIND[it.kind]}" and its ${photos.length} photo${photos.length === 1 ? '' : 's'}?`)) return;
-        await DB.run('DELETE FROM portfolio_items WHERE id = ?', [it.id]);
-        for (const p of photos) { await Media.release(p.photo_ref); await Media.release(p.thumb_ref); }
-        toast('Deleted.'); history.back();
+        const snap = await Undel.snap([['portfolio_items', 'id = ?', [it.id]], ['portfolio_photos', 'item_id = ?', [it.id]]]);
+        await DB.run('DELETE FROM portfolio_items WHERE id = ?', [it.id]); history.back();
+        Undel.offer('Deleted.', snap, photos.flatMap(p => [p.photo_ref, p.thumb_ref]), () => typeof renderPfGrid === 'function' && renderPfGrid());
       };
     }
   },
@@ -3620,7 +3641,8 @@ async function refSheet(id) {
   };
   o.querySelector('#rs-del').onclick = async () => {
     if (!await ask(`Delete "${r.title || 'this reference'}"? Designs that already use it keep their copy.`)) return;
-    await DB.run('DELETE FROM ref_images WHERE id = ?', [id]); await Media.release(r.photo_ref); await Media.release(r.thumb_ref); close();
+    const snap = await Undel.snap([['ref_images', 'id = ?', [id]]]); await DB.run('DELETE FROM ref_images WHERE id = ?', [id]); close();
+    Undel.offer('Reference deleted.', snap, [r.photo_ref, r.thumb_ref], () => typeof renderPfGrid === 'function' && renderPfGrid());
   };
 }
 /* ---------- Stencils (portfolio) ----------
@@ -3696,9 +3718,8 @@ async function stencilSheet(id) {
   };
   o.querySelector('#sn-del').onclick = async () => {
     if (!await ask(`Delete "${r.name || 'this stencil'}" and its original?`)) return;
-    await DB.run('DELETE FROM stencils WHERE id = ?', [id]);
-    for (const ref of [r.src_ref, r.stencil_ref, r.thumb_ref]) await Media.release(ref);
-    o.remove(); renderPfGrid();
+    const snap = await Undel.snap([['stencils', 'id = ?', [id]]]); await DB.run('DELETE FROM stencils WHERE id = ?', [id]);
+    o.remove(); renderPfGrid(); Undel.offer('Stencil deleted.', snap, [r.src_ref, r.stencil_ref, r.thumb_ref], renderPfGrid);
   };
 }
 
@@ -4448,8 +4469,8 @@ async function qlDraw() {
     if (t.closest('#ql-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url); Object.assign(QZ, QZ_RESET); location.hash = 'quote'; return; }
     if (d('qd')) {
       const q = await DB.one('SELECT client_name, design_ref FROM quotes WHERE id = ?', [+d('qd')]);
-      if (!q || !await ask(`Delete the quote${q.client_name ? ' for ' + q.client_name : ''}? This can't be undone.`)) return;
-      await DB.run('DELETE FROM quotes WHERE id = ?', [+d('qd')]); await Media.release(q.design_ref);
+      if (!q || !await ask(`Delete the quote${q.client_name ? ' for ' + q.client_name : ''}?`)) return;
+      const snap = await Undel.snap([['quotes', 'id = ?', [+d('qd')]]]); await DB.run('DELETE FROM quotes WHERE id = ?', [+d('qd')]); Undel.offer('Quote deleted.', snap, [q.design_ref], qlDraw);
       if (QZ.id === +d('qd')) QZ.id = null;
       return qlDraw();
     }
@@ -6027,10 +6048,10 @@ async function reelList() {
     }
     if (d('del')) {
       const r = await DB.one('SELECT * FROM reels WHERE id = ?', [+d('del')]);
-      if (!r || !await ask(`Delete "${r.name || 'this reel'}"? Its photos, videos and music are removed from the app too (not from your device). This can't be undone.`)) return;
-      await DB.run('DELETE FROM reels WHERE id = ?', [r.id]);
+      if (!r || !await ask(`Delete "${r.name || 'this reel'}"? Its photos, videos and music are removed from the app too (not from your device).`)) return;
+      const snap = await Undel.snap([['reels', 'id = ?', [r.id]]]); await DB.run('DELETE FROM reels WHERE id = ?', [r.id]);
       if (RS.id === r.id) { RS.id = null; RS.loaded = false; }
-      for (const ref of new Set([r.thumb_ref, ...(String(r.doc || '').match(MEDIA_REF_RE) || [])])) await Media.release(ref);
+      Undel.offer(`Deleted "${r.name || 'reel'}".`, snap, [r.thumb_ref, ...(String(r.doc || '').match(MEDIA_REF_RE) || [])], reelList);
       return reelList();
     }
     if (d('dup')) {

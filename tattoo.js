@@ -947,8 +947,9 @@ TT.list = async (el) => {
     if (await Lib.click(e, 'tattoo', redraw)) return;
     const d = e.target.closest('[data-del]');
     if (d) { e.stopPropagation(); const r = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [+d.dataset.del]); if (!r || !await ask(`Delete "${r.name || 'this piece'}"?`)) return;
-      await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]); for (const k of ['thumb_ref', 'skin_ref', 'blow_ref', ...TT_LAYERS.map(([l]) => l + '_ref')]) await Media.release(r[k]);
-      let tl = []; try { tl = JSON.parse(r.meta || '{}').tl || []; } catch {} for (const f of tl) await Media.release(f); return TT.list(el); }
+      const snap = await Undel.snap([['tattoo_pieces', 'id = ?', [r.id]]]); await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]);
+      let tl = []; try { tl = JSON.parse(r.meta || '{}').tl || []; } catch {}
+      Undel.offer(`Deleted "${r.name || 'piece'}".`, snap, [...['thumb_ref', 'skin_ref', 'blow_ref', ...TT_LAYERS.map(([l]) => l + '_ref')].map(k => r[k]), ...tl], () => TT.list(el)); return TT.list(el); }
     const o = e.target.closest('[data-open]'); if (o) location.hash = 'tattoo/' + o.dataset.open;
   };
 };

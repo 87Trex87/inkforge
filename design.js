@@ -1467,10 +1467,11 @@ DZ.list = async () => {
     if (t.closest('#dz-new')) return dzPicker();
     if (d('del')) {
       const r = await DB.one('SELECT name, thumb_ref FROM designs WHERE id = ?', [+d('del')]);
-      if (!r || !await ask(`Delete "${r.name}"? This can't be undone.`)) return;
-      const refs = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [+d('del')])).map(x => x.ref);
-      await DB.run('DELETE FROM designs WHERE id = ?', [+d('del')]); Settings.set('dz_refs_' + d('del'), '');   /* its reference pictures go too */
-      for (const ref of [r.thumb_ref, ...refs]) await Media.release(ref);
+      if (!r || !await ask(`Delete "${r.name}"?`)) return;
+      const id0 = +d('del'), refs = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id0])).map(x => x.ref), rp = Settings.get('dz_refs_' + id0, '');
+      const snap = await Undel.snap([['designs', 'id = ?', [id0]], ['design_assets', 'design_id = ?', [id0]]]);
+      await DB.run('DELETE FROM designs WHERE id = ?', [id0]); Settings.set('dz_refs_' + id0, '');   /* its reference pictures go too */
+      Undel.offer(`Deleted "${r.name}".`, snap, [r.thumb_ref, ...refs], DZ.list, () => rp && Settings.set('dz_refs_' + id0, rp));
       return DZ.list();
     }
     if (d('dup')) {

@@ -1774,3 +1774,4 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 .dz-wrefs span button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: #000a; color: #fff; font-size: 11px; padding: 0; }
 #dz-charea { position: absolute; border: 2px dashed #1fb6a6; box-shadow: 0 0 0 1px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; z-index: 2; box-sizing: border-box; }
 #dz-charea::after { content: attr(data-label); position: absolute; left: 4px; top: -18px; font: 600 11px Inter, sans-serif; color: rgba(31,182,166,.95); white-space: nowrap; }
+#toast .toast-act { margin-left: 10px; padding: 4px 12px; min-height: 0; }
