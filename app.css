@@ -1236,7 +1236,9 @@ html.gv-lock, html.gv-lock body, html.gv-lock #main { overflow: hidden !importan
 .tour-t { margin: 0 0 10px; font-size: 15px; line-height: 1.45; }
 .tour-m { display: none; margin: -2px 0 10px; font-size: 13px; color: var(--ink2); line-height: 1.5; border-left: 2px solid var(--teal); padding-left: 10px; }
 .tour-card.more .tour-m { display: block; }
-.tour-acts { display: flex; gap: 6px; align-items: center; }
+.tour-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tour-card { max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; }
+@media (max-width: 899px) { .tour-card.at-sheet { max-height: calc(100dvh - 100px); } }
 .tour-dots { display: flex; gap: 4px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
 .tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); } .tour-dots i.on { background: var(--teal); width: 16px; border-radius: 3px; } .tour-dots i.done { background: rgba(31,182,166,.45); }
 .tour-offer { max-width: 440px; }

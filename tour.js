@@ -208,6 +208,7 @@ Tour.show = async () => {
 function tourPlace() {
   if (!Tour.el) return;
   const hole = Tour.el.querySelector('.tour-hole'), card = Tour.el.querySelector('.tour-card'), t = Tour.target;
+  card.style.left = card.style.top = '';   // a centred card or a bottom sheet must not keep the last floating position
   if (!t || !document.body.contains(t)) { hole.hidden = true; card.className = card.className.replace(/ ?at-\w+/g, '') + ' at-mid'; return; }
   const r = t.getBoundingClientRect(), pad = 6, top = Math.max(4, r.top - pad), h = Math.min(innerHeight - top - 4, r.height + pad * 2);
   Object.assign(hole.style, { left: Math.max(4, r.left - pad) + 'px', top: top + 'px', width: Math.min(innerWidth - 8, r.width + pad * 2) + 'px', height: Math.max(20, h) + 'px' });
