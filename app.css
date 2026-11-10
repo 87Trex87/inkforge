@@ -1682,3 +1682,5 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 .dz-gk button.on { background: rgba(31,182,166,.22); border-color: var(--teal); color: var(--teal); }
 .dz-gsz { display: flex; align-items: center; gap: 6px; margin: 2px 6px 4px; font-size: 12px; color: var(--ink2); } .dz-gsz input { width: 80px; min-height: 30px; height: 30px; } .dz-gsz em { font-style: normal; }
 .dz-pop.dz-gpop { width: 240px; }
+
+.dz-isob b { font: 700 12px var(--ui); }

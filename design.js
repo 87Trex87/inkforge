@@ -1725,6 +1725,10 @@ DZ.edit = async (id) => {
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
     else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
     const field = l.t === 'field';
+    if (doc.grid?.on && doc.grid.type === 'iso' && l.t === 'shape' && l.shape !== 'line' && !l.qr)   // isometric planes, as in Affinity Designer
+      own += ISO_PL.map(([v, n]) => `<button class="dz-ib dz-isob ${l.isoP === v ? 'on' : ''}" data-iso="${v}" data-tip="Fit to the ${n.toLowerCase()} plane" aria-label="${n} plane"><b>${n[0]}</b></button>`).join('')
+        + (l.isoP ? dzIB('data-iso="rl"', '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/>', 'Turn 15° left in the plane') + dzIB('data-iso="rr"', '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>', 'Turn 15° right in the plane')
+          + dzIB('data-iso="fh"', 'fx', 'Flip across in the plane') + dzIB('data-iso="fv"', 'fy', 'Flip upside down in the plane') + `<button class="dz-ib dz-isob" data-iso="flat" data-tip="Put it back flat, off the plane" aria-label="Flat"><b>⊟</b></button>` : '') + sep;
     b.innerHTML = (own ? own + sep : '')
       + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="up"', 'fwd', 'Bring forward') + dzIB('data-act="down"', 'back', 'Send back') + sep
       + (field ? '' : dzIB('data-act="fx"', 'fx', 'Flip left to right', l.fx ? 'on' : '') + dzIB('data-act="fy"', 'fy', 'Flip upside down', l.fy ? 'on' : '') + dzIB(`data-act="clip" ${F().indexOf(l) ? '' : 'disabled'}`, 'clip', 'Clip to the layer below: only shows inside it', clipped(l) ? 'on' : '') + sep
@@ -3333,7 +3337,8 @@ DZ.edit = async (id) => {
       if (a === 'image') { panel = panel === 'image' ? null : 'image'; return drawSide(); }
       panel = panel === a ? null : a; return drawSide();
     }
-    if (d('shape')) { const s = d('shape'), m = Math.min(doc.w, doc.h) * 0.3;
+    if (d('shape')) { const s = d('shape'), m = Math.min(doc.w, doc.h) * 0.3, onPl = doc.grid?.on && doc.grid.type === 'iso' && doc.grid.plane && s !== 'line' ? doc.grid.plane : null;
+      if (onPl) setTimeout(() => { const nl = layer(); if (isoOK(nl) && !nl.isoP) isoAct(nl, onPl); });   // the new shape starts on the chosen isometric plane
       return add({ t: 'shape', shape: s === 'round' || s === 'frame' ? 'rect' : s, r: s === 'round' ? m * 0.15 : s === 'frame' ? 12 : 0,
         fill: s === 'frame' || s === 'line' ? 'none' : '@accent', stroke: s === 'frame' || s === 'line' ? '@accent' : 'none', sw: s === 'frame' ? 6 : s === 'line' ? 6 : 0,
         ...({ poly: { n: 6 }, star: { n: 5, inner: 0.45 }, ring: { inner: 0.6 }, cross: { th: 0.34 }, arrow: { th: 0.4 } }[s] || {}),
@@ -3471,6 +3476,7 @@ DZ.edit = async (id) => {
   xfB.addEventListener('change', (e) => { if (e.target.hasAttribute('data-unit')) return sideChange(e); if (e.target.dataset.xf) { changed(true); drawXf(); } });
   const ctxB = $('#dz-ctx');
   ctxB.addEventListener('click', async (e) => { if (e.target.closest('input, select, textarea, .dz-cnum')) return;   /* a box or dropdown: redrawing the strip would throw the click away */
+    const iso = e.target.closest('[data-iso]'); if (iso) return isoAct(layer(), iso.dataset.iso);
     const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
     const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
     if (pick && l && (cpop === 'c' || cpop === 'fill')) l.fm = 'solid';
@@ -3671,7 +3677,7 @@ DZ.edit = async (id) => {
     if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
     const x = c.getContext('2d'), s = k * dpr, g = gStep(), T = G.type || 'square'; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cw, ch); x.setTransform(s, 0, 0, s, 0, 0);
     const line = (a, b) => { x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); }, span = Math.hypot(W, H) * 2;
-    x.lineWidth = 1 / s; x.strokeStyle = 'rgba(31,182,166,.45)'; x.beginPath();
+    const op = G.op ?? 0.45; x.lineWidth = 1 / s; x.strokeStyle = `rgba(31,182,166,${op})`; x.beginPath();
     if (T === 'square' || T === 'p1' || T === 'p2') for (let v = g; v < W; v += g) line({ x: v, y: 0 }, { x: v, y: H });
     if (T === 'square') for (let v = g; v < H; v += g) line({ x: 0, y: v }, { x: W, y: v });
     if (T === 'iso') { const t30 = Math.tan(Math.PI / 6), st2 = g / Math.cos(Math.PI / 6);
@@ -3684,12 +3690,14 @@ DZ.edit = async (id) => {
       if (v.x > 0 && v.x < W && v.y > 0 && v.y < H) { a0 = -Math.PI; a1 = Math.PI; } else if (a1 - a0 > Math.PI) { const s2 = ang.map(a => a < 0 ? a + Math.PI * 2 : a); a0 = Math.min(...s2); a1 = Math.max(...s2); }
       for (let i = 0; i <= rays; i++) { const a = a0 + (a1 - a0) * i / rays; line(v, { x: v.x + Math.cos(a) * span, y: v.y + Math.sin(a) * span }); } }
     x.stroke();
-    if (T === 'p1' || T === 'p2') { x.strokeStyle = 'rgba(255,111,97,.75)'; x.lineWidth = 1.5 / s; x.beginPath(); line({ x: -W, y: vps[0].y }, { x: W * 2, y: vps[0].y }); x.stroke(); }   // horizon
+    if (T === 'p1' || T === 'p2') { x.strokeStyle = `rgba(255,111,97,${Math.min(1, op + 0.3)})`; x.lineWidth = 1.5 / s; x.beginPath(); line({ x: -W, y: vps[0].y }, { x: W * 2, y: vps[0].y }); x.stroke(); }   // horizon
     if (vb && moving) { vb.querySelectorAll('[data-vp]').forEach(h => { const v = G.vp[+h.dataset.vp]; h.style.left = v.x * k + 'px'; h.style.top = v.y * k + 'px'; }); return; }
     if (vb) vb.innerHTML = G.lock ? '' : gIdx().map(i => `<i class="dz-vp" data-vp="${i}" style="left:${G.vp[i].x * k}px;top:${G.vp[i].y * k}px" data-tip="Drag the vanishing point"></i>`).join(''); }
   const gridMenu = () => { const G = doc.grid || {}, u = dzUnit(doc);
     return `<div class="gh">Grid</div><div class="dz-gk">${[['off', 'Off'], ...GRID_KINDS].map(([v, n]) => `<button class="${(G.on ? G.type || 'square' : 'off') === v ? 'on' : ''}" data-gk="${v}">${n}</button>`).join('')}</div>
       <label class="dz-gsz"><span>Size</span><input class="in" type="number" min="0.1" step="any" data-gsize value="${+G.size || 10}"><em>${esc(u)}</em></label>
+      <label class="dz-gsz"><span>Opacity</span><input type="range" min="0.05" max="1" step="0.05" data-gop value="${G.op ?? 0.45}" style="flex:1"><b data-gopv>${Math.round((G.op ?? 0.45) * 100)}%</b></label>
+      ${G.on && G.type === 'iso' ? `<div class="gh" style="margin-top:4px">New shapes go on</div><div class="dz-gk">${[['', 'Flat'], ...ISO_PL].map(([v, n]) => `<button class="${(G.plane || '') === v ? 'on' : ''}" data-gplane="${v}">${n}</button>`).join('')}</div>` : ''}
       <label class="toggle" style="display:flex;margin:4px 6px;border:0;min-height:30px;padding:0" data-tip="Edges, centres, pen points and nodes snap to the grid's lines; in perspective, pen lines near a grid direction run along it. Hold Alt for none."><input type="checkbox" data-gsnap ${G.snap === false ? '' : 'checked'}><span>Snap to the grid</span></label>
       ${['p1', 'p2', 'p3', 'radial'].includes(G.type) && G.on ? `<label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="Keeps the vanishing points where they are and hides their handles"><input type="checkbox" data-glock ${G.lock ? 'checked' : ''}><span>Lock the grid in place</span></label>
         ${G.lock ? '' : '<button class="btn small" data-greset style="margin:2px 6px 6px">Reset vanishing points</button>'}` : ''}
@@ -3697,10 +3705,14 @@ DZ.edit = async (id) => {
   const gridSet = (fn) => { doc.grid ||= { on: false, type: 'square', size: 10, snap: true }; fn(doc.grid); changed(true); gridDraw(); drawRail(); const p0 = pop(); if (!p0.hidden && p0.classList.contains('dz-gpop')) p0.innerHTML = gridMenu(); };
   $('#dz-pop').addEventListener('click', (e) => { if (!$('#dz-pop').classList.contains('dz-gpop')) return; const t = e.target;
     const kk = t.closest('[data-gk]')?.dataset.gk; if (kk) return gridSet(G => { if (kk === 'off') G.on = false; else { G.on = true; G.type = kk; } });
-    if (t.closest('[data-greset]')) return gridSet(G => { delete G.vp; }); });
+    if (t.closest('[data-greset]')) return gridSet(G => { delete G.vp; });
+    const gp = t.closest('[data-gplane]'); if (gp) return gridSet(G => { if (gp.dataset.gplane) G.plane = gp.dataset.gplane; else delete G.plane; }); });
+  $('#dz-pop').addEventListener('input', (e) => { if (!$('#dz-pop').classList.contains('dz-gpop') || !e.target.matches('[data-gop]')) return;   /* live while sliding; kept on release */
+    doc.grid.op = +e.target.value; const b = $('#dz-pop [data-gopv]'); if (b) b.textContent = Math.round(doc.grid.op * 100) + '%'; gridDraw(); });
   $('#dz-pop').addEventListener('change', (e) => { if (!$('#dz-pop').classList.contains('dz-gpop')) return;
     if (e.target.matches('[data-gsize]')) { const v = +e.target.value; if (v > 0) gridSet(G => { G.size = v; }); }
     if (e.target.matches('[data-gsnap]')) gridSet(G => { G.snap = e.target.checked; });
+    if (e.target.matches('[data-gop]')) gridSet(G => { G.op = +e.target.value; });
     if (e.target.matches('[data-glock]')) gridSet(G => { G.lock = e.target.checked; }); });
   // Dragging a vanishing point (two-point keeps both on one horizon).
   $('#dz-vps').addEventListener('pointerdown', (e) => { const h = e.target.closest('[data-vp]'); if (!h || doc.grid?.lock) return; e.stopPropagation(); e.preventDefault(); const i = +h.dataset.vp;
@@ -3708,6 +3720,38 @@ DZ.edit = async (id) => {
     const mv = (ev) => { const r = page.getBoundingClientRect(), q = { x: (ev.clientX - r.left) / k, y: (ev.clientY - r.top) / k }; doc.grid.vp[i] = q; if (doc.grid.type === 'p2') for (const j of [1, 2]) doc.grid.vp[j].y = q.y; gridDraw(true); };
     const up = () => { h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); changed(true); gridDraw(); };
     h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up); });
+  /* ---------- Isometric planes (as in Affinity Designer's isometric tools) ----------
+     A shape is put on the top, front or side plane of the isometric grid by baking its rotation and flips into its
+     outline and then skewing that outline onto the plane (l.isoP remembers which). On a plane it can be turned and
+     flipped within the plane, moved to another plane, or put back flat; with "New shapes go on" set in the grid
+     menu, new shapes start on that plane. Shapes only: text and pictures can't be skewed. */
+  const ISO_PL = [['top', 'Top'], ['front', 'Front'], ['side', 'Side']];
+  const IC = Math.cos(Math.PI / 6), IS = 0.5;
+  const ISO_M = { top: [IC, -IC, IS, IS], front: [IC, 0, IS, 1], side: [IC, 0, -IS, 1] };   // [a, b, c, d]: x' = a x + b y, y' = c x + d y
+  const mMul = (A, B) => [A[0] * B[0] + A[1] * B[2], A[0] * B[1] + A[1] * B[3], A[2] * B[0] + A[3] * B[2], A[2] * B[1] + A[3] * B[3]];
+  const mInv = (A) => { const dt = A[0] * A[3] - A[1] * A[2]; return [A[3] / dt, -A[1] / dt, -A[2] / dt, A[0] / dt]; };
+  const isoOK = (l) => l?.t === 'shape' && l.shape !== 'line' && !l.qr && !l.lock && (l.shape === 'vec' || DZ_GEN[l.shape]);
+  // Applies M (about the shape's centre) to its outline, rotation and flips included, and refits its box.
+  const isoXf = (l, M) => {
+    if (l.shape !== 'vec') { const g = DZ_GEN[l.shape]; if (!g) return false; l.subs = JSON.parse(JSON.stringify(g(l))); l.shape = 'vec'; for (const kk of ['n', 'inner', 'th', 'path', 'r']) delete l[kk]; }
+    const w = l.w, h = l.h || 1, a = (l.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), sx = l.fx ? -1 : 1, sy = l.fy ? -1 : 1;
+    const R = mMul(M, [ca * sx, -sa * sy, sa * sx, ca * sy]), P = (vx, vy) => [R[0] * vx + R[1] * vy, R[2] * vx + R[3] * vy];
+    const all = []; for (const sp of l.subs) for (const n of sp.nodes) {
+      const [px, py] = P((n.x - 0.5) * w, (n.y - 0.5) * h), [ix, iy] = P(n.ix * w, n.iy * h), [ox, oy] = P(n.ox * w, n.oy * h);
+      Object.assign(n, { _x: px, _y: py, _ix: ix, _iy: iy, _ox: ox, _oy: oy }); all.push([px, py], [px + ix, py + iy], [px + ox, py + oy]); }
+    const x0 = Math.min(...all.map(q => q[0])), x1 = Math.max(...all.map(q => q[0])), y0 = Math.min(...all.map(q => q[1])), y1 = Math.max(...all.map(q => q[1]));
+    const nw = Math.max(1, x1 - x0), nh = Math.max(1, y1 - y0), cx = l.x + w / 2, cy = l.y + (l.h || 0) / 2;
+    for (const sp of l.subs) for (const n of sp.nodes) { n.x = (n._x - x0) / nw; n.y = (n._y - y0) / nh; n.ix = n._ix / nw; n.iy = n._iy / nh; n.ox = n._ox / nw; n.oy = n._oy / nh;
+      for (const kk of ['_x', '_y', '_ix', '_iy', '_ox', '_oy']) delete n[kk]; }
+    l.x = cx + x0; l.y = cy + y0; l.w = nw; l.h = nh; l.rot = 0; l.fx = false; l.fy = false; return true; };
+  const isoAct = (l, act) => { if (!isoOK(l)) return toast(l?.lock ? 'Unlock it first.' : 'Planes work on shapes (text and pictures can\'t be skewed).', 2200);
+    const P = l.isoP && ISO_M[l.isoP], un = P ? mInv(P) : [1, 0, 0, 1], inP = (A) => P ? mMul(P, mMul(A, un)) : A;
+    let M;
+    if (ISO_M[act]) { M = mMul(ISO_M[act], un); l.isoP = act; }
+    else if (act === 'flat') { if (!P) return; M = un; delete l.isoP; }
+    else if (act === 'rl' || act === 'rr') { const a = (act === 'rl' ? -15 : 15) * Math.PI / 180; M = inP([Math.cos(a), -Math.sin(a), Math.sin(a), Math.cos(a)]); }
+    else if (act === 'fh') M = inP([-1, 0, 0, 1]); else if (act === 'fv') M = inP([1, 0, 0, -1]); else return;
+    if (isoXf(l, M)) { changed(true); drawSide(); } };
   /* ---------- Quick strip (as in the tattoo simulator) ----------
      A row of shortcuts across the top of the page. Its + window picks tools, actions on what's selected (they
      work through the context strip's own buttons, so they behave exactly the same), favourite colours (up to 8)
