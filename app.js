@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 361;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 362;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2085,8 +2085,9 @@ const VIEWS = {
       return `
       <div class="card su-again"><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
         <button class="btn small" id="s-setup">Run setup</button></div>
-      ${WS.cur?.test ? '' : `<div class="card su-again"><div><b>Practice workspace</b><span class="muted">A separate workspace full of made-up data to try things on.</span></div>
-        <button class="btn small" id="s-practice">${Practice.get() ? 'Open' : 'Make one'}</button></div>`}
+      <div class="card su-again"><div><b>Practice workspace</b><span class="muted">${WS.cur?.test ? 'You\'re in it: made-up data to try things on. Only one is kept.' : 'A separate workspace full of made-up data to try things on. Only one is kept.'}</span></div>
+        <span class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end">${WS.cur?.test ? '<button class="btn small" id="s-pback">Back to my workspace</button>' : `<button class="btn small" id="s-practice">${Practice.get() ? 'Open' : 'Make one'}</button>`}
+          ${Practice.get() ? '<button class="btn small" id="s-pfresh" data-tip="Replace it with a new one, full of fresh made-up data">Start fresh</button><button class="btn small danger" id="s-pdel">Delete</button>' : ''}</span></div>
       <div class="card su-again"><div><b>What's new notes</b><span class="muted">Update notes with things to test on the home screen.</span></div>
         <label class="toggle"><input type="checkbox" id="s-news" ${Settings.get('news_off') === '1' ? '' : 'checked'}><span>Show</span></label></div>
       <div class="card su-again"><div><b>Workspace password</b><span class="muted">${WsPass.on() ? 'On: asked each time this workspace opens.' : 'Off. Add one so others can\'t open this workspace.'}</span></div>
@@ -2173,6 +2174,9 @@ const VIEWS = {
       $('#s-tour').onclick = () => tourOffer();
       $('#s-pass').onclick = () => WsPass.change();
       const sp = $('#s-practice'); if (sp) sp.onclick = () => Practice.open();
+      const pb = $('#s-pback'); if (pb) pb.onclick = () => { Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(Practice.back())); };
+      const pf = $('#s-pfresh'); if (pf) pf.onclick = async () => { if (await ask('Start the practice workspace fresh?\n\nThe one you have now is deleted and a new one made, full of fresh made-up data.')) { Dirty.set(false); await Snapshot.save().catch(() => {}); Practice.fresh(); } };
+      const pd = $('#s-pdel'); if (pd) pd.onclick = () => Practice.drop();
       $('#s-pfsize').onclick = (e) => { const b = e.target.closest('[data-sz]'); if (!b) return; Settings.set('pf_size', b.dataset.sz);
         $('#s-pfsize').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
       $('#view').addEventListener('toggle', (e) => { const k = e.target.dataset?.sec; if (k) e.target.open ? SET_OPEN.add(k) : SET_OPEN.delete(k); }, true);
@@ -8037,6 +8041,7 @@ async function startWorkspace(w, fileBytes) {
     else { await Practice.refresh(); render(); }
   }
   if (w.fresh && Settings.get('setup_done') !== '1') runSetup();
+  Practice.tidy().catch(() => {}); Tour.resume();
   if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
   else if (fileBytes) { toast(`Opened "${w.name}".`); Snapshot.soon(); }
   else Snapshot.soon();
