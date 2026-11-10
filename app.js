@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 359;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 360;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -622,6 +622,40 @@ function ask(msg, def) {
   });
 }
 const askText = (msg, def = '') => ask(msg, def);
+/* Workspace password: a light lock so a casual person can't open a workspace. Kept as a hash in the workspace's
+   own settings (ws_pass), so it travels with its backups. Not encryption: the data itself is not scrambled, and
+   anyone who opens the database file can read it or clear the setting. There is no reset: a forgotten password
+   means getting the data out of a backup by hand. */
+const WsPass = {
+  async hash(pw) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('inkforge-ws:' + pw)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); },
+  on: () => !!Settings.get('ws_pass'),
+  async check(pw) { return (await WsPass.hash(pw)) === Settings.get('ws_pass'); },
+  async set(pw) { return Settings.set('ws_pass', pw ? await WsPass.hash(pw) : ''); },
+  // A password box (hidden typing). Resolves the text, or null on Cancel.
+  ask(title, detail = '', fields = ['Password']) { return new Promise((res) => { const o = document.createElement('div'); o.className = 'ask-dlg';
+    o.innerHTML = `<div class="card" role="dialog" aria-modal="true"><p class="ask-q">${esc(title)}</p>${detail ? `<p class="muted ask-d">${esc(detail)}</p>` : ''}
+      ${fields.map((f, i) => `<label class="field" style="margin:8px 0 0"><span>${esc(f)}</span><input class="in" type="password" data-pw="${i}" autocomplete="off"></label>`).join('')}
+      <p class="muted ws-pwerr" style="color:var(--red);font-size:13px;margin:8px 0 0" hidden></p>
+      <div class="row" style="gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn" data-ask="0">Cancel</button><button class="btn primary" data-ask="1">OK</button></div></div>`;
+    const vals = () => [...o.querySelectorAll('[data-pw]')].map(i => i.value);
+    const done = (ok) => { removeEventListener('keydown', key, true); o.remove(); res(ok ? vals() : null); };
+    const key = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); } };
+    o.onclick = (e) => { const b = e.target.closest('[data-ask]'); if (b) done(b.dataset.ask === '1'); };
+    addEventListener('keydown', key, true); document.body.appendChild(o); setTimeout(() => o.querySelector('[data-pw]')?.focus(), 30); }); },
+  // On opening: asks until it's right or the person gives up. True when the workspace may open.
+  async unlock(w) { if (!WsPass.on()) return true;
+    for (let tries = 0; ; tries++) { const v = await WsPass.ask(`"${w.name}" is locked`, tries ? 'That password is not right. Try again.' : 'Type the workspace password to open it.');
+      if (v == null) return false; if (await WsPass.check(v[0])) return true; } },
+  // New password (typed twice). Returns the password, '' to have none, or null when cancelled or not matching.
+  async pick(title, detail) { const v = await WsPass.ask(title, detail, ['New password', 'Type it again']); if (v == null) return null;
+    if (v[0] !== v[1]) { toast('The two passwords are not the same. Nothing changed.', 3000); return null; } return v[0]; },
+  // Settings: set, change or remove, asking for the old one first.
+  async change() {
+    if (WsPass.on()) { const old = await WsPass.ask('Type the current password', 'To change or remove the workspace password, type the one you use now.'); if (old == null) return;
+      if (!await WsPass.check(old[0])) return toast('That password is not right.', 2500); }
+    const pw = await WsPass.pick(WsPass.on() ? 'New workspace password' : 'Set a workspace password', 'Asked each time this workspace opens. Leave both empty to have no password. There is no way to reset a forgotten one, so keep it somewhere safe.');
+    if (pw == null) return; await WsPass.set(pw); toast(pw ? 'Workspace password set.' : 'Workspace password removed.', 2500); render(); },
+};
 
 /* Library organiser for the grids of saved work (designs, simulator pieces, reels): search, a type filter, sort,
    favourites and folders. Kept in settings as lib_<key> by item id (not carried over by a merge, where ids change).
@@ -2055,6 +2089,8 @@ const VIEWS = {
         <button class="btn small" id="s-practice">${Practice.get() ? 'Open' : 'Make one'}</button></div>`}
       <div class="card su-again"><div><b>What's new notes</b><span class="muted">Update notes with things to test on the home screen.</span></div>
         <label class="toggle"><input type="checkbox" id="s-news" ${Settings.get('news_off') === '1' ? '' : 'checked'}><span>Show</span></label></div>
+      <div class="card su-again"><div><b>Workspace password</b><span class="muted">${WsPass.on() ? 'On: asked each time this workspace opens.' : 'Off. Add one so others can\'t open this workspace.'}</span></div>
+        <button class="btn small" id="s-pass">${WsPass.on() ? 'Change' : 'Set'}</button></div>
       <div class="card su-again"><div><b>Take a tour</b><span class="muted">A guided look around with examples; all removed afterwards.</span></div>
         <button class="btn small" id="s-tour">Start</button></div>
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
@@ -2135,6 +2171,7 @@ const VIEWS = {
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-setup').onclick = runSetup;
       $('#s-tour').onclick = () => tourOffer();
+      $('#s-pass').onclick = () => WsPass.change();
       const sp = $('#s-practice'); if (sp) sp.onclick = () => Practice.open();
       $('#s-pfsize').onclick = (e) => { const b = e.target.closest('[data-sz]'); if (!b) return; Settings.set('pf_size', b.dataset.sz);
         $('#s-pfsize').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
@@ -2263,6 +2300,8 @@ function runSetup() {
         <label class="field"><span>Currency symbol</span><input class="in" data-f="currency" maxlength="4" value="${esc(S.currency)}" placeholder="R"></label></div>
       <div class="two"><label class="field"><span>Contact number</span><input class="in" type="tel" data-f="artist_phone" value="${esc(S.artist_phone)}"></label>
         <label class="field"><span>Instagram</span><input class="in" data-f="artist_instagram" value="${esc(S.artist_instagram)}" placeholder="@yourstudio" autocapitalize="off"></label></div>
+      ${WsPass.on() ? '' : `<div class="two"><label class="field"><span>Workspace password <span class="muted">(optional)</span> ${help('Asked each time this workspace opens. There is no way to reset a forgotten one, so keep it somewhere safe. Change it later in Settings.')}</span><input class="in" type="password" data-f="pw1" value="${esc(S.pw1 || '')}" autocomplete="new-password"></label>
+        <label class="field"><span>Password again</span><input class="in" type="password" data-f="pw2" value="${esc(S.pw2 || '')}" autocomplete="new-password"></label></div>`}
       <div class="lbl">Portfolio picture size ${help('Long side in pixels for photos you add to your portfolio. Original keeps them exactly as they are; smaller saves space.')}</div>
       ${chips('pf_size', PF_SIZES)}`;
     if (st === 1) body = `<h2>Your week</h2><p class="muted">Used for the calendar, new bookings and the open days clients see.</p>
@@ -2306,6 +2345,8 @@ function runSetup() {
       await Settings.set('country_code', String(S.country_code || '').replace(/\D/g, ''));
       const ph = intlPhone(S.artist_phone);
       if (ph === null) { toast(phoneBad(), 6000); return false; }
+      if ((S.pw1 || S.pw2) && S.pw1 !== S.pw2) { toast('The two passwords are not the same.', 3500); return false; }
+      if (S.pw1 && !WsPass.on()) { await WsPass.set(S.pw1); S.pw1 = S.pw2 = ''; toast('Workspace password set.', 2000); }
       await Settings.set('artist_phone', ph);
     }
     if (st === 1) {
@@ -2739,7 +2780,7 @@ const MERGE_TABLES = {
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'signed_form_pages', 'portfolio_items',
   'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
-const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_|lib_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
+const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_|lib_|ws_pass$)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
 
 function parseBackup(bytes) {
@@ -7951,6 +7992,7 @@ async function startWorkspace(w, fileBytes) {
     }
     await migrate();
     await Settings.load();
+    if (!fileBytes && !(await WsPass.unlock(w))) { await Cloud.release?.(w); return WS.switchTo(null); }
     // Every table must belong to a merge section (or be marked device-only) in MERGE_TABLES,
     // otherwise "Merge from backup" would quietly leave its data behind.
     const unmapped = (await DB.all(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`))
