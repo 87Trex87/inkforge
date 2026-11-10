@@ -1817,15 +1817,22 @@ TT.open = async (el, id) => {
   function letPanel() { const Lt = letCur(); if (!Lt) return; const b = $('#tt-rail [data-r="tools"]');
     const sl = (f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:3px 6px"><span>${lab}<b>${fmt(Lt[f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${Lt[f]}" data-lt="${f}"></label>`;
     const seg = (f, opts, ic) => `<div class="tt-lseg">${opts.map(([v, n2]) => `<button data-lv="${f}:${v}" class="${ic ? 'tt-icb ' : ''}${String(Lt[f]) === String(v) ? 'on' : ''}" aria-label="${n2}">${ic ? ttIcb(v, n2) : n2}</button>`).join('')}</div>`;
-    pop.innerHTML = `<div class="tt-letp"><div class="gh">Lettering</div>
+    const bendTxt = (v) => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.round(Math.abs(v) * 1.8) + '°';   // shown in degrees like the studio's Bend
+    pop.innerHTML = `<div class="tt-letp"><div class="gh">Lettering</div><div class="gh" style="opacity:.7">Text</div>
       <textarea class="in" data-lt="s" rows="2" style="margin:2px 6px 6px;width:calc(100% - 12px);font-family:${Lt.font.replace(/"/g, "'")}">${esc(Lt.s)}</textarea>
       <div class="row" style="gap:4px;margin:0 6px 6px"><select class="in" data-lt="font" style="flex:1">${letFonts().map(([f, n2]) => `<option value="${esc(f)}" ${f === Lt.font ? 'selected' : ''}>${esc(n2)}</option>`).join('')}</select>
         ${typeof dzImportFont === 'function' ? '<button class="btn small" data-la="font">Import</button>' : ''}</div>
-      ${seg('mode', [['outline', 'Stencil line'], ['solid', 'Stencil solid'], ['ink', 'Tattoo solid'], ['inkline', 'Tattoo line']])}
-      ${sl('mm', 'Size', 3, 80, 0.5, v => v + ' mm')}${sl('sp', 'Letter spacing', -0.2, 1, 0.01, v => Math.round(v * 100) + '%')}${sl('lh', 'Line height', 0.7, 2.5, 0.05, v => '× ' + v)}
-      ${sl('curve', 'Curve', -100, 100, 1, v => v ? (v > 0 ? 'arch ' : 'dip ') + Math.abs(v) : 'straight')}${Lt.mode === 'outline' || Lt.mode === 'inkline' ? sl('ow', 'Line width', 0.1, 2, 0.05, v => v + ' mm') : ''}
+      ${sl('mm', 'Text size', 3, 80, 0.5, v => v + ' mm')}
+      <div class="tt-lseg"><button data-lv="bold:${!Lt.bold}" class="tt-tog ${Lt.bold ? 'on' : ''}" style="font-weight:800" data-tip="Bold" aria-label="Bold">B</button><button data-lv="ital:${!Lt.ital}" class="tt-tog ${Lt.ital ? 'on' : ''}" style="font-style:italic;font-family:Georgia,serif" data-tip="Italic" aria-label="Italic">I</button></div>
       ${seg('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], true)}
-      <div class="tt-lseg"><button data-lv="bold:${!Lt.bold}" class="${Lt.bold ? 'on' : ''}" style="font-weight:800">Bold</button><button data-lv="ital:${!Lt.ital}" class="${Lt.ital ? 'on' : ''}" style="font-style:italic">Italic</button><button data-la="ink">Needle ink</button></div>
+      <div class="gh" style="opacity:.7">Style</div>
+      ${seg('mode', [['outline', 'Stencil line'], ['solid', 'Stencil solid'], ['ink', 'Tattoo solid'], ['inkline', 'Tattoo line']])}
+      ${Lt.mode === 'outline' || Lt.mode === 'inkline' ? sl('ow', 'Outline width', 0.1, 2, 0.05, v => v + ' mm') : ''}
+      <div class="tt-lseg"><button data-la="ink" data-tip="The text takes the ink on the needle">Needle ink</button></div>
+      <div class="gh" style="opacity:.7">Layout</div>
+      ${sl('curve', 'Bend', -100, 100, 1, bendTxt)}
+      <div class="gh" style="opacity:.7">Spacing</div>
+      ${sl('sp', 'Letter spacing', -0.2, 1, 0.01, v => Math.round(v * 100) + '%')}${sl('lh', 'Line height', 0.7, 2.5, 0.05, v => '× ' + v)}
       <div class="row" style="gap:4px;margin:8px 6px 6px"><button class="btn small" data-la="del">Delete</button><button class="btn small" data-la="dup">Copy</button><span style="flex:1"></span>
         <button class="btn small primary" data-la="bake" data-tip="Lay it into the ${Lt.mode === 'outline' || Lt.mode === 'solid' ? 'stencil' : 'current ink'} layer. After this it can't be edited as text.">Bake</button></div></div>`;
     pop.hidden = false; pop.style.top = Math.max(8, (b?.getBoundingClientRect().top || 0) - stage.getBoundingClientRect().top - 6) + 'px'; }
@@ -1843,7 +1850,7 @@ TT.open = async (el, id) => {
     toast(toSten ? 'Baked into the stencil layer: trace it.' : 'Baked into the ink layer.', 1800); };
   pop.addEventListener('input', (e) => { const f = e.target.dataset?.lt, Lt = letCur(); if (!f || !Lt) return;
     Lt[f] = e.target.type === 'range' ? +e.target.value : e.target.value; if (f !== 's') st.letDef = { ...st.letDef, [f]: Lt[f] }; st.dirty = true;
-    const v = e.target.closest('label')?.querySelector('b'); if (v) v.textContent = f === 'mm' || f === 'ow' ? Lt[f] + ' mm' : f === 'sp' ? Math.round(Lt[f] * 100) + '%' : f === 'lh' ? '× ' + Lt[f] : f === 'curve' ? (Lt.curve ? (Lt.curve > 0 ? 'arch ' : 'dip ') + Math.abs(Lt.curve) : 'straight') : '';
+    const v = e.target.closest('label')?.querySelector('b'); if (v) v.textContent = f === 'mm' || f === 'ow' ? Lt[f] + ' mm' : f === 'sp' ? Math.round(Lt[f] * 100) + '%' : f === 'lh' ? '× ' + Lt[f] : f === 'curve' ? (+Lt.curve === 0 ? 'straight' : (Lt.curve > 0 ? 'up ' : 'down ') + Math.round(Math.abs(Lt.curve) * 1.8) + '°') : '';
     if (f === 'font') { e.target.closest('.tt-letp').querySelector('textarea').style.fontFamily = Lt.font.replace(/"/g, "'"); letLoadFont(Lt.font).then(() => { letDraw(); placeGuides(); }); return; }
     letDraw(); placeGuides(); });
   pop.addEventListener('click', async (e) => { const Lt = letCur(); if (!Lt) return; const lv = e.target.closest('[data-lv]')?.dataset.lv, la = e.target.closest('[data-la]')?.dataset.la;
@@ -3883,7 +3890,7 @@ function ttStyle() {
 .tt-mkc button.on { outline: 2px solid var(--teal); outline-offset: 2px; } .tt-mkcu { position: relative; flex: none; width: 24px; height: 24px; border-radius: 50%; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
 .tt-mkcu input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .tt-letp { max-height: min(70vh, 560px); overflow-y: auto; } .tt-lseg { display: flex; gap: 3px; margin: 4px 6px; } .tt-lseg button { flex: 1; border: 0; border-radius: 7px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 11px var(--ui); padding: 7px 2px; cursor: pointer; }
-.tt-lseg button.on { background: rgba(181,138,232,.28); color: #d6bdf7; } .tt-selb.let { border-color: #b58ae8; }
+.tt-lseg button.on { background: rgba(181,138,232,.28); color: #d6bdf7; } .tt-lseg .tt-tog { flex: 0 0 40px; font-size: 14px; } .tt-selb.let { border-color: #b58ae8; }
 .tt-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 0 6px; }
 .tt-tb { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); padding: 8px 2px 6px; cursor: pointer; font: 600 10px var(--ui); }
 .tt-tb svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; } .tt-tb.on { background: rgba(255,111,97,.2); color: #ff8a7a; }
