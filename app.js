@@ -7382,6 +7382,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 355, when: '2026-11-10T12:00', added: ['Choosing a photo, reference or portfolio piece now opens on your folders, like an explorer, with a search box that looks through all of them.', 'Your stencils and Place a tattoo in the simulator use the same folder picker, and older work past the old limits shows up again.'],
+    test: ['Put a few references in different categories, then import one in design studio. Is it quicker to find?'] },
   { build: 352, when: '2026-11-09T19:30', added: ['Design studio: shapes and lines can be solid, dashed or dotted, from the top strip.', 'Search, sort, favourites and folders in the design studio, simulator, reels, portfolio, stencils and forms, to keep a year of work tidy.', 'Simulator: packing and shading wear the stencil off around the needle, like on skin. Refresh it from Layers. Never in cheat mode.'],
     test: ['Shade over part of a stencil. Does it fade at a realistic pace?'] },
   { build: 348, when: '2026-11-09T17:30', added: ['Design studio: you can click and type in the line width, text size and font boxes along the top again.'], test: ['Select a shape and change its line width from the top strip.'] },
