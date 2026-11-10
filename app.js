@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 357;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 358;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -647,7 +647,7 @@ const Lib = {
     if (opt.fav === false && s.view === 'fav') s.view = '';
     return `<div class="lib-bar">${opt.search === false ? '' : `<input class="in lib-q" data-libq type="search" placeholder="Search" value="${esc(s.q)}" aria-label="Search">`}
       ${kinds.length > 1 ? `<select class="in" data-libkind aria-label="Type"><option value="">All types</option>${kinds.map(k => `<option ${s.kind === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>` : ''}
-      <select class="in" data-libsort aria-label="Sort">${[['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A to Z']].map(([v, t]) => `<option value="${v}" ${s.sort === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      ${opt.sort === false ? '' : `<select class="in" data-libsort aria-label="Sort">${[['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A to Z']].map(([v, t]) => `<option value="${v}" ${s.sort === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`}</div>
       <div class="lib-chips">${chip('', 'All', rows.length)}${opt.fav === false ? '' : chip('fav', '★ Favourites', n(r => o.fav.includes(r.id)))}${o.folders.length ? chip('loose', 'Not in a folder', n(r => !o.in[r.id])) : ''}
         ${o.folders.map(f => chip('f:' + f, LIB_FOLDER + esc(f), n(r => o.in[r.id] === f))).join('')}
         <button class="lib-chip add" data-libnew data-tip="Make a folder to sort your work into">+ Folder</button>
@@ -5691,15 +5691,21 @@ async function renderRules() {
   const ce = $('#r-cats');
   if (ce) { ce.hidden = cats.length < 2; ce.innerHTML = [['all', 'All', cats.reduce((t, x) => t + x.n, 0)], ...cats.map(x => [x.c, x.c, x.n])]
     .map(([k, l, n]) => `<button class="chip qz-chip ${RULES.cat === k ? 'on' : ''}" data-cat="${esc(k)}">${esc(l)} <span class="muted">${n}</span></button>`).join(''); }
-  const rs = await DB.all(`SELECT * FROM rules WHERE ?1 = 'all' OR category = ?1 ORDER BY (category = 'Client rules') DESC, category COLLATE NOCASE, sort, id`, [RULES.cat]);
+  const every = await DB.all(`SELECT * FROM rules WHERE ?1 = 'all' OR category = ?1 ORDER BY (category = 'Client rules') DESC, category COLLATE NOCASE, sort, id`, [RULES.cat]);
+  /* Search, favourites and folders over the categories; the rule book keeps its own order and numbers. */
+  const nth = {}, at = {}; for (const r of every) at[r.id] = nth[r.category] = (nth[r.category] || 0) + 1;
+  Lib.st('rules').sort = ''; const all = every.map(r => ({ ...r, name: r.title, sub: `${r.body || ''} ${r.category}` })), rs = Lib.apply('rules', all);
+  Lib.wire(el, 'rules', renderRules); el.onclick = (e) => { if (e.target.closest('.lib-tools')) e.preventDefault(); Lib.click(e, 'rules', renderRules); };   /* the stars and folders sit inside each rule's link */
+  const bar = every.length ? Lib.bar('rules', all, { sort: false }) : '', moved = rs.length !== every.length;
+  if (every.length && !rs.length) { el.innerHTML = bar + Lib.empty; return; }
   if (!rs.length) { el.innerHTML = `<div class="empty"><div class="empty-ico">${ICON.rules}</div><div style="font:24px var(--display)">No rules yet</div><div class="muted">Deposits, cancellations, touch-ups, age, guests…</div></div>`; return; }
   // One card per category, numbered from 1 in each.
   const groups = []; for (const r of rs) { const g = groups[groups.length - 1]; if (g && g.cat === r.category) g.rows.push(r); else groups.push({ cat: r.category, rows: [r] }); }
-  el.innerHTML = groups.map(g => `${RULES.cat === 'all' && cats.length > 1 ? `<div class="letter">${esc(g.cat)}</div>` : ''}<div class="card list">` + g.rows.map((r, i) => `
-    <a class="c-row rule" href="#rule-edit/${r.id}"><span class="rule-n">${i + 1}</span>
+  el.innerHTML = bar + groups.map(g => `${RULES.cat === 'all' && cats.length > 1 ? `<div class="letter">${esc(g.cat)}</div>` : ''}<div class="card list">` + g.rows.map((r, i) => `
+    <a class="c-row rule" href="#rule-edit/${r.id}"><span class="rule-n">${at[r.id]}</span>
       <span class="c-main"><span class="c-n">${esc(r.title)}</span>${r.body ? `<span class="muted rule-b">${esc(r.body)}</span>` : ''}</span>
-      <span class="row" style="gap:4px;flex-wrap:nowrap"><button class="mini" data-mv="-1" data-id="${r.id}" ${i ? '' : 'disabled'} aria-label="Move up">&uarr;</button>
-      <button class="mini" data-mv="1" data-id="${r.id}" ${i < g.rows.length - 1 ? '' : 'disabled'} aria-label="Move down">&darr;</button></span></a>`).join('') + '</div>').join('');
+      <span class="row" style="gap:4px;flex-wrap:nowrap">${Lib.tools('rules', r.id).replace('class="lib-tools"', 'class="lib-tools rule-lib"')}${moved ? '' : `<button class="mini" data-mv="-1" data-id="${r.id}" ${i ? '' : 'disabled'} aria-label="Move up">&uarr;</button>
+      <button class="mini" data-mv="1" data-id="${r.id}" ${i < g.rows.length - 1 ? '' : 'disabled'} aria-label="Move down">&darr;</button>`}</span></a>`).join('') + '</div>').join('');
 }
 
 /* Rule book print / export: pick categories, with or without the details. Print gives a clean
