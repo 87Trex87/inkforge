@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 399;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 400;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2028,6 +2028,7 @@ const VIEWS = {
           <button class="btn" id="st-print" style="align-self:flex-end">Print</button>
           <button class="btn" id="st-split" style="align-self:flex-end" data-tip="Too big for one sheet? Split it over several pages to tape together">Split</button>
           <button class="btn" id="st-keep" style="align-self:flex-end" data-tip="Keep the stencil and the picture it was made from in Portfolio › Stencils">Keep</button>
+          ${ST.ret ? '<button class="btn primary" id="st-chal" style="align-self:flex-end" data-tip="Put this stencil on the challenge, lined up with the picture it was made from">Use in the challenge</button>' : ''}
           <button class="btn" id="st-sim" style="align-self:flex-end" data-tip="Open a new piece in the tattoo simulator with this stencil on its stencil layer, at its print size">Simulator</button>
           <button class="btn" id="st-share" style="align-self:flex-end">Share</button>
           <button class="btn primary" id="st-save" style="align-self:flex-end;flex:1">Save to device</button>
@@ -2067,7 +2068,7 @@ const VIEWS = {
       $('#st-autocrop').onclick = () => stAutoCrop();
       stCropWire();
       $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(300, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); stMark(); });
-      $('#st-save').onclick = () => stExport(false); $('#st-share').onclick = () => stExport(true); $('#st-sim').onclick = stToSim;
+      $('#st-save').onclick = () => stExport(false); $('#st-share').onclick = () => stExport(true); $('#st-sim').onclick = stToSim; const stc = $('#st-chal'); if (stc) stc.onclick = stToChallenge;
       $('#st-keep').onclick = stKeep;
       $('#st-print').onclick = stPrint;
       $('#st-split').onclick = async () => { if (!ST.mask) return; await SP.open(await stBlob(), `stencil-${ymd(new Date())}`, ST.cm); };
@@ -6872,7 +6873,7 @@ const ST = {
 async function stLoad(file) {
   try { ST.src = await createImageBitmap(file); }
   catch { toast('Could not read that image.'); return; }
-  ST.rot = 0; ST.mask = null; ST.crop = null; ST.cropping = null; ST.from = '';
+  ST.rot = 0; ST.mask = null; ST.crop = null; ST.cropping = null; ST.from = ''; ST.ret = null;   /* ret: a challenge waiting for this stencil (stToChallenge) */
   try { Object.assign(ST.p, JSON.parse(Settings.get('st_params', '{}'))); } catch {}
   ST.p.flip = false;
   ST.cm = +Settings.get('st_cm', '10') || 10;
@@ -7100,6 +7101,24 @@ async function stExport(share) {
 }
 
 // A new simulator piece with this stencil on its stencil layer at print size, centred with a margin of skin around it.
+/* A stencil for a challenge's value study (Challenge maker): made from the study's own picture, cropped to the
+   zone, so it lines up with the zone when it comes back. A crop in the stencil maker is allowed (the stencil sits
+   on that part of the zone); a turn is not, as it would no longer line up. Kept on the zone as sh.stencil. */
+async function stToChallenge() {
+  const R = ST.ret; if (!ST.mask || !R) return;
+  if (ST.rot % 360) return toast('Turn the picture back to how it started, so the stencil lines up with the challenge.', 3500);
+  const img = new ImageData(ST.w, ST.h); for (let i = 0; i < ST.mask.length; i++) if (ST.mask[i]) img.data.set([78, 40, 150, 230], i * 4);
+  const c = new OffscreenCanvas(ST.w, ST.h); c.getContext('2d').putImageData(img, 0, 0);
+  const ref = await Media.save(await c.convertToBlob({ type: 'image/png' }), 'png');
+  const row = await DB.one('SELECT doc FROM designs WHERE id = ?', [R.id]); if (!row) return toast('That challenge is gone.');
+  const doc = JSON.parse(row.doc), z = doc.layers.find(l => l.id === R.layer); if (!z?.sh) return toast('That value study is gone.');
+  const b = R.box, k = ST.crop || { x: 0, y: 0, w: 1, h: 1 }, old = z.sh.stencil?.ref;
+  z.sh.stencil = { ref, box: [b[0] + k.x * b[2], b[1] + k.y * b[3], k.w * b[2], k.h * b[3]].map(v => Math.round(v * 100) / 100) };
+  await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(doc), R.id]);
+  await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [R.id, ref]);
+  if (old) { await DB.run('DELETE FROM design_assets WHERE design_id = ? AND ref = ?', [R.id, old]); await Media.release(old); }
+  ST.ret = null; toast('Stencil added to the challenge.', 2500); location.hash = 'design/' + R.id;
+}
 async function stToSim() {
   if (!ST.mask) return;
   const mode = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;

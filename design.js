@@ -172,7 +172,7 @@ function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 's
   else { T.zones = true; T.focus = Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C0.focus?.[k] ?? v])); }
   const shs = S.filter(l => l.role === 'shade');
   if (shs.length) { T.shades = shs.map(l => { const pts = dzChPts(l), P = pts.flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
-      const { raw, src, ...sh } = l.sh || {}; return { pts, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], nd: l.nd || CH_SHADE[sh.tech || 'stipple'][2], ...sh }; });
+      const { raw, src, ...sh } = l.sh || {}; if (sh.stencil) (T.stencils ||= []).push(sh.stencil); return { pts, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], nd: l.nd || CH_SHADE[sh.tech || 'stipple'][2], ...sh }; });
     T.needles = [...new Set([...T.needles, ...T.shades.map(z => z.nd)])]; T.cat = 'shade'; if (T.shades.some(z => z.tech === 'wash')) { T.wash = true; T.ink = 'wash'; } }
   if (pk) { const P = dzChPts(pk).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2), x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys);
     T.pack = [x0, y0, x1 - x0, y1 - y0].map(v => Math.round(v * 10) / 10); T.packNeedle = pk.nd || '7RS'; T.packPts = dzChPts(pk);
@@ -977,6 +977,8 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(off, 0, 0);
   }
   for (const l of chLines) await one(x, { ...l, fill: null, fm: undefined, stroke: '#141414', sw: (CH_NW[l.nd] || 0.7) * CH_PX, dash: '' });
+  if (doc.chal && !opts.noStencil) for (const l of doc.layers) { const S = l.sh?.stencil; if (l.hide || !S) continue; const im = await dzImg(S.ref); if (!im) continue;   /* a value study's stencil, where it goes on the skin */
+    x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.85; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
 }
 /* ---------- SVG ----------
    Shapes are vector, and so are their plain colours and gradients, so they write straight into an SVG the same
@@ -3906,6 +3908,8 @@ DZ.edit = async (id) => {
     else if (T === 'grad') { const sl = (k, n, mn, mx, stp, def) => `<label class="dz-gsz"><span style="width:86px">${n}</span><input type="range" min="${mn}" max="${mx}" step="${stp}" data-chss="${k}" value="${S[k] ?? def}" style="flex:1"></label>`;
       body = `<div class="dz-gk" style="grid-template-columns:repeat(4,1fr)">${tb('grad', 'flat', 'Even')}${tb('grad', 'linear', 'Straight')}${tb('grad', 'radial', 'Radial')}${tb('grad', 'paint', 'Painted')}</div>
         ${S.grad === 'linear' || S.grad === 'radial' ? chNote('Drag the dots on the shape: the black one is the dark end.') : ''}${S.grad === 'paint' && !S.raw ? chNote('Paint it in the Brush tab, or start from an auto shading below.') : ''}
+        ${S.raw ? `<div class="dz-gk" style="grid-template-columns:1fr;margin-top:6px"><button data-chsten class="${S.stencil ? '' : 'on'}">${S.stencil ? 'Remake the stencil' : 'Make the stencil from the picture'}</button></div>`
+          + chNote(S.stencil ? 'The stencil is on. Remake it in the stencil maker, or remove it.' + ' <a href="#" data-chstenx>Remove it</a>' : 'Opens the stencil maker with the picture, at this size. Press Use in the challenge there and it comes back lined up.') : ''}
         ${S.raw && S.grad === 'paint' ? `<div class="gh" style="margin-top:6px">Value study</div>${sl('levels', 'Value steps', 2, 8, 1, 5)}<b class="dz-chval">${Math.round(S.levels || 5)} steps</b>` + chNote('The picture posterized into this many values, from Lightest to Darkest. Changing the steps or range starts again from the picture, over any airbrushing.') : ''}
         ${S.grad === 'flat' || S.grad === 'paint' ? '' : `<div class="dz-gk" style="grid-template-columns:1fr"><button data-chs="rev:${S.rev ? 0 : 1}" class="${S.rev ? 'on' : ''}">Reverse</button></div>`}
         ${S.grad === 'linear' || (S.grad === 'paint' && !S.raw) ? sl('ang', 'Turn', 0, 345, 15, 90) : ''}${S.grad === 'radial' ? sl('cx', 'Centre across', 0, 1, 0.05, 0.5) + sl('cy', 'Centre down', 0, 1, 0.05, 0.5) : ''}
@@ -3944,6 +3948,14 @@ DZ.edit = async (id) => {
     z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1 }; chQuant(z.sh);
     const i = doc.layers.indexOf(l); doc.layers.splice(i + 1, 0, z); l.hide = true; changed(true); select(z.id); chTab.role = 'grad'; await chOpen('role');
     toast('Value study made. The picture is hidden: show it from Layers to compare.', 3500); }
+  // The value study's picture, as it shows and cropped to the zone, into the stencil maker at the zone's width.
+  async function chStencil(l) { const pic = doc.layers.find(o => o.t === 'image' && o.ref === l.sh.src); if (!pic) return toast('The picture this study was made from is gone.', 3000);
+    const b = chBox(l), sc = 2, c = document.createElement('canvas'); c.width = Math.round(b[2] * CH_PX * sc); c.height = Math.round(b[3] * CH_PX * sc);
+    const full = document.createElement('canvas'); full.width = Math.round(doc.w * sc); full.height = Math.round(doc.h * sc); await dzDraw(full, { ...doc, layers: doc.layers.map(o => o === pic ? { ...o, hide: false } : o) }, sc, { only: new Set([pic.id]), noBg: true, noStencil: true });
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(full, b[0] * CH_PX * sc, b[1] * CH_PX * sc, c.width, c.height, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png')); await flush(); closePop();
+    await stLoad(new File([blob], 'value-study.png', { type: 'image/png' })); ST.from = name; ST.cm = Math.round(b[2] / 10 * 10) / 10; ST.ret = { id, layer: l.id, box: b };
+    location.hash = 'stencil'; }
   const chStopFix = (S) => { S.cols ||= []; S.mixs = S.cols.map((c, k) => S.mixs?.[k] || [c]); };
   const chStopSet = (S, i) => { const m = S.mixs[i] || [S.cols[i]]; S.cols[i] = m[1] ? chMix(m[0], m[1], m[2] ?? 0.5) : m[0]; };
   const chInk = (l) => { const m = l.mixOf || ['#141414']; l.ink = m[1] ? chMix(m[0], m[1], l.mixT ?? 0.5) : m[0]; };
@@ -4018,6 +4030,8 @@ DZ.edit = async (id) => {
     if (t.closest('[data-chstdel]') && l?.sh) { const S = l.sh; chStopFix(S); if (S.cols.length <= 2) return; const i = Math.min(chStop, S.cols.length - 1); S.cols.splice(i, 1); S.mixs.splice(i, 1); chStop = Math.max(0, i - 1); changed(true); return chRe(); }
     if (d('chsc') && l?.sh) { const S = l.sh; chStopFix(S); const i = Math.min(chStop, S.cols.length - 1); S.mixs[i] = [d('chsc'), S.mixs[i][1], S.mixs[i][2]]; chStopSet(S, i); changed(true); return chRe(); }
     if (d('chsm') != null && l?.sh) { const S = l.sh; chStopFix(S); const i = Math.min(chStop, S.cols.length - 1); S.mixs[i] = [S.mixs[i][0], d('chsm') || undefined, S.mixs[i][2] ?? 0.5]; chStopSet(S, i); changed(true); return chRe(); }
+    if (t.closest('[data-chsten]') && l?.sh?.src) { e.preventDefault(); return chStencil(l); }
+    if (t.closest('[data-chstenx]') && l?.sh?.stencil) { e.preventDefault(); delete l.sh.stencil; changed(true); return chRe(); }
     if (d('chpre') && l?.sh) { chPreset(l, d('chpre')); changed(true); drawCtx(); return chRe(); }
     if (d('chbr')) { const [k, v] = d('chbr').split(':'); chBrush[k] = k === 'hard' ? v === '1' : v; return chRe(); }
     if (d('chs') && l?.sh) { const [k, v] = d('chs').split(':'); if (k === 'grad' && v === 'paint' && l.sh.grad !== 'paint') { l.sh.map = dzChMapEnc(dzChBake(l.sh, chBox(l))); delete l.sh.preset; delete l.sh.mapN; delete l.sh.raw; } l.sh[k] = k === 'rev' ? v === '1' : v;
