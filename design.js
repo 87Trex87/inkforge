@@ -1306,7 +1306,7 @@ DZ.list = async () => {
       const r = await DB.one('SELECT name, thumb_ref FROM designs WHERE id = ?', [+d('del')]);
       if (!r || !await ask(`Delete "${r.name}"? This can't be undone.`)) return;
       const refs = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [+d('del')])).map(x => x.ref);
-      await DB.run('DELETE FROM designs WHERE id = ?', [+d('del')]);
+      await DB.run('DELETE FROM designs WHERE id = ?', [+d('del')]); Settings.set('dz_refs_' + d('del'), '');   /* its reference pictures go too */
       for (const ref of [r.thumb_ref, ...refs]) await Media.release(ref);
       return DZ.list();
     }
@@ -1445,7 +1445,7 @@ DZ.edit = async (id) => {
     <div class="dz-ctxw"><div class="dz-ctx" id="dz-ctx"></div><div class="dz-csnap" id="dz-csnap"></div></div>
     <div class="dz-body">
       <div class="dz-stage" id="dz-stage">
-        <div class="tt-qs dz-qstrip" id="dz-qstrip"></div>
+        <div class="tt-qs dz-qstrip" id="dz-qstrip"></div><div class="tt-refs dz-refs" id="dz-refs"></div>
         <div class="dz-rail" id="dz-rail">
           ${dzIB('data-rail="select"', 'select', 'Select and move')}
           ${dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
@@ -1459,6 +1459,7 @@ DZ.edit = async (id) => {
           <i class="sep"></i>
           ${dzIB('data-rail="layers"', 'layers', 'Layers')}
           ${dzIB('data-rail="doc"', 'page', 'Page: theme, background, sides and details')}
+          ${dzIB('data-rail="refs" hidden', '<rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/>', 'Reference pictures: float over the design to follow, never printed')}
           <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg,image/*" hidden id="dz-file"></div>
         <div class="dz-pop" id="dz-pop" hidden></div>
         <div class="dz-page ${doc.kind === 'note' ? 'is-note' : ''}" id="dz-page"><canvas id="dz-cv"></canvas><canvas id="dz-gridcv" hidden></canvas><div id="dz-vps"></div>${doc.kind === 'note' ? '<div class="dz-nguide" aria-hidden="true"><i class="s"><b>Top strip (on hover or tap)</b></i><i class="b"></i><i class="f"><b>Scrolls below this line</b></i></div>' : ''}<div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
@@ -1786,7 +1787,7 @@ DZ.edit = async (id) => {
     side.hidden = !show; side.classList.toggle('min', mini);
     if (!show) side.innerHTML = '';
     else {
-      if (tab === 'layers') drawLayers(); else if (tab === 'doc') drawDoc(); else drawEdit();
+      if (tab === 'layers') drawLayers(); else if (tab === 'doc') drawDoc(); else if (tab === 'refs') drawRefsSide(); else drawEdit();
       // every panel's header: Done becomes a tick, and a chevron folds the panel down to its header
       const h = side.querySelector('.dz-lh');
       if (h) {
@@ -1804,7 +1805,7 @@ DZ.edit = async (id) => {
     const nh = sheetH(stage.clientHeight); if (nh !== sheetWas) { sheetWas = nh; fit(); redraw(); }
   };
   const drawRail = () => { const r = $('#dz-rail'); if (!r) return;
-    const on = { select: !toolOn() && !nodeArm && tab === 'edit', pen: penOn, pencil: pclOn, nodes: !!nodes || nodeArm, grid: !!doc.grid?.on, layers: tab === 'layers', doc: tab === 'doc' };
+    const on = { select: !toolOn() && !nodeArm && tab === 'edit', pen: penOn, pencil: pclOn, nodes: !!nodes || nodeArm, grid: !!doc.grid?.on, refs: tab === 'refs', layers: tab === 'layers', doc: tab === 'doc' };
     r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); try { dqDraw(); gridDraw(); } catch {} };   /* the strip is set up further down; before then there's nothing to redraw */
   /* The tool rail. Text, Picture and Shape open a small menu beside it; the rest act straight away. */
   const pop = () => $('#dz-pop');
@@ -1822,6 +1823,7 @@ DZ.edit = async (id) => {
       const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; return; }
     if (a === 'nodes') { closePop(); const l = layer(); if (canNodes(l)) return startNodes(l); nodeArm = true; drawRail(); return toast('Tap a shape to edit its nodes.', 2000); }
     if (a === 'select') { closePop(); endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); tab = 'edit'; return select(null); }
+    if (a === 'refs') { closePop(); tab = tab === 'refs' ? 'edit' : 'refs'; return drawSide(); }
     if (a === 'layers' || a === 'doc') { closePop(); if (a === 'doc' && tab !== 'doc') { sel = null; picks = new Set(); picking = false; placeSel(); } tab = tab === a ? 'edit' : a; return drawSide(); }
     if (a === 'close') { tab = 'edit'; return drawSide(); }
     if (a === 'assets') { closePop(); return addAsset(); }
@@ -3063,6 +3065,7 @@ DZ.edit = async (id) => {
     b.querySelectorAll('[data-mod]').forEach(x => x.classList.toggle('on', !!dock[x.dataset.mod]));
   };
   stage.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('[data-rf]') || refG) return;   // a reference picture's own gesture, not a pan or pinch of the design
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size >= 2 && busy() && e.pointerType === 'touch') { rest.add(e.pointerId); return; }   // a resting finger: a modifier, not a zoom
     if (pts.size === 2) {
@@ -3073,7 +3076,7 @@ DZ.edit = async (id) => {
     }
   }, true);
   stage.addEventListener('pointerdown', (e) => {
-    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-xf, .dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop, .dz-notebar')) return;
+    if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-xf, .dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop, .dz-notebar, [data-rf]')) return;
     // Background (around the design, or an empty part of it): drag to pan, tap to deselect. Shift-drag, or on a
     // touchscreen a moment's hold before dragging, draws a selection box instead.
     stage.setPointerCapture(e.pointerId);
@@ -3397,7 +3400,9 @@ DZ.edit = async (id) => {
     if (d('pic')) {
       const src = d('pic'); if (src === 'device') return $('#dz-file').click();
       const ref = await dzPortfolioPick(src === 'refs' ? 'refs' : true); if (!ref) return;
-      const im = await dzImg(ref), w = Math.min(doc.w, doc.h) * 0.5, h = im ? w * im.naturalHeight / im.naturalWidth : w;
+      const im = await dzImg(ref), where = await picWhere(); if (!where) return;
+      if (where === 'ref') return refNew({ ref, ar: im ? im.naturalHeight / im.naturalWidth : 1 });
+      const w = Math.min(doc.w, doc.h) * 0.5, h = im ? w * im.naturalHeight / im.naturalWidth : w;
       panel = null; return add({ t: 'image', ref, ...center(w, h) });
     }
     if ((t.closest('#dz-pfphoto') || t.closest('#dz-refphoto')) && l) { const ref = await dzPortfolioPick(t.closest('#dz-refphoto') ? 'refs' : true); if (!ref) return; l.ref = ref; if (!l.cover && l.slot == null) { const im = await dzImg(ref); if (im) l.h = l.w * im.naturalHeight / im.naturalWidth; } changed(true); return drawSide(); }
@@ -3657,6 +3662,7 @@ DZ.edit = async (id) => {
         const { ref, ar } = await importPic(f, t.id === 'dz-bgfile' ? 3000 : 2000);
         if (t.id === 'dz-bgfile') { doc.bg.img = ref; doc.bg.op ??= 1; changed(true); return drawSide(); }
         if (t.id === 'dz-repl' && l) { l.ref = ref; l.h = l.w / ar; changed(true); return drawSide(); }
+        const where = await picWhere(); if (!where) return; if (where === 'ref') return refNew({ ref, ar: 1 / ar });
         const w = Math.min(doc.w, doc.h) * 0.5, h = w / ar; add({ t: 'image', ref, ...center(w, h) });
       } catch { toast('Could not read that picture.'); }
       return;
@@ -3882,13 +3888,89 @@ DZ.edit = async (id) => {
       const g = c.getContext('2d'); g.drawImage(A.im, 0, 0, c.width, c.height); const src = g.getImageData(0, 0, c.width, c.height), dst = g.createImageData(c.width, c.height); dzAdjust(src, dst, A.v); g.putImageData(dst, 0, 0);
       const ref = await Media.save(await new Promise(r => c.toBlob(r, 'image/png')), 'png'); A.l.ref = ref; adjClose(true); changed(true); drawSide(); toast('Colour adjusted.', 1400); };
     draw(); $('.dz-ed').appendChild(d); { const r = $('#dz-ctx').getBoundingClientRect(); d.style.top = (r.bottom + 6) + 'px'; } redraw(); };   /* over the side panel, top right, so the picture stays in view */
+  /* ---------- Reference pictures (as in the simulator) ----------
+     Pictures that float over the design to follow: one finger moves one, two fingers move, size and turn it together,
+     a corner sizes it, the dot turns it, a double tap flips it. In the panel each can be hidden, locked (so you work
+     straight through it), faded or removed. Never part of the design: not printed, exported or undone. Kept with
+     each design in the setting dz_refs_<id>. */
+  const refLay = $('#dz-refs'); let refs = (() => { try { return JSON.parse(Settings.get('dz_refs_' + id, '[]')).filter(Boolean); } catch { return []; } })(), refSel = null, refSaveT = 0;
+  const refSave = () => { clearTimeout(refSaveT); refSaveT = setTimeout(() => Settings.set('dz_refs_' + id, JSON.stringify(refs.map(({ _u, ...r }) => r))), 400); };
+  const refUrl = async (r) => r._u ||= await Media.url(r.ref);
+  async function drawRefs() { for (const r of refs) await refUrl(r);
+    const sr = stage.getBoundingClientRect(), rb = $('#dz-rail [data-rail="refs"]'); if (rb) rb.hidden = !refs.length;
+    refLay.innerHTML = refs.filter(r => r.on).map(r => { r.x = Math.max(20, Math.min(sr.width - 20, r.x)); r.y = Math.max(20, Math.min(sr.height - 20, r.y));
+      return `<div class="tt-ref ${r.lock ? 'lock' : ''} ${refSel === r.id && !r.lock ? 'sel' : ''}" data-rf="${r.id}" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.w * r.ar}px;opacity:${r.op};transform:translate(-50%,-50%) rotate(${r.rot || 0}deg)">
+        <img src="${r._u}" alt="" draggable="false" style="${r.flip ? 'transform:scaleX(-1)' : ''}">${refSel === r.id && !r.lock ? '<i data-rh="nw"></i><i data-rh="ne"></i><i data-rh="sw"></i><i data-rh="se"></i><i data-rh="rot"></i>' : ''}</div>`; }).join(''); }
+  const refNew = (o) => { const sr = stage.getBoundingClientRect(); const r = { id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), x: Math.round(Math.max(170, sr.width * 0.3)), y: Math.round(Math.max(170, sr.height * 0.4)), w: 220, ar: 1, rot: 0, flip: false, op: 0.9, on: true, lock: false, ...o };
+    refs.push(r); refSel = r.id; refSave(); drawRefs(); tab = 'refs'; drawSide(); toast('Reference added: drag to move, pinch or a corner to size, the dot to turn.', 2600); return r; };
+  // Where a picture goes: into the design, or floating over it as a reference.
+  const picWhere = () => new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
+    o.innerHTML = `<div class="card"><h2>Add this picture</h2><div class="dz-ex">
+      <button data-pw="design"><b>Into the design</b><small>Part of the design: printed and exported</small></button>
+      <button data-pw="ref"><b>As a reference</b><small>Floats over the design to follow: move, size, turn, fade or hide it. Never printed</small></button></div>
+      <button class="btn" data-pw="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+    o.onclick = (e) => { const b = e.target.closest('[data-pw]'); if (!b && e.target !== o) return; o.remove(); res(b?.dataset.pw || null); }; document.body.appendChild(o); });
+  const refAdd = async (src) => { let ref = null, ar = 1;
+    if (src === 'file') { const f = await new Promise((res) => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = () => res(i.files[0] || null); i.click(); });
+      if (f) { try { const p = await importPic(f, 2000); ref = p.ref; ar = 1 / p.ar; } catch { return toast('Could not read that picture.'); } } }
+    else { ref = await dzPortfolioPick(src === 'refs' ? 'refs' : src === 'sten' ? 'sten' : true); if (ref) { const im = await dzImg(ref); ar = im ? im.naturalHeight / im.naturalWidth : 1; } }
+    if (ref) refNew({ ref, ar }); };
+  const drawRefsSide = async () => { const us = await Promise.all(refs.map(refUrl));
+    side.innerHTML = `<div class="dz-lh"><b>References <small>${refs.length}</small></b>${dzIB('data-rail="close"', 'close', 'Close')}</div>
+      <div class="tt-layers">${refs.map((r, i) => `<div class="tt-lr tt-rr ${refSel === r.id ? 'on' : ''}" data-rid="${r.id}"><img src="${us[i] || ''}" alt="">
+        <button class="dz-ib" data-rhide data-tip="${r.on ? 'Hide' : 'Show'}" aria-label="${r.on ? 'Hide' : 'Show'}">${r.on ? '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'}</button>
+        <button class="dz-ib ${r.lock ? 'on' : ''}" data-rlock data-tip="${r.lock ? 'Unlock' : 'Lock: work straight through it'}" aria-label="Lock">${r.lock ? '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>'}</button>
+        <button class="dz-ib" data-rflip data-tip="Flip" aria-label="Flip"><svg viewBox="0 0 24 24">${DZ_UI.fx}</svg></button>
+        <button class="dz-ib" data-rdel data-tip="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        <input type="range" min="0.1" max="1" step="0.05" value="${r.op}" data-rop aria-label="See-through"></div>`).join('') || '<p class="muted" style="margin:4px 2px">No references yet.</p>'}</div>
+      <div class="lbl" style="margin-top:10px">Add a picture</div>
+      <div class="tt-addr"><button class="btn small" data-radd="file">This device</button><button class="btn small" data-radd="refs">References</button><button class="btn small" data-radd="sten">Stencils</button><button class="btn small" data-radd="pf">Portfolio</button></div>
+      <p class="muted dz-hint">Drag to move; pinch, or a corner, to size; the dot turns it; double tap flips it. Locked ones let you work straight through. References are never printed or exported.</p>`;
+    drawSide2(); };
+  const drawSide2 = () => { const h = side.querySelector('.dz-lh'); if (h && !h.querySelector('[data-collapse]')) h.insertAdjacentHTML('beforeend', dzIB('data-collapse', 'chev', mini ? 'Show the panel' : 'Fold the panel away', 'dz-fold')); };
+  side.addEventListener('click', async (e) => { if (tab !== 'refs') return; const t = e.target, rid = t.closest('[data-rid]')?.dataset.rid;
+    if (rid) { const r = refs.find(x => x.id === rid); if (!r) return; e.stopPropagation();
+      if (t.closest('[data-rhide]')) r.on = !r.on; else if (t.closest('[data-rlock]')) { r.lock = !r.lock; if (r.lock && refSel === r.id) refSel = null; }
+      else if (t.closest('[data-rflip]')) r.flip = !r.flip; else if (t.closest('[data-rdel]')) refs = refs.filter(x => x !== r); else if (!t.matches('input')) { refSel = r.id; r.on = true; } else return;
+      refSave(); drawRefs(); return drawRefsSide(); }
+    const ad = t.closest('[data-radd]'); if (ad) { e.stopPropagation(); return refAdd(ad.dataset.radd); } }, true);
+  side.addEventListener('input', (e) => { if (tab !== 'refs' || !e.target.matches('[data-rop]')) return; const r = refs.find(x => x.id === e.target.closest('[data-rid]').dataset.rid); if (!r) return; r.op = +e.target.value; refSave();
+    const el = refLay.querySelector(`[data-rf="${r.id}"]`); if (el) el.style.opacity = r.op; });
+  // The gestures, as in the simulator: the picture is moved in place while fingers are down, never rebuilt.
+  let refG = null, refTap = null; const refPts = new Map(), refPos = (e) => { const sr = stage.getBoundingClientRect(); return { x: e.clientX - sr.left, y: e.clientY - sr.top }; };
+  const refPlace = (r) => { const el = refLay.querySelector(`[data-rf="${r.id}"]`); if (!el) return; el.style.left = r.x + 'px'; el.style.top = r.y + 'px'; el.style.width = r.w + 'px'; el.style.height = r.w * r.ar + 'px'; el.style.transform = `translate(-50%,-50%) rotate(${r.rot || 0}deg)`; };
+  const refStart = () => { const r = refG.r, p = [...refPts.values()]; Object.assign(refG, { x0: r.x, y0: r.y, w0: r.w, rot0: r.rot || 0, p0: p.map(q => ({ ...q })) });
+    if (refG.h && p.length === 1) { refG.d0 = Math.max(1, Math.hypot(p[0].x - r.x, p[0].y - r.y)); refG.a0 = Math.atan2(p[0].y - r.y, p[0].x - r.x) - (r.rot || 0) * Math.PI / 180; } };
+  const refDown = (e, r, h) => { e.stopPropagation(); e.preventDefault(); try { refLay.setPointerCapture(e.pointerId); } catch {} refPts.set(e.pointerId, refPos(e));
+    if (!refG) refG = { r, h, t: Date.now(), moved: false }; else refG.h = null; refStart(); };
+  refLay.addEventListener('pointerdown', (e) => { const el = e.target.closest('[data-rf]'); if (!el) return; const r = refs.find(x => x.id === el.dataset.rf); if (!r || r.lock) return;
+    if (refG && refG.r !== r) return; if (refSel !== r.id) { refSel = r.id; drawRefs(); } refDown(e, r, e.target.dataset.rh); });
+  stage.addEventListener('pointerdown', (e) => { if (refG && refPts.size === 1 && e.pointerType === 'touch' && !e.target.closest('[data-rf]')) refDown(e, refG.r, null); }, true);
+  const refMove = (e) => { if (!refG || !refPts.has(e.pointerId)) return; refPts.set(e.pointerId, refPos(e)); const g = refG, r = g.r, p = [...refPts.values()];
+    if (Math.hypot(p[0].x - g.p0[0].x, p[0].y - g.p0[0].y) > 6) g.moved = true;
+    if (p.length >= 2 && g.p0.length >= 2) { const [a0, b0] = g.p0, [a, b] = p, m0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 }, m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const s = Math.hypot(b.x - a.x, b.y - a.y) / Math.max(1, Math.hypot(b0.x - a0.x, b0.y - a0.y)), da = Math.atan2(b.y - a.y, b.x - a.x) - Math.atan2(b0.y - a0.y, b0.x - a0.x), c = Math.cos(da), sn = Math.sin(da);
+      const ox = (g.x0 - m0.x) * s, oy = (g.y0 - m0.y) * s; r.w = Math.max(40, g.w0 * s); r.x = m.x + ox * c - oy * sn; r.y = m.y + ox * sn + oy * c;
+      let deg = g.rot0 + da * 180 / Math.PI; const q = Math.round(deg / 90) * 90; if (Math.abs(deg - q) < 3) deg = q; r.rot = Math.round(deg * 10) / 10; g.moved = true; }
+    else if (!g.h) { r.x = g.x0 + p[0].x - g.p0[0].x; r.y = g.y0 + p[0].y - g.p0[0].y; }
+    else if (g.h === 'rot') { let a = (Math.atan2(p[0].y - r.y, p[0].x - r.x) - g.a0) * 180 / Math.PI; const q = Math.round(a / 90) * 90; if (Math.abs(a - q) < 5) a = q; r.rot = Math.round(a); }
+    else r.w = Math.max(40, g.w0 * Math.hypot(p[0].x - r.x, p[0].y - r.y) / g.d0);
+    refPlace(r); };
+  const refUp = (e) => { if (!refG || !refPts.has(e.pointerId)) return; refPts.delete(e.pointerId); if (refPts.size) { refG.h = null; return refStart(); }
+    const g = refG; refG = null; const now = Date.now();
+    if (!g.moved && !g.h && now - g.t < 300) { if (refTap && refTap.id === g.r.id && now - refTap.t < 350) { g.r.flip = !g.r.flip; refTap = null; } else refTap = { id: g.r.id, t: now }; } else refTap = null;
+    refSave(); drawRefs(); if (tab === 'refs') drawRefsSide(); };
+  refLay.addEventListener('pointermove', refMove); stage.addEventListener('pointermove', (e) => { if (refG && !refLay.hasPointerCapture?.(e.pointerId)) refMove(e); }, true);
+  for (const n of ['pointerup', 'pointercancel']) { refLay.addEventListener(n, refUp); stage.addEventListener(n, (e) => { if (refG && refPts.has(e.pointerId) && !refLay.hasPointerCapture?.(e.pointerId)) refUp(e); }, true); }
+  page.addEventListener('pointerdown', () => { if (refSel && !refG) { refSel = null; drawRefs(); } }, true);
+  drawRefs();
   /* ---------- Quick strip (as in the tattoo simulator) ----------
      A row of shortcuts across the top of the page. Its + window picks tools, actions on what's selected (they
      work through the context strip's own buttons, so they behave exactly the same), favourite colours (up to 8)
      and favourite fonts (up to 5). Kept for every design (setting dz_strip). */
   const DQ_SVG = { undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>', redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>', fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>' };
   const DQ_TOOLS = [['select', 'select', 'Select and move'], ['text', 'text', 'Text'], ['image', 'picture', 'Picture'], ['shape', 'shape', 'Shape'], ['pen', 'pen', 'Pen'], ['pencil', 'pencil', 'Pencil'],
-    ['layers', 'layers', 'Layers'], ['doc', 'page', 'Page: theme, background and sides'], ['undo', DQ_SVG.undo, 'Undo'], ['redo', DQ_SVG.redo, 'Redo'], ['fit', DQ_SVG.fit, 'Show the whole design'], ['export', 'export', 'Export'], ['grid', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective']];
+    ['layers', 'layers', 'Layers'], ['doc', 'page', 'Page: theme, background and sides'], ['refs', '<rect x="3" y="6" width="13" height="11" rx="1.5"/><path d="M8 3h13v11"/><circle cx="7.5" cy="10" r="1.5"/><path d="M16 15l-4-4-6 6"/>', 'Reference pictures'], ['undo', DQ_SVG.undo, 'Undo'], ['redo', DQ_SVG.redo, 'Redo'], ['fit', DQ_SVG.fit, 'Show the whole design'], ['export', 'export', 'Export'], ['grid', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective']];
   const DQ_ACTS = [['dup', 'copy', 'Duplicate'], ['del', 'del', 'Delete'], ['up', 'fwd', 'Bring forward'], ['down', 'back', 'Send back'], ['fx', 'fx', 'Flip left to right'], ['fy', 'fy', 'Flip upside down'],
     ['lock', 'lock', 'Lock or unlock'], ['crop', 'crop', 'Crop'], ['cut', 'area', 'Select area'], ['nodes', 'nodes', 'Edit nodes'], ['flatten1', 'flatten', 'Flatten into a picture'], ['bend', '<path d="M3 16c4-8 14-8 18 0"/><path d="M6 19c3-5 9-5 12 0"/>', 'Bend into an arc'], ['adjc', '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M12 4a8 8 0 0 1 0 16"/>', 'Adjust colour (pictures)'],
     ...AL.map(([a, tp, ic]) => ['al:' + a, ic, 'Align: ' + tp]), ...['add', 'subtract', 'intersect', 'contour'].map(v => ['bool:' + v, DZ_BOOL_ICON[v], { add: 'Add: weld into one outline', subtract: 'Subtract', intersect: 'Intersect', contour: 'Contour' }[v]])];
@@ -3952,7 +4034,7 @@ DZ.edit = async (id) => {
     draw(); document.body.appendChild(o); };
   /* ---------- Panels: hide or show each one, or all at once (Focus), as in the simulator ----------
      Kept in the setting dz_panels (a list of hidden panel names). */
-  const DPANELS = [['qs', 'Quick strip'], ['rail', 'Tools'], ['ctx', 'Selection strip'], ['side', 'Side panel'], ['zoom', 'Zoom']];
+  const DPANELS = [['qs', 'Quick strip'], ['rail', 'Tools'], ['ctx', 'Selection strip'], ['side', 'Side panel'], ['zoom', 'Zoom'], ['refs', 'Reference pictures']];
   let dpHide = (() => { try { return new Set(JSON.parse(Settings.get('dz_panels', '[]'))); } catch { return new Set(); } })();
   const dpApply = () => { const ed = $('.dz-ed'); if (!ed) return; ed.dataset.hide = [...dpHide].join(' '); Settings.set('dz_panels', JSON.stringify([...dpHide]));
     const f = $('#dz-hide'), all = DPANELS.every(([k2]) => dpHide.has(k2)); if (f) { f.classList.toggle('on', all); f.dataset.tip = all ? 'Show all the panels' : 'Focus: hide all the panels'; } };
