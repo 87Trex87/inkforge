@@ -3525,7 +3525,8 @@ TT.open = async (el, id) => {
       const sp = spillOut((x, y) => { const X = Math.round(x * mm), Y = Math.round(y * mm); if (X < 0 || Y < 0 || X >= W || Y >= H) return false; const j = (Y * W + X) * 4 + 3; return fillM[j] > 128 || growM[j] > 128; }, 1.2);
       const up = underPacked(); let hn = 0, hl = 0; for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { if (!inside((x + 0.5) * TS / mm, (y + 0.5) * TS / mm)) continue; hn++; const k2 = y * tw + x; hl += Math.max(up ? up[k2] : 0, Math.max(0, Math.min(1, (TP[k2] - 0.9) / 1.3))); } const heal = clamp01(1 - hl / Math.max(1, hn) * 2) * Math.min(1, sat / 0.5);
       const mv = EX.cur?.mv, ctrl = mv?.n > 1 ? (1 - clamp01((Math.sqrt(mv.vs / mv.n) / Math.max(1, mv.vm) - 0.5) / 0.6)) * (1 - clamp01((Math.sqrt(mv.ds / mv.n) / Math.max(0.6, mv.dm) - 0.12) / 0.5)) * (1 - clamp01(mv.fast / mv.all)) : 0;
-      const rs = EX.cur?.tm?.by?.[T.packNeedle], same = rs?.abs ? rs.net / rs.abs : 0, flips = rs?.mm ? rs.flips / rs.mm * 10 : 9, tech = clamp01((same - 0.3) / 0.5) * clamp01(1 - (flips - 0.2) / 0.6);
+      const tbn = (T.packNeedles || [T.packNeedle]).map(id => EX.cur?.tm?.by?.[id]).filter(Boolean), allMm = tbn.reduce((t, r) => t + (r.mm || 0), 0);   /* several needles allowed: each one's motion, weighted by how much it was used */
+      const tech = allMm ? tbn.reduce((t, r) => { const same = r.abs ? r.net / r.abs : 0, flips = r.mm ? r.flips / r.mm * 10 : 9; return t + (r.mm || 0) * clamp01((same - 0.3) / 0.5) * clamp01(1 - (flips - 0.2) / 0.6); }, 0) / allMm : 0;
       const pq = cov * (0.25 * sat + 0.75 * cons) * (1 - 0.6 * sp);
       parts.push([F.pack, pq], [F.colour, col], [F.heal, heal], [F.tech, tech * (0.5 + 0.5 * ctrl)]);
       Object.assign(out, { packing: Math.round(pq * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), colour: Math.round(col * 100), healing: Math.round(heal * 100), technique: Math.round(tech * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100), yourColour: ttToHex(avg.map(v => v / 255)) }); }
@@ -3541,7 +3542,7 @@ TT.open = async (el, id) => {
       B.n++; B.s += d; B.tv += t; if (d > 0.5) { B.cov++; const c = colAt(j); if (c) { B.c[0] += c[0]; B.c[1] += c[1]; B.c[2] += c[2]; B.cn++; } } const ck = Math.floor(X) + ',' + Math.floor(Y), ce = B.cells.get(ck) || [0, 0]; ce[0] += d; ce[1]++; B.cells.set(ck, ce); }
     const used = bd.filter(B => B.n > 3), mean = used.map(B => B.s / B.n), mid = (B) => B.tv / B.n;
     const steps = (vals, wantStep) => { let m = 0; for (let i = 1; i < vals.length; i++) m = Math.max(m, vals[i] - wantStep(i)); return m; };
-    const nd = EX.cur?.tm?.by?.[Z.nd], needle = nd?.strokes ? 1 : 0.4;
+    const needle = (Z.nds?.length ? Z.nds : [Z.nd]).some(id => EX.cur?.tm?.by?.[id]?.strokes) ? 1 : 0.4;   /* any of the needles allowed */
     if (Z.tech === 'blend') { const CS = (Z.cols?.length > 1 ? Z.cols : [Z.cols?.[0] || '#b3261e', '#f2c21b']).map(ttHex), want = (B) => { const [i, f] = dzChSeg(CS.length, mid(B)); return ttMix(CS[i], CS[i + 1], f).map(v => v * 255); };   /* the colour asked for between its two stops */
       const errs = used.map(B => B.cn ? dist(B.c.map(v => v / B.cn), want(B)) : 0.6), col = 1 - clamp01((errs.reduce((a, v) => a + v, 0) / Math.max(1, errs.length) - 0.05) * 3);
       const avg = used.map(B => B.cn ? B.c.map(v => v / B.cn) : null), stp = steps(avg.map((c, i) => c && avg[i - 1] ? dist(c, avg[i - 1]) : 0), (i) => dist(want(used[i]), want(used[i - 1] || used[i])) + 0.06), smooth = clamp01(1 - stp / 0.25);
