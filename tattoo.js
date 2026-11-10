@@ -2530,9 +2530,9 @@ TT.open = async (el, id) => {
   $('#tt-rail').onclick = (e) => {
     const b = e.target.closest('[data-r]'); if (!b) return; const r = b.dataset.r;
     if (r === 'needles') {
-      if (!pop.hidden) return closePop();
+      if (!pop.hidden) return closePop(); const tick = exTick();
       pop.innerHTML = Object.entries(TT_KINDS).map(([kind, [, label]]) => `<div class="gh">${label}</div><div class="tt-ndg">${TT_NEEDLES.filter(n => n.kind === kind)
-        .map(n => `<button class="${n.id === st.needle ? 'on' : ''}" data-nd="${n.id}" data-tip="${n.name}">${n.id}</button>`).join('')}</div>`).join('');
+        .map(n => `<button class="${n.id === st.needle ? 'on' : ''}${tick?.has(n.id) ? ' req' : ''}" data-nd="${n.id}" data-tip="${n.name}${tick?.has(n.id) ? ': needed for this one' : ''}">${n.id}</button>`).join('')}</div>`).join('');
       pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; return;
     }
     if (r === 'tools') { if (!pop.hidden) return closePop(); return toolsPop(b); }
@@ -2654,7 +2654,7 @@ TT.open = async (el, id) => {
       if (id === 'roll') return sep + `<button class="tt-qb wide${dim}${st.magRoll ? ' on' : ''}" data-q="roll" data-tip="Stack tilt: tap for a slider, or hold and drag" aria-label="Stack tilt">${qsIcon.roll}<b>${Math.round((st.magRoll || 0) * 100)}</b></button>`;
       if (/^a\d/.test(id)) { const v = +id.slice(1); return sep + `<button class="tt-qb${st.magAng === v ? ' on' : ''}${dim}" data-q="${id}" data-tip="${nm}" aria-label="${nm}"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke-width="3" transform="rotate(${v} 12 12)"/></svg></button>`; }
       if (grp === 'p') { const P = palAll().find(x => x.id === id.slice(2)); return sep + `<button class="tt-qb tt-qp${!st.wash && st.pal === P.id ? ' on' : ''}" data-q="${esc(id)}" data-tip="${nm}" aria-label="${nm}">${palDots(P, 3)}</button>`; }
-      if (grp === 'n') { const { n, s } = qsFav(id), on = st.needle === n && (!s || Math.abs(feel.size - s) < 0.01); return sep + `<button class="tt-qb tt-qn${on ? ' on' : ''}" data-q="${esc(id)}" data-tip="${nm}" aria-label="${nm}"><b>${esc(n)}</b>${s ? `<small>${SZN[s] || ''}</small>` : ''}</button>`; }
+      if (grp === 'n') { const { n, s } = qsFav(id), on = st.needle === n && (!s || Math.abs(feel.size - s) < 0.01); const tk = exTick()?.has(n); return sep + `<button class="tt-qb tt-qn${on ? ' on' : ''}${tk ? ' req' : ''}" data-q="${esc(id)}" data-tip="${nm}" aria-label="${nm}"><b>${esc(n)}</b>${s ? `<small>${SZN[s] || ''}</small>` : ''}</button>`; }
       if (grp === 'f') { if (!CHEAT || fdone) return ''; fdone = true; return sep + `<button class="tt-qb" data-q="fonts" data-tip="Your lettering fonts" aria-label="Your lettering fonts"><b style="color:var(--ink);font-size:13px;font-weight:400">Aa</b><svg viewBox="0 0 24 24" style="width:10px;height:10px"><path d="M6 9l6 6 6-6"/></svg></button>`; }
       if (grp === 'c') { const r = id.slice(2), on = st.tool === r || r === 'fast' && !!st.fast || r === 'endless' && !!st.endless || r === 'grid' && st.grid.on || r === 'ruler' && st.ruler.on || r === 'sym' && st.sym.mode !== 'off';
         return sep + `<button class="tt-qb${on ? ' on' : ''}" data-q="${id}" data-r="${r}" data-tip="${nm}" aria-label="${nm}">${qsIcon[id]}</button>`; }
@@ -3333,7 +3333,11 @@ TT.open = async (el, id) => {
   // This run's challenges: the exam's, or the one challenge played from the hub.
   /* The needles a lesson or challenge allows (its needles, or its one needle). Ink put in with any other costs points,
      by how much of the work it did: 5 for any at all, up to 25 (wrongNeedle in exDone). */
-  function exAllowed(T) { return new Set(T?.needles?.length ? T.needles : T?.needle ? [T.needle] : []); }
+  function exReqd(T) { return new Set(T?.needles?.length ? T.needles : T?.needle ? [T.needle] : []); }   /* the needles it names (ticked green) */
+  // A shading-only challenge (a portrait: no lines to follow) lets any liner in too: its ink is judged as part of the shading.
+  const exNoLines = (T) => !!T?.zones && !T.lines?.some(p => p.length > 2) && !!T.shades?.length;
+  function exAllowed(T) { const S = exReqd(T); if (exNoLines(T)) for (const n of TT_NEEDLES) if (n.kind === 'liner') S.add(n.id); return S; }
+  const exTick = () => { try { return EX && !EX.done ? exReqd(exList()[EX.i]) : null; } catch { return null; } };
   const exList = () => (EX?.list || []).map(id => TT_CH.find(c => c.id === id) || TT_LS_CH.find(c => c.id === id) || (EX.custom?.id === id ? ttChCustom(EX.custom) : null)).filter(Boolean);
   const exGen = (name) => { const T = TT_CH.find(c => c.id === name); return T ? ttExGen(T, st.skin) : ''; };
   const exCrop = ttCrop;
@@ -3534,19 +3538,19 @@ TT.open = async (el, id) => {
       const pq = cov * (0.25 * sat + 0.75 * cons) * (1 - 0.6 * sp);
       parts.push([F.pack, pq], [F.colour, col], [F.heal, heal], [F.tech, tech * (0.5 + 0.5 * ctrl)]);
       Object.assign(out, { packing: Math.round(pq * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), colour: Math.round(col * 100), healing: Math.round(heal * 100), technique: Math.round(tech * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100), yourColour: ttToHex(avg.map(v => v / 255)) }); }
-    (T.shades || []).forEach((Z, zi) => { const z = shadeZone(Z), nm = T.shades.length > 1 ? ' ' + (zi + 1) : ''; parts.push([F.shade ?? 1, z.score / 100]); for (const [k, v] of Object.entries(z)) out[(k === 'score' ? 'shading' : k) + nm] = v; });
+    (T.shades || []).forEach((Z, zi) => { const z = shadeZone(Z, T), nm = T.shades.length > 1 ? ' ' + (zi + 1) : ''; parts.push([F.shade ?? 1, z.score / 100]); for (const [k, v] of Object.entries(z)) out[(k === 'score' ? 'shading' : k) + nm] = v; });
     const ws = parts.reduce((t, [w]) => t + w, 0); out.score = ws ? Math.round(100 * parts.reduce((t, [w, v]) => t + w * v, 0) / ws) : ln.score; return out; };
   /* A shading zone, in ten bands along its gradient (dzChP, shared with the design studio). Tones (stipple, whip,
      grey wash): the shape of the gradient against the one asked for (scaled to your own darkest, as the gradient
      challenges are), reaching the darkest asked, no sudden steps between bands, and each band even across.
      A blend: each band the colour asked for, covered, and no sudden steps. Plus whether the needle asked for was used. */
-  const shadeZone = (Z) => { const N = 10, zp = zonePath(Z.pts), fillM = maskOf(zp, true), edgeM = maskOf(zp, false, 0.8), bd = Array.from({ length: N }, () => ({ n: 0, s: 0, tv: 0, cov: 0, c: [0, 0, 0], cn: 0, cells: new Map() })), blend = Z.tech === 'blend';
+  const shadeZone = (Z, T) => { const N = 10, zp = zonePath(Z.pts), fillM = maskOf(zp, true), edgeM = maskOf(zp, false, 0.8), bd = Array.from({ length: N }, () => ({ n: 0, s: 0, tv: 0, cov: 0, c: [0, 0, 0], cn: 0, cells: new Map() })), blend = Z.tech === 'blend';
     const pts = []; let lo = 1, hi = 0; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const j = (y * W + x) * 4; if (fillM[j + 3] <= 128 || edgeM[j + 3] > 128) continue; const t = dzChAt(Z, x / mm, y / mm, Z.box); pts.push([x, y, t]); if (t < lo) lo = t; if (t > hi) hi = t; }
     for (const [x, y, t] of pts) { const j = (y * W + x) * 4, X = x / mm, Y = y / mm, f = hi - lo > 0.02 ? (t - lo) / (hi - lo) : 0, k = Math.min(N - 1, Math.floor((blend ? f : 1 - f) * N)), B = bd[k], d = densAt(j);   /* tones: band 0 the darkest asked; blends: band 0 the first colour */
       B.n++; B.s += d; B.tv += t; if (d > 0.5) { B.cov++; const c = colAt(j); if (c) { B.c[0] += c[0]; B.c[1] += c[1]; B.c[2] += c[2]; B.cn++; } } const ck = Math.floor(X) + ',' + Math.floor(Y), ce = B.cells.get(ck) || [0, 0]; ce[0] += d; ce[1]++; B.cells.set(ck, ce); }
     const used = bd.filter(B => B.n > 3), mean = used.map(B => B.s / B.n), mid = (B) => B.tv / B.n;
     const steps = (vals, wantStep) => { let m = 0; for (let i = 1; i < vals.length; i++) m = Math.max(m, vals[i] - wantStep(i)); return m; };
-    const needle = (Z.nds?.length ? Z.nds : [Z.nd]).some(id => EX.cur?.tm?.by?.[id]?.strokes) ? 1 : 0.4;   /* any of the needles allowed */
+    const needle = (Z.nds?.length ? Z.nds : [Z.nd]).some(id => EX.cur?.tm?.by?.[id]?.strokes) || (exNoLines(T) && Object.entries(EX.cur?.tm?.by || {}).some(([id, r]) => r.strokes && /RL$/.test(id))) ? 1 : 0.4;   /* a liner working the gradient counts in a portrait */   /* any of the needles allowed */
     if (Z.tech === 'blend') { const CS = (Z.cols?.length > 1 ? Z.cols : [Z.cols?.[0] || '#b3261e', '#f2c21b']).map(ttHex), want = (B) => { const [i, f] = dzChSeg(CS.length, mid(B)); return ttMix(CS[i], CS[i + 1], f).map(v => v * 255); };   /* the colour asked for between its two stops */
       const errs = used.map(B => B.cn ? dist(B.c.map(v => v / B.cn), want(B)) : 0.6), col = 1 - clamp01((errs.reduce((a, v) => a + v, 0) / Math.max(1, errs.length) - 0.05) * 3);
       const avg = used.map(B => B.cn ? B.c.map(v => v / B.cn) : null), stp = steps(avg.map((c, i) => c && avg[i - 1] ? dist(c, avg[i - 1]) : 0), (i) => dist(want(used[i]), want(used[i - 1] || used[i])) + 0.06), smooth = clamp01(1 - stp / 0.25);
