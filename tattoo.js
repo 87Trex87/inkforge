@@ -347,7 +347,7 @@ TT.hub = async (el) => {
     <div class="tt-cabinet">${TT_TROPHIES.map(t => `<div class="tt-trophy ${a.trophies[t.id] ? 'won' : ''}" data-tip="${esc(t.desc)}">${ttCup(a.trophies[t.id] ? t.tier : 'locked', 30)}<b>${esc(t.name)}</b><span>${a.trophies[t.id] ? new Date(a.trophies[t.id]).toLocaleDateString() : esc(t.desc)}</span></div>`).join('')}</div>
     ${TT_HUB.map(([k, n]) => `<div class="letter">${n}</div><div class="tt-chgrid">${ttHubCh(k).sort((x, y) => x.diff - y.diff).map(c => { const p = a.pb[c.id], m = ttMedal(p?.best);
       const off = noCol && ttIsColour(c);
-      return `<button class="tt-chc ${off ? 'off' : ''}" data-ch="${c.id}" ${off ? 'data-tip="No colour on this skin"' : ''}><div class="tt-chimg"><img src="${ttExGen(c, skin)}" alt=""></div>
+      return `<button class="tt-chc ${off ? 'off' : ''}" data-ch="${c.id}" ${off ? 'data-tip="No colour on this skin"' : ''}><div class="tt-chimg"><img src="${c.thumb || ttExGen(c, skin)}" alt=""${c.thumb ? ` data-alt="${ttExGen(c, skin)}" onerror="if(this.dataset.alt){this.src=this.dataset.alt;this.removeAttribute('data-alt')}"` : ''}></div>
         <div class="tt-chmeta"><b>${esc(ttShort(c.title))}</b><span>${ttStars(c.diff)} ${c.needle}</span>
         <span class="tt-chpb">${p ? `${ttMedalIco(m)} Best ${p.best} <i class="tt-chr" data-chr="${c.id}" data-tip="Clear this challenge's best score">Reset</i>` : '<i class="muted">Not tried yet</i>'}</span></div></button>`; }).join('')}</div>`).join('')}
   </div>`;
@@ -547,7 +547,8 @@ TT_LS_CH.push({ id: 'l-orange', lesson: '2-2', cat: 'pack', diff: 2, title: 'Ora
   path: (g) => { g.moveTo(96, 60); g.arc(90, 60, 6, 0, Math.PI * 2); },
   text: 'Line the circle in black with the 7RL in no more than 4 strokes. Then change to the 7M magnum, mix orange from the red and yellow caps, and pack it solid with tight ovals. It has to heal solid. Let it settle, then press Done.' });
 // Each lesson task again as a challenge: same stencil, needles and judging, without the unlock wording.
-TT_CH.push(...[...TT_LS_CH].sort((x, y) => x.lesson.localeCompare(y.lesson)).map(c => ({ ...c, id: 'ch-' + c.id.slice(2), lesson: undefined, hub: 'c' + c.lesson[0], diff: +c.lesson[0],
+TT_CH.push(...[...TT_LS_CH].sort((x, y) => x.lesson.localeCompare(y.lesson)).map(c => ({ ...c, id: 'ch-' + c.id.slice(2), lesson: undefined, thumb: 'img/ref/ch-' + c.lesson + '.jpg',   /* a calibrated attempt, shown on the card */
+  hub: 'c' + c.lesson[0], diff: +c.lesson[0],
   text: c.text.replace(/\s*(Grade )?C or higher (unlocks the next lesson|moves you on|finishes the chapter)\./g, '') })));
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
