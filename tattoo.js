@@ -1961,7 +1961,7 @@ TT.open = async (el, id) => {
     for (let i = 1; i <= n; i++) { const a = { x: td.last.x + (p.x - td.last.x) * (i - 1) / n, y: td.last.y + (p.y - td.last.y) * (i - 1) / n }, b = { x: td.last.x + (p.x - td.last.x) * i / n, y: td.last.y + (p.y - td.last.y) * i / n }; blendStep(a, b); const sa = symPts(a), sb = symPts(b); sa.forEach((q, j) => blendStep(q, sb[j])); }
     td.last = p; const u = flushPig(); st.dirty = true; if (u) paint({ x0: u.x0 - 2, y0: u.y0 - 2, x1: u.x1 + 2, y1: u.y1 + 2 }); };
   const toolUp = () => { const t0 = td; td = null; if (!t0) return;
-    if (t0.kind === 'lasso') { if (t0.pts.length > 6) liftSel(t0.pts); return drawCur(); }
+    if (t0.kind === 'lasso') { if (t0.pts.length > (t0.mode === 'box' || t0.mode === 'ellipse' ? 3 : 6)) liftSel(t0.pts); return drawCur(); }   // a box has just 4 corners
     if (t0.kind === 'shape') { shapeCommit(t0.a, t0.b); return drawCur(); }
     if (t0.kind === 'liq') { const B = t0.box, pad = st.liq.r * mm + 4; cropTop({ x0: B.x0 - pad, y0: B.y0 - pad, x1: B.x1 + pad, y1: B.y1 + pad }); return; }
     const B = t0.box, pad = st.blend.r * mm + 2; cropTop({ x0: B.x0 - pad, y0: B.y0 - pad, x1: B.x1 + pad, y1: B.y1 + pad }); };
@@ -1976,14 +1976,15 @@ TT.open = async (el, id) => {
     let x0 = W, y0 = H, x1 = 0, y1 = 0; for (const q of selCorners()) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
     const now = { x0: Math.max(0, Math.floor(x0) - 2), y0: Math.max(0, Math.floor(y0) - 2), x1: Math.min(W, Math.ceil(x1) + 2), y1: Math.min(H, Math.ceil(y1) + 2) }, was = lsel.last || now;
     const R = { x0: Math.min(now.x0, was.x0), y0: Math.min(now.y0, was.y0), x1: Math.max(now.x1, was.x1), y1: Math.max(now.y1, was.y1) }; lsel.last = now;
-    for (const key of lsel.keys) { const g = L[key].getContext('2d'); g.putImageData(lsel.base[key], 0, 0, R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0);   // only where it was and is g.save(); g.translate(c.x, c.y); g.rotate(lsel.rot); g.scale(lsel.s * lsel.fx, lsel.s * lsel.fy);
+    for (const key of lsel.keys) { const g = L[key].getContext('2d'); g.putImageData(lsel.base[key], 0, 0, R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); /* only where it was and is */ g.save(); g.translate(c.x, c.y); g.rotate(lsel.rot); g.scale(lsel.s * lsel.fx, lsel.s * lsel.fy);
       g.imageSmoothingQuality = 'high'; g.drawImage(lsel.fl[key], -lsel.b.w / 2, -lsel.b.h / 2); g.restore(); }
     st.dirty = true; paint(R); }); };
   const liftSel = (poly) => {
     let x0 = W, y0 = H, x1 = 0, y1 = 0; for (const q of poly) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
     x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1)); const bw = x1 - x0, bh = y1 - y0;
     if (bw < 4 || bh < 4) return;
-    const keys = st.lassoAll ? INK.filter(k2 => !st.hide.has(k2)) : [st.layer];   // the stencil layer works too (e.g. lettering)
+    const keys = st.lassoAll ? INK.filter(k2 => !st.hide.has(k2)) : [st.layer];   /* the stencil layer works too (e.g. lettering) */
+    if (!st.lassoAll && INK.includes(st.layer) && st.layer !== 'high' && !st.hide.has('high')) keys.push('high');   /* white goes with it: a placed picture keeps its white on the highlights layer */
     const m = document.createElement('canvas'); m.width = bw; m.height = bh; const mg = m.getContext('2d'); mg.beginPath(); poly.forEach((q, i) => i ? mg.lineTo(q.x - x0, q.y - y0) : mg.moveTo(q.x - x0, q.y - y0)); mg.closePath(); mg.fill();
     const M = mg.getImageData(0, 0, bw, bh).data; let any = false;
     const h = state(keys[0]); h.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(h); if (hist.length > 15) hist.shift(); fut.length = 0;
