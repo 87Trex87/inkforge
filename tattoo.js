@@ -3513,7 +3513,7 @@ TT.open = async (el, id) => {
      as the packing lessons judge it (saturation, coverage, even passes, the colour asked for, healing, the packing
      needle's motion), inside its own shape. The parts are weighted by the challenge's focus sliders. */
   const zonePath = (P) => (g) => { for (const p of P) { g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); g.closePath(); } };
-  const zoneScore = (T) => { const F = { line: 1, pack: 1, colour: 0.6, heal: 0.8, tech: 0.8, ...(T.focus || {}) }, ln = lineScore(T.path, T.core, T.covEase ?? 0.86), parts = [[F.line, ln.score / 100]], out = { lines: ln.score };
+  const zoneScore = (T) => { const F = { line: 1, pack: 1, colour: 0.6, heal: 0.8, tech: 0.8, ...(T.focus || {}) }, hasL = T.lines?.some(p => p.length > 2), ln = hasL ? lineScore(T.path, T.core, T.covEase ?? 0.86) : { score: 0 }, parts = hasL ? [[F.line, ln.score / 100]] : [], out = hasL ? { lines: ln.score } : {};   /* a value study can have no lines at all */
     if (T.packPts) { const zp = zonePath(T.packPts), fillM = maskOf(zp, true), edgeM = maskOf(zp, false, 1.2), growM = maskOf(zp, false, 2.4), at = (x, y) => (Math.round(y * mm) * W + Math.round(x * mm)) * 4 + 3;
       const inside = (x, y) => fillM[at(x, y)] > 128 && edgeM[at(x, y)] <= 128, want = ttHex(T.packInk || '#141414').map(v => v * 255), b = T.pack; let n = 0, solid = 0, sum = 0, cs = [0, 0, 0], cn = 0;
       for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const j = (y * W + x) * 4; if (fillM[j + 3] <= 128 || edgeM[j + 3] > 128) continue; const d = densAt(j); n++; sum += d; if (d > 0.7) { solid++; const c = colAt(j); if (c) { cs[0] += c[0]; cs[1] += c[1]; cs[2] += c[2]; cn++; } } }
