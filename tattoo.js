@@ -3541,7 +3541,7 @@ TT.open = async (el, id) => {
     const used = bd.filter(B => B.n > 3), mean = used.map(B => B.s / B.n), mid = (B) => B.tv / B.n;
     const steps = (vals, wantStep) => { let m = 0; for (let i = 1; i < vals.length; i++) m = Math.max(m, vals[i] - wantStep(i)); return m; };
     const nd = EX.cur?.tm?.by?.[Z.nd], needle = nd?.strokes ? 1 : 0.4;
-    if (Z.tech === 'blend') { const A = ttHex(Z.cols?.[0] || '#b3261e'), Bc = ttHex(Z.cols?.[1] || '#f2c21b'), want = (B) => ttMix(A, Bc, mid(B)).map(v => v * 255);
+    if (Z.tech === 'blend') { const CS = (Z.cols?.length > 1 ? Z.cols : [Z.cols?.[0] || '#b3261e', '#f2c21b']).map(ttHex), want = (B) => { const [i, f] = dzChSeg(CS.length, mid(B)); return ttMix(CS[i], CS[i + 1], f).map(v => v * 255); };   /* the colour asked for between its two stops */
       const errs = used.map(B => B.cn ? dist(B.c.map(v => v / B.cn), want(B)) : 0.6), col = 1 - clamp01((errs.reduce((a, v) => a + v, 0) / Math.max(1, errs.length) - 0.05) * 3);
       const avg = used.map(B => B.cn ? B.c.map(v => v / B.cn) : null), stp = steps(avg.map((c, i) => c && avg[i - 1] ? dist(c, avg[i - 1]) : 0), (i) => dist(want(used[i]), want(used[i - 1] || used[i])) + 0.06), smooth = clamp01(1 - stp / 0.25);
       const cov = used.reduce((a, B) => a + B.cov, 0) / Math.max(1, used.reduce((a, B) => a + B.n, 0));

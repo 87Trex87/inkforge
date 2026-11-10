@@ -1732,3 +1732,18 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 #dz-chov { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; touch-action: none; cursor: crosshair; } #dz-chov[hidden] { display: none; }
 .dz-ed:has(.dz-pop.dz-chpop:not([hidden])) .dz-side { display: none; }   /* the challenge menus replace the side panel while open */
 .dz-pop.dz-chpop[data-ch="role"] { left: auto; right: 10px; }   /* the shape stays in view on the left while its role is set */
+
+/* Challenge menus: header, tabs, scrolling body and a pinned footer */
+.dz-pop.dz-chpop { width: 292px; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+#dz-chov { pointer-events: none; }
+.dz-chhead { display: flex; align-items: baseline; gap: 8px; padding: 11px 12px 7px; } .dz-chhead b { flex: 1; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--teal); } .dz-chhead span { font-size: 12px; color: var(--ink2); font-weight: 600; }
+.dz-chtabs { display: flex; gap: 2px; margin: 0 8px 6px; padding: 3px; border-radius: 10px; background: rgba(127, 127, 127, .14); }
+.dz-chtabs button { flex: 1; border: 0; background: none; color: inherit; font: 600 12px Inter, sans-serif; padding: 7px 2px; border-radius: 8px; min-width: 0; } .dz-chtabs button.on { background: var(--teal); color: #fff; }
+.dz-chbody { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 10px; overscroll-behavior: contain; }
+.dz-chfoot { padding: 8px; border-top: 1px solid var(--line); } .dz-chfoot .btn { width: 100%; }
+.dz-chnote { font-size: 11.5px; line-height: 1.4; color: var(--ink2); margin: 6px 4px; }
+.dz-chstops { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px; } .dz-chstops button { width: 32px; height: 32px; border-radius: 9px; border: 2px solid var(--line); padding: 0; position: relative; }
+.dz-chstops button b { position: absolute; right: 2px; bottom: 0; font-size: 9px; color: #fff; text-shadow: 0 0 2px #000; } .dz-chstops button.on { border-color: var(--teal); box-shadow: 0 0 0 2px var(--teal); }
+.dz-chstops .add { background: none; color: var(--teal); font-size: 20px; line-height: 1; border-style: dashed; }
+.dz-chgrad { height: 14px; border-radius: 7px; margin: 4px; border: 1px solid var(--line); }
+.dz-chpop input[type="range"] { accent-color: var(--teal); }
