@@ -13,6 +13,7 @@ const DZ_KINDS = {
   note: { label: 'Sticky note', sub: 'Pin it on your menu screens', w: 900, h: 900, per: 0, note: 1 },
   form: { label: 'Form', sub: 'Consent, aftercare, any form', w: 2480, h: 3508, per: 0, form: 1 },
   page: { label: 'Blank page', sub: 'A2 to A6, Letter, custom…', w: 2480, h: 3508, per: 0, page: 1 },
+  pattern: { label: 'Pattern tile', sub: 'A seamless repeat, for fills', w: 709, h: 709, per: 0, pattern: 1 },
   fold: { label: 'Folded pamphlet', sub: 'Trifold, bifold, Z-fold…', w: 3508, h: 2480, per: 0, fold: 1 },
   voucher: { label: 'Gift voucher', sub: 'DL, 210 × 99 mm', w: 2480, h: 1169, per: 2 },
   card: { label: 'Business card', sub: '85 × 55 mm', w: 1004, h: 650, per: 10 },
@@ -58,6 +59,31 @@ function dzPaper(wmm, hmm, label) {
   return { w: Math.round(wmm * dpi / 25.4), h: Math.round(hmm * dpi / 25.4), dpi, label, mm: [wmm, hmm] };
 }
 const dzMM = (v) => (Math.round(v * 10) / 10).toString();
+/* Pattern tiles (design studio and the simulator's cheat mode), after FORMAthing's pattern maker: one cell, drawn with
+   its neighbours shown faintly round it, and anything crossing an edge carries on from the opposite one, so the tile
+   always repeats without a seam. A kept tile goes to Portfolio > References, in Patterns, where any texture fill and
+   the picture pickers find it; it can also be saved to the device. */
+const PAT_RATIOS = [['1:1', 1, 1], ['3:2', 3, 2], ['2:3', 2, 3], ['4:3', 4, 3], ['16:9', 16, 9]];
+const PAT_SIZES = [20, 40, 60, 100, 150];
+async function dzSavePattern(cv, title, toDevice) {
+  const png = (c) => new Promise(r => c.toBlob(r, 'image/png')), s = Math.min(1, 420 / Math.max(cv.width, cv.height)), th = document.createElement('canvas');
+  th.width = Math.max(1, Math.round(cv.width * s)); th.height = Math.max(1, Math.round(cv.height * s)); th.getContext('2d').drawImage(cv, 0, 0, th.width, th.height);
+  const blob = await png(cv);
+  if (toDevice) { const f = new File([blob], (title || 'pattern').replace(/[^\w-]+/g, '_') + '.png', { type: 'image/png' }); return saveFiles([f]); }
+  await DB.run('INSERT INTO ref_images (title, category, photo_ref, thumb_ref, w, h) VALUES (?, ?, ?, ?, ?, ?)',
+    [title || 'Pattern', 'Patterns', await Media.save(blob, 'png'), await Media.save(await png(th), 'png'), cv.width, cv.height]);
+  toast('Saved to References, in Patterns: pick it for a texture fill.', 3000); }
+// The pattern options, the same for a new design and a new simulator piece: cell size, ratio, neighbours, background.
+const patOptsHtml = (o, clearLabel) => `<div class="lbl">Cell across</div><div class="dz-papers">${PAT_SIZES.map(v => `<button data-patw="${v}" class="${o.w === v ? 'on' : ''}"><b>${v} mm</b></button>`).join('')}
+    <label class="dz-csize" style="margin:0"><span>Other</span><input class="in" type="text" inputmode="decimal" data-patwi value="${PAT_SIZES.includes(o.w) ? '' : o.w}" placeholder="mm" style="width:70px"></label></div>
+  <div class="lbl" style="margin-top:8px">Shape</div><div class="seg">${PAT_RATIOS.map(([n, a, b]) => `<button data-patr="${a}:${b}" class="${o.ra === a && o.rb === b ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+  <div class="lbl" style="margin-top:8px">Neighbours shown</div><div class="seg">${[[0, 'Off'], [1, '1 ring'], [2, '2 rings'], [3, '3 rings']].map(([v, n]) => `<button data-patring="${v}" class="${o.ring === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+  <div class="lbl" style="margin-top:8px">Background</div><div class="seg">${[[true, clearLabel || 'See-through'], [false, 'Colour']].map(([v, n]) => `<button data-patclear="${v ? 1 : 0}" class="${o.clear === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+  <p class="muted" style="font-size:12px;margin:8px 0 12px">${dzMM(o.w)} × ${dzMM(o.w * o.rb / o.ra)} mm. Draw in the cell: what crosses an edge comes back on the other side, so it always repeats seamlessly. Save it to References (Patterns) to use as a texture fill.</p>`;
+// A click or entry in those options; true when it was one.
+const patOptsAct = (o, t) => { const d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+  if (d('patw')) { o.w = +d('patw'); return true; } if (d('patr')) { const [a, b] = d('patr').split(':').map(Number); o.ra = a; o.rb = b; return true; }
+  if (d('patring') != null) { o.ring = +d('patring'); return true; } if (d('patclear') != null) { o.clear = d('patclear') === '1'; return true; } return false; };
 /* Folded pamphlets: one landscape sheet, always two-sided (outside = front, inside = back). Panel names follow how the sheet folds: on a trifold the
    panel that folds in is 1.5 mm narrower so it tucks in without buckling. */
 const DZ_FOLD_TYPES = {
@@ -673,7 +699,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   await DZF.all(doc); dzCurveSync(doc);
   const x = cv.getContext('2d'), W = doc.w * scale, H = doc.h * scale;
   x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
-  if (!opts.noBg) x.fillStyle = dzCol(doc, doc.bg?.c) || '#ffffff', x.fillRect(0, 0, W, H);
+  if (!opts.noBg && !doc.pat?.clear) x.fillStyle = dzCol(doc, doc.bg?.c) || '#ffffff', x.fillRect(0, 0, W, H);
   if (doc.bg?.img && !opts.noBg) { const im = await dzImg(doc.bg.img);
     if (im) { const s = Math.max(W / im.naturalWidth, H / im.naturalHeight); x.globalAlpha = doc.bg.op ?? 1;
       x.drawImage(im, (W - im.naturalWidth * s) / 2, (H - im.naturalHeight * s) / 2, im.naturalWidth * s, im.naturalHeight * s); x.globalAlpha = 1; } }
@@ -816,17 +842,18 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   // so a texture laid over a shape takes the shape's form. The bottom layer of each page can't be clipped.
   // Two-sided designs: the master page (shared backgrounds, frames) sits under the front or the back.
   const show = (l) => !l.hide && (!opts.only || opts.only.has(l.id));
+  const one0 = one, oneW = doc.pat ? async (cx, l) => { await one0(cx, l); for (const dy of [-doc.h, 0, doc.h]) for (const dx of [-doc.w, 0, doc.w]) if (dx || dy) await one0(cx, { ...l, x: l.x + dx, y: l.y + dy }); } : one0;   /* copies, so the layer itself never moves */
   for (const L of dzPages(doc, opts.face))
   for (let i = 0; i < L.length; i++) {
     const base = L[i]; let j = i + 1;
     while (j < L.length && L[j].clip) j++;
     const clips = L.slice(i + 1, j).filter(show); i = j - 1;
     if (!show(base)) continue;
-    if (!clips.length) { await one(x, base); continue; }
+    if (!clips.length) { await oneW(x, base); continue; }
     const off = document.createElement('canvas'); off.width = cv.width; off.height = cv.height;
     const ox = off.getContext('2d');
-    await one(ox, base); ox.globalCompositeOperation = 'source-atop';
-    for (const c of clips) await one(ox, c);
+    await oneW(ox, base); ox.globalCompositeOperation = 'source-atop';
+    for (const c of clips) await oneW(ox, c);
     x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(off, 0, 0);
   }
 }
@@ -1195,6 +1222,7 @@ function dzNew(kind, opt, theme, piece, size, sides) {
     if (size.fold) doc.fold = size.fold; }
   doc.vals = kind === 'voucher' ? { amount: '', to: '', from: '', ...(opt?.custom ? doc.vals : {}), code, expires: ymd(exp) } : {};
   if (k.form) ffSetup(doc, opt?.make);
+  if (k.pattern) { delete doc.sides; doc.pat = { ring: 1, fade: 0.38, clear: true, ...(size?.pat || {}) }; if (size) doc.paper = `Pattern tile, ${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm`; }
   dzFillSlots(doc, piece);
   return doc;
 }
@@ -1325,10 +1353,12 @@ DZ.list = async () => {
 // opts.piece: start a post from this portfolio piece (only post sizes are offered).
 async function dzPicker(opts = {}) {
   const st = { kind: opts.kind || null, li: 0, theme: opts.kind === 'form' ? 'paper' : 'ink', piece: opts.piece ? await dzPiece(opts.piece) : null,
-    ps: Settings.get('dz_paper', 'A4'), land: false, cw: 200, ch: 200, cu: 'mm', ft: 'tri', fs: Settings.get('dz_fold_sheet', 'A4'), two: false };
+    ps: Settings.get('dz_paper', 'A4'), land: false, cw: 200, ch: 200, cu: 'mm', ft: 'tri', fs: Settings.get('dz_fold_sheet', 'A4'), two: false,
+    pat: { w: 60, ra: 1, rb: 1, ring: 1, clear: true } };
   // The chosen blank page size (mm, turned for landscape) at its dpi.
   const size = () => {
     if (DZ_KINDS[st.kind]?.fold) return dzFold(st.ft, st.fs);
+    if (DZ_KINDS[st.kind]?.pattern) { const P = st.pat, z = dzPaper(P.w, Math.round(P.w * P.rb / P.ra * 10) / 10, 'Pattern'); z.pat = { ring: P.ring, clear: P.clear }; return z; }
     if (!DZ_KINDS[st.kind]?.page) return null;
     const f = { mm: 1, cm: 10, in: 25.4 }[st.cu], p = DZ_PAPER.find(x => x[0] === st.ps);
     let [w, h] = p ? [p[1], p[2]] : [Math.min(1200, Math.max(20, st.cw * f)), Math.min(1200, Math.max(20, st.ch * f))];
@@ -1337,6 +1367,7 @@ async function dzPicker(opts = {}) {
   };
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const kinds = Object.entries(DZ_KINDS).filter(([, v]) => !st.piece || v.social);
+  o.addEventListener('change', (e) => { if (!e.target.matches('[data-patwi]')) return; const v = parseFloat(e.target.value); if (v > 0) { st.pat.w = Math.min(1000, Math.max(5, v)); draw(); } });
   const draw = async () => {
     if (!st.kind) {
       o.innerHTML = `<div class="card dz-pick"><h2>${st.piece ? 'Make a post' : 'New design'}</h2>
@@ -1356,7 +1387,8 @@ async function dzPicker(opts = {}) {
           return `<button data-fs="${n}" class="${st.fs === n ? 'on' : ''}"><b>${n}</b><small>${dzMM(pp[2])} × ${dzMM(pp[1])}</small></button>`; }).join('')}</div>
         <p class="muted" style="font-size:12px;margin:6px 0 12px">You design both sides: the outside on top, the inside below it, with the folds marked.
           Panels: ${sz.fold.lo.join(', ')}. ${sz.dpi} dpi.</p>` : ''}
-      ${sz && !sz.fold ? `<div class="lbl">Size</div><div class="dz-papers">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => {
+      ${DZ_KINDS[st.kind].pattern ? patOptsHtml(st.pat) : ''}
+      ${sz && !sz.fold && !sz.pat ? `<div class="lbl">Size</div><div class="dz-papers">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => {
           const pp = DZ_PAPER.find(x => x[0] === n);
           return `<button data-ps="${esc(n)}" class="${st.ps === n ? 'on' : ''}"><b>${esc(n)}</b><small>${pp ? `${dzMM(pp[1])} × ${dzMM(pp[2])}` : 'your size'}</small></button>`; }).join('')}</div>
         ${st.ps === 'Custom' ? `<div class="dz-csize"><label><span>W</span><input class="in" type="text" inputmode="text" data-calc min="0" step="any" data-cs="cw" value="${st.cw}"></label>
@@ -1367,7 +1399,7 @@ async function dzPicker(opts = {}) {
       ${social ? `<div class="dz-piece">${pu ? `<img src="${pu}" alt="">` : '<span class="muted">No tattoo chosen</span>'}
         <div><b>${esc(st.piece?.vals.title || (st.piece ? 'Untitled piece' : 'Show off a tattoo'))}</b><small class="muted">${st.piece ? `${st.piece.photos.length} photo${st.piece.photos.length > 1 ? 's' : ''}` : 'Pick a portfolio piece to fill the photos, title and hashtags'}</small></div>
         <button class="btn small" data-piece>${st.piece ? 'Change' : 'Choose'}</button></div>` : ''}
-      ${!social && !sz?.fold ? `<div class="lbl">Sides</div><div class="seg" style="margin-bottom:12px">${[[false, 'One side'], [true, 'Front and back']].map(([v, n]) =>
+      ${!social && !sz?.fold && !sz?.pat ? `<div class="lbl">Sides</div><div class="seg" style="margin-bottom:12px">${[[false, 'One side'], [true, 'Front and back']].map(([v, n]) =>
           `<button data-two="${v ? 1 : 0}" class="${st.two === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>` : ''}
       <div class="lbl">Layout</div><div class="dz-tpls">${lays.map((l, i) =>
         `<button data-li="${i}" class="${st.li === i ? 'on' : ''}"><canvas data-prev="${i}"></canvas><span>${esc(l.name)}${l.custom ? ' <em>yours</em>' : ''}</span>
@@ -1386,6 +1418,7 @@ async function dzPicker(opts = {}) {
     if (d('kind') === 'note') { o.remove(); return dzNoteNew(); }
     if (d('kind')) { st.kind = d('kind'); st.li = 0; st.two = false; return draw(); }
     if (d('two') != null) { st.two = d('two') === '1'; return draw(); }
+    if (DZ_KINDS[st.kind]?.pattern && patOptsAct(st.pat, t)) return draw();
     if (t.closest('[data-back]')) { st.kind = null; return draw(); }
     if (d('tdel')) { e.stopPropagation();
       if (!await ask('Delete this template? Designs made from it are not affected.')) return;
@@ -1402,7 +1435,7 @@ async function dzPicker(opts = {}) {
       if (sz) await Settings.set(sz.fold ? 'dz_fold_sheet' : 'dz_paper', sz.fold ? st.fs : st.ps);
       const doc = dzNew(st.kind, dzLayouts(st.kind)[st.li], st.theme, st.piece, sz, st.two);
       const n = await DB.one('SELECT COUNT(*) AS n FROM designs WHERE kind = ?', [st.kind]);
-      const base = sz ? (sz.fold ? `${sz.label} pamphlet` : `${sz.label} page`) : DZ_KINDS[st.kind].label;
+      const base = sz?.pat ? 'Pattern tile' : sz ? (sz.fold ? `${sz.label} pamphlet` : `${sz.label} page`) : DZ_KINDS[st.kind].label;
       const name = st.piece?.vals.title ? `${st.piece.vals.title} (${DZ_KINDS[st.kind].label.toLowerCase()})` : base + (n.n ? ' ' + (n.n + 1) : '');
       await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [name, st.kind, JSON.stringify(doc)]);
       const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
@@ -1445,7 +1478,7 @@ DZ.edit = async (id) => {
     <div class="dz-ctxw"><div class="dz-ctx" id="dz-ctx"></div><div class="dz-csnap" id="dz-csnap"></div></div>
     <div class="dz-body">
       <div class="dz-stage" id="dz-stage">
-        <div class="tt-qs dz-qstrip" id="dz-qstrip"></div><div class="tt-refs dz-refs" id="dz-refs"></div>
+        <canvas id="dz-patcv" hidden></canvas><div class="tt-qs dz-qstrip" id="dz-qstrip"></div><div class="tt-refs dz-refs" id="dz-refs"></div>
         <div class="dz-rail" id="dz-rail">
           ${dzIB('data-rail="select"', 'select', 'Select and move')}
           ${dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
@@ -1455,6 +1488,7 @@ DZ.edit = async (id) => {
           ${dzIB('data-rail="shape"', 'shape', 'Shape')}
           ${dzIB('data-add="pen"', 'pen', 'Pen (P)')}
           ${dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
+          ${doc.pat ? dzIB('data-rail="pattern"', '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="3" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="13" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><circle cx="7" cy="7" r="1.6"/>', 'Pattern: cell size, neighbours, fit, and save the tile') : ''}
           ${dzIB('data-rail="grid"', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective, with snapping')}
           <i class="sep"></i>
           ${dzIB('data-rail="layers"', 'layers', 'Layers')}
@@ -1506,7 +1540,7 @@ DZ.edit = async (id) => {
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
     const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
-    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel(); try { gridDraw(); } catch {}   /* set up further down; nothing to draw before then */
+    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel(); try { gridDraw(); patDraw(); } catch {}   /* set up further down; nothing to draw before then */
   };
   // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
   // drawing is stretched; it's redrawn sharp a moment after zooming stops.
@@ -1535,7 +1569,7 @@ DZ.edit = async (id) => {
   let cont = null, cdrag = null;
   let penOn = false, pen = null, spaceHeld = false;
   let pclOn = false, stroke = null;   // the pencil (see "Pencil" below)   // the pen tool (see "Pen tool" below)   // the contour tool (see "Shape builder" below)   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
-  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) placeSel(); };
+  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) { placeSel(); try { patDraw(); } catch {} } };
   // Page tabs (top right of the design): front, back and the master page under both.
   const drawFaces = () => {
     const b = $('#dz-faces'); if (!b) return; b.hidden = !doc.sides; if (!doc.sides) return;
@@ -1809,7 +1843,7 @@ DZ.edit = async (id) => {
     r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); try { dqDraw(); gridDraw(); } catch {} };   /* the strip is set up further down; before then there's nothing to redraw */
   /* The tool rail. Text, Picture and Shape open a small menu beside it; the rest act straight away. */
   const pop = () => $('#dz-pop');
-  const closePop = () => { const p = pop(); p?.classList.remove('dz-gpop'); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
+  const closePop = () => { const p = pop(); p?.classList.remove('dz-gpop', 'dz-ppop'); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
   const mi = (attr, ic, label) => `<button class="mi" ${attr}><svg viewBox="0 0 24 24">${DZ_UI[ic]}</svg><span>${label}</span></button>`;
   /* Nodes: with a shape selected it opens its nodes; with none, the next shape tapped opens (nodeArm). A shape is
      also opened for node editing by double-tapping it. */
@@ -1819,6 +1853,8 @@ DZ.edit = async (id) => {
     nodeArm = false;
     // Every tool on the rail leaves the pen, pencil and other edit modes first, so they can be switched straight away.
     if (a !== 'select' && a !== 'close' && toolOn()) { endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); }
+    if (a === 'pattern') { const p0 = pop(); if (!p0.hidden && btn?.classList.contains('open')) return closePop(); closePop(); p0.innerHTML = patMenu(); p0.hidden = false; btn?.classList.add('open'); p0.classList.add('dz-gpop', 'dz-ppop');
+      const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; return; }
     if (a === 'grid') { const p0 = pop(); if (!p0.hidden && btn?.classList.contains('open')) return closePop(); closePop(); p0.innerHTML = gridMenu(); p0.hidden = false; btn?.classList.add('open'); p0.classList.add('dz-gpop');
       const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; return; }
     if (a === 'nodes') { closePop(); const l = layer(); if (canNodes(l)) return startNodes(l); nodeArm = true; drawRail(); return toast('Tap a shape to edit its nodes.', 2000); }
@@ -3695,6 +3731,46 @@ DZ.edit = async (id) => {
   };
   $('#dz-name').onchange = (e) => { name = e.target.value.trim() || name; save(); };
   $('#dz-undo').onclick = () => undo(-1); $('#dz-redo').onclick = () => undo(1);
+  /* ---------- Pattern tile ----------
+     The page is one cell of the pattern. Its neighbours are drawn faintly round it (the same picture, a cell over),
+     and every layer is also drawn a cell over in each direction (dzDraw), so a shape that crosses an edge carries on
+     from the opposite one. The menu sets the cell's size and shape, how many rings of neighbours show and how faint,
+     the background, fits what's selected to the cell, and saves the tile. */
+  function patDraw() { const c = $('#dz-patcv'), P = doc.pat; if (!c) return; c.hidden = !P || !P.ring; if (c.hidden) return;
+    const sr = stage.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1), W = Math.round(sr.width * dpr), H = Math.round(sr.height * dpr); if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, sr.width, sr.height);
+    const pl = parseFloat(page.style.left) || 0, pt = parseFloat(page.style.top) || 0, pw = doc.w * k, ph = doc.h * k, R = Math.min(3, P.ring | 0);
+    g.globalAlpha = Math.max(0.05, Math.min(1, P.fade ?? 0.38));
+    for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) if (i || j) { if (!P.clear) { g.fillStyle = dzCol(doc, doc.bg?.c) || '#fff'; g.fillRect(pl + i * pw, pt + j * ph, pw, ph); } g.drawImage(cv, pl + i * pw, pt + j * ph, pw, ph); }
+    g.globalAlpha = 1; g.setLineDash([6, 4]); g.lineWidth = 1.5; g.strokeStyle = 'rgba(232,154,69,.95)'; g.strokeRect(pl - 0.5, pt - 0.5, pw + 1, ph + 1); g.setLineDash([]); }
+  const patMM = () => [doc.w / ((doc.dpi || 300) / 25.4), doc.h / ((doc.dpi || 300) / 25.4)];
+  const patMenu = () => { const P = doc.pat, [wm, hm] = patMM();
+    return `<div class="gh">Pattern</div>
+      <div class="dz-gsz"><span>Cell</span><input class="in" type="text" inputmode="decimal" data-patcw value="${dzMM(wm)}" style="width:62px"><span>×</span><input class="in" type="text" inputmode="decimal" data-patch value="${dzMM(hm)}" style="width:62px"><em>mm</em></div>
+      <div class="dz-gk" style="grid-template-columns:repeat(5,1fr)">${PAT_RATIOS.map(([n, a, b]) => `<button data-patr="${a}:${b}">${n}</button>`).join('')}</div>
+      <div class="gh" style="margin-top:4px">Neighbours</div><div class="dz-gk" style="grid-template-columns:repeat(4,1fr)">${[[0, 'Off'], [1, '1'], [2, '2'], [3, '3']].map(([v, n]) => `<button data-patring="${v}" class="${(P.ring | 0) === v ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <label class="dz-gsz"><span>Fade</span><input type="range" min="0.05" max="1" step="0.05" data-patfade value="${P.fade ?? 0.38}" style="flex:1"></label>
+      <div class="dz-gk" style="grid-template-columns:1fr 1fr">${[[1, 'See-through'], [0, 'Colour']].map(([v, n]) => `<button data-patclear="${v}" class="${!!P.clear === !!v ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="dz-gk" style="grid-template-columns:1fr;margin-top:6px"><button data-patfit data-tip="Size what's selected (or everything) to fill the cell, keeping its shape and arrangement">Fit to the cell</button></div>
+      <div class="gh" style="margin-top:4px">Save the tile</div><div class="dz-gk" style="grid-template-columns:1fr 1fr"><button data-patsave="refs">To References</button><button data-patsave="device">To device</button></div>
+      <p class="muted" style="font-size:11px;margin:4px 6px 6px">What crosses an edge comes back on the other side. Saved tiles are in References, in Patterns: pick one for a texture fill.</p>`; };
+  const patSet = (fn) => { fn(doc.pat); changed(true); fit(); redraw(); const p0 = pop(); if (!p0.hidden && p0.classList.contains('dz-ppop')) p0.innerHTML = patMenu(); };
+  const patSize = (wm, hm) => { const per = ((doc.dpi || 300) / 25.4); doc.w = Math.max(20, Math.round(wm * per)); doc.h = Math.max(20, Math.round(hm * per)); doc.paper = `Pattern tile, ${dzMM(wm)} × ${dzMM(hm)} mm`; };
+  $('#dz-pop').addEventListener('click', async (e) => { if (!$('#dz-pop').classList.contains('dz-ppop')) return; const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk];
+    if (d('patr')) { const [a, b] = d('patr').split(':').map(Number), [wm] = patMM(); return patSet(() => patSize(wm, wm * b / a)); }
+    if (d('patring') != null) return patSet(P => { P.ring = +d('patring'); });
+    if (d('patclear') != null) return patSet(P => { P.clear = d('patclear') === '1'; });
+    if (t.closest('[data-patfit]')) { const L = (many() ? picked() : layer() ? [layer()] : doc.layers).filter(l => !l.hide && !l.lock); if (!L.length) return toast('Nothing to fit.');
+      const bs = L.map(box), B = { x0: Math.min(...bs.map(b => b.x0)), y0: Math.min(...bs.map(b => b.y0)), x1: Math.max(...bs.map(b => b.x1)), y1: Math.max(...bs.map(b => b.y1)) };
+      const f = Math.min(doc.w / Math.max(1, B.x1 - B.x0), doc.h / Math.max(1, B.y1 - B.y0)), cx = (B.x0 + B.x1) / 2, cy = (B.y0 + B.y1) / 2;
+      for (const l of L) { const lcx = l.x + l.w / 2, lcy = l.y + (l.h || 0) / 2, nw = l.w * f, nh = (l.h || 0) * f; l.x = doc.w / 2 + (lcx - cx) * f - nw / 2; l.y = doc.h / 2 + (lcy - cy) * f - nh / 2; l.w = nw; if (l.h) l.h = nh; if (l.t === 'text' && l.size) l.size *= f; if (l.sw) l.sw *= f; }
+      changed(true); redraw(); return toast(L.length === 1 ? 'Fitted to the cell.' : `${L.length} items fitted to the cell.`, 1600); }
+    const sv = d('patsave'); if (sv) { const title = sv === 'refs' ? await askText('Name for the pattern:', name) : name; if (title == null) return; closePop(); select(null);
+      const c = document.createElement('canvas'); c.width = doc.w; c.height = doc.h; await dzDraw(c, doc, 1); return dzSavePattern(c, title.trim() || 'Pattern', sv === 'device'); } });
+  $('#dz-pop').addEventListener('change', (e) => { if (!$('#dz-pop').classList.contains('dz-ppop')) return;
+    if (e.target.matches('[data-patcw], [data-patch]')) { const w = parseFloat($('#dz-pop [data-patcw]').value), h = parseFloat($('#dz-pop [data-patch]').value); if (w > 0 && h > 0) patSet(() => patSize(Math.min(1000, w), Math.min(1000, h))); }
+    if (e.target.matches('[data-patfade]')) patSet(P => { P.fade = +e.target.value; }); });
+  $('#dz-pop').addEventListener('input', (e) => { if ($('#dz-pop').classList.contains('dz-ppop') && e.target.matches('[data-patfade]')) { doc.pat.fade = +e.target.value; patDraw(); } });
   /* ---------- Grid and perspective ----------
      Kept with the design (doc.grid: on, type, size in the design's unit, snap, vanishing points in page px) and
      never printed or exported. Square, isometric, one, two and three point perspective, and radial, as in the

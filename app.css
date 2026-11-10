@@ -1715,3 +1715,7 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 .tt-lr { display: grid; align-items: center; gap: 2px 4px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer; } .tt-lr.on { border-color: var(--teal); background: rgba(31,182,166,.1); }
 .tt-lr .dz-ib { width: 30px; height: 30px; } .tt-lr input { width: 100%; accent-color: var(--teal); }
 .dz-ed .tt-rr { grid-template-columns: 44px 1fr repeat(4, auto); } .dz-ed .tt-rr img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; } .dz-ed .tt-rr input { grid-column: 1 / -1; }
+
+/* Pattern tile: the neighbours round the cell, behind the page */
+#dz-patcv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; } #dz-patcv[hidden] { display: none; }
+.dz-pop.dz-ppop { width: 250px; }
