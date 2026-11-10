@@ -337,6 +337,9 @@ function dzClipper() {
 }
 /* Editor icons (24 px grid, drawn as strokes). Every icon button has its name in a tooltip. */
 const DZ_UI = {
+  selbox: '<rect x="4" y="5" width="16" height="14" rx="1" stroke-dasharray="3 2"/>', selell: '<ellipse cx="12" cy="12" rx="8.5" ry="6.5" stroke-dasharray="3 2"/>',
+  sellasso: '<path d="M5 9c0-3 3.1-5 7-5s7 2 7 5-3.1 5-7 5c-1.2 0-2.3-.2-3.3-.5" stroke-dasharray="3 2"/><path d="M6 13c-1.3.8-1.7 2.4-.8 3.6.9 1.2 2.6 1.4 3.6.5"/>',
+  selpen: '<path d="M12 19l7-7-3-3-7 7-1 4z"/><path d="M15 6l3 3M4 20l4-1"/>', selcol: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/>',
   select: '<path d="M6 3l13 8-6 1.5L10 19z"/>', text: '<path d="M5 7V4h14v3M12 4v16M9 20h6"/>', heading: '<path d="M6 4v16M18 4v16M6 12h12"/>',
   picture: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 8"/>',
   shape: '<rect x="3" y="10" width="11" height="11" rx="1.5"/><circle cx="15.5" cy="8.5" r="5.5"/>',
@@ -2165,7 +2168,7 @@ DZ.edit = async (id) => {
   const cutPanel = (l) => {
     const pen = Settings.get('dz_pen', 'any'), T = copt.tool;
     return `<div class="dz-lh"><b>Select an area</b><button class="btn small primary" data-cut="done">Done</button></div>
-      <div class="seg dz-ctools">${[['box', '▭ Box'], ['ellipse', '◯ Ellipse'], ['lasso', '✎ Lasso'], ['pen', '✒ Pen'], ['color', '◉ Colour']].map(([t, n]) => `<button data-ctool="${t}" class="${T === t ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="seg dz-ctools">${[['box', 'Box', 'selbox'], ['ellipse', 'Ellipse', 'selell'], ['lasso', 'Lasso', 'sellasso'], ['pen', 'Pen', 'selpen'], ['color', 'Colour', 'selcol']].map(([t, n, ic]) => `<button data-ctool="${t}" class="tt-icb ${T === t ? 'on' : ''}" aria-label="${n}"><svg viewBox="0 0 24 24">${DZ_UI[ic]}</svg><span>${n}</span></button>`).join('')}</div>
       <div class="seg" style="margin:6px 0">${[['new', 'New'], ['add', 'Add'], ['sub', 'Take away']].map(([m, n]) => `<button data-cmode="${m}" class="${copt.mode === m ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
       <p class="muted" style="font-size:12px;margin:0 0 6px">${copt.moving ? 'Drag on the design to move the selection outline.' : T === 'color' ? 'Tap a colour on the item: every part close to it is selected.' : T === 'lasso' ? 'Draw round the part you want.' : T === 'pen' ? 'Click for corners, drag for curves; click the first point to close and select.' : 'Drag across the part you want.'}</p>
       ${T === 'lasso' ? slider('c:lazy', 'Smoothing', 0, 100, 1, copt.lazy, v => v + '%') + holdUI() : ''}

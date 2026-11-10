@@ -1747,7 +1747,7 @@ TT.open = async (el, id) => {
   st.liq = meta.liq || CP.liq || { r: 8, s: 0.5, all: true };
   st.letters = meta.letters || []; st.letSel = null;
   st.letDef = meta.letDef || CP.letDef || { s: 'Mum', font: "'Pirata One', serif", mm: 12, sp: 0, lh: 1.15, curve: 0, bold: false, ital: false, align: 'center', mode: 'outline', ow: 0.35 };
-  st.lassoAll = !!(meta.lassoAll ?? CP.lassoAll); st.grid = meta.grid || { on: false, mm: 10, ...(CP.grid || {}) }; st.blend = meta.blend || CP.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || CP.fillo || { sten: true }; st.shape = meta.shape || CP.shape || { kind: 'rect', fill: false };
+  st.lassoAll = !!(meta.lassoAll ?? CP.lassoAll); st.lassoMode = meta.lassoMode || CP.lassoMode || 'lasso'; st.grid = meta.grid || { on: false, mm: 10, ...(CP.grid || {}) }; st.blend = meta.blend || CP.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || CP.fillo || { sten: true }; st.shape = meta.shape || CP.shape || { kind: 'rect', fill: false };
   function toolPop(b) {
     const T = st.tool, sl = (o, f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:4px 6px"><span>${lab}<b>${fmt(st[o][f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${st[o][f]}" data-tl="${o}.${f}"></label>`;
     const tg = (o, f, lab) => `<label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-tl="${o}.${f}" ${st[o][f] ? 'checked' : ''}><span>${lab}</span></label>`;
@@ -1755,7 +1755,7 @@ TT.open = async (el, id) => {
       : T === 'fill' ? `<div class="gh">Fill</div>${tg('fillo', 'sten', 'Stencil lines count as edges')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap inside an outline: it packs solid with the ink on the needle, on the current layer.</p>`
       : T === 'liquify' ? `<div class="gh">Liquify</div>${sl('liq', 'r', 'Size', 2, 30, 0.5, v => v + ' mm')}${sl('liq', 's', 'Strength', 0.1, 1, 0.05, v => Math.round(v * 100) + '%')}${tg('liq', 'all', 'Every ink layer, not just the current one')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag to push the ink along like wet paint.</p>`
       : T === 'text' ? `<div class="gh">Lettering</div><p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap the page to add text, or tap a text to change it. It stays editable on its own lettering layer until you bake it.</p>`
-      : T === 'lasso' ? `<div class="gh">Lasso</div><label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-lassoall ${st.lassoAll ? 'checked' : ''}><span>Every ink layer, not just the current one</span></label><p class="muted" style="font-size:11px;margin:2px 6px 6px">Draw round the part to move. Drag it, size it from a corner, turn it from the top dot, flip it, then Done.</p>`
+      : T === 'lasso' ? `<div class="gh">Lasso</div><div class="tt-symm">${[['lasso', 'Lasso', 'sellasso'], ['box', 'Box', 'selbox'], ['ellipse', 'Ellipse', 'selell']].map(([k2, n, ic]) => `<button data-lmode="${k2}" class="tt-icb ${(st.lassoMode || 'lasso') === k2 ? 'on' : ''}" aria-label="${n}"><svg viewBox="0 0 24 24">${typeof DZ_UI !== 'undefined' ? DZ_UI[ic] : ''}</svg><span>${n}</span></button>`).join('')}</div><label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-lassoall ${st.lassoAll ? 'checked' : ''}><span>Every ink layer, not just the current one</span></label><p class="muted" style="font-size:11px;margin:2px 6px 6px">Draw round the part to move. Drag it, size it from a corner, turn it from the top dot, flip it, then Done.</p>`
       : `<div class="gh">Shapes</div><div class="tt-symm tt-shps">${TT_SHAPES.map(([k2, n]) => `<button data-shp="${k2}" class="tt-icb ${st.shape.kind === k2 ? 'on' : ''}" aria-label="${n}"><svg viewBox="0 0 24 24">${typeof DZ_UI !== 'undefined' ? DZ_UI['s_' + k2] || TT_IC[k2] || '' : TT_IC[k2] || ''}</svg><span>${n}</span></button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   const inkCx = (key) => { const col = st.ink.c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
@@ -1944,12 +1944,14 @@ TT.open = async (el, id) => {
       st.tool = 'needle'; sel(); placeGuides(); return toast('Picked up that colour: the needle is loaded.', 1600); }
     if (st.tool === 'path') { if (pth.a.length > 2 && !pth.closed) { const f = toScreen(pth.a[0]), r = stage.getBoundingClientRect(); if (Math.hypot(f.x - (e.clientX - r.left), f.y - (e.clientY - r.top)) < 16) { pth.closed = true; return placeGuides(); } }
       if (pth.closed) return; pth.a.push({ x: p.x, y: p.y, c: false }); return placeGuides(); }
-    if (st.tool === 'lasso') { if (lsel) selCommit(); td = { kind: 'lasso', id: e.pointerId, pts: [p] }; return; }
+    if (st.tool === 'lasso') { if (lsel) selCommit(); td = { kind: 'lasso', id: e.pointerId, pts: [p], a: p, mode: st.lassoMode || 'lasso' }; return; }
     if (st.tool === 'fill') { const key = toolLayer(); if (key) fillAt([p, ...symPts(p)], key); return; }
     if (st.tool === 'shape') { td = { kind: 'shape', id: e.pointerId, a: p, b: p }; return drawCur(e); }
     const key = toolLayer(); if (!key) return; snap(key); touched.add(key); td = { kind: 'blend', key, id: e.pointerId, last: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y } }; };
   const toolMove = (e) => { const p = toPage(e);
-    if (td.kind === 'lasso') { const l = td.pts[td.pts.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) > 2) td.pts.push(p); return drawCur(e); }
+    if (td.kind === 'lasso') { if (td.mode === 'box' || td.mode === 'ellipse') { const a = td.a, x0 = Math.min(a.x, p.x), y0 = Math.min(a.y, p.y), w = Math.abs(p.x - a.x), h = Math.abs(p.y - a.y);   // as in the studio's Select area
+        td.pts = td.mode === 'box' ? [{ x: x0, y: y0 }, { x: x0 + w, y: y0 }, { x: x0 + w, y: y0 + h }, { x: x0, y: y0 + h }] : Array.from({ length: 48 }, (_, i) => { const t = Math.PI * 2 * i / 48; return { x: x0 + w / 2 + Math.cos(t) * w / 2, y: y0 + h / 2 + Math.sin(t) * h / 2 }; }); return drawCur(e); }
+      const l = td.pts[td.pts.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) > 2) td.pts.push(p); return drawCur(e); }
     if (td.kind === 'shape') { td.b = p; return; }
     if (td.kind === 'liq') { const d = Math.hypot(p.x - td.last.x, p.y - td.last.y), stp = Math.max(1, st.liq.r * mm / 5), n = Math.ceil(d / stp);
       for (let i = 1; i <= n; i++) { const a = { x: td.last.x + (p.x - td.last.x) * (i - 1) / n, y: td.last.y + (p.y - td.last.y) * (i - 1) / n }, b = { x: td.last.x + (p.x - td.last.x) * i / n, y: td.last.y + (p.y - td.last.y) * i / n };
@@ -1997,7 +1999,7 @@ TT.open = async (el, id) => {
   function keepPrefs() {
     Settings.set('tt_mk', JSON.stringify({ col: st.mk.col, r: st.mk.r }));
     if (CHEAT) Settings.set('tt_cheat_prefs', JSON.stringify({ smooth: st.smooth, fast: st.fast, endless: st.endless, rulerOn: st.ruler.on, sym: { mode: st.sym.mode, n: st.sym.n, mir: st.sym.mir },
-      grid: { on: st.grid.on, mm: st.grid.mm, type: st.grid.type, snap: st.grid.snap, op: st.grid.op, lock: st.grid.lock }, liq: st.liq, letDef: st.letDef, lassoAll: st.lassoAll, blend: st.blend, fillo: st.fillo, shape: st.shape, pathP: st.pathP })); }
+      grid: { on: st.grid.on, mm: st.grid.mm, type: st.grid.type, snap: st.grid.snap, op: st.grid.op, lock: st.grid.lock }, liq: st.liq, letDef: st.letDef, lassoAll: st.lassoAll, lassoMode: st.lassoMode, blend: st.blend, fillo: st.fillo, shape: st.shape, pathP: st.pathP })); }
   // Back to the defaults: the marker and magnum settings, and (in cheat mode) every cheat tool, here and for new pieces.
   async function resetTools() { if (!await ask('Put the tool settings back to the defaults?\n\nThe marker, the magnum angle' + (CHEAT ? ' and every cheat tool (smoothing, fast lines, endless ink, grid, symmetry, ruler and the rest)' : '') + '. Your work is not changed.')) return;
     await Settings.set('tt_mk', ''); await Settings.set('tt_magflip', '1'); st.mk = { col: MK_COLS[0], r: 0.6, wipe: false }; st.magAng = 75; st.magTilt = true; st.magFlip = true;
@@ -2647,6 +2649,7 @@ TT.open = async (el, id) => {
     const gt = e.target.closest('[data-gt]'); if (gt) { if (gt.dataset.gt === 'off') st.grid.on = false; else { st.grid.on = true; st.grid.type = gt.dataset.gt; } st.dirty = true; gridRedraw(); $('#tt-rail [data-r="tools"]')?.classList.toggle('on', true); return placeGuides(); }
     if (e.target.closest('[data-greset]')) { delete st.grid.vp; st.dirty = true; return placeGuides(); }
     const tb = e.target.closest('.tt-tb'); if (tb) { const top = pop.style.top; pop.hidden = true; $('#tt-rail').onclick({ target: tb }); pop.style.top = top; return placeGuides(); }
+    const lmb = e.target.closest('[data-lmode]'); if (lmb) { st.lassoMode = lmb.dataset.lmode; st.dirty = true; pop.querySelectorAll('[data-lmode]').forEach(x => x.classList.toggle('on', x === lmb)); return; }
     const shb = e.target.closest('[data-shp]'); if (shb) { st.shape.kind = shb.dataset.shp; st.dirty = true; pop.querySelectorAll('[data-shp]').forEach(x => x.classList.toggle('on', x === shb)); return; }
     const sy = e.target.closest('[data-sym]'); if (sy) { st.sym.mode = sy.dataset.sym; st.dirty = true; pop.querySelectorAll('[data-sym]').forEach(x => x.classList.toggle('on', x === sy));
       pop.querySelector('[data-symn]').hidden = pop.querySelector('[data-symm]').hidden = st.sym.mode !== 'mandala'; $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off'); return placeGuides(); }
