@@ -23,6 +23,12 @@ const DZ_KINDS = {
   portrait: { label: 'Portrait post', sub: '1080 × 1350, feed (4:5)', w: 1080, h: 1350, per: 0, social: 1 },
   story: { label: 'Story / reel cover', sub: '1080 × 1920 (9:16)', w: 1080, h: 1920, per: 0, social: 1 }
 };
+// An icon for each kind in the New design window.
+const DZ_KIND_IC = { note: '<path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5"/>', form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>', page: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/>',
+  pattern: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="3" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/>',
+  challenge: '<path d="M6 3h12v5a6 6 0 0 1-12 0z"/><path d="M12 14v4M8 21h8"/>', fold: '<path d="M3 5l6 2 6-2 6 2v12l-6-2-6 2-6-2z"/><path d="M9 7v12M15 5v12"/>', voucher: '<rect x="2" y="7" width="20" height="10" rx="2"/><path d="M8 7v10" stroke-dasharray="2 2"/><path d="M13 12h5"/>',
+  card: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h6M7 14h4"/>', flyer: '<rect x="6" y="2" width="12" height="20" rx="1"/><path d="M9 7h6M9 11h6M9 15h4"/>', post: '<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="12" cy="12" r="3.5"/>',
+  portrait: '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="11" r="3.5"/>', story: '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 5h4"/>' };
 const DZ_THEMES = {
   ink: { name: 'Ink', bg: '#0f1213', fg: '#f1ece2', accent: '#1fb6a6', soft: '#8c9593', f1: 'Pirata One', f2: 'Inter' },
   gold: { name: 'Black & gold', bg: '#0d0d0d', fg: '#f5ecd7', accent: '#c9a24a', soft: '#9b9180', f1: 'Cinzel', f2: 'Montserrat' },
@@ -1508,15 +1514,15 @@ async function dzPicker(opts = {}) {
     if (!st.kind) {
       o.innerHTML = `<div class="card dz-pick"><h2>${st.piece ? 'Make a post' : 'New design'}</h2>
         ${st.piece ? '' : '<div class="lbl">Print</div>'}<div class="dz-kinds">${kinds.filter(([, v]) => !v.social).map(([k, v]) =>
-          `<button data-kind="${k}"><span class="dz-shape" style="aspect-ratio:${v.w}/${v.h}"></span><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
+          `<button data-kind="${k}"><svg viewBox="0 0 24 24" class="dz-kic">${DZ_KIND_IC[k] || DZ_KIND_IC.page}</svg><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
         <div class="lbl" style="margin-top:10px">Social posts ${st.piece ? '' : '<span class="muted">(show off a tattoo)</span>'}</div><div class="dz-kinds three">${kinds.filter(([, v]) => v.social).map(([k, v]) =>
-          `<button data-kind="${k}"><span class="dz-shape" style="aspect-ratio:${v.w}/${v.h}"></span><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
+          `<button data-kind="${k}"><svg viewBox="0 0 24 24" class="dz-kic">${DZ_KIND_IC[k] || DZ_KIND_IC.page}</svg><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
         <button class="btn" data-x style="width:100%;margin-top:12px">Cancel</button></div>`;
       return;
     }
     const lays = dzLayouts(st.kind), social = DZ_KINDS[st.kind].social, pu = st.piece ? await Media.url(st.piece.thumb) : '';
     const sz = size();
-    o.innerHTML = `<div class="card dz-pick"><h2>${DZ_KINDS[st.kind].label}</h2>
+    o.innerHTML = `<div class="card dz-pick dz-pick2"><h2>${DZ_KINDS[st.kind].label}</h2><div class="dz-pk2"><div class="dz-pkL">
       ${sz?.fold ? `<div class="lbl">Fold</div><div class="dz-papers">${Object.entries(DZ_FOLD_TYPES).map(([k, v]) =>
           `<button data-ft="${k}" class="${st.ft === k ? 'on' : ''}"><b>${v.name}</b><small>${v.sub}</small></button>`).join('')}</div>
         <div class="lbl" style="margin-top:10px">Sheet, laid flat</div><div class="dz-papers">${DZ_FOLD_SHEETS.map(n => { const pp = DZ_PAPER.find(x => x[0] === n);
@@ -1537,12 +1543,12 @@ async function dzPicker(opts = {}) {
         <button class="btn small" data-piece>${st.piece ? 'Change' : 'Choose'}</button></div>` : ''}
       ${!social && !sz?.fold && !sz?.pat && !DZ_KINDS[st.kind].chal ? `<div class="lbl">Sides</div><div class="seg" style="margin-bottom:12px">${[[false, 'One side'], [true, 'Front and back']].map(([v, n]) =>
           `<button data-two="${v ? 1 : 0}" class="${st.two === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>` : ''}
-      <div class="lbl">Layout</div><div class="dz-tpls">${lays.map((l, i) =>
+      </div><div class="dz-pkR"><div class="lbl">Layout</div><div class="dz-tpls">${lays.map((l, i) =>
         `<button data-li="${i}" class="${st.li === i ? 'on' : ''}"><canvas data-prev="${i}"></canvas><span>${esc(l.name)}${l.custom ? ' <em>yours</em>' : ''}</span>
           ${l.custom ? `<i class="dz-tdel" data-tdel="${esc(l.custom.id)}" title="Delete this template">&times;</i>` : ''}</button>`).join('')}</div>
       <div class="lbl" style="margin-top:12px">Theme</div><div class="dz-themes">${Object.entries(DZ_THEMES).map(([k, t]) =>
         `<button data-theme="${k}" class="${st.theme === k ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>
-      <div class="row" style="margin-top:14px"><button class="btn" data-back>Back</button><button class="btn primary" data-go style="flex:1">Create</button></div></div>`;
+      </div></div><div class="row dz-pkfoot"><button class="btn" data-back>Back</button><button class="btn primary" data-go style="flex:1">Create</button></div></div>`;
     for (const cv of o.querySelectorAll('canvas[data-prev]')) {
       const doc = dzNew(st.kind, lays[+cv.dataset.prev], st.theme, st.piece, sz, st.two), sc = 220 / Math.max(doc.w, doc.h);
       cv.width = Math.round(doc.w * sc); cv.height = Math.round(doc.h * sc); dzDraw(cv, doc, sc);

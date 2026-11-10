@@ -1775,3 +1775,18 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 #dz-charea { position: absolute; border: 2px dashed #1fb6a6; box-shadow: 0 0 0 1px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; z-index: 2; box-sizing: border-box; }
 #dz-charea::after { content: attr(data-label); position: absolute; left: 4px; top: -18px; font: 600 11px Inter, sans-serif; color: rgba(31,182,166,.95); white-space: nowrap; }
 #toast .toast-act { margin-left: 10px; padding: 4px 12px; min-height: 0; }
+/* New design: compact kind tiles with their own icons; the second window in two columns that fit without scrolling */
+.dz-kinds { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; } .dz-kinds.three { grid-template-columns: repeat(3, 1fr); }
+.dz-kinds button { padding: 9px 8px 8px; gap: 2px; border-radius: 12px; } .dz-kinds button b { font-size: 13px; } .dz-kinds small { font-size: 10.5px; line-height: 1.25; }
+.dz-kic { width: 26px; height: 26px; fill: none; stroke: var(--teal); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 2px; }
+.dz-pick { max-height: calc(100vh - 24px); overflow-y: auto; } .dz-pick h2 { margin-bottom: 8px; }
+.dz-pick2 { max-width: 920px; width: min(920px, calc(100vw - 24px)); display: flex; flex-direction: column; overflow: hidden; }
+.dz-pk2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; min-height: 0; flex: 1; }
+.dz-pkL, .dz-pkR { min-height: 0; overflow-y: auto; padding-right: 2px; }
+.dz-pick2 .dz-papers { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 5px; } .dz-pick2 .dz-papers button { padding: 5px 3px; } .dz-pick2 .dz-papers b { font-size: 13px; }
+.dz-pick2 .seg button { padding: 6px; } .dz-pick2 .lbl { margin-top: 4px; }
+.dz-pick2 .dz-tpls { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; } .dz-pick2 .dz-tpls canvas { max-height: 92px; } .dz-pick2 .dz-tpls button { padding: 6px; gap: 4px; font-size: 12px; }
+.dz-pkfoot { margin-top: 12px; flex: none; }
+@media (max-width: 700px) { .dz-pk2 { grid-template-columns: 1fr; overflow-y: auto; } .dz-pkL, .dz-pkR { overflow: visible; } .dz-kinds { grid-template-columns: 1fr 1fr; } }
+#merge-dlg .card.dz-pick2 { max-width: min(920px, calc(100vw - 24px)); width: min(920px, calc(100vw - 24px)); }
+.dz-pkL, .dz-pkR, .dz-pick { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
