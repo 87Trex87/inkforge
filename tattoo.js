@@ -974,31 +974,36 @@ TT.list = async (el) => {
   };
 };
 function ttNewDlg() {
-  const st = { size: 1, skin: Settings.get('tt_skin', '#e2b493'), cw: 15, ch: 20, cheat: false };
+  const st = { size: 1, skin: Settings.get('tt_skin', '#e2b493'), cw: 15, ch: 20, cheat: false, patOn: false, pat: { w: 60, ra: 1, rb: 1, ring: 1, clear: true } };
+  const PATS = typeof patOptsHtml === 'function';   /* the pattern options are shared with the design studio */
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const draw = () => { o.innerHTML = `<div class="card"><h2>New piece</h2>
-    <div class="lbl">Page</div><div class="seg" style="flex-wrap:wrap;margin-bottom:8px">${[...TT_SIZES, ['Custom']].map(([n], i) => `<button data-s="${i}" class="${st.size === i ? 'on' : ''}">${n}</button>`).join('')}</div>
+    ${st.cheat && st.patOn && PATS ? patOptsHtml(st.pat, 'Ink only') : `<div class="lbl">Page</div><div class="seg" style="flex-wrap:wrap;margin-bottom:8px">${[...TT_SIZES, ['Custom']].map(([n], i) => `<button data-s="${i}" class="${st.size === i ? 'on' : ''}">${n}</button>`).join('')}</div>
     ${st.size === TT_SIZES.length ? `<div class="two"><label class="field"><span>Width (cm)</span><input class="in" id="tn-w" type="number" min="3" max="60" value="${st.cw}"></label>
-      <label class="field"><span>Height (cm)</span><input class="in" id="tn-h" type="number" min="3" max="60" value="${st.ch}"></label></div>` : ''}
+      <label class="field"><span>Height (cm)</span><input class="in" id="tn-h" type="number" min="3" max="60" value="${st.ch}"></label></div>` : ''}`}
     <div class="lbl">Skin</div><div class="tt-skins">${TT_SKINS.map(([n, c]) => `<button data-k="${c}" class="${st.skin === c ? 'on' : ''}" style="background:${c}" data-tip="${n}" aria-label="${n}"></button>`).join('')}
       <label class="tt-skinpick" data-tip="Any skin tone"><input type="color" id="tn-k" value="${st.skin}"></label></div>
     <label class="field"><span>Name</span><input class="in" id="tn-n" value="${esc(st.name ?? 'Piece ' + ymd(new Date()))}"></label>
     <label class="toggle tt-cheatpick" data-tip="Design freely: no skin damage, smoother lines, hold to snap, and drawing helpers. Not for challenges, and anything saved from it is marked as a cheat.">
       <input type="checkbox" id="tn-cheat" ${st.cheat ? 'checked' : ''}><span><b>Cheat mode</b> · no skin damage, drawing helpers. Handy for designing for clients.</span></label>
+    ${st.cheat && PATS ? `<label class="toggle tt-cheatpick" data-tip="A seamless tile: what crosses an edge comes back on the other side, with its neighbours shown round it. Save it to References to use as a texture fill in the design studio."><input type="checkbox" id="tn-pat" ${st.patOn ? 'checked' : ''}><span><b>Pattern tile</b> · a seamless repeat, for fills</span></label>` : ''}
     <div class="row"><button class="btn" id="tn-x">Cancel</button><button class="btn primary" id="tn-go" style="flex:1">Start</button></div></div>`; };
   o.onclick = async (e) => {
     const t = e.target;
     if (t.closest('[data-s]')) { st.size = +t.closest('[data-s]').dataset.s; return draw(); }
     if (t.closest('[data-k]')) { st.skin = t.closest('[data-k]').dataset.k; return draw(); }
     if (t.id === 'tn-x') return o.remove();
+    if (st.cheat && st.patOn && PATS && patOptsAct(st.pat, t)) return draw();
     if (t.id === 'tn-go') {
-      const [, w, h] = st.size < TT_SIZES.length ? TT_SIZES[st.size] : [0, Math.min(60, Math.max(3, +$('#tn-w').value || 15)), Math.min(60, Math.max(3, +$('#tn-h').value || 20))];
+      const pat = st.cheat && st.patOn && PATS, [, w, h] = pat ? [0, Math.min(60, Math.max(1, st.pat.w / 10)), Math.min(60, Math.max(1, st.pat.w * st.pat.rb / st.pat.ra / 10))]
+        : st.size < TT_SIZES.length ? TT_SIZES[st.size] : [0, Math.min(60, Math.max(3, +$('#tn-w').value || 15)), Math.min(60, Math.max(3, +$('#tn-h').value || 20))];
       await Settings.set('tt_skin', st.skin);
-      await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', [$('#tn-n').value.trim() || 'Piece', w, h, st.skin, st.cheat ? JSON.stringify({ cheat: true }) : null]);
+      await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', [$('#tn-n').value.trim() || (pat ? 'Pattern tile' : 'Piece'), w, h, st.skin, st.cheat ? JSON.stringify(pat ? { cheat: true, pat: { ring: st.pat.ring, fade: 0.38, clear: st.pat.clear } } : { cheat: true }) : null]);
       const id = (await DB.one('SELECT last_insert_rowid() AS id')).id; o.remove(); location.hash = 'tattoo/' + id;
     }
   };
-  o.oninput = (e) => { if (e.target.id === 'tn-cheat') st.cheat = e.target.checked; if (e.target.id === 'tn-n') st.name = e.target.value; if (e.target.id === 'tn-k') { st.skin = e.target.value; } if (e.target.id === 'tn-w') st.cw = +e.target.value; if (e.target.id === 'tn-h') st.ch = +e.target.value; };
+  o.onchange = (e) => { if (e.target.matches('[data-patwi]')) { const v = parseFloat(e.target.value); if (v > 0) { st.pat.w = Math.min(600, Math.max(10, v)); draw(); } } };
+  o.oninput = (e) => { if (e.target.id === 'tn-pat') { st.patOn = e.target.checked; return draw(); } if (e.target.id === 'tn-cheat') { st.cheat = e.target.checked; draw(); } if (e.target.id === 'tn-n') st.name = e.target.value; if (e.target.id === 'tn-k') { st.skin = e.target.value; } if (e.target.id === 'tn-w') st.cw = +e.target.value; if (e.target.id === 'tn-h') st.ch = +e.target.value; };
   document.body.appendChild(o); draw();
 }
 
@@ -1091,7 +1096,12 @@ TT.open = async (el, id) => {
     stenX.globalCompositeOperation = 'source-over'; stenX.clearRect(0, 0, W, H); stenX.drawImage(L.stencil, 0, 0);
     stenX.globalCompositeOperation = 'destination-out'; stenX.imageSmoothingEnabled = true; stenX.drawImage(wearC, 0, 0, W, H); stenX.globalCompositeOperation = 'source-over'; wearDirty = false; };
   const stenRefresh = () => { wear.fill(0); wearAny = wearDirty = false; wearR = null; compAll = true; paint(); };
-  const put = (cx, x, y, r, al, erase) => { if (cx.pig) return dotPig(cx, x, y, r, al, erase);
+  /* Pattern tile (cheat mode): a stamp near an edge also lands just past the opposite edge, so the tile repeats
+     seamlessly; the neighbours are drawn faintly round the page (paint). Needle, laser, shapes and paths wrap; the
+     fill, blend, liquify, lasso and lettering work inside the cell only. */
+  const PAT = CHEAT && meta.pat ? meta.pat : null; let patWrap = false;
+  const put = (cx, x, y, r, al, erase) => { if (PAT && !patWrap) { const m = r + 2, xs = [0], ys = [0]; if (x < m) xs.push(W); if (x > W - m) xs.push(-W); if (y < m) ys.push(H); if (y > H - m) ys.push(-H);
+      if (xs.length > 1 || ys.length > 1) { patWrap = true; try { for (const dx of xs) for (const dy of ys) if (dx || dy) put(cx, x + dx, y + dy, r, al, erase); } finally { patWrap = false; } } } if (cx.pig) return dotPig(cx, x, y, r, al, erase);
     cx.globalAlpha = al; cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.fill(); };
   /* The skin itself. Trauma: every puncture works the skin a little (deeper, more needles: more), on a map at a
      quarter of the page's resolution; as it builds the skin goes red, then swollen and bumpy, then raw like
@@ -1349,7 +1359,9 @@ TT.open = async (el, id) => {
     else { if (trDirty && !pen) { buildTrauma(); compAll = true; }   // the skin's redness catches up when the needle lifts
       if (compAll) recomp(0, 0, W, H);
       else if (compR) { const x0 = Math.max(0, Math.floor(compR.x0)), y0 = Math.max(0, Math.floor(compR.y0)); recomp(x0, y0, Math.min(W, Math.ceil(compR.x1)) - x0 + 1, Math.min(H, Math.ceil(compR.y1)) - y0 + 1); }
-      compAll = false; compR = null; x.drawImage(comp, 0, 0); }
+      compAll = false; compR = null; x.drawImage(comp, 0, 0);
+      if (PAT && PAT.ring) { const R = Math.min(3, PAT.ring | 0); x.globalAlpha = Math.max(0.05, Math.min(1, PAT.fade ?? 0.38)); for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) if (i || j) x.drawImage(comp, i * W, j * H); x.globalAlpha = 1;
+        x.setLineDash([6 / k, 4 / k]); x.lineWidth = 1.5 / k; x.strokeStyle = 'rgba(232,154,69,.95)'; x.strokeRect(0, 0, W, H); x.setLineDash([]); } }
     if (st.check) { dmgDraw(); x.imageSmoothingEnabled = true; x.globalAlpha = 0.75; x.drawImage(dmgC, 0, 0, tw * TS, th * TS); }
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     const deg = Math.round(((st.rot * 180 / Math.PI) % 360 + 360) % 360);
@@ -1732,13 +1744,20 @@ TT.open = async (el, id) => {
       ${persp ? `<label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="Keeps the vanishing points where they are and hides their handles"><input type="checkbox" data-glock ${G.lock ? 'checked' : ''}><span>Lock the grid in place</span></label>
         ${G.lock ? '' : '<button class="btn small" data-greset style="margin:2px 6px 6px">Reset vanishing points</button>'}` : ''}
       <p class="muted" style="font-size:11px;margin:2px 6px 6px">Only on screen: never saved into the pictures.</p>`; };
+  const patSec = () => `<div class="tt-patsec"><div class="gh" style="margin-top:6px">Pattern tile</div>
+      <div class="tt-lseg">${[[0, 'Off'], [1, '1'], [2, '2'], [3, '3']].map(([v, n]) => `<button data-ptring="${v}" class="${(PAT.ring | 0) === v ? 'on' : ''}">${n === 'Off' ? 'No neighbours' : n + ' ring' + (v > 1 ? 's' : '')}</button>`).join('')}</div>
+      <label class="dz-sl" style="margin:2px 6px 4px"><span>Neighbour fade<b id="tt-ptfv">${Math.round((PAT.fade ?? 0.38) * 100)}%</b></span><input type="range" min="0.05" max="1" step="0.05" value="${PAT.fade ?? 0.38}" data-ptfade></label>
+      <div class="tt-lseg">${[[1, 'Ink only'], [0, 'With skin']].map(([v, n]) => `<button data-ptclear="${v}" class="${!!PAT.clear === !!v ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="row" style="gap:4px;margin:4px 6px 6px"><button class="btn small" data-ptsave="refs" style="flex:1">Save to References</button><button class="btn small" data-ptsave="device" style="flex:1">To device</button></div>
+      <p class="muted" style="font-size:11px;margin:2px 6px 6px">Needle work near an edge carries on from the other side. Saved tiles go to References, in Patterns: in the design studio, use one as a texture fill.</p></div>`;
+  const patRedraw = () => { const s2 = pop.querySelector('.tt-patsec'); if (s2) s2.outerHTML = patSec(); };
   const gridRedraw = () => { const s2 = pop.querySelector('.tt-gridsec'); if (s2) s2.innerHTML = gridMenu(); };
   function toolsPop(b) {
     pop.innerHTML = `<div class="gh">Cheat tools</div><div class="tt-tools">${TOOL_BTNS}</div>
       <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
       <button class="btn small" data-toolreset style="margin:2px 6px 6px">Reset tool settings</button>
       <label class="toggle" style="display:flex;margin:0 6px 6px;border:0;min-height:30px;padding:0" data-tip="The needle never runs dry. Dipping still mixes colours as usual."><input type="checkbox" data-endless ${st.endless ? 'checked' : ''}><span>Ink never runs out</span></label>
-      <div class="tt-gridsec">${gridMenu()}</div>`;
+      <div class="tt-gridsec">${gridMenu()}</div>${PAT ? patSec() : ''}`;
     pop.querySelectorAll('.tt-tb').forEach(x => { const r = x.dataset.r; x.insertAdjacentHTML('beforeend', `<span>${TOOL_NAMES[r]}</span>`);
       x.classList.toggle('on', r === st.tool || (r === 'grid' && st.grid.on) || (r === 'ruler' && st.ruler.on) || (r === 'sym' && st.sym.mode !== 'off')); });
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
@@ -2657,9 +2676,14 @@ TT.open = async (el, id) => {
     if (r === 'blend' || r === 'fill' || r === 'shape' || r === 'lasso' || r === 'liquify' || r === 'text') { if (st.tool === r && !pop.hidden) return closePop(); if (lsel && r !== 'lasso') selCommit(); st.tool = r; sel(); drawCur(); return toolPop(b); }
     st.panel = st.panel === r ? null : r; drawSide();
   };
-  pop.onclick = (e) => {
+  pop.onclick = async (e) => {
     if (e.target.closest('[data-toolreset]')) return resetTools();
     const gt = e.target.closest('[data-gt]'); if (gt) { if (gt.dataset.gt === 'off') st.grid.on = false; else { st.grid.on = true; st.grid.type = gt.dataset.gt; } st.dirty = true; gridRedraw(); $('#tt-rail [data-r="tools"]')?.classList.toggle('on', true); return placeGuides(); }
+    const ptr = e.target.closest('[data-ptring]'); if (ptr && PAT) { PAT.ring = +ptr.dataset.ptring; meta.pat = PAT; st.dirty = true; patRedraw(); return paint(); }
+    const ptc = e.target.closest('[data-ptclear]'); if (ptc && PAT) { PAT.clear = ptc.dataset.ptclear === '1'; meta.pat = PAT; st.dirty = true; return patRedraw(); }
+    const pts2 = e.target.closest('[data-ptsave]'); if (pts2 && PAT && typeof dzSavePattern === 'function') { if (lsel) selCommit(); if (snapE) snapFinish();
+      const c = PAT.clear ? composite(1, false) : composite(); const toDev = pts2.dataset.ptsave === 'device', title = toDev ? ($('#tt-name').value || 'pattern') : await askText('Name for the pattern:', $('#tt-name').value || 'Pattern'); if (title == null) return;
+      closePop(); return dzSavePattern(c, title.trim() || 'Pattern', toDev); }
     if (e.target.closest('[data-greset]')) { delete st.grid.vp; st.dirty = true; return placeGuides(); }
     const tb = e.target.closest('.tt-tb'); if (tb) { const top = pop.style.top; pop.hidden = true; $('#tt-rail').onclick({ target: tb }); pop.style.top = top; return placeGuides(); }
     const lmb = e.target.closest('[data-lmode]'); if (lmb) { st.lassoMode = lmb.dataset.lmode; st.dirty = true; pop.querySelectorAll('[data-lmode]').forEach(x => x.classList.toggle('on', x === lmb)); return; }
@@ -2672,6 +2696,7 @@ TT.open = async (el, id) => {
   pop.oninput = (e) => {
     if (e.target.matches('[data-lassoall]')) { st.lassoAll = e.target.checked; st.dirty = true; return; }
     if (e.target.matches('[data-gsnap]')) { st.grid.snap = e.target.checked; st.dirty = true; return toast(st.grid.snap ? 'Lines follow the grid.' : 'Lines are free again.', 1400); }
+    if (e.target.matches('[data-ptfade]') && PAT) { PAT.fade = +e.target.value; meta.pat = PAT; st.dirty = true; const v = $('#tt-ptfv'); if (v) v.textContent = Math.round(PAT.fade * 100) + '%'; return paint(); }
     if (e.target.matches('[data-glock]')) { st.grid.lock = e.target.checked; st.dirty = true; gridRedraw(); return placeGuides(); }
     if (e.target.matches('[data-gop]')) { st.grid.op = +e.target.value; st.dirty = true; const v = $('#tt-gopv'); if (v) v.textContent = Math.round(st.grid.op * 100) + '%'; return placeGuides(); }
     if (e.target.matches('[data-gridmm]')) { st.grid.mm = +e.target.value; $('#tt-gridv').textContent = st.grid.mm + ' mm'; st.dirty = true; return placeGuides(); }
@@ -3198,7 +3223,7 @@ TT.open = async (el, id) => {
     tlDrop.push(...TL.refs.splice(0));
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], lockL: st.lockL.size ? [...st.lockL] : undefined, op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
+        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], lockL: st.lockL.size ? [...st.lockL] : undefined, op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, pat: PAT || undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
