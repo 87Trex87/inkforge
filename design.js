@@ -1736,7 +1736,7 @@ DZ.edit = async (id) => {
     const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
     const ref = await Media.save(await new Promise(r => th.toBlob(r, 'image/jpeg', 0.8)), 'jpg');
     const old = (await DB.one('SELECT thumb_ref FROM designs WHERE id = ?', [id]))?.thumb_ref;
-    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => adjS && l.ref === adjS.tmp ? adjS.ref : l.ref), ...doc.layers.map(l => l.tex?.ref)].filter(Boolean))];
+    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => adjS && l.ref === adjS.tmp ? adjS.ref : l.ref), ...doc.layers.map(l => l.tex?.ref), ...doc.layers.map(l => l.sh?.stencil?.ref)].filter(Boolean))];   /* a value study's stencil is the design's too */
     const before = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id])).map(x => x.ref);
     await DB.tx([{ sql: `UPDATE designs SET name = ?, doc = ?, thumb_ref = ?, updated_at = datetime('now') WHERE id = ?`, params: [name, docJSON(), ref, id] },
       { sql: 'DELETE FROM design_assets WHERE design_id = ?', params: [id] },
@@ -4049,7 +4049,8 @@ DZ.edit = async (id) => {
     if (d('chca') && l) { l.mixOf = [d('chca'), l.mixOf?.[1]]; chInk(l); changed(true); return chRe(); }
     if (d('chcb') != null && l) { const b = d('chcb'); l.mixOf = [l.mixOf?.[0] || chCaps()[0], b || undefined]; chInk(l); changed(true); return chRe(); }
     if (d('chpal')) { doc.chal.pal = d('chpal'); changed(true); return chRe(); }
-    if (t.closest('[data-chplay]')) { const T = dzChSpec(doc, $('#dz-name').value.trim() || name, id); if (T.err) return toast(T.err, 3500); await flush(); closePop();
+    if (t.closest('[data-chplay]')) { const T = dzChSpec(doc, $('#dz-name').value.trim() || name, id); if (T.err) return toast(T.err, 3500); for (const S of T.stencils || []) if (!await Media.url(S.ref)) return toast('The stencil file for this value study is missing. Select the study and press Remake the stencil.', 5000);
+      await flush(); closePop();
       { const box = (q) => [q[0], q[1], q[0] + q[2], q[1] + q[3]], P = T.lines.flat().concat(T.pack ? box(T.pack) : [], ...(T.shades || []).map(z => box(z.box))), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
         /* the example: for a value study its own picture (as it shows, the study unhidden) cropped to the zone; otherwise the design, cropped round the challenge (lines, packing and shading) */
         const st = doc.layers.find(o => o.role === 'shade' && o.sh?.src && !o.hide), pic = st && doc.layers.find(o => o.t === 'image' && o.ref === st.sh.src), m = pic ? 0 : 6, zb = pic && T.shades?.find(z => z.mapN)?.box;

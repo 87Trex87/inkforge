@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 403;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 404;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7116,7 +7116,7 @@ async function stToChallenge() {
   z.sh.stencil = { ref, box: [b[0] + k.x * b[2], b[1] + k.y * b[3], k.w * b[2], k.h * b[3]].map(v => Math.round(v * 100) / 100) };
   await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(doc), R.id]);
   await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [R.id, ref]);
-  if (old) { await DB.run('DELETE FROM design_assets WHERE design_id = ? AND ref = ?', [R.id, old]); await Media.release(old); }
+  if (old && old !== ref) { await DB.run('DELETE FROM design_assets WHERE design_id = ? AND ref = ?', [R.id, old]); await Media.release(old); }   /* the same stencil again has the same file name */
   ST.ret = null; toast('Stencil added to the challenge.', 2500); location.hash = 'design/' + R.id;
 }
 async function stToSim() {
