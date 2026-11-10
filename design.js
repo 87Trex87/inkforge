@@ -280,6 +280,12 @@ function dzTrace(im) {
    plain node path ('vec'). */
 const dzNd = (x, y, ix = 0, iy = 0, ox = 0, oy = 0, t = 'corner') => ({ x, y, ix, iy, ox, oy, t });
 const dzK = 0.5523 / 2;   // circle handle length, as a fraction of the box
+// The real extent of an outline (points along each curve, not its handles). G(n) gives a node's absolute x, y and handles.
+const dzCurveBox = (subs, G) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; const put = (x, y) => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; };
+  for (const sp of subs) { const N = sp.nodes, segs = sp.closed === false ? N.length - 1 : N.length; if (N.length === 1) { const a = G(N[0]); put(a.x, a.y); }
+    for (let i = 0; i < segs; i++) { const a = G(N[i]), b = G(N[(i + 1) % N.length]), X = [a.x, a.x + a.ox, b.x + b.ix, b.x], Y = [a.y, a.y + a.oy, b.y + b.iy, b.y];
+      for (let q = 0; q <= 24; q++) { const t = q / 24, u = 1 - t, w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t; put(w0 * X[0] + w1 * X[1] + w2 * X[2] + w3 * X[3], w0 * Y[0] + w1 * Y[1] + w2 * Y[2] + w3 * Y[3]); } } }
+  return { x0, y0, x1, y1 }; };
 const dzPoly = (pts) => [{ closed: true, nodes: pts.map(([x, y]) => dzNd(x, y)) }];
 // Stretches subpaths so they exactly fill the box (0..1 both ways).
 function dzFit01(subs) {
@@ -3741,7 +3747,7 @@ DZ.edit = async (id) => {
     const all = []; for (const sp of l.subs) for (const n of sp.nodes) {
       const [px, py] = P((n.x - 0.5) * w, (n.y - 0.5) * h), [ix, iy] = P(n.ix * w, n.iy * h), [ox, oy] = P(n.ox * w, n.oy * h);
       Object.assign(n, { _x: px, _y: py, _ix: ix, _iy: iy, _ox: ox, _oy: oy }); all.push([px, py], [px + ix, py + iy], [px + ox, py + oy]); }
-    const x0 = Math.min(...all.map(q => q[0])), x1 = Math.max(...all.map(q => q[0])), y0 = Math.min(...all.map(q => q[1])), y1 = Math.max(...all.map(q => q[1]));
+    const { x0, y0, x1, y1 } = dzCurveBox(l.subs, n => ({ x: n._x, y: n._y, ix: n._ix, iy: n._iy, ox: n._ox, oy: n._oy }));   // fitted to the outline itself, so a turned circle keeps its box
     const nw = Math.max(1, x1 - x0), nh = Math.max(1, y1 - y0), cx = l.x + w / 2, cy = l.y + (l.h || 0) / 2;
     for (const sp of l.subs) for (const n of sp.nodes) { n.x = (n._x - x0) / nw; n.y = (n._y - y0) / nh; n.ix = n._ix / nw; n.iy = n._iy / nh; n.ox = n._ox / nw; n.oy = n._oy / nh;
       for (const kk of ['_x', '_y', '_ix', '_iy', '_ox', '_oy']) delete n[kk]; }
@@ -3792,8 +3798,7 @@ DZ.edit = async (id) => {
         return { x, y, ix: prev ? prev.C[2][0] - x : 0, iy: prev ? prev.C[2][1] - y : 0, ox: pc.C[1][0] - x, oy: pc.C[1][1] - y, t: pc.first || 'smooth' }; });
       if (sp.closed === false && cs.length) { const lp = cs[cs.length - 1], [x, y] = lp.C[3]; nodes.push({ x, y, ix: lp.C[2][0] - x, iy: lp.C[2][1] - y, ox: 0, oy: 0, t: N[N.length - 1].t || 'corner' }); }
       return { ...sp, nodes }; });
-    const pts = subs.flatMap(sp => sp.nodes.flatMap(n => [[n.x, n.y], [n.x + n.ix, n.y + n.iy], [n.x + n.ox, n.y + n.oy]]));
-    const x0 = Math.min(...pts.map(q => q[0])), x1 = Math.max(...pts.map(q => q[0])), y0 = Math.min(...pts.map(q => q[1])), y1 = Math.max(...pts.map(q => q[1]));
+    const { x0, y0, x1, y1 } = dzCurveBox(subs, n => n);
     const nw = Math.max(1, x1 - x0), nh = Math.max(1, y1 - y0), cx = l.x + W / 2, cy = l.y + H / 2;
     for (const sp of subs) for (const n of sp.nodes) { n.x = (n.x - x0) / nw; n.y = (n.y - y0) / nh; n.ix /= nw; n.iy /= nh; n.ox /= nw; n.oy /= nh; }
     l.subs = subs; l.w = nw; l.h = nh; l.x = cx - nw / 2; l.y = cy - nh / 2; };
