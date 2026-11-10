@@ -1755,3 +1755,22 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 
 .dz-chcup { display: flex; align-items: center; gap: 8px; margin: 4px; } .dz-chcup > i { width: 42px; height: 42px; flex: none; border-radius: 50%; border: 2px solid var(--line); background-image: none; box-shadow: inset 0 0 0 3px rgba(0,0,0,.25); }
 .dz-chcup .dz-chsw { margin: 0; } .dz-chpop button[disabled] { opacity: .45; }
+
+/* Challenge setup */
+.dz-chsetup { position: fixed; inset: 0; z-index: 105; display: grid; place-items: center; padding: 12px; background: rgba(0,0,0,.6); }
+.dz-wcard { width: min(560px, 100%); max-height: calc(100vh - 24px); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.dz-whead { display: flex; align-items: center; padding: 14px 16px 8px; } .dz-whead h2 { flex: 1; margin: 0; }
+.dz-wtabs { margin: 0 12px 4px; overflow-x: auto; scrollbar-width: none; } .dz-wtabs button { flex: 1 0 auto; padding: 7px 9px; }
+.dz-wbody { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 16px 14px; }
+.dz-wfoot { position: sticky; bottom: 0; display: flex; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid var(--line); background: var(--bg2, inherit); }
+.dz-wgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.dz-wgrid button, .dz-wskins button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: none; color: inherit; font: 600 13px Inter, sans-serif; text-align: left; }
+.dz-wgrid button small { font-weight: 400; color: var(--ink2); font-size: 11.5px; } .dz-wgrid button.on, .dz-wskins button.on, .dz-wnd button.on { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.dz-wgrid button[disabled] { opacity: .4; }
+.dz-wskins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; } .dz-wskins button { flex-direction: row; align-items: center; gap: 8px; } .dz-wskins i { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); }
+.dz-wnd { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; } .dz-wnd button { padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: none; color: inherit; font: 600 12px Inter, sans-serif; }
+.dz-wnd button.on { background: var(--teal); color: #fff; }
+.dz-wrefs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; } .dz-wrefs span { position: relative; } .dz-wrefs img { height: 56px; border-radius: 6px; display: block; }
+.dz-wrefs span button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: #000a; color: #fff; font-size: 11px; padding: 0; }
+#dz-charea { position: absolute; border: 2px dashed #1fb6a6; box-shadow: 0 0 0 1px rgba(0,0,0,.35), inset 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; z-index: 2; box-sizing: border-box; }
+#dz-charea::after { content: attr(data-label); position: absolute; left: 4px; top: -18px; font: 600 11px Inter, sans-serif; color: rgba(31,182,166,.95); white-space: nowrap; }

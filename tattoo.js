@@ -3257,7 +3257,7 @@ TT.open = async (el, id) => {
      and turned under them (like the drawing board's reference tool). Drag to move, a corner to resize (always in
      proportion), the dot to turn, double tap to flip; locked ones let the needle through. Kept with the piece. */
   const refLay = $('#tt-refs');
-  async function refUrl(r) { if (r._u) return r._u; r._u = r.src || (r.gen ? exGen(r.gen) : await Media.url(r.ref)); return r._u; }
+  async function refUrl(r) { if (r._u) return r._u; r._u = r.src || (r.ref ? await Media.url(r.ref) : r.gen ? exGen(r.gen) : ''); return r._u; }
   async function drawRefs() {
     for (const r of refs) await refUrl(r);
     const sr = stage.getBoundingClientRect();
@@ -3361,6 +3361,7 @@ TT.open = async (el, id) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
     exStencil(T); st.hide.delete('stencil'); st.op.stencil = 0.6;
+    (T.refs || []).forEach((R, k) => refNew({ gen: T.id, ref: R.ref, ar: R.ar || 1, w: 180, op: 1, x: 110 + k * 24, y: 170 + k * 40 }));   /* the challenge's own reference pictures */
     for (const S of T.stencils || []) Media.url(S.ref).then(u => { if (!u) return; const im = new Image(); im.onload = () => { L.stencil.getContext('2d').drawImage(im, S.box[0] * mm, S.box[1] * mm, S.box[2] * mm, S.box[3] * mm); touched.add('stencil'); paint(); }; im.src = u; });   /* a value study's stencil from the stencil maker */
     refs = refs.filter(r => !r.gen);
     if (T.kind !== 'line') { const cr = exCrop(T), sr = stage.getBoundingClientRect(), w = Math.max(140, Math.min(280, sr.width * 0.28)), h = w * cr[3] / cr[2];
