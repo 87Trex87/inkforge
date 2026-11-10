@@ -3686,12 +3686,13 @@ DZ.edit = async (id) => {
     x.stroke();
     if (T === 'p1' || T === 'p2') { x.strokeStyle = 'rgba(255,111,97,.75)'; x.lineWidth = 1.5 / s; x.beginPath(); line({ x: -W, y: vps[0].y }, { x: W * 2, y: vps[0].y }); x.stroke(); }   // horizon
     if (vb && moving) { vb.querySelectorAll('[data-vp]').forEach(h => { const v = G.vp[+h.dataset.vp]; h.style.left = v.x * k + 'px'; h.style.top = v.y * k + 'px'; }); return; }
-    if (vb) vb.innerHTML = gIdx().map(i => `<i class="dz-vp" data-vp="${i}" style="left:${G.vp[i].x * k}px;top:${G.vp[i].y * k}px" data-tip="Drag the vanishing point"></i>`).join(''); }
+    if (vb) vb.innerHTML = G.lock ? '' : gIdx().map(i => `<i class="dz-vp" data-vp="${i}" style="left:${G.vp[i].x * k}px;top:${G.vp[i].y * k}px" data-tip="Drag the vanishing point"></i>`).join(''); }
   const gridMenu = () => { const G = doc.grid || {}, u = dzUnit(doc);
     return `<div class="gh">Grid</div><div class="dz-gk">${[['off', 'Off'], ...GRID_KINDS].map(([v, n]) => `<button class="${(G.on ? G.type || 'square' : 'off') === v ? 'on' : ''}" data-gk="${v}">${n}</button>`).join('')}</div>
       <label class="dz-gsz"><span>Size</span><input class="in" type="number" min="0.1" step="any" data-gsize value="${+G.size || 10}"><em>${esc(u)}</em></label>
       <label class="toggle" style="display:flex;margin:4px 6px;border:0;min-height:30px;padding:0" data-tip="Edges, centres, pen points and nodes snap to the grid's lines; in perspective, pen lines near a grid direction run along it. Hold Alt for none."><input type="checkbox" data-gsnap ${G.snap === false ? '' : 'checked'}><span>Snap to the grid</span></label>
-      ${['p1', 'p2', 'p3', 'radial'].includes(G.type) && G.on ? '<button class="btn small" data-greset style="margin:2px 6px 6px">Reset vanishing points</button>' : ''}
+      ${['p1', 'p2', 'p3', 'radial'].includes(G.type) && G.on ? `<label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="Keeps the vanishing points where they are and hides their handles"><input type="checkbox" data-glock ${G.lock ? 'checked' : ''}><span>Lock the grid in place</span></label>
+        ${G.lock ? '' : '<button class="btn small" data-greset style="margin:2px 6px 6px">Reset vanishing points</button>'}` : ''}
       <p class="muted" style="font-size:11px;margin:2px 6px 6px">Only on screen: never printed or exported.</p>`; };
   const gridSet = (fn) => { doc.grid ||= { on: false, type: 'square', size: 10, snap: true }; fn(doc.grid); changed(true); gridDraw(); drawRail(); const p0 = pop(); if (!p0.hidden && p0.classList.contains('dz-gpop')) p0.innerHTML = gridMenu(); };
   $('#dz-pop').addEventListener('click', (e) => { if (!$('#dz-pop').classList.contains('dz-gpop')) return; const t = e.target;
@@ -3699,9 +3700,10 @@ DZ.edit = async (id) => {
     if (t.closest('[data-greset]')) return gridSet(G => { delete G.vp; }); });
   $('#dz-pop').addEventListener('change', (e) => { if (!$('#dz-pop').classList.contains('dz-gpop')) return;
     if (e.target.matches('[data-gsize]')) { const v = +e.target.value; if (v > 0) gridSet(G => { G.size = v; }); }
-    if (e.target.matches('[data-gsnap]')) gridSet(G => { G.snap = e.target.checked; }); });
+    if (e.target.matches('[data-gsnap]')) gridSet(G => { G.snap = e.target.checked; });
+    if (e.target.matches('[data-glock]')) gridSet(G => { G.lock = e.target.checked; }); });
   // Dragging a vanishing point (two-point keeps both on one horizon).
-  $('#dz-vps').addEventListener('pointerdown', (e) => { const h = e.target.closest('[data-vp]'); if (!h) return; e.stopPropagation(); e.preventDefault(); const i = +h.dataset.vp;
+  $('#dz-vps').addEventListener('pointerdown', (e) => { const h = e.target.closest('[data-vp]'); if (!h || doc.grid?.lock) return; e.stopPropagation(); e.preventDefault(); const i = +h.dataset.vp;
     try { h.setPointerCapture(e.pointerId); } catch {}
     const mv = (ev) => { const r = page.getBoundingClientRect(), q = { x: (ev.clientX - r.left) / k, y: (ev.clientY - r.top) / k }; doc.grid.vp[i] = q; if (doc.grid.type === 'p2') for (const j of [1, 2]) doc.grid.vp[j].y = q.y; gridDraw(true); };
     const up = () => { h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); changed(true); gridDraw(); };
