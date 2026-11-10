@@ -1427,13 +1427,14 @@ DZ.edit = async (id) => {
           ${dzIB('data-rail="shape"', 'shape', 'Shape')}
           ${dzIB('data-add="pen"', 'pen', 'Pen (P)')}
           ${dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
+          ${dzIB('data-rail="grid"', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective, with snapping')}
           ${dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
           <i class="sep"></i>
           ${dzIB('data-rail="layers"', 'layers', 'Layers')}
           ${dzIB('data-rail="doc"', 'page', 'Page: theme, background, sides and details')}
           <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg,image/*" hidden id="dz-file"></div>
         <div class="dz-pop" id="dz-pop" hidden></div>
-        <div class="dz-page ${doc.kind === 'note' ? 'is-note' : ''}" id="dz-page"><canvas id="dz-cv"></canvas>${doc.kind === 'note' ? '<div class="dz-nguide" aria-hidden="true"><i class="s"><b>Top strip (on hover or tap)</b></i><i class="b"></i><i class="f"><b>Scrolls below this line</b></i></div>' : ''}<div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
+        <div class="dz-page ${doc.kind === 'note' ? 'is-note' : ''}" id="dz-page"><canvas id="dz-cv"></canvas><canvas id="dz-gridcv" hidden></canvas><div id="dz-vps"></div>${doc.kind === 'note' ? '<div class="dz-nguide" aria-hidden="true"><i class="s"><b>Top strip (on hover or tap)</b></i><i class="b"></i><i class="f"><b>Scrolls below this line</b></i></div>' : ''}<div id="dz-folds"></div><div id="dz-multi"></div><canvas id="dz-cutcv"></canvas><canvas id="dz-nodecv"></canvas><canvas id="dz-contcv"></canvas><canvas id="dz-pencv"></canvas><div id="dz-sel" hidden>
         <i class="h nw" data-h="nw"></i><i class="h ne" data-h="ne"></i><i class="h sw" data-h="sw"></i><i class="h se" data-h="se"></i>
         <i class="h e" data-h="e"></i><i class="h w" data-h="w"></i><i class="h n" data-h="n"></i><i class="h s" data-h="s"></i><i class="h rot" data-h="rot"></i></div>
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
@@ -1477,7 +1478,7 @@ DZ.edit = async (id) => {
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
     const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
-    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel();
+    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel(); try { gridDraw(); } catch {}   /* set up further down; nothing to draw before then */
   };
   // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
   // drawing is stretched; it's redrawn sharp a moment after zooming stops.
@@ -1769,11 +1770,11 @@ DZ.edit = async (id) => {
     const nh = sheetH(stage.clientHeight); if (nh !== sheetWas) { sheetWas = nh; fit(); redraw(); }
   };
   const drawRail = () => { const r = $('#dz-rail'); if (!r) return;
-    const on = { select: !toolOn() && !nodeArm && tab === 'edit', pen: penOn, pencil: pclOn, nodes: !!nodes || nodeArm, layers: tab === 'layers', doc: tab === 'doc' };
-    r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); try { dqDraw(); } catch {} };   /* the strip is set up further down; before then there's nothing to redraw */
+    const on = { select: !toolOn() && !nodeArm && tab === 'edit', pen: penOn, pencil: pclOn, nodes: !!nodes || nodeArm, grid: !!doc.grid?.on, layers: tab === 'layers', doc: tab === 'doc' };
+    r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); try { dqDraw(); gridDraw(); } catch {} };   /* the strip is set up further down; before then there's nothing to redraw */
   /* The tool rail. Text, Picture and Shape open a small menu beside it; the rest act straight away. */
   const pop = () => $('#dz-pop');
-  const closePop = () => { const p = pop(); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
+  const closePop = () => { const p = pop(); p?.classList.remove('dz-gpop'); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
   const mi = (attr, ic, label) => `<button class="mi" ${attr}><svg viewBox="0 0 24 24">${DZ_UI[ic]}</svg><span>${label}</span></button>`;
   /* Nodes: with a shape selected it opens its nodes; with none, the next shape tapped opens (nodeArm). A shape is
      also opened for node editing by double-tapping it. */
@@ -1783,6 +1784,8 @@ DZ.edit = async (id) => {
     nodeArm = false;
     // Every tool on the rail leaves the pen, pencil and other edit modes first, so they can be switched straight away.
     if (a !== 'select' && a !== 'close' && toolOn()) { endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); }
+    if (a === 'grid') { const p0 = pop(); if (!p0.hidden && btn?.classList.contains('open')) return closePop(); closePop(); p0.innerHTML = gridMenu(); p0.hidden = false; btn?.classList.add('open'); p0.classList.add('dz-gpop');
+      const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; return; }
     if (a === 'nodes') { closePop(); const l = layer(); if (canNodes(l)) return startNodes(l); nodeArm = true; drawRail(); return toast('Tap a shape to edit its nodes.', 2000); }
     if (a === 'select') { closePop(); endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); tab = 'edit'; return select(null); }
     if (a === 'layers' || a === 'doc') { closePop(); if (a === 'doc' && tab !== 'doc') { sel = null; picks = new Set(); picking = false; placeSel(); } tab = tab === a ? 'edit' : a; return drawSide(); }
@@ -2597,7 +2600,7 @@ DZ.edit = async (id) => {
       if (N.length >= 3 && sNear(N[0], p) < PEN_CLOSE) return penClose();
       const ln = N.at(-1);
       if (ln && sNear(ln, p) < PEN_CLOSE) { ln.ox = ln.oy = 0; ln.t = 'corner'; toast('Handle dropped: the next part starts straight.'); return drawPen(); }
-      if (e.shiftKey && ln) p = snap45(ln, p); else p = snapPt(p, e);
+      if (e.shiftKey && ln) p = snap45(ln, p); else { p = snapPt(p, e); if (ln && !e.altKey) p = perspPt(ln, p); }
     }
     pen.nodes.push({ x: p.x, y: p.y, ix: 0, iy: 0, ox: 0, oy: 0, t: 'corner' });
     pen.drag = { i: pen.nodes.length - 1, anchor: { ...p }, curve: false, at: null, alt: e.altKey };
@@ -2977,15 +2980,18 @@ DZ.edit = async (id) => {
   // while moving, resizing, placing pen points and dragging nodes. Hold Alt for none. Options are in the strip's magnet.
   const snapO = (() => { try { return { on: true, page: true, edges: true, mids: true, dist: 10, gap: 0, ...JSON.parse(Settings.get('dz_snap', '{}')) }; } catch { return { on: true, page: true, edges: true, mids: true, dist: 10, gap: 0 }; } })();
   const snapTargets = (ids) => { const tx = [], ty = [], G = snapO.gap || 0;
+    const gs = gridSteps(); if (gs) { tx.grid = gs.x; ty.grid = gs.y; }
+    if (!snapO.on) return { tx, ty };
     if (snapO.page) { tx.push(0, doc.w / 2, doc.w); ty.push(0, doc.h / 2, doc.h); }
     for (const o of dzPages(doc, face).flat()) if (!o.hide && !ids.has(o.id)) { const b = box(o);
       if (snapO.edges) { tx.push(b.x0, b.x1); ty.push(b.y0, b.y1); if (G) { tx.push(b.x0 - G, b.x1 + G); ty.push(b.y0 - G, b.y1 + G); } }
       if (snapO.mids) { tx.push((b.x0 + b.x1) / 2); ty.push((b.y0 + b.y1) / 2); } }
     return { tx, ty }; };
-  const snapBest = (cs, ts) => { let r = null; for (const c of cs) for (const v of ts) { const d = v - c; if (Math.abs(d) < snapO.dist / k && (!r || Math.abs(d) < Math.abs(r.d))) r = { d, t: v }; } return r; };
+  const snapBest = (cs, ts) => { let r = null; const try1 = (c, v) => { const d = v - c; if (Math.abs(d) < snapO.dist / k && (!r || Math.abs(d) < Math.abs(r.d))) r = { d, t: v }; };
+    for (const c of cs) { for (const v of ts) try1(c, v); if (ts.grid) try1(c, Math.round(c / ts.grid) * ts.grid); } return r; };   // ts.grid: the grid's line spacing on this axis
   // lock: the axis Shift is holding still ('x' or 'y'), which doesn't snap.
   const snapTo = (list, e, lock) => {
-    if (e.altKey || !snapO.on || !list.length) return guides(false, false);
+    if (e.altKey || !(snapO.on || gSnap()) || !list.length) return guides(false, false);
     const ids = new Set(list.map(m => m.id)), bs = list.map(box), { tx, ty } = snapTargets(ids);
     const B = { x0: Math.min(...bs.map(b => b.x0)), x1: Math.max(...bs.map(b => b.x1)), y0: Math.min(...bs.map(b => b.y0)), y1: Math.max(...bs.map(b => b.y1)) };
     const sx = lock === 'x' ? null : snapBest([B.x0, (B.x0 + B.x1) / 2, B.x1], tx), sy = lock === 'y' ? null : snapBest([B.y0, (B.y0 + B.y1) / 2, B.y1], ty);
@@ -2993,7 +2999,7 @@ DZ.edit = async (id) => {
     guides(sx ? sx.t : false, sy ? sy.t : false);
   };
   // One point (a pen point or a node) snapped the same way.
-  const snapPt = (p, e, ids = new Set()) => { if (e.altKey || !snapO.on) { guides(false, false); return p; }
+  const snapPt = (p, e, ids = new Set()) => { if (e.altKey || !(snapO.on || gSnap())) { guides(false, false); return p; }
     const { tx, ty } = snapTargets(ids), sx = snapBest([p.x], tx), sy = snapBest([p.y], ty); guides(sx ? sx.t : false, sy ? sy.t : false);
     return { ...p, x: p.x + (sx?.d || 0), y: p.y + (sy?.d || 0) }; };
   let drag = null;
@@ -3207,7 +3213,7 @@ DZ.edit = async (id) => {
       const oh = o.h || 1, normal = o.t === 'text' && !o.frame, keep = o.shape !== 'line' && (normal ? sx && sy : dzKeep(o) !== e.shiftKey);
       let w = Math.max(20, o.w + sx * lx * mid), hgt = Math.max(10, oh + sy * ly * mid), snapX = null, snapY = null;
       const ocx = o.x + o.w / 2, ocy = o.y + oh / 2;
-      if (!o.rot && !e.altKey && snapO.on) { const { tx, ty } = snapTargets(new Set([l.id]));
+      if (!o.rot && !e.altKey && (snapO.on || gSnap())) { const { tx, ty } = snapTargets(new Set([l.id]));
         if (sx) { const ed = mid > 1 ? ocx + sx * w / 2 : sx > 0 ? o.x + w : o.x + o.w - w; snapX = snapBest([ed], tx); if (snapX) w = Math.max(20, w + sx * snapX.d * mid); }
         if (sy && !(normal && snapX)) { const ed = mid > 1 ? ocy + sy * hgt / 2 : sy > 0 ? o.y + hgt : o.y + oh - hgt; snapY = snapBest([ed], ty); if (snapY) hgt = Math.max(10, hgt + sy * snapY.d * mid); } }
       if (keep) { const s = snapX ? w / o.w : snapY ? hgt / oh : sx && sy ? Math.max(w / o.w, hgt / oh) : sx ? w / o.w : hgt / oh; w = o.w * s; hgt = oh * s; if (normal) l.size = Math.max(6, o.size * s); }
@@ -3638,13 +3644,73 @@ DZ.edit = async (id) => {
   };
   $('#dz-name').onchange = (e) => { name = e.target.value.trim() || name; save(); };
   $('#dz-undo').onclick = () => undo(-1); $('#dz-redo').onclick = () => undo(1);
+  /* ---------- Grid and perspective ----------
+     Kept with the design (doc.grid: on, type, size in the design's unit, snap, vanishing points in page px) and
+     never printed or exported. Square, isometric, one, two and three point perspective, and radial, as in the
+     simulator. With snap on, edges, centres, pen points and nodes snap to the grid's lines; in perspective and
+     isometric, a pen line close to a grid direction (towards a vanishing point, upright, level) runs exactly along it. */
+  const GRID_KINDS = [['square', 'Square'], ['iso', 'Isometric'], ['p1', '1-point'], ['p2', '2-point'], ['p3', '3-point'], ['radial', 'Radial']];
+  const gSnap = () => !!(doc.grid?.on && doc.grid.snap !== false);
+  const gStep = () => Math.max(2, (+doc.grid?.size || 10) * dzPer(doc));
+  const gVps = () => { const G = doc.grid, W = doc.w, H = doc.h; G.vp ||= [{ x: W / 2, y: H * 0.4 }, { x: W * 0.06, y: H * 0.4 }, { x: W * 0.94, y: H * 0.4 }, { x: W / 2, y: H * 0.96 }];
+    return G.type === 'p1' || G.type === 'radial' ? [G.vp[0]] : G.type === 'p2' ? [G.vp[1], G.vp[2]] : G.type === 'p3' ? [G.vp[1], G.vp[2], G.vp[3]] : []; };
+  const gIdx = () => { const T = doc.grid?.type; return T === 'p1' || T === 'radial' ? [0] : T === 'p2' ? [1, 2] : T === 'p3' ? [1, 2, 3] : []; };
+  function gridSteps() { if (!gSnap()) return null; const T = doc.grid.type || 'square', g = gStep();
+    return T === 'square' ? { x: g, y: g } : T === 'iso' ? { x: g * Math.cos(Math.PI / 6), y: 0 } : T === 'p1' || T === 'p2' ? { x: g, y: 0 } : null; }
+  // A pen line near a grid direction from the last point runs exactly along it.
+  function perspPt(from, p) { if (!gSnap()) return p; const T = doc.grid.type || 'square'; if (T === 'square') return p;
+    const dirs = []; if (T === 'iso') dirs.push(Math.PI / 6, -Math.PI / 6, Math.PI / 2); if (T === 'p1') dirs.push(0, Math.PI / 2); if (T === 'p2') dirs.push(Math.PI / 2);
+    for (const v of gVps()) dirs.push(Math.atan2(v.y - from.y, v.x - from.x));
+    const dx = p.x - from.x, dy = p.y - from.y, L = Math.hypot(dx, dy); if (L < 1) return p; let best = null;
+    for (const a of dirs) { const u = { x: Math.cos(a), y: Math.sin(a) }, s = Math.abs(dx * u.y - dy * u.x) / L; if (s < 0.12 && (!best || s < best.s)) { const t = dx * u.x + dy * u.y; best = { s, x: from.x + u.x * t, y: from.y + u.y * t }; } }
+    return best ? { ...p, x: best.x, y: best.y } : p; }
+  function gridDraw() { const c = $('#dz-gridcv'), vb = $('#dz-vps'); if (!c) return; const G = doc.grid;
+    c.hidden = !G?.on; if (vb) vb.innerHTML = ''; if (!G?.on) return;
+    const W = doc.w, H = doc.h, dpr = Math.min(2, devicePixelRatio || 1), cw = Math.max(1, Math.round(W * k * dpr)), ch = Math.max(1, Math.round(H * k * dpr));
+    if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
+    const x = c.getContext('2d'), s = k * dpr, g = gStep(), T = G.type || 'square'; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cw, ch); x.setTransform(s, 0, 0, s, 0, 0);
+    const line = (a, b) => { x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); }, span = Math.hypot(W, H) * 2;
+    x.lineWidth = 1 / s; x.strokeStyle = 'rgba(31,182,166,.45)'; x.beginPath();
+    if (T === 'square' || T === 'p1' || T === 'p2') for (let v = g; v < W; v += g) line({ x: v, y: 0 }, { x: v, y: H });
+    if (T === 'square') for (let v = g; v < H; v += g) line({ x: 0, y: v }, { x: W, y: v });
+    if (T === 'iso') { const t30 = Math.tan(Math.PI / 6), st2 = g / Math.cos(Math.PI / 6);
+      for (let q = -W * t30 - H; q < H + W * t30; q += st2) { line({ x: 0, y: q }, { x: W, y: q + W * t30 }); line({ x: 0, y: q + W * t30 }, { x: W, y: q }); }
+      for (let v = 0; v < W; v += g * Math.cos(Math.PI / 6)) line({ x: v, y: 0 }, { x: v, y: H }); }
+    const vps = gVps(), rays = Math.max(8, Math.min(72, Math.round(300 / (+G.size || 10))));
+    if (T === 'radial') { const o = vps[0]; for (let r = g; r < span / 2; r += g) { x.moveTo(o.x + r, o.y); x.arc(o.x, o.y, r, 0, Math.PI * 2); }
+      for (let i = 0; i < rays; i++) { const a = Math.PI * 2 * i / rays; line(o, { x: o.x + Math.cos(a) * span, y: o.y + Math.sin(a) * span }); } }
+    else for (const v of vps) { const ang = [[0, 0], [W, 0], [0, H], [W, H]].map(([px, py]) => Math.atan2(py - v.y, px - v.x)); let a0 = Math.min(...ang), a1 = Math.max(...ang);
+      if (v.x > 0 && v.x < W && v.y > 0 && v.y < H) { a0 = -Math.PI; a1 = Math.PI; } else if (a1 - a0 > Math.PI) { const s2 = ang.map(a => a < 0 ? a + Math.PI * 2 : a); a0 = Math.min(...s2); a1 = Math.max(...s2); }
+      for (let i = 0; i <= rays; i++) { const a = a0 + (a1 - a0) * i / rays; line(v, { x: v.x + Math.cos(a) * span, y: v.y + Math.sin(a) * span }); } }
+    x.stroke();
+    if (T === 'p1' || T === 'p2') { x.strokeStyle = 'rgba(255,111,97,.75)'; x.lineWidth = 1.5 / s; x.beginPath(); line({ x: -W, y: vps[0].y }, { x: W * 2, y: vps[0].y }); x.stroke(); }   // horizon
+    if (vb) vb.innerHTML = gIdx().map(i => `<i class="dz-vp" data-vp="${i}" style="left:${G.vp[i].x * k}px;top:${G.vp[i].y * k}px" data-tip="Drag the vanishing point"></i>`).join(''); }
+  const gridMenu = () => { const G = doc.grid || {}, u = dzUnit(doc);
+    return `<div class="gh">Grid</div><div class="dz-gk">${[['off', 'Off'], ...GRID_KINDS].map(([v, n]) => `<button class="${(G.on ? G.type || 'square' : 'off') === v ? 'on' : ''}" data-gk="${v}">${n}</button>`).join('')}</div>
+      <label class="dz-gsz"><span>Size</span><input class="in" type="number" min="0.1" step="any" data-gsize value="${+G.size || 10}"><em>${esc(u)}</em></label>
+      <label class="toggle" style="display:flex;margin:4px 6px;border:0;min-height:30px;padding:0" data-tip="Edges, centres, pen points and nodes snap to the grid's lines; in perspective, pen lines near a grid direction run along it. Hold Alt for none."><input type="checkbox" data-gsnap ${G.snap === false ? '' : 'checked'}><span>Snap to the grid</span></label>
+      ${['p1', 'p2', 'p3', 'radial'].includes(G.type) && G.on ? '<button class="btn small" data-greset style="margin:2px 6px 6px">Reset vanishing points</button>' : ''}
+      <p class="muted" style="font-size:11px;margin:2px 6px 6px">Only on screen: never printed or exported.</p>`; };
+  const gridSet = (fn) => { doc.grid ||= { on: false, type: 'square', size: 10, snap: true }; fn(doc.grid); changed(true); gridDraw(); drawRail(); const p0 = pop(); if (!p0.hidden && p0.classList.contains('dz-gpop')) p0.innerHTML = gridMenu(); };
+  $('#dz-pop').addEventListener('click', (e) => { if (!$('#dz-pop').classList.contains('dz-gpop')) return; const t = e.target;
+    const kk = t.closest('[data-gk]')?.dataset.gk; if (kk) return gridSet(G => { if (kk === 'off') G.on = false; else { G.on = true; G.type = kk; } });
+    if (t.closest('[data-greset]')) return gridSet(G => { delete G.vp; }); });
+  $('#dz-pop').addEventListener('change', (e) => { if (!$('#dz-pop').classList.contains('dz-gpop')) return;
+    if (e.target.matches('[data-gsize]')) { const v = +e.target.value; if (v > 0) gridSet(G => { G.size = v; }); }
+    if (e.target.matches('[data-gsnap]')) gridSet(G => { G.snap = e.target.checked; }); });
+  // Dragging a vanishing point (two-point keeps both on one horizon).
+  $('#dz-vps').addEventListener('pointerdown', (e) => { const h = e.target.closest('[data-vp]'); if (!h) return; e.stopPropagation(); e.preventDefault(); const i = +h.dataset.vp;
+    try { h.setPointerCapture(e.pointerId); } catch {}
+    const mv = (ev) => { const r = page.getBoundingClientRect(), q = { x: (ev.clientX - r.left) / k, y: (ev.clientY - r.top) / k }; doc.grid.vp[i] = q; if (doc.grid.type === 'p2') for (const j of [1, 2]) doc.grid.vp[j].y = q.y; gridDraw(); };
+    const up = () => { h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); changed(true); gridDraw(); };
+    h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up); });
   /* ---------- Quick strip (as in the tattoo simulator) ----------
      A row of shortcuts across the top of the page. Its + window picks tools, actions on what's selected (they
      work through the context strip's own buttons, so they behave exactly the same), favourite colours (up to 8)
      and favourite fonts (up to 5). Kept for every design (setting dz_strip). */
   const DQ_SVG = { undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>', redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>', fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>' };
   const DQ_TOOLS = [['select', 'select', 'Select and move'], ['text', 'text', 'Text'], ['image', 'picture', 'Picture'], ['shape', 'shape', 'Shape'], ['pen', 'pen', 'Pen'], ['pencil', 'pencil', 'Pencil'],
-    ['layers', 'layers', 'Layers'], ['doc', 'page', 'Page: theme, background and sides'], ['undo', DQ_SVG.undo, 'Undo'], ['redo', DQ_SVG.redo, 'Redo'], ['fit', DQ_SVG.fit, 'Show the whole design'], ['export', 'export', 'Export']];
+    ['layers', 'layers', 'Layers'], ['doc', 'page', 'Page: theme, background and sides'], ['undo', DQ_SVG.undo, 'Undo'], ['redo', DQ_SVG.redo, 'Redo'], ['fit', DQ_SVG.fit, 'Show the whole design'], ['export', 'export', 'Export'], ['grid', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective']];
   const DQ_ACTS = [['dup', 'copy', 'Duplicate'], ['del', 'del', 'Delete'], ['up', 'fwd', 'Bring forward'], ['down', 'back', 'Send back'], ['fx', 'fx', 'Flip left to right'], ['fy', 'fy', 'Flip upside down'],
     ['lock', 'lock', 'Lock or unlock'], ['crop', 'crop', 'Crop'], ['cut', 'area', 'Select area'], ['nodes', 'nodes', 'Edit nodes'], ['flatten1', 'flatten', 'Flatten into a picture'],
     ...AL.map(([a, tp, ic]) => ['al:' + a, ic, 'Align: ' + tp]), ...['add', 'subtract', 'intersect', 'contour'].map(v => ['bool:' + v, DZ_BOOL_ICON[v], { add: 'Add: weld into one outline', subtract: 'Subtract', intersect: 'Intersect', contour: 'Contour' }[v]])];
@@ -3653,7 +3719,7 @@ DZ.edit = async (id) => {
   const dqList = () => { try { const a = JSON.parse(Settings.get('dz_strip', 'null')); return Array.isArray(a) ? a : DQ_DEF; } catch { return DQ_DEF; } };
   const dqFont = (v) => { const s = document.createElement('select'); s.innerHTML = fontOpts(v); return s.selectedOptions[0]?.textContent || v; };
   function dqDraw() { const el = $('#dz-qstrip'); if (!el) return; let last = '';
-    const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc' };
+    const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc', grid: !!doc.grid?.on };
     const html = dqList().map(id => { const grp = id.startsWith('c:') ? 'c' : id.startsWith('f:') ? 'f' : DQ_ACTS.some(x => x[0] === id) ? 'a' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
       if (grp === 'c') return sep + `<button class="tt-qb dz-qc" data-dq="${esc(id)}" data-tip="Colour ${esc(id.slice(2))}: on what's selected" aria-label="Colour ${esc(id.slice(2))}"><i style="background:${esc(id.slice(2))}"></i></button>`;
       if (grp === 'f') { const v = id.slice(2), n = dqFont(v); return sep + `<button class="tt-qb dz-qf" data-dq="${esc(id)}" data-tip="Font ${esc(n)}: on the selected text" aria-label="Font ${esc(n)}"><b style="font-family:'${esc((v === '@1' || v === '@2' ? (DZ_THEMES[doc.theme] || DZ_THEMES.ink)['f' + v[1]] : v).replace(/'/g, ''))}'">Aa</b></button>`; }
