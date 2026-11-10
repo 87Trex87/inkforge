@@ -3092,14 +3092,7 @@ TT.open = async (el, id) => {
     if (pick === 'file') url = await new Promise((res) => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = () => res(i.files[0] ? URL.createObjectURL(i.files[0]) : null); i.click(); });
     else if (pick === 'refs' && typeof dzPortfolioPick === 'function') { const ref = await dzPortfolioPick('refs'); url = ref && await Media.url(ref); }
     else if (pick === 'sten') {
-      const rows = await DB.all('SELECT id, name, stencil_ref, thumb_ref FROM stencils ORDER BY created_at DESC LIMIT 200');
-      if (!rows.length) return toast('No stencils kept yet: make one in the stencil maker and press Keep.');
-      const us = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
-      const ref = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
-        o.innerHTML = `<div class="card dz-pick"><h2>Your stencils</h2><div class="dz-pf">${rows.map((r, i) => `<button data-v="${esc(r.stencil_ref)}" title="${esc(r.name || '')}" style="background:#fff"><img src="${us[i]}" alt="" style="object-fit:contain"></button>`).join('')}</div>
-          <button class="btn" data-v="" style="width:100%;margin-top:10px">Cancel</button></div>`;
-        o.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v || null); }; document.body.appendChild(o); });
-      url = ref && await Media.url(ref);
+      const ref = await dzPortfolioPick('sten'); url = ref && await Media.url(ref);
     }
     if (!url) return;
     const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }); if (!im) return toast('Could not read that picture.');
@@ -3282,12 +3275,7 @@ TT.open = async (el, id) => {
       if (f) ref = await Media.save(f, (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg')); }
     else if (src === 'refs' && typeof dzPortfolioPick === 'function') ref = await dzPortfolioPick('refs');
     else if (src === 'pf' && typeof dzPortfolioPick === 'function') ref = await dzPortfolioPick(true);
-    else if (src === 'sten') { const rows = await DB.all('SELECT stencil_ref, src_ref, name FROM stencils ORDER BY created_at DESC LIMIT 1');
-      if (!rows.length) return toast('No stencils kept yet.'); ref = typeof dzPortfolioPick === 'function' ? null : null;
-      const us = await Promise.all((await DB.all('SELECT stencil_ref FROM stencils ORDER BY created_at DESC LIMIT 200')).map(x => x.stencil_ref));
-      ref = await new Promise(async (res) => { const ims = await Promise.all(us.map(u => Media.url(u))); const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
-        o.innerHTML = `<div class="card dz-pick"><h2>Your stencils</h2><div class="dz-pf">${us.map((u, i) => `<button data-v="${esc(u)}" style="background:#fff"><img src="${ims[i]}" alt="" style="object-fit:contain"></button>`).join('')}</div><button class="btn" data-v="" style="width:100%;margin-top:10px">Cancel</button></div>`;
-        o.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v || null); }; document.body.appendChild(o); }); }
+    else if (src === 'sten' && typeof dzPortfolioPick === 'function') ref = await dzPortfolioPick('sten');
     if (!ref) return;
     const u = await Media.url(ref), im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; });
     refNew({ ref, ar: im ? im.naturalHeight / im.naturalWidth : 1 }); drawSide();
