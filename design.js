@@ -112,6 +112,22 @@ const DZF = {
 
 /* ---------- Drawing ---------- */
 const DZI = new Map();   // media ref -> loaded Image
+/* Adjust colour for pictures: the same sliders as the simulator's Adjust colour (exposure, brightness, contrast,
+   gamma, saturation, vibrance, temperature, tint, hue), without the simulator's limits to what ink can look like. */
+const DZ_ADJ = [['exp', 'Exposure', -2, 2, 0.05, v => (v > 0 ? '+' : '') + (+v).toFixed(2)], ['bri', 'Brightness', -1, 1, 0.02], ['con', 'Contrast', -1, 1, 0.02], ['gam', 'Gamma', 0.3, 3, 0.05, v => (+v).toFixed(2)],
+  ['sat', 'Saturation', -1, 1, 0.02], ['vib', 'Vibrance', -1, 1, 0.02], ['tmp', 'Temperature', -1, 1, 0.02], ['tin', 'Tint', -1, 1, 0.02], ['hue', 'Hue', -180, 180, 1, v => Math.round(v) + '°']];
+const DZ_ADJ0 = { exp: 0, bri: 0, con: 0, gam: 1, sat: 0, vib: 0, tmp: 0, tin: 0, hue: 0 };
+function dzAdjust(src, dst, V) { const O = src.data, D = dst.data, hc = Math.cos(V.hue * Math.PI / 180), hs = Math.sin(V.hue * Math.PI / 180), ex = Math.pow(2, V.exp), ck = 1 + V.con, gi = 1 / V.gam;
+  for (let i = 0; i < O.length; i += 4) { if (!O[i + 3]) { D[i + 3] = 0; continue; }
+    let r = O[i] / 255 * ex + V.bri * 0.5, g = O[i + 1] / 255 * ex + V.bri * 0.5, b = O[i + 2] / 255 * ex + V.bri * 0.5;
+    r = Math.max(0, (r - 0.5) * ck + 0.5); g = Math.max(0, (g - 0.5) * ck + 0.5); b = Math.max(0, (b - 0.5) * ck + 0.5);
+    if (V.gam !== 1) { r = r ** gi; g = g ** gi; b = b ** gi; }
+    if (V.hue) { const y = 0.299 * r + 0.587 * g + 0.114 * b, ii = 0.596 * r - 0.274 * g - 0.322 * b, q = 0.211 * r - 0.523 * g + 0.312 * b, i2 = ii * hc - q * hs, q2 = ii * hs + q * hc;
+      r = y + 0.956 * i2 + 0.621 * q2; g = y - 0.272 * i2 - 0.647 * q2; b = y - 1.106 * i2 + 1.703 * q2; }
+    const l = 0.299 * r + 0.587 * g + 0.114 * b, mx = Math.max(r, g, b), mn = Math.min(r, g, b), s0 = mx > 0 ? (mx - mn) / mx : 0, sk = (1 + V.sat) * (1 + V.vib * (1 - s0));
+    r = l + (r - l) * sk; g = l + (g - l) * sk; b = l + (b - l) * sk;
+    r += V.tmp * 0.12; b -= V.tmp * 0.12; g -= V.tin * 0.1; r += V.tin * 0.04; b += V.tin * 0.04;
+    D[i] = r * 255; D[i + 1] = g * 255; D[i + 2] = b * 255; D[i + 3] = O[i + 3]; } }
 async function dzImg(ref) {
   if (!ref) return null;
   if (DZI.has(ref)) return DZI.get(ref);
@@ -1411,6 +1427,8 @@ DZ.edit = async (id) => {
   let doc = JSON.parse(row.doc), sel = null, panel = null, name = row.name;
   doc.vals ||= {}; doc.bg ||= { c: '@bg' };
   const hist = [JSON.stringify(doc)]; let hi = 0;
+  let adjS = null;   // Adjust colour in progress: the picture shows a stand-in copy (adjS.tmp) until Apply or Cancel
+  const docJSON = () => { const s2 = JSON.stringify(doc); return adjS ? s2.split('"' + adjS.tmp + '"').join('"' + adjS.ref + '"') : s2; };   // saved and undo copies always name the real picture
   el.innerHTML = `<div class="dz-ed">
     <div class="dz-top">
       <button class="dz-ib" id="dz-back" aria-label="Back" data-tip="Back to your designs"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
@@ -1552,9 +1570,9 @@ DZ.edit = async (id) => {
     const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
     const ref = await Media.save(await new Promise(r => th.toBlob(r, 'image/jpeg', 0.8)), 'jpg');
     const old = (await DB.one('SELECT thumb_ref FROM designs WHERE id = ?', [id]))?.thumb_ref;
-    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => l.ref), ...doc.layers.map(l => l.tex?.ref)].filter(Boolean))];
+    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => adjS && l.ref === adjS.tmp ? adjS.ref : l.ref), ...doc.layers.map(l => l.tex?.ref)].filter(Boolean))];
     const before = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id])).map(x => x.ref);
-    await DB.tx([{ sql: `UPDATE designs SET name = ?, doc = ?, thumb_ref = ?, updated_at = datetime('now') WHERE id = ?`, params: [name, JSON.stringify(doc), ref, id] },
+    await DB.tx([{ sql: `UPDATE designs SET name = ?, doc = ?, thumb_ref = ?, updated_at = datetime('now') WHERE id = ?`, params: [name, docJSON(), ref, id] },
       { sql: 'DELETE FROM design_assets WHERE design_id = ?', params: [id] },
       ...refs.map(r => ({ sql: 'INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', params: [id, r] }))]);
     if (old && old !== ref) await Media.release(old);
@@ -1571,7 +1589,7 @@ DZ.edit = async (id) => {
     flush().then(async () => { if (typeof notesShow === 'function') notesShow(); const keep = docRefs(); for (const r of new Set([...dropped, ...made])) if (!keep.includes(r)) await Media.release(r); }); });
   // A change: redraw, remember for undo, save.
   let histT = null;
-  const push = () => { histT = null; const s = JSON.stringify(doc); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
+  const push = () => { histT = null; const s = docJSON(); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
   const changed = (now) => {
     redraw(); save();
     clearTimeout(histT);
@@ -1735,6 +1753,7 @@ DZ.edit = async (id) => {
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
     else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
     const field = l.t === 'field';
+    if (l.t === 'image' && l.ref && !l.logo && !l.lock) own += dzIB('data-adjc', '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M12 4a8 8 0 0 1 0 16"/>', 'Adjust colour: exposure, contrast, saturation, hue and more');
     if (bendOK(l)) own += dzIB('data-bend', '<path d="M3 16c4-8 14-8 18 0"/><path d="M6 19c3-5 9-5 12 0"/>', 'Bend into an arc, as in the bend tool') + sep;
     if (doc.grid?.on && doc.grid.type === 'iso' && l.t === 'shape' && l.shape !== 'line' && !l.qr)   // isometric planes, as in Affinity Designer
       own += ISO_PL.map(([v, n]) => `<button class="dz-ib dz-isob ${l.isoP === v ? 'on' : ''}" data-iso="${v}" data-tip="Fit to the ${n.toLowerCase()} plane" aria-label="${n} plane"><b>${n[0]}</b></button>`).join('')
@@ -3493,6 +3512,7 @@ DZ.edit = async (id) => {
   ctxB.addEventListener('click', async (e) => { if (e.target.closest('input, select, textarea, .dz-cnum')) return;   /* a box or dropdown: redrawing the strip would throw the click away */
     const iso = e.target.closest('[data-iso]'); if (iso) return isoAct(layer(), iso.dataset.iso);
     if (e.target.closest('[data-bend]')) return bendOpen(layer());
+    if (e.target.closest('[data-adjc]')) return adjOpen(layer());
     const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
     const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
     if (pick && l && (cpop === 'c' || cpop === 'fill')) l.fm = 'solid';
@@ -3837,6 +3857,31 @@ DZ.edit = async (id) => {
         b.l.ref = await Media.save(await new Promise(res => out.toBlob(res, 'image/png')), 'png'); b.l.w = out.width * per; b.l.h = out.height * per; b.l.x = cx - b.l.w / 2; b.l.y = cy - b.l.h / 2; }
       bendClose(true); changed(true); drawSide(); };
     set(0); };
+  /* ---------- Adjust colour (pictures), as in the simulator ----------
+     The picture previews live on the design (a smaller copy stands in while the sliders move); Apply makes the full
+     size picture with the change (one undo step), Cancel puts the original back. Vector shapes keep their own colours. */
+  const adjClose = (keep) => { const A = adjS; adjS = null; $('#dz-adj')?.remove(); if (!A) return; cancelAnimationFrame(A.raf); DZI.delete(A.tmp);
+    if (!keep) { A.l.ref = A.ref; redraw(); } };
+  const adjOpen = async (l) => { if (!l || l.t !== 'image' || !l.ref) return toast('Adjust colour works on pictures.', 1800); if (l.lock) return toast('Unlock it first.');
+    adjClose(false); bendClose(false); const im = await dzImg(l.ref); if (!im) return toast('Could not load that picture.');
+    const nw = im.naturalWidth, nh = im.naturalHeight, s = Math.min(1, 1200 / Math.max(nw, nh)), pv = document.createElement('canvas'); pv.width = Math.max(1, Math.round(nw * s)); pv.height = Math.max(1, Math.round(nh * s));
+    const pg = pv.getContext('2d', { willReadFrequently: true }); pg.drawImage(im, 0, 0, pv.width, pv.height); Object.defineProperty(pv, 'naturalWidth', { value: pv.width }); Object.defineProperty(pv, 'naturalHeight', { value: pv.height });
+    const tmp = 'adj:' + l.id; DZI.set(tmp, pv);
+    adjS = { l, ref: l.ref, im, pv, tmp, orig: pg.getImageData(0, 0, pv.width, pv.height), out: pg.createImageData(pv.width, pv.height), v: { ...DZ_ADJ0 }, raf: 0 }; l.ref = tmp;
+    const f2 = (v) => Math.round(v * 100) + '%', d = document.createElement('div'); d.id = 'dz-adj'; d.className = 'dz-bendp dz-adjp';
+    const draw = () => { d.innerHTML = `<div class="row" style="align-items:center;gap:6px"><b style="flex:1">Adjust colour</b><button class="btn small" data-ax="reset">Reset</button><button class="btn small" data-ax="0">Cancel</button><button class="btn small primary" data-ax="1">Apply</button></div>
+      ${DZ_ADJ.map(([k2, n2, mn, mx, st2, fm]) => `<label class="dz-sl" style="margin:3px 0"><span>${n2}<b>${(fm || f2)(adjS.v[k2])}</b></span><input type="range" min="${mn}" max="${mx}" step="${st2}" value="${adjS.v[k2]}" data-adj="${k2}"></label>`).join('')}
+      <p class="muted" style="font-size:11px;margin:4px 0 0">Previewed on the design; Apply keeps it (Undo takes it back).</p>`; };
+    const run = () => { const A = adjS; if (!A || A.raf) return; A.raf = requestAnimationFrame(() => { A.raf = 0; if (adjS !== A) return; dzAdjust(A.orig, A.out, A.v); A.pv.getContext('2d').putImageData(A.out, 0, 0); redraw(); }); };
+    d.oninput = (e) => { const k2 = e.target.dataset.adj; if (!k2 || !adjS) return; adjS.v[k2] = +e.target.value; const fm = DZ_ADJ.find(x => x[0] === k2)[5] || f2; e.target.closest('label').querySelector('b').textContent = fm(adjS.v[k2]); run(); };
+    d.onclick = async (e) => { const a = e.target.closest('[data-ax]')?.dataset.ax; if (!a || !adjS) return; const A = adjS;
+      if (a === 'reset') { A.v = { ...DZ_ADJ0 }; draw(); return run(); }
+      if (a === '0') return adjClose(false);
+      if (Object.keys(DZ_ADJ0).every(k2 => A.v[k2] === DZ_ADJ0[k2])) return adjClose(false);
+      e.target.disabled = true; const s2 = Math.min(1, 4096 / Math.max(A.im.naturalWidth, A.im.naturalHeight)), c = document.createElement('canvas'); c.width = Math.round(A.im.naturalWidth * s2); c.height = Math.round(A.im.naturalHeight * s2);
+      const g = c.getContext('2d'); g.drawImage(A.im, 0, 0, c.width, c.height); const src = g.getImageData(0, 0, c.width, c.height), dst = g.createImageData(c.width, c.height); dzAdjust(src, dst, A.v); g.putImageData(dst, 0, 0);
+      const ref = await Media.save(await new Promise(r => c.toBlob(r, 'image/png')), 'png'); A.l.ref = ref; adjClose(true); changed(true); drawSide(); toast('Colour adjusted.', 1400); };
+    draw(); $('.dz-ed').appendChild(d); { const r = $('#dz-ctx').getBoundingClientRect(); d.style.top = (r.bottom + 6) + 'px'; } redraw(); };   /* over the side panel, top right, so the picture stays in view */
   /* ---------- Quick strip (as in the tattoo simulator) ----------
      A row of shortcuts across the top of the page. Its + window picks tools, actions on what's selected (they
      work through the context strip's own buttons, so they behave exactly the same), favourite colours (up to 8)
@@ -3845,7 +3890,7 @@ DZ.edit = async (id) => {
   const DQ_TOOLS = [['select', 'select', 'Select and move'], ['text', 'text', 'Text'], ['image', 'picture', 'Picture'], ['shape', 'shape', 'Shape'], ['pen', 'pen', 'Pen'], ['pencil', 'pencil', 'Pencil'],
     ['layers', 'layers', 'Layers'], ['doc', 'page', 'Page: theme, background and sides'], ['undo', DQ_SVG.undo, 'Undo'], ['redo', DQ_SVG.redo, 'Redo'], ['fit', DQ_SVG.fit, 'Show the whole design'], ['export', 'export', 'Export'], ['grid', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective']];
   const DQ_ACTS = [['dup', 'copy', 'Duplicate'], ['del', 'del', 'Delete'], ['up', 'fwd', 'Bring forward'], ['down', 'back', 'Send back'], ['fx', 'fx', 'Flip left to right'], ['fy', 'fy', 'Flip upside down'],
-    ['lock', 'lock', 'Lock or unlock'], ['crop', 'crop', 'Crop'], ['cut', 'area', 'Select area'], ['nodes', 'nodes', 'Edit nodes'], ['flatten1', 'flatten', 'Flatten into a picture'], ['bend', '<path d="M3 16c4-8 14-8 18 0"/><path d="M6 19c3-5 9-5 12 0"/>', 'Bend into an arc'],
+    ['lock', 'lock', 'Lock or unlock'], ['crop', 'crop', 'Crop'], ['cut', 'area', 'Select area'], ['nodes', 'nodes', 'Edit nodes'], ['flatten1', 'flatten', 'Flatten into a picture'], ['bend', '<path d="M3 16c4-8 14-8 18 0"/><path d="M6 19c3-5 9-5 12 0"/>', 'Bend into an arc'], ['adjc', '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M12 4a8 8 0 0 1 0 16"/>', 'Adjust colour (pictures)'],
     ...AL.map(([a, tp, ic]) => ['al:' + a, ic, 'Align: ' + tp]), ...['add', 'subtract', 'intersect', 'contour'].map(v => ['bool:' + v, DZ_BOOL_ICON[v], { add: 'Add: weld into one outline', subtract: 'Subtract', intersect: 'Intersect', contour: 'Contour' }[v]])];
   const DQ_DEF = ['select', 'text', 'image', 'shape', 'undo', 'redo'], DQ_CMAX = 8, DQ_FMAX = 5;
   const dqIcon = (ic) => String(ic).startsWith('<svg') ? ic : `<svg viewBox="0 0 24 24">${DZ_UI[ic] || ic}</svg>`;
@@ -3876,7 +3921,7 @@ DZ.edit = async (id) => {
     if (q === 'fit') return $('.dz-ed .dz-zoom [data-z="fit"]')?.click(); if (q === 'export') return $('#dz-export').click();
     if (q === 'pen' || q === 'pencil') return $(`#dz-rail [data-add="${q}"]`)?.click();
     if (DQ_TOOLS.some(x => x[0] === q)) return $(`#dz-rail [data-rail="${q}"]`)?.click();
-    const sel2 = q === 'bend' ? '[data-bend]' : q.startsWith('al:') ? `[data-align="${q.slice(3)}"]` : q.startsWith('bool:') ? `[data-bool="${q.slice(5)}"]` : `[data-act="${q}"], [data-mact="${q}"]`;
+    const sel2 = q === 'bend' ? '[data-bend]' : q === 'adjc' ? '[data-adjc]' : q.startsWith('al:') ? `[data-align="${q.slice(3)}"]` : q.startsWith('bool:') ? `[data-bool="${q.slice(5)}"]` : `[data-act="${q}"], [data-mact="${q}"]`;
     const t = $('#dz-ctx').querySelector(sel2); if (!t) return toast(layer() || many() ? 'Not for this item.' : 'Select something first.', 1500); if (t.disabled) return toast('Not right now: select more, or something else.', 1600); t.click(); });
   const dqEdit = () => { let list = dqList().slice(), tab2 = 'tools', addC = '#1fb6a6', addF = ''; const o = document.createElement('div'); o.id = 'dz-qsedit';
     o.style.cssText = 'position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.55)';
