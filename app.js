@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 360;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 361;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -4386,7 +4386,9 @@ async function qlDraw() {
     FROM quotes q LEFT JOIN bookings b ON b.id = q.booking_id ORDER BY q.updated_at DESC, q.id DESC`);
   const cur = JSON.stringify(qCfg());
   const n = { open: rows.filter(r => !r.completed).length, done: rows.filter(r => r.completed).length, all: rows.length };
-  const list = rows.filter(r => QL.f === 'all' || (QL.f === 'done') === !!r.completed);
+  /* Search, sort, favourites and folders on top of the Open / Completed tabs. */
+  const tabbed = rows.filter(r => QL.f === 'all' || (QL.f === 'done') === !!r.completed).map(r => ({ ...r, name: r.client_name || 'No name', sub: r.summary || '', t: r.updated_at }));
+  const list = Lib.apply('quotes', tabbed);
   const cmp = rows.filter(r => r.b_done && r.b_min && r.hours);
   const avg = cmp.length ? cmp.reduce((a, r) => a + (r.b_min / 60 - r.hours) / r.hours, 0) / cmp.length * 100 : 0;
   const diff = (r) => { const p = Math.round((r.b_min / 60 - r.hours) / r.hours * 100); return p === 0 ? 'on time' : `${p > 0 ? '+' : ''}${p}% time`; };
@@ -4400,7 +4402,8 @@ async function qlDraw() {
       <p>Across ${cmp.length} completed tattoo${cmp.length === 1 ? '' : 's'}, the real time was ${Math.abs(Math.round(avg)) < 1 ? 'right on the estimate' : `<b>${Math.abs(Math.round(avg))}% ${avg > 0 ? 'longer' : 'shorter'}</b> than quoted`} on average.
       ${avg > 10 ? 'You may want to raise your speeds in Calibrate.' : avg < -10 ? 'You may want to lower your speeds in Calibrate.' : ''}</p>
       <a class="btn small" href="#quote-cal">Calibrate</a></div>` : ''}
-    ${list.length ? list.map(r => `<div class="card ql-row ${r.completed ? 'done' : ''}">
+    ${tabbed.length ? Lib.bar('quotes', tabbed) : ''}
+    ${tabbed.length && !list.length ? Lib.empty : list.length ? list.map(r => `<div class="card ql-row ${r.completed ? 'done' : ''}">
       <div class="ql-main" data-qo="${r.id}">
         <b>${esc(r.client_name || 'No name')}</b>
         <span class="muted">${esc(r.summary || '')}</span>
@@ -4411,9 +4414,10 @@ async function qlDraw() {
       </div>
       <div class="ql-side"><b>${money(r.total)}</b><span class="muted">${fmtH(r.hours || 0)}</span>
         <label class="toggle" data-tip="Completed quotes are kept for comparing, not deleted"><input type="checkbox" data-qc="${r.id}" ${r.completed ? 'checked' : ''}><span>Done</span></label>
-        <button class="mini del" data-qd="${r.id}" aria-label="Delete quote">&times;</button></div>
+        <span class="row" style="gap:4px;flex-wrap:nowrap">${Lib.tools('quotes', r.id).replace('class="lib-tools"', 'class="lib-tools rule-lib"')}<button class="mini del" data-qd="${r.id}" aria-label="Delete quote">&times;</button></span></div>
     </div>`).join('') : `<div class="empty muted">${QL.f === 'done' ? 'No completed quotes yet.' : 'No saved quotes. Save one from the price page of the quote calculator.'}</div>`}`;
   el.onclick = async (e) => {
+    if (await Lib.click(e, 'quotes', qlDraw)) return;
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (d('f')) { QL.f = d('f'); return qlDraw(); }
     if (t.closest('#ql-reply')) return openReplyPaste();
@@ -4428,7 +4432,8 @@ async function qlDraw() {
     }
     if (d('qo') && !t.closest('label')) return qzOpenQuote(+d('qo'));
   };
-  el.onchange = async (e) => {
+  Lib.wire(el, 'quotes', qlDraw); const libChange = el.onchange;   /* the organiser's sort menu, alongside the Done boxes below */
+  el.onchange = async (e) => { if (e.target.matches('[data-libsort], [data-libkind]')) return libChange(e);
     const id = e.target.dataset.qc; if (!id) return;
     await DB.run(`UPDATE quotes SET completed = ?, updated_at = datetime('now') WHERE id = ?`, [e.target.checked ? 1 : 0, +id]);
     qlDraw();
