@@ -1421,6 +1421,7 @@ DZ.edit = async (id) => {
         <div class="tt-qs dz-qstrip" id="dz-qstrip"></div>
         <div class="dz-rail" id="dz-rail">
           ${dzIB('data-rail="select"', 'select', 'Select and move')}
+          ${dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
           ${doc.kind === 'form' ? dzIB('data-rail="fields"', 'frametext', 'Form fields') : ''}
           ${dzIB('data-rail="text"', 'text', 'Text')}
           ${dzIB('data-rail="image"', 'picture', 'Picture')}
@@ -1428,7 +1429,6 @@ DZ.edit = async (id) => {
           ${dzIB('data-add="pen"', 'pen', 'Pen (P)')}
           ${dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
           ${dzIB('data-rail="grid"', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective, with snapping')}
-          ${dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
           <i class="sep"></i>
           ${dzIB('data-rail="layers"', 'layers', 'Layers')}
           ${dzIB('data-rail="doc"', 'page', 'Page: theme, background, sides and details')}
