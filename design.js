@@ -3640,17 +3640,20 @@ DZ.edit = async (id) => {
   const dqFont = (v) => { const s = document.createElement('select'); s.innerHTML = fontOpts(v); return s.selectedOptions[0]?.textContent || v; };
   function dqDraw() { const el = $('#dz-qstrip'); if (!el) return; let last = '';
     const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc' };
-    el.innerHTML = dqList().map(id => { const grp = id.startsWith('c:') ? 'c' : id.startsWith('f:') ? 'f' : DQ_ACTS.some(x => x[0] === id) ? 'a' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
+    const html = dqList().map(id => { const grp = id.startsWith('c:') ? 'c' : id.startsWith('f:') ? 'f' : DQ_ACTS.some(x => x[0] === id) ? 'a' : 't', sep = last && last !== grp ? '<i class="tt-qsep"></i>' : ''; last = grp;
       if (grp === 'c') return sep + `<button class="tt-qb dz-qc" data-dq="${esc(id)}" data-tip="Colour ${esc(id.slice(2))}: on what's selected" aria-label="Colour ${esc(id.slice(2))}"><i style="background:${esc(id.slice(2))}"></i></button>`;
       if (grp === 'f') { const v = id.slice(2), n = dqFont(v); return sep + `<button class="tt-qb dz-qf" data-dq="${esc(id)}" data-tip="Font ${esc(n)}: on the selected text" aria-label="Font ${esc(n)}"><b style="font-family:'${esc((v === '@1' || v === '@2' ? (DZ_THEMES[doc.theme] || DZ_THEMES.ink)['f' + v[1]] : v).replace(/'/g, ''))}'">Aa</b></button>`; }
       const it = [...DQ_TOOLS, ...DQ_ACTS].find(x => x[0] === id); if (!it) return '';
       return sep + `<button class="tt-qb${on[id] ? ' on' : ''}" data-dq="${id}" data-tip="${esc(it[2])}" aria-label="${esc(it[2])}">${dqIcon(it[1])}</button>`; }).join('')
-      + `<i class="tt-qsep"></i><button class="tt-qb tt-qadd" data-dq="add" data-tip="Choose what this strip shows" aria-label="Customise the strip"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`; }
+      + `<i class="tt-qsep"></i><button class="tt-qb tt-qadd" data-dq="add" data-tip="Choose what this strip shows" aria-label="Customise the strip"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`;
+    if (el.innerHTML !== html && el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; } }   /* rebuilt only when it changes, so a tap's button is still there for its click */
   const dqApply = (key, v) => { const L = many() ? picked() : layer() ? [layer()] : []; if (!L.length) return toast('Select something first.', 1500);
     let n = 0; for (const l of L) { if (l.lock) continue;
       if (key === 'font') { if (l.t === 'text' || l.t === 'field') { l.font = v; n++; } }
       else if (l.t === 'text' || l.t === 'field') { l.c = v; if (l.t === 'text') l.fm = 'solid'; n++; } else if (l.t === 'shape') { if (l.shape === 'line') l.fill = v; else { l.fill = v; l.fm = 'solid'; } n++; } }
     if (!n) return toast(key === 'font' ? 'Fonts go on text.' : 'Colours go on text and shapes.', 1600); changed(true); drawSide(); };
+  // A press on the strip is the strip's: the page behind must not take it (it would select, deselect or start a drag).
+  $('#dz-qstrip').addEventListener('pointerdown', (e) => e.stopPropagation());
   $('#dz-qstrip').addEventListener('click', (e) => { const b = e.target.closest('[data-dq]'); if (!b) return; const q = b.dataset.dq;
     if (q === 'add') return dqEdit();
     if (q.startsWith('c:')) return dqApply('colour', q.slice(2)); if (q.startsWith('f:')) return dqApply('font', q.slice(2));
