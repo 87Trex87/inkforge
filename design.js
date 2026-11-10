@@ -88,6 +88,18 @@ function dzChP(sh, x, y, b) { let p; const C = [[0, 0], [1, 0], [0, 1], [1, 1]];
   p = Math.max(0, Math.min(1, p)); return sh.rev ? 1 - p : p; }
 const dzChV = (sh, p) => { const d = sh.dark ?? 0.85, l = sh.light ?? 0.05; return l + (d - l) * Math.pow(1 - p, sh.bias ?? 1); };
 const dzChBlend = (sh, p) => Math.pow(p, sh.bias ?? 1);   /* a blend: 0 is the first colour, 1 the second */
+/* A painted zone (airbrush or auto shading) keeps its own map: CH_MAP x CH_MAP darknesses (0 to 255) over the zone's
+   box, as base64. For a blend, dark is the first colour. dzChAt is what the zone asks for at a point: the darkness
+   for a tone, the share of the second colour for a blend. */
+const CH_MAP = 40, dzChMapC = new Map();
+const dzChMapArr = (sh) => { let a = dzChMapC.get(sh.map); if (!a) { const s = atob(sh.map || ''); a = new Uint8Array(CH_MAP * CH_MAP); for (let i = 0; i < Math.min(s.length, a.length); i++) a[i] = s.charCodeAt(i); if (dzChMapC.size > 60) dzChMapC.clear(); dzChMapC.set(sh.map, a); } return a; };
+const dzChMapEnc = (arr) => { let s = ''; for (const v of arr) s += String.fromCharCode(Math.max(0, Math.min(255, Math.round(v)))); return btoa(s); };
+function dzChAt(sh, x, y, b) {
+  if (sh.grad === 'paint' && sh.map) { const a = dzChMapArr(sh), N = CH_MAP, u = Math.max(0, Math.min(N - 1, (x - b[0]) / (b[2] || 1) * N - 0.5)), v = Math.max(0, Math.min(N - 1, (y - b[1]) / (b[3] || 1) * N - 0.5)), i = Math.floor(u), j = Math.floor(v), i2 = Math.min(N - 1, i + 1), j2 = Math.min(N - 1, j + 1), fu = u - i, fv = v - j;
+    const val = ((a[j * N + i] * (1 - fu) + a[j * N + i2] * fu) * (1 - fv) + (a[j2 * N + i] * (1 - fu) + a[j2 * N + i2] * fu) * fv) / 255; return sh.tech === 'blend' ? 1 - val : val; }
+  const p = dzChP(sh, x, y, b); return sh.tech === 'blend' ? dzChBlend(sh, p) : dzChV(sh, p); }
+// The zone's gradient as it is now, as a map to paint over.
+const dzChBake = (sh, b) => { const N = CH_MAP, a = new Float32Array(N * N); for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const v = dzChAt(sh, b[0] + (i + 0.5) / N * b[2], b[1] + (j + 0.5) / N * b[3], b); a[j * N + i] = 255 * (sh.tech === 'blend' ? 1 - v : v); } return a; };
 const CH_SHADE = { stipple: ['Stipple', 'Dots only, from quick even whips with a liner. Judged on the gradient, how even and smooth it is, and reaching the darkest.', '3RL'],
   whip: ['Whip', 'Whipped in black with a shader or magnum, solid at the dark end and fading out. Judged like stipple.', '9M1'],
   wash: ['Grey wash', 'Black thinned with water, blended through the wash values. The simulator starts on the grey wash caps. Judged on how dark each part is.', '13CM'],
@@ -99,9 +111,8 @@ async function dzChShade(x, doc, l, scale) { const sh = l.sh || {}, outs = doc.l
   const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], res = 0.2, cw = Math.max(1, Math.ceil(b[2] / res)), chh = Math.max(1, Math.ceil(b[3] / res));
   const c = document.createElement('canvas'); c.width = cw; c.height = chh; const g = c.getContext('2d'), im = g.createImageData(cw, chh), D = im.data;
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, A = chHexRGB(sh.cols?.[0] || '#b3261e'), B = chHexRGB(sh.cols?.[1] || '#f2c21b');
-  for (let j = 0; j < chh; j++) for (let i = 0; i < cw; i++) { const p = dzChP(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b), k = (j * cw + i) * 4;
-    if (sh.tech === 'blend') { const t = dzChBlend(sh, p); for (let q = 0; q < 3; q++) D[k + q] = A[q] + (B[q] - A[q]) * t; D[k + 3] = 255; continue; }
-    const v = dzChV(sh, p); D[k] = D[k + 1] = D[k + 2] = 20; D[k + 3] = sh.tech === 'stipple' ? (rnd() < v * 0.9 ? 235 : 0) : v * 255; }
+  for (let j = 0; j < chh; j++) for (let i = 0; i < cw; i++) { const v = dzChAt(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b), k = (j * cw + i) * 4;
+    if (sh.tech === 'blend') { for (let q = 0; q < 3; q++) D[k + q] = A[q] + (B[q] - A[q]) * v; D[k + 3] = 255; continue; } D[k] = D[k + 1] = D[k + 2] = 20; D[k + 3] = sh.tech === 'stipple' ? (rnd() < v * 0.9 ? 235 : 0) : v * 255; }
   g.putImageData(im, 0, 0);
   x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); if (outs.length) { const O = new Path2D(); for (const o of outs) O.addPath(dzChPath(o)); x.clip(O); } x.clip(dzChPath(l));
   x.imageSmoothingEnabled = sh.tech !== 'stipple'; x.drawImage(c, b[0] * CH_PX, b[1] * CH_PX, b[2] * CH_PX, b[3] * CH_PX); x.restore(); }
@@ -1650,7 +1661,7 @@ DZ.edit = async (id) => {
     // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
     if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
     const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
-    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel(); try { gridDraw(); patDraw(); } catch {}   /* set up further down; nothing to draw before then */
+    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel(); try { gridDraw(); patDraw(); if (doc.chal) chOv(); } catch {}   /* set up further down; nothing to draw before then */
   };
   // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
   // drawing is stretched; it's redrawn sharp a moment after zooming stops.
@@ -1679,7 +1690,7 @@ DZ.edit = async (id) => {
   let cont = null, cdrag = null;
   let penOn = false, pen = null, spaceHeld = false;
   let pclOn = false, stroke = null;   // the pencil (see "Pencil" below)   // the pen tool (see "Pen tool" below)   // the contour tool (see "Shape builder" below)   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
-  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) { placeSel(); try { patDraw(); } catch {} } };
+  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) { placeSel(); try { patDraw(); if (doc.chal && !chDrag) chOv(); } catch {} } };
   // Page tabs (top right of the design): front, back and the master page under both.
   const drawFaces = () => {
     const b = $('#dz-faces'); if (!b) return; b.hidden = !doc.sides; if (!doc.sides) return;
@@ -1954,7 +1965,7 @@ DZ.edit = async (id) => {
     r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); try { dqDraw(); gridDraw(); } catch {} };   /* the strip is set up further down; before then there's nothing to redraw */
   /* The tool rail. Text, Picture and Shape open a small menu beside it; the rest act straight away. */
   const pop = () => $('#dz-pop');
-  const closePop = () => { const p = pop(); p?.classList.remove('dz-gpop', 'dz-ppop', 'dz-chpop'); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
+  const closePop = () => { const p = pop(); p?.classList.remove('dz-gpop', 'dz-ppop', 'dz-chpop'); setTimeout(() => { try { if (doc.chal) chOv(); } catch {} }); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
   const mi = (attr, ic, label) => `<button class="mi" ${attr}><svg viewBox="0 0 24 24">${DZ_UI[ic]}</svg><span>${label}</span></button>`;
   /* Nodes: with a shape selected it opens its nodes; with none, the next shape tapped opens (nodeArm). A shape is
      also opened for node editing by double-tapping it. */
@@ -3676,7 +3687,7 @@ DZ.edit = async (id) => {
     if (e.target.dataset.ck) changed(true); else sideChange(e); });
   ctxB.addEventListener('input', (e) => { const k = e.target.dataset.ck, l = layer(), v = +e.target.value; if (!k || !l || !(v >= 0) || (k === 'size' && v < 6)) return; l[k] = v; changed(); });
   stage.addEventListener('pointerdown', () => { if (cpop) { cpop = null; drawCtx(); } }, true);
-  stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dz-pop, .dz-rail')) closePop(); }, true);
+  stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dz-pop, .dz-rail, #dz-chov')) closePop(); }, true);
   let gdrag = null;
   side.addEventListener('pointerdown', (e) => {
     const bar = e.target.closest('[data-gbar]'), l = layer(); if (!bar || !l?.grad) return;
@@ -3878,19 +3889,80 @@ DZ.edit = async (id) => {
     return `<div class="gh" style="margin-top:6px">Technique</div><div class="dz-gk" style="grid-template-columns:1fr 1fr">${Object.entries(CH_SHADE).map(([k, v]) => tb('tech', k, v[0])).join('')}</div>
       <p class="muted" style="font-size:11px;margin:2px 6px 4px">${CH_SHADE[S.tech || 'stipple'][1]}</p>
       <div class="gh">Needle allowed</div>${nds(S.tech === 'stipple' ? CH_LINERS : CH_PACKERS)}
-      <div class="gh" style="margin-top:6px">Gradient</div><div class="dz-gk" style="grid-template-columns:repeat(3,1fr)">${tb('grad', 'flat', 'Even')}${tb('grad', 'linear', 'Straight')}${tb('grad', 'radial', 'Radial')}</div>
-      ${S.grad === 'flat' ? '' : `<div class="dz-gk" style="grid-template-columns:1fr"><button data-chs="rev:${S.rev ? 0 : 1}" class="${S.rev ? 'on' : ''}">Reverse: dark at the other end</button></div>`}
-      ${S.grad === 'linear' ? sl('ang', 'Turn', 0, 345, 15, 90) : ''}${S.grad === 'radial' ? sl('cx', 'Centre across', 0, 1, 0.05, 0.5) + sl('cy', 'Centre down', 0, 1, 0.05, 0.5) : ''}
+      <div class="gh" style="margin-top:6px">Gradient</div><div class="dz-gk" style="grid-template-columns:repeat(4,1fr)">${tb('grad', 'flat', 'Even')}${tb('grad', 'linear', 'Straight')}${tb('grad', 'radial', 'Radial')}${tb('grad', 'paint', 'Painted')}</div>
+      ${S.grad === 'linear' || S.grad === 'radial' ? '<p class="muted" style="font-size:11px;margin:2px 6px">Or drag the dots on the shape: the black one is the dark end.</p>' : ''}
+      ${S.grad === 'flat' || S.grad === 'paint' ? '' : `<div class="dz-gk" style="grid-template-columns:1fr"><button data-chs="rev:${S.rev ? 0 : 1}" class="${S.rev ? 'on' : ''}">Reverse: dark at the other end</button></div>`}
+      <div class="gh" style="margin-top:6px">Auto shading</div><div class="dz-gk" style="grid-template-columns:1fr 1fr">${CH_PRESETS.map(([k, n]) => `<button data-chpre="${k}" class="${S.grad === 'paint' && S.preset === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <p class="muted" style="font-size:11px;margin:2px 6px">Shades the shape for you, then you can paint over it. Turn sets the side the shadow falls on.</p>
+      ${S.grad === 'paint' ? `<div class="gh" style="margin-top:6px">Airbrush</div><div class="dz-gk" style="grid-template-columns:1fr 1fr">${[['dark', 'Darken'], ['light', 'Lighten']].map(([v, n]) => `<button data-chbr="mode:${v}" class="${chBrush.mode === v ? 'on' : ''}">${n}</button>`).join('')}${[[0, 'Soft'], [1, 'Hard']].map(([v, n]) => `<button data-chbr="hard:${v}" class="${+chBrush.hard === v ? 'on' : ''}">${n}</button>`).join('')}</div>
+        <label class="dz-gsz"><span style="width:86px">Brush</span><input type="range" min="1" max="24" step="0.5" data-chbrs="size" value="${chBrush.size}" style="flex:1"></label><label class="dz-gsz"><span style="width:86px">Flow</span><input type="range" min="0.05" max="1" step="0.05" data-chbrs="flow" value="${chBrush.flow}" style="flex:1"></label>
+        <p class="muted" style="font-size:11px;margin:2px 6px">Paint on the shape with your finger or pen. Close this menu to move the shape again.</p>` : ''}
+      ${S.grad === 'linear' || S.grad === 'paint' ? sl('ang', 'Turn', 0, 345, 15, 90) : ''}${S.grad === 'radial' ? sl('cx', 'Centre across', 0, 1, 0.05, 0.5) + sl('cy', 'Centre down', 0, 1, 0.05, 0.5) : ''}
       ${S.tech === 'blend' ? `<div class="gh" style="margin-top:4px">From</div>${chSw(chCaps(), 'chbf', S.cols?.[0])}<div class="gh">Into</div>${chSw(chCaps(), 'chbt', S.cols?.[1])}`
         : sl('dark', 'Darkest', 0.1, 1, 0.05, 0.85) + (S.grad === 'flat' ? '' : sl('light', 'Lightest', 0, 0.9, 0.05, 0.05))}
       ${S.grad === 'flat' ? '' : sl('bias', 'Balance', 0.3, 3, 0.1, 1) + '<p class="muted" style="font-size:11px;margin:0 6px 4px">Balance: left keeps more of it dark, right more of it light.</p>'}`; };
   const chInk = (l) => { const m = l.mixOf || ['#141414']; l.ink = m[1] ? chMix(m[0], m[1], l.mixT ?? 0.5) : m[0]; };
   async function chOpen(mode, btn) { if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const s = document.createElement('script'); s.src = 'tattoo.js'; s.onload = s.onerror = res; document.head.appendChild(s); });
-    closePop(); const p0 = pop(); p0.dataset.ch = mode; p0.innerHTML = mode === 'role' ? chRoleMenu() : chSetMenu(); p0.hidden = false; p0.classList.add('dz-gpop', 'dz-chpop'); btn?.classList.add('open');
+    closePop(); const p0 = pop(); p0.dataset.ch = mode; p0.innerHTML = mode === 'role' ? chRoleMenu() : chSetMenu(); p0.hidden = false; p0.classList.add('dz-gpop', 'dz-chpop'); btn?.classList.add('open'); chOv();
     const y = btn ? btn.getBoundingClientRect().top - stage.getBoundingClientRect().top : 8; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; }
-  const chRe = () => { const p0 = pop(); if (!p0.hidden && p0.classList.contains('dz-chpop')) p0.innerHTML = p0.dataset.ch === 'role' ? chRoleMenu() : chSetMenu(); };
+  const chRe = () => { const p0 = pop(); if (!p0.hidden && p0.classList.contains('dz-chpop')) p0.innerHTML = p0.dataset.ch === 'role' ? chRoleMenu() : chSetMenu(); chOv(); };
+  /* Auto shading: the zone's map worked out from how far each part is from the shape's edge, and which side faces
+     the shadow (Turn, 90 = the shadow at the bottom). Pillow: dark round the edge, light in the middle. Edge fade:
+     only a dark rim. 3D: a ball lit from the far side, with its edge rolling into shadow. Cast shadow: dark along
+     the shadow side, fading across. Darkest and Lightest set the range. */
+  const CH_PRESETS = [['pillow', 'Pillow'], ['edge', 'Edge fade'], ['ball', '3D'], ['cast', 'Cast shadow']];
+  const chBox = (l) => { const P = dzChPts(l).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2); return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs) || 1, Math.max(...ys) - Math.min(...ys) || 1]; };
+  function chPreset(l, kind) { const sh = l.sh, b = chBox(l), N = CH_MAP, g = document.createElement('canvas').getContext('2d'), P = dzChPath(l), ins = new Uint8Array(N * N), cell = (i, j) => [b[0] + (i + 0.5) / N * b[2], b[1] + (j + 0.5) / N * b[3]];
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const [X, Y] = cell(i, j); ins[j * N + i] = g.isPointInPath(P, X * CH_PX, Y * CH_PX, 'evenodd') ? 1 : 0; }
+    const outs = []; for (let k = 0; k < N * N; k++) if (!ins[k]) outs.push(cell(k % N, Math.floor(k / N)));
+    const e = new Float32Array(N * N); let mx = 0;
+    for (let k = 0; k < N * N; k++) { if (!ins[k]) continue; const [X, Y] = cell(k % N, Math.floor(k / N)); let d = Math.min(X - b[0], b[0] + b[2] - X, Y - b[1], b[1] + b[3] - Y); for (const [ox, oy] of outs) { const q = Math.hypot(X - ox, Y - oy); if (q < d) d = q; } e[k] = d; if (d > mx) mx = d; }
+    const dk = sh.tech === 'blend' ? 1 : sh.dark ?? 0.85, lt = sh.tech === 'blend' ? 0 : sh.light ?? 0.05, a = (sh.ang ?? 90) * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a), A = new Float32Array(N * N), c01 = (v) => Math.max(0, Math.min(1, v));
+    for (let k = 0; k < N * N; k++) { const t = e[k] / (mx || 1), u = (k % N + 0.5) / N - 0.5, v = (Math.floor(k / N) + 0.5) / N - 0.5, side = c01((u * dx + v * dy) * 1.4 + 0.5);
+      const s = kind === 'pillow' ? Math.pow(1 - t, 1.6) : kind === 'edge' ? Math.pow(1 - t, 5) : kind === 'ball' ? c01(0.8 * side + 0.45 * Math.pow(1 - t, 3) - 0.15) : c01(side * 1.6 - 0.65) * Math.pow(1 - t, 0.8) + 0.15 * Math.pow(1 - t, 6);
+      A[k] = 255 * (lt + (dk - lt) * c01(s)); }
+    sh.grad = 'paint'; sh.map = dzChMapEnc(A); sh.preset = kind; }
+  /* On the shape, while a shading zone's menu is open: dots to drag for a straight or radial gradient (the black dot
+     is the dark end), or the airbrush for a painted one. Sized for a finger as well as a pen. */
+  const chBrush = { size: 6, flow: 0.35, hard: false, mode: 'dark' }; let chDrag = null, chArr = null, chRaf = 0, chAt = null;
+  const chOvOn = () => { const p0 = pop(), l = layer(); return p0 && !p0.hidden && p0.classList.contains('dz-chpop') && p0.dataset.ch === 'role' && l?.role === 'shade' && ['linear', 'radial', 'paint'].includes(l.sh?.grad) ? l : null; };
+  const chScr = () => { const pr = page.getBoundingClientRect(), sr = stage.getBoundingClientRect(), s = pr.width / doc.w; return { ox: pr.left - sr.left, oy: pr.top - sr.top, s, sr }; };
+  const mm2s = (x, y) => { const S = chScr(); return [S.ox + x * CH_PX * S.s, S.oy + y * CH_PX * S.s]; };
+  const s2mm = (cx, cy) => { const S = chScr(); return [(cx - S.sr.left - S.ox) / S.s / CH_PX, (cy - S.sr.top - S.oy) / S.s / CH_PX]; };
+  const chHandles = (l, b = chBox(l)) => { const sh = l.sh, cx = b[0] + b[2] / 2, cy = b[1] + b[3] / 2;
+    if (sh.grad === 'radial') return [{ k: 'c', x: b[0] + (sh.cx ?? 0.5) * b[2], y: b[1] + (sh.cy ?? 0.5) * b[3] }];
+    const a = (sh.ang ?? 90) * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a), half = (Math.abs(dx) * b[2] + Math.abs(dy) * b[3]) / 2, s = sh.rev ? -1 : 1;
+    return [{ k: 'd', x: cx - dx * half * s, y: cy - dy * half * s }, { k: 'l', x: cx + dx * half * s, y: cy + dy * half * s }]; };
+  function chOv() { let c = $('#dz-chov'); if (!c) { c = document.createElement('canvas'); c.id = 'dz-chov'; stage.appendChild(c); chOvWire(c); }
+    const l = chOvOn(); c.hidden = !l; if (!l) return; const sr = stage.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1), W2 = Math.round(sr.width * dpr), H2 = Math.round(sr.height * dpr);
+    if (c.width !== W2 || c.height !== H2) { c.width = W2; c.height = H2; } const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, sr.width, sr.height);
+    const b = chDrag?.b || chBox(l), S = chScr(), [bx, by] = mm2s(b[0], b[1]); g.setLineDash([5, 4]); g.lineWidth = 1.2; g.strokeStyle = 'rgba(31,182,166,.9)'; g.strokeRect(bx, by, b[2] * CH_PX * S.s, b[3] * CH_PX * S.s); g.setLineDash([]);
+    if (l.sh.grad === 'paint') { if (chAt) { const [X, Y] = mm2s(...chAt), r = chBrush.size / 2 * CH_PX * S.s; g.beginPath(); g.arc(X, Y, r, 0, Math.PI * 2); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(); g.strokeStyle = '#141414'; g.lineWidth = 1; g.stroke(); } return; }
+    const Hs = chHandles(l, b).map(h => ({ ...h, s: mm2s(h.x, h.y) }));
+    if (Hs.length === 2) { g.beginPath(); g.moveTo(...Hs[0].s); g.lineTo(...Hs[1].s); g.strokeStyle = 'rgba(31,182,166,.95)'; g.lineWidth = 2.5; g.stroke(); }
+    for (const h of Hs) { g.beginPath(); g.arc(h.s[0], h.s[1], 11, 0, Math.PI * 2); g.fillStyle = h.k === 'l' ? '#fbfbf8' : '#141414'; g.fill(); g.strokeStyle = '#1fb6a6'; g.lineWidth = 3; g.stroke(); } }
+  const chLive = () => { if (chRaf) return; chRaf = requestAnimationFrame(async () => { chRaf = 0; await redraw(); chOv(); }); };
+  const chStamp = (l, x, y) => { const b = chDrag.b, N = CH_MAP, r = chBrush.size / 2, tgt = chBrush.mode === 'light' ? 0 : 255;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const X = b[0] + (i + 0.5) / N * b[2], Y = b[1] + (j + 0.5) / N * b[3], dd = Math.hypot(X - x, Y - y); if (dd > r) continue; const w = chBrush.hard ? 1 : Math.pow(1 - dd / r, 2), k = j * N + i; chArr[k] += (tgt - chArr[k]) * chBrush.flow * w; }
+    l.sh.map = dzChMapEnc(chArr); delete l.sh.preset; chLive(); };
+  function chOvWire(c) {
+    c.addEventListener('pointerdown', (e) => { const l = chOvOn(); if (!l) return; e.preventDefault(); e.stopPropagation();   /* not a pan, a select or a close for the page under it */ try { c.setPointerCapture(e.pointerId); } catch {} const [x, y] = s2mm(e.clientX, e.clientY), b = chBox(l);
+      if (l.sh.grad === 'paint') { chArr = Float32Array.from(dzChMapArr(l.sh)); chDrag = { paint: true, last: [x, y], b }; chAt = [x, y]; return chStamp(l, x, y); }
+      const S = chScr(), hit = chHandles(l, b).find(h => { const [X, Y] = mm2s(h.x, h.y); return Math.hypot(e.clientX - S.sr.left - X, e.clientY - S.sr.top - Y) < 28; });
+      chDrag = hit ? { k: hit.k, b } : null; });
+    c.addEventListener('pointermove', (e) => { const l = chOvOn(); if (!l) return; if (chDrag) e.stopPropagation(); const [x, y] = s2mm(e.clientX, e.clientY); chAt = [x, y];
+      if (!chDrag) { if (l.sh.grad === 'paint') chOv(); return; }
+      if (chDrag.paint) { const [lx, ly] = chDrag.last, r = chBrush.size / 2, n = Math.max(1, Math.ceil(Math.hypot(x - lx, y - ly) / Math.max(0.3, r / 3))); for (let i = 1; i <= n; i++) chStamp(l, lx + (x - lx) * i / n, ly + (y - ly) * i / n); chDrag.last = [x, y]; return; }
+      const sh = l.sh, b = chDrag.b, c01 = (v) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
+      if (chDrag.k === 'c') { sh.cx = c01((x - b[0]) / b[2]); sh.cy = c01((y - b[1]) / b[3]); }
+      else { const Hs = chHandles(l, b), D = chDrag.k === 'd' ? { x, y } : Hs[0], L2 = chDrag.k === 'l' ? { x, y } : Hs[1]; let a = Math.atan2(L2.y - D.y, L2.x - D.x) * 180 / Math.PI; if (sh.rev) a += 180; sh.ang = Math.round(((a % 360) + 360) % 360); }
+      chLive(); });
+    const up = () => { if (!chDrag) return; chDrag = null; chArr = null; changed(true); chRe(); }; c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+    c.addEventListener('pointerleave', () => { if (!chDrag) { chAt = null; chOv(); } }); }
   $('#dz-pop').addEventListener('click', async (e) => { const p0 = $('#dz-pop'); if (!p0.classList.contains('dz-chpop')) return; const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
-    if (d('chs') && l?.sh) { const [k, v] = d('chs').split(':'); l.sh[k] = k === 'rev' ? v === '1' : v;
+    if (d('chpre') && l?.sh) { chPreset(l, d('chpre')); changed(true); drawCtx(); return chRe(); }
+    if (d('chbr')) { const [k, v] = d('chbr').split(':'); chBrush[k] = k === 'hard' ? v === '1' : v; return chRe(); }
+    if (d('chs') && l?.sh) { const [k, v] = d('chs').split(':'); if (k === 'grad' && v === 'paint' && l.sh.grad !== 'paint') { l.sh.map = dzChMapEnc(dzChBake(l.sh, chBox(l))); delete l.sh.preset; } l.sh[k] = k === 'rev' ? v === '1' : v;
       if (k === 'tech') { l.nd = CH_SHADE[v][2]; if (v === 'blend' && !l.sh.cols) l.sh.cols = [chCaps()[2] || chCaps()[0], chCaps()[3] || chCaps()[0]]; }
       changed(true); drawCtx(); return chRe(); }
     if (d('chbf') && l?.sh) { l.sh.cols = [d('chbf'), l.sh.cols?.[1] || d('chbf')]; changed(true); return chRe(); }
@@ -3919,7 +3991,8 @@ DZ.edit = async (id) => {
     if (e.target.matches('[data-chlj]')) { doc.chal.lessonJudge = e.target.checked; changed(true); chRe(); }
     if (e.target.matches('[data-chf]')) { doc.chal.focus = { ...(doc.chal.focus || {}), [e.target.dataset.chf]: +e.target.value }; changed(true); }
     if (e.target.matches('[data-chmt]')) { const l = layer(); if (l) { l.mixT = +e.target.value; chInk(l); changed(true); chRe(); } }
-    if (e.target.matches('[data-chss]')) { const l = layer(); if (l?.sh) { l.sh[e.target.dataset.chss] = +e.target.value; changed(true); } } });
+    if (e.target.matches('[data-chss]')) { const l = layer(); if (l?.sh) { l.sh[e.target.dataset.chss] = +e.target.value; if (l.sh.grad === 'paint' && l.sh.preset && e.target.dataset.chss !== 'bias') chPreset(l, l.sh.preset); changed(true); } }
+    if (e.target.matches('[data-chbrs]')) chBrush[e.target.dataset.chbrs] = +e.target.value; });
   $('#dz-pop').addEventListener('input', (e) => { if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chf]')) { const b = e.target.nextElementSibling; if (b) b.textContent = Math.round(e.target.value * 100) + '%'; }
     const l = layer(); if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chss]') && l?.sh) { l.sh[e.target.dataset.chss] = +e.target.value; redraw(); return; }
     if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chmt]') && l) { l.mixT = +e.target.value; chInk(l); redraw(); const r = $('#dz-pop .dz-chres i'); if (r) r.style.background = l.ink; } });

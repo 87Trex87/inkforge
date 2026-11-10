@@ -3534,18 +3534,19 @@ TT.open = async (el, id) => {
      grey wash): the shape of the gradient against the one asked for (scaled to your own darkest, as the gradient
      challenges are), reaching the darkest asked, no sudden steps between bands, and each band even across.
      A blend: each band the colour asked for, covered, and no sudden steps. Plus whether the needle asked for was used. */
-  const shadeZone = (Z) => { const N = 10, zp = zonePath(Z.pts), fillM = maskOf(zp, true), edgeM = maskOf(zp, false, 0.8), bd = Array.from({ length: N }, () => ({ n: 0, s: 0, cov: 0, c: [0, 0, 0], cn: 0, cells: new Map() }));
-    for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const j = (y * W + x) * 4; if (fillM[j + 3] <= 128 || edgeM[j + 3] > 128) continue; const X = x / mm, Y = y / mm, p = dzChP(Z, X, Y, Z.box), k = Math.min(N - 1, Math.floor(p * N)), B = bd[k], d = densAt(j);
-      B.n++; B.s += d; if (d > 0.5) { B.cov++; const c = colAt(j); if (c) { B.c[0] += c[0]; B.c[1] += c[1]; B.c[2] += c[2]; B.cn++; } } const ck = Math.floor(X) + ',' + Math.floor(Y), ce = B.cells.get(ck) || [0, 0]; ce[0] += d; ce[1]++; B.cells.set(ck, ce); }
-    const used = bd.filter(B => B.n > 3), mean = used.map(B => B.s / B.n), mid = (B) => (bd.indexOf(B) + 0.5) / N;
+  const shadeZone = (Z) => { const N = 10, zp = zonePath(Z.pts), fillM = maskOf(zp, true), edgeM = maskOf(zp, false, 0.8), bd = Array.from({ length: N }, () => ({ n: 0, s: 0, tv: 0, cov: 0, c: [0, 0, 0], cn: 0, cells: new Map() })), blend = Z.tech === 'blend';
+    const pts = []; let lo = 1, hi = 0; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const j = (y * W + x) * 4; if (fillM[j + 3] <= 128 || edgeM[j + 3] > 128) continue; const t = dzChAt(Z, x / mm, y / mm, Z.box); pts.push([x, y, t]); if (t < lo) lo = t; if (t > hi) hi = t; }
+    for (const [x, y, t] of pts) { const j = (y * W + x) * 4, X = x / mm, Y = y / mm, f = hi - lo > 0.02 ? (t - lo) / (hi - lo) : 0, k = Math.min(N - 1, Math.floor((blend ? f : 1 - f) * N)), B = bd[k], d = densAt(j);   /* tones: band 0 the darkest asked; blends: band 0 the first colour */
+      B.n++; B.s += d; B.tv += t; if (d > 0.5) { B.cov++; const c = colAt(j); if (c) { B.c[0] += c[0]; B.c[1] += c[1]; B.c[2] += c[2]; B.cn++; } } const ck = Math.floor(X) + ',' + Math.floor(Y), ce = B.cells.get(ck) || [0, 0]; ce[0] += d; ce[1]++; B.cells.set(ck, ce); }
+    const used = bd.filter(B => B.n > 3), mean = used.map(B => B.s / B.n), mid = (B) => B.tv / B.n;
     const steps = (vals, wantStep) => { let m = 0; for (let i = 1; i < vals.length; i++) m = Math.max(m, vals[i] - wantStep(i)); return m; };
     const nd = EX.cur?.tm?.by?.[Z.nd], needle = nd?.strokes ? 1 : 0.4;
-    if (Z.tech === 'blend') { const A = ttHex(Z.cols?.[0] || '#b3261e'), Bc = ttHex(Z.cols?.[1] || '#f2c21b'), want = (B) => ttMix(A, Bc, dzChBlend(Z, mid(B))).map(v => v * 255);
+    if (Z.tech === 'blend') { const A = ttHex(Z.cols?.[0] || '#b3261e'), Bc = ttHex(Z.cols?.[1] || '#f2c21b'), want = (B) => ttMix(A, Bc, mid(B)).map(v => v * 255);
       const errs = used.map(B => B.cn ? dist(B.c.map(v => v / B.cn), want(B)) : 0.6), col = 1 - clamp01((errs.reduce((a, v) => a + v, 0) / Math.max(1, errs.length) - 0.05) * 3);
       const avg = used.map(B => B.cn ? B.c.map(v => v / B.cn) : null), stp = steps(avg.map((c, i) => c && avg[i - 1] ? dist(c, avg[i - 1]) : 0), (i) => dist(want(used[i]), want(used[i - 1] || used[i])) + 0.06), smooth = clamp01(1 - stp / 0.25);
       const cov = used.reduce((a, B) => a + B.cov, 0) / Math.max(1, used.reduce((a, B) => a + B.n, 0));
       return { score: Math.round(100 * cov * (0.5 * col + 0.3 * smooth + 0.2) * (0.75 + 0.25 * needle)), coverage: Math.round(cov * 100), colour: Math.round(col * 100), smoothness: Math.round(smooth * 100), needle: Math.round(needle * 100) }; }
-    const tv = used.map(B => dzChV(Z, mid(B))); let ct = 0, tt = 0; mean.forEach((m, i) => { ct += m * tv[i]; tt += tv[i] * tv[i]; }); const a = ct / Math.max(1e-6, tt);
+    const tv = used.map(B => mid(B)); let ct = 0, tt = 0; mean.forEach((m, i) => { ct += m * tv[i]; tt += tv[i] * tv[i]; }); const a = ct / Math.max(1e-6, tt);
     const shape = mean.reduce((e, m, i) => e + Math.abs(m - a * tv[i]), 0) / Math.max(1, mean.length) / Math.max(0.15, a * Math.max(...tv, 0.1)), match = 1 - clamp01(shape * 1.6);
     const reach = clamp01(Math.max(0, ...mean) / Math.max(0.1, (Z.dark ?? 0.85) * 0.85)), stp = steps(mean.map((m, i) => i ? Math.abs(m - mean[i - 1]) : 0), (i) => Math.abs(tv[i] - tv[i - 1]) * a + 0.08), smooth = clamp01(1 - stp / 0.25);
     const ev = used.map(B => { const cs = [...B.cells.values()].filter(c => c[1] > 2).map(c => c[0] / c[1]), m = cs.reduce((s, v) => s + v, 0) / Math.max(1, cs.length); return cs.length > 1 ? Math.sqrt(cs.reduce((s, v) => s + (v - m) * (v - m), 0) / cs.length) : 0; }), even = clamp01(1 - (ev.reduce((s, v) => s + v, 0) / Math.max(1, ev.length) - 0.04) / 0.2);
