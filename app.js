@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 358;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 359;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -630,6 +630,10 @@ const askText = (msg, def = '') => ask(msg, def);
 const LIB_FOLDER = '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
 const Lib = {
   ui: {},
+  /* Libraries where one item can sit in several folders at once (o.in[id] is then a list): inventory, where a
+     folder is a stock section or sheet, and an item can be on more than one without being copied. */
+  multi: { inventory: true },
+  fl: (v) => Array.isArray(v) ? v : v ? [v] : [],
   org(key) { let o = {}; try { o = JSON.parse(Settings.get('lib_' + key, '{}')); } catch {} return { fav: o.fav || [], in: o.in || {}, folders: o.folders || [] }; },
   save(key, o) { return Settings.set('lib_' + key, JSON.stringify(o)); },
   st(key) { return Lib.ui[key] ??= { q: '', view: '', kind: '', sort: Settings.get('lib_sort_' + key, key === 'forms' ? 'az' : 'new') }; },
@@ -637,7 +641,7 @@ const Lib = {
     const o = Lib.org(key), s = Lib.st(key), q = s.q.trim().toLowerCase();
     if (s.view.startsWith('f:') && !o.folders.includes(s.view.slice(2))) s.view = '';
     const out = rows.filter(r => (!q || `${r.name || ''} ${r.sub || ''}`.toLowerCase().includes(q)) && (!s.kind || r.kind === s.kind)
-      && (s.view === '' || (s.view === 'fav' ? o.fav.includes(r.id) : s.view === 'loose' ? !o.in[r.id] : o.in[r.id] === s.view.slice(2))));
+      && (s.view === '' || (s.view === 'fav' ? o.fav.includes(r.id) : s.view === 'loose' ? !Lib.fl(o.in[r.id]).length : Lib.fl(o.in[r.id]).includes(s.view.slice(2)))));
     const by = { new: (a, b) => String(b.t).localeCompare(String(a.t)), old: (a, b) => String(a.t).localeCompare(String(b.t)), az: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base', numeric: true }) }[s.sort];
     return by ? out.sort(by) : out;
   },
@@ -648,17 +652,17 @@ const Lib = {
     return `<div class="lib-bar">${opt.search === false ? '' : `<input class="in lib-q" data-libq type="search" placeholder="Search" value="${esc(s.q)}" aria-label="Search">`}
       ${kinds.length > 1 ? `<select class="in" data-libkind aria-label="Type"><option value="">All types</option>${kinds.map(k => `<option ${s.kind === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>` : ''}
       ${opt.sort === false ? '' : `<select class="in" data-libsort aria-label="Sort">${[['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A to Z']].map(([v, t]) => `<option value="${v}" ${s.sort === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`}</div>
-      <div class="lib-chips">${chip('', 'All', rows.length)}${opt.fav === false ? '' : chip('fav', '★ Favourites', n(r => o.fav.includes(r.id)))}${o.folders.length ? chip('loose', 'Not in a folder', n(r => !o.in[r.id])) : ''}
-        ${o.folders.map(f => chip('f:' + f, LIB_FOLDER + esc(f), n(r => o.in[r.id] === f))).join('')}
+      <div class="lib-chips">${chip('', 'All', rows.length)}${opt.fav === false ? '' : chip('fav', '★ Favourites', n(r => o.fav.includes(r.id)))}${o.folders.length ? chip('loose', 'Not in a folder', n(r => !Lib.fl(o.in[r.id]).length)) : ''}
+        ${o.folders.map(f => chip('f:' + f, LIB_FOLDER + esc(f), n(r => Lib.fl(o.in[r.id]).includes(f)))).join('')}
         <button class="lib-chip add" data-libnew data-tip="Make a folder to sort your work into">+ Folder</button>
         ${s.view.startsWith('f:') ? `<button class="lib-chip add" data-libren>Rename</button><button class="lib-chip add" data-libdelf>Delete folder</button>` : ''}</div>`;
   },
-  tools(key, id, opt = {}) { const o = Lib.org(key), on = o.fav.includes(id), f = o.in[id];
-    return `<div class="lib-tools">${opt.fav === false ? '' : `<button class="mini lib-fav ${on ? 'on' : ''}" data-libfav="${id}" aria-label="${on ? 'Remove from favourites' : 'Add to favourites'}" data-tip="${on ? 'Remove from favourites' : 'Add to favourites'}">${on ? '★' : '☆'}</button>`}<button class="mini lib-mv ${f ? 'on' : ''}" data-libmove="${id}" aria-label="Move to a folder" data-tip="${f ? 'In ' + esc(f) + ': move' : 'Move to a folder'}">${LIB_FOLDER}</button></div>`; },
+  tools(key, id, opt = {}) { const o = Lib.org(key), on = o.fav.includes(id), f = Lib.fl(o.in[id]).join(', ');
+    return `<div class="lib-tools">${opt.fav === false ? '' : `<button class="mini lib-fav ${on ? 'on' : ''}" data-libfav="${id}" aria-label="${on ? 'Remove from favourites' : 'Add to favourites'}" data-tip="${on ? 'Remove from favourites' : 'Add to favourites'}">${on ? '★' : '☆'}</button>`}<button class="mini lib-mv ${f ? 'on' : ''}" data-libmove="${id}" aria-label="Move to a folder" data-tip="${f ? 'In ' + esc(f) + (Lib.multi[key] ? ': change' : ': move') : Lib.multi[key] ? 'Put in folders' : 'Move to a folder'}">${LIB_FOLDER}</button></div>`; },
   empty: '<div class="empty muted" style="padding:24px 0">Nothing here. Try another search, type or folder.</div>',
   async folderName(key, msg, def = '') { const v = (await askText(msg, def))?.trim(); if (!v) return null;
     if (Lib.org(key).folders.includes(v) && v !== def) { toast('There is already a folder called ' + v + '.'); return null; } return v.slice(0, 40); },
-  moveDlg(key, id) { return new Promise((res) => { const o = Lib.org(key), cur = o.in[id] || '';
+  moveDlg(key, id) { if (Lib.multi[key]) return Lib.pickDlg(key, id); return new Promise((res) => { const o = Lib.org(key), cur = o.in[id] || '';
     const d = document.createElement('div'); d.className = 'ask-dlg';
     d.innerHTML = `<div class="card lib-move" role="dialog" aria-modal="true"><p class="ask-q">Move to a folder</p>
       ${['', ...o.folders].map(f => `<button class="lib-chip ${f === cur ? 'on' : ''}" data-mf="${esc(f)}">${f ? LIB_FOLDER + esc(f) : 'Not in a folder'}</button>`).join('')}
@@ -669,6 +673,19 @@ const Lib = {
       d.remove(); if (!b || b.dataset.ask === '0') return res(false);
       const o2 = Lib.org(key); if (b.dataset.mf) o2.in[id] = b.dataset.mf; else delete o2.in[id]; await Lib.save(key, o2); res(true); };
     document.body.appendChild(d); }); },
+  // Several folders: tick each one the item belongs in.
+  pickDlg(key, id) { return new Promise((res) => { const sel = new Set(Lib.fl(Lib.org(key).in[id])); const d = document.createElement('div'); d.className = 'ask-dlg';
+    const draw = () => { const o = Lib.org(key); d.innerHTML = `<div class="card lib-move" role="dialog" aria-modal="true"><p class="ask-q">Folders for this item</p>
+      <p class="muted" style="font-size:12px;margin:-4px 0 4px">Tick every folder it belongs in. It stays one item, so its stock is counted once.</p>
+      ${o.folders.map(f => `<button class="lib-chip ${sel.has(f) ? 'on' : ''}" data-pf="${esc(f)}">${sel.has(f) ? '✓ ' : ''}${LIB_FOLDER}${esc(f)}</button>`).join('') || '<p class="muted" style="font-size:13px">No folders yet.</p>'}
+      <button class="lib-chip add" data-pf-new>+ New folder</button>
+      <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn" data-ask="0">Cancel</button><button class="btn primary" data-ask="1">Done</button></div></div>`; };
+    d.onclick = async (e) => { const t = e.target, f = t.closest('[data-pf]');
+      if (f) { const v = f.dataset.pf; if (sel.has(v)) sel.delete(v); else sel.add(v); return draw(); }
+      if (t.closest('[data-pf-new]')) { d.hidden = true; const n = await Lib.folderName(key, 'New folder name'); d.hidden = false; if (n == null) return; const o = Lib.org(key); o.folders.push(n); await Lib.save(key, o); sel.add(n); return draw(); }
+      const a = t.closest('[data-ask]'); if (!a && t !== d) return; d.remove(); if (!a || a.dataset.ask === '0') return res(false);
+      const o = Lib.org(key), keep = o.folders.filter(x => sel.has(x)); if (keep.length) o.in[id] = keep; else delete o.in[id]; await Lib.save(key, o); res(true); };
+    draw(); document.body.appendChild(d); }); },
   // Handles the bar and card buttons; true when the click was the organiser's (the list then stops there).
   async click(e, key, redraw) { const t = e.target, s = Lib.st(key), b = (k) => t.closest(`[data-${k}]`);
     if (b('libv')) { s.view = b('libv').dataset.libv; redraw(); return true; }
@@ -676,9 +693,9 @@ const Lib = {
     if (b('libmove')) { e.stopPropagation(); if (await Lib.moveDlg(key, +b('libmove').dataset.libmove)) redraw(); return true; }
     if (b('libnew')) { const n = await Lib.folderName(key, 'New folder name\n\nThen move work into it with the folder button on each one.'); if (n == null) return true; const o = Lib.org(key); o.folders.push(n); await Lib.save(key, o); s.view = 'f:' + n; redraw(); return true; }
     if (b('libren')) { const was = s.view.slice(2), n = await Lib.folderName(key, 'Rename the folder', was); if (n == null || n === was) return true; const o = Lib.org(key);
-      o.folders = o.folders.map(f => f === was ? n : f); for (const k in o.in) if (o.in[k] === was) o.in[k] = n; await Lib.save(key, o); s.view = 'f:' + n; redraw(); return true; }
+      o.folders = o.folders.map(f => f === was ? n : f); for (const k in o.in) o.in[k] = Array.isArray(o.in[k]) ? o.in[k].map(f => f === was ? n : f) : o.in[k] === was ? n : o.in[k]; await Lib.save(key, o); s.view = 'f:' + n; redraw(); return true; }
     if (b('libdelf')) { const was = s.view.slice(2); if (!await ask(`Delete the folder "${was}"?\n\nThe work in it stays; it just isn't in a folder any more.`)) return true; const o = Lib.org(key);
-      o.folders = o.folders.filter(f => f !== was); for (const k in o.in) if (o.in[k] === was) delete o.in[k]; await Lib.save(key, o); s.view = ''; redraw(); return true; }
+      o.folders = o.folders.filter(f => f !== was); for (const k in o.in) { const v = Array.isArray(o.in[k]) ? o.in[k].filter(f => f !== was) : o.in[k] === was ? null : o.in[k]; if (!v || (Array.isArray(v) && !v.length)) delete o.in[k]; else o.in[k] = v; } await Lib.save(key, o); s.view = ''; redraw(); return true; }
     if (t.closest('.lib-bar')) return true;
     return false; },
   // Search, type and sort; the search box keeps its focus and caret across the redraw.
@@ -5568,20 +5585,25 @@ async function renderInventory() {
   const all = await DB.all(`SELECT * FROM inventory_items WHERE name LIKE ?1 OR category LIKE ?1 OR supplier LIKE ?1
     ORDER BY (qty <= min_qty) DESC, category COLLATE NOCASE, name COLLATE NOCASE`, [like]);
   if ($('#inv-list') !== el) return;
-  const rows = all.filter(r => r.active), off = all.filter(r => !r.active);
+  /* Folders as stock sections: one item can be in several (a needles sheet, a cartridges sheet...). */
+  const act = all.filter(r => r.active), off = all.filter(r => !r.active);
+  Lib.st('inventory').sort = ''; const tagged = act.map(r => ({ ...r, sub: '' })), rows = Lib.apply('inventory', tagged);
+  Lib.wire(el, 'inventory', renderInventory); el.onclick = (e) => { if (e.target.closest('.lib-tools')) e.preventDefault(); Lib.click(e, 'inventory', renderInventory); };
+  const bar = act.length ? Lib.bar('inventory', tagged, { search: false, sort: false }) : '';
   const low = rows.filter(r => r.qty <= r.min_qty);
-  if (!rows.length && !off.length) {
+  if (act.length && !rows.length) el.innerHTML = bar + Lib.empty;
+  else if (!rows.length && !off.length) {
     el.innerHTML = INV.q ? '<div class="empty muted">No matches.</div>'
       : `<div class="empty"><div class="empty-ico">${ICON.stock}</div><div style="font:24px var(--display)">Nothing stocked yet</div><div class="muted">Tap + to add needles, ink, gloves…</div></div>`;
   } else {
     const row = (i) => `<a class="c-row inv-row ${i.qty <= i.min_qty ? 'low' : ''}" href="#inv-edit/${i.id}">
       <span class="c-main"><span class="c-n">${esc(i.name)}</span>
         <span class="muted c-sub">${esc([i.category, i.supplier].filter(Boolean).join(' · ') || ' ')}</span></span>
-      <span class="stepper">
+      ${Lib.tools('inventory', i.id).replace('class="lib-tools"', 'class="lib-tools rule-lib"')}<span class="stepper">
         <button class="mini" data-step="-1" data-id="${i.id}" aria-label="Less">−</button>
         <b>${fmtQty(i.qty)}<small>${esc(i.unit || '')}</small></b>
         <button class="mini" data-step="1" data-id="${i.id}" aria-label="More">+</button></span></a>`;
-    el.innerHTML = (low.length ? `<div class="letter" style="color:var(--red)">Running low (${low.length})</div><div class="card list">${low.map(row).join('')}</div>` : '')
+    el.innerHTML = bar + (low.length ? `<div class="letter" style="color:var(--red)">Running low (${low.length})</div><div class="card list">${low.map(row).join('')}</div>` : '')
       + (rows.length > low.length ? `<div class="letter">In stock</div><div class="card list">${rows.filter(r => r.qty > r.min_qty).map(row).join('')}</div>` : '')
       + (off.length && INV.showOff ? `<div class="letter">Inactive (${off.length})</div><div class="card list inv-off">${off.map(i => `<a class="c-row" href="#inv-edit/${i.id}">
           <span class="c-main"><span class="c-n">${esc(i.name)}</span><span class="muted c-sub">${esc([i.category, 'not counted'].filter(Boolean).join(' · '))}</span></span>
@@ -5603,13 +5625,17 @@ async function renderInventory() {
 async function openStockPrint() {
   const cats = await DB.all(`SELECT coalesce(category, 'Uncategorised') AS c, COUNT(*) AS n FROM inventory_items WHERE active = 1 GROUP BY 1 ORDER BY 1 COLLATE NOCASE`);
   if (!cats.length) return toast('No active stock items yet.');
-  const st = { mode: 'stock', cats: new Set(cats.map(x => x.c)), low: false, cost: true, supplier: true, expected: true };
+  const st = { mode: 'stock', cats: new Set(cats.map(x => x.c)), low: false, cost: true, supplier: true, expected: true, fold: null };
+  /* Folders: print one stock section (or several). An item in more than one picked folder is still printed once. */
+  const lo = Lib.org('inventory'), inF = (r) => !st.fold || Lib.fl(lo.in[r.id]).some(f => st.fold.has(f));
+  const act = await DB.all(`SELECT id, coalesce(category, 'Uncategorised') AS c FROM inventory_items WHERE active = 1`);
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const draw = () => {
-    const n = cats.filter(x => st.cats.has(x.c)).reduce((t, x) => t + x.n, 0);
+    const n = act.filter(r => st.cats.has(r.c) && inF(r)).length;
     o.innerHTML = `<div class="card"><h2>Print stock</h2>
       <div class="seg" style="margin-bottom:12px">${[['blank', 'Blank count sheet'], ['stock', 'Current stock']].map(([k, l]) => `<button data-sm="${k}" class="${st.mode === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
       <p class="muted" style="font-size:12px;margin:-4px 0 10px">${st.mode === 'blank' ? 'Product list with empty Counted boxes, to fill in by hand during a stock take.' : 'What you have now, with a summary at the top. Print or export to a spreadsheet.'}</p>
+      ${lo.folders.length ? `<div class="lbl">Folders</div><div class="qz-chips"><button class="chip qz-chip ${st.fold ? '' : 'on'}" data-sf="">${st.fold ? '' : '✓ '}All stock</button>${lo.folders.map(f => `<button class="chip qz-chip ${st.fold?.has(f) ? 'on' : ''}" data-sf="${esc(f)}">${st.fold?.has(f) ? '✓ ' : ''}${esc(f)} <span>${act.filter(r => Lib.fl(lo.in[r.id]).includes(f)).length}</span></button>`).join('')}</div>` : ''}
       <div class="lbl">Categories</div>
       <div class="qz-chips">${cats.map(x => `<button class="chip qz-chip ${st.cats.has(x.c) ? 'on' : ''}" data-sc="${esc(x.c)}">${st.cats.has(x.c) ? '✓ ' : ''}${esc(x.c)} <span>${x.n}</span></button>`).join('')}</div>
       <div class="row" style="gap:14px;margin:4px 0 12px;flex-wrap:wrap">
@@ -5624,10 +5650,11 @@ async function openStockPrint() {
   };
   document.body.appendChild(o); draw();
   const rows = async () => (await DB.all(`SELECT *, coalesce(category, 'Uncategorised') AS cat FROM inventory_items WHERE active = 1 ORDER BY cat COLLATE NOCASE, name COLLATE NOCASE`))
-    .filter(r => st.cats.has(r.cat) && (!st.low || st.mode === 'blank' || r.qty <= r.min_qty));
+    .filter(r => st.cats.has(r.cat) && inF(r) && (!st.low || st.mode === 'blank' || r.qty <= r.min_qty));
   o.addEventListener('change', (e) => { const k = { 'sp-low': 'low', 'sp-cost': 'cost', 'sp-sup': 'supplier', 'sp-exp': 'expected' }[e.target.id]; if (k) st[k] = e.target.checked; });
   o.addEventListener('click', async (e) => {
-    const t = e.target, m = t.closest('[data-sm]'), c = t.closest('[data-sc]');
+    const t = e.target, m = t.closest('[data-sm]'), c = t.closest('[data-sc]'), sf = t.closest('[data-sf]');
+    if (sf) { const v = sf.dataset.sf; if (!v) st.fold = null; else { st.fold ??= new Set(); if (st.fold.has(v)) st.fold.delete(v); else st.fold.add(v); if (!st.fold.size) st.fold = null; } return draw(); }
     if (m) { st.mode = m.dataset.sm; return draw(); }
     if (c) { st.cats.has(c.dataset.sc) ? st.cats.delete(c.dataset.sc) : st.cats.add(c.dataset.sc); return draw(); }
     if (t.closest('#sp-close')) return o.remove();
