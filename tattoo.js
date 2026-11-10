@@ -233,105 +233,10 @@ const fSpots = (g) => { ttCirc(g, 77, 50, 5); ttCirc(g, 96, 41, 6); ttCirc(g, 10
 const fAnchor = (g) => { ttCirc(g, 90, 28, 7); g.moveTo(90, 35); g.lineTo(90, 104); g.moveTo(72, 46); g.lineTo(108, 46);
   g.moveTo(60, 82); g.quadraticCurveTo(66, 108, 90, 106); g.quadraticCurveTo(114, 108, 120, 82); g.moveTo(54, 89); g.lineTo(60, 80); g.lineTo(66, 89); g.moveTo(114, 89); g.lineTo(120, 80); g.lineTo(126, 89); };
 
-const TT_CH = [
-  // ---- lining ----
-  { id: 'straight', cat: 'line', diff: 1, title: 'Straight lines', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
-    text: 'Black ink, 3RL. Line the three stencil lines: one steady pull each, solid and even, without going back over them.',
-    path: (g) => { for (const y of [35, 65, 95]) { g.moveTo(30, y); g.lineTo(150, y); } } },
-  { id: 'curves', cat: 'line', diff: 2, title: 'Curves and a circle', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
-    text: 'Black ink, 3RL. Follow the S-curve and the circle, keeping the line the same weight all the way round.',
-    path: (g) => { g.moveTo(22, 100); g.bezierCurveTo(40, 20, 70, 110, 90, 30); g.moveTo(152, 65); g.arc(128, 65, 24, 0, Math.PI * 2); } },
-  { id: 'bold', cat: 'line', diff: 2, title: 'Bold line', needle: '9RL', layer: 'line', ink: 'black', kind: 'line', core: 1.1,
-    text: 'Black ink, 9RL. Pull the bold arc solid in one pass, no gaps and no wobble.',
-    path: (g) => { g.moveTo(30, 95); g.quadraticCurveTo(90, 10, 150, 95); } },
-  { id: 'zigzag', cat: 'line', diff: 2, title: 'Sharp corners', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
-    text: 'Black ink, 3RL. Line the zigzag with crisp points: stop, turn and pull again at each corner, without rounding them off or doubling back.',
-    path: (g) => { g.moveTo(26, 90); for (let i = 1; i <= 8; i++) g.lineTo(26 + i * 16, i % 2 ? 40 : 90); } },
-  { id: 'fine', cat: 'line', diff: 3, title: 'Fine line', needle: '1RL', layer: 'line', ink: 'black', kind: 'line', core: 0.25,
-    text: 'Black ink, 1RL. Three fine, gentle curves close together: light and steady, so they stay crisp and never touch.',
-    path: (g) => { for (const y of [52, 66, 80]) { g.moveTo(30, y); g.quadraticCurveTo(90, y - 18, 150, y); } } },
-  { id: 'spiral', cat: 'line', diff: 3, title: 'Spiral', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.45,
-    text: 'Black ink, 3RL. Follow the spiral from the middle out in one continuous line, turning the skin (two fingers) as you go if it helps.',
-    path: (g) => { for (let i = 0; i <= 360; i++) { const a = i / 360 * Math.PI * 6, r = 3 + i / 360 * 50; i ? g.lineTo(90 + r * Math.cos(a), 65 + r * Math.sin(a) * 0.95) : g.moveTo(90 + r, 65); } } },
-  { id: 'loops', cat: 'line', diff: 3, title: 'Script loops', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.55,
-    text: 'Black ink, 5RL. Run the loops like joined-up script: an even line through every loop and turn.',
-    path: (g) => { for (let i = 0; i <= 600; i++) { const t = i / 600 * Math.PI * 12, x = 28 + t * 3.1 - 7 * Math.sin(t), y = 70 - 15 * Math.cos(t); i ? g.lineTo(x, y) : g.moveTo(x, y); } } },
-  // ---- shading ----
-  { id: 'whip', cat: 'shade', diff: 1, title: 'Whip shading', needle: '7RS', layer: 'shadow', ink: 'black', kind: 'grad', box: [55, 56, 70, 18], prof: (f) => Math.pow(1 - f, 1.4),
-    text: 'Black ink, 7RS. Whip shade the box to match the example: dark at the left, fading out to clean skin on the right.' },
-  { id: 'whipr', cat: 'shade', diff: 1, title: 'Whip from the right', needle: '7RS', layer: 'shadow', ink: 'black', kind: 'grad', box: [55, 56, 70, 18], prof: (f) => Math.pow(f, 1.4),
-    text: 'Black ink, 7RS. The other way round: dark at the right, whipping out to clean skin on the left.' },
-  { id: 'smooth', cat: 'shade', diff: 2, title: 'Smooth gradient', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'grad', box: [45, 56, 90, 18], prof: (f) => Math.pow(Math.sin(Math.PI * f), 1.2),
-    text: 'Black ink, 15CM. Pendulum shade the box: soft at both ends, darkest through the middle, with no hard edges.' },
-  { id: 'wash', cat: 'shade', diff: 2, title: 'Grey wash blend', needle: '15CM', layer: 'shadow', ink: 'wash', wash: true, kind: 'grad', box: [45, 55, 90, 20], dk: 0.45, prof: (f) => Math.pow(1 - f, 1.1),
-    text: 'Grey wash, 15CM. Blend from dark on the left to clean skin on the right with the washes: dark wash at the left, mid through the middle, light to fade it out. Smooth, no steps between the tones.' },
-  { id: 'longfade', cat: 'shade', diff: 3, title: 'Long fade', needle: '15CM', layer: 'shadow', ink: 'black', kind: 'grad', box: [25, 57, 130, 16], prof: (f) => 1 - f,
-    text: 'Black ink, 15CM. One long, even fade across the whole box: as smooth at the far end as at the start.' },
-  { id: 'steps', cat: 'shade', diff: 3, title: 'Three clean tones', needle: '15M1', layer: 'shadow', ink: 'wash', wash: true, kind: 'grad', box: [45, 55, 90, 20], dk: 0.45, prof: (f) => f < 1 / 3 ? 1 : f < 2 / 3 ? 0.5 : 0.22,
-    text: 'Grey wash, 15M1. Three flat tones in equal thirds, dark to light, each one even with a crisp edge between them (not a blend).' },
-  // ---- packing ----
-  { id: 'pack', cat: 'pack', diff: 1, title: 'Solid black', needle: '15M1', layer: 'shadow', ink: 'black', kind: 'pack', box: [75, 50, 30, 30],
-    text: 'Black ink, 15M1. Pack the box solid and even, edge to edge, with your usual technique. Watch the skin: solid, not chewed.' },
-  { id: 'bigpack', cat: 'pack', diff: 3, title: 'Big black pack', needle: '15M1', layer: 'shadow', ink: 'black', kind: 'pack', box: [55, 40, 70, 50],
-    text: 'Black ink, 15M1. A big area to pack solid: work in sections, overlap your passes, and keep the skin from chewing up.' },
-  { id: 'colour', cat: 'pack', diff: 1, title: 'Colour packing', needle: '11M1', layer: 'mid', ink: 'red', kind: 'fill', col: RED, crop: [66, 41, 48, 48], shape: (g) => { g.arc(90, 65, 16, 0, Math.PI * 2); },
-    text: 'Red ink, 11M1. Pack the circle with solid red, right up to the line and no further.' },
-  { id: 'bluesq', cat: 'pack', diff: 1, title: 'Blue square', needle: '11M1', layer: 'mid', ink: 'blue', kind: 'fill', col: BLU, crop: [67, 42, 46, 46], shape: (g) => g.rect(75, 50, 30, 30),
-    text: 'Blue ink, 11M1. Pack the square solid blue, keeping the corners sharp and the edges clean.' },
-  { id: 'greentri', cat: 'pack', diff: 2, title: 'Green triangle', needle: '9M1', layer: 'mid', ink: 'green', kind: 'fill', col: GRN, crop: [56, 32, 68, 64], shape: (g) => ttPoly(g, [[90, 40], [116, 88], [64, 88]]),
-    text: 'Green ink, 9M1. Pack the triangle right into its points without going over the edges.' },
-  { id: 'yelstar', cat: 'pack', diff: 3, title: 'Yellow star', needle: '7M1', layer: 'mid', ink: 'yellow', kind: 'fill', col: YEL, crop: [60, 36, 60, 60], shape: (g) => ttStar(g, 90, 67, 26, 11),
-    text: 'Yellow ink, 7M1. Pack the star solid, all the way into each of its five points: small needle, small passes.' },
-  // ---- colour ----
-  { id: 'mix', cat: 'colour', diff: 2, title: 'Mix a colour', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: MIX, crop: [70, 45, 40, 40], shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
-    text: 'Mix the colour in the example from the red and yellow caps (dip in one, then the other: the longer the dip, the more of it), then pack the square with it.' },
-  { id: 'mixgreen', cat: 'colour', diff: 2, title: 'Mix a green', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: ttToHex(ttMix(ttHex(BLU), ttHex(YEL), 0.5)), crop: [70, 45, 40, 40], shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
-    text: 'Mix the green in the example from the blue and yellow caps, then pack the square with it.' },
-  { id: 'mixpurple', cat: 'colour', diff: 3, title: 'Mix a purple', needle: '11M1', layer: 'mid', ink: 'mix', kind: 'fill', col: ttToHex(ttMix(ttHex(RED), ttHex(BLU), 0.5)), crop: [70, 45, 40, 40], shape: (g) => { g.rect(78, 53, 24, 24); }, colW: 0.75,
-    text: 'Mix the purple in the example from the red and blue caps (it takes a careful balance), then pack the square with it.' },
-  { id: 'blend', cat: 'colour', diff: 2, title: 'Colour blend', needle: '15CM', layer: 'mid', ink: 'red, yellow', kind: 'blend', box: [45, 55, 90, 20], from: RED, to: YEL,
-    text: 'Red feathered into yellow, like the example: solid red on the left, feather it out, then saturate yellow into the feathered part and across to the right.' },
-  { id: 'blendby', cat: 'colour', diff: 3, title: 'Blue into yellow', needle: '15CM', layer: 'mid', ink: 'blue, yellow', kind: 'blend', box: [45, 55, 90, 20], from: BLU, to: YEL,
-    text: 'Blue feathered into yellow: solid blue on the left, feathered out, with yellow saturated through it to the right. The middle should turn green, not muddy.' },
-  // ---- flash: whole pictures ----
-  { id: 'fbolt', cat: 'final', hub: 'flash', diff: 1, title: 'Flash: lightning bolt', needle: '3RL', layer: 'line', ink: 'black, yellow', kind: 'piece', crop: [58, 14, 66, 102],
-    lines: fBolt, regions: [{ shape: fBolt, col: YEL }],
-    text: 'Line the bolt in black, then pack it solid yellow up to the line.' },
-  { id: 'fanchor', cat: 'line', hub: 'flash', diff: 2, title: 'Flash: anchor (lines)', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6,
-    path: fAnchor, text: 'Black ink, 5RL. Line the whole anchor: ring, shank, stock, arms and points, with clean joins.' },
-  { id: 'fstar', cat: 'final', hub: 'flash', diff: 2, title: 'Flash: shaded star', needle: '3RL', layer: 'line', ink: 'black, yellow, white', kind: 'piece', crop: [48, 26, 84, 82],
-    lines: fStar, regions: [{ shape: fStar, col: YEL }], hi: [(g) => ttEll(g, 82, 56, 4, 2.4, -0.5)], shade: { in: fStar, light: [80, 44, 20, 14], dark: [72, 80, 36, 10] },
-    text: 'Line the star, pack it yellow, shade the lower points darker with black, and put a white highlight up near the top.' },
-  { id: 'fgem', cat: 'final', hub: 'flash', diff: 2, title: 'Flash: gem', needle: '3RL', layer: 'line', ink: 'black, blue, white', kind: 'piece', crop: [52, 24, 76, 84],
-    lines: (g) => { fGem(g); fGemFacets(g); }, regions: [{ shape: fGem, col: BLU }], hi: [(g) => ttPoly(g, [[76, 36], [84, 36], [78, 46]])], shade: { in: fGem, light: [66, 38, 12, 8], dark: [94, 62, 10, 18] },
-    text: 'Line the gem and its facets, pack it blue, shade the lower right side darker, and put a white glint in the top left facet.' },
-  { id: 'fcherry', cat: 'final', hub: 'flash', diff: 2, title: 'Flash: cherries', needle: '3RL', layer: 'line', ink: 'black, red, green, white', kind: 'piece', crop: [52, 24, 76, 82],
-    lines: (g) => { fCherries(g); fStems(g); fLeaf(g); }, regions: [{ shape: fCherries, col: RED }, { shape: fLeaf, col: GRN }], hi: [(g) => { ttEll(g, 67, 81, 3, 1.8, -0.6); ttEll(g, 99, 83, 3, 1.8, -0.6); }],
-    text: 'Line the cherries, stems and leaf, pack the cherries red and the leaf green, and give each cherry a small white shine.' },
-  { id: 'fflower', cat: 'final', hub: 'flash', diff: 2, title: 'Flash: flower', needle: '3RL', layer: 'line', ink: 'black, red, yellow', kind: 'piece', crop: [52, 26, 76, 78],
-    lines: (g) => { fPetals(g); fCentre(g); }, regions: [{ shape: fPetals, col: RED }, { shape: fCentre, col: YEL }],
-    text: 'Line the five petals and the centre, pack the petals red and the centre yellow.' },
-  { id: 'fdagger', cat: 'final', hub: 'flash', diff: 3, title: 'Flash: dagger', needle: '3RL', layer: 'line', ink: 'black, grey, red, yellow', kind: 'piece', crop: [52, 12, 76, 112],
-    lines: (g) => { fBlade(g); g.moveTo(90, 22); g.lineTo(90, 78); fGuard(g); fHandle(g); fPommel(g); },
-    regions: [{ shape: fBlade, col: GRY }, { shape: fGuard, col: YEL }, { shape: fHandle, col: RED }, { shape: fPommel, col: YEL }], shade: { in: fBlade, light: [83, 34, 5, 40], dark: [92, 34, 5, 40] },
-    text: 'Line the dagger (and the ridge down the blade), pack the blade grey with its right side shaded darker, the guard and pommel yellow and the handle red.' },
-  { id: 'fmush', cat: 'final', hub: 'flash', diff: 3, title: 'Flash: mushroom', needle: '3RL', layer: 'line', ink: 'black, red, brown, white', kind: 'piece', crop: [48, 22, 84, 90],
-    lines: (g) => { fCap(g); fStem(g); fSpots(g); }, regions: [{ shape: fCap, col: RED }, { shape: fStem, col: BRN }], hi: [fSpots],
-    text: 'Line the cap, stem and spots, pack the cap red and the stem brown, and fill the spots solid white.' },
-  { id: 'final', cat: 'final', hub: 'flash', diff: 3, title: 'Final piece: traditional heart', needle: '3RL', layer: 'line', ink: 'all', kind: 'piece', crop: [34, 20, 112, 88],
-    lines: (g) => { heart(g); banner(g); shine(g); }, regions: [{ shape: heart, col: RED, tol: 2.2 }, { shape: banner, col: YEL }], hi: [shine], shade: { in: heart, light: [40, 20, 42, 38], dark: [98, 58, 50, 50] },
-    text: 'Tattoo the heart like the reference: line it (black), shade the lower right of the heart (black), pack the heart red and the banner yellow, and put a white highlight in the shine. Use any needles and layers you like.' }
-];
-/* Grey wash flash: every colour flash piece again in black and grey, for any skin (and the only way to do them on
-   skin that takes no colour). Each colour becomes a wash tone by how dark it reads; highlights are left as bare skin.
-   Scored on the tones (how dark each part is), the line and the shading, not on colour. */
-TT_CH.push(...TT_CH.filter(c => c.hub === 'flash' && c.kind === 'piece').map(c => ({ ...c, id: 'g' + c.id, title: 'Grey wash: ' + c.title.replace(/^(Flash|Final piece): /, ''),
-  ink: 'wash', wash: true, bare: true,
-  regions: c.regions.map(r => { const v = ttHex(r.col), tone = Math.max(0.15, Math.min(0.65, (1 - (v[0] * 0.3 + v[1] * 0.59 + v[2] * 0.11)) * 0.8)), g = 1 - tone * 0.92;
-    return { shape: r.shape, tone, col: ttToHex([g, g, g]) }; }),
-  text: 'Line it in black, then build it up in grey wash like the example: each part its own tone, blended smooth, ' + (c.shade ? 'darker where it\u2019s shaded, ' : '') + (c.hi ? 'with the highlights left as bare skin. ' : '') + 'Use the grey wash set, or dilute black in the dilute cup.' })));
-const TT_EXAM = ['straight', 'curves', 'bold', 'whip', 'smooth', 'pack', 'wash', 'colour', 'mix', 'blend', 'final'];
-const TT_HUB = [['line', 'Lining'], ['shade', 'Shading'], ['pack', 'Packing'], ['colour', 'Colour'], ['flash', 'Flash']];
+/* The challenges are the lessons' tasks for now, played on their own for medals and personal bests (filled in
+   below, once the lesson tasks exist). The Challenge maker in the design studio will add more. */
+const TT_CH = [];
+const TT_HUB = [['c1', 'Chapter 1: Lining'], ['c2', 'Chapter 2: Packing and shading']];
 const ttHubOf = (c) => c.hub || c.cat;
 // A stencil picture recoloured to the transfer purple the challenges use: the darker the line, the stronger.
 function ttPurple(g, w, h) { const im = g.getImageData(0, 0, w, h), d = im.data;
@@ -379,24 +284,13 @@ const ttMedal = (s) => s == null ? null : TT_MEDALS.find(([m]) => s >= m) || nul
 const ttHubCh = (sec) => TT_CH.filter(c => ttHubOf(c) === sec);
 const ttBest = (a, id) => a.pb[id]?.best ?? -1;
 const TT_TROPHIES = [
-  { id: 'first', tier: 'bronze', name: 'First ink', desc: 'Finish any challenge.', test: (a) => Object.keys(a.pb).length >= 1 },
-  { id: 'ten', tier: 'silver', name: 'Getting serious', desc: 'Finish 10 different challenges.', test: (a) => Object.keys(a.pb).length >= 10 },
-  { id: 'all', tier: 'gold', name: 'Completionist', desc: 'Finish every challenge.', test: (a) => TT_CH.every(c => a.pb[c.id]) },
-  { id: 'medals', tier: 'bronze', name: 'On the podium', desc: 'Win a medal in every section.', test: (a) => TT_HUB.every(([k]) => ttHubCh(k).some(c => ttBest(a, c.id) >= 60)) },
-  { id: 'gold5', tier: 'silver', name: 'Golden hands', desc: 'Win 5 gold medals.', test: (a) => TT_CH.filter(c => ttBest(a, c.id) >= 90).length >= 5 },
-  { id: 'gold15', tier: 'gold', name: 'Gold rush', desc: 'Win 15 gold medals.', test: (a) => TT_CH.filter(c => ttBest(a, c.id) >= 90).length >= 15 },
-  ...TT_HUB.map(([k, n]) => ({ id: 'm-' + k, tier: 'gold', name: { line: 'Line master', shade: 'Shade master', pack: 'Packing master', colour: 'Colourist', flash: 'Flash master' }[k], desc: `Gold on every ${n.toLowerCase()} challenge.`, test: (a) => ttHubCh(k).every(c => ttBest(a, c.id) >= 90) })),
-  { id: 'flash', tier: 'silver', name: 'Flash collector', desc: 'Finish every flash piece.', test: (a) => ttHubCh('flash').every(c => a.pb[c.id]) },
-  { id: 'hard', tier: 'gold', name: 'Hard mode', desc: 'Silver or better on every three-star challenge.', test: (a) => TT_CH.filter(c => c.diff === 3).every(c => ttBest(a, c.id) >= 75) },
-  { id: 'perfect', tier: 'gold', name: 'Flawless', desc: 'Score 95 or more on any challenge.', test: (a) => TT_CH.some(c => ttBest(a, c.id) >= 95) },
-  { id: 'clean', tier: 'silver', name: 'Gentle hands', desc: 'A medal on a flash piece with the skin at 95% or better and no blowouts.', test: (a) => a.log.some(l => ttHubOf(TT_CH.find(c => c.id === l.id) || {}) === 'flash' && l.s >= 60 && l.skin >= 95 && !l.blow) },
-  { id: 'improve', tier: 'bronze', name: 'Practice pays', desc: 'Beat a personal best by 15 points or more.', test: (a) => a.log.some((l, i) => { const prev = a.log.slice(0, i).filter(x => x.id === l.id); return prev.length && l.s - Math.max(...prev.map(x => x.s)) >= 15; }) },
-  { id: 'days', tier: 'silver', name: 'Dedicated', desc: 'Practise on 5 different days.', test: (a) => new Set(a.log.map(l => new Date(l.t).toDateString())).size >= 5 },
-  { id: 'exam', tier: 'silver', name: 'Graduate', desc: 'Finish the apprentice exam.', test: (a) => a.exam.length > 0 },
-  { id: 'examA', tier: 'gold', name: 'Top of the class', desc: 'Grade A in the apprentice exam.', test: (a) => a.exam.some(e => e.grade === 'A') }
+  { id: 'first', tier: 'bronze', name: 'First ink', desc: 'Finish any challenge.', test: (a) => TT_CH.some(c => a.pb[c.id]) },
+  { id: 'medal', tier: 'bronze', name: 'On the podium', desc: 'Win a medal on any challenge.', test: (a) => TT_CH.some(c => ttBest(a, c.id) >= 60) },
+  ...TT_HUB.map(([k, n]) => ({ id: 'm-' + k, tier: 'silver', name: k === 'c1' ? 'Line master' : 'Pack and shade master', desc: `Gold on every ${n.replace(/^.*: /, '').toLowerCase()} challenge.`, test: (a) => ttHubCh(k).every(c => ttBest(a, c.id) >= 90) })),
+  { id: 'all', tier: 'gold', name: 'Completionist', desc: 'Gold on every challenge.', test: (a) => TT_CH.every(c => ttBest(a, c.id) >= 90) }
 ];
 TT.aw = {
-  get() { let a = {}; try { a = JSON.parse(Settings.get('tt_awards', '{}')); } catch {} return { pb: {}, log: [], trophies: {}, exam: [], ...a }; },
+  get() { let a = {}; try { a = JSON.parse(Settings.get('tt_awards', '{}')); } catch {} const r = { pb: {}, log: [], trophies: {}, exam: [], ...a }; for (const k of Object.keys(r.trophies)) if (!TT_TROPHIES.some(t => t.id === k)) delete r.trophies[k]; return r; },   /* retired trophies drop out */
   put(a) { Settings.set('tt_awards', JSON.stringify(a)); },
   check(a) { const got = []; for (const t of TT_TROPHIES) if (!a.trophies[t.id] && t.test(a)) { a.trophies[t.id] = Date.now(); got.push(t); } return got; },
   // A finished challenge: returns the earlier best (null the first time), the best now and any trophies just won.
@@ -420,8 +314,6 @@ const ttNoColour = (i = ttChSkin()) => i >= 4;
 const ttIsColour = (T) => !/^(black|wash)$/.test(T.ink || 'black');   // grey wash flash counts as black and grey
 const TT_SKIN_NOTE = ['', '', '', 'Hardest for colour: colour inks take less', 'Black and grey only: no colour on this skin', 'Black and grey only: no colour on this skin'];
 // The exam on skin that takes no colour: the colour challenges swapped for black and grey ones.
-const TT_EXAM_BG = { colour: 'bigpack', mix: 'steps', blend: 'longfade', final: 'gfinal' };
-const ttExamList = (i = ttChSkin()) => ttNoColour(i) ? TT_EXAM.map(id => TT_EXAM_BG[id] || id) : null;
 
 // Starts (or restarts) a challenge on its own piece of skin; each challenge keeps one piece.
 async function ttChStart(id) {
@@ -448,7 +340,7 @@ TT.hub = async (el) => {
       <div class="tt-hubsum"><span><b>${done}</b> / ${TT_CH.length} done</span><span>${ttMedalIco(TT_MEDALS[0], 18)}<b>${golds}</b> gold</span><span>${ttCup('gold', 18)}<b>${cups}</b> / ${TT_TROPHIES.length} trophies</span></div>
       <span style="flex:1"></span><button class="btn" id="tt-sheet">Results sheet</button>${done || a.exam.length ? '<button class="btn" id="tt-chreset" data-tip="Clear challenge scores or exam results">Reset…</button>' : ''}</div>
     ${(() => { let L0 = null; try { L0 = JSON.parse(Settings.get('tt_chlast', 'null')); } catch {} return L0 ? `<button class="tt-lsrow" style="width:100%;margin-bottom:12px" data-chlast><span class="tt-lsno">${L0.total}</span><span class="tt-lsmeta"><b>Open last challenge</b><span class="muted">${esc(ttShort(L0.title))} · ${new Date(L0.when).toLocaleString()}</span></span></button>` : ''; })()}
-    <div class="tt-chskin"><span class="lbl" style="margin:0">Skin for challenges and the exam</span>
+    <div class="tt-chskin"><span class="lbl" style="margin:0">Skin for challenges</span>
       <div class="tt-skins" style="margin:0">${TT_SKINS.map(([n, c], i) => `<button data-chskin="${i}" class="${i === si ? 'on' : ''}" style="background:${c}" data-tip="${n}${TT_SKIN_NOTE[i] ? ': ' + TT_SKIN_NOTE[i] : ''}" aria-label="${n}"></button>`).join('')}</div>
       <span class="muted" style="font-size:12px">${TT_SKINS[si][0]}${TT_SKIN_NOTE[si] ? ' · ' + TT_SKIN_NOTE[si] : ''}</span></div>
     <div class="letter">Trophy cabinet</div>
@@ -654,6 +546,9 @@ TT_LS_CH.push({ id: 'l-pack', lesson: '2-1', cat: 'pack', diff: 2, title: 'Solid
 TT_LS_CH.push({ id: 'l-orange', lesson: '2-2', cat: 'pack', diff: 2, title: 'Orange circle', needle: '7RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [84, 54, 12, 12], circle: [90, 60, 6], needles: ['7RL', '7M1'], packNeedle: '7M1', liner: '7RL', maxStrokes: 4, strokeNeedle: '7RL', mixOf: ['#b3261e', '#f2c21b'],
   path: (g) => { g.moveTo(96, 60); g.arc(90, 60, 6, 0, Math.PI * 2); },
   text: 'Line the circle in black with the 7RL in no more than 4 strokes. Then change to the 7M magnum, mix orange from the red and yellow caps, and pack it solid with tight ovals. It has to heal solid. Let it settle, then press Done.' });
+// Each lesson task again as a challenge: same stencil, needles and judging, without the unlock wording.
+TT_CH.push(...[...TT_LS_CH].sort((x, y) => x.lesson.localeCompare(y.lesson)).map(c => ({ ...c, id: 'ch-' + c.id.slice(2), lesson: undefined, hub: 'c' + c.lesson[0], diff: +c.lesson[0],
+  text: c.text.replace(/\s*(Grade )?C or higher (unlocks the next lesson|moves you on|finishes the chapter)\./g, '') })));
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
 const TT_BLOW_SEVERE = 7, TT_BLOW_JOKES = ['Did you nod off with your foot on the pedal?', 'That is not shading. That is a bruise with ambition.', 'Your mentor felt that from across town.', 'Somewhere, a client just googled laser removal.', 'The ink has left the building. So has my faith in you.', 'Chores. So many chores.', 'Fat layer says hi. Nobody invited it.'];
@@ -946,8 +841,7 @@ TT.list = async (el) => {
   const all = rows.map((r, i) => ({ ...r, url: urls[i], kind: r.exam ? 'Exam' : r.cheat ? 'Cheat mode' : 'Piece', t: r.updated_at })), shown = Lib.apply('tattoo', all), redraw = () => TT.list(el);
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Experimental: draw with needle groupings in ink on skin. Works best with a pressure pen (like an S Pen).</p>
       <button class="btn" id="tt-less" data-go="tattoo/lessons" data-tip="Step-by-step lessons with tips and techniques; each one unlocks the next">Lessons</button>
-      <button class="btn" id="tt-chal" data-go="tattoo/challenges" data-tip="Single challenges in every style and flash pieces to tattoo: medals, personal bests and trophies">Challenges</button>
-      <button class="btn" id="tt-exam" data-tip="A set of challenges, from lines to a finished piece, with a report card">Apprentice exam</button>
+      <button class="btn" id="tt-chal" data-go="tattoo/challenges" data-tip="Each lesson as a challenge of its own: medals, personal bests and trophies">Challenges</button>
       <button class="btn primary" id="tt-new">+ New piece</button></div>
     ${rows.length ? Lib.bar('tattoo', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('tattoo', r.id)}<div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
       <div class="dz-meta"><b>${esc(r.name || 'Piece')}</b><span class="muted">${r.exam ? (r.exam === 2 ? 'Exam · finished' : 'Exam · in progress') : `${+r.w_cm} × ${+r.h_cm} cm`}${r.cheat ? ' <span class="tt-cheat" style="display:inline-block;margin-left:4px">Cheat</span>' : ''}</span></div>
@@ -955,14 +849,6 @@ TT.list = async (el) => {
       : `<div class="empty"><div class="empty-ico">${ICON.needle}</div><div style="font:24px var(--display)">Tattoo simulator</div>
         <div class="muted">Pick a page size and skin tone, load a stencil to trace, dip into the ink caps and tattoo in layers: linework, shadow, mid and light tones, highlights.</div></div>`}`;
   $('#tt-new').onclick = () => ttNewDlg();
-  $('#tt-exam').onclick = async () => {   // carry on with an unfinished exam, or start one
-    const open = rows.find(r => r.exam === 1);
-    if (open) { location.hash = 'tattoo/' + open.id; return; }
-    const si = ttChSkin(), list = ttExamList(si);
-    if (!await ask(`Start the apprentice exam on ${TT_SKINS[si][0].toLowerCase()} skin?\n\n11 challenges, from straight lines to ${list ? 'a heart in grey wash (this skin takes no colour)' : 'a finished heart'}. Each loads its stencil, an example to follow and the needle to use; you can stop at any point and carry on later. You get a report card at the end.\n\nThe skin is chosen in Challenges.`)) return;
-    await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Apprentice exam', 18, 13, TT_SKINS[si][1], JSON.stringify({ exam: { v: 1, i: 0, res: [], started: Date.now(), ...(list ? { list } : {}) } })]);
-    location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
-  };
   Lib.wire(el, 'tattoo', redraw);
   el.onclick = async (e) => {
     if (await Lib.click(e, 'tattoo', redraw)) return;
@@ -3437,7 +3323,7 @@ TT.open = async (el, id) => {
      piece of its own: leaving saves it, and opening it carries on where it stopped. */
   const Mm = (g, f) => { g.save(); g.scale(mm, mm); g.beginPath(); f(g); g.restore(); };
   // This run's challenges: the exam's, or the one challenge played from the hub.
-  const exList = () => (EX?.list || TT_EXAM).map(id => TT_CH.find(c => c.id === id) || TT_LS_CH.find(c => c.id === id)).filter(Boolean);
+  const exList = () => (EX?.list || []).map(id => TT_CH.find(c => c.id === id) || TT_LS_CH.find(c => c.id === id)).filter(Boolean);
   const exGen = (name) => { const T = TT_CH.find(c => c.id === name); return T ? ttExGen(T, st.skin) : ''; };
   const exCrop = ttCrop;
   const exStencil = (T) => {
