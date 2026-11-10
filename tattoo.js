@@ -1621,6 +1621,17 @@ TT.open = async (el, id) => {
     drawCur(); }
   /* Grids: square, isometric, one, two and three point perspective (vanishing points draggable), and radial. In
      perspective the lines fan out from each vanishing point across the page, closer together as the grid size drops. */
+  /* Icons for the cheat menus' choices (shapes, grids, symmetry, alignment), each with its name under it. */
+  const TT_IC = { line: '<path d="M5 19L19 5"/>', rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>', ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="6"/>', tri: '<path d="M12 4l9 16H3z"/>',
+    star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>', heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+    square: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', iso: '<path d="M12 3l9 5v8l-9 5-9-5V8z"/><path d="M12 13v8M12 13l9-5M12 13L3 8"/>',
+    p1: '<path d="M2 12h20"/><path d="M12 12L3 4M12 12L21 4M12 12L3 20M12 12L21 20"/>', p2: '<path d="M1 10h22"/><path d="M2 10l8-6M2 10l8 10M22 10l-8-6M22 10l-8 10M10 4v16M14 4v16"/>',
+    p3: '<path d="M3 5h18M3 5l9 16M21 5l-9 16M8 5l4 16M16 5l-4 16"/>', radial: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 3.5v17M3.5 12h17"/>',
+    off: '<circle cx="12" cy="12" r="8"/><path d="M6.3 17.7L17.7 6.3"/>', mirror: '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7L4 12l5 5zM15 7l5 5-5 5z"/>',
+    quad: '<path d="M12 3v18M3 12h18" stroke-dasharray="2 2"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="7" r="2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>',
+    mandala: '<circle cx="12" cy="12" r="2"/><path d="M12 3c2 3 2 5 0 7-2-2-2-4 0-7zM21 12c-3 2-5 2-7 0 2-2 4-2 7 0zM12 21c-2-3-2-5 0-7 2 2 2 4 0 7zM3 12c3-2 5-2 7 0-2 2-4 2-7 0z"/>',
+    left: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>', center: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>', right: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>' };
+  const ttIcb = (k, n) => `<svg viewBox="0 0 24 24">${TT_IC[k] || ''}</svg><span>${n}</span>`;
   const GRID_TYPES = [['square', 'Square'], ['iso', 'Isometric'], ['p1', '1-point'], ['p2', '2-point'], ['p3', '3-point'], ['radial', 'Radial']];
   const gridVps = () => { const G = st.grid; G.vp ||= [{ x: W / 2, y: H * 0.4 }, { x: W * 0.06, y: H * 0.4 }, { x: W * 0.94, y: H * 0.4 }, { x: W / 2, y: H * 0.96 }];
     return G.type === 'p1' || G.type === 'radial' ? [G.vp[0]] : G.type === 'p2' ? [G.vp[1], G.vp[2]] : G.type === 'p3' ? [G.vp[1], G.vp[2], G.vp[3]] : []; };
@@ -1716,7 +1727,7 @@ TT.open = async (el, id) => {
       <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
       <button class="btn small" data-toolreset style="margin:2px 6px 6px">Reset tool settings</button>
       <label class="toggle" style="display:flex;margin:0 6px 6px;border:0;min-height:30px;padding:0" data-tip="The needle never runs dry. Dipping still mixes colours as usual."><input type="checkbox" data-endless ${st.endless ? 'checked' : ''}><span>Ink never runs out</span></label>
-      <div class="tt-lseg" style="flex-wrap:wrap">${GRID_TYPES.map(([k2, n2]) => `<button data-gt="${k2}" class="${(st.grid.type || 'square') === k2 && st.grid.on ? 'on' : ''}" style="flex:1 1 30%">${n2}</button>`).join('')}</div>
+      <div class="tt-lseg" style="flex-wrap:wrap">${GRID_TYPES.map(([k2, n2]) => `<button data-gt="${k2}" class="tt-icb ${(st.grid.type || 'square') === k2 && st.grid.on ? 'on' : ''}" style="flex:1 1 30%" aria-label="${n2}">${ttIcb(k2, n2)}</button>`).join('')}</div>
       <label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="A line drawn with the grid on runs exactly along the nearest grid direction (towards a vanishing point in perspective)."><input type="checkbox" data-gsnap ${st.grid.snap ? 'checked' : ''}><span>Lines follow the grid</span></label>
       <label class="dz-sl" style="margin:2px 6px 6px"><span>Grid size<b id="tt-gridv">${st.grid.mm} mm</b></span><input type="range" min="2" max="30" step="1" value="${st.grid.mm}" data-gridmm></label>`;
     pop.querySelectorAll('.tt-tb').forEach(x => { const r = x.dataset.r; x.insertAdjacentHTML('beforeend', `<span>${TOOL_NAMES[r]}</span>`);
@@ -1736,7 +1747,7 @@ TT.open = async (el, id) => {
       : T === 'liquify' ? `<div class="gh">Liquify</div>${sl('liq', 'r', 'Size', 2, 30, 0.5, v => v + ' mm')}${sl('liq', 's', 'Strength', 0.1, 1, 0.05, v => Math.round(v * 100) + '%')}${tg('liq', 'all', 'Every ink layer, not just the current one')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag to push the ink along like wet paint.</p>`
       : T === 'text' ? `<div class="gh">Lettering</div><p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap the page to add text, or tap a text to change it. It stays editable on its own lettering layer until you bake it.</p>`
       : T === 'lasso' ? `<div class="gh">Lasso</div><label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-lassoall ${st.lassoAll ? 'checked' : ''}><span>Every ink layer, not just the current one</span></label><p class="muted" style="font-size:11px;margin:2px 6px 6px">Draw round the part to move. Drag it, size it from a corner, turn it from the top dot, flip it, then Done.</p>`
-      : `<div class="gh">Shapes</div><div class="tt-symm">${[['line', 'Line'], ['rect', 'Box'], ['ellipse', 'Ellipse'], ['tri', 'Triangle'], ['star', 'Star'], ['heart', 'Heart']].map(([k2, n]) => `<button data-shp="${k2}" class="${st.shape.kind === k2 ? 'on' : ''}">${n}</button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
+      : `<div class="gh">Shapes</div><div class="tt-symm">${[['line', 'Line'], ['rect', 'Box'], ['ellipse', 'Ellipse'], ['tri', 'Triangle'], ['star', 'Star'], ['heart', 'Heart']].map(([k2, n]) => `<button data-shp="${k2}" class="tt-icb ${st.shape.kind === k2 ? 'on' : ''}" aria-label="${n}">${ttIcb(k2, n)}</button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   const inkCx = (key) => { const col = st.ink.c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
     return { pig: true, key, col, str: st.ink.s ?? 1, lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; };
@@ -1796,7 +1807,7 @@ TT.open = async (el, id) => {
   const letLoadFont = async (f) => { if (typeof DZF !== 'undefined' && !/[,'"]/.test(f)) await DZF.load(f); else await document.fonts.load(`400 40px ${f}`).catch(() => {}); };
   function letPanel() { const Lt = letCur(); if (!Lt) return; const b = $('#tt-rail [data-r="tools"]');
     const sl = (f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:3px 6px"><span>${lab}<b>${fmt(Lt[f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${Lt[f]}" data-lt="${f}"></label>`;
-    const seg = (f, opts) => `<div class="tt-lseg">${opts.map(([v, n2]) => `<button data-lv="${f}:${v}" class="${String(Lt[f]) === String(v) ? 'on' : ''}">${n2}</button>`).join('')}</div>`;
+    const seg = (f, opts, ic) => `<div class="tt-lseg">${opts.map(([v, n2]) => `<button data-lv="${f}:${v}" class="${ic ? 'tt-icb ' : ''}${String(Lt[f]) === String(v) ? 'on' : ''}" aria-label="${n2}">${ic ? ttIcb(v, n2) : n2}</button>`).join('')}</div>`;
     pop.innerHTML = `<div class="tt-letp"><div class="gh">Lettering</div>
       <textarea class="in" data-lt="s" rows="2" style="margin:2px 6px 6px;width:calc(100% - 12px);font-family:${Lt.font.replace(/"/g, "'")}">${esc(Lt.s)}</textarea>
       <div class="row" style="gap:4px;margin:0 6px 6px"><select class="in" data-lt="font" style="flex:1">${letFonts().map(([f, n2]) => `<option value="${esc(f)}" ${f === Lt.font ? 'selected' : ''}>${esc(n2)}</option>`).join('')}</select>
@@ -1804,7 +1815,7 @@ TT.open = async (el, id) => {
       ${seg('mode', [['outline', 'Stencil line'], ['solid', 'Stencil solid'], ['ink', 'Tattoo solid'], ['inkline', 'Tattoo line']])}
       ${sl('mm', 'Size', 3, 80, 0.5, v => v + ' mm')}${sl('sp', 'Letter spacing', -0.2, 1, 0.01, v => Math.round(v * 100) + '%')}${sl('lh', 'Line height', 0.7, 2.5, 0.05, v => '× ' + v)}
       ${sl('curve', 'Curve', -100, 100, 1, v => v ? (v > 0 ? 'arch ' : 'dip ') + Math.abs(v) : 'straight')}${Lt.mode === 'outline' || Lt.mode === 'inkline' ? sl('ow', 'Line width', 0.1, 2, 0.05, v => v + ' mm') : ''}
-      ${seg('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']])}
+      ${seg('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], true)}
       <div class="tt-lseg"><button data-lv="bold:${!Lt.bold}" class="${Lt.bold ? 'on' : ''}" style="font-weight:800">Bold</button><button data-lv="ital:${!Lt.ital}" class="${Lt.ital ? 'on' : ''}" style="font-style:italic">Italic</button><button data-la="ink">Needle ink</button></div>
       <div class="row" style="gap:4px;margin:8px 6px 6px"><button class="btn small" data-la="del">Delete</button><button class="btn small" data-la="dup">Copy</button><span style="flex:1"></span>
         <button class="btn small primary" data-la="bake" data-tip="Lay it into the ${Lt.mode === 'outline' || Lt.mode === 'solid' ? 'stencil' : 'current ink'} layer. After this it can't be edited as text.">Bake</button></div></div>`;
@@ -2580,7 +2591,7 @@ TT.open = async (el, id) => {
     if (r === 'ruler') { closePop(); st.ruler.on = !st.ruler.on; st.dirty = true; b.classList.toggle('on', st.ruler.on); placeGuides(); return toast(st.ruler.on ? 'Ruler on: drag its ends to place it. Strokes close to it run along its edge.' : 'Ruler off.', 2200); }
     if (r === 'sym') {
       if (!pop.hidden) return closePop();
-      const S = st.sym; pop.innerHTML = `<div class="gh">Symmetry</div><div class="tt-symm">${[['off', 'Off'], ['mirror', 'Mirror'], ['quad', 'Four ways'], ['mandala', 'Mandala']].map(([k2, n]) => `<button data-sym="${k2}" class="${S.mode === k2 ? 'on' : ''}">${n}</button>`).join('')}</div>
+      const S = st.sym; pop.innerHTML = `<div class="gh">Symmetry</div><div class="tt-symm">${[['off', 'Off'], ['mirror', 'Mirror'], ['quad', 'Four ways'], ['mandala', 'Mandala']].map(([k2, n]) => `<button data-sym="${k2}" class="tt-icb ${S.mode === k2 ? 'on' : ''}" aria-label="${n}">${ttIcb(k2, n)}</button>`).join('')}</div>
         <label class="dz-sl" style="margin:6px 6px 2px" ${S.mode === 'mandala' ? '' : 'hidden'} data-symn><span>Sections<b id="tt-symnv">${S.n}</b></span><input type="range" min="2" max="24" step="1" value="${S.n}" data-symr></label>
         <label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0" ${S.mode === 'mandala' ? '' : 'hidden'} data-symm><input type="checkbox" data-symmir ${S.mir ? 'checked' : ''}><span>Mirror each section</span></label>
         <button class="btn small" style="margin:2px 6px 6px" data-symc>Centre on the page</button>`;
@@ -3860,6 +3871,7 @@ function ttStyle() {
 .tt-cheatb.on { color: #ff8a7a !important; background: rgba(255,111,97,.18) !important; }
 .tt-symm { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 0 6px; } .tt-symm button { border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 12px var(--ui); padding: 8px 4px; cursor: pointer; }
 .tt-symm button.on { background: rgba(181,138,232,.28); color: #d6bdf7; }
+.tt-icb { display: flex !important; flex-direction: column; align-items: center; justify-content: center; gap: 3px; } .tt-icb svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; } .tt-icb span { font: 600 9.5px var(--ui); opacity: .85; }
 .tt-meter.cheat [data-m="skin"] { display: none; } .tt-smlbl { font: 700 11px var(--ui); color: #ff8a7a; padding: 0 4px; }
 .tt-cheatpick { display: flex; margin: 4px 0 10px; } .tt-cheatpick b { color: #ff8a7a; }
 .tt-pfask { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--teal); background: rgba(31,182,166,.08); font-size: 13px; }
