@@ -978,7 +978,7 @@ function ttNewDlg() {
   const PATS = typeof patOptsHtml === 'function';   /* the pattern options are shared with the design studio */
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const draw = () => { o.innerHTML = `<div class="card"><h2>New piece</h2>
-    ${st.cheat && st.patOn && PATS ? patOptsHtml(st.pat, 'Ink only') : `<div class="lbl">Page</div><div class="seg" style="flex-wrap:wrap;margin-bottom:8px">${[...TT_SIZES, ['Custom']].map(([n], i) => `<button data-s="${i}" class="${st.size === i ? 'on' : ''}">${n}</button>`).join('')}</div>
+    ${st.cheat && st.patOn && PATS ? patOptsHtml(st.pat, 'Ink only', 'With skin') : `<div class="lbl">Page</div><div class="seg" style="flex-wrap:wrap;margin-bottom:8px">${[...TT_SIZES, ['Custom']].map(([n], i) => `<button data-s="${i}" class="${st.size === i ? 'on' : ''}">${n}</button>`).join('')}</div>
     ${st.size === TT_SIZES.length ? `<div class="two"><label class="field"><span>Width (cm)</span><input class="in" id="tn-w" type="number" min="3" max="60" value="${st.cw}"></label>
       <label class="field"><span>Height (cm)</span><input class="in" id="tn-h" type="number" min="3" max="60" value="${st.ch}"></label></div>` : ''}`}
     <div class="lbl">Skin</div><div class="tt-skins">${TT_SKINS.map(([n, c]) => `<button data-k="${c}" class="${st.skin === c ? 'on' : ''}" style="background:${c}" data-tip="${n}" aria-label="${n}"></button>`).join('')}

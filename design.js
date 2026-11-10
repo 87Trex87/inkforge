@@ -74,11 +74,11 @@ async function dzSavePattern(cv, title, toDevice) {
     [title || 'Pattern', 'Patterns', await Media.save(blob, 'png'), await Media.save(await png(th), 'png'), cv.width, cv.height]);
   toast('Saved to References, in Patterns: pick it for a texture fill.', 3000); }
 // The pattern options, the same for a new design and a new simulator piece: cell size, ratio, neighbours, background.
-const patOptsHtml = (o, clearLabel) => `<div class="lbl">Cell across</div><div class="dz-papers">${PAT_SIZES.map(v => `<button data-patw="${v}" class="${o.w === v ? 'on' : ''}"><b>${v} mm</b></button>`).join('')}
+const patOptsHtml = (o, clearLabel, fullLabel) => `<div class="lbl">Cell across</div><div class="dz-papers">${PAT_SIZES.map(v => `<button data-patw="${v}" class="${o.w === v ? 'on' : ''}"><b>${v} mm</b></button>`).join('')}
     <label class="dz-csize" style="margin:0"><span>Other</span><input class="in" type="text" inputmode="decimal" data-patwi value="${PAT_SIZES.includes(o.w) ? '' : o.w}" placeholder="mm" style="width:70px"></label></div>
   <div class="lbl" style="margin-top:8px">Shape</div><div class="seg">${PAT_RATIOS.map(([n, a, b]) => `<button data-patr="${a}:${b}" class="${o.ra === a && o.rb === b ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
   <div class="lbl" style="margin-top:8px">Neighbours shown</div><div class="seg">${[[0, 'Off'], [1, '1 ring'], [2, '2 rings'], [3, '3 rings']].map(([v, n]) => `<button data-patring="${v}" class="${o.ring === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
-  <div class="lbl" style="margin-top:8px">Background</div><div class="seg">${[[true, clearLabel || 'See-through'], [false, 'Colour']].map(([v, n]) => `<button data-patclear="${v ? 1 : 0}" class="${o.clear === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+  <div class="lbl" style="margin-top:8px">Background</div><div class="seg">${[[true, clearLabel || 'See-through'], [false, fullLabel || 'Colour']].map(([v, n]) => `<button data-patclear="${v ? 1 : 0}" class="${o.clear === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
   <p class="muted" style="font-size:12px;margin:8px 0 12px">${dzMM(o.w)} × ${dzMM(o.w * o.rb / o.ra)} mm. Draw in the cell: what crosses an edge comes back on the other side, so it always repeats seamlessly. Save it to References (Patterns) to use as a texture fill.</p>`;
 // A click or entry in those options; true when it was one.
 const patOptsAct = (o, t) => { const d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
