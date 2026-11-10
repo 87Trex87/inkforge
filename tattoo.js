@@ -1601,7 +1601,7 @@ TT.open = async (el, id) => {
     $('#tt-rail [data-r="tools"]')?.classList.toggle('on', ['blend', 'fill', 'shape', 'lasso', 'pick', 'liquify', 'text', 'path'].includes(st.tool) || st.grid.on || st.ruler.on || st.sym.mode !== 'off' || !!st.fast);
     $('#tt-rail [data-r="ruler"]')?.classList.toggle('on', st.ruler.on); $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off');
     if (st.ruler.on) hs.push(['ra', st.ruler.a], ['rb', st.ruler.b]);
-    if (st.grid.on) gridVps().forEach((v, i) => hs.push(['gv' + i, v]));
+    if (st.grid.on && !st.grid.lock) gridVps().forEach((v, i) => hs.push(['gv' + i, v]));   // locked: the vanishing points stay put, their handles hidden
     if (st.sym.mode !== 'off') hs.push(['sc', st.sym.c]);
     let sh = '';
     if (lsel) { const cs = selCorners().map(toScreen), c = toScreen(selCentre()), ang = lsel.rot + st.rot, w = lsel.b.w * lsel.s * k, h2 = lsel.b.h * lsel.s * k, top = toScreen({ x: (selCorners()[0].x + selCorners()[1].x) / 2, y: (selCorners()[0].y + selCorners()[1].y) / 2 });
@@ -1637,7 +1637,7 @@ TT.open = async (el, id) => {
     return G.type === 'p1' || G.type === 'radial' ? [G.vp[0]] : G.type === 'p2' ? [G.vp[1], G.vp[2]] : G.type === 'p3' ? [G.vp[1], G.vp[2], G.vp[3]] : []; };
   const drawGrid = () => { const G = st.grid, g = G.mm * mm, T = G.type || 'square', line = (a, b) => { const A = toScreen(a), B = toScreen(b); cux.moveTo(A.x, A.y); cux.lineTo(B.x, B.y); };
     cux.save(); { const C = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => toScreen({ x, y })); cux.beginPath(); C.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.closePath(); cux.clip(); }   // only on the page
-    cux.lineWidth = 1; cux.strokeStyle = 'rgba(255,255,255,.2)'; cux.beginPath();
+    const gop = G.op ?? 0.2; cux.lineWidth = 1; cux.strokeStyle = `rgba(255,255,255,${gop})`; cux.beginPath();
     const span = Math.hypot(W, H) * 2;
     if (T === 'square' || T === 'p1') { for (let x = g; x < W; x += g) line({ x, y: 0 }, { x, y: H }); if (T === 'square') for (let y = g; y < H; y += g) line({ x: 0, y }, { x: W, y }); }
     if (T === 'iso') { const t30 = Math.tan(Math.PI / 6), step = g / Math.cos(Math.PI / 6);
@@ -1652,7 +1652,7 @@ TT.open = async (el, id) => {
       if (v.x > 0 && v.x < W && v.y > 0 && v.y < H) { a0 = -Math.PI; a1 = Math.PI; } else if (a1 - a0 > Math.PI) { const s = ang.map(a => a < 0 ? a + Math.PI * 2 : a); a0 = Math.min(...s); a1 = Math.max(...s); }
       for (let i = 0; i <= rays; i++) { const a = a0 + (a1 - a0) * i / rays; line(v, { x: v.x + Math.cos(a) * span, y: v.y + Math.sin(a) * span }); } }
     cux.stroke();
-    if (T === 'p1' || T === 'p2') { const y = vps[0].y; cux.strokeStyle = 'rgba(255,111,97,.6)'; cux.lineWidth = 1.5; cux.beginPath(); line({ x: -W, y }, { x: W * 2, y }); cux.stroke(); }   // horizon
+    if (T === 'p1' || T === 'p2') { const y = vps[0].y; cux.strokeStyle = `rgba(255,111,97,${Math.min(1, gop + 0.4)})`; cux.lineWidth = 1.5; cux.beginPath(); line({ x: -W, y }, { x: W * 2, y }); cux.stroke(); }   // horizon
     cux.restore(); };
   // Lines follow the grid: once a stroke shows its direction, it runs exactly along the nearest grid direction.
   const gridPt = (p) => { const G = st.grid; if (!CHEAT || !G.on || !G.snap || !pen) return p;
@@ -1722,14 +1722,23 @@ TT.open = async (el, id) => {
         <button class="tt-tb" data-r="sym" data-tip="Symmetry and mandala" aria-label="Symmetry"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M18.4 5.6l-4.2 4.2M9.8 14.2l-4.2 4.2"/></svg></button>
         <button class="tt-tb" data-r="lasso" data-tip="Lasso: draw round part of the work to move, size, turn or flip it" aria-label="Lasso"><svg viewBox="0 0 24 24"><path d="M4 9c0-3 3.6-5 8-5s8 2 8 5-3.6 5-8 5c-1.4 0-2.7-.2-3.8-.6"/><path d="M6 13c-1.5 1-1.5 3 0 4s3 0 3-2-2-2-3-2zM6 17c0 2 1 3 2 4"/></svg></button>`;
   const TOOL_NAMES = { adjust: 'Adjust colour', path: 'Path', place: 'Place tattoo', liquify: 'Liquify', text: 'Lettering', pick: 'Colour pick', grid: 'Grid', ruler: 'Ruler', sym: 'Symmetry', blend: 'Blend', fill: 'Fill', shape: 'Shapes', lasso: 'Lasso' };
+  /* The grid section, laid out like the design studio's grid menu: type (or off), size, opacity, snapping, and for
+     perspective and radial grids a lock (hides the vanishing points) and a reset. */
+  const gridMenu = () => { const G = st.grid, persp = G.on && ['p1', 'p2', 'p3', 'radial'].includes(G.type);
+    return `<div class="gh" style="margin-top:6px">Grid</div><div class="tt-lseg" style="flex-wrap:wrap">${[['off', 'Off'], ...GRID_TYPES].map(([k2, n2]) => `<button data-gt="${k2}" class="tt-icb ${(G.on ? G.type || 'square' : 'off') === k2 ? 'on' : ''}" style="flex:1 1 22%" aria-label="${n2}">${ttIcb(k2, n2)}</button>`).join('')}</div>
+      <label class="dz-sl" style="margin:2px 6px 4px"><span>Size<b id="tt-gridv">${G.mm} mm</b></span><input type="range" min="2" max="30" step="1" value="${G.mm}" data-gridmm></label>
+      <label class="dz-sl" style="margin:2px 6px 4px"><span>Opacity<b id="tt-gopv">${Math.round((G.op ?? 0.2) * 100)}%</b></span><input type="range" min="0.05" max="1" step="0.05" value="${G.op ?? 0.2}" data-gop></label>
+      <label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="A line drawn with the grid on runs exactly along the nearest grid direction (towards a vanishing point in perspective)."><input type="checkbox" data-gsnap ${G.snap ? 'checked' : ''}><span>Snap to the grid</span></label>
+      ${persp ? `<label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="Keeps the vanishing points where they are and hides their handles"><input type="checkbox" data-glock ${G.lock ? 'checked' : ''}><span>Lock the grid in place</span></label>
+        ${G.lock ? '' : '<button class="btn small" data-greset style="margin:2px 6px 6px">Reset vanishing points</button>'}` : ''}
+      <p class="muted" style="font-size:11px;margin:2px 6px 6px">Only on screen: never saved into the pictures.</p>`; };
+  const gridRedraw = () => { const s2 = pop.querySelector('.tt-gridsec'); if (s2) s2.innerHTML = gridMenu(); };
   function toolsPop(b) {
     pop.innerHTML = `<div class="gh">Cheat tools</div><div class="tt-tools">${TOOL_BTNS}</div>
       <label class="toggle" style="display:flex;margin:6px 6px 6px;border:0;min-height:30px;padding:0" data-tip="Lines come out solid however fast you pull them, like a brush: pressure still sets the width, and quick strokes taper a little."><input type="checkbox" data-fast ${st.fast ? 'checked' : ''}><span>Fast lines</span></label>
       <button class="btn small" data-toolreset style="margin:2px 6px 6px">Reset tool settings</button>
       <label class="toggle" style="display:flex;margin:0 6px 6px;border:0;min-height:30px;padding:0" data-tip="The needle never runs dry. Dipping still mixes colours as usual."><input type="checkbox" data-endless ${st.endless ? 'checked' : ''}><span>Ink never runs out</span></label>
-      <div class="tt-lseg" style="flex-wrap:wrap">${GRID_TYPES.map(([k2, n2]) => `<button data-gt="${k2}" class="tt-icb ${(st.grid.type || 'square') === k2 && st.grid.on ? 'on' : ''}" style="flex:1 1 30%" aria-label="${n2}">${ttIcb(k2, n2)}</button>`).join('')}</div>
-      <label class="toggle" style="display:flex;margin:0 6px 4px;border:0;min-height:30px;padding:0" data-tip="A line drawn with the grid on runs exactly along the nearest grid direction (towards a vanishing point in perspective)."><input type="checkbox" data-gsnap ${st.grid.snap ? 'checked' : ''}><span>Lines follow the grid</span></label>
-      <label class="dz-sl" style="margin:2px 6px 6px"><span>Grid size<b id="tt-gridv">${st.grid.mm} mm</b></span><input type="range" min="2" max="30" step="1" value="${st.grid.mm}" data-gridmm></label>`;
+      <div class="tt-gridsec">${gridMenu()}</div>`;
     pop.querySelectorAll('.tt-tb').forEach(x => { const r = x.dataset.r; x.insertAdjacentHTML('beforeend', `<span>${TOOL_NAMES[r]}</span>`);
       x.classList.toggle('on', r === st.tool || (r === 'grid' && st.grid.on) || (r === 'ruler' && st.ruler.on) || (r === 'sym' && st.sym.mode !== 'off')); });
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
@@ -1972,7 +1981,7 @@ TT.open = async (el, id) => {
   function keepPrefs() {
     Settings.set('tt_mk', JSON.stringify({ col: st.mk.col, r: st.mk.r }));
     if (CHEAT) Settings.set('tt_cheat_prefs', JSON.stringify({ smooth: st.smooth, fast: st.fast, endless: st.endless, rulerOn: st.ruler.on, sym: { mode: st.sym.mode, n: st.sym.n, mir: st.sym.mir },
-      grid: { on: st.grid.on, mm: st.grid.mm, type: st.grid.type, snap: st.grid.snap }, liq: st.liq, letDef: st.letDef, lassoAll: st.lassoAll, blend: st.blend, fillo: st.fillo, shape: st.shape, pathP: st.pathP })); }
+      grid: { on: st.grid.on, mm: st.grid.mm, type: st.grid.type, snap: st.grid.snap, op: st.grid.op, lock: st.grid.lock }, liq: st.liq, letDef: st.letDef, lassoAll: st.lassoAll, blend: st.blend, fillo: st.fillo, shape: st.shape, pathP: st.pathP })); }
   // Back to the defaults: the marker and magnum settings, and (in cheat mode) every cheat tool, here and for new pieces.
   async function resetTools() { if (!await ask('Put the tool settings back to the defaults?\n\nThe marker, the magnum angle' + (CHEAT ? ' and every cheat tool (smoothing, fast lines, endless ink, grid, symmetry, ruler and the rest)' : '') + '. Your work is not changed.')) return;
     await Settings.set('tt_mk', ''); await Settings.set('tt_magflip', '1'); st.mk = { col: MK_COLS[0], r: 0.6, wipe: false }; st.magAng = 75; st.magTilt = true; st.magFlip = true;
@@ -2619,7 +2628,8 @@ TT.open = async (el, id) => {
   };
   pop.onclick = (e) => {
     if (e.target.closest('[data-toolreset]')) return resetTools();
-    const gt = e.target.closest('[data-gt]'); if (gt) { st.grid.on = true; st.grid.type = gt.dataset.gt; st.dirty = true; pop.querySelectorAll('[data-gt]').forEach(x => x.classList.toggle('on', x === gt)); return placeGuides(); }
+    const gt = e.target.closest('[data-gt]'); if (gt) { if (gt.dataset.gt === 'off') st.grid.on = false; else { st.grid.on = true; st.grid.type = gt.dataset.gt; } st.dirty = true; gridRedraw(); $('#tt-rail [data-r="tools"]')?.classList.toggle('on', true); return placeGuides(); }
+    if (e.target.closest('[data-greset]')) { delete st.grid.vp; st.dirty = true; return placeGuides(); }
     const tb = e.target.closest('.tt-tb'); if (tb) { const top = pop.style.top; pop.hidden = true; $('#tt-rail').onclick({ target: tb }); pop.style.top = top; return placeGuides(); }
     const shb = e.target.closest('[data-shp]'); if (shb) { st.shape.kind = shb.dataset.shp; st.dirty = true; pop.querySelectorAll('[data-shp]').forEach(x => x.classList.toggle('on', x === shb)); return; }
     const sy = e.target.closest('[data-sym]'); if (sy) { st.sym.mode = sy.dataset.sym; st.dirty = true; pop.querySelectorAll('[data-sym]').forEach(x => x.classList.toggle('on', x === sy));
@@ -2630,6 +2640,8 @@ TT.open = async (el, id) => {
   pop.oninput = (e) => {
     if (e.target.matches('[data-lassoall]')) { st.lassoAll = e.target.checked; st.dirty = true; return; }
     if (e.target.matches('[data-gsnap]')) { st.grid.snap = e.target.checked; st.dirty = true; return toast(st.grid.snap ? 'Lines follow the grid.' : 'Lines are free again.', 1400); }
+    if (e.target.matches('[data-glock]')) { st.grid.lock = e.target.checked; st.dirty = true; gridRedraw(); return placeGuides(); }
+    if (e.target.matches('[data-gop]')) { st.grid.op = +e.target.value; st.dirty = true; const v = $('#tt-gopv'); if (v) v.textContent = Math.round(st.grid.op * 100) + '%'; return placeGuides(); }
     if (e.target.matches('[data-gridmm]')) { st.grid.mm = +e.target.value; $('#tt-gridv').textContent = st.grid.mm + ' mm'; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-endless]')) { st.endless = e.target.checked; st.dirty = true; return toast(st.endless ? 'Endless ink: the needle stays loaded.' : 'Ink runs out again as you work.', 1600); }
     if (e.target.matches('[data-fast]')) { st.fast = e.target.checked; st.dirty = true; return toast(st.fast ? 'Fast lines on: pull lines as quick as you like.' : 'Fast lines off.', 1600); }
