@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 366;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 367;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2287,7 +2287,8 @@ function runSetup() {
     country_code: countryCode(), artist_phone: Settings.get('artist_phone'), artist_instagram: Settings.get('artist_instagram'),
     day_start: Settings.get('day_start', '10:00'), day_end: Settings.get('day_end', '17:00'), weekly: [...off.weekly],
     max_per_day: Settings.get('max_per_day', '1'), booking_gap: Settings.get('booking_gap', '60'),
-    r1: an[0]?.[1] ?? 650, r4: (an.find(a => a[0] === 4) || an[1] || [4, 2500])[1], r9: (an.find(a => a[0] === 9) || an[an.length - 1] || [9, 4500])[1],
+    ...(() => { const o1 = an[0] || [1, 650], o4 = an.find(a => a[0] === 4) || an[1] || [4, 2500], o9 = an.find(a => a[0] === 9) || an[an.length - 1] || [9, 4500];
+      return { r1: o1[1], r4: o4[1], r9: o9[1], h1: o1[0], h4: o4[0], h9: o9[0], oh: [o1[0], o4[0], o9[0]] }; })(),   /* three points on the rate curve; their hours can be changed too */
     pf_size: pfSizeDefault(), deposit: c0.deposit, touchup: c0.touchupFee, vatOn: c0.vatOn, vatRate: c0.vatRate, followup: Settings.get('followup_weeks', '6')
   };
   const o = document.createElement('div'); o.id = 'setup';
@@ -2319,8 +2320,10 @@ function runSetup() {
       <div class="lbl">Break between bookings ${help('Setup, cleaning and a breather; kept free around every booking.')}</div>
       ${chips('booking_gap', [[0, 'None'], [30, '30 min'], [60, '1 hour'], [90, '1½ hours']])}`;
     if (st === 2) body = `<h2>Your prices</h2><p class="muted">What you charge for tattooing time. Quotes work out everything in between; fine-tune it later in Calibrate.</p>
-      <div class="su-rates">${[['r1', '1 hour'], ['r4', '4 hours'], ['r9', 'Full day (9 h)']].map(([k, l]) =>
-        `<label class="field"><span>${l}</span><div class="unit-in"><input class="in" type="number" inputmode="decimal" min="0" step="10" data-f="${k}" value="${S[k]}"><em>${cur()}</em></div></label>`).join('')}</div>
+      <div class="su-rates">${[['1', 'Short session'], ['4', 'Half day'], ['9', 'Full day']].map(([k, l]) =>
+        `<div class="field"><span>${l}</span><div class="unit-in"><input class="in" type="number" inputmode="decimal" min="0.25" max="24" step="0.25" data-f="h${k}" value="${S['h' + k]}" aria-label="${l}: hours"><em>h</em></div>
+          <div class="unit-in" style="margin-top:6px"><input class="in" type="number" inputmode="decimal" min="0" step="10" data-f="r${k}" value="${S['r' + k]}" aria-label="${l}: price"><em>${cur()}</em></div></div>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:-2px 0 10px">Set the hours too: if your full day is 6 hours, make it 6. Longer pieces are split into sessions of your full day.</p>
       <div class="lbl">Deposit to book</div>${chips('deposit', [[0, 'None'], [20], [30], [50]], '%')}
       <div class="two"><label class="field"><span>Touch-up price ${help('0 = free touch-ups. Mentioned on quotes and receipts.')}</span><div class="unit-in"><input class="in" type="number" min="0" step="10" data-f="touchup" value="${S.touchup}"><em>${cur()}</em></div></label>
         <label class="field"><span>Healing check after ${help('When you finish a tattoo, InkForge offers to book a short follow-up this many weeks later.')}</span><div class="unit-in"><input class="in" type="number" min="1" max="52" data-f="followup" value="${esc(S.followup)}"><em>weeks</em></div></label></div>
@@ -2330,7 +2333,7 @@ function runSetup() {
       const wd = WEEKDAYS.filter(([n]) => S.weekly.includes(n)).map(x => x[1]).join(', ');
       const sum = [['Studio', [S.studio_name, S.artist_name].filter(Boolean).join(' · ') || '—'], ['Contact', [S.artist_phone, S.artist_instagram].filter(Boolean).join(' · ') || '—'],
         ['Hours', `${S.day_start} – ${S.day_end}${wd ? ' · off ' + wd : ''}`], ['Bookings', `Up to ${S.max_per_day} a day · ${+S.booking_gap ? S.booking_gap + ' min' : 'no'} break between`],
-        ['Rates', `${money(+S.r1)} 1 h · ${money(+S.r4)} 4 h · ${money(+S.r9)} full day`], ['Deposit', +S.deposit ? S.deposit + '%' : 'None'],
+        ['Rates', `${money(+S.r1)} ${+S.h1} h · ${money(+S.r4)} ${+S.h4} h · ${money(+S.r9)} full day (${+S.h9} h)`], ['Deposit', +S.deposit ? S.deposit + '%' : 'None'],
         ['Touch-ups', +S.touchup ? money(+S.touchup) : 'Free'], ['VAT', S.vatOn ? S.vatRate + '%' : 'Not added']];
       body = `<h2>You're all set</h2><p class="muted">These are saved. Change any of them later in More › Settings, or fine-tune prices in Calibrate.</p>
         <div class="su-sum">${sum.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>`;
@@ -2360,8 +2363,11 @@ function runSetup() {
       await Settings.set('days_off', JSON.stringify({ ...daysOff(), weekly: S.weekly }));
     }
     if (st === 2) {
-      const cfg = qCfg(), rest = cfg.anchors.filter(a => ![1, 4, 9].includes(a[0]));
-      cfg.anchors = [[1, +S.r1 || 0], [4, +S.r4 || 0], [9, +S.r9 || 0], ...rest].sort((a, b) => a[0] - b[0]);
+      const h1 = +S.h1, h4 = +S.h4, h9 = +S.h9;
+      if (!(h1 > 0 && h4 > h1 && h9 > h4 && h9 <= 24)) { toast('The hours need to go up: short session, then half day, then full day (24 at most).', 4000); return false; }
+      const cfg = qCfg(), rest = cfg.anchors.filter(a => ![...S.oh, h1, h4, h9].includes(a[0]));
+      cfg.anchors = [[h1, +S.r1 || 0], [h4, +S.r4 || 0], [h9, +S.r9 || 0], ...rest].sort((a, b) => a[0] - b[0]);
+      cfg.sessionMax = h9; S.oh = [h1, h4, h9];   /* a full day is the longest session */
       Object.assign(cfg, { deposit: +S.deposit, touchupFee: +S.touchup || 0, vatOn: !!S.vatOn, vatRate: +S.vatRate || cfg.vatRate });
       await qSave(cfg);
       await Settings.set('followup_weeks', String(Math.max(1, Math.min(52, +S.followup || 6))));
