@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 356;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 357;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1951,7 +1951,9 @@ const VIEWS = {
           <button class="btn icon-btn" id="st-autocrop" data-tip="Auto crop: trim to where the stencil starts" aria-label="Auto crop"><svg viewBox="0 0 24 24"><path d="M6 2v16h16M2 6h16v16"/><path d="M10 10l4 4M14 10l-4 4" stroke-width="1.6"/></svg></button>
           <button class="btn icon-btn ${ST.p.flip ? 'on' : ''}" id="st-flip" data-tip="Mirror (for hand transfers)" aria-label="Mirror"><svg viewBox="0 0 24 24"><path d="M12 3v18M8 7l-5 5 5 5V7zM16 7l5 5-5 5V7z"/></svg></button>
           <span class="ink-dots" id="st-ink">${ST_INKS.map(([c, n]) => `<button class="ink ${ST.p.ink === c ? 'on' : ''}" data-c="${c}" style="background:${c}" data-tip="${n} ink" aria-label="${n}"></button>`).join('')}</span>
-          <button class="btn icon-btn" id="st-new" data-tip="Start with a new photo" aria-label="New photo" style="margin-left:auto"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
+          <button class="btn icon-btn" id="st-undo" data-tip="Undo (Ctrl+Z)" aria-label="Undo" style="margin-left:auto" disabled><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+          <button class="btn icon-btn" id="st-redo" data-tip="Redo (Ctrl+Y)" aria-label="Redo" disabled><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+          <button class="btn icon-btn" id="st-new" data-tip="Start with a new photo" aria-label="New photo"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
         </div>
       </div>
       <div class="card st-controls">
@@ -1982,6 +1984,8 @@ const VIEWS = {
         $('#st-file').addEventListener('change', async (e) => { const f = e.target.files[0]; if (f) { await stLoad(f); render(); } });
         return;
       }
+      if (!ST.hist) ST.hist = { u: [], r: [], last: '' };
+      if (!ST.hist.u.length && !ST.hist.r.length) ST.hist.last = stSnap();   // a kept stencil or a design brings its own settings: start from those
       stSliders();
       $('#st-mode').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; ST.p.mode = b.dataset.m;
         $('#st-mode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); stSliders(); stRun(); };
@@ -1993,12 +1997,15 @@ const VIEWS = {
       ST.zoom = stZoom($('#st-view'), $('#st-canvas'), $('#st-fit'));
       $('#st-flip').onclick = (e) => { if (ST.crop) ST.crop.x = 1 - ST.crop.x - ST.crop.w; ST.p.flip = !ST.p.flip; e.currentTarget.classList.toggle('on', ST.p.flip); stPrepare(); stRun(); };
       $('#st-ink').onclick = (e) => { const b = e.target.closest('.ink'); if (!b) return; ST.p.ink = b.dataset.c;
-        $('#st-ink').querySelectorAll('.ink').forEach(x => x.classList.toggle('on', x === b)); stDraw(false); stSave(); };
+        $('#st-ink').querySelectorAll('.ink').forEach(x => x.classList.toggle('on', x === b)); stDraw(false); stSave(); stMark(); };
+      $('#st-undo').onclick = () => stStep(true); $('#st-redo').onclick = () => stStep(false); stHistBtns();
+      if (!ST.keys) { ST.keys = true; addEventListener('keydown', (e) => { if (!ST.src || !$('#st-undo') || !(e.ctrlKey || e.metaKey) || e.target.closest?.('input, textarea, select')) return;
+        const k = e.key.toLowerCase(); if (k === 'z' || k === 'y') { e.preventDefault(); stStep(k === 'z' && !e.shiftKey); } }); }
       $('#st-new').onclick = () => { ST.src = null; render(); };
       $('#st-cropbtn').onclick = () => stCropOpen();
       $('#st-autocrop').onclick = () => stAutoCrop();
       stCropWire();
-      $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(300, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); });
+      $('#st-cm').addEventListener('change', (e) => { ST.cm = Math.min(300, Math.max(1, +e.target.value || 10)); Settings.set('st_cm', String(ST.cm)); stMark(); });
       $('#st-save').onclick = () => stExport(false); $('#st-share').onclick = () => stExport(true); $('#st-sim').onclick = stToSim;
       $('#st-keep').onclick = stKeep;
       $('#st-print').onclick = stPrint;
@@ -6737,7 +6744,20 @@ async function stLoad(file) {
   try { Object.assign(ST.p, JSON.parse(Settings.get('st_params', '{}'))); } catch {}
   ST.p.flip = false;
   ST.cm = +Settings.get('st_cm', '10') || 10;
+  ST.hist = { u: [], r: [], last: stSnap() };
 }
+
+/* Undo and redo: every change to the settings, mode, ink, mirror, turn, crop and print width is kept as a snapshot
+   (settled changes only, so a slider drag is one step). */
+function stSnap() { return JSON.stringify({ p: ST.p, rot: ST.rot, crop: ST.crop || null, cm: ST.cm }); }
+function stMark() { const H = ST.hist; if (!H || ST.cropping) return; clearTimeout(H.t);
+  H.t = setTimeout(() => { const now = stSnap(); if (now === H.last) return; H.u.push(H.last); if (H.u.length > 100) H.u.shift(); H.r = []; H.last = now; stHistBtns(); }, 350); }
+function stHistBtns() { const H = ST.hist; const u = $('#st-undo'), r = $('#st-redo'); if (u) u.disabled = !H?.u.length; if (r) r.disabled = !H?.r.length; }
+function stStep(back) { const H = ST.hist; if (!H || ST.cropping) return; clearTimeout(H.t);
+  const now = stSnap(); if (now !== H.last) { H.u.push(H.last); H.r = []; H.last = now; }
+  const from = back ? H.u : H.r, to = back ? H.r : H.u; if (!from.length) return;
+  to.push(H.last); H.last = from.pop(); const o = JSON.parse(H.last);
+  ST.p = o.p; ST.rot = o.rot; ST.crop = o.crop; ST.cm = o.cm; stSave(); Settings.set('st_cm', String(ST.cm)); render(); }
 
 // Applies rotation/mirror and downsizes into the working buffer.
 function stPrepare() {
@@ -6763,7 +6783,7 @@ function stPrepare() {
 }
 
 function stRun() {
-  clearTimeout(ST._t);
+  stMark(); clearTimeout(ST._t);
   ST._t = setTimeout(() => {
     if (!ST.worker) {
       ST.worker = new Worker('lib/stencil-worker.js');
@@ -6950,6 +6970,13 @@ async function stExport(share) {
 // A new simulator piece with this stencil on its stencil layer at print size, centred with a margin of skin around it.
 async function stToSim() {
   if (!ST.mask) return;
+  const mode = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
+    o.innerHTML = `<div class="card"><h2>Open in the simulator</h2><div class="dz-ex">
+      <button data-sm="normal"><b>Normal</b><small>Real skin: it swells, bleeds and scars if you work it too hard</small></button>
+      <button data-sm="cheat"><b>Cheat mode</b><small>No skin damage, with drawing helpers like the ruler, symmetry and fill</small></button></div>
+      <button class="btn" data-sm="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+    o.onclick = (e) => { const b = e.target.closest('[data-sm]'); if (!b && e.target !== o) return; o.remove(); res(b?.dataset.sm || null); }; document.body.appendChild(o); });
+  if (!mode) return;
   const sw = ST.cm, sh = ST.cm * ST.h / ST.w, pad = 3;
   const w = Math.min(60, Math.max(3, Math.ceil(sw + pad * 2))), h = Math.min(60, Math.max(3, Math.ceil(sh + pad * 2)));
   const R = Math.min(80, 2400 / Math.max(w, h)), W = Math.round(w * R), H = Math.round(h * R);   // the simulator's page px per cm
@@ -6959,8 +6986,8 @@ async function stToSim() {
   const src = new OffscreenCanvas(ST.w, ST.h); src.getContext('2d').putImageData(img, 0, 0);
   const c = new OffscreenCanvas(W, H), g = c.getContext('2d'); g.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh);
   const ref = await Media.save(await c.convertToBlob({ type: 'image/png' }), 'png');
-  await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, stencil_ref) VALUES (?, ?, ?, ?, ?)',
-    [ST.from || `Piece ${ymd(new Date())}`, w, h, Settings.get('tt_skin', '#e2b493'), ref]);
+  await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, stencil_ref, meta) VALUES (?, ?, ?, ?, ?, ?)',
+    [ST.from || `Piece ${ymd(new Date())}`, w, h, Settings.get('tt_skin', '#e2b493'), ref, mode === 'cheat' ? JSON.stringify({ cheat: true }) : null]);
   location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id;
 }
 
