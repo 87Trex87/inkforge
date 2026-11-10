@@ -1752,3 +1752,6 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 /* The needles a lesson or challenge names: a green tick */
 .tt-ndg button.req, .tt-qn.req { position: relative; }
 .tt-ndg button.req::after, .tt-qn.req::after { content: '\2713'; position: absolute; top: -5px; right: -5px; width: 15px; height: 15px; border-radius: 50%; background: #2e9d58; color: #fff; font: 700 10px/15px Inter, sans-serif; text-align: center; box-shadow: 0 0 0 2px var(--bg2, #1b1e1f); pointer-events: none; }
+
+.dz-chcup { display: flex; align-items: center; gap: 8px; margin: 4px; } .dz-chcup > i { width: 42px; height: 42px; flex: none; border-radius: 50%; border: 2px solid var(--line); background-image: none; box-shadow: inset 0 0 0 3px rgba(0,0,0,.25); }
+.dz-chcup .dz-chsw { margin: 0; } .dz-chpop button[disabled] { opacity: .45; }

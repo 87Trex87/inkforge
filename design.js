@@ -170,7 +170,7 @@ const CH_FOCUS = [['line', 'Linework', 1], ['pack', 'Packing', 1], ['shade', 'Sh
 function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 'shape' && l.role && !l.hide), outs = S.filter(l => l.role === 'outline'), dets = S.filter(l => l.role === 'detail'), pk = S.find(l => l.role === 'pack');
   if (!outs.length && !S.some(l => l.role === 'pack' || l.role === 'shade')) return { err: 'Give a shape a role first (Grade as in the strip): an outline, packing or shading.' };   /* a value study can be shading alone */
   const nd = outs[0]?.nd || dets[0]?.nd || S.find(l => l.nd)?.nd || '5RL', lines = [...outs, ...dets].flatMap(dzChPts);
-  const T = { id: 'u-' + did, title: title || 'Challenge', cat: pk ? 'pack' : 'line', needle: nd, liner: nd, strokeNeedle: nd, lines, pal: doc.chal?.pal || 'default', lock: !!doc.chal?.lock,
+  const T = { id: 'u-' + did, title: title || 'Challenge', cat: pk ? 'pack' : 'line', needle: nd, liner: nd, strokeNeedle: nd, lines, pal: doc.chal?.pal || 'default', lock: !!doc.chal?.lock, palData: (() => { let mine = []; try { mine = JSON.parse(Settings.get('tt_pals', '[]')); } catch {} return (Array.isArray(mine) ? mine : []).find(x => x.id === doc.chal?.pal) || null; })(),
     needles: [...new Set([nd, ...dets.map(l => l.nd || nd), ...(pk ? (dzChNds(pk).length ? dzChNds(pk) : ['7RS']) : [])])] };
   const C0 = doc.chal || {}; if (C0.base && C0.lessonJudge !== false && C0.sig === dzChSig(doc)) T.base = C0.base;   /* an unchanged lesson template: the lesson's own judging */
   else { T.zones = true; T.focus = Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C0.focus?.[k] ?? v])); }
@@ -3703,7 +3703,7 @@ DZ.edit = async (id) => {
   stage.addEventListener('pointerdown', (e) => { if (e.button !== 1 || e.pointerType !== 'mouse') return; e.preventDefault(); e.stopImmediatePropagation(); try { stage.setPointerCapture(e.pointerId); } catch {}
     bg = { x: e.clientX, y: e.clientY, vx, vy, moved: true }; }, true);
   stage.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
-  stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dz-pop, .dz-rail, #dz-chov')) closePop(); }, true);
+  stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dz-pop, .dz-rail, #dz-chov') && !(doc.chal && chHit(e))) closePop(); }, true);   /* not for the airbrush or a gradient dot: their menu stays open */
   let gdrag = null;
   side.addEventListener('pointerdown', (e) => {
     const bar = e.target.closest('[data-gbar]'), l = layer(); if (!bar || !l?.grad) return;
@@ -3890,7 +3890,8 @@ DZ.edit = async (id) => {
     const body = chTab.set === 'brief' ? `<textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
         + chNote(`${n('outline')} outline, ${n('detail')} detail line${n('detail') === 1 ? '' : 's'}, ${n('pack')} packing, ${n('shade')} shading. Select a shape and press Grade as in the strip to give it a role.`)
       : chTab.set === 'pal' ? `<div class="dz-chpals">${chPals().map(p => `<button data-chpal="${esc(p.id)}" class="${C.pal === p.id ? 'on' : ''}"><span>${p.caps.map(c => `<i style="background:${c.c}"></i>`).join('')}</span>${esc(p.name)}</button>`).join('')}</div>
-        <label class="toggle" style="margin:8px 4px"><input type="checkbox" data-chlock ${C.lock ? 'checked' : ''}><span>Only this palette in the challenge</span></label>` + chNote('Every colour in the challenge is picked or mixed from this palette.')
+        <div class="dz-gk" style="grid-template-columns:1fr 1fr 1fr;margin-top:6px"><button data-chpe="new">New</button><button data-chpe="edit">${ttPalMine().some(x => x.id === C.pal) ? 'Edit' : 'Copy to edit'}</button><button data-chpe="imp">Import</button></div>
+        <label class="toggle" style="margin:8px 4px"><input type="checkbox" data-chlock ${C.lock ? 'checked' : ''}><span>Only this palette in the challenge</span></label>` + chNote('Every colour in the challenge is picked or mixed from this palette. New and Edit open the simulator\'s palette maker, with its mixing bench; Import takes a palette file.')
       : (C.base ? (C.sig === dzChSig(doc) ? `<label class="toggle" style="margin:4px 4px 8px"><input type="checkbox" data-chlj ${C.lessonJudge !== false ? 'checked' : ''}><span>The lesson's own calibrated judging</span></label>` : chNote('The lesson shapes have changed, so it is judged by the focus below.')) : '')
         + (lj ? '' : CH_FOCUS.map(([k, nm, v]) => { const f = C.focus?.[k] ?? v; return `<label class="dz-gsz"><span style="width:74px">${nm}</span><input type="range" min="0" max="1" step="0.05" data-chf="${k}" value="${f}" style="flex:1"><b style="width:36px;text-align:right">${Math.round(f * 100)}%</b></label>`; }).join('')
           + chNote('How much each part counts. Put Linework at 0 to judge only the shading or packing, however rough the line.'));
@@ -3935,7 +3936,13 @@ DZ.edit = async (id) => {
       <div class="gh" style="margin-top:4px">Mixed with</div>${chSw(chCaps(), 'chsm', m[1])}
       <div class="dz-gk" style="grid-template-columns:1fr${cs.length > 2 ? ' 1fr' : ''}"><button data-chsm="" class="${m[1] ? '' : 'on'}">One cap</button>${cs.length > 2 ? '<button data-chstdel>Remove it</button>' : ''}</div>
       ${m[1] ? `<label class="dz-gsz"><span>Mix</span><input type="range" min="0.05" max="0.95" step="0.05" data-chsmt value="${m[2] ?? 0.5}" style="flex:1"></label>` : ''}
-      ${chNote('Blended in this order along the gradient, from the dark end. Up to 10 colours, all from the palette.')}`; };
+      <div class="gh" style="margin-top:8px">Mixing cup <span style="text-transform:none;letter-spacing:0;font-weight:500">· hold a cap to pour it in</span></div>
+      <div class="dz-chcup"><i data-chcupc style="background:${chCup.c ? ttToHex(chCup.c) : 'transparent'}"></i><div class="dz-chsw">${chCaps().map(c => `<button data-chpour="${c}" style="background:${c}" aria-label="Pour ${c}"></button>`).join('')}</div></div>
+      <div class="dz-gk" style="grid-template-columns:1fr 1fr 1fr"><button data-chcup="add" ${chCup.c && cs.length < 10 ? '' : 'disabled'}>Add it</button><button data-chcup="use" ${chCup.c ? '' : 'disabled'}>Use for ${i + 1}</button><button data-chcup="empty" ${chCup.c ? '' : 'disabled'}>Empty</button></div>
+      ${chNote('Mix like on the needle: the longer you hold a cap, the more of it goes in. Add it puts the mix after colour ' + (i + 1) + '. Blended in order along the gradient, from the dark end; up to 10 colours, all from the palette.')}`; };
+  /* The mixing cup: pours like dipping the needle in the simulator (the fuller the cup, the slower a colour changes it). */
+  const chCup = { c: null, v: 0 }; let chPour = null;
+  const chPourEnd = () => { if (!chPour) return; cancelAnimationFrame(chPour.raf); chPour = null; chRe(); };
   /* Value study (the start of portraits and realism): a picture becomes a shading zone the same size, whose map is
      the picture's darkness (96 x 96, kept raw in sh.raw) posterized into value steps between Lightest and Darkest,
      the way a portrait is blocked in. The technique and needle are chosen as for any shading zone, and the map can be
@@ -4011,12 +4018,15 @@ DZ.edit = async (id) => {
   /* The stage takes a press only when it is on a gradient dot, or the airbrush on the zone (left button, pen or one
      finger); anything else (the middle button, a second finger, off the zone) pans, pinches and selects as usual. */
   let chWired = false;
+  // A press that is the airbrush on the zone or a gradient dot (left button, pen or one finger), or null for anything else.
+  function chHit(e) { const l = chOvOn(); if (!l || e.button !== 0 || (e.pointerType === 'touch' && !e.isPrimary) || e.target.closest('.dz-pop, .dz-rail, .dz-qs, .dz-zoom, .dz-xf, .dz-mods')) return null;
+    const [x, y] = s2mm(e.clientX, e.clientY), b = chBox(l);
+    if (l.sh.grad === 'paint') { const r = chBrush.size / 2; return x < b[0] - r || x > b[0] + b[2] + r || y < b[1] - r || y > b[1] + b[3] + r ? null : { l, x, y, b, paint: true }; }
+    const S = chScr(), hit = chHandles(l, b).find(h => { const [X, Y] = mm2s(h.x, h.y); return Math.hypot(e.clientX - S.sr.left - X, e.clientY - S.sr.top - Y) < 28; }); return hit ? { l, x, y, b, k: hit.k } : null; }
   function chWire() { if (chWired) return; chWired = true;
-    stage.addEventListener('pointerdown', (e) => { const l = chOvOn(); if (!l || e.button !== 0 || (e.pointerType === 'touch' && !e.isPrimary) || e.target.closest('.dz-pop, .dz-rail, .dz-qs, .dz-zoom, .dz-xf, .dz-mods')) return;
-      const [x, y] = s2mm(e.clientX, e.clientY), b = chBox(l);
-      if (l.sh.grad === 'paint') { const r = chBrush.size / 2; if (x < b[0] - r || x > b[0] + b[2] + r || y < b[1] - r || y > b[1] + b[3] + r) return;
-        chArr = Float32Array.from(dzChMapArr(l.sh)); chDrag = { paint: true, last: [x, y], b }; chAt = [x, y]; }
-      else { const S = chScr(), hit = chHandles(l, b).find(h => { const [X, Y] = mm2s(h.x, h.y); return Math.hypot(e.clientX - S.sr.left - X, e.clientY - S.sr.top - Y) < 28; }); if (!hit) return; chDrag = { k: hit.k, b }; }
+    stage.addEventListener('pointerdown', (e) => { const H = chHit(e); if (!H) return; const { l, x, y, b } = H;
+      if (H.paint) { chArr = Float32Array.from(dzChMapArr(l.sh)); chDrag = { paint: true, last: [x, y], b }; chAt = [x, y]; }
+      else chDrag = { k: H.k, b };
       e.preventDefault(); e.stopImmediatePropagation(); chDrag.id = e.pointerId; try { stage.setPointerCapture(e.pointerId); } catch {} if (chDrag.paint) chStamp(l, x, y); }, true);
     stage.addEventListener('pointermove', (e) => { const l = chOvOn(); if (!l) return; if (chDrag && e.pointerId !== chDrag.id) return; const [x, y] = s2mm(e.clientX, e.clientY);
       if (!chDrag) { if (l.sh.grad === 'paint') { chAt = [x, y]; chOv(); } return; }
@@ -4031,6 +4041,9 @@ DZ.edit = async (id) => {
   $('#dz-pop').addEventListener('click', async (e) => { const p0 = $('#dz-pop'); if (!p0.classList.contains('dz-chpop')) return; const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
     if (d('cht')) { const [m, k] = d('cht').split(':'); chTab[m] = k; return chRe(); }
     if (d('chst') != null && l?.sh) { chStop = +d('chst'); return chRe(); }
+    if (d('chcup') && l?.sh) { const k = d('chcup'), S = l.sh; if (k === 'empty') { chCup.c = null; chCup.v = 0; return chRe(); } if (!chCup.c) return; chStopFix(S); const i = Math.min(chStop, S.cols.length - 1), hx = ttToHex(chCup.c);
+      if (k === 'add') { if (S.cols.length >= 10) return toast('Up to 10 colours.', 1500); S.cols.splice(i + 1, 0, hx); S.mixs.splice(i + 1, 0, [hx]); chStop = i + 1; } else { S.cols[i] = hx; S.mixs[i] = [hx]; }
+      changed(true); return chRe(); }
     if (t.closest('[data-chstadd]') && l?.sh) { const S = l.sh; chStopFix(S); const i = Math.min(chStop, S.cols.length - 1); if (S.cols.length >= 10) return; S.cols.splice(i + 1, 0, S.cols[i]); S.mixs.splice(i + 1, 0, [...S.mixs[i]]); chStop = i + 1; changed(true); return chRe(); }
     if (t.closest('[data-chstdel]') && l?.sh) { const S = l.sh; chStopFix(S); if (S.cols.length <= 2) return; const i = Math.min(chStop, S.cols.length - 1); S.cols.splice(i, 1); S.mixs.splice(i, 1); chStop = Math.max(0, i - 1); changed(true); return chRe(); }
     if (d('chsc') && l?.sh) { const S = l.sh; chStopFix(S); const i = Math.min(chStop, S.cols.length - 1); S.mixs[i] = [d('chsc'), S.mixs[i][1], S.mixs[i][2]]; chStopSet(S, i); changed(true); return chRe(); }
@@ -4049,6 +4062,11 @@ DZ.edit = async (id) => {
     if (d('chca') && l) { l.mixOf = [d('chca'), l.mixOf?.[1]]; chInk(l); changed(true); return chRe(); }
     if (d('chcb') != null && l) { const b = d('chcb'); l.mixOf = [l.mixOf?.[0] || chCaps()[0], b || undefined]; chInk(l); changed(true); return chRe(); }
     if (d('chpal')) { doc.chal.pal = d('chpal'); changed(true); return chRe(); }
+    if (d('chpe')) { const k = d('chpe'), use = (P) => { doc.chal.pal = P.id; changed(true); chRe(); };
+      if (k === 'imp') return ttPalImport(use);
+      if (k === 'new') return ttPalEdit({ id: 'p' + Date.now().toString(36), name: 'Challenge palette', caps: [{ c: '#141414', s: 1 }] }, true, use, () => { doc.chal.pal = 'default'; changed(true); chRe(); });
+      const cur = chPals().find(x => x.id === doc.chal.pal) || chPals()[0], mine = ttPalMine().some(x => x.id === cur.id);
+      return ttPalEdit(mine ? JSON.parse(JSON.stringify(cur)) : { id: 'p' + Date.now().toString(36), name: 'My ' + cur.name.toLowerCase(), caps: JSON.parse(JSON.stringify(cur.caps)) }, !mine, use, () => { doc.chal.pal = 'default'; changed(true); chRe(); }); }
     if (t.closest('[data-chplay]')) { const T = dzChSpec(doc, $('#dz-name').value.trim() || name, id); if (T.err) return toast(T.err, 3500); for (const S of T.stencils || []) if (!await Media.url(S.ref)) return toast('The stencil file for this value study is missing. Select the study and press Remake the stencil.', 5000);
       await flush(); closePop();
       { const box = (q) => [q[0], q[1], q[0] + q[2], q[1] + q[3]], P = T.lines.flat().concat(T.pack ? box(T.pack) : [], ...(T.shades || []).map(z => box(z.box))), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
@@ -4065,6 +4083,12 @@ DZ.edit = async (id) => {
       if (hit) { let m = {}; try { m = JSON.parse(hit.meta); } catch {} await DB.run(`UPDATE tattoo_pieces SET meta = ?, skin = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...m, exam }), skin, hit.id]); location.hash = 'tattoo/' + hit.id; return; }
       await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Challenge: ' + T.title, 18, 13, skin, JSON.stringify({ exam })]);
       location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id; } });
+  $('#dz-pop').addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-chpour]'); if (!b || typeof ttMix !== 'function') return; e.preventDefault(); const col = ttHex(b.dataset.chpour);
+    if (!chCup.c) { chCup.c = col; chCup.v = 0.15; } let t0 = performance.now();
+    const step = (now) => { if (!chPour) return; const dt = Math.min(0.1, (now - t0) / 1000); t0 = now; const a = dt * 0.9, f = a / (chCup.v + a); chCup.c = ttMix(chCup.c, col, f); chCup.v += a;
+      const sw = $('#dz-pop [data-chcupc]'); if (sw) sw.style.background = ttToHex(chCup.c); chPour.raf = requestAnimationFrame(step); };
+    chPour = { raf: requestAnimationFrame(step) }; });
+  ['pointerup', 'pointercancel'].forEach(ev => addEventListener(ev, chPourEnd));
   $('#dz-pop').addEventListener('change', (e) => { const p0 = $('#dz-pop'); if (!p0.classList.contains('dz-chpop')) return;
     if (e.target.matches('[data-chtext]')) { doc.chal.text = e.target.value; changed(true); }
     if (e.target.matches('[data-chlock]')) { doc.chal.lock = e.target.checked; changed(true); }
