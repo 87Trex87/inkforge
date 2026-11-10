@@ -3764,15 +3764,33 @@ DZ.edit = async (id) => {
     isoXf(l, [1, 0, 0, 1]); delete l.isoP;   // a free shape with its turn and flips baked in
     const W = l.w, H = l.h || 1, down = deg < 0, Ri = Math.max(H * 0.05, W / a - H / 2), Ro = Ri + H;
     const map = (u, v) => { if (down) v = H - v; const f = (u / W - 0.5) * a, r = Ro - v / H * (Ro - Ri); return [r * Math.sin(f), down ? r * Math.cos(f) : -r * Math.cos(f)]; };
-    const lerp = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t], M = 8;
-    const subs = l.subs.map(sp => { const N = sp.nodes, P = (n) => [n.x * W, n.y * H], segN = sp.closed === false ? N.length - 1 : N.length, out = [];
-      for (let i = 0; i < segN; i++) { const A = N[i], B = N[(i + 1) % N.length]; let q0 = P(A), q1 = [q0[0] + A.ox * W, q0[1] + A.oy * H], q3 = P(B), q2 = [q3[0] + B.ix * W, q3[1] + B.iy * H];
-        for (let j = 0; j < M; j++) { const t = 1 / (M - j);   // split off the next piece (de Casteljau)
-          const a1 = lerp(q0, q1, t), b1 = lerp(q1, q2, t), c1 = lerp(q2, q3, t), a2 = lerp(a1, b1, t), b2 = lerp(b1, c1, t), m = lerp(a2, b2, t);
-          out.push({ p0: q0, p1: a1, p2: a2, p3: m, t: j ? 'smooth' : A.t || 'corner' }); q0 = m; q1 = b2; q2 = c1; } }
-      const nodes = out.map((pc, i) => { const prev = out[i - 1] || (sp.closed === false ? null : out[out.length - 1]), [x, y] = map(...pc.p0), [hx, hy] = map(...pc.p1);
-        let ix = 0, iy = 0; if (prev) { const [gx, gy] = map(...prev.p2); ix = gx - x; iy = gy - y; } return { x, y, ix, iy, ox: hx - x, oy: hy - y, t: pc.t }; });
-      if (sp.closed === false && out.length) { const lp = out[out.length - 1], [x, y] = map(...lp.p3), [gx, gy] = map(...lp.p2); nodes.push({ x, y, ix: gx - x, iy: gy - y, ox: 0, oy: 0, t: N[N.length - 1].t || 'corner' }); }
+    /* Each edge is sampled finely, bent exactly, then refitted with as few curves as stay within a hair of the true
+       bend (Schneider's fit, split in half where it isn't close enough), so a bent box keeps a handful of nodes. */
+    const K = 48, tol = Math.max(0.5, 0.0006 * Math.max(W, H)), unit = (v) => { const n = Math.hypot(v[0], v[1]) || 1; return [v[0] / n, v[1] / n]; };
+    const bz = (c, t) => { const u = 1 - t, b0 = u * u * u, b1 = 3 * u * u * t, b2 = 3 * u * t * t, b3 = t * t * t; return [b0 * c[0][0] + b1 * c[1][0] + b2 * c[2][0] + b3 * c[3][0], b0 * c[0][1] + b1 * c[1][1] + b2 * c[2][1] + b3 * c[3][1]]; };
+    const fit = (S, T1, T2) => { const P0 = S[0], P3 = S[S.length - 1], d = [0]; for (let i = 1; i < S.length; i++) d.push(d[i - 1] + Math.hypot(S[i][0] - S[i - 1][0], S[i][1] - S[i - 1][1]));
+      const tot = d[d.length - 1] || 1; let c00 = 0, c01 = 0, c11 = 0, x0 = 0, x1 = 0;
+      for (let i = 0; i < S.length; i++) { const t = d[i] / tot, u = 1 - t, b0 = u * u * u, b1 = 3 * u * u * t, b2 = 3 * u * t * t, b3 = t * t * t, A1 = [T1[0] * b1, T1[1] * b1], A2 = [T2[0] * b2, T2[1] * b2];
+        const r = [S[i][0] - (P0[0] * (b0 + b1) + P3[0] * (b2 + b3)), S[i][1] - (P0[1] * (b0 + b1) + P3[1] * (b2 + b3))];
+        c00 += A1[0] * A1[0] + A1[1] * A1[1]; c01 += A1[0] * A2[0] + A1[1] * A2[1]; c11 += A2[0] * A2[0] + A2[1] * A2[1]; x0 += A1[0] * r[0] + A1[1] * r[1]; x1 += A2[0] * r[0] + A2[1] * r[1]; }
+      const det = c00 * c11 - c01 * c01, dd = Math.hypot(P3[0] - P0[0], P3[1] - P0[1]); let a1 = det ? (x0 * c11 - x1 * c01) / det : 0, a2 = det ? (c00 * x1 - c01 * x0) / det : 0;
+      if (!(a1 > dd * 1e-3) || !(a2 > dd * 1e-3)) a1 = a2 = dd / 3;
+      const C = [P0, [P0[0] + T1[0] * a1, P0[1] + T1[1] * a1], [P3[0] + T2[0] * a2, P3[1] + T2[1] * a2], P3], F = []; for (let q = 0; q <= 60; q++) F.push(bz(C, q / 60));
+      // error: each sample's distance to the fitted curve (as 60 short segments, not just its points)
+      const sd = (s, p, q) => { const vx = q[0] - p[0], vy = q[1] - p[1], L2 = vx * vx + vy * vy, t = L2 ? Math.max(0, Math.min(1, ((s[0] - p[0]) * vx + (s[1] - p[1]) * vy) / L2)) : 0; return (p[0] + vx * t - s[0]) ** 2 + (p[1] + vy * t - s[1]) ** 2; };
+      let err = 0; for (const s of S) { let m = Infinity; for (let q = 1; q < F.length; q++) m = Math.min(m, sd(s, F[q - 1], F[q])); err = Math.max(err, Math.sqrt(m)); } return { C, err }; };
+    const fitRange = (S, i0, i1, T1, T2, out, first) => { const r = fit(S.slice(i0, i1 + 1), T1, T2);
+      if (r.err <= tol || i1 - i0 <= 3) return out.push({ C: r.C, first });
+      const m = (i0 + i1) >> 1, Tm = unit([S[m + 1][0] - S[m - 1][0], S[m + 1][1] - S[m - 1][1]]);
+      fitRange(S, i0, m, T1, [-Tm[0], -Tm[1]], out, first); fitRange(S, m, i1, Tm, T2, out, null); };
+    const subs = l.subs.map(sp => { const N = sp.nodes, P = (n) => [n.x * W, n.y * H], segN = sp.closed === false ? N.length - 1 : N.length, cs = [];
+      for (let i = 0; i < segN; i++) { const A = N[i], B = N[(i + 1) % N.length], c = [P(A), [A.x * W + A.ox * W, A.y * H + A.oy * H], [B.x * W + B.ix * W, B.y * H + B.iy * H], P(B)];
+        const S = []; for (let q = 0; q <= K; q++) S.push(map(...bz(c, q / K)));
+        const T1 = unit([map(...bz(c, 1e-3))[0] - S[0][0], map(...bz(c, 1e-3))[1] - S[0][1]]), T2 = unit([map(...bz(c, 1 - 1e-3))[0] - S[K][0], map(...bz(c, 1 - 1e-3))[1] - S[K][1]]);
+        fitRange(S, 0, K, T1, T2, cs, A.t || 'corner'); }
+      const nodes = cs.map((pc, i) => { const prev = cs[i - 1] || (sp.closed === false ? null : cs[cs.length - 1]), [x, y] = pc.C[0];
+        return { x, y, ix: prev ? prev.C[2][0] - x : 0, iy: prev ? prev.C[2][1] - y : 0, ox: pc.C[1][0] - x, oy: pc.C[1][1] - y, t: pc.first || 'smooth' }; });
+      if (sp.closed === false && cs.length) { const lp = cs[cs.length - 1], [x, y] = lp.C[3]; nodes.push({ x, y, ix: lp.C[2][0] - x, iy: lp.C[2][1] - y, ox: 0, oy: 0, t: N[N.length - 1].t || 'corner' }); }
       return { ...sp, nodes }; });
     const pts = subs.flatMap(sp => sp.nodes.flatMap(n => [[n.x, n.y], [n.x + n.ix, n.y + n.iy], [n.x + n.ox, n.y + n.oy]]));
     const x0 = Math.min(...pts.map(q => q[0])), x1 = Math.max(...pts.map(q => q[0])), y0 = Math.min(...pts.map(q => q[1])), y1 = Math.max(...pts.map(q => q[1]));
