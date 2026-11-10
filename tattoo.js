@@ -3528,7 +3528,28 @@ TT.open = async (el, id) => {
       const pq = cov * (0.25 * sat + 0.75 * cons) * (1 - 0.6 * sp);
       parts.push([F.pack, pq], [F.colour, col], [F.heal, heal], [F.tech, tech * (0.5 + 0.5 * ctrl)]);
       Object.assign(out, { packing: Math.round(pq * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), colour: Math.round(col * 100), healing: Math.round(heal * 100), technique: Math.round(tech * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100), yourColour: ttToHex(avg.map(v => v / 255)) }); }
+    (T.shades || []).forEach((Z, zi) => { const z = shadeZone(Z), nm = T.shades.length > 1 ? ' ' + (zi + 1) : ''; parts.push([F.shade ?? 1, z.score / 100]); for (const [k, v] of Object.entries(z)) out[(k === 'score' ? 'shading' : k) + nm] = v; });
     const ws = parts.reduce((t, [w]) => t + w, 0); out.score = ws ? Math.round(100 * parts.reduce((t, [w, v]) => t + w * v, 0) / ws) : ln.score; return out; };
+  /* A shading zone, in ten bands along its gradient (dzChP, shared with the design studio). Tones (stipple, whip,
+     grey wash): the shape of the gradient against the one asked for (scaled to your own darkest, as the gradient
+     challenges are), reaching the darkest asked, no sudden steps between bands, and each band even across.
+     A blend: each band the colour asked for, covered, and no sudden steps. Plus whether the needle asked for was used. */
+  const shadeZone = (Z) => { const N = 10, zp = zonePath(Z.pts), fillM = maskOf(zp, true), edgeM = maskOf(zp, false, 0.8), bd = Array.from({ length: N }, () => ({ n: 0, s: 0, cov: 0, c: [0, 0, 0], cn: 0, cells: new Map() }));
+    for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const j = (y * W + x) * 4; if (fillM[j + 3] <= 128 || edgeM[j + 3] > 128) continue; const X = x / mm, Y = y / mm, p = dzChP(Z, X, Y, Z.box), k = Math.min(N - 1, Math.floor(p * N)), B = bd[k], d = densAt(j);
+      B.n++; B.s += d; if (d > 0.5) { B.cov++; const c = colAt(j); if (c) { B.c[0] += c[0]; B.c[1] += c[1]; B.c[2] += c[2]; B.cn++; } } const ck = Math.floor(X) + ',' + Math.floor(Y), ce = B.cells.get(ck) || [0, 0]; ce[0] += d; ce[1]++; B.cells.set(ck, ce); }
+    const used = bd.filter(B => B.n > 3), mean = used.map(B => B.s / B.n), mid = (B) => (bd.indexOf(B) + 0.5) / N;
+    const steps = (vals, wantStep) => { let m = 0; for (let i = 1; i < vals.length; i++) m = Math.max(m, vals[i] - wantStep(i)); return m; };
+    const nd = EX.cur?.tm?.by?.[Z.nd], needle = nd?.strokes ? 1 : 0.4;
+    if (Z.tech === 'blend') { const A = ttHex(Z.cols?.[0] || '#b3261e'), Bc = ttHex(Z.cols?.[1] || '#f2c21b'), want = (B) => ttMix(A, Bc, dzChBlend(Z, mid(B))).map(v => v * 255);
+      const errs = used.map(B => B.cn ? dist(B.c.map(v => v / B.cn), want(B)) : 0.6), col = 1 - clamp01((errs.reduce((a, v) => a + v, 0) / Math.max(1, errs.length) - 0.05) * 3);
+      const avg = used.map(B => B.cn ? B.c.map(v => v / B.cn) : null), stp = steps(avg.map((c, i) => c && avg[i - 1] ? dist(c, avg[i - 1]) : 0), (i) => dist(want(used[i]), want(used[i - 1] || used[i])) + 0.06), smooth = clamp01(1 - stp / 0.25);
+      const cov = used.reduce((a, B) => a + B.cov, 0) / Math.max(1, used.reduce((a, B) => a + B.n, 0));
+      return { score: Math.round(100 * cov * (0.5 * col + 0.3 * smooth + 0.2) * (0.75 + 0.25 * needle)), coverage: Math.round(cov * 100), colour: Math.round(col * 100), smoothness: Math.round(smooth * 100), needle: Math.round(needle * 100) }; }
+    const tv = used.map(B => dzChV(Z, mid(B))); let ct = 0, tt = 0; mean.forEach((m, i) => { ct += m * tv[i]; tt += tv[i] * tv[i]; }); const a = ct / Math.max(1e-6, tt);
+    const shape = mean.reduce((e, m, i) => e + Math.abs(m - a * tv[i]), 0) / Math.max(1, mean.length) / Math.max(0.15, a * Math.max(...tv, 0.1)), match = 1 - clamp01(shape * 1.6);
+    const reach = clamp01(Math.max(0, ...mean) / Math.max(0.1, (Z.dark ?? 0.85) * 0.85)), stp = steps(mean.map((m, i) => i ? Math.abs(m - mean[i - 1]) : 0), (i) => Math.abs(tv[i] - tv[i - 1]) * a + 0.08), smooth = clamp01(1 - stp / 0.25);
+    const ev = used.map(B => { const cs = [...B.cells.values()].filter(c => c[1] > 2).map(c => c[0] / c[1]), m = cs.reduce((s, v) => s + v, 0) / Math.max(1, cs.length); return cs.length > 1 ? Math.sqrt(cs.reduce((s, v) => s + (v - m) * (v - m), 0) / cs.length) : 0; }), even = clamp01(1 - (ev.reduce((s, v) => s + v, 0) / Math.max(1, ev.length) - 0.04) / 0.2);
+    return { score: Math.round(100 * (0.4 * match + 0.2 * reach + 0.2 * smooth + 0.2 * even) * (0.75 + 0.25 * needle) * clamp01(reach / 0.5)), gradient: Math.round(match * 100), darkness: Math.round(reach * 100), smoothness: Math.round(smooth * 100), evenness: Math.round(even * 100), needle: Math.round(needle * 100) }; };
   const scoreOf = (T) => {
     if (T.zones) return zoneScore(T);
     if (T.tri) return triScore(T);

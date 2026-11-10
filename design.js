@@ -76,7 +76,35 @@ const CH_NW = { '1RL': 0.25, '3RL': 0.57, '5RL': 0.7, '7RL': 0.77, '9RL': 0.91, 
   '7M1': 1.4, '9M1': 1.75, '11M1': 2.1, '13M1': 2.45, '15M1': 2.4, '9CM': 1.75, '13CM': 2.45, '15CM': 2.8, '23CM': 4.2, '31CM': 5.6 };   /* mm, from the simulator's needle layouts */
 const CH_LINERS = ['1RL', '3RL', '5RL', '7RL', '9RL', '11RL', '14RL'];
 const CH_PACKERS = ['5RS', '7RS', '9RS', '11RS', '14RS', '7M1', '9M1', '11M1', '13M1', '15M1', '9CM', '13CM', '15CM', '23CM', '31CM'];
-const CH_ROLES = [['', 'Not graded'], ['outline', 'Outline'], ['detail', 'Detail lines'], ['pack', 'Packing']];
+const CH_ROLES = [['', 'Not graded'], ['outline', 'Outline'], ['detail', 'Detail lines'], ['pack', 'Packing'], ['shade', 'Shading']];
+/* Shading zones. p is where a point sits along the zone's gradient, 0 at the dark end and 1 at the light end, in the
+   zone's box b ([x, y, w, h], any units as long as x and y match): even (all the darkest), straight (along a turn,
+   90 = dark at the top) or radial (dark at a centre, given as fractions of the box). Reverse swaps the ends. The
+   wanted darkness runs from Darkest to Lightest; Balance bends it (below 1: more of it dark, above: more light). */
+function dzChP(sh, x, y, b) { let p; const C = [[0, 0], [1, 0], [0, 1], [1, 1]];
+  if (sh.grad === 'flat') p = 0;
+  else if (sh.grad === 'radial') { const cx = b[0] + (sh.cx ?? 0.5) * b[2], cy = b[1] + (sh.cy ?? 0.5) * b[3], R = Math.max(...C.map(([i, j]) => Math.hypot(b[0] + i * b[2] - cx, b[1] + j * b[3] - cy))) || 1; p = Math.hypot(x - cx, y - cy) / R; }
+  else { const a = (sh.ang ?? 90) * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a), pr = C.map(([i, j]) => (b[0] + i * b[2]) * dx + (b[1] + j * b[3]) * dy), lo = Math.min(...pr), hi = Math.max(...pr); p = (x * dx + y * dy - lo) / ((hi - lo) || 1); }
+  p = Math.max(0, Math.min(1, p)); return sh.rev ? 1 - p : p; }
+const dzChV = (sh, p) => { const d = sh.dark ?? 0.85, l = sh.light ?? 0.05; return l + (d - l) * Math.pow(1 - p, sh.bias ?? 1); };
+const dzChBlend = (sh, p) => Math.pow(p, sh.bias ?? 1);   /* a blend: 0 is the first colour, 1 the second */
+const CH_SHADE = { stipple: ['Stipple', 'Dots only, from quick even whips with a liner. Judged on the gradient, how even and smooth it is, and reaching the darkest.', '3RL'],
+  whip: ['Whip', 'Whipped in black with a shader or magnum, solid at the dark end and fading out. Judged like stipple.', '9M1'],
+  wash: ['Grey wash', 'Black thinned with water, blended through the wash values. The simulator starts on the grey wash caps. Judged on how dark each part is.', '13CM'],
+  blend: ['Colour blend', 'Packed and whipped from one colour into the next, with no line where one stops. Judged on each band being the colour asked for, coverage and smoothness.', '11M1'] };
+const chHexRGB = (h) => [1, 3, 5].map(i => parseInt(String(h).slice(i, i + 2), 16) || 0);
+// A shading zone as it should look: dots for stipple, a smooth tone for whip and wash, the colours for a blend.
+async function dzChShade(x, doc, l, scale) { const sh = l.sh || {}, outs = doc.layers.filter(o => o.t === 'shape' && o.role === 'outline' && !o.hide && (o.side || null) === (l.side || null));
+  const P = dzChPts(l).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2); if (!xs.length) return;
+  const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], res = 0.2, cw = Math.max(1, Math.ceil(b[2] / res)), chh = Math.max(1, Math.ceil(b[3] / res));
+  const c = document.createElement('canvas'); c.width = cw; c.height = chh; const g = c.getContext('2d'), im = g.createImageData(cw, chh), D = im.data;
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, A = chHexRGB(sh.cols?.[0] || '#b3261e'), B = chHexRGB(sh.cols?.[1] || '#f2c21b');
+  for (let j = 0; j < chh; j++) for (let i = 0; i < cw; i++) { const p = dzChP(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b), k = (j * cw + i) * 4;
+    if (sh.tech === 'blend') { const t = dzChBlend(sh, p); for (let q = 0; q < 3; q++) D[k + q] = A[q] + (B[q] - A[q]) * t; D[k + 3] = 255; continue; }
+    const v = dzChV(sh, p); D[k] = D[k + 1] = D[k + 2] = 20; D[k + 3] = sh.tech === 'stipple' ? (rnd() < v * 0.9 ? 235 : 0) : v * 255; }
+  g.putImageData(im, 0, 0);
+  x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); if (outs.length) { const O = new Path2D(); for (const o of outs) O.addPath(dzChPath(o)); x.clip(O); } x.clip(dzChPath(l));
+  x.imageSmoothingEnabled = sh.tech !== 'stipple'; x.drawImage(c, b[0] * CH_PX, b[1] * CH_PX, b[2] * CH_PX, b[3] * CH_PX); x.restore(); }
 // A shape's outline as a path on the page (its turn and flips included).
 const dzChPath = (L) => { const p = new Path2D(); p.addPath(new Path2D(dzSvgPath(L)), new DOMMatrix().translate(L.x + L.w / 2, L.y + (L.h || 0) / 2).rotate(L.rot || 0).scale(L.fx ? -1 : 1, L.fy ? -1 : 1)); return p; };
 // The same outline as lines of points in mm on the skin, one every 0.3 mm, for the simulator's stencil and judging.
@@ -112,11 +140,14 @@ function dzChTemplates() { if (typeof TT_CH === 'undefined') return [];
       const ink = T.mixOf ? ttToHex(ttMix(ttHex(T.mixOf[0]), ttHex(T.mixOf[1]), 0.5)) : '#141414'; L.push(dzS('ellipse', px(cx - r), px(cy - r), px(r * 2), px(r * 2), { fill: ink, role: 'pack', nd: pn, mixOf: T.mixOf ? [...T.mixOf] : ['#141414'], mixT: 0.5, ink })); }
     else if (T.pack) { const b = T.pack; L.push(dzS('rect', px(b[0]), px(b[1]), px(b[2]), px(b[3]), { fill: 'none', role: 'outline', nd })); L.push(dzS('rect', px(b[0]), px(b[1]), px(b[2]), px(b[3]), { fill: '#141414', role: 'pack', nd: pn, mixOf: ['#141414'], ink: '#141414' })); }
     else { const R = dzChRec(); T.path(R); L.push(dzChVec(R.subs, { role: 'outline', nd })); }
-    L.forEach((l, i) => l.name = l.role === 'pack' ? 'Packing' : 'Outline');
+    const zb = T.stipple || T.wgrad;
+    if (zb) L.push(dzS('rect', px(zb[0]), px(zb[1]), px(zb[2]), px(zb[3]), { fill: 'none', role: 'shade', nd: T.stipple ? '3RL' : (T.shadeNeedle || '13CM'), sh: T.stipple ? { tech: 'stipple', grad: 'linear', ang: 90, dark: 0.85, light: 0.05, bias: 1 } : { tech: 'wash', grad: 'linear', ang: 90, rev: true, dark: 1, light: 0.14, bias: 1 } }));
+    if (T.tri) { const R = dzChRec(); T.path(R); L.push(dzChVec(R.subs, { role: 'shade', nd: T.packNeedle || '11M1', sh: { tech: 'blend', grad: 'linear', ang: -90, bias: 1, cols: [ttToHex(ttMix(ttHex('#141414'), ttHex('#b3261e'), 0.6)), '#f2c21b'] } })); }
+    L.forEach((l) => l.name = { pack: 'Packing', shade: 'Shading' }[l.role] || 'Outline');
     return L; }, { base: T.id, text: T.text, lessonJudge: true }]); }
 // What the graded shapes are, so a template knows when it has been changed.
-const dzChSig = (doc) => JSON.stringify(doc.layers.filter(l => l.t === 'shape' && l.role).map(l => [l.role, l.nd, l.shape, Math.round(l.x), Math.round(l.y), Math.round(l.w), Math.round(l.h || 0), l.rot || 0, l.fx, l.fy, l.subs, l.ink]));
-const CH_FOCUS = [['line', 'Linework', 1], ['pack', 'Packing', 1], ['colour', 'Colour', 0.6], ['heal', 'Healing', 0.8], ['tech', 'Technique', 0.8]];
+const dzChSig = (doc) => JSON.stringify(doc.layers.filter(l => l.t === 'shape' && l.role).map(l => [l.role, l.nd, l.shape, Math.round(l.x), Math.round(l.y), Math.round(l.w), Math.round(l.h || 0), l.rot || 0, l.fx, l.fy, l.subs, l.ink, l.sh]));
+const CH_FOCUS = [['line', 'Linework', 1], ['pack', 'Packing', 1], ['shade', 'Shading', 1], ['colour', 'Colour', 0.6], ['heal', 'Healing', 0.8], ['tech', 'Technique', 0.8]];
 // The challenge as the simulator plays it, or { err } when it can't be played yet.
 function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 'shape' && l.role && !l.hide), outs = S.filter(l => l.role === 'outline'), dets = S.filter(l => l.role === 'detail'), pk = S.find(l => l.role === 'pack');
   if (!outs.length) return { err: 'Give a shape the Outline role first: it is the line the artist follows.' };
@@ -125,12 +156,17 @@ function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 's
     needles: [...new Set([nd, ...dets.map(l => l.nd || nd), ...(pk ? [pk.nd || '7RS'] : [])])] };
   const C0 = doc.chal || {}; if (C0.base && C0.lessonJudge !== false && C0.sig === dzChSig(doc)) T.base = C0.base;   /* an unchanged lesson template: the lesson's own judging */
   else { T.zones = true; T.focus = Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C0.focus?.[k] ?? v])); }
+  const shs = S.filter(l => l.role === 'shade');
+  if (shs.length) { T.shades = shs.map(l => { const pts = dzChPts(l), P = pts.flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
+      return { pts, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], nd: l.nd || CH_SHADE[l.sh?.tech || 'stipple'][2], ...(l.sh || {}) }; });
+    T.needles = [...new Set([...T.needles, ...T.shades.map(z => z.nd)])]; T.cat = 'shade'; if (T.shades.some(z => z.tech === 'wash')) { T.wash = true; T.ink = 'wash'; } }
   if (pk) { const P = dzChPts(pk).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2), x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys);
     T.pack = [x0, y0, x1 - x0, y1 - y0].map(v => Math.round(v * 10) / 10); T.packNeedle = pk.nd || '7RS'; T.packPts = dzChPts(pk);
     const ink = pk.ink || '#141414'; T.packInk = ink;
     if (pk.shape === 'ellipse' && Math.abs(pk.w - (pk.h || 0)) < 4) { T.circle = [(x0 + x1) / 2, (y0 + y1) / 2, Math.min(x1 - x0, y1 - y0) / 2].map(v => Math.round(v * 100) / 100); T.mixOf = pk.mixOf?.[1] ? [pk.mixOf[0], pk.mixOf[1]] : [ink, ink]; } }
   const C = doc.chal || {}, what = outs[0].shape === 'ellipse' ? 'circle' : 'shape';
   T.text = C.text?.trim() || `Line the ${what} with the ${nd}${dets.length ? `, and the detail lines with the ${[...new Set(dets.map(l => l.nd || nd))].join(' and ')}` : ''}.`
+    + (shs.length ? ' ' + shs.map(l => { const z = l.sh || {}; return `${z.tech === 'blend' ? 'Blend' : 'Shade'} the ${CH_SHADE[z.tech || 'stipple'][0].toLowerCase()} zone with the ${l.nd}${z.tech === 'blend' ? ', from the first colour into the second' : z.grad === 'flat' ? ', one even tone' : ', dark to light like the example'}.`; }).join(' ') : '')
     + (pk ? ` Then change to the ${T.packNeedle} and pack it solid${pk.mixOf?.[1] ? ', in a colour mixed from two caps like the example' : (pk.ink || '#141414') === '#141414' ? ' black' : ' in the colour of the example'}.` : '') + ' Let it settle, then press Done.';
   return T; }
 async function dzSavePattern(cv, title, toDevice) {
@@ -918,7 +954,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     while (j < L.length && L[j].clip) j++;
     const clips = L.slice(i + 1, j).filter(show); i = j - 1;
     if (!show(base)) continue;
-    if (doc.chal && base.t === 'shape' && base.role) { if (base.role === 'pack') await dzChPack(x, doc, base, scale, one); else chLines.push(base); continue; }
+    if (doc.chal && base.t === 'shape' && base.role) { if (base.role === 'pack') await dzChPack(x, doc, base, scale, one); else if (base.role === 'shade') await dzChShade(x, doc, base, scale); else chLines.push(base); continue; }
     if (!clips.length) { await oneW(x, base); continue; }
     const off = document.createElement('canvas'); off.width = cv.width; off.height = cv.height;
     const ox = off.getContext('2d');
@@ -3835,13 +3871,31 @@ DZ.edit = async (id) => {
         <div class="gh" style="margin-top:6px">Colour</div>${chSw(chCaps(), 'chca', l.mixOf?.[0])}
         <div class="gh" style="margin-top:4px">Mixed with</div>${chSw(chCaps(), 'chcb', l.mixOf?.[1])}<div class="dz-gk" style="grid-template-columns:1fr"><button data-chcb="" class="${l.mixOf?.[1] ? '' : 'on'}">Nothing: one cap</button></div>
         ${l.mixOf?.[1] ? `<label class="dz-gsz"><span>Mix</span><input type="range" min="0.05" max="0.95" step="0.05" data-chmt value="${l.mixT ?? 0.5}" style="flex:1"></label>` : ''}
-        <div class="dz-chres"><i style="background:${l.ink || '#141414'}"></i><span class="muted">Packed solid in this colour, kept inside the outline. Only colours from the challenge's palette.</span></div>` : ''}`; };
+        <div class="dz-chres"><i style="background:${l.ink || '#141414'}"></i><span class="muted">Packed solid in this colour, kept inside the outline. Only colours from the challenge's palette.</span></div>` : ''}
+      ${r === 'shade' ? chShadeMenu(l, nds) : ''}`; };
+  const chShadeMenu = (l, nds) => { const S = l.sh || {}, tb = (k, v, n) => `<button data-chs="${k}:${v}" class="${String(S[k] ?? '') === String(v) ? 'on' : ''}">${n}</button>`;
+    const sl = (k, n, mn, mx, stp, def) => `<label class="dz-gsz"><span style="width:86px">${n}</span><input type="range" min="${mn}" max="${mx}" step="${stp}" data-chss="${k}" value="${S[k] ?? def}" style="flex:1"></label>`;
+    return `<div class="gh" style="margin-top:6px">Technique</div><div class="dz-gk" style="grid-template-columns:1fr 1fr">${Object.entries(CH_SHADE).map(([k, v]) => tb('tech', k, v[0])).join('')}</div>
+      <p class="muted" style="font-size:11px;margin:2px 6px 4px">${CH_SHADE[S.tech || 'stipple'][1]}</p>
+      <div class="gh">Needle allowed</div>${nds(S.tech === 'stipple' ? CH_LINERS : CH_PACKERS)}
+      <div class="gh" style="margin-top:6px">Gradient</div><div class="dz-gk" style="grid-template-columns:repeat(3,1fr)">${tb('grad', 'flat', 'Even')}${tb('grad', 'linear', 'Straight')}${tb('grad', 'radial', 'Radial')}</div>
+      ${S.grad === 'flat' ? '' : `<div class="dz-gk" style="grid-template-columns:1fr"><button data-chs="rev:${S.rev ? 0 : 1}" class="${S.rev ? 'on' : ''}">Reverse: dark at the other end</button></div>`}
+      ${S.grad === 'linear' ? sl('ang', 'Turn', 0, 345, 15, 90) : ''}${S.grad === 'radial' ? sl('cx', 'Centre across', 0, 1, 0.05, 0.5) + sl('cy', 'Centre down', 0, 1, 0.05, 0.5) : ''}
+      ${S.tech === 'blend' ? `<div class="gh" style="margin-top:4px">From</div>${chSw(chCaps(), 'chbf', S.cols?.[0])}<div class="gh">Into</div>${chSw(chCaps(), 'chbt', S.cols?.[1])}`
+        : sl('dark', 'Darkest', 0.1, 1, 0.05, 0.85) + (S.grad === 'flat' ? '' : sl('light', 'Lightest', 0, 0.9, 0.05, 0.05))}
+      ${S.grad === 'flat' ? '' : sl('bias', 'Balance', 0.3, 3, 0.1, 1) + '<p class="muted" style="font-size:11px;margin:0 6px 4px">Balance: left keeps more of it dark, right more of it light.</p>'}`; };
   const chInk = (l) => { const m = l.mixOf || ['#141414']; l.ink = m[1] ? chMix(m[0], m[1], l.mixT ?? 0.5) : m[0]; };
   async function chOpen(mode, btn) { if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const s = document.createElement('script'); s.src = 'tattoo.js'; s.onload = s.onerror = res; document.head.appendChild(s); });
     closePop(); const p0 = pop(); p0.dataset.ch = mode; p0.innerHTML = mode === 'role' ? chRoleMenu() : chSetMenu(); p0.hidden = false; p0.classList.add('dz-gpop', 'dz-chpop'); btn?.classList.add('open');
     const y = btn ? btn.getBoundingClientRect().top - stage.getBoundingClientRect().top : 8; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; }
   const chRe = () => { const p0 = pop(); if (!p0.hidden && p0.classList.contains('dz-chpop')) p0.innerHTML = p0.dataset.ch === 'role' ? chRoleMenu() : chSetMenu(); };
   $('#dz-pop').addEventListener('click', async (e) => { const p0 = $('#dz-pop'); if (!p0.classList.contains('dz-chpop')) return; const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
+    if (d('chs') && l?.sh) { const [k, v] = d('chs').split(':'); l.sh[k] = k === 'rev' ? v === '1' : v;
+      if (k === 'tech') { l.nd = CH_SHADE[v][2]; if (v === 'blend' && !l.sh.cols) l.sh.cols = [chCaps()[2] || chCaps()[0], chCaps()[3] || chCaps()[0]]; }
+      changed(true); drawCtx(); return chRe(); }
+    if (d('chbf') && l?.sh) { l.sh.cols = [d('chbf'), l.sh.cols?.[1] || d('chbf')]; changed(true); return chRe(); }
+    if (d('chbt') && l?.sh) { l.sh.cols = [l.sh.cols?.[0] || d('chbt'), d('chbt')]; changed(true); return chRe(); }
+    if (d('chr') === 'shade' && l) { l.role = 'shade'; l.sh ||= { tech: 'stipple', grad: 'linear', ang: 90, dark: 0.85, light: 0.05, bias: 1 }; l.nd = CH_SHADE[l.sh.tech][2]; changed(true); drawCtx(); return chRe(); }
     if (d('chr') != null && l) { const r = d('chr'); if (r) { l.role = r; if (!(r === 'pack' ? CH_PACKERS : CH_LINERS).includes(l.nd)) l.nd = r === 'pack' ? '7RS' : r === 'outline' ? '5RL' : '3RL'; if (r === 'pack') { l.mixOf ||= [chCaps()[0]]; chInk(l); } } else { delete l.role; delete l.nd; }
       changed(true); drawCtx(); return chRe(); }
     if (d('chn') && l) { l.nd = d('chn'); changed(true); drawCtx(); return chRe(); }
@@ -3864,9 +3918,11 @@ DZ.edit = async (id) => {
     if (e.target.matches('[data-chlock]')) { doc.chal.lock = e.target.checked; changed(true); }
     if (e.target.matches('[data-chlj]')) { doc.chal.lessonJudge = e.target.checked; changed(true); chRe(); }
     if (e.target.matches('[data-chf]')) { doc.chal.focus = { ...(doc.chal.focus || {}), [e.target.dataset.chf]: +e.target.value }; changed(true); }
-    if (e.target.matches('[data-chmt]')) { const l = layer(); if (l) { l.mixT = +e.target.value; chInk(l); changed(true); chRe(); } } });
+    if (e.target.matches('[data-chmt]')) { const l = layer(); if (l) { l.mixT = +e.target.value; chInk(l); changed(true); chRe(); } }
+    if (e.target.matches('[data-chss]')) { const l = layer(); if (l?.sh) { l.sh[e.target.dataset.chss] = +e.target.value; changed(true); } } });
   $('#dz-pop').addEventListener('input', (e) => { if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chf]')) { const b = e.target.nextElementSibling; if (b) b.textContent = Math.round(e.target.value * 100) + '%'; }
-    const l = layer(); if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chmt]') && l) { l.mixT = +e.target.value; chInk(l); redraw(); const r = $('#dz-pop .dz-chres i'); if (r) r.style.background = l.ink; } });
+    const l = layer(); if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chss]') && l?.sh) { l.sh[e.target.dataset.chss] = +e.target.value; redraw(); return; }
+    if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chmt]') && l) { l.mixT = +e.target.value; chInk(l); redraw(); const r = $('#dz-pop .dz-chres i'); if (r) r.style.background = l.ink; } });
   /* ---------- Pattern tile ----------
      The page is one cell of the pattern. Its neighbours are drawn faintly round it (the same picture, a cell over),
      and every layer is also drawn a cell over in each direction (dzDraw), so a shape that crosses an edge carries on
