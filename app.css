@@ -1719,3 +1719,12 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 /* Pattern tile: the neighbours round the cell, behind the page */
 #dz-patcv { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; } #dz-patcv[hidden] { display: none; }
 .dz-pop.dz-ppop { width: 250px; }
+
+/* Challenge maker */
+.dz-pop.dz-chpop { width: 270px; max-height: calc(100% - 16px); overflow-y: auto; }
+.dz-chrole { white-space: nowrap; } .dz-chrole.on { border-color: var(--teal); color: var(--teal); }
+.dz-chsw { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 4px 4px; } .dz-chsw button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); padding: 0; }
+.dz-chsw button.on { border-color: var(--teal); box-shadow: 0 0 0 2px var(--teal); }
+.dz-chres { display: flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 11px; } .dz-chres i { width: 34px; height: 34px; border-radius: 8px; flex: none; border: 1px solid var(--line); }
+.dz-chpals { display: grid; gap: 4px; } .dz-chpals button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 5px 7px; border-radius: 8px; border: 1px solid var(--line); background: none; color: inherit; font-size: 12px; text-align: left; }
+.dz-chpals button.on { border-color: var(--teal); } .dz-chpals span { display: flex; gap: 2px; } .dz-chpals i { width: 14px; height: 14px; border-radius: 50%; }

@@ -550,6 +550,11 @@ TT_LS_CH.push({ id: 'l-orange', lesson: '2-2', cat: 'pack', diff: 2, title: 'Ora
 TT_CH.push(...[...TT_LS_CH].sort((x, y) => x.lesson.localeCompare(y.lesson)).map(c => ({ ...c, id: 'ch-' + c.id.slice(2), lesson: undefined, thumb: 'img/ref/ch-' + c.lesson + '.jpg',   /* a calibrated attempt, shown on the card */
   hub: 'c' + c.lesson[0], diff: +c.lesson[0],
   text: c.text.replace(/\s*(Grade )?C or higher (unlocks the next lesson|moves you on|finishes the chapter)\./g, '') })));
+/* A challenge made in the design studio's Challenge maker: its stencil lines come as points in mm. Judged like the
+   lessons for now (a line, a packed box or circle); judging from the challenge's own zones comes next. */
+const ttChCustomC = new WeakMap();
+const ttChCustom = (S) => { if (!ttChCustomC.has(S)) ttChCustomC.set(S, { kind: 'line', layer: 'line', ink: 'black', core: 0.6, maxBlow: 1, diff: 1, ...S,
+  path: (g) => { for (const p of S.lines || []) { g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); } } }); return ttChCustomC.get(S); };
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
 const TT_BLOW_SEVERE = 7, TT_BLOW_JOKES = ['Did you nod off with your foot on the pedal?', 'That is not shading. That is a bruise with ambition.', 'Your mentor felt that from across town.', 'Somewhere, a client just googled laser removal.', 'The ink has left the building. So has my faith in you.', 'Chores. So many chores.', 'Fat layer says hi. Nobody invited it.'];
@@ -2418,7 +2423,7 @@ TT.open = async (el, id) => {
   const palDots = (P, n = 4) => `<span class="tt-pdots">${P.caps.slice(0, n).map(x => `<i style="background:${x.c};opacity:${Math.max(0.25, x.s ?? 1)}"></i>`).join('')}</span>`;
   const palMenu = (at) => {
     if (!pop.hidden && pop.dataset.k === 'pal') return closePop();
-    const L = EX?.lesson ? TT_PALS.slice(0, 1) : palAll(), cur = st.wash ? 'wash' : st.pal || 'default';
+    const L = EX?.lesson ? TT_PALS.slice(0, 1) : EX?.custom?.lock ? palAll().filter(p => p.id === EX.custom.pal) : palAll(), cur = st.wash ? 'wash' : st.pal || 'default';
     pop.dataset.k = 'pal'; pop.innerHTML = `<div class="gh">Inks</div>${L.map(P => `<button class="mi${cur === P.id ? ' on' : ''}" data-pal="${esc(P.id)}">${palDots(P)}<span>${esc(P.name)}</span></button>`).join('')}
       <button class="mi${cur === 'wash' ? ' on' : ''}" data-pal="wash"><span class="tt-pdots">${TT_WASH.map(([, s]) => `<i style="background:rgba(20,20,20,${s})"></i>`).join('')}</span><span>Grey wash</span></button>
       ${EX?.lesson ? '<p class="muted" style="font-size:11px;margin:4px 8px">Lessons use the standard inks.</p>' : `<i class="sep" style="display:block;height:1px;background:var(--line);margin:4px 6px"></i>
@@ -2678,7 +2683,7 @@ TT.open = async (el, id) => {
     if (q === 'offset' || q === 'roll' || q === 'peek') return;
     if (q === 'lean') { if (!isMag()) return toast('Only a magnum leans.', 1500); st.magTilt = !st.magTilt; st.dirty = true; drawAng(); return toast(st.magTilt ? 'Follows the pen\'s lean' : 'Fixed angle', 1300); }
     if (/^a\d/.test(q)) { if (!isMag()) return toast('Only a magnum has an angle.', 1500); return setAng(+q.slice(1)); }
-    if (q.startsWith('p:')) { if (EX?.lesson) return toast('Lessons use the standard inks.', 1600); const P = palAll().find(x => x.id === q.slice(2)); if (P) palApply(P); return; }
+    if (q.startsWith('p:')) { if (EX?.lesson) return toast('Lessons use the standard inks.', 1600); if (EX?.custom?.lock && q.slice(2) !== EX.custom.pal) return toast('This challenge allows only its own palette.', 1800); const P = palAll().find(x => x.id === q.slice(2)); if (P) palApply(P); return; }
     if (q.startsWith('n:')) { const { n, s } = qsFav(q); if (EX?.lesson && n !== st.needle) { st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; drawNeedleInk(); } setNeedle(n);
       if (s) { feel.size = s; TT.setFeel(n, feel); lay = ttLayout(TT_NEEDLES.find(x => x.id === n), feel.size); drawSz(); drawCur(); } st.tool = 'needle'; closePop(); sel(); return qsDraw(); }
     if (q === 'rinse') return $('#tt-tray [data-rinse]')?.click();
@@ -3324,7 +3329,7 @@ TT.open = async (el, id) => {
      piece of its own: leaving saves it, and opening it carries on where it stopped. */
   const Mm = (g, f) => { g.save(); g.scale(mm, mm); g.beginPath(); f(g); g.restore(); };
   // This run's challenges: the exam's, or the one challenge played from the hub.
-  const exList = () => (EX?.list || []).map(id => TT_CH.find(c => c.id === id) || TT_LS_CH.find(c => c.id === id)).filter(Boolean);
+  const exList = () => (EX?.list || []).map(id => TT_CH.find(c => c.id === id) || TT_LS_CH.find(c => c.id === id) || (EX.custom?.id === id ? ttChCustom(EX.custom) : null)).filter(Boolean);
   const exGen = (name) => { const T = TT_CH.find(c => c.id === name); return T ? ttExGen(T, st.skin) : ''; };
   const exCrop = ttCrop;
   const exStencil = (T) => {
@@ -3348,7 +3353,7 @@ TT.open = async (el, id) => {
     st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; st.wash = !!T.wash;   // each challenge starts with a clean, empty needle
     if (T.presets) for (const [id, f] of Object.entries(T.presets)) TT.setFeel(id, { ...TT.feel(id), ...f });   // each needle the lesson uses, set up as it asks
     setNeedle(T.needle); if (T.size || T.volt) { if (T.size) feel.size = T.size; if (T.volt) feel.volt = T.volt; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawSz(); drawVolt(); }   // a lesson that asks for a size and voltage starts there
-    st.layer = T.layer; st.caps = [...TT_CAPS]; st.capS = null; st.pal = 'default'; st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
+    st.layer = T.layer; st.caps = [...TT_CAPS]; st.capS = null; st.pal = 'default'; { const P = EX.custom?.pal && palAll().find(p => p.id === EX.custom.pal); if (P) { st.caps = P.caps.map(c => c.c); st.capS = P.caps.map(c => c.s ?? 1); st.pal = P.id; } } st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
     drawTray(); drawView(); drawRefs(); exBar(); tally(); paint(); st.dirty = true;
   };
   // ---- scoring ----
@@ -3703,7 +3708,7 @@ TT.open = async (el, id) => {
     if (EX.lesson) return lessonReport(T, res); ttBusy(null);
     if (!EX.savedLast || EX.savedLast !== res) { EX.savedLast = res; saveChLast(T, res).catch(() => {}); }
     const m = ttMedal(res.total), parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
-    const all = TT_CH.filter(c => ttHubOf(c) === ttHubOf(T)).sort((x, y) => x.diff - y.diff), next = all[all.indexOf(T) + 1];
+    const all = TT_CH.filter(c => ttHubOf(c) === ttHubOf(T)).sort((x, y) => x.diff - y.diff), next = all.includes(T) ? all[all.indexOf(T) + 1] : null;
     const o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade ${m ? m[1] : ''}"><b>${res.total}</b><div><h2 style="margin:0">${esc(T.title)}</h2>
         <span class="muted">${ttStars(T.diff)} ${m ? m[2] + ' medal' : res.empty ? 'Nothing tattooed' : 'No medal yet: 60 for bronze'}</span></div>${ttMedalIco(m, 40)}</div>
