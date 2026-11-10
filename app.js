@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 365;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 366;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2092,6 +2092,8 @@ const VIEWS = {
         <label class="toggle"><input type="checkbox" id="s-news" ${Settings.get('news_off') === '1' ? '' : 'checked'}><span>Show</span></label></div>
       <div class="card su-again"><div><b>Workspace password</b><span class="muted">${WsPass.on() ? 'On: asked each time this workspace opens.' : 'Off. Add one so others can\'t open this workspace.'}</span></div>
         <button class="btn small" id="s-pass">${WsPass.on() ? 'Change' : 'Set'}</button></div>
+      <div class="card su-again"><div><b>Quote calibration</b><span class="muted">Your rates, speeds, pain, styles and more, used by every quote. Export it or load one here too.</span></div>
+        <a class="btn small" href="#quote-cal">Open</a></div>
       <div class="card su-again"><div><b>Take a tour</b><span class="muted">A guided look around with examples; all removed afterwards.</span></div>
         <button class="btn small" id="s-tour">Start</button></div>
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
