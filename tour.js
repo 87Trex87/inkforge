@@ -71,7 +71,7 @@ const TOUR_STEPS = [
       qzGo(2); await tourSleep(500); qzGo(3); await tourSleep(500); qzGo(6); await tourSleep(300);
     },
     text: 'Placement, size, colour, detail and style: the price comes from your own rates.',
-    more: 'Calibrate holds your rates, speeds and pain areas. Quotes handle cover-ups and fix-ups with a difficulty slider, several tattoos at once with a combined price, discounts and VAT.' },
+    more: 'Calibrate holds your rates, speeds and pain areas, a tab for each, and Save and share exports it to load into another workspace. Quotes handle cover-ups and fix-ups with a difficulty slider, several tattoos at once with a combined price, discounts and VAT.' },
   { id: 'qsend', route: 'quote', sel: '.qz-out', title: 'Send it your way',
     text: 'Print, picture, text, or a link the client books from.',
     more: 'The quote link opens on the client\'s phone: they see the price and your open days, pick a time and reply on WhatsApp. Paste their reply into Saved quotes and it becomes a booking. Book with this quote does it directly.' },

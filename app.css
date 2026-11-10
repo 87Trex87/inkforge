@@ -1668,3 +1668,7 @@ textarea.ff-i { resize: none; }
 .dz-ed[data-hide~="qs"] #dz-qstrip, .dz-ed[data-hide~="rail"] #dz-rail, .dz-ed[data-hide~="ctx"] .dz-ctxw, .dz-ed[data-hide~="side"] #dz-side, .dz-ed[data-hide~="zoom"] .dz-zoom { display: none !important; }
 /* The selection strip in the simulator's button style */
 .dz-ctx .dz-ib { border-radius: 9px; } .dz-ctx .dz-ib:hover:not(:disabled) { background: rgba(255,255,255,.06); } .dz-ctx .dz-ib.on { background: rgba(31,182,166,.2); color: var(--teal); }
+/* Calibrate quotes: tab pages */
+.qc-tabs { position: sticky; top: 0; z-index: 3; margin: 0 0 12px; background: var(--bg2); }
+details.qc-page > summary { list-style: none; cursor: default; pointer-events: none; } details.qc-page > summary::-webkit-details-marker { display: none; } details.qc-page > summary::after { display: none !important; }
+details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-events: auto; }

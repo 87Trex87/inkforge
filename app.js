@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 364;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 365;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -4826,15 +4826,34 @@ async function qzShare() {
   return shareText(text, 'Quote copied.');
 }
 
-/* Calibrate: every number the calculator uses, grouped, with a live sample so changes make sense. */
-const QC_OPEN = new Set();   // Calibrate sections the artist has opened
+/* Calibrate: every number the calculator uses, one tab page per section (as in the simulator's windows), with a
+   live sample so changes make sense. Changes save as they're made. The Share tab exports the whole calibration
+   to a file and loads one in, so another workspace (or another artist) prices the same way. */
+const QC_OPEN = new Set();   // kept for older code paths; every section shows open on its own tab now
+const QC_TABS = [['rates', 'Rates'], ['speed', 'Speed'], ['colour', 'Colour'], ['pain', 'Pain'], ['styles', 'Styles'], ['job', 'Cover-ups'], ['combo', 'Several'], ['letter', 'Lettering'], ['share', 'Save and share']];
+let QC_TAB = 'rates';
+// The calibration file: the quote settings plus the currency they were made in.
+async function qcExport() {
+  const data = { inkforge_quote_calibration: 1, made: new Date().toISOString(), studio: Settings.get('studio_name') || '', currency: Settings.get('currency') || '', cfg: qCfg() };
+  const name = `InkForge-quote-calibration-${ymd(new Date())}.json`;
+  return shareFiles([new File([JSON.stringify(data, null, 1)], name, { type: 'application/json' })], 'Quote calibration');
+}
+async function qcImport(file) {
+  let d; try { d = JSON.parse(await file.text()); } catch { return toast('That file could not be read.', 3000); }
+  if (!d || d.inkforge_quote_calibration !== 1 || !d.cfg || !Array.isArray(d.cfg.anchors)) return toast('That is not an InkForge quote calibration file.', 3500);
+  const cur = Settings.get('currency') || '', diff = d.currency && cur && d.currency !== cur;
+  if (!await ask(`Use this calibration?${d.studio ? `\n\nFrom ${d.studio}, saved ${fmtDay(d.made)}.` : ''}\n\nIt replaces every quote setting in this workspace: rates, speeds, colour, pain, placements, styles, cover-ups and lettering.${diff ? `\n\nIts prices were set in ${d.currency}; this workspace uses ${cur}. The numbers come across as they are.` : ''}`)) return;
+  await qSave({ ...QUOTE_V2, ...d.cfg }); toast('Calibration loaded. New quotes use it.', 3000); qcDraw();
+}
+
 function qcDraw() {
   const el = $('#qc'); if (!el) return;
   const c = qCfg(), cur = Settings.get('currency') || '';
   const num = (path, v, step = 'any', w = '') => `<input class="in qc-n" type="number" inputmode="decimal" step="${step}" value="${v}" data-p="${path}" ${w}>`;
   const sample = (h) => money(qRound(c, qCurve(c, h)));
   el.innerHTML = `
-    <div class="card"><h2>Your rates ${help('Price for tattooing time, breaks not included. Between points the price runs in a straight line; under the first point is your minimum.')}</h2>
+    <div class="tt-ftabs qc-tabs">${QC_TABS.map(([k, n]) => `<button data-qct="${k}" class="${QC_TAB === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <div class="card qc-sec" data-sec="rates"><h2>Your rates ${help('Price for tattooing time, breaks not included. Between points the price runs in a straight line; under the first point is your minimum.')}</h2>
       <div class="qc-grid qc-anchors"><span class="lbl">Hours</span><span class="lbl">Price${cur ? ' (' + esc(cur) + ')' : ''}</span><span></span>
         ${c.anchors.map(([h, p], i) => `${num(`anchors.${i}.0`, h, '0.25')}${num(`anchors.${i}.1`, p, '10')}
           <button class="mini del" data-rm="${i}" aria-label="Remove" ${c.anchors.length > 1 ? '' : 'disabled'}>&times;</button>`).join('')}</div>
@@ -4887,7 +4906,15 @@ function qcDraw() {
     <details class="card qc-sec" data-sec="letter" ${QC_OPEN.has('letter') ? 'open' : ''}><summary><h2>Lettering</h2></summary>
       <label class="field"><span>Minutes per letter ${help('At 2 cm letter height. Bigger letters scale up.')}</span><div class="unit-in">${num('textMin', c.textMin, '0.5')}<em>min</em></div></label>
       ${c.fonts.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`fonts.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</details>
-    <button class="btn danger" id="qc-reset" style="margin:4px 0 24px">Reset all to defaults</button>`;
+    <div class="card qc-sec" data-sec="share"><h2>Save and share</h2>
+      <p class="muted" style="margin-top:0">Every change here is saved as you make it. Export the whole calibration to a file to keep it safe, or load it into another workspace (or send it to another artist) so their quotes price the same way.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn primary" id="qc-exp">Export calibration</button>
+        <label class="btn">Load a calibration<input type="file" accept=".json,application/json" hidden id="qc-imp"></label></div>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Loading replaces this workspace's rates, speeds, colour, pain, placements, styles, cover-ups and lettering. Quotes you already saved keep their prices.</p>
+      <div class="lbl" style="margin-top:16px">Start again</div>
+      <button class="btn danger" id="qc-reset">Reset all to defaults</button></div>`;
+  // One section per tab: each shows open on its own page.
+  el.querySelectorAll('.qc-sec').forEach(d => { const on = d.dataset.sec === QC_TAB; d.hidden = !on; if (d.tagName === 'DETAILS') d.open = true; d.classList.add('qc-page'); });
   el.oninput = (e) => {
     const p = e.target.dataset.p; if (!p) return;
     const cfg = qCfg(), keys = p.split('.'), v = +e.target.value;
@@ -4897,6 +4924,7 @@ function qcDraw() {
     if (p.startsWith('anchors') || p === 'round') { const c2 = qCfg(); el.querySelectorAll('.qc-sample b').forEach((b, i) => b.textContent = money(qRound(c2, qCurve(c2, [1, 2, 3, 4, 6, 9][i])))); }
   };
   el.onchange = async (e) => {
+    if (e.target.id === 'qc-imp') { const f = e.target.files[0]; e.target.value = ''; if (f) return qcImport(f); return; }
     if (e.target.id === 'qc-vat') { const cfg = qCfg(); cfg.vatOn = e.target.checked; return qSave(cfg); }
     if (e.target.id === 'qc-tu') { const cfg = qCfg(); cfg.touchupNote = e.target.checked; return qSave(cfg); }
     if (e.target.dataset.p && e.target.tagName === 'SELECT') qcDraw();
@@ -4906,6 +4934,9 @@ function qcDraw() {
     const k = e.target.dataset.sec; if (k) e.target.open ? QC_OPEN.add(k) : QC_OPEN.delete(k);
   }, true);
   el.onclick = async (e) => {
+    const tb = e.target.closest('[data-qct]'); if (tb) { QC_TAB = tb.dataset.qct; return qcDraw(); }
+    if (e.target.closest('summary') && e.target.closest('.qc-page') && !e.target.closest('details.guide')) { e.preventDefault(); return; }   // a tab page stays open
+    if (e.target.closest('#qc-exp')) return qcExport();
     const cfg = qCfg();
     const del = e.target.closest('[data-del]');
     if (del) {
