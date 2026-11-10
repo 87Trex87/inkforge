@@ -92,14 +92,41 @@ function dzChPts(L) { const NS = 'http://www.w3.org/2000/svg', svg = document.cr
 async function dzChPack(x, doc, l, scale, one) { const outs = doc.layers.filter(o => o.t === 'shape' && o.role === 'outline' && !o.hide && (o.side || null) === (l.side || null));
   x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); if (outs.length) { const P = new Path2D(); for (const o of outs) P.addPath(dzChPath(o)); x.clip(P); }
   await one(x, { ...l, fill: l.ink || '#141414', fm: undefined, stroke: null, sw: 0 }); x.restore(); }
+/* The lessons as Challenge maker templates (once the simulator's script is loaded): each lesson's stencil becomes the
+   outline (a rectangle or circle where it is one, otherwise a free shape traced from the stencil) and its packing a
+   packing zone. A template keeps the lesson's own calibrated judging (chal.base) until a graded shape is changed. */
+function dzChRec() { const subs = []; let cur = null; const P = (x, y) => { if (!cur) { cur = { pts: [], closed: false }; subs.push(cur); } cur.pts.push([x, y]); }, last = () => cur?.pts.at(-1);
+  return { subs, moveTo(x, y) { cur = { pts: [[x, y]], closed: false }; subs.push(cur); }, lineTo: P, closePath() { if (cur) { cur.closed = true; cur = null; } },
+    rect(x, y, w, h) { this.moveTo(x, y); P(x + w, y); P(x + w, y + h); P(x, y + h); this.closePath(); },
+    arc(cx, cy, r, a0, a1, ccw) { this.ellipse(cx, cy, r, r, 0, a0, a1, ccw); },
+    ellipse(cx, cy, rx, ry, rot, a0, a1, ccw) { let d = a1 - a0; if (ccw && d > 0) d -= Math.PI * 2; if (!ccw && d < 0) d += Math.PI * 2; if (Math.abs(a1 - a0) >= Math.PI * 2 - 1e-6) d = ccw ? -Math.PI * 2 : Math.PI * 2;
+      const n = Math.max(8, Math.ceil(Math.abs(d) * Math.max(rx, ry))), c = Math.cos(rot), s = Math.sin(rot); for (let i = 0; i <= n; i++) { const a = a0 + d * i / n, ex = rx * Math.cos(a), ey = ry * Math.sin(a); P(cx + ex * c - ey * s, cy + ex * s + ey * c); } },
+    bezierCurveTo(a, b, c2, d2, e, f) { const [x0, y0] = last() || [a, b]; for (let i = 1; i <= 24; i++) { const t = i / 24, u = 1 - t; P(u * u * u * x0 + 3 * u * u * t * a + 3 * u * t * t * c2 + t * t * t * e, u * u * u * y0 + 3 * u * u * t * b + 3 * u * t * t * d2 + t * t * t * f); } },
+    quadraticCurveTo(a, b, e, f) { const [x0, y0] = last() || [a, b]; for (let i = 1; i <= 16; i++) { const t = i / 16, u = 1 - t; P(u * u * x0 + 2 * u * t * a + t * t * e, u * u * y0 + 2 * u * t * b + t * t * f); } } }; }
+const dzChVec = (subs, o) => { const all = subs.flatMap(s => s.pts), xs = all.map(p => p[0]), ys = all.map(p => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(0.2, Math.max(...xs) - x0), h = Math.max(0.2, Math.max(...ys) - y0);
+  return dzS('vec', x0 * CH_PX, y0 * CH_PX, w * CH_PX, h * CH_PX, { fill: 'none', subs: subs.filter(s => s.pts.length > 1).map(s => ({ closed: s.closed, nodes: s.pts.map(([x, y]) => dzNd((x - x0) / w, (y - y0) / h)) })), ...o }); };
+function dzChTemplates() { if (typeof TT_CH === 'undefined') return [];
+  return TT_CH.map(T => [`Lesson ${TT_LS_CH.find(c => c.id === 'l-' + T.id.slice(3))?.lesson || ''}: ${T.title}`, () => {
+    const nd = T.strokeNeedle || T.liner || T.needle, pn = T.packNeedle || T.needles?.find(n => n !== nd) || '7RS', L = [], px = (v) => v * CH_PX;
+    if (T.circle) { const [cx, cy, r] = T.circle; L.push(dzS('ellipse', px(cx - r), px(cy - r), px(r * 2), px(r * 2), { fill: 'none', role: 'outline', nd }));
+      const ink = T.mixOf ? ttToHex(ttMix(ttHex(T.mixOf[0]), ttHex(T.mixOf[1]), 0.5)) : '#141414'; L.push(dzS('ellipse', px(cx - r), px(cy - r), px(r * 2), px(r * 2), { fill: ink, role: 'pack', nd: pn, mixOf: T.mixOf ? [...T.mixOf] : ['#141414'], mixT: 0.5, ink })); }
+    else if (T.pack) { const b = T.pack; L.push(dzS('rect', px(b[0]), px(b[1]), px(b[2]), px(b[3]), { fill: 'none', role: 'outline', nd })); L.push(dzS('rect', px(b[0]), px(b[1]), px(b[2]), px(b[3]), { fill: '#141414', role: 'pack', nd: pn, mixOf: ['#141414'], ink: '#141414' })); }
+    else { const R = dzChRec(); T.path(R); L.push(dzChVec(R.subs, { role: 'outline', nd })); }
+    L.forEach((l, i) => l.name = l.role === 'pack' ? 'Packing' : 'Outline');
+    return L; }, { base: T.id, text: T.text, lessonJudge: true }]); }
+// What the graded shapes are, so a template knows when it has been changed.
+const dzChSig = (doc) => JSON.stringify(doc.layers.filter(l => l.t === 'shape' && l.role).map(l => [l.role, l.nd, l.shape, Math.round(l.x), Math.round(l.y), Math.round(l.w), Math.round(l.h || 0), l.rot || 0, l.fx, l.fy, l.subs, l.ink]));
+const CH_FOCUS = [['line', 'Linework', 1], ['pack', 'Packing', 1], ['colour', 'Colour', 0.6], ['heal', 'Healing', 0.8], ['tech', 'Technique', 0.8]];
 // The challenge as the simulator plays it, or { err } when it can't be played yet.
 function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 'shape' && l.role && !l.hide), outs = S.filter(l => l.role === 'outline'), dets = S.filter(l => l.role === 'detail'), pk = S.find(l => l.role === 'pack');
   if (!outs.length) return { err: 'Give a shape the Outline role first: it is the line the artist follows.' };
   const nd = outs[0].nd || '5RL', lines = [...outs, ...dets].flatMap(dzChPts);
   const T = { id: 'u-' + did, title: title || 'Challenge', cat: pk ? 'pack' : 'line', needle: nd, liner: nd, strokeNeedle: nd, lines, pal: doc.chal?.pal || 'default', lock: !!doc.chal?.lock,
     needles: [...new Set([nd, ...dets.map(l => l.nd || nd), ...(pk ? [pk.nd || '7RS'] : [])])] };
+  const C0 = doc.chal || {}; if (C0.base && C0.lessonJudge !== false && C0.sig === dzChSig(doc)) T.base = C0.base;   /* an unchanged lesson template: the lesson's own judging */
+  else { T.zones = true; T.focus = Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C0.focus?.[k] ?? v])); }
   if (pk) { const P = dzChPts(pk).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2), x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys);
-    T.pack = [x0, y0, x1 - x0, y1 - y0].map(v => Math.round(v * 10) / 10); T.packNeedle = pk.nd || '7RS';
+    T.pack = [x0, y0, x1 - x0, y1 - y0].map(v => Math.round(v * 10) / 10); T.packNeedle = pk.nd || '7RS'; T.packPts = dzChPts(pk);
     const ink = pk.ink || '#141414'; T.packInk = ink;
     if (pk.shape === 'ellipse' && Math.abs(pk.w - (pk.h || 0)) < 4) { T.circle = [(x0 + x1) / 2, (y0 + y1) / 2, Math.min(x1 - x0, y1 - y0) / 2].map(v => Math.round(v * 100) / 100); T.mixOf = pk.mixOf?.[1] ? [pk.mixOf[0], pk.mixOf[1]] : [ink, ink]; } }
   const C = doc.chal || {}, what = outs[0].shape === 'ellipse' ? 'circle' : 'shape';
@@ -1233,8 +1260,8 @@ const DZ_TATTOO = [
 // Layout choices for a type: built-in ones, your saved templates, then a blank page.
 const dzCustom = () => { try { return JSON.parse(Settings.get('dz_tpls', '[]')); } catch { return []; } };
 function dzLayouts(kind) {
-  const built = DZ_KINDS[kind]?.social ? [...DZ_TATTOO, ...DZ_TEMPLATES.post] : DZ_TEMPLATES[kind];
-  return [...(built || []).map(t => ({ name: t[0], make: t[1] })), ...dzCustom().filter(c => c.kind === kind).map(c => ({ name: c.name, custom: c })), { name: 'Blank' }];
+  const built = DZ_KINDS[kind]?.social ? [...DZ_TATTOO, ...DZ_TEMPLATES.post] : kind === 'challenge' ? dzChTemplates() : DZ_TEMPLATES[kind];
+  return [...(built || []).map(t => ({ name: t[0], make: t[1], chal: t[2] })), ...dzCustom().filter(c => c.kind === kind).map(c => ({ name: c.name, custom: c })), { name: 'Blank' }];
 }
 // A portfolio piece for a post: its photos (in order) and details.
 async function dzPiece(id) {
@@ -1266,7 +1293,7 @@ function dzNew(kind, opt, theme, piece, size, sides) {
     if (size.fold) doc.fold = size.fold; }
   doc.vals = kind === 'voucher' ? { amount: '', to: '', from: '', ...(opt?.custom ? doc.vals : {}), code, expires: ymd(exp) } : {};
   if (k.form) ffSetup(doc, opt?.make);
-  if (k.chal) { delete doc.sides; doc.dpi = 254; doc.paper = 'Challenge: 180 × 130 mm of skin'; if (!opt?.custom) doc.bg = { c: '#e2b493' }; doc.chal = { text: '', pal: 'default', lock: true, ...(doc.chal || {}) }; }
+  if (k.chal) { delete doc.sides; doc.dpi = 254; doc.paper = 'Challenge: 180 × 130 mm of skin'; if (!opt?.custom) doc.bg = { c: '#e2b493' }; doc.chal = { text: '', pal: 'default', lock: true, ...(opt?.chal || {}), ...(doc.chal || {}) }; if (doc.chal.base) doc.chal.sig = dzChSig(doc); }
   if (k.pattern) { delete doc.sides; doc.pat = { ring: 1, fade: 0.38, clear: true, ...(size?.pat || {}) }; if (size) doc.paper = `Pattern tile, ${dzMM(size.mm[0])} × ${dzMM(size.mm[1])} mm`; }
   dzFillSlots(doc, piece);
   return doc;
@@ -1461,6 +1488,7 @@ async function dzPicker(opts = {}) {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('[data-x]')) return o.remove();
     if (d('kind') === 'note') { o.remove(); return dzNoteNew(); }
+    if (d('kind') === 'challenge' && typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const s = document.createElement('script'); s.src = 'tattoo.js'; s.onload = s.onerror = res; document.head.appendChild(s); });   /* the lesson templates come from the simulator */
     if (d('kind')) { st.kind = d('kind'); st.li = 0; st.two = false; return draw(); }
     if (d('two') != null) { st.two = d('two') === '1'; return draw(); }
     if (DZ_KINDS[st.kind]?.pattern && patOptsAct(st.pat, t)) return draw();
@@ -3793,6 +3821,10 @@ DZ.edit = async (id) => {
       <textarea class="in" data-chtext rows="4" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>
       <div class="gh" style="margin-top:6px">Palette</div><div class="dz-chpals">${chPals().map(p => `<button data-chpal="${esc(p.id)}" class="${C.pal === p.id ? 'on' : ''}"><span>${p.caps.map(c => `<i style="background:${c.c}"></i>`).join('')}</span>${esc(p.name)}</button>`).join('')}</div>
       <label class="toggle" style="margin:6px 4px"><input type="checkbox" data-chlock ${C.lock ? 'checked' : ''}><span>Only this palette in the challenge</span></label>
+      <div class="gh" style="margin-top:6px">Judging</div>
+      ${C.base ? (C.sig === dzChSig(doc) ? `<label class="toggle" style="margin:4px"><input type="checkbox" data-chlj ${C.lessonJudge !== false ? 'checked' : ''}><span>The lesson's own calibrated judging</span></label>` : '<p class="muted" style="font-size:11px;margin:2px 6px">The lesson shapes have changed, so it is judged by the focus below.</p>') : ''}
+      ${C.base && C.lessonJudge !== false && C.sig === dzChSig(doc) ? '' : CH_FOCUS.map(([k, n, v]) => { const f = C.focus?.[k] ?? v; return `<label class="dz-gsz"><span style="width:70px">${n}</span><input type="range" min="0" max="1" step="0.05" data-chf="${k}" value="${f}" style="flex:1"><b style="width:34px;text-align:right">${Math.round(f * 100)}%</b></label>`; }).join('')
+        + '<p class="muted" style="font-size:11px;margin:2px 6px">How much each part counts. Put Linework at 0 to judge only the packing, however rough the line.</p>'}
       <p class="muted" style="font-size:11px;margin:4px 6px">${n('outline')} outline, ${n('detail')} detail line${n('detail') === 1 ? '' : 's'}, ${n('pack')} packing. Select a shape and use Grade as in the strip to give it a role.</p>
       <div class="dz-gk" style="grid-template-columns:1fr;margin-top:4px"><button data-chplay class="on">Play in the simulator</button></div>`; };
   const chRoleMenu = () => { const l = layer(); if (!l || l.t !== 'shape') return '<p class="muted" style="margin:8px">Select a shape first.</p>'; const r = l.role || '';
@@ -3830,8 +3862,11 @@ DZ.edit = async (id) => {
   $('#dz-pop').addEventListener('change', (e) => { const p0 = $('#dz-pop'); if (!p0.classList.contains('dz-chpop')) return;
     if (e.target.matches('[data-chtext]')) { doc.chal.text = e.target.value; changed(true); }
     if (e.target.matches('[data-chlock]')) { doc.chal.lock = e.target.checked; changed(true); }
+    if (e.target.matches('[data-chlj]')) { doc.chal.lessonJudge = e.target.checked; changed(true); chRe(); }
+    if (e.target.matches('[data-chf]')) { doc.chal.focus = { ...(doc.chal.focus || {}), [e.target.dataset.chf]: +e.target.value }; changed(true); }
     if (e.target.matches('[data-chmt]')) { const l = layer(); if (l) { l.mixT = +e.target.value; chInk(l); changed(true); chRe(); } } });
-  $('#dz-pop').addEventListener('input', (e) => { const l = layer(); if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chmt]') && l) { l.mixT = +e.target.value; chInk(l); redraw(); const r = $('#dz-pop .dz-chres i'); if (r) r.style.background = l.ink; } });
+  $('#dz-pop').addEventListener('input', (e) => { if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chf]')) { const b = e.target.nextElementSibling; if (b) b.textContent = Math.round(e.target.value * 100) + '%'; }
+    const l = layer(); if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chmt]') && l) { l.mixT = +e.target.value; chInk(l); redraw(); const r = $('#dz-pop .dz-chres i'); if (r) r.style.background = l.ink; } });
   /* ---------- Pattern tile ----------
      The page is one cell of the pattern. Its neighbours are drawn faintly round it (the same picture, a cell over),
      and every layer is also drawn a cell over in each direction (dzDraw), so a shape that crosses an edge carries on

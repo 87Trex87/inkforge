@@ -553,7 +553,8 @@ TT_CH.push(...[...TT_LS_CH].sort((x, y) => x.lesson.localeCompare(y.lesson)).map
 /* A challenge made in the design studio's Challenge maker: its stencil lines come as points in mm. Judged like the
    lessons for now (a line, a packed box or circle); judging from the challenge's own zones comes next. */
 const ttChCustomC = new WeakMap();
-const ttChCustom = (S) => { if (!ttChCustomC.has(S)) ttChCustomC.set(S, { kind: 'line', layer: 'line', ink: 'black', core: 0.6, maxBlow: 1, diff: 1, ...S,
+const ttChCustom = (S) => { const B = S.base && TT_CH.find(c => c.id === S.base); if (B && !ttChCustomC.has(S)) ttChCustomC.set(S, { ...B, id: S.id, title: S.title, text: S.text, pal: S.pal, lock: S.lock, refImg: S.refImg || B.refImg, refAr: S.refImg ? S.refAr : B.refAr });
+  if (!ttChCustomC.has(S)) ttChCustomC.set(S, { kind: 'line', layer: 'line', ink: 'black', core: 0.6, maxBlow: 1, diff: 1, ...S,
   path: (g) => { for (const p of S.lines || []) { g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); } } }); return ttChCustomC.get(S); };
 const ttGrade = (s) => s >= 90 ? 'A' : s >= 80 ? 'B' : s >= 70 ? 'C' : s >= 60 ? 'D' : 'E';
 const TT_LS_PASS = 70;
@@ -3508,7 +3509,28 @@ TT.open = async (el, id) => {
     const om = offs.reduce((a, v) => a + v, 0) / Math.max(1, offs.length), osd = Math.sqrt(offs.reduce((a, v) => a + (v - om) * (v - om), 0) / Math.max(1, offs.length)), outl = offs.length ? clamp01(1 - (cvD - 0.2) / 0.4) * clamp01(1 - (osd - 0.1) / 0.5) : 0;
     const volts = ln ? clamp01(1 - (Math.abs((EX.cur?.lineV || 0) - T.lineVolt[0]) - T.lineVolt[1]) / 0.6) : 0;
     return { score: Math.round(100 * cov * (0.15 * sat + 0.25 * col + 0.25 * blend + 0.25 * heal + 0.1 * (1 - sp)) * (0.8 + 0.2 * outl) * (0.9 + 0.1 * volts)), outline: Math.round(outl * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), colour: Math.round(col * 100), blend: Math.round(blend * 100), healing: Math.round(heal * 100), voltage: Math.round(volts * 100), spill: Math.round(sp * 100), bandColours: avg.map(c => c ? ttToHex(c.map(v => v / 255)) : '-').join(' ') }; };
+  /* Made challenges (Challenge maker), zone by zone: the outline and detail lines judged as lines, and a packing zone
+     as the packing lessons judge it (saturation, coverage, even passes, the colour asked for, healing, the packing
+     needle's motion), inside its own shape. The parts are weighted by the challenge's focus sliders. */
+  const zonePath = (P) => (g) => { for (const p of P) { g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); g.closePath(); } };
+  const zoneScore = (T) => { const F = { line: 1, pack: 1, colour: 0.6, heal: 0.8, tech: 0.8, ...(T.focus || {}) }, ln = lineScore(T.path, T.core, T.covEase ?? 0.86), parts = [[F.line, ln.score / 100]], out = { lines: ln.score };
+    if (T.packPts) { const zp = zonePath(T.packPts), fillM = maskOf(zp, true), edgeM = maskOf(zp, false, 1.2), growM = maskOf(zp, false, 2.4), at = (x, y) => (Math.round(y * mm) * W + Math.round(x * mm)) * 4 + 3;
+      const inside = (x, y) => fillM[at(x, y)] > 128 && edgeM[at(x, y)] <= 128, want = ttHex(T.packInk || '#141414').map(v => v * 255), b = T.pack; let n = 0, solid = 0, sum = 0, cs = [0, 0, 0], cn = 0;
+      for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) { const j = (y * W + x) * 4; if (fillM[j + 3] <= 128 || edgeM[j + 3] > 128) continue; const d = densAt(j); n++; sum += d; if (d > 0.7) { solid++; const c = colAt(j); if (c) { cs[0] += c[0]; cs[1] += c[1]; cs[2] += c[2]; cn++; } } }
+      const hm = EX.cur?.hm || [], pc = []; for (let i = 0; i + 1 < Math.min(30, b[2] * 2); i += 2) for (let j = 0; j + 1 < b[3] * 2; j += 2) { if (!inside(b[0] + (i + 1) / 2, b[1] + (j + 1) / 2)) continue; pc.push((hm[j * 30 + i] || 0) + (hm[j * 30 + i + 1] || 0) + (hm[(j + 1) * 30 + i] || 0) + (hm[(j + 1) * 30 + i + 1] || 0)); }
+      { const md = pc.slice().sort((p, q) => p - q)[pc.length >> 1] || 0; for (let k = 0; k < pc.length; k++) pc[k] = Math.min(pc[k], md); }
+      const mean = pc.reduce((a, v) => a + v, 0) / Math.max(1, pc.length), sd = Math.sqrt(pc.reduce((a, v) => a + (v - mean) * (v - mean), 0) / Math.max(1, pc.length)), low = pc.filter(v => v < mean * 0.6).length / Math.max(1, pc.length);
+      const sat = clamp01(sum / Math.max(1, n) / 0.9), cov = solid / Math.max(1, n), cons = pc.length ? (mean > 0 ? clamp01(1 - sd / mean / 0.6 - low * 1.5) * Math.min(1, sat / 0.5) : 0) : cov, avg = cn ? cs.map(v => v / cn) : [255, 255, 255], col = cn ? 1 - clamp01((dist(avg, want) - 0.06) * 3) : 0;
+      const sp = spillOut((x, y) => { const X = Math.round(x * mm), Y = Math.round(y * mm); if (X < 0 || Y < 0 || X >= W || Y >= H) return false; const j = (Y * W + X) * 4 + 3; return fillM[j] > 128 || growM[j] > 128; }, 1.2);
+      const up = underPacked(); let hn = 0, hl = 0; for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { if (!inside((x + 0.5) * TS / mm, (y + 0.5) * TS / mm)) continue; hn++; const k2 = y * tw + x; hl += Math.max(up ? up[k2] : 0, Math.max(0, Math.min(1, (TP[k2] - 0.9) / 1.3))); } const heal = clamp01(1 - hl / Math.max(1, hn) * 2) * Math.min(1, sat / 0.5);
+      const mv = EX.cur?.mv, ctrl = mv?.n > 1 ? (1 - clamp01((Math.sqrt(mv.vs / mv.n) / Math.max(1, mv.vm) - 0.5) / 0.6)) * (1 - clamp01((Math.sqrt(mv.ds / mv.n) / Math.max(0.6, mv.dm) - 0.12) / 0.5)) * (1 - clamp01(mv.fast / mv.all)) : 0;
+      const rs = EX.cur?.tm?.by?.[T.packNeedle], same = rs?.abs ? rs.net / rs.abs : 0, flips = rs?.mm ? rs.flips / rs.mm * 10 : 9, tech = clamp01((same - 0.3) / 0.5) * clamp01(1 - (flips - 0.2) / 0.6);
+      const pq = cov * (0.25 * sat + 0.75 * cons) * (1 - 0.6 * sp);
+      parts.push([F.pack, pq], [F.colour, col], [F.heal, heal], [F.tech, tech * (0.5 + 0.5 * ctrl)]);
+      Object.assign(out, { packing: Math.round(pq * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), colour: Math.round(col * 100), healing: Math.round(heal * 100), technique: Math.round(tech * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100), yourColour: ttToHex(avg.map(v => v / 255)) }); }
+    const ws = parts.reduce((t, [w]) => t + w, 0); out.score = ws ? Math.round(100 * parts.reduce((t, [w, v]) => t + w * v, 0) / ws) : ln.score; return out; };
   const scoreOf = (T) => {
+    if (T.zones) return zoneScore(T);
     if (T.tri) return triScore(T);
     if (T.wgrad) return washGradScore(T);
     if (T.stipple) return stippleScore(T);
