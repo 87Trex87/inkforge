@@ -2028,13 +2028,7 @@ TT.open = async (el, id) => {
   /* Place: a picture becomes a floating piece on the current ink layer (white parts on the highlights layer, so they
      stay white), handled like a lasso selection: drag, size, turn, flip, Done. */
   async function placePick() {
-    const rows = await DB.all(`SELECT p.title, x.photo_ref, x.thumb_ref FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id WHERE x.label = 'Ink only (clear background)' ORDER BY p.id DESC LIMIT 120`);
-    const us = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
-    const ref = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
-      o.innerHTML = `<div class="card dz-pick"><h2>Place a tattoo</h2>${rows.length ? `<div class="dz-pf">${rows.map((r, i) => `<button data-v="${esc(r.photo_ref)}" title="${esc(r.title || '')}" class="tt-plc"><img src="${us[i]}" alt="" style="object-fit:contain"></button>`).join('')}</div>`
-        : '<p class="muted">Nothing yet: tattoos saved to the portfolio from the simulator show up here.</p>'}
-        <div class="row" style="gap:8px;margin-top:10px"><button class="btn" data-v="">Cancel</button><span style="flex:1"></span><button class="btn" data-v="@file">From this device</button></div></div>`;
-      o.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v); }; document.body.appendChild(o); });
+    const ref = await dzPortfolioPick('place');
     if (!ref) return;
     const url = ref === '@file' ? await new Promise((res) => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = () => res(i.files[0] ? URL.createObjectURL(i.files[0]) : null); i.click(); }) : await Media.url(ref);
     if (!url) return; const im = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }); if (!im) return toast('Could not read that picture.');
