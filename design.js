@@ -3664,8 +3664,9 @@ DZ.edit = async (id) => {
     const dx = p.x - from.x, dy = p.y - from.y, L = Math.hypot(dx, dy); if (L < 1) return p; let best = null;
     for (const a of dirs) { const u = { x: Math.cos(a), y: Math.sin(a) }, s = Math.abs(dx * u.y - dy * u.x) / L; if (s < 0.12 && (!best || s < best.s)) { const t = dx * u.x + dy * u.y; best = { s, x: from.x + u.x * t, y: from.y + u.y * t }; } }
     return best ? { ...p, x: best.x, y: best.y } : p; }
-  function gridDraw() { const c = $('#dz-gridcv'), vb = $('#dz-vps'); if (!c) return; const G = doc.grid;
-    c.hidden = !G?.on; if (vb) vb.innerHTML = ''; if (!G?.on) return;
+  // moving: a vanishing point is being dragged, so its handle is moved, not rebuilt (that would drop the drag).
+  function gridDraw(moving) { const c = $('#dz-gridcv'), vb = $('#dz-vps'); if (!c) return; const G = doc.grid;
+    c.hidden = !G?.on; if (vb && !moving) vb.innerHTML = ''; if (!G?.on) return;
     const W = doc.w, H = doc.h, dpr = Math.min(2, devicePixelRatio || 1), cw = Math.max(1, Math.round(W * k * dpr)), ch = Math.max(1, Math.round(H * k * dpr));
     if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
     const x = c.getContext('2d'), s = k * dpr, g = gStep(), T = G.type || 'square'; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cw, ch); x.setTransform(s, 0, 0, s, 0, 0);
@@ -3684,6 +3685,7 @@ DZ.edit = async (id) => {
       for (let i = 0; i <= rays; i++) { const a = a0 + (a1 - a0) * i / rays; line(v, { x: v.x + Math.cos(a) * span, y: v.y + Math.sin(a) * span }); } }
     x.stroke();
     if (T === 'p1' || T === 'p2') { x.strokeStyle = 'rgba(255,111,97,.75)'; x.lineWidth = 1.5 / s; x.beginPath(); line({ x: -W, y: vps[0].y }, { x: W * 2, y: vps[0].y }); x.stroke(); }   // horizon
+    if (vb && moving) { vb.querySelectorAll('[data-vp]').forEach(h => { const v = G.vp[+h.dataset.vp]; h.style.left = v.x * k + 'px'; h.style.top = v.y * k + 'px'; }); return; }
     if (vb) vb.innerHTML = gIdx().map(i => `<i class="dz-vp" data-vp="${i}" style="left:${G.vp[i].x * k}px;top:${G.vp[i].y * k}px" data-tip="Drag the vanishing point"></i>`).join(''); }
   const gridMenu = () => { const G = doc.grid || {}, u = dzUnit(doc);
     return `<div class="gh">Grid</div><div class="dz-gk">${[['off', 'Off'], ...GRID_KINDS].map(([v, n]) => `<button class="${(G.on ? G.type || 'square' : 'off') === v ? 'on' : ''}" data-gk="${v}">${n}</button>`).join('')}</div>
@@ -3701,7 +3703,7 @@ DZ.edit = async (id) => {
   // Dragging a vanishing point (two-point keeps both on one horizon).
   $('#dz-vps').addEventListener('pointerdown', (e) => { const h = e.target.closest('[data-vp]'); if (!h) return; e.stopPropagation(); e.preventDefault(); const i = +h.dataset.vp;
     try { h.setPointerCapture(e.pointerId); } catch {}
-    const mv = (ev) => { const r = page.getBoundingClientRect(), q = { x: (ev.clientX - r.left) / k, y: (ev.clientY - r.top) / k }; doc.grid.vp[i] = q; if (doc.grid.type === 'p2') for (const j of [1, 2]) doc.grid.vp[j].y = q.y; gridDraw(); };
+    const mv = (ev) => { const r = page.getBoundingClientRect(), q = { x: (ev.clientX - r.left) / k, y: (ev.clientY - r.top) / k }; doc.grid.vp[i] = q; if (doc.grid.type === 'p2') for (const j of [1, 2]) doc.grid.vp[j].y = q.y; gridDraw(true); };
     const up = () => { h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up); changed(true); gridDraw(); };
     h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up); });
   /* ---------- Quick strip (as in the tattoo simulator) ----------
