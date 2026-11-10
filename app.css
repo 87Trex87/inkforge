@@ -1692,3 +1692,7 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 @media (max-width: 700px) { .dz-bendp { left: 12px; transform: none; bottom: auto; } }
 
 .strip-menu { width: 240px; max-height: 60dvh; overflow-y: auto; } .strip-menu .gh { font: 700 10.5px var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); padding: 4px 8px 6px; }
+
+/* Icon buttons with their name underneath (cheat menus, design studio shapes) */
+.tt-icb { display: flex !important; flex-direction: column; align-items: center; justify-content: center; gap: 3px; } .tt-icb svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; } .tt-icb span { font: 600 9.5px var(--ui); opacity: .85; white-space: nowrap; }
+.dz-pop .sg { grid-template-columns: repeat(4, 58px); } .dz-pop .sg .dz-ib.tt-icb { width: 58px; height: 50px; }

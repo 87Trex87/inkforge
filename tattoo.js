@@ -1756,7 +1756,7 @@ TT.open = async (el, id) => {
       : T === 'liquify' ? `<div class="gh">Liquify</div>${sl('liq', 'r', 'Size', 2, 30, 0.5, v => v + ' mm')}${sl('liq', 's', 'Strength', 0.1, 1, 0.05, v => Math.round(v * 100) + '%')}${tg('liq', 'all', 'Every ink layer, not just the current one')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag to push the ink along like wet paint.</p>`
       : T === 'text' ? `<div class="gh">Lettering</div><p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap the page to add text, or tap a text to change it. It stays editable on its own lettering layer until you bake it.</p>`
       : T === 'lasso' ? `<div class="gh">Lasso</div><label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-lassoall ${st.lassoAll ? 'checked' : ''}><span>Every ink layer, not just the current one</span></label><p class="muted" style="font-size:11px;margin:2px 6px 6px">Draw round the part to move. Drag it, size it from a corner, turn it from the top dot, flip it, then Done.</p>`
-      : `<div class="gh">Shapes</div><div class="tt-symm">${[['line', 'Line'], ['rect', 'Box'], ['ellipse', 'Ellipse'], ['tri', 'Triangle'], ['star', 'Star'], ['heart', 'Heart']].map(([k2, n]) => `<button data-shp="${k2}" class="tt-icb ${st.shape.kind === k2 ? 'on' : ''}" aria-label="${n}">${ttIcb(k2, n)}</button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
+      : `<div class="gh">Shapes</div><div class="tt-symm tt-shps">${TT_SHAPES.map(([k2, n]) => `<button data-shp="${k2}" class="tt-icb ${st.shape.kind === k2 ? 'on' : ''}" aria-label="${n}"><svg viewBox="0 0 24 24">${typeof DZ_UI !== 'undefined' ? DZ_UI['s_' + k2] || TT_IC[k2] || '' : TT_IC[k2] || ''}</svg><span>${n}</span></button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   const inkCx = (key) => { const col = st.ink.c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
     return { pig: true, key, col, str: st.ink.s ?? 1, lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; };
@@ -1886,10 +1886,19 @@ TT.open = async (el, id) => {
     markDirty(key, Math.max(0, x0 - 1), Math.max(0, y0 - 1), Math.min(W - 1, x1 + 1), Math.min(H - 1, y1 + 1)); const u = flushPig(); cropTop({ x0: x0 - 2, y0: y0 - 2, x1: x1 + 2, y1: y1 + 2 });
     st.dirty = true; paint(u ? { x0: u.x0 - 2, y0: u.y0 - 2, x1: u.x1 + 2, y1: u.y1 + 2 } : undefined); };
   // Shapes: the outline's points (page px) for a drag from a to b.
+  // The design studio's shapes (same names, order and icons), less the ring and frame, which have holes.
+  const TT_SHAPES = (typeof DZ_SHAPES !== 'undefined' ? DZ_SHAPES : [['rect', 'Square'], ['ellipse', 'Circle'], ['tri', 'Triangle'], ['star', 'Star'], ['heart', 'Heart'], ['line', 'Line']]).filter(([k2]) => !['ring', 'frame'].includes(k2));
+  // A studio shape's outline (from its generator) as points across the dragged box.
+  const genPts = (kind, x0, y0, w, h) => { const g = typeof DZ_GEN !== 'undefined' && DZ_GEN[kind === 'round' ? 'rect' : kind]; if (!g) return null;
+    const sp = g({ w, h, r: kind === 'round' ? Math.min(w, h) * 0.15 : 0, n: 6, th: kind === 'cross' ? 0.34 : 0.4 })[0], N = sp.nodes, out = [];
+    for (let i = 0; i < N.length; i++) { const A = N[i], B = N[(i + 1) % N.length], X = [A.x, A.x + A.ox, B.x + B.ix, B.x], Y = [A.y, A.y + A.oy, B.y + B.iy, B.y], st2 = A.ox || A.oy || B.ix || B.iy ? 12 : 1;
+      for (let q = 0; q < st2; q++) { const t = q / st2, u = 1 - t, w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t; out.push({ x: x0 + (w0 * X[0] + w1 * X[1] + w2 * X[2] + w3 * X[3]) * w, y: y0 + (w0 * Y[0] + w1 * Y[1] + w2 * Y[2] + w3 * Y[3]) * h }); } }
+    out.push({ ...out[0] }); return out; };
   const shapePts = (kind, a, b) => { const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y), cx = x0 + w / 2, cy = y0 + h / 2;
     if (kind === 'line') return [a, b];
     if (kind === 'rect') return [{ x: x0, y: y0 }, { x: x0 + w, y: y0 }, { x: x0 + w, y: y0 + h }, { x: x0, y: y0 + h }, { x: x0, y: y0 }];
     if (kind === 'tri') return [{ x: cx, y: y0 }, { x: x0 + w, y: y0 + h }, { x: x0, y: y0 + h }, { x: cx, y: y0 }];
+    if (!['ellipse', 'star', 'heart'].includes(kind)) { const g = genPts(kind, x0, y0, w, h); if (g) return g; }
     const out = [];
     if (kind === 'ellipse') for (let i = 0; i <= 96; i++) { const t2 = Math.PI * 2 * i / 96; out.push({ x: cx + Math.cos(t2) * w / 2, y: cy + Math.sin(t2) * h / 2 }); }
     if (kind === 'star') for (let i = 0; i <= 10; i++) { const t2 = -Math.PI / 2 + Math.PI * i / 5, r = i % 2 ? 0.42 : 1; out.push({ x: cx + Math.cos(t2) * w / 2 * r, y: cy + Math.sin(t2) * h / 2 * r }); }
@@ -3882,7 +3891,7 @@ function ttStyle() {
 .tt-guides i.sym { background: rgba(181,138,232,.3); border-color: #b58ae8; }
 .tt-cheatb.on { color: #ff8a7a !important; background: rgba(255,111,97,.18) !important; }
 .tt-symm { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; padding: 0 6px; } .tt-symm button { border: 0; border-radius: 8px; background: rgba(255,255,255,.05); color: var(--ink); font: 700 12px var(--ui); padding: 8px 4px; cursor: pointer; }
-.tt-symm button.on { background: rgba(181,138,232,.28); color: #d6bdf7; }
+.tt-symm button.on { background: rgba(181,138,232,.28); color: #d6bdf7; } .tt-shps { grid-template-columns: repeat(4, 1fr); }
 .tt-icb { display: flex !important; flex-direction: column; align-items: center; justify-content: center; gap: 3px; } .tt-icb svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; } .tt-icb span { font: 600 9.5px var(--ui); opacity: .85; }
 .tt-meter.cheat [data-m="skin"] { display: none; } .tt-smlbl { font: 700 11px var(--ui); color: #ff8a7a; padding: 0 4px; }
 .tt-cheatpick { display: flex; margin: 4px 0 10px; } .tt-cheatpick b { color: #ff8a7a; }

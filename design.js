@@ -1808,7 +1808,7 @@ DZ.edit = async (id) => {
     p.innerHTML = a === 'fields' ? FF_TYPES.map(([v, n]) => mi(`data-ffadd="${v}"`, 'frametext', n)).join('') : a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="frame"', 'frametext', 'Frame text') + mi('data-add="heading"', 'heading', 'Heading')
         + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
       : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-add="logo"', 'logo', 'Studio logo')
-      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => dzIB(`data-shape="${v}"`, 's_' + v, n)).join('')}</div>` + mi('data-qradd', 'qr', 'QR code') + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
+      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => `<button class="dz-ib tt-icb" data-shape="${v}" data-tip="${n}" aria-label="${n}"><svg viewBox="0 0 24 24">${DZ_UI['s_' + v]}</svg><span>${n.replace('Rounded square', 'Rounded').replace('Speech bubble', 'Bubble')}</span></button>`).join('')}</div>` + mi('data-qradd', 'qr', 'QR code') + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
     p.hidden = false; btn?.classList.add('open');
     const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p.offsetHeight - 8)) + 'px';
   };
