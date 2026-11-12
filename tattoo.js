@@ -1497,6 +1497,18 @@ TT.open = async (el, id) => {
   const isMag = () => ['mag', 'soft'].includes(TT_NEEDLES.find(n => n.id === st.needle)?.kind);
   const rowAng = (ev) => { const tx = ev?.tiltX || 0, ty = ev?.tiltY || 0;
     return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 + st.magAng * Math.PI / 180 : st.magAng * Math.PI / 180; };   // leaning: the angle is an offset on the lean
+  /* Scrubbing: shading rushed back and forth, turning sharply (more than 90 degrees) without easing off, instead of a
+     pendulum swing that slows at each end. Fresh it looks saturated; healed, each turn shows as a darker step the shape
+     of the needle (a bar for a magnum, a blot for a round shader). Each turn is kept with the piece (meta.scrub: x, y,
+     angle, length and width in px, magnum) and drawn only in the healed and 10 year views, only where there is ink. */
+  const SCR = Array.isArray(meta.scrub) ? meta.scrub.slice() : [];
+  const scrubAdd = (p, ev) => { if (CHEAT || nk === 'liner') return; let s = pen.scr; if (!s || ev.timeStamp - s.t > 150) s = pen.scr = { x: p.x, y: p.y, a: null, v: pen.speed, n: 0, t: ev.timeStamp };
+    s.t = ev.timeStamp; const dx = p.x - s.x, dy = p.y - s.y; if (Math.hypot(dx, dy) < 0.6 * mm) return; const a = Math.atan2(dy, dx); s.x = p.x; s.y = p.y;
+    if (s.a != null) { let d = Math.abs(a - s.a); if (d > Math.PI) d = 2 * Math.PI - d;
+      if (d > Math.PI / 2 && pen.speed > 30 && pen.speed > s.v * 0.6 && SCR.length < 5000) { const us = lay.map(q => q.u), vs = lay.map(q => q.v), mg = isMag() ? 1 : 0;
+        SCR.push([Math.round(p.x), Math.round(p.y), mg ? +rowAng(ev).toFixed(2) : 0, Math.round((Math.max(...us) - Math.min(...us) + feel.size) * mm), Math.round((Math.max(...vs) - Math.min(...vs) + feel.size) * mm), mg]);
+        if (EX?.cur) EX.cur.scrub = (EX.cur.scrub || 0) + 1; st.dirty = true; } }
+    s.v = s.v * 0.8 + pen.speed * 0.2; s.a = a; };
   // magFlip: the short row of a magnum leads (the rows swapped end for end), the way most artists hold one
   st.magFlip = Settings.get('tt_magflip', '1') === '1';
   const turnOf = (strokeA, ev) => isMag() ? rowAng(ev) - Math.PI / 2 + (st.magFlip ? Math.PI : 0) : strokeA;
@@ -1636,7 +1648,7 @@ TT.open = async (el, id) => {
       if (EX?.cur && st.tool !== 'erase' && (EX.cur.n = (EX.cur.n || 0) + 1) % 3 === 0 && EX.cur.p.length < 1500) {
         EX.cur.p.push(+pNorm(ev).toFixed(3)); EX.cur.v.push(Math.round(pen.speed)); EX.cur.d.push(+depth.toFixed(3)); EX.cur.t.push(Math.round(Math.hypot(ev.tiltX || 0, ev.tiltY || 0))); }
       // punctures land every (hand speed / machine speed) along the skin; `hand` scales screen speed to a tattooing hand's
-      const packB = EX?.cur && st.tool !== 'erase' && pen.cx.pig ? exList()[EX.i]?.pack : null; if (packB && st.needle === (exList()[EX.i]?.packNeedle || '7RS') && d > 0) packMotion(d, depth); if (EX?.cur && st.tool !== 'erase' && pen.cx.pig) tmAdd(ev, d, dx, dy, depth, dt);
+      const packB = EX?.cur && st.tool !== 'erase' && pen.cx.pig ? exList()[EX.i]?.pack : null; if (packB && st.needle === (exList()[EX.i]?.packNeedle || '7RS') && d > 0) packMotion(d, depth); if (EX?.cur && st.tool !== 'erase' && pen.cx.pig) tmAdd(ev, d, dx, dy, depth, dt); if (st.tool !== 'erase' && pen.cx.pig && d > 0) scrubAdd(p, ev);
       const gap = (fast ? Math.min(gapMm(pen.speed), 0.06) : gapMm(pen.speed)) / z * mm;
       let t = pen.carry;
       while (t <= d) {
@@ -3237,6 +3249,10 @@ TT.open = async (el, id) => {
     if (withSkin) { if (raw && trDirty) buildTrauma(); g.drawImage(skin, 0, 0); skinUnder(g, raw); }
     for (const key of TT_DRAW) { if (key === 'stencil' || key === 'marker' || st.hide.has(key)) continue; g.globalAlpha = st.op[key] ?? 1; g.globalCompositeOperation = key === 'high' || !withSkin ? 'source-over' : 'multiply'; g.drawImage(L[key], 0, 0); if (key === 'high' && raw) g.drawImage(L[key], 0, 0); }
     g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; if (withSkin && raw) skinOver(g);
+    if (!raw && SCR.length) { const bl = document.createElement('canvas'); bl.width = W; bl.height = H; const q = bl.getContext('2d');   /* scrub steps, healed: the ink there, darker, in the needle's shape */
+      for (const key of INK) if (!st.hide.has(key)) q.drawImage(L[key], 0, 0); q.globalCompositeOperation = 'destination-in'; q.beginPath();
+      for (const [x, y, a, w, h, mg] of SCR) { const ca = Math.cos(a), sa = Math.sin(a); if (mg) { const P = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([u, v]) => [x + u * ca - v * sa, y + u * sa + v * ca]); q.moveTo(...P[0]); for (const pt of P.slice(1)) q.lineTo(...pt); q.closePath(); } else { q.moveTo(x + w / 2, y); q.ellipse(x, y, w / 2, h / 2, 0, 0, Math.PI * 2); } }
+      q.fill(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = mode === 'aged' ? 0.45 : 0.6; g.drawImage(bl, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
     return c;
   };
   const blobOf = (c) => new Promise(r => c.toBlob(r, 'image/png'));
@@ -3255,7 +3271,7 @@ TT.open = async (el, id) => {
     tlDrop.push(...TL.refs.splice(0));
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], lockL: st.lockL.size ? [...st.lockL] : undefined, op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, area: st.area || undefined, abox: st.area ? (st.abox ? 1 : 0) : undefined, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, pat: PAT || undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
+        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], lockL: st.lockL.size ? [...st.lockL] : undefined, op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, scrub: SCR.length ? SCR : undefined, area: st.area || undefined, abox: st.area ? (st.abox ? 1 : 0) : undefined, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, pat: PAT || undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -3499,7 +3515,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); PC = PK = null; pfMax = 0; LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); SCR.length = 0; PC = PK = null; pfMax = 0; LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
@@ -3895,6 +3911,7 @@ TT.open = async (el, id) => {
     if (T.corners) notes.push(...cornerNotes);
     if (res.blowouts) notes.push(`Blue with a white ring is blowout, ${spots.length} spot${spots.length === 1 ? '' : 's'}: pressing deep while moving slowly. Keep moving whenever the needle is in.`);
     if (res.skin != null && res.skin < 90) notes.push('Purple is overworked skin. Make fewer passes, and let it settle before pressing Done.');
+    if ((EX.cur?.scrub || 0) >= 6) notes.push(`Scrubbing: ${EX.cur.scrub} times the shading turned back sharply at full speed. It looks solid now, but healed each turn shows as a darker step the shape of the needle (see the Healed preview). Swing it like a pendulum, easing off at each end.`);
     const sf = settingsCheck(T); if (sf.length) notes.push(`Settings past their limit, which can make this easier: ${sf.map(s => `${s.name} ${s.value} (default ${s.default})`).join(', ')}.`);
     if (!notes.length) notes.push(T.tri ? 'Nothing stands out: a clean attempt. To score higher, blend each colour further into the next and keep the point dark and sharp.' : T.wgrad ? 'Nothing stands out: a clean attempt. To score higher, fade each wash further into the last and keep the edges hard against the line.' : T.stipple ? 'Nothing stands out: a clean attempt. To score higher, take the dark end a little darker and keep every row of dots even from side to side.' : T.pack ? 'Nothing stands out: a clean attempt. To score higher, layer your passes more evenly so no spot gets fewer than the rest.' : 'Nothing stands out: a clean attempt. To score higher, keep the line dead centre on the stencil and the speed steady from start to finish.');
     return { c, notes, crop: [x0, y0, cw, ch] }; };
