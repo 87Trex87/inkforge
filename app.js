@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 420;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 421;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7593,6 +7593,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 421, when: '2026-11-13T14:00', added: ['Challenge maker: a Stencil tab on shading zones with a skin marker and spirit wipe, to add shading detail to the stencil by hand.', 'The skin marker in the simulator now wears off while you work, like the stencil.'],
+    test: ['Draw and wipe on a zone stencil, then play it. Does the marker show faint and wear off while shading?', 'In a piece, draw with the skin marker and shade over it. Does it fade?'] },
   { build: 420, when: '2026-11-13T12:00', added: ['New pieces ask for a level and body area. The page can be the size of the area, or show it as a dashed outline you can turn off.', 'Lessons and challenges grey out body areas too small for them.', 'Colour portrait studies in the Challenge maker: sharper, drawn in a palette made from the picture (black and white always in), and judged colour by colour with leeway at edges.', 'Portrait linework: trace lines from the picture into lines to follow. Judged lines are black, the stencil faint purple, and the stencil can be hidden.', 'My challenges: add your own to the Challenges hub, go back to editing from the simulator, and two new trophies for making them.', 'The heat map now works for challenges with no lines.'],
     test: ['Start a new piece on Hard, Ribs. Is the page or outline the right size?', 'Make a colour portrait challenge from a picture. Do the study colours and palette match the picture?', 'Trace lines in Setup, then hide the stencil. Can you tell the judged lines from the stencil?', 'Play your challenge, add it to My challenges, then play it from the hub. Does Edit take you back?'] },
   { build: 419, when: '2026-11-13T00:00', added: ['Normal mode now has the pain meter, red flashes and pain map too. The client never taps out, but they will let you know.', 'The Stats button at the top shows the body area, pain now and worst, and how much skin is red, swollen or overworked.'],
