@@ -4135,7 +4135,8 @@ DZ.edit = async (id) => {
   const TR_STYLES = [['colour', 'Colour line work', 'Traditional, neo-trad, new school: lines, outline and flat colours', { k: 4, lines: true, lw: 0.8 }],
     ['black', 'Blackwork', 'Black lines and solid black', { k: 1, lines: true, lw: 0.8 }],
     ['fine', 'Fine line', 'Thin black lines only', { k: 1, lines: true, lw: 1.2, linesOnly: true }]];
-  async function chTracePick() { const src = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
+  async function chTracePick() { if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const sc = document.createElement('script'); sc.src = 'tattoo.js'; sc.onload = sc.onerror = res; document.head.appendChild(sc); });   /* palettes and caps */
+    const src = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
       o.innerHTML = `<div class="card"><h2>A picture to trace</h2><p class="muted" style="margin-top:0">Any drawing or photo: the sharper and bigger, the cleaner the trace.</p><div class="dz-ex">
         <button data-ts="refs"><b>From References</b><small>Portfolio › References</small></button><button data-ts="pf"><b>From your portfolio</b><small>Tattoos, simulator pieces and their photos</small></button><button data-ts="file"><b>From this device</b><small>A drawing from another app, a photo</small></button></div>
         <button class="btn" data-ts="" style="width:100%;margin-top:10px">Cancel</button></div>`;
