@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 422;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 423;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7593,6 +7593,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 423, when: '2026-11-13T16:00', added: ['The stencil and skin marker fade a little slower: gone after roughly 6 to 10 passes.', 'Simulator cards in the library show the level and body area.'],
+    test: ['Pack over a stencil line. Does the fade feel right now?', 'Look at your simulator pieces. Do the cards show the level and area?'] },
   { build: 422, when: '2026-11-13T15:00', added: ['The stencil and skin marker wear off about three times quicker while packing and shading, often before the skin reddens.'],
     test: ['Pack over a stencil line. Is it gone after a handful of passes?'] },
   { build: 421, when: '2026-11-13T14:00', added: ['Challenge maker: a Stencil tab on shading zones with a skin marker and spirit wipe, to add shading detail to the stencil by hand.', 'The skin marker in the simulator now wears off while you work, like the stencil.'],
