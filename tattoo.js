@@ -1498,16 +1498,16 @@ TT.open = async (el, id) => {
   const isMag = () => ['mag', 'soft'].includes(TT_NEEDLES.find(n => n.id === st.needle)?.kind);
   const rowAng = (ev) => { const tx = ev?.tiltX || 0, ty = ev?.tiltY || 0;
     return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 + st.magAng * Math.PI / 180 : st.magAng * Math.PI / 180; };   // leaning: the angle is an offset on the lean
-  /* Scrubbing: shading rushed back and forth, turning back sharply (about 150 degrees or more in one 1.5 mm step, straight after a straight run) without easing off, so tight ovals still pass, instead of a
+  /* Scrubbing: shading rushed back and forth, turning back sharply (about 150 degrees or more in one 1.5 mm step, straight after a straight run) without easing off, so tight ovals still pass, and only while the needle is still in deep (a pendulum or whip lifts out at each end), instead of a
      pendulum swing that slows at each end. Fresh it looks saturated; healed, each turn shows as a darker step the shape
      of the needle (a bar for a magnum, a blot for a round shader). Each turn is kept with the piece (meta.scrub: x, y,
      angle, length and width in px, magnum) and drawn only in the healed and 10 year views, only where there is ink. */
   const SCR = Array.isArray(meta.scrub) ? meta.scrub.slice() : [];
-  const scrubAdd = (p, ev) => { if (CHEAT || nk === 'liner') return; let s = pen.scr; if (!s || ev.timeStamp - s.t > 150) s = pen.scr = { x: p.x, y: p.y, a: null, v: pen.speed, n: 0, run: 0, t: ev.timeStamp };
+  const scrubAdd = (p, ev, depth = 1) => { if (CHEAT || nk === 'liner') return; let s = pen.scr; if (!s || ev.timeStamp - s.t > 150) s = pen.scr = { x: p.x, y: p.y, a: null, v: pen.speed, n: 0, run: 0, t: ev.timeStamp };
     s.t = ev.timeStamp; const dx = p.x - s.x, dy = p.y - s.y; const sl = Math.hypot(dx, dy); if (sl < 1.5 * mm) return; const a = Math.atan2(dy, dx); s.x = p.x; s.y = p.y;
     if (s.a != null) { let d = Math.abs(a - s.a); if (d > Math.PI) d = 2 * Math.PI - d;
       /* a scrub flips straight back in one step after a straight run; an oval end turns over two or more steps */
-      if (d > 2.6 && s.run >= 2 * mm && pen.speed > 30 && pen.speed > s.v * 0.75 && SCR.length < 5000) { const us = lay.map(q => q.u), vs = lay.map(q => q.v), mg = isMag() ? 1 : 0;
+      if (d > 2.6 && s.run >= 2 * mm && depth >= 0.4 && pen.speed > 30 && pen.speed > s.v * 0.75 && SCR.length < 5000) { const us = lay.map(q => q.u), vs = lay.map(q => q.v), mg = isMag() ? 1 : 0;
         SCR.push([Math.round(p.x), Math.round(p.y), mg ? +rowAng(ev).toFixed(2) : 0, Math.round((Math.max(...us) - Math.min(...us) + feel.size) * mm), Math.round((Math.max(...vs) - Math.min(...vs) + feel.size) * mm), mg]);
         if (EX?.cur) EX.cur.scrub = (EX.cur.scrub || 0) + 1; st.dirty = true; painHit(p, 0.6, pen.foot, 0.008); } }
     s.run = s.a != null && (() => { let d = Math.abs(a - s.a); if (d > Math.PI) d = 2 * Math.PI - d; return d < 0.6; })() ? s.run + sl : sl; s.v = s.v * 0.8 + pen.speed * 0.2; s.a = a; };
@@ -1651,7 +1651,7 @@ TT.open = async (el, id) => {
       if (EX?.cur && st.tool !== 'erase' && (EX.cur.n = (EX.cur.n || 0) + 1) % 3 === 0 && EX.cur.p.length < 1500) {
         EX.cur.p.push(+pNorm(ev).toFixed(3)); EX.cur.v.push(Math.round(pen.speed)); EX.cur.d.push(+depth.toFixed(3)); EX.cur.t.push(Math.round(Math.hypot(ev.tiltX || 0, ev.tiltY || 0))); }
       // punctures land every (hand speed / machine speed) along the skin; `hand` scales screen speed to a tattooing hand's
-      const packB = EX?.cur && st.tool !== 'erase' && pen.cx.pig ? exList()[EX.i]?.pack : null; if (packB && st.needle === (exList()[EX.i]?.packNeedle || '7RS') && d > 0) packMotion(d, depth); if (EX?.cur && st.tool !== 'erase' && pen.cx.pig) tmAdd(ev, d, dx, dy, depth, dt); if (st.tool !== 'erase' && pen.cx.pig && d > 0) scrubAdd(p, ev);
+      const packB = EX?.cur && st.tool !== 'erase' && pen.cx.pig ? exList()[EX.i]?.pack : null; if (packB && st.needle === (exList()[EX.i]?.packNeedle || '7RS') && d > 0) packMotion(d, depth); if (EX?.cur && st.tool !== 'erase' && pen.cx.pig) tmAdd(ev, d, dx, dy, depth, dt); if (st.tool !== 'erase' && pen.cx.pig && d > 0) scrubAdd(p, ev, depth);
       const gap = (fast ? Math.min(gapMm(pen.speed), 0.06) : gapMm(pen.speed)) / z * mm;
       let t = pen.carry;
       while (t <= d) {
