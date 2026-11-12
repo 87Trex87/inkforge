@@ -128,18 +128,31 @@ const CH_SHADE = { stipple: ['Stipple', 'Dots only, from quick even whips with a
 // Where t (0 to 1) falls among n colour stops: the stop before it and how far on towards the next.
 const dzChSeg = (n, t) => { if (n < 2) return [0, 0]; const v = Math.max(0, Math.min(1, t)) * (n - 1), i = Math.min(n - 2, Math.floor(v)); return [i, v - i]; };
 const chHexRGB = (h) => [1, 3, 5].map(i => parseInt(String(h).slice(i, i + 2), 16) || 0);
+/* A colour value study's colour at a point (mm), shared with the simulator's judging. Each cell of the picture's
+   colour copy (about 1 mm) is snapped to its nearest palette colour; between cells the colour is chosen only from
+   the colours of the four cells round it, so no third colour creeps in along an edge, with a soft blend where two
+   close colours meet (a gradient). edge: the point is within a cell of a change of colour. */
+const dzChRGBC = new WeakMap();
+function dzChRGBAt(sh, x, y, b) { const cols = sh.tech === 'blend' && sh.cols?.length > 1 ? sh.cols : sh.palC; if (!sh.rgb || !(cols?.length > 1)) return null;
+  let C = dzChRGBC.get(sh); const key = cols.join();
+  if (!C || C.rgb !== sh.rgb || C.key !== key) { const A = Uint8Array.from(atob(sh.rgb), ch => ch.charCodeAt(0)), PC = cols.map(chHexRGB), n = Math.floor(A.length / 3), idx = new Uint8Array(n);
+    for (let i = 0; i < n; i++) { let bi = 0, bd = 1e9; for (let k = 0; k < PC.length; k++) { const d = (PC[k][0] - A[i * 3]) ** 2 + (PC[k][1] - A[i * 3 + 1]) ** 2 + (PC[k][2] - A[i * 3 + 2]) ** 2; if (d < bd) { bd = d; bi = k; } } idx[i] = bi; }
+    C = { rgb: sh.rgb, key, A, PC, idx }; dzChRGBC.set(sh, C); }
+  const RW = sh.rgbW || sh.rgbN || 80, RH = sh.rgbH || sh.rgbN || 80, u = Math.max(0, Math.min(RW - 1, (x - b[0]) / (b[2] || 1) * RW - 0.5)), v = Math.max(0, Math.min(RH - 1, (y - b[1]) / (b[3] || 1) * RH - 0.5));
+  const i0 = Math.floor(u), j0 = Math.floor(v), i1 = Math.min(RW - 1, i0 + 1), j1 = Math.min(RH - 1, j0 + 1), fu = u - i0, fv = v - j0, A = C.A, at = (i, j, q) => A[(j * RW + i) * 3 + q];
+  const px = [0, 1, 2].map(q => (at(i0, j0, q) * (1 - fu) + at(i1, j0, q) * fu) * (1 - fv) + (at(i0, j1, q) * (1 - fu) + at(i1, j1, q) * fu) * fv);
+  const cand = [...new Set([C.idx[j0 * RW + i0], C.idx[j0 * RW + i1], C.idx[j1 * RW + i0], C.idx[j1 * RW + i1]])], dd = cand.map(k => Math.sqrt((C.PC[k][0] - px[0]) ** 2 + (C.PC[k][1] - px[1]) ** 2 + (C.PC[k][2] - px[2]) ** 2));
+  const o = dd.map((d, n) => n).sort((a, z) => dd[a] - dd[z]), a1 = cand[o[0]], a2 = cand[o[1] ?? o[0]], t = o.length > 1 ? Math.max(0, Math.min(0.5, 0.5 - (dd[o[1]] - dd[o[0]]) / 40)) : 0;
+  return { c: [0, 1, 2].map(q => C.PC[a1][q] * (1 - t) + C.PC[a2][q] * t), i: a1, edge: cand.length > 1 }; }
 // A shading zone as it should look: dots for stipple, a smooth tone for whip and wash, the colours for a blend.
 async function dzChShade(x, doc, l, scale) { const sh = l.sh || {}, outs = doc.layers.filter(o => o.t === 'shape' && o.role === 'outline' && !o.hide && (o.side || null) === (l.side || null));
   const P = dzChPts(l).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2); if (!xs.length) return;
   const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], res = 0.2, cw = Math.max(1, Math.ceil(b[2] / res)), chh = Math.max(1, Math.ceil(b[3] / res));
   const c = document.createElement('canvas'); c.width = cw; c.height = chh; const g = c.getContext('2d'), im = g.createImageData(cw, chh), D = im.data;
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, CS = (sh.cols?.length ? sh.cols : ['#b3261e', '#f2c21b']).map(chHexRGB); if (CS.length < 2) CS.push(CS[0]);
-  const RGB = sh.rgb && (sh.palC?.length > 1 || sh.cols?.length > 1) ? Uint8Array.from(atob(sh.rgb), ch => ch.charCodeAt(0)) : null, RN = sh.rgbN || 80, PC = (sh.tech === 'blend' && sh.cols?.length > 1 ? sh.cols : sh.palC || []).map(chHexRGB);   /* a colour value study: the picture in the palette's colours */
+  const RGB = !!sh.rgb;   /* a colour value study: the picture in the palette's colours */
   for (let j = 0; j < chh; j++) for (let i = 0; i < cw; i++) { const v = dzChAt(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b), k = (j * cw + i) * 4;
-    if (RGB) { const u = Math.max(0, Math.min(RN - 1, (i + 0.5) / cw * RN - 0.5)), w2 = Math.max(0, Math.min(RN - 1, (j + 0.5) / chh * RN - 0.5)), i0 = Math.floor(u), j0 = Math.floor(w2), i1 = Math.min(RN - 1, i0 + 1), j1 = Math.min(RN - 1, j0 + 1), fu = u - i0, fv = w2 - j0;
-      const px = [0, 1, 2].map(q => ((RGB[(j0 * RN + i0) * 3 + q] * (1 - fu) + RGB[(j0 * RN + i1) * 3 + q] * fu) * (1 - fv) + (RGB[(j1 * RN + i0) * 3 + q] * (1 - fu) + RGB[(j1 * RN + i1) * 3 + q] * fu) * fv));
-      let a1 = 0, a2 = 0, d1 = 1e9, d2 = 1e9; PC.forEach((c, n) => { const dd = (c[0] - px[0]) ** 2 + (c[1] - px[1]) ** 2 + (c[2] - px[2]) ** 2; if (dd < d1) { d2 = d1; a2 = a1; d1 = dd; a1 = n; } else if (dd < d2) { d2 = dd; a2 = n; } });
-      const t = Math.max(0, Math.min(0.5, 0.5 - (Math.sqrt(d2) - Math.sqrt(d1)) / 40)); for (let q = 0; q < 3; q++) D[k + q] = PC[a1][q] * (1 - t) + PC[a2][q] * t; D[k + 3] = 255; continue; }
+    if (RGB) { const r = dzChRGBAt(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b); if (r) { D[k] = r.c[0]; D[k + 1] = r.c[1]; D[k + 2] = r.c[2]; D[k + 3] = 255; continue; } }
     if (sh.tech === 'blend') { const [si, f] = dzChSeg(CS.length, v); for (let q = 0; q < 3; q++) D[k + q] = CS[si][q] + (CS[si + 1][q] - CS[si][q]) * f; D[k + 3] = 255; continue; } D[k] = D[k + 1] = D[k + 2] = 20; D[k + 3] = sh.tech === 'stipple' ? (rnd() < v * 0.9 ? 235 : 0) : v * 255; }
   g.putImageData(im, 0, 0);
   x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); if (outs.length) { const O = new Path2D(); for (const o of outs) O.addPath(dzChPath(o)); x.clip(O); } x.clip(dzChPath(l));
@@ -4017,20 +4030,27 @@ DZ.edit = async (id) => {
     for (let it = 0; it < 12; it++) { const s = cs.map(() => [0, 0, 0, 0]); for (const p of px) { let bi = 0, bd = 1e9; cs.forEach((c, k) => { const d = (c[0] - p[0]) ** 2 + (c[1] - p[1]) ** 2 + (c[2] - p[2]) ** 2; if (d < bd) { bd = d; bi = k; } }); const t = s[bi]; t[0] += p[0]; t[1] += p[1]; t[2] += p[2]; t[3]++; }
       cs = cs.map((c, k) => s[k][3] ? [s[k][0] / s[k][3], s[k][1] / s[k][3], s[k][2] / s[k][3]] : c); }
     const hex = (c) => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
-    return cs.sort((a, b) => lum(a) - lum(b)).filter(c => lum(c) > 28 && lum(c) < 236).map(hex).filter((h, i, a) => a.indexOf(h) === i); };
+    /* Small strong colours (dots, a coloured rim) are outvoted by area above: any strong hue with a little room in the
+       picture that no colour so far is near gets its own cap. */
+    const hb = Array.from({ length: 12 }, () => [0, 0, 0, 0]); for (const p of px) { const mx = Math.max(...p), mn = Math.min(...p); if (mx < 60 || (mx - mn) / mx < 0.45) continue; const d = mx - mn, H = mx === p[0] ? ((p[1] - p[2]) / d + 6) % 6 : mx === p[1] ? (p[2] - p[0]) / d + 2 : (p[0] - p[1]) / d + 4, t = hb[Math.floor(H * 2) % 12]; t[0] += p[0]; t[1] += p[1]; t[2] += p[2]; t[3]++; }
+    const near = (c, L) => L.some(o => Math.hypot(o[0] - c[0], o[1] - c[1], o[2] - c[2]) < 70), extra = [];
+    for (const t of hb.sort((a, z) => z[3] - a[3])) { if (t[3] < px.length * 0.002) break; const c = [t[0] / t[3], t[1] / t[3], t[2] / t[3]]; if (!near(c, [...cs, ...extra])) extra.push(c); }
+    const base = cs.filter(c => lum(c) > 28 && lum(c) < 236).slice(0, Math.max(1, 8 - extra.length));
+    return [...base, ...extra.slice(0, 8 - base.length)].sort((a, b) => lum(a) - lum(b)).map(hex).filter((h, i, a) => a.indexOf(h) === i); };
   async function chStudy(l) { if (!l || l.t !== 'image') return; if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const sc = document.createElement('script'); sc.src = 'tattoo.js'; sc.onload = sc.onerror = res; document.head.appendChild(sc); });
-    const N = 160, sc = Math.min(1, 1600 / Math.max(doc.w, doc.h)), c = document.createElement('canvas'); c.width = Math.round(doc.w * sc); c.height = Math.round(doc.h * sc);
+    let N = 160; const sc = Math.min(1, 1600 / Math.max(doc.w, doc.h)), c = document.createElement('canvas'); c.width = Math.round(doc.w * sc); c.height = Math.round(doc.h * sc);
     await dzDraw(c, doc, sc, { only: new Set([l.id]), noBg: true });   /* the picture as it shows: crop, flips and colour adjustments included */
     const z = dzS('rect', l.x, l.y, l.w, l.h, { fill: 'none', rot: l.rot || 0, role: 'shade', nd: '13CM', name: 'Value study' }), P = dzChPts(z).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
-    const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], m = document.createElement('canvas'); m.width = m.height = N;
+    const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], m = (N = Math.max(96, Math.min(240, Math.round(Math.max(b[2], b[3])))), document.createElement('canvas')); m.width = m.height = N;   /* about a millimetre a cell */
     const g = m.getContext('2d'); g.drawImage(c, b[0] * CH_PX * sc, b[1] * CH_PX * sc, b[2] * CH_PX * sc, b[3] * CH_PX * sc, 0, 0, N, N); const D = g.getImageData(0, 0, N, N).data, raw = new Uint8Array(N * N);
     let lo = 255, hi = 0; for (let i = 0; i < N * N; i++) { const a = D[i * 4 + 3] / 255, lum = (D[i * 4] * 0.3 + D[i * 4 + 1] * 0.59 + D[i * 4 + 2] * 0.11) / 255, v = 255 * a * (1 - lum); raw[i] = v; if (a > 0.5) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
     if (hi > lo) for (let i = 0; i < N * N; i++) raw[i] = Math.max(0, Math.min(255, (raw[i] - lo) / (hi - lo) * 255));   /* stretched so the picture's darkest is the darkest step */
-    for (let pass = 0; pass < 2; pass++) { const s = Float32Array.from(raw); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let t = 0, n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue; t += s[yy * N + xx]; n++; } raw[y * N + x] = t / n; } }   /* softened: no speckle where the picture is noisy */
+    for (let pass = 0; pass < 1; pass++) { const s = Float32Array.from(raw); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let t = 0, n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue; t += s[yy * N + xx]; n++; } raw[y * N + x] = t / n; } }   /* softened: no speckle where the picture is noisy */
     const pals = doc.chal?.inkT === 'colour' ? Object.fromEntries([2, 3, 4, 5, 6, 7, 8].map(k => [k, chKCols(D, k)])) : undefined;
-    let rgb; if (pals) { const RN = 80, rc = document.createElement('canvas'); rc.width = rc.height = RN; const rg = rc.getContext('2d'); rg.filter = 'blur(0.6px)'; rg.drawImage(m, 0, 0, RN, RN); const RD = rg.getImageData(0, 0, RN, RN).data, a = new Uint8Array(RN * RN * 3);
-      for (let i = 0; i < RN * RN; i++) { const al = RD[i * 4 + 3] / 255; for (let q = 0; q < 3; q++) a[i * 3 + q] = RD[i * 4 + q] * al + 255 * (1 - al); } rgb = dzChMapEnc(a); }
-    z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1, pals, rgb, rgbN: rgb ? 80 : undefined }; chQuant(z.sh);
+    const RW = Math.max(8, Math.min(260, Math.round(b[2]))), RH = Math.max(8, Math.min(260, Math.round(b[3]))); let rgb;   /* the colour copy: the picture's own shape, a millimetre a cell, sharp */
+    if (pals) { const rc = document.createElement('canvas'); rc.width = RW; rc.height = RH; const rg = rc.getContext('2d'); rg.imageSmoothingQuality = 'high'; rg.drawImage(c, b[0] * CH_PX * sc, b[1] * CH_PX * sc, b[2] * CH_PX * sc, b[3] * CH_PX * sc, 0, 0, RW, RH); const RD = rg.getImageData(0, 0, RW, RH).data, a = new Uint8Array(RW * RH * 3);
+      for (let i = 0; i < RW * RH; i++) { const al = RD[i * 4 + 3] / 255; for (let q = 0; q < 3; q++) a[i * 3 + q] = RD[i * 4 + q] * al + 255 * (1 - al); } rgb = dzChMapEnc(a); }
+    z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1, pals, rgb, rgbW: rgb ? RW : undefined, rgbH: rgb ? RH : undefined }; chQuant(z.sh);
     chDefN(z); const i = doc.layers.indexOf(l); doc.layers.splice(i + 1, 0, z); l.hide = true; changed(true); select(z.id); chTab.role = 'grad'; await chOpen('role');
     toast(pals ? 'Value study made, with a palette from the picture\'s colours (plus black and white). The picture is hidden: show it from Layers to compare.' : 'Value study made. The picture is hidden: show it from Layers to compare.', 4000); }
   // The value study's picture, as it shows and cropped to the zone, into the stencil maker at the zone's width.
