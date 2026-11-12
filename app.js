@@ -7146,10 +7146,6 @@ async function stToChallenge() {
   await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(doc), R.id]);
   await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [R.id, ref]);
   if (old && old !== ref) { await DB.run('DELETE FROM design_assets WHERE design_id = ? AND ref = ?', [R.id, old]); await Media.release(old); }   /* the same stencil again has the same file name */
-  if (R.lines) { const sb = z.sh.stencil.box, subs = dzChCentre(ST.mask, ST.w, ST.h, sb);   /* its lines as detail lines to follow */
-    doc.layers = doc.layers.filter(l => !(l.traced && l.traced === R.layer)); if (subs.length) { const v = dzChVec(subs, { role: 'detail', nd: R.nd, name: 'Traced lines' }); v.traced = R.layer; doc.layers.push(v); }
-    await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(doc), R.id]);
-    ST.ret = null; toast(subs.length ? `Stencil added, with ${subs.length} traced line${subs.length > 1 ? 's' : ''} to follow.` : 'Stencil added. No lines were found to trace.', 3000); location.hash = 'design/' + R.id; return; }
   ST.ret = null; toast('Stencil added to the challenge.', 2500); location.hash = 'design/' + R.id;
 }
 async function stToSim() {
