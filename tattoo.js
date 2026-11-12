@@ -294,8 +294,9 @@ TT.aw = {
   put(a) { Settings.set('tt_awards', JSON.stringify(a)); },
   check(a) { const got = []; for (const t of TT_TROPHIES) if (!a.trophies[t.id] && t.test(a)) { a.trophies[t.id] = Date.now(); got.push(t); } return got; },
   // A finished challenge: returns the earlier best (null the first time), the best now and any trophies just won.
-  record(T, res) {
+  record(T, res, tier) {
     const a = this.get(), p = a.pb[T.id] || { best: 0, tries: 0 }, was = p.tries ? p.best : null;
+    if (tier) { p.tiers = p.tiers || {}; const q = p.tiers[tier] || { best: 0, tries: 0 }; q.tries++; if (res.total > q.best) q.best = res.total; p.tiers[tier] = q; }
     p.tries++; p.last = res.total; p.lastT = Date.now(); if (was == null || res.total > p.best) { p.best = res.total; p.bestT = Date.now(); }
     a.pb[T.id] = p; a.log.push({ id: T.id, s: res.total, t: Date.now(), skin: res.skin, blow: res.blowouts }); if (a.log.length > 1500) a.log.splice(0, a.log.length - 1500);
     const gained = this.check(a); this.put(a); return { was, best: p.best, newPb: was != null && res.total > was, first: was == null, gained };
@@ -304,6 +305,13 @@ TT.aw = {
 };
 const ttStars = (n) => '<span class="tt-stars">' + [1, 2, 3].map(i => `<i class="${i <= n ? 'on' : ''}"></i>`).join('') + '</span>';
 const ttCup = (tier, size = 28) => `<svg class="tt-cup ${tier}" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M9.5 17h5"/></svg>`;
+/* Pain levels: the body areas split by their pain from quotes (1-2 easy, 3 medium, 4-5 hard). Each challenge keeps
+   a best and medal per level (pb[id].tiers), each lesson a best per level (tt_lessons tier[id]). */
+const TT_TIERS = [['easy', 'Easy', 'Fleshy areas: the client takes a lot'], ['medium', 'Medium', 'Some bone or thin skin: go steady'], ['hard', 'Hard', 'Ribs, spine, hands, feet: the slightest overwork spikes it']];
+const TT_TIERN = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
+const ttTier = (n) => n <= 2 ? 'easy' : n === 3 ? 'medium' : 'hard';
+const ttTierChips = (t, pass) => t ? `<span class="tt-tiers">${TT_TIERS.map(([k, n]) => { const v = t[k]?.best ?? t[k]; if (v == null) return `<i data-tip="${n}: not tried">${n[0]}</i>`;
+  const m = pass ? (v >= pass ? [0, 'pass'] : null) : ttMedal(v); return `<i class="${m ? m[1] : 'tried'}" data-tip="${n}: best ${v}">${n[0]}</i>`; }).join('')}</span>` : '';
 const ttMedalIco = (m, size = 22) => m ? `<svg class="tt-medal ${m[1]}" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="M8 2l4 7 4-7"/><circle cx="12" cy="15" r="6"/></svg>` : '';
 
 /* Skin for challenges and the exam (setting tt_chskin, an index into TT_SKINS). The three lightest play the same;
@@ -349,7 +357,7 @@ TT.hub = async (el) => {
       const off = noCol && ttIsColour(c);
       return `<button class="tt-chc ${off ? 'off' : ''}" data-ch="${c.id}" ${off ? 'data-tip="No colour on this skin"' : ''}><div class="tt-chimg"><img src="${c.thumb || ttExGen(c, skin)}" alt=""${c.thumb ? ` data-alt="${ttExGen(c, skin)}" onerror="if(this.dataset.alt){this.src=this.dataset.alt;this.removeAttribute('data-alt')}"` : ''}></div>
         <div class="tt-chmeta"><b>${esc(ttShort(c.title))}</b><span>${ttStars(c.diff)} ${c.needle}</span>
-        <span class="tt-chpb">${p ? `${ttMedalIco(m)} Best ${p.best} <i class="tt-chr" data-chr="${c.id}" data-tip="Clear this challenge's best score">Reset</i>` : '<i class="muted">Not tried yet</i>'}</span></div></button>`; }).join('')}</div>`).join('')}
+        <span class="tt-chpb">${p ? `${ttMedalIco(m)} Best ${p.best}${ttTierChips(p.tiers)} <i class="tt-chr" data-chr="${c.id}" data-tip="Clear this challenge's best score">Reset</i>` : '<i class="muted">Not tried yet</i>'}</span></div></button>`; }).join('')}</div>`).join('')}
   </div>`;
   // After scores are cleared, trophies stay only if what's left still earns them.
   const keepTrophies = (A) => { for (const tr of TT_TROPHIES) if (A.trophies[tr.id] && !tr.test(A)) delete A.trophies[tr.id]; };
@@ -686,8 +694,8 @@ TT.lessons = (el) => { ttStyle();
   el.innerHTML = `<div class="tt-hub">${ttTryBar()}<div class="row" style="margin-bottom:12px;gap:8px"><button class="btn icon-btn" data-go="tattoo" aria-label="Back" data-tip="Back to your pieces"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><b style="flex:1">Lessons</b><span class="muted" style="font-size:12px">Build ${TT_BUILD}</span>${Object.keys(p.done).length ? '<button class="btn small" data-lsall data-tip="Clear every lesson and lock them again">Reset all</button>' : ''}</div>
     ${p.last ? (() => { const l0 = ttLessonList().find(x => x.id === p.last.lesson); return l0 ? `<button class="tt-lsrow" style="width:100%;margin-bottom:12px" data-lslast><span class="tt-lsno">${ttGrade(p.last.total)}</span><span class="tt-lsmeta"><b>Open last lesson</b><span class="muted">${esc(l0.title)} · ${p.last.total} / 100 · ${new Date(p.last.when).toLocaleString()}</span></span></button>` : ''; })() : ''}
     ${TT_LESSONS.map(c => `<div class="letter">${c.name}</div>${c.lessons.length ? `<div class="tt-lslist">${c.lessons.map(l => { const open = ttLessonOpen(l.id, p), ready = !!l.steps?.length, can = open && ready;
-      return `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="tt-lsrow ${can ? '' : 'off'}" style="flex:1" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>${can && l.task ? `<button class="btn small" data-lscmp="${l.id}" data-tip="Compare two attempts at this lesson side by side: yours, Trevor's, an apprentice's or another artist's">Compare</button>` : ''}${p.results?.[l.id] ? `<button class="btn small" data-lres="${l.id}">Result</button>` : ''}${p.best?.[l.id] != null || p.results?.[l.id] ? `<button class="btn small" data-lsone="${l.id}" data-tip="Clear this lesson's best and result, and keep it unlocked">Reset</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
-  const dropResult = async (P, id) => { const R = P.results?.[id]; if (R?.ref) await Media.release(R.ref); if (R?.heat) await Media.release(R.heat); if (P.results) delete P.results[id]; if (P.best) delete P.best[id]; };
+      return `<div class="row" style="gap:6px;flex-wrap:nowrap"><button class="tt-lsrow ${can ? '' : 'off'}" style="flex:1" ${can ? `data-ls="${l.id}"` : 'disabled'}><span class="tt-lsno">${p.done[l.id] ? '✓' : l.id.split('-')[1]}</span><span class="tt-lsmeta"><b>${esc(l.title)}${p.best?.[l.id] != null ? ` · ${ttGrade(p.best[l.id])}` : ''}${ttTierChips(p.tier?.[l.id], TT_LS_PASS)}</b><span class="muted">${esc(l.sum)}</span></span><span class="muted tt-lsst">${!ready ? 'Coming soon' : p.done[l.id] ? 'Done' : open ? 'Start' : 'Locked'}</span></button>${can && l.task ? `<button class="btn small" data-lscmp="${l.id}" data-tip="Compare two attempts at this lesson side by side: yours, Trevor's, an apprentice's or another artist's">Compare</button>` : ''}${p.results?.[l.id] ? `<button class="btn small" data-lres="${l.id}">Result</button>` : ''}${p.best?.[l.id] != null || p.results?.[l.id] ? `<button class="btn small" data-lsone="${l.id}" data-tip="Clear this lesson's best and result, and keep it unlocked">Reset</button>` : ''}</div>`; }).join('')}</div>` : '<p class="muted" style="font-size:13px">Lessons coming soon.</p>'}`).join('')}</div>`;
+  const dropResult = async (P, id) => { const R = P.results?.[id]; if (R?.ref) await Media.release(R.ref); if (R?.heat) await Media.release(R.heat); if (P.results) delete P.results[id]; if (P.best) delete P.best[id]; if (P.tier) delete P.tier[id]; };
   el.onclick = async (e) => { const one = e.target.closest('[data-lsone]')?.dataset.lsone; if (one) { const l = ttLessonList().find(x => x.id === one); if (!await ask(`Reset "${l.title}"? Its best score and saved result are cleared, and it stays unlocked. Your next attempt becomes the new best, even if it's lower.`)) return; const P = ttLessonProg(); await dropResult(P, one); await Settings.set('tt_lessons', JSON.stringify(P)); return TT.lessons(el); }
     if (e.target.closest('[data-lsall]')) { if (!await ask('Reset all lessons? Every score and saved result is cleared, and the lessons lock again from the start. Copies in your portfolio stay.')) return; const P = ttLessonProg(); for (const k of Object.keys(P.results || {})) await dropResult(P, k); for (const k of ['ref', 'heat', 'page']) if (P.last?.[k]) await Media.release(P.last[k]); await Settings.set('tt_lessons', '{}'); return TT.lessons(el); }
     const cl = e.target.closest('[data-lscmp]')?.dataset.lscmp; if (cl) return TT.compare(cl); if (e.target.closest('[data-lslast]')) return ttLessonResult(null, true); const v = e.target.closest('[data-lres]'); if (v) return ttLessonResult(v.dataset.lres); const r = e.target.closest('[data-ls]'); if (r) TT.lesson(el, r.dataset.ls, 0); };
@@ -1123,22 +1131,33 @@ TT.open = async (el, id) => {
      off lets it settle: quickly during a real break (a couple of seconds or more), slowly while working elsewhere.
      Wincing, then asking for a break, warn on the way up; at the top the client taps out and the attempt is judged on
      what was done. Kept with the attempt (EX.cur.pain, painPeak, area). */
-  const PAIN_SENS = [0.55, 0.75, 1, 1.3, 1.65], PAIN_RATE = 0.012;
+  const PAIN_SENS = [0.5, 0.8, 1.15, 1.6, 2.2], PAIN_RATE = 0.03;
   const ttAreas = () => typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.placements : [['Forearm', 'Arms & hands', 2]];
   const painOn = () => !CHEAT && !!EX?.cur && !EX.done && !EX.cur.scored;
   const painArea = () => { let T = null; try { T = EX ? exList()[EX.i] : null; } catch {} const n = EX?.cur?.area || T?.area || Settings.get('tt_area', 'Forearm'); return ttAreas().find(a => a[0] === n) || ['Forearm', 'Arms & hands', 2]; };
   let painT = 0, painTold = 0;
+  /* Choosing where: first the level (easy, medium, hard), then a body area in it. Opens by itself at the start of a
+     lesson or challenge (unless the challenge sets its area), and from the area button before the first stroke. */
+  const painPick = (auto) => new Promise((res) => { const A = ttAreas(), cur = painArea(), T = exList()[EX.i], o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99; let tier = null;
+    const best = (k) => { const v = EX.lesson ? ttLessonProg().tier?.[EX.lesson]?.[k] : TT.aw.get().pb[T?.id]?.tiers?.[k]?.best; if (v == null) return ''; return ' · Best ' + v + (EX.lesson ? (v >= TT_LS_PASS ? ', passed' : '') : ttMedal(v) ? ', ' + ttMedal(v)[2].toLowerCase() : ''); };
+    const draw = () => { if (!tier) { o.innerHTML = `<div class="card tt-areas"><h2>How hard?</h2><p class="muted" style="margin-top:0">The body area sets how quickly the client feels it. Each level keeps its own ${EX.lesson ? 'pass' : 'medal'}.</p><div class="dz-ex">${TT_TIERS.map(([k, n, d]) => `<button data-tier="${k}" class="${ttTier(cur[2]) === k ? 'on' : ''}" ${A.some(a => ttTier(a[2]) === k) ? '' : 'disabled'}><b>${n}</b><small>${d}${best(k)}</small></button>`).join('')}</div><button class="btn" data-area="" style="width:100%;margin-top:10px">${auto ? 'Keep ' + esc(cur[0].toLowerCase()) : 'Cancel'}</button></div>`; return; }
+      const L = A.filter(a => ttTier(a[2]) === tier), groups = [...new Set(L.map(a => a[1]))];
+      o.innerHTML = `<div class="card tt-areas"><h2>${TT_TIERN[tier]}: where?</h2>${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="tt-areag">${L.filter(a => a[1] === g).map(a => `<button data-area="${esc(a[0])}" class="${a[0] === cur[0] ? 'on' : ''}"><b>${esc(a[0])}</b><i>${'●'.repeat(a[2])}${'○'.repeat(5 - a[2])}</i></button>`).join('')}</div>`).join('')}<div class="row" style="gap:6px;margin-top:10px"><button class="btn" data-back style="flex:1">Back</button><button class="btn" data-area="" style="flex:1">Cancel</button></div></div>`; };
+    o.onclick = (e) => { const t = e.target.closest('[data-tier]'); if (t) { tier = t.dataset.tier; return draw(); } if (e.target.closest('[data-back]')) { tier = null; return draw(); }
+      const b2 = e.target.closest('[data-area]'); if (!b2 && e.target !== o) return; o.remove(); res(b2?.dataset.area || null); };
+    draw(); document.body.appendChild(o); });
+  const painSet = async (pick) => { if (!pick || !EX) return; if (EX.cur) EX.cur.area = pick; await Settings.set('tt_area', pick); st.dirty = true; exBar(); painShow(); };
   const painWord = (v) => v < 0.3 ? 'Relaxed' : v < 0.6 ? 'Uncomfortable' : v < 0.85 ? 'Wincing' : 'Needs a break';
   function painShow() { const el = $('#tt-pain'); if (!el) return; el.hidden = !painOn(); if (el.hidden) return; const v = Math.min(1, EX.cur.pain || 0), b = el.querySelector('b'), w = el.querySelector('em');
     b.style.width = (v * 100).toFixed(1) + '%'; b.style.background = `hsl(${Math.round(120 - 120 * v)} 70% 45%)`; w.textContent = painWord(v); }
   function painHit(q, depth) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = EX.cur; painT = now;
-    c.pain = (c.pain || 0) + dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.35, Math.min(1.6, depth / 0.6)) * (0.4 + 1.2 * Math.min(2, trAt(q)));   /* worked skin hurts far more: pain leads the damage */
+    c.pain = (c.pain || 0) + dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.35, Math.min(1.6, depth / 0.6)) * (0.4 + 2.2 * Math.pow(Math.min(2, trAt(q)), 1.4));   /* worked skin hurts far more, and climbs steeply as it saturates: pain leads the damage */
     c.painPeak = Math.max(c.painPeak || 0, c.pain); painShow();
     if (c.pain >= 1 && !c.tapOut) { c.tapOut = true; toast('The client tapped out. The attempt is judged on what you got done.', 5000); setTimeout(() => { try { exDone(); } catch {} }, 250); }
     else if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); }
     else if (c.pain >= 0.6 && painTold < 1) { painTold = 1; toast('The client is wincing: ease off, or work another part for a while.', 3500); } }
   const painIv = setInterval(() => { try { if (!document.body.contains(stage)) return clearInterval(painIv); if (!painOn() || !EX.cur.pain) return;
-    const rest = performance.now() - painT > 2000; if (!rest) return; EX.cur.pain = Math.max(0, EX.cur.pain - 0.012 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (EX.cur.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
+    const rest = performance.now() - painT > 1500; if (!rest) return; EX.cur.pain = Math.max(0, EX.cur.pain - 0.02 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (EX.cur.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
   const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
   // Raw skin: a mottled, bumpy texture of red and pink lumps, made once.
   const patty = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d');
@@ -3384,7 +3403,7 @@ TT.open = async (el, id) => {
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
-    setTimeout(painShow);
+    setTimeout(painShow); if (fresh && EX.mode === 'ch' && !T.area && !CHEAT) setTimeout(async () => painSet(await painPick(true)), 350);
     exStencil(T); st.hide.delete('stencil'); st.op.stencil = 0.6;
     (T.refs || []).forEach((R, k) => refNew({ gen: T.id, ref: R.ref, ar: R.ar || 1, w: 180, op: 1, x: 110 + k * 24, y: 170 + k * 40 }));   /* the challenge's own reference pictures */
     for (const S of T.stencils || []) Media.url(S.ref).then(u => { if (!u) return; const im = new Image(); im.onload = () => { L.stencil.getContext('2d').drawImage(im, S.box[0] * mm, S.box[1] * mm, S.box[2] * mm, S.box[3] * mm); touched.add('stencil'); paint(); }; im.src = u; });   /* a value study's stencil from the stencil maker */
@@ -3680,7 +3699,7 @@ TT.open = async (el, id) => {
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
     if (EX.cur) EX.cur.scored = true;
     EX.res = EX.res.filter(r => r.id !== T.id); EX.res.push(res); st.dirty = true; exBar(res);
-    if (EX.mode === 'ch') { const info = empty || EX.lesson ? null : TT.aw.record(T, res); EX.info = info; save(true); chReport(T, res, info); }
+    if (EX.mode === 'ch') { const info = empty || EX.lesson ? null : TT.aw.record(T, res, ttTier(painArea()[2])); EX.info = info; save(true); chReport(T, res, info); }
   };
   const exNext = () => { EX.cur = null; EX.i++; if (EX.i >= exList().length) { EX.done = true; EX.finished = Date.now(); exBar(); save(true); return exReport(); } exStart(true); save(true); };
   function exBar(res) {
@@ -3689,7 +3708,7 @@ TT.open = async (el, id) => {
     if (EX.done) { b.innerHTML = `<div class="tt-exh"><b>Exam finished</b></div><div class="row" style="gap:6px"><button class="btn small primary" data-ex="report">Report card</button></div>`; return; }
     const T = exList()[EX.i];
     if (EX.mode === 'ch') { const p = TT.aw.get().pb[T.id];
-      const ar = painArea(); b.innerHTML = `<div class="tt-exh"><b>${T.title}</b>${ttStars(T.diff)}<button class="tt-area" data-ex="area" data-tip="Where on the body: sets how much it hurts${T.area ? ' (set by this challenge)' : '. Change it before you start'}">${esc(ar[0])} <i>${'●'.repeat(ar[2])}${'○'.repeat(5 - ar[2])}</i></button><span class="muted" style="font-size:11px">${p ? 'Best ' + p.best : ''}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      const ar = painArea(); b.innerHTML = `<div class="tt-exh"><b>${T.title}</b>${ttStars(T.diff)}<button class="tt-area" data-ex="area" data-tip="Where on the body: sets how much it hurts${T.area ? ' (set by this challenge)' : '. Change it before you start'}">${TT_TIERN[ttTier(ar[2])]} · ${esc(ar[0])} <i>${'●'.repeat(ar[2])}${'○'.repeat(5 - ar[2])}</i></button><span class="muted" style="font-size:11px">${p ? 'Best ' + p.best : ''}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
         <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
         ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${EX.lesson ? 'Grade ' + ttGrade(res.total) : ttMedal(res.total)?.[2] || 'No medal'}</span></div>
           <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button><span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
@@ -3710,10 +3729,7 @@ TT.open = async (el, id) => {
     if (a === 'done') { ttBusy('Scoring your work', 0.1); await ttFrame(); return exDone(); }
     if (a === 'retry') { if (!await ask('Start this challenge again on clean skin?')) return; return exStart(true); }
     if (a === 'area') { const T = exList()[EX.i]; if (T?.area) return toast(`This challenge is on the ${T.area.toLowerCase()}.`, 2000); if (EX.cur?.strokes) return toast('The area is set once you start. Start over to change it.', 2500);
-      const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99; const A = ttAreas(), groups = [...new Set(A.map(a => a[1]))];
-        o.innerHTML = `<div class="card tt-areas"><h2>Where are you tattooing?</h2><p class="muted" style="margin-top:0">Pain from quotes: the more dots, the sooner the client needs a break.</p>${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="tt-areag">${A.filter(a => a[1] === g).map(a => `<button data-area="${esc(a[0])}" class="${a[0] === painArea()[0] ? 'on' : ''}"><b>${esc(a[0])}</b><i>${'●'.repeat(a[2])}${'○'.repeat(5 - a[2])}</i></button>`).join('')}</div>`).join('')}<button class="btn" data-area="" style="width:100%;margin-top:10px">Cancel</button></div>`;
-        o.onclick = (e) => { const b2 = e.target.closest('[data-area]'); if (!b2 && e.target !== o) return; o.remove(); res(b2?.dataset.area || null); }; document.body.appendChild(o); });
-      if (!pick) return; if (EX.cur) EX.cur.area = pick; await Settings.set('tt_area', pick); st.dirty = true; exBar(); return painShow(); }
+      return painSet(await painPick()); }
     if (a === 'next') return exNext();
     if (a === 'report') return exReport();
     if (a === 'hub') return location.hash = EX.lesson ? 'tattoo/lessons' : 'tattoo/challenges';
@@ -3787,7 +3803,7 @@ TT.open = async (el, id) => {
     document.body.appendChild(o); };
   async function lessonReport(T, res) {
     const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
-    const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now();
+    const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) { p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); const tk = ttTier(painArea()[2]); p.tier = p.tier || {}; p.tier[EX.lesson] = p.tier[EX.lesson] || {}; p.tier[EX.lesson][tk] = Math.max(p.tier[EX.lesson][tk] ?? 0, res.total); } if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now();
     ttBusy('Making the heat map', 0.35); await ttFrame(); const heat = res.empty ? null : heatOf(T, res), hurl = heat?.c.toDataURL('image/jpeg', 0.92), purl = composite(Math.min(1, 1600 / W)).toDataURL('image/jpeg', 0.9), old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
     if (pass && (!old || res.total > old.total)) { const sc = Math.min(1, 1600 / W), blob = await new Promise(r => composite(sc).toBlob(r, 'image/jpeg', 0.9));
       p.results = p.results || {}; p.results[EX.lesson] = { ref: await Media.save(blob, 'jpg'), total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, penalty: res.penalty, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, heat: await Media.save(await new Promise(r => heat.c.toBlob(r, 'image/jpeg', 0.92)), 'jpg'), notes: heat.notes }; if (old?.ref) await Media.release(old.ref); if (old?.heat) await Media.release(old.heat); }
@@ -3916,6 +3932,8 @@ function ttStyle() {
 .tt-trophy.won { opacity: 1; } .tt-trophy svg { grid-row: span 2; } .tt-trophy b { font-size: 12px; } .tt-trophy span { font-size: 10px; color: var(--ink2); line-height: 1.25; }
 .tt-cup, .tt-medal { fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .tt-cup.gold, .tt-medal.gold { stroke: #e2b34a; } .tt-cup.silver, .tt-medal.silver { stroke: #c9d1d6; } .tt-cup.bronze, .tt-medal.bronze { stroke: #c88a55; } .tt-cup.locked { stroke: var(--ink2); }
+.tt-tiers { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; } .tt-tiers i { font-style: normal; font-size: 10px; font-weight: 700; width: 16px; height: 16px; line-height: 14px; text-align: center; border-radius: 50%; border: 1px solid var(--line); color: var(--ink2); }
+.tt-tiers i.tried { border-color: var(--ink2); } .tt-tiers i.bronze { border-color: #c88a55; color: #c88a55; } .tt-tiers i.silver { border-color: #c9d1d6; color: #c9d1d6; } .tt-tiers i.gold { border-color: #e2b34a; color: #e2b34a; } .tt-tiers i.pass { border-color: var(--teal); background: var(--teal); color: #fff; }
 .tt-chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
 .tt-chc { display: flex; flex-direction: column; text-align: left; padding: 0; border-radius: 12px; overflow: hidden; background: var(--bg2); border: 1px solid var(--line); color: var(--ink); cursor: pointer; font: inherit; }
 .tt-cheat { flex: none; font: 800 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: #ff8a7a; border: 1.5px solid #ff6f61; border-radius: 6px; padding: 2px 6px; transform: rotate(-3deg); }
