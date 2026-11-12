@@ -1120,6 +1120,7 @@ TT.open = async (el, id) => {
   const WEAR_R = 5, WEAR_K = 0.002, WEAR_LINE = 0.25, GW = Math.ceil(W / mm), GH = Math.ceil(H / mm), wear = new Float32Array(GW * GH);
   const wearC = document.createElement('canvas'); wearC.width = GW; wearC.height = GH; const wearX = wearC.getContext('2d'), wearI = wearX.createImageData(GW, GH);
   const stenV = document.createElement('canvas'); stenV.width = W; stenV.height = H; const stenX = stenV.getContext('2d');
+  const markV = document.createElement('canvas'); markV.width = W; markV.height = H; const markX = markV.getContext('2d');   /* the skin marker wears off the same way */
   let wearAny = false, wearDirty = false, wearR = null;
   const wearAdd = (x, y, al, key) => { if (CHEAT || key === 'stencil' || key === 'marker') return;
     const gx = x / mm, gy = y / mm, a = al * WEAR_K * (key === 'line' ? WEAR_LINE : 1);
@@ -1129,8 +1130,8 @@ TT.open = async (el, id) => {
     wearAny = wearDirty = true; const m = (WEAR_R + 1) * mm, rc = { x0: x - m, y0: y - m, x1: x + m, y1: y + m };
     wearR = wearR ? { x0: Math.min(wearR.x0, rc.x0), y0: Math.min(wearR.y0, rc.y0), x1: Math.max(wearR.x1, rc.x1), y1: Math.max(wearR.y1, rc.y1) } : rc; };
   const stenBuild = () => { const D = wearI.data; for (let n = 0; n < wear.length; n++) D[n * 4 + 3] = Math.round(wear[n] * 255); wearX.putImageData(wearI, 0, 0);
-    stenX.globalCompositeOperation = 'source-over'; stenX.clearRect(0, 0, W, H); stenX.drawImage(L.stencil, 0, 0);
-    stenX.globalCompositeOperation = 'destination-out'; stenX.imageSmoothingEnabled = true; stenX.drawImage(wearC, 0, 0, W, H); stenX.globalCompositeOperation = 'source-over'; wearDirty = false; };
+    for (const [X, key] of [[stenX, 'stencil'], [markX, 'marker']]) { if (!L[key]) continue; X.globalCompositeOperation = 'source-over'; X.clearRect(0, 0, W, H); X.drawImage(L[key], 0, 0);
+      X.globalCompositeOperation = 'destination-out'; X.imageSmoothingEnabled = true; X.drawImage(wearC, 0, 0, W, H); X.globalCompositeOperation = 'source-over'; } wearDirty = false; };
   const stenRefresh = () => { wear.fill(0); wearAny = wearDirty = false; wearR = null; compAll = true; paint(); };
   /* Pattern tile (cheat mode): a stamp near an edge also lands just past the opposite edge, so the tile repeats
      seamlessly; the neighbours are drawn faintly round the page (paint). Needle, laser, shapes and paths wrap; the
@@ -1429,7 +1430,7 @@ TT.open = async (el, id) => {
     cg.clearRect(x0, y0, w, h); cg.drawImage(skin, 0, 0); skinUnder(cg, true);
     for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
       cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? (key === 'marker' ? 0.9 : 1)); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply';
-      if (key === 'stencil' && wearAny && !CHEAT) { if (wearDirty || (x0 === 0 && y0 === 0 && w === W && h === H)) stenBuild(); cg.drawImage(stenV, 0, 0); } else cg.drawImage(L[key], 0, 0);
+      if ((key === 'stencil' || key === 'marker') && wearAny && !CHEAT) { if (wearDirty || (x0 === 0 && y0 === 0 && w === W && h === H)) stenBuild(); cg.drawImage(key === 'marker' ? markV : stenV, 0, 0); } else cg.drawImage(L[key], 0, 0);
       if (key === 'high') cg.drawImage(L[key], 0, 0); }   // white laid twice: fresh white ink reads bright, not grey
     cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); if (CHEAT && st.letters?.length && !st.hide.has('stencil')) cg.drawImage(LT, 0, 0); cg.restore(); };
   /* Damage map: every patch of skin that has been worked, coloured by how irritated it is now and how worn it is from
@@ -2359,13 +2360,13 @@ TT.open = async (el, id) => {
   const mkDown = (e) => { const p = toPage(e); if (st.view !== 'work') { st.view = 'work'; st.viewC = null; drawView(); } st.hide.delete('marker');
     snap('marker'); touched.add('marker'); const g = L.marker.getContext('2d');
     mk = { id: e.pointerId, g, last: p, sp: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y }, raw: [p], rs: 0, rn: 0 };
-    g.fillStyle = st.mk.col; g.globalCompositeOperation = st.mk.wipe ? 'destination-out' : 'source-over'; mkTo(p, e); };
+    g.fillStyle = st.mk.col; g.globalCompositeOperation = st.mk.wipe ? 'destination-out' : 'source-over'; if (wearAny) wearDirty = true; mkTo(p, e); };
   // the spirit wipe is a cloth, much wider than the marker's tip
   const mkTo = (p, e) => { if (mk.snapped) return; const M = st.mk, pr = e.pointerType === 'mouse' ? 0.6 : Math.max(0.15, e.pressure || 0.5);
     const lr = mk.raw[mk.raw.length - 1]; if (Math.hypot(p.x - lr.x, p.y - lr.y) > 0.5) mk.raw.push(p);
     mk.sp = { x: mk.sp.x + (p.x - mk.sp.x) * 0.55, y: mk.sp.y + (p.y - mk.sp.y) * 0.55 };   // a little smoothing
     const r = (M.wipe ? Math.max(3, M.r * 5) : M.r) * mm / 2 * (0.6 + 0.6 * pr), a = mk.last, b = mk.sp, d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(1, Math.ceil(d / Math.max(0.5, r * 0.3)));
-    mk.g.globalAlpha = M.wipe ? 0.35 : 1; mk.rs += r; mk.rn++;
+    if (wearAny) wearDirty = true; mk.g.globalAlpha = M.wipe ? 0.35 : 1; mk.rs += r; mk.rn++;
     for (let i = 1; i <= n; i++) mkDot(mk.g, { x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }, r);
     const B = mk.box; B.x0 = Math.min(B.x0, b.x - r - 2); B.y0 = Math.min(B.y0, b.y - r - 2); B.x1 = Math.max(B.x1, b.x + r + 2); B.y1 = Math.max(B.y1, b.y + r + 2);
     mk.last = b; st.dirty = true; paint({ x0: Math.min(a.x, b.x) - r - 2, y0: Math.min(a.y, b.y) - r - 2, x1: Math.max(a.x, b.x) + r + 2, y1: Math.max(a.y, b.y) + r + 2 }); };

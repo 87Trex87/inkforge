@@ -1042,7 +1042,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   }
   /* A value study's stencil, where it goes on the skin: under the judged lines (black, at their needle's width), faint
      purple, so the two never look alike. Hidden with Stencil in the Challenge menu. */
-  if (doc.chal && !opts.noStencil && doc.chal.showSten !== false) for (const l of doc.layers) { const S = l.sh?.stencil; if (l.hide || !S) continue; const im = await dzImg(S.ref); if (!im) continue;
+  if (doc.chal && !opts.noStencil && doc.chal.showSten !== false) for (const l of doc.layers) { const S = l.sh?.stencil; if (l.hide || !S || l.sh.mkLive) continue; const im = await dzImg(S.ref); if (!im) continue;
     x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
   for (const l of chLines) await one(x, { ...l, fill: null, fm: undefined, stroke: '#141414', sw: (CH_NW[l.nd] || 0.7) * CH_PX, dash: '' });
 }
@@ -3984,7 +3984,7 @@ DZ.edit = async (id) => {
     return chFrame('Challenge', '', tabs, body, `<button class="btn small" data-chmine data-tip="${doc.chal?.mine ? 'Take it out of My challenges' : 'Put it in the Challenges hub, under My challenges'}">${doc.chal?.mine ? 'In My challenges' : 'Add to My challenges'}</button><button class="btn primary small" data-chplay>Play in the simulator</button>`); };
   const chNds = (l, list) => { const many = l.role === 'pack' || l.role === 'shade', on = many ? dzChNds(l) : [l.nd]; return `<div class="dz-gk" style="grid-template-columns:repeat(4,1fr)">${list.map(n => `<button data-chn="${n}" class="${on.includes(n) ? 'on' : ''}">${n}</button>`).join('')}</div>`; };
   const chRoleMenu = () => { const l = layer(); if (!l || l.t !== 'shape') return chFrame('Grade this shape', '', '', chNote('Select a shape first.')); const r = l.role || '', S = l.sh || {};
-    const tabs = chTabs('role', [['role', 'Role'], ...(r ? [['needle', 'Needle']] : []), ...(r === 'pack' || (r === 'shade' && S.tech === 'blend') ? [['colour', 'Colour']] : []), ...(r === 'shade' ? [['grad', 'Gradient']] : []), ...(r === 'shade' && S.grad === 'paint' ? [['brush', 'Brush']] : [])]);
+    const tabs = chTabs('role', [['role', 'Role'], ...(r ? [['needle', 'Needle']] : []), ...(r === 'pack' || (r === 'shade' && S.tech === 'blend') ? [['colour', 'Colour']] : []), ...(r === 'shade' ? [['grad', 'Gradient']] : []), ...(r === 'shade' && S.grad === 'paint' ? [['brush', 'Brush']] : []), ...(r === 'shade' ? [['sten', 'Stencil']] : [])]);
     const T = chTab.role, tb = (k, v, n) => `<button data-chs="${k}:${v}" class="${String(S[k] ?? '') === String(v) ? 'on' : ''}">${n}</button>`;
     let body = '';
     if (T === 'role') body = `<div class="dz-gk" style="grid-template-columns:1fr 1fr">${CH_ROLES.map(([v, nm]) => `<button data-chr="${v}" class="${r === v ? 'on' : ''}">${nm}</button>`).join('')}</div>`
@@ -4012,6 +4012,10 @@ DZ.edit = async (id) => {
     else if (T === 'brush') body = `<div class="dz-gk" style="grid-template-columns:1fr 1fr">${[['dark', 'Darken'], ['light', 'Lighten']].map(([v, n]) => `<button data-chbr="mode:${v}" class="${chBrush.mode === v ? 'on' : ''}">${n}</button>`).join('')}${[[0, 'Soft'], [1, 'Hard']].map(([v, n]) => `<button data-chbr="hard:${v}" class="${+chBrush.hard === v ? 'on' : ''}">${n}</button>`).join('')}</div>
         <label class="dz-gsz"><span style="width:60px">Size</span><input type="range" min="1" max="24" step="0.5" data-chbrs="size" value="${chBrush.size}" style="flex:1"></label><label class="dz-gsz"><span style="width:60px">Flow</span><input type="range" min="0.05" max="1" step="0.05" data-chbrs="flow" value="${chBrush.flow}" style="flex:1"></label>
         ${chNote('Paint on the shape with a finger or pen. Pan off the shape, or with the middle mouse button.')}`;
+    else if (T === 'sten') body = `<div class="dz-gk" style="grid-template-columns:1fr 1fr">${[['draw', 'Skin marker'], ['wipe', 'Spirit wipe']].map(([v, n]) => `<button data-chmk="${v}" class="${(chMkM.wipe ? 'wipe' : 'draw') === v ? 'on' : ''}">${n}</button>`).join('')}</div>
+        <label class="dz-gsz"><span style="width:60px">Tip</span><input type="range" min="0.2" max="4" step="0.1" data-chmks value="${chMkM.r}" style="flex:1"><b style="width:52px;text-align:right">${chMkM.r} mm</b></label>
+        ${chNote((S.stencil ? 'Draw on the stencil, or wipe parts off, with a finger or pen (the wipe is wider). ' : 'No stencil yet: drawing starts a blank one over this zone. ') + 'For shading detail: the marker goes on the stencil, faint purple, and wears off while tattooing like the rest of it. Lines to be judged are best as shapes graded Outline or Detail.')}
+        ${S.raw ? `<div class="dz-gk" style="grid-template-columns:1fr;margin-top:6px"><button data-chsten>${S.stencil ? 'Remake the stencil from the picture' : 'Make the stencil from the picture'}</button></div>` : ''}${S.stencil ? `<p class="dz-chnote"><a href="#" data-chstenx>Remove the stencil</a></p>` : ''}`;
     return chFrame(r ? CH_ROLES.find(x => x[0] === r)[1] + (r === 'shade' ? ': ' + CH_SHADE[S.tech || 'stipple'][0] : '') : 'Grade this shape', r ? dzChNds(l).join(' / ') : '', tabs, body); };
   /* A blend's colours: 2 to 10 stops, blended in order along the gradient. Each stop is a cap from the palette,
      or two caps mixed (sh.mixs keeps how). */
@@ -4186,7 +4190,18 @@ DZ.edit = async (id) => {
   /* On the shape, while a shading zone's menu is open: dots to drag for a straight or radial gradient (the black dot
      is the dark end), or the airbrush for a painted one. Sized for a finger as well as a pen. */
   const chBrush = { size: 6, flow: 0.35, hard: false, mode: 'dark' }; let chDrag = null, chArr = null, chRaf = 0, chAt = null;
-  const chOvOn = () => { const p0 = pop(), l = layer(); return p0 && !p0.hidden && p0.classList.contains('dz-chpop') && p0.dataset.ch === 'role' && l?.role === 'shade' && ['linear', 'radial', 'paint'].includes(l.sh?.grad) ? l : null; };
+  /* Skin marker on a shading zone's stencil (Stencil tab): drawn into a copy of the stencil picture, shown live on the
+     overlay, saved as the zone's stencil when the stroke ends. The wipe takes it off, wider, like a spirit wipe. */
+  const chMkM = { r: 0.6, wipe: false }; let chMk = null;
+  const chMkOn = () => { const p0 = pop(), l = layer(); return p0 && !p0.hidden && p0.classList.contains('dz-chpop') && p0.dataset.ch === 'role' && chTab.role === 'sten' && l?.role === 'shade' ? l : null; };
+  const chMkCanvas = async (l) => { const S = l.sh.stencil, b = S?.box || chBox(l), im = S ? await dzImg(S.ref) : null, k = Math.min(20, 3000 / Math.max(b[2], b[3])), c = document.createElement('canvas');
+    c.width = im ? im.naturalWidth || im.width : Math.max(2, Math.round(b[2] * k)); c.height = im ? im.naturalHeight || im.height : Math.max(2, Math.round(b[3] * k)); if (im) c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); return { c, b }; };
+  const chMkDot = (x, y) => { const { c, b } = chMk, g = c.getContext('2d'), sx = c.width / b[2], r = (chMkM.wipe ? Math.max(3, chMkM.r * 5) : chMkM.r) / 2 * sx; g.globalCompositeOperation = chMkM.wipe ? 'destination-out' : 'source-over'; g.fillStyle = 'rgba(78,40,150,0.9)'; g.globalAlpha = chMkM.wipe ? 0.5 : 1;
+    g.beginPath(); g.arc((x - b[0]) * sx, (y - b[1]) * c.height / b[3], r, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; };
+  const chMkSave = async (l) => { const { c, b } = chMk, old = l.sh.stencil?.ref, ref = await Media.save(await new Promise(r => c.toBlob(r, 'image/png')), 'png');
+    l.sh.stencil = { ref, box: b.map(v => Math.round(v * 100) / 100) }; await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [id, ref]);
+    if (old && old !== ref) { await DB.run('DELETE FROM design_assets WHERE design_id = ? AND ref = ?', [id, old]); await Media.release(old); } };
+  const chOvOn = () => { const m = chMkOn(); if (m) return m; const p0 = pop(), l = layer(); return p0 && !p0.hidden && p0.classList.contains('dz-chpop') && p0.dataset.ch === 'role' && l?.role === 'shade' && ['linear', 'radial', 'paint'].includes(l.sh?.grad) ? l : null; };
   const chScr = () => { const pr = page.getBoundingClientRect(), sr = stage.getBoundingClientRect(), s = pr.width / doc.w; return { ox: pr.left - sr.left, oy: pr.top - sr.top, s, sr }; };
   const mm2s = (x, y) => { const S = chScr(); return [S.ox + x * CH_PX * S.s, S.oy + y * CH_PX * S.s]; };
   const s2mm = (cx, cy) => { const S = chScr(); return [(cx - S.sr.left - S.ox) / S.s / CH_PX, (cy - S.sr.top - S.oy) / S.s / CH_PX]; };
@@ -4198,6 +4213,8 @@ DZ.edit = async (id) => {
     const l = chOvOn(); c.hidden = !l; if (!l) return; const sr = stage.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1), W2 = Math.round(sr.width * dpr), H2 = Math.round(sr.height * dpr);
     if (c.width !== W2 || c.height !== H2) { c.width = W2; c.height = H2; } const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, sr.width, sr.height);
     const b = chDrag?.b || chBox(l), S = chScr(), [bx, by] = mm2s(b[0], b[1]); g.setLineDash([5, 4]); g.lineWidth = 1.2; g.strokeStyle = 'rgba(31,182,166,.9)'; g.strokeRect(bx, by, b[2] * CH_PX * S.s, b[3] * CH_PX * S.s); g.setLineDash([]);
+    if (chMkOn()) { if (chMk?.live) { const [X0, Y0] = mm2s(chMk.b[0], chMk.b[1]); g.globalAlpha = 0.55; g.drawImage(chMk.c, X0, Y0, chMk.b[2] * CH_PX * S.s, chMk.b[3] * CH_PX * S.s); g.globalAlpha = 1; }
+      if (chAt) { const [X, Y] = mm2s(...chAt), r = Math.max(2, (chMkM.wipe ? Math.max(3, chMkM.r * 5) : chMkM.r) / 2 * CH_PX * S.s); g.beginPath(); g.arc(X, Y, r, 0, Math.PI * 2); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(); g.strokeStyle = chMkM.wipe ? '#9fd3e0' : '#4e2896'; g.lineWidth = 1.2; g.stroke(); } return; }
     if (l.sh.grad === 'paint') { if (chAt) { const [X, Y] = mm2s(...chAt), r = chBrush.size / 2 * CH_PX * S.s; g.beginPath(); g.arc(X, Y, r, 0, Math.PI * 2); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke(); g.strokeStyle = '#141414'; g.lineWidth = 1; g.stroke(); } return; }
     const Hs = chHandles(l, b).map(h => ({ ...h, s: mm2s(h.x, h.y) }));
     if (Hs.length === 2) { g.beginPath(); g.moveTo(...Hs[0].s); g.lineTo(...Hs[1].s); g.strokeStyle = 'rgba(31,182,166,.95)'; g.lineWidth = 2.5; g.stroke(); }
@@ -4212,22 +4229,28 @@ DZ.edit = async (id) => {
   // A press that is the airbrush on the zone or a gradient dot (left button, pen or one finger), or null for anything else.
   function chHit(e) { const l = chOvOn(); if (!l || e.button !== 0 || (e.pointerType === 'touch' && !e.isPrimary) || e.target.closest('.dz-pop, .dz-rail, .dz-qs, .dz-zoom, .dz-xf, .dz-mods')) return null;
     const [x, y] = s2mm(e.clientX, e.clientY), b = chBox(l);
+    if (chMkOn()) { const B = l.sh.stencil?.box || b; return x < B[0] - 2 || x > B[0] + B[2] + 2 || y < B[1] - 2 || y > B[1] + B[3] + 2 ? null : { l, x, y, b: B, mk: true }; }
     if (l.sh.grad === 'paint') { const r = chBrush.size / 2; return x < b[0] - r || x > b[0] + b[2] + r || y < b[1] - r || y > b[1] + b[3] + r ? null : { l, x, y, b, paint: true }; }
     const S = chScr(), hit = chHandles(l, b).find(h => { const [X, Y] = mm2s(h.x, h.y); return Math.hypot(e.clientX - S.sr.left - X, e.clientY - S.sr.top - Y) < 28; }); return hit ? { l, x, y, b, k: hit.k } : null; }
   function chWire() { if (chWired) return; chWired = true;
-    stage.addEventListener('pointerdown', (e) => { const H = chHit(e); if (!H) return; const { l, x, y, b } = H;
+    stage.addEventListener('pointerdown', async (e) => { const H = chHit(e); if (!H) return; const { l, x, y, b } = H;
+      if (H.mk) { e.preventDefault(); e.stopImmediatePropagation(); if (chMk?.busy) return; chDrag = { mk: true, last: [x, y], b, id: e.pointerId, l }; chAt = [x, y]; try { stage.setPointerCapture(e.pointerId); } catch {}
+        chMk = { ...(await chMkCanvas(l)), live: true }; l.sh.mkLive = true; chMkDot(x, y); await redraw(); chOv(); return; }
       if (H.paint) { chArr = Float32Array.from(dzChMapArr(l.sh)); chDrag = { paint: true, last: [x, y], b }; chAt = [x, y]; }
       else chDrag = { k: H.k, b };
       e.preventDefault(); e.stopImmediatePropagation(); chDrag.id = e.pointerId; try { stage.setPointerCapture(e.pointerId); } catch {} if (chDrag.paint) chStamp(l, x, y); }, true);
     stage.addEventListener('pointermove', (e) => { const l = chOvOn(); if (!l) return; if (chDrag && e.pointerId !== chDrag.id) return; const [x, y] = s2mm(e.clientX, e.clientY);
       if (!chDrag) { if (l.sh.grad === 'paint') { chAt = [x, y]; chOv(); } return; }
       e.stopImmediatePropagation(); chAt = [x, y];
+      if (chDrag.mk) { if (!chMk?.c) return; const [lx, ly] = chDrag.last, st2 = Math.max(0.1, (chMkM.wipe ? chMkM.r * 5 : chMkM.r) / 4), n = Math.max(1, Math.ceil(Math.hypot(x - lx, y - ly) / st2)); for (let i = 1; i <= n; i++) chMkDot(lx + (x - lx) * i / n, ly + (y - ly) * i / n); chDrag.last = [x, y]; chOv(); return; }
       if (chDrag.paint) { const [lx, ly] = chDrag.last, r = chBrush.size / 2, n = Math.max(1, Math.ceil(Math.hypot(x - lx, y - ly) / Math.max(0.3, r / 3))); for (let i = 1; i <= n; i++) chStamp(l, lx + (x - lx) * i / n, ly + (y - ly) * i / n); chDrag.last = [x, y]; return; }
       const sh = l.sh, b = chDrag.b, c01 = (v) => Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
       if (chDrag.k === 'c') { sh.cx = c01((x - b[0]) / b[2]); sh.cy = c01((y - b[1]) / b[3]); }
       else { const Hs = chHandles(l, b), D = chDrag.k === 'd' ? { x, y } : Hs[0], L2 = chDrag.k === 'l' ? { x, y } : Hs[1]; let a = Math.atan2(L2.y - D.y, L2.x - D.x) * 180 / Math.PI; if (sh.rev) a += 180; sh.ang = Math.round(((a % 360) + 360) % 360); }
       chLive(); }, true);
-    const up = (e) => { if (!chDrag || e.pointerId !== chDrag.id) return; e.stopImmediatePropagation(); chDrag = null; chArr = null; changed(true); chRe(); }; stage.addEventListener('pointerup', up, true); stage.addEventListener('pointercancel', up, true);
+    const up = async (e) => { if (!chDrag || e.pointerId !== chDrag.id) return; e.stopImmediatePropagation(); const D = chDrag; chDrag = null; chArr = null;
+      if (D.mk) { if (!chMk?.c) return; chMk.busy = true; try { await chMkSave(D.l); } catch (err) { toast('Could not save the stencil: ' + err.message, 3500); } delete D.l.sh.mkLive; chMk = null; changed(true); await redraw(); chOv(); return chRe(); }
+      changed(true); chRe(); }; stage.addEventListener('pointerup', up, true); stage.addEventListener('pointercancel', up, true);
     stage.addEventListener('pointerleave', () => { if (!chDrag && chAt) { chAt = null; chOv(); } }); }
   $('#dz-pop').addEventListener('click', async (e) => { const p0 = $('#dz-pop'); if (!p0.classList.contains('dz-chpop')) return; const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
     if (d('cht')) { const [m, k] = d('cht').split(':'); chTab[m] = k; return chRe(); }
@@ -4242,6 +4265,7 @@ DZ.edit = async (id) => {
     if (t.closest('[data-chsten]') && l?.sh?.src) { e.preventDefault(); return chStencil(l); }
     if (t.closest('[data-chstenx]') && l?.sh?.stencil) { e.preventDefault(); delete l.sh.stencil; changed(true); return chRe(); }
     if (d('chpre') && l?.sh) { chPreset(l, d('chpre')); changed(true); drawCtx(); return chRe(); }
+    if (d('chmk')) { chMkM.wipe = d('chmk') === 'wipe'; return chRe(); }
     if (d('chbr')) { const [k, v] = d('chbr').split(':'); chBrush[k] = k === 'hard' ? v === '1' : v; return chRe(); }
     if (d('chs') && l?.sh) { const [k, v] = d('chs').split(':'); if (k === 'grad' && v === 'paint' && l.sh.grad !== 'paint') { l.sh.map = dzChMapEnc(dzChBake(l.sh, chBox(l))); delete l.sh.preset; delete l.sh.mapN; delete l.sh.raw; } l.sh[k] = k === 'rev' ? v === '1' : v;
       if (k === 'tech') { l.nd = CH_SHADE[v][2]; delete l.nds; chDefN(l); if (v === 'blend' && !l.sh.cols) { l.sh.cols = [chCaps()[2] || chCaps()[0], chCaps()[3] || chCaps()[0]]; chStopFix(l.sh); } }
@@ -4298,6 +4322,7 @@ DZ.edit = async (id) => {
     if (e.target.matches('[data-chmt]')) { const l = layer(); if (l) { l.mixT = +e.target.value; chInk(l); changed(true); chRe(); } }
     if (e.target.matches('[data-chss]')) { const l = layer(); if (l?.sh) { const k = e.target.dataset.chss; l.sh[k] = +e.target.value; if (l.sh.grad === 'paint' && l.sh.preset && k !== 'bias') chPreset(l, l.sh.preset); if (l.sh.grad === 'paint' && l.sh.raw && /^(levels|dark|light)$/.test(k)) chQuant(l.sh); changed(true); if (k === 'levels') chRe(); } }
     if (e.target.matches('[data-chbrs]')) chBrush[e.target.dataset.chbrs] = +e.target.value;
+    if (e.target.matches('[data-chmks]')) { chMkM.r = +e.target.value; const b2 = e.target.parentElement.querySelector('b'); if (b2) b2.textContent = chMkM.r + ' mm'; }
     if (e.target.matches('[data-chsmt]')) { const l = layer(); if (l?.sh) { const S = l.sh; chStopFix(S); const i = Math.min(chStop, S.cols.length - 1); S.mixs[i][2] = +e.target.value; chStopSet(S, i); changed(true); chRe(); } } });
   $('#dz-pop').addEventListener('input', (e) => { if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chf]')) { const b = e.target.nextElementSibling; if (b) b.textContent = Math.round(e.target.value * 100) + '%'; }
     const l = layer(); if ($('#dz-pop').classList.contains('dz-chpop') && e.target.matches('[data-chss]') && l?.sh) { l.sh[e.target.dataset.chss] = +e.target.value; redraw(); return; }
