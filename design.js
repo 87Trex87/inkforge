@@ -202,6 +202,56 @@ function dzChCentre(mask, w, h, box) { const k = Math.min(1, box[2] / 0.2 / w), 
     for (let i = 1; i < P.length - 1; i++) { const d = L < 1e-6 ? Math.hypot(P[i][0] - a[0], P[i][1] - a[1]) : Math.abs((b[0] - a[0]) * (a[1] - P[i][1]) - (a[0] - P[i][0]) * (b[1] - a[1])) / L;   /* a loop: from its start */ if (d > md) { md = d; mi = i; } }
     return md > tol ? [...dp(P.slice(0, mi + 1), tol).slice(0, -1), ...dp(P.slice(mi), tol)] : [a, b]; };
   return paths.map(p => p.map(mmOf)).filter(p => p.reduce((t, q, i) => i ? t + Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) : 0, 0) >= 1.5).map(p => ({ closed: false, pts: dp(p, 0.25) })); }
+/* ---------- Picture trace (Challenge maker: From a picture) ----------
+   Pixels to graded vector shapes. The picture (RGBA, W x H) is brought down to a few colours (k-means from evenly
+   spaced shades), the background found from the border, speckle cleared (a majority filter, then every patch under
+   the Detail size merged into its neighbour). For line work the darkest colour is split: what an opening of the line
+   weight keeps is a solid fill, the rest are lines, thinned to their centre. The silhouette's edge is the outline.
+   Each colour's areas are traced along the pixel edges into rings (holes run the other way), smoothed and simplified.
+   o: { k: colours, minPx: smallest patch in px, lineR: line half-width in px, lines: split lines out, darkLum }.
+   Returns { cols: [[r,g,b]], rings: [{ ci, loops: [[[x,y]...]] }], thin: Uint8Array mask, sil: Uint8Array mask, dark }. */
+function dzTraceImg(D, W, H, o) {
+  const N = W * H, lum = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11, px = new Float32Array(N * 3), op = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { const a = D[i * 4 + 3] / 255; op[i] = a > 0.5 ? 1 : 0; for (let q = 0; q < 3; q++) px[i * 3 + q] = D[i * 4 + q] * a + 255 * (1 - a); }
+  // k-means: K colours plus one for the background, from evenly spaced shades
+  const idx = []; for (let i = 0; i < N; i++) if (op[i]) idx.push(i); const K = Math.max(1, o.k) + (idx.length > N * 0.97 ? 1 : 0);   /* one more for the background, unless the picture is see-through round it */
+  const step = Math.max(1, Math.floor(idx.length / 20000)), smp = idx.filter((_, n) => n % step === 0), sl = smp.map(i => [px[i * 3], px[i * 3 + 1], px[i * 3 + 2]]).sort((a, b) => lum(a) - lum(b));
+  let cs = Array.from({ length: K }, (_, k) => [...(sl[Math.min(sl.length - 1, Math.floor((k + 0.5) / K * sl.length))] || [255, 255, 255])]);
+  const near = (r, g, b) => { let bi = 0, bd = 1e12; for (let k = 0; k < cs.length; k++) { const c = cs[k], d = (c[0] - r) ** 2 + (c[1] - g) ** 2 + (c[2] - b) ** 2; if (d < bd) { bd = d; bi = k; } } return bi; };
+  for (let it = 0; it < 10; it++) { const s = cs.map(() => [0, 0, 0, 0]); for (const c of sl) { const t = s[near(c[0], c[1], c[2])]; t[0] += c[0]; t[1] += c[1]; t[2] += c[2]; t[3]++; } cs = cs.map((c, k) => s[k][3] ? [s[k][0] / s[k][3], s[k][1] / s[k][3], s[k][2] / s[k][3]] : c); }
+  const L = new Uint8Array(N); for (let i = 0; i < N; i++) L[i] = op[i] ? near(px[i * 3], px[i * 3 + 1], px[i * 3 + 2]) : 255;
+  // the background: see-through, or the colour that holds most of the border
+  const bc = new Array(K).fill(0); let bn = 0; for (let x = 0; x < W; x++) for (const y of [0, H - 1]) { const l = L[y * W + x]; if (l < 255) bc[l]++; bn++; } for (let y = 0; y < H; y++) for (const x of [0, W - 1]) { const l = L[y * W + x]; if (l < 255) bc[l]++; bn++; }
+  const bgK = bc.indexOf(Math.max(...bc)); if (bc[bgK] > bn * 0.4) for (let i = 0; i < N; i++) if (L[i] === bgK) L[i] = 255;
+  // speckle: two passes of a 3x3 majority
+  for (let pass = 0; pass < 2; pass++) { const S = L.slice(), cnt = new Uint16Array(256); for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const i = y * W + x; let best = S[i], bv = 0; const seen = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const v = S[i + dy * W + dx]; if (!cnt[v]) seen.push(v); cnt[v]++; if (cnt[v] > bv) { bv = cnt[v]; best = v; } } if (bv >= 5) L[i] = best; for (const v of seen) cnt[v] = 0; } }
+  // patches under the Detail size go to the neighbour they share most edge with
+  const merge = () => { const C = new Int32Array(N).fill(-1), st = []; let nc = 0, changed = 0;
+    for (let s0 = 0; s0 < N; s0++) { if (C[s0] >= 0) continue; const lab = L[s0], mem = [s0]; C[s0] = nc; st.length = 0; st.push(s0); const nb = new Map();
+      while (st.length) { const i = st.pop(), x = i % W, y = (i - x) / W; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) { if (j < 0) continue; if (L[j] === lab) { if (C[j] < 0) { C[j] = nc; st.push(j); mem.push(j); } } else nb.set(L[j], (nb.get(L[j]) || 0) + 1); } }
+      if (mem.length < o.minPx && nb.size) { let to = lab, tv = -1; for (const [k, v] of nb) if (v > tv) { tv = v; to = k; } for (const i of mem) L[i] = to; changed++; } nc++; } return changed; };
+  for (let r = 0; r < 3 && merge(); r++);
+  // line work: the darkest colour, if dark, split into solid fills (kept by an opening of the line weight) and lines
+  const used = [...new Set(L)].filter(v => v < 255), dark = o.lines ? used.reduce((m, k) => (m < 0 || lum(cs[k]) < lum(cs[m]) ? k : m), -1) : -1;
+  let thin = null; if (dark >= 0 && lum(cs[dark]) < (o.darkLum ?? 100)) { const M = new Uint8Array(N); for (let i = 0; i < N; i++) M[i] = L[i] === dark ? 1 : 0;
+    const morph = (A, er) => { let B = A; for (let r = 0; r < o.lineR; r++) { const C2 = new Uint8Array(N); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x, v = [B[i], x > 0 ? B[i - 1] : 0, x < W - 1 ? B[i + 1] : 0, y > 0 ? B[i - W] : 0, y < H - 1 ? B[i + W] : 0]; C2[i] = er ? (v.every(Boolean) ? 1 : 0) : (v.some(Boolean) ? 1 : 0); } B = C2; } return B; };
+    const thick = morph(morph(M, true), false); thin = new Uint8Array(N); for (let i = 0; i < N; i++) if (M[i] && !thick[i]) { thin[i] = 1; L[i] = 254; } }
+  const sil = new Uint8Array(N); for (let i = 0; i < N; i++) sil[i] = L[i] < 255 ? 1 : 0;
+  const rings = []; for (const k of [...new Set(L)].filter(v => v < 254)) { const M = new Uint8Array(N); for (let i = 0; i < N; i++) M[i] = L[i] === k ? 1 : 0; const loops = dzTraceLoops(M, W, H).filter(lp => Math.abs(dzRingArea(lp)) >= o.minPx); if (loops.length) rings.push({ ci: k, loops }); }
+  return { cols: cs, rings, thin, sil, dark };
+}
+// The edges of a mask (1 inside) as closed loops of pixel corners: outlines one way round, holes the other.
+function dzTraceLoops(M, W, H) { const out = new Map(), key = (x, y) => y * (W + 1) + x, add = (a, b) => { let l = out.get(a); if (!l) out.set(a, l = []); l.push(b); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (!M[y * W + x]) continue;
+    if (y === 0 || !M[(y - 1) * W + x]) add(key(x, y), key(x + 1, y)); if (x === W - 1 || !M[y * W + x + 1]) add(key(x + 1, y), key(x + 1, y + 1));
+    if (y === H - 1 || !M[(y + 1) * W + x]) add(key(x + 1, y + 1), key(x, y + 1)); if (x === 0 || !M[y * W + x - 1]) add(key(x, y + 1), key(x, y)); }
+  const loops = []; for (const [s] of out) { let l = out.get(s); while (l && l.length) { const lp = [s]; let a = s; for (let g = 0; g < 1e6; g++) { const L2 = out.get(a); if (!L2?.length) break; const b = L2.pop(); if (b === s) break; lp.push(b); a = b; }
+      loops.push(lp.map(v => [v % (W + 1), Math.floor(v / (W + 1))])); l = out.get(s); } } return loops; }
+const dzRingArea = (lp) => { let a = 0; for (let i = 0; i < lp.length; i++) { const p = lp[i], q = lp[(i + 1) % lp.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
+// A traced loop of pixel corners smoothed (the staircase averaged out) and simplified to within tol px.
+const dzTraceSmooth = (lp, tol) => { const n = lp.length; if (n < 4) return lp; let P = lp; for (let pass = 0; pass < 2; pass++) P = P.map((p, i) => { const a = P[(i - 1 + n) % n], b = P[(i + 1) % n]; return [(a[0] + 2 * p[0] + b[0]) / 4, (a[1] + 2 * p[1] + b[1]) / 4]; });
+  const pts = P.map(([x, y]) => ({ x, y })); return (typeof dzRdp === 'function' ? dzRdp([...pts, pts[0]], tol).slice(0, -1) : pts).map(q => [q.x, q.y]); };
 const dzChVec = (subs, o) => { const all = subs.flatMap(s => s.pts), xs = all.map(p => p[0]), ys = all.map(p => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(0.2, Math.max(...xs) - x0), h = Math.max(0.2, Math.max(...ys) - y0);
   return dzS('vec', x0 * CH_PX, y0 * CH_PX, w * CH_PX, h * CH_PX, { fill: 'none', subs: subs.filter(s => s.pts.length > 1).map(s => ({ closed: s.closed, nodes: s.pts.map(([x, y]) => dzNd((x - x0) / w, (y - y0) / h)) })), ...o }); };
 function dzChTemplates() { if (typeof TT_CH === 'undefined') return [];
@@ -3973,7 +4023,7 @@ DZ.edit = async (id) => {
   const chFrame = (title, sub, tabs, body, foot = '') => `<div class="dz-chhead"><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</div>${tabs}<div class="dz-chbody">${body}</div>${foot ? `<div class="dz-chfoot">${foot}</div>` : ''}`;
   const chSetMenu = () => { const C = doc.chal, S = doc.layers.filter(l => l.t === 'shape' && l.role), n = (r) => S.filter(l => l.role === r).length, lj = C.base && C.lessonJudge !== false && C.sig === dzChSig(doc);
     const tabs = chTabs('set', [['brief', 'Brief'], ['pal', 'Palette'], ['judge', 'Judging']]);
-    const body = chTab.set === 'brief' ? `<div class="dz-gk" style="grid-template-columns:1fr 1fr;margin-bottom:6px"><button data-chsetup>Setup…</button><button data-charea class="${C.area && C.showArea !== false ? 'on' : ''}" ${C.area ? '' : 'disabled'}>Tattoo area</button>${doc.layers.some(o => o.sh?.stencil) ? `<button data-chstshow class="${C.showSten !== false ? 'on' : ''}" style="grid-column:span 2">Stencil</button>` : ''}</div>${doc.layers.some(o => o.sh?.stencil) ? chNote('<b>Black</b>: lines that are judged (Outline or Detail), at the width their needle makes. <b>Faint purple</b>: the stencil, a guide for the shading only.') : ''}<textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
+    const body = chTab.set === 'brief' ? `<div class="dz-gk" style="grid-template-columns:1fr 1fr;margin-bottom:6px"><button data-chsetup>Setup…</button><button data-chtrace>Trace a picture…</button><button data-charea class="${C.area && C.showArea !== false ? 'on' : ''}" ${C.area ? '' : 'disabled'}>Tattoo area</button>${doc.layers.some(o => o.sh?.stencil) ? `<button data-chstshow class="${C.showSten !== false ? 'on' : ''}" style="grid-column:span 2">Stencil</button>` : ''}</div>${doc.layers.some(o => o.sh?.stencil) ? chNote('<b>Black</b>: lines that are judged (Outline or Detail), at the width their needle makes. <b>Faint purple</b>: the stencil, a guide for the shading only.') : ''}<textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
         + chNote(`${n('outline')} outline, ${n('detail')} detail line${n('detail') === 1 ? '' : 's'}, ${n('pack')} packing, ${n('shade')} shading. Select a shape and press Grade as in the strip to give it a role.`)
       : chTab.set === 'pal' ? `<div class="dz-chpals">${chPals().map(p => `<button data-chpal="${esc(p.id)}" class="${C.pal === p.id ? 'on' : ''}"><span>${p.caps.map(c => `<i style="background:${c.c}"></i>`).join('')}</span>${esc(p.name)}</button>`).join('')}</div>
         <div class="dz-gk" style="grid-template-columns:1fr 1fr 1fr;margin-top:6px"><button data-chpe="new">New</button><button data-chpe="edit">${ttPalMine().some(x => x.id === C.pal) ? 'Edit' : 'Copy to edit'}</button><button data-chpe="imp">Import</button></div>
@@ -4079,6 +4129,69 @@ DZ.edit = async (id) => {
     chDefN(z); const i = doc.layers.indexOf(l); doc.layers.splice(i + 1, 0, z); l.hide = true; changed(true); select(z.id); chTab.role = 'grad'; await chOpen('role');
     toast(pals ? 'Value study made, with a palette from the picture\'s colours (plus black and white). The picture is hidden: show it from Layers to compare.' : 'Value study made. The picture is hidden: show it from Layers to compare.', 4000); }
   // The value study's picture, as it shows and cropped to the zone, into the stencil maker at the zone's width.
+  /* From a picture: pick one, choose the style, tune the trace with a live preview, then it comes in as graded shapes
+     (Outline, Detail lines, one Packing shape per colour) fitted into the tattoo area. The picture is kept, hidden, to
+     compare against. Styles that trace the same way share one setting. */
+  const TR_STYLES = [['colour', 'Colour line work', 'Traditional, neo-trad, new school: lines, outline and flat colours', { k: 4, lines: true, lw: 0.8 }],
+    ['black', 'Blackwork', 'Black lines and solid black', { k: 1, lines: true, lw: 0.8 }],
+    ['fine', 'Fine line', 'Thin black lines only', { k: 1, lines: true, lw: 1.2, linesOnly: true }]];
+  async function chTracePick() { const src = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
+      o.innerHTML = `<div class="card"><h2>A picture to trace</h2><p class="muted" style="margin-top:0">Any drawing or photo: the sharper and bigger, the cleaner the trace.</p><div class="dz-ex">
+        <button data-ts="refs"><b>From References</b><small>Portfolio › References</small></button><button data-ts="pf"><b>From your portfolio</b><small>Tattoos, simulator pieces and their photos</small></button><button data-ts="file"><b>From this device</b><small>A drawing from another app, a photo</small></button></div>
+        <button class="btn" data-ts="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+      o.onclick = (e) => { const b = e.target.closest('[data-ts]'); if (!b && e.target !== o) return; o.remove(); res(b?.dataset.ts || null); }; document.body.appendChild(o); });
+    if (!src) return false; let ref = null;
+    if (src === 'file') { const f = await new Promise((res) => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.onchange = () => res(i.files[0] || null); i.click(); }); if (f) ref = await Media.save(f, (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')); }
+    else ref = await dzPortfolioPick(src === 'refs' ? 'refs' : true);
+    if (!ref) return false; return chTrace(ref); }
+  async function chTrace(ref) { const u = await Media.url(ref), im = u && await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; }); if (!im) { toast('Could not open that picture.', 3000); return false; }
+    const A = doc.chal?.area || { x: 30, y: 20, w: 120, h: 90 }, nw = im.naturalWidth, nh = im.naturalHeight, f = Math.min(1, 640 / Math.max(nw, nh)), W = Math.max(8, Math.round(nw * f)), H = Math.max(8, Math.round(nh * f));
+    const cv0 = document.createElement('canvas'); cv0.width = W; cv0.height = H; const g0 = cv0.getContext('2d', { willReadFrequently: true }); g0.imageSmoothingQuality = 'high'; g0.drawImage(im, 0, 0, W, H); const D = g0.getImageData(0, 0, W, H).data;
+    const s = Math.min(A.w / W, A.h / H), ox = A.x + (A.w - W * s) / 2, oy = A.y + (A.h - H * s) / 2;   /* mm per trace px, and where it sits */
+    const O = { style: 'colour', k: 4, detail: 2, smooth: 0.4, lw: 0.8 }; let R = null, timer = 0;
+    const run = () => { const S = TR_STYLES.find(x => x[0] === O.style)[3], k = S.k > 1 ? O.k : 1; R = dzTraceImg(D, W, H, { k, minPx: Math.max(4, Math.round(O.detail / (s * s))), lineR: Math.max(1, Math.round(O.lw / s / 2)), lines: S.lines });
+      if (S.linesOnly && R.thin) R.rings = R.rings.filter(r => r.ci !== R.dark);
+      R.lineSubs = R.thin ? dzChCentre(R.thin, W, H, [ox, oy, W * s, H * s]) : [];
+      R.outer = dzTraceLoops(R.sil, W, H).filter(lp => dzRingArea(lp) > 0).sort((a, b) => dzRingArea(b) - dzRingArea(a)).slice(0, 1);
+      const inner = (() => { const M = R.sil.slice(), r0 = Math.max(1, Math.round(O.lw * 1.2 / s)); for (let r = 0; r < r0; r++) { const C = M.slice(); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (C[i] && ((x && !C[i - 1]) || (x < W - 1 && !C[i + 1]) || (y && !C[i - W]) || (y < H - 1 && !C[i + W]))) M[i] = 0; } } return M; })();
+      const isIn = ([X, Y]) => { const x = Math.floor((X - ox) / s), y = Math.floor((Y - oy) / s); return x >= 0 && y >= 0 && x < W && y < H && inner[y * W + x]; };
+      const det = []; for (const sp of R.lineSubs) { let cur = []; for (const p of sp.pts) { if (isIn(p)) cur.push(p); else { if (cur.length > 1) det.push(cur); cur = []; } } if (cur.length > 1) det.push(cur); }
+      R.details = det.filter(p => p.reduce((t, q, i) => i ? t + Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) : 0, 0) >= 1.5); draw(); };
+    const later = () => { clearTimeout(timer); timer = setTimeout(run, 220); };
+    const hex = (c) => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+    const o = document.createElement('div'); o.id = 'dz-trace'; o.className = 'dz-chsetup';
+    const sl = (k, n, mn, mx, st, unit) => `<label class="dz-gsz"><span style="width:96px">${n}</span><input type="range" min="${mn}" max="${mx}" step="${st}" data-tro="${k}" value="${O[k]}" style="flex:1"><b style="width:64px;text-align:right" data-trv="${k}">${O[k]}${unit}</b></label>`;
+    o.innerHTML = `<div class="card dz-trcard"><h2 style="margin-top:0">Trace the picture</h2><canvas id="dz-trprev"></canvas><p class="muted" id="dz-trsum" style="font-size:12px;margin:6px 2px"></p>
+      <div class="dz-wgrid" style="grid-template-columns:repeat(3,1fr)">${TR_STYLES.map(([k, n, d]) => `<button data-trs="${k}" class="${O.style === k ? 'on' : ''}"><b>${n}</b><small>${d}</small></button>`).join('')}</div>
+      <div id="dz-trk">${sl('k', 'Colours', 2, 8, 1, '')}</div>${sl('detail', 'Detail', 0.5, 20, 0.5, ' mm²')}${sl('smooth', 'Smoothness', 0.1, 1.5, 0.05, ' mm')}${sl('lw', 'Line weight', 0.3, 2.5, 0.1, ' mm')}
+      <p class="dz-chnote">Detail: the smallest shape kept, anything smaller joins its neighbour. Smoothness: how far a curve may stray to save nodes. Line weight: dark marks thinner than this are lines, thicker ones solid black.</p>
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn" data-tr="x" style="flex:1">Cancel</button><button class="btn primary" data-tr="ok" style="flex:2">Use this trace</button></div></div>`;
+    document.body.appendChild(o); const pc = o.querySelector('#dz-trprev');
+    function draw() { const k = Math.min(1, 560 / Math.max(W, H)) * 1.6, g = pc.getContext('2d'); pc.width = Math.round(W * k); pc.height = Math.round(H * k); pc.style.width = '100%'; g.fillStyle = '#e2b493'; g.fillRect(0, 0, pc.width, pc.height); g.save(); g.scale(k, k);
+      let nodes = 0; for (const r of R.rings) { g.beginPath(); for (const lp of r.loops) { const P = dzTraceSmooth(lp, O.smooth / s); nodes += P.length; g.moveTo(...P[0]); for (const q of P.slice(1)) g.lineTo(...q); g.closePath(); } g.fillStyle = hex(R.cols[r.ci]); g.fill('evenodd'); }
+      g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#141414'; g.lineWidth = Math.max(0.6, O.lw * 0.6 / s); for (const p of R.details) { g.beginPath(); g.moveTo((p[0][0] - ox) / s, (p[0][1] - oy) / s); for (const q of p.slice(1)) g.lineTo((q[0] - ox) / s, (q[1] - oy) / s); g.stroke(); }
+      g.strokeStyle = '#1fb6a6'; g.lineWidth = Math.max(0.8, 1.2 / k); for (const lp of R.outer) { const P = dzTraceSmooth(lp, O.smooth / s); g.beginPath(); g.moveTo(...P[0]); for (const q of P.slice(1)) g.lineTo(...q); g.closePath(); g.stroke(); } g.restore();
+      o.querySelector('#dz-trsum').textContent = `${R.rings.length} colour${R.rings.length === 1 ? '' : 's'} · ${R.rings.reduce((t, r) => t + r.loops.length, 0)} areas · ${R.details.length} detail lines · about ${nodes} points before curve fitting · outline in teal`;
+      o.querySelector('#dz-trk').hidden = TR_STYLES.find(x => x[0] === O.style)[3].k <= 1; }
+    o.addEventListener('input', (e) => { const k = e.target.dataset.tro; if (!k) return; O[k] = +e.target.value; o.querySelector(`[data-trv="${k}"]`).textContent = O[k] + { k: '', detail: ' mm²', smooth: ' mm', lw: ' mm' }[k]; later(); });
+    run();
+    return new Promise((res) => { o.onclick = async (e) => { const st = e.target.closest('[data-trs]'); if (st) { O.style = st.dataset.trs; O.lw = TR_STYLES.find(x => x[0] === O.style)[3].lw; o.querySelector('[data-tro="lw"]').value = O.lw; o.querySelector('[data-trv="lw"]').textContent = O.lw + ' mm'; o.querySelectorAll('[data-trs]').forEach(b => b.classList.toggle('on', b === st)); return run(); }
+      const b = e.target.closest('[data-tr]'); if (!b) return; o.remove(); if (b.dataset.tr !== 'ok') return res(false); chTraceApply(R, { ref, W, H, s, ox, oy, O, hex }); res(true); }; }); }
+  // The trace into the challenge as shapes: the picture (hidden), one Packing shape per colour, Detail lines, the Outline.
+  function chTraceApply(R, P) { const { ref, W, H, s, ox, oy, O, hex } = P, PX = CH_PX, tol = Math.max(0.3, O.smooth * PX), C = doc.chal || (doc.chal = {});
+    const liner = (C.needles || []).find(n => /RL$/.test(n)) || (O.style === 'fine' ? '3RL' : '5RL'), packer = (C.needles || []).find(n => /M1$|RS$/.test(n)) || '9M1', news = [];
+    const img = { id: dzId(), t: 'image', ref, x: ox * PX, y: oy * PX, w: W * s * PX, h: H * s * PX, op: 1, rot: 0, name: 'Traced picture', hide: true }; news.push(img);
+    const toPage = (lp) => dzTraceSmooth(lp, O.smooth / s).map(([x, y]) => ({ x: (ox + x * s) * PX, y: (oy + y * s) * PX }));
+    const cols = []; for (const r of [...R.rings].sort((a, b) => b.loops.reduce((t, l) => t + Math.abs(dzRingArea(l)), 0) - a.loops.reduce((t, l) => t + Math.abs(dzRingArea(l)), 0))) {
+      const subs = r.loops.map(lp => dzFitRing(toPage(lp), tol)).filter(sp => sp.nodes.length > 2); if (!subs.length) continue; const c = hex(R.cols[r.ci]); cols.push(c);
+      const z = vecFromPage(subs, { fill: 'none', role: 'shade', nd: packer, name: 'Packing ' + c, sh: { tech: 'blend', grad: 'flat', cols: [c, c], mixs: [[c], [c]], dark: 0.85, light: 0.05, bias: 1 } }); chDefN(z); news.push(z); }
+    if (R.details.length) { const z = dzChVec(R.details.map(p => ({ closed: false, pts: p })), { role: 'detail', nd: liner, name: 'Detail lines' }); chDefN(z); news.push(z); }
+    if (R.outer.length && O.style !== 'fine') { const sp = dzFitRing(toPage(R.outer[0]), tol); if (sp.nodes.length > 2) { const z = vecFromPage([sp], { fill: 'none', role: 'outline', nd: liner, name: 'Outline' }); chDefN(z); news.push(z); } }
+    if (!C.area) { C.area = { x: Math.round(ox * 10) / 10, y: Math.round(oy * 10) / 10, w: Math.round(W * s * 10) / 10, h: Math.round(H * s * 10) / 10 }; C.showArea = true; }   /* the tattoo area: the traced picture, so Setup starts at its size */
+    doc.layers.push(...news);
+    if (cols.length && typeof ttPalSave === 'function' && O.style === 'colour') { const P2 = { id: C.autoPal || 'p' + Date.now().toString(36), name: (doc.name || 'Challenge').slice(0, 30) + ' colours', caps: [...new Set([TT_CAPS[0], ...cols.slice(0, 8), TT_CAPS[TT_CAPS.length - 1]])].map(c => ({ c, s: 1 })) }; ttPalSave(P2); C.autoPal = P2.id; C.pal = P2.id; C.inkT = 'colour'; }
+    else if (O.style !== 'colour') C.inkT = 'black';
+    C.lines = !!(R.details.length || R.outer.length); changed(true); redraw(); toast(`Traced: ${news.length - 1} shapes. The picture is hidden in Layers to compare. Tap any shape to fine-tune its nodes.`, 5000); }
   async function chStencil(l, lines) { const pic = doc.layers.find(o => o.t === 'image' && o.ref === l.sh.src); if (!pic) return toast('The picture this study was made from is gone.', 3000);
     const b = chBox(l), sc = 2, c = document.createElement('canvas'); c.width = Math.round(b[2] * CH_PX * sc); c.height = Math.round(b[3] * CH_PX * sc);
     const full = document.createElement('canvas'); full.width = Math.round(doc.w * sc); full.height = Math.round(doc.h * sc); await dzDraw(full, { ...doc, layers: doc.layers.map(o => o === pic ? { ...o, hide: false } : o) }, sc, { only: new Set([pic.id]), noBg: true, noStencil: true });
@@ -4161,7 +4274,12 @@ DZ.edit = async (id) => {
       doc.layers.push(L); changed(true); chAreaDraw(); if (W.study) { select(L.id); await chStudy(L); const z = layer(); if (W.lines && W.trace !== false && z?.sh?.src) return chStencil(z, true); } else select(L.id); }
     else { changed(true); chAreaDraw(); }
     toast('Challenge set up. Change any of it from the Challenge menu, or Setup again.', 3500); }
-  setTimeout(() => { try { if (doc.chal) { chAreaDraw(); if (doc.chal.setup === false) chSetup(); } } catch {} }, 500);
+  setTimeout(() => { try { if (doc.chal) { chAreaDraw(); if (doc.chal.setup === false) chStart(); } } catch {} }, 500);
+  /* A blank challenge starts by asking: from a picture (traced into shapes), or blank; then the setup. */
+  async function chStart() { const how = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
+      o.innerHTML = `<div class="card"><h2>New challenge</h2><div class="dz-ex"><button data-cs="pic"><b>From a picture</b><small>Trace a drawing, photo or simulator piece into shapes to tattoo: outline, detail lines and colours</small></button><button data-cs="blank"><b>Blank</b><small>Draw your own shapes and grade them</small></button></div></div>`;
+      o.onclick = (e) => { const b = e.target.closest('[data-cs]'); if (b) { o.remove(); res(b.dataset.cs); } }; document.body.appendChild(o); });
+    if (how === 'pic') await chTracePick(); return chSetup(); }
   dzDragOrder($('#dz-pop'), 'chst', (i, j) => { const l = layer(); if (!l?.sh) return; const S = l.sh; chStopFix(S); const [c] = S.cols.splice(i, 1), [m] = S.mixs.splice(i, 1); S.cols.splice(j, 0, c); S.mixs.splice(j, 0, m); chStop = j; redraw(); chRe(); }, () => changed(true));   /* drag a colour along the strip */
   const chStopFix = (S) => { S.cols ||= []; S.mixs = S.cols.map((c, k) => S.mixs?.[k] || [c]); };
   const chStopSet = (S, i) => { const m = S.mixs[i] || [S.cols[i]]; S.cols[i] = m[1] ? chMix(m[0], m[1], m[2] ?? 0.5) : m[0]; };
@@ -4277,6 +4395,7 @@ DZ.edit = async (id) => {
     if (d('chca') && l) { l.mixOf = [d('chca'), l.mixOf?.[1]]; chInk(l); changed(true); return chRe(); }
     if (d('chcb') != null && l) { const b = d('chcb'); l.mixOf = [l.mixOf?.[0] || chCaps()[0], b || undefined]; chInk(l); changed(true); return chRe(); }
     if (t.closest('[data-chsetup]')) { closePop(); return chSetup(); }
+    if (t.closest('[data-chtrace]')) { closePop(); return chTracePick(); }
     if (t.closest('[data-chstshow]')) { doc.chal.showSten = doc.chal.showSten === false; changed(true); redraw(); return chRe(); }
     if (t.closest('[data-charea]') && doc.chal.area) { doc.chal.showArea = doc.chal.showArea === false; changed(true); chAreaDraw(); return chRe(); }
     if (d('chpal')) { doc.chal.pal = d('chpal'); changed(true); return chRe(); }
