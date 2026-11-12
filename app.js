@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 428;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 429;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7593,6 +7593,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 429, when: '2026-11-13T23:00', added: ['Red skin hurts far less. Pain only climbs steeply once the skin swells.', 'The red flash only comes on swollen skin, not while it is just red.'],
+    test: ['Pack an easy area until red. Does the client cope without needing many breaks?', 'Keep going until it swells. Does the red flash come then?'] },
   { build: 428, when: '2026-11-13T22:00', added: ['Round shaders are much gentler on pain while packing.', 'Scrubbing only counts a sharp flip straight back after a straight run, so ovals and circles pass.'],
     test: ['Pack with a round shader on a Hard area. Can you get through it?', 'Shade with ovals. Does it heal with no steps?'] },
   { build: 427, when: '2026-11-13T21:00', added: ['Packing with a round shader builds pain more slowly.'],
