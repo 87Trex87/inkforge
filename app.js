@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 429;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 430;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7593,6 +7593,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 430, when: '2026-11-14T00:00', added: ['Lesson and challenge stats now include the body area and level, the client pain over time, red flashes, how much skin was red or swollen, and scrubbing.'],
+    test: ['Finish a lesson and save the stats PDF. Do you see area, level and pain in it?'] },
   { build: 429, when: '2026-11-13T23:00', added: ['Red skin hurts far less. Pain only climbs steeply once the skin swells.', 'The red flash only comes on swollen skin, not while it is just red.'],
     test: ['Pack an easy area until red. Does the client cope without needing many breaks?', 'Keep going until it swells. Does the red flash come then?'] },
   { build: 428, when: '2026-11-13T22:00', added: ['Round shaders are much gentler on pain while packing.', 'Scrubbing only counts a sharp flip straight back after a straight run, so ovals and circles pass.'],
