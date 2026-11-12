@@ -1155,11 +1155,15 @@ TT.open = async (el, id) => {
      holds (easing a little) while you move over fresher skin, and everything settles during a real break. So keep
      moving: lingering or going back over a sore patch is what spikes it. */
   let PC = null;
-  const pcI = (p) => Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)));
-  function painHit(q, depth) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = EX.cur; painT = now;
-    if (!PC || PC.length !== TR.length) PC = new Float32Array(TR.length); const k = pcI(q);
-    PC[k] += dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.35, Math.min(1.6, depth / 0.6)) * (0.4 + 2.2 * Math.pow(Math.min(2, trAt(q)), 1.4));   /* worked skin hurts far more, and climbs steeply as it saturates: pain leads the damage */
-    c.pain = c.pain || 0; if (PC[k] > c.pain) c.pain = PC[k]; else if (PC[k] < c.pain - 0.15) c.pain = Math.max(PC[k], c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
+  function painHit(q, depth, r) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = EX.cur; painT = now;
+    if (!PC || PC.length !== TR.length) PC = new Float32Array(TR.length);
+    /* every patch under the needle's footprint feels it, so a big magnum works (and hurts) a wide area at once; the
+       worst-worn patch under it sets how much: swollen skin is very painful, overworked far more */
+    r = Math.max(TS * 0.5, r || 0); const x0 = Math.max(0, Math.floor((q.x - r) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + r) / TS)), y0 = Math.max(0, Math.floor((q.y - r) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + r) / TS));
+    let w = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) w = Math.max(w, TR[y * tw + x] || 0);
+    const add = dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.5, Math.min(1.6, depth / 0.6)) * (0.3 + 4 * Math.pow(Math.min(2, w), 1.8)) * Math.min(1.6, 0.85 + 0.15 * Math.sqrt(r / mm));
+    let top = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = y * tw + x; PC[k] += add; top = Math.max(top, PC[k]); }
+    c.pain = c.pain || 0; if (top > c.pain) c.pain = top; else if (top < c.pain - 0.15) c.pain = Math.max(top, c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
     c.painPeak = Math.max(c.painPeak || 0, c.pain); painShow();
     if (c.pain >= 1 && !c.tapOut) { c.tapOut = true; toast('The client tapped out. The attempt is judged on what you got done.', 5000); setTimeout(() => { try { exDone(); } catch {} }, 250); }
     else if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); }
@@ -1568,7 +1572,7 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q); hcAdd(q, pen.foot); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          painHit(q, depth); trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH));   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          painHit(q, depth, pen.foot); trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH));   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * 3 * Math.pow(0.3 / blowSize(), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: too deep, too slow.', 2500); } }
