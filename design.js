@@ -320,6 +320,7 @@ function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 's
   if (doc.chal?.needles?.length) T.needles = [...new Set([...doc.chal.needles, ...T.needles])];   /* the setup's needles: ticked and allowed in the simulator */
   if (doc.chal?.bodyArea) T.area = doc.chal.bodyArea;
   if (doc.chal?.refs?.length) T.refs = doc.chal.refs.map(r => ({ ref: r.ref, ar: r.ar || 1 }));
+  if (doc.chal?.stencil?.ref) (T.stencils ||= []).push(doc.chal.stencil);
   const shs = S.filter(l => l.role === 'shade');
   if (shs.length) { T.shades = shs.map(l => { const pts = dzChPts(l), bx = dzChBoxOf(pts) || [0, 0, 0, 0];
       const { raw, src, ...sh } = l.sh || {}; if (sh.stencil) (T.stencils ||= []).push(sh.stencil); return { pts, box: bx, nd: l.nd || CH_SHADE[sh.tech || 'stipple'][2], nds: dzChNds(l), ...sh }; });
@@ -1130,6 +1131,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   }
   /* A value study's stencil, where it goes on the skin: under the judged lines (black, at their needle's width), faint
      purple, so the two never look alike. Hidden with Stencil in the Challenge menu. */
+  if (doc.chal?.stencil && !opts.noStencil && doc.chal.showSten !== false) { const S = doc.chal.stencil, im = await dzImg(S.ref); if (im) { x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); } }
   if (doc.chal && !opts.noStencil && doc.chal.showSten !== false) for (const l of doc.layers) { const S = l.sh?.stencil; if (l.hide || !S || l.sh.mkLive) continue; const im = await dzImg(S.ref); if (!im) continue;
     x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
   for (const l of chLines) await one(x, { ...l, fill: null, fm: undefined, stroke: '#141414', sw: (CH_NW[l.nd] || 0.7) * CH_PX, dash: '' });
@@ -1886,7 +1888,7 @@ DZ.edit = async (id) => {
     const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
     const ref = await Media.save(await new Promise(r => th.toBlob(r, 'image/jpeg', 0.8)), 'jpg');
     const old = (await DB.one('SELECT thumb_ref FROM designs WHERE id = ?', [id]))?.thumb_ref;
-    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => adjS && l.ref === adjS.tmp ? adjS.ref : l.ref), ...doc.layers.map(l => l.tex?.ref), ...doc.layers.map(l => l.sh?.stencil?.ref), ...(doc.chal?.refs || []).map(r => r.ref)].filter(Boolean))];   /* a value study's stencil is the design's too */
+    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => adjS && l.ref === adjS.tmp ? adjS.ref : l.ref), ...doc.layers.map(l => l.tex?.ref), ...doc.layers.map(l => l.sh?.stencil?.ref), doc.chal?.stencil?.ref, ...(doc.chal?.refs || []).map(r => r.ref)].filter(Boolean))];   /* a value study's stencil is the design's too */
     const before = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id])).map(x => x.ref);
     await DB.tx([{ sql: `UPDATE designs SET name = ?, doc = ?, thumb_ref = ?, updated_at = datetime('now') WHERE id = ?`, params: [name, docJSON(), ref, id] },
       { sql: 'DELETE FROM design_assets WHERE design_id = ?', params: [id] },
@@ -4061,7 +4063,7 @@ DZ.edit = async (id) => {
   const chFrame = (title, sub, tabs, body, foot = '') => `<div class="dz-chhead"><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</div>${tabs}<div class="dz-chbody">${body}</div>${foot ? `<div class="dz-chfoot">${foot}</div>` : ''}`;
   const chSetMenu = () => { const C = doc.chal, S = doc.layers.filter(l => l.t === 'shape' && l.role), n = (r) => S.filter(l => l.role === r).length, lj = C.base && C.lessonJudge !== false && C.sig === dzChSig(doc);
     const tabs = chTabs('set', [['brief', 'Brief'], ['pal', 'Palette'], ['judge', 'Judging']]);
-    const body = chTab.set === 'brief' ? `<div class="dz-gk" style="grid-template-columns:1fr 1fr;margin-bottom:6px"><button data-chsetup>Setup…</button><button data-chtrace>Trace a picture…</button><button data-charea class="${C.area && C.showArea !== false ? 'on' : ''}" ${C.area ? '' : 'disabled'}>Tattoo area</button>${doc.layers.some(o => o.sh?.stencil) ? `<button data-chstshow class="${C.showSten !== false ? 'on' : ''}" style="grid-column:span 2">Stencil</button>` : ''}</div>${doc.layers.some(o => o.sh?.stencil) ? chNote('<b>Black</b>: lines that are judged (Outline or Detail), at the width their needle makes. <b>Faint purple</b>: the stencil, a guide for the shading only.') : ''}<textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
+    const body = chTab.set === 'brief' ? `<div class="dz-gk" style="grid-template-columns:1fr 1fr;margin-bottom:6px"><button data-chsetup>Setup…</button><button data-chtrace>Trace a picture…</button><button data-charea class="${C.area && C.showArea !== false ? 'on' : ''}" ${C.area ? '' : 'disabled'}>Tattoo area</button>${(doc.chal?.stencil || doc.layers.some(o => o.sh?.stencil)) ? `<button data-chstshow class="${C.showSten !== false ? 'on' : ''}" style="grid-column:span 2">Stencil</button>` : ''}</div>${(doc.chal?.stencil || doc.layers.some(o => o.sh?.stencil)) ? chNote('<b>Black</b>: lines that are judged (Outline or Detail), at the width their needle makes. <b>Faint purple</b>: the stencil, a guide for the shading only.') : ''}<textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
         + chNote(`${n('outline')} outline, ${n('detail')} detail line${n('detail') === 1 ? '' : 's'}, ${n('pack')} packing, ${n('shade')} shading. Select a shape and press Grade as in the strip to give it a role.`)
       : chTab.set === 'pal' ? `<div class="dz-chpals">${chPals().map(p => `<button data-chpal="${esc(p.id)}" class="${C.pal === p.id ? 'on' : ''}"><span>${p.caps.map(c => `<i style="background:${c.c}"></i>`).join('')}</span>${esc(p.name)}</button>`).join('')}</div>
         <div class="dz-gk" style="grid-template-columns:1fr 1fr 1fr;margin-top:6px"><button data-chpe="new">New</button><button data-chpe="edit">${ttPalMine().some(x => x.id === C.pal) ? 'Edit' : 'Copy to edit'}</button><button data-chpe="imp">Import</button></div>
@@ -4243,7 +4245,15 @@ DZ.edit = async (id) => {
     else if (O.style === 'bg') { C.inkT = 'bg'; C.pal = 'wash'; }
     else if (O.style !== 'colour') C.inkT = 'black';
     C.style = { colour: 'New School', black: 'Blackwork', fine: 'Fine Line', bg: 'Black and Grey', real: 'Realism' }[O.style] || C.style;
-    C.lines = !!(R.details.length || R.outer.length); changed(true); redraw(); toast(`Traced: ${news.length - 1} shapes. The picture is hidden in Layers to compare. Tap any shape to fine-tune its nodes.`, 5000); }
+    /* The stencil: every edge the trace found (between colours or zones, the outline and the detail lines), thin
+       purple lines as a stencil maker would give, over the traced area; it wears off in the simulator like any stencil. */
+    try { const bx = [ox, oy, W * s, H * s], k = Math.min(20, 3000 / Math.max(bx[2], bx[3])), sc = document.createElement('canvas'); sc.width = Math.round(bx[2] * k); sc.height = Math.round(bx[3] * k);
+      const sg = sc.getContext('2d'); sg.strokeStyle = 'rgba(78,40,150,0.92)'; sg.lineWidth = Math.max(1, 0.3 * k); sg.lineJoin = sg.lineCap = 'round'; const mm2c = (X, Y) => [(X - bx[0]) * k, (Y - bx[1]) * k];
+      for (const r of R.rings) for (const lp of r.loops) { const P2 = dzTraceSmooth(lp, O.smooth / s); if (P2.length < 3) continue; sg.beginPath(); P2.forEach(([x2, y2], i) => sg[i ? 'lineTo' : 'moveTo'](...mm2c(ox + x2 * s, oy + y2 * s))); sg.closePath(); sg.stroke(); }
+      for (const pl of R.details) { sg.beginPath(); pl.forEach((q, i) => sg[i ? 'lineTo' : 'moveTo'](...mm2c(q[0], q[1]))); sg.stroke(); }
+      const sref = await Media.save(await new Promise(r2 => sc.toBlob(r2, 'image/png')), 'png'); C.stencil = { ref: sref, box: bx.map(v => Math.round(v * 100) / 100) }; C.showSten = true; } catch (err) { console.warn('trace stencil', err); }
+    C.refs = [...(C.refs || []).filter(r2 => r2.ref !== ref), { ref, ar: H / W }];
+    C.lines = !!(R.details.length || R.outer.length); changed(true); redraw(); toast(`Traced: ${news.length - 1} shapes, a stencil of its edges, and the picture to follow beside the skin. The picture is hidden in Layers to compare. Tap any shape to fine-tune its nodes.`, 5000); }
   async function chStencil(l, lines) { const pic = doc.layers.find(o => o.t === 'image' && o.ref === l.sh.src); if (!pic) return toast('The picture this study was made from is gone.', 3000);
     const b = chBox(l), sc = 2, c = document.createElement('canvas'); c.width = Math.round(b[2] * CH_PX * sc); c.height = Math.round(b[3] * CH_PX * sc);
     const full = document.createElement('canvas'); full.width = Math.round(doc.w * sc); full.height = Math.round(doc.h * sc); await dzDraw(full, { ...doc, layers: doc.layers.map(o => o === pic ? { ...o, hide: false } : o) }, sc, { only: new Set([pic.id]), noBg: true, noStencil: true });
@@ -4318,7 +4328,8 @@ DZ.edit = async (id) => {
     if (old && (Math.abs(old.w - mmW) > 0.5 || Math.abs(old.h - mmH) > 0.5 || Math.abs(old.x - C.area.x) > 0.5 || Math.abs(old.y - C.area.y) > 0.5)) {   /* the shapes follow the area: scaled from its middle, keeping their shape */
       const k = Math.min(mmW / old.w, mmH / old.h), ocx = (old.x + old.w / 2) * CH_PX, ocy = (old.y + old.h / 2) * CH_PX, ncx = (C.area.x + mmW / 2) * CH_PX, ncy = (C.area.y + mmH / 2) * CH_PX;
       for (const l of doc.layers) { l.x = ncx + (l.x - ocx) * k; l.y = ncy + (l.y - ocy) * k; l.w *= k; if (l.h != null) l.h *= k; if (l.fs) l.fs *= k;
-        const S = l.sh?.stencil; if (S?.box) S.box = [(ncx + (S.box[0] * CH_PX - ocx) * k) / CH_PX, (ncy + (S.box[1] * CH_PX - ocy) * k) / CH_PX, S.box[2] * k, S.box[3] * k].map(v => Math.round(v * 100) / 100); } }
+        const S = l.sh?.stencil; if (S?.box) S.box = [(ncx + (S.box[0] * CH_PX - ocx) * k) / CH_PX, (ncy + (S.box[1] * CH_PX - ocy) * k) / CH_PX, S.box[2] * k, S.box[3] * k].map(v => Math.round(v * 100) / 100); }
+      const CS = C.stencil; if (CS?.box) CS.box = [(ncx + (CS.box[0] * CH_PX - ocx) * k) / CH_PX, (ncy + (CS.box[1] * CH_PX - ocy) * k) / CH_PX, CS.box[2] * k, CS.box[3] * k].map(v => Math.round(v * 100) / 100); }
     changed(true); redraw(); chAreaDraw();
     toast('Challenge set up. Change any of it from the Challenge menu, or Setup again.', 3500); }
   setTimeout(() => { try { if (doc.chal) { chAreaDraw(); if (doc.chal.setup === false) chStart(); } } catch {} }, 500);
