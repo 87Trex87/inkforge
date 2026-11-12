@@ -312,6 +312,31 @@ const TT_TIERN = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 const ttTier = (n) => n <= 2 ? 'easy' : n === 3 ? 'medium' : 'hard';
 const ttTierChips = (t, pass) => t ? `<span class="tt-tiers">${TT_TIERS.map(([k, n]) => { const v = t[k]?.best ?? t[k]; if (v == null) return `<i data-tip="${n}: not tried">${n[0]}</i>`;
   const m = pass ? (v >= pass ? [0, 'pass'] : null) : ttMedal(v); return `<i class="${m ? m[1] : 'tried'}" data-tip="${n}: best ${v}">${n[0]}</i>`; }).join('')}</span>` : '';
+/* Body areas: a typical tattooable size for each placement (cm, width x height as it sits on the body). A new piece
+   can take its page size from it, or show it as an outline to keep in proportion; a lesson or challenge bigger than
+   an area can't be done there. Placements added in Quotes have no size, so nothing limits them. */
+const TT_AREA_CM = { Head: [14, 16], Face: [8, 8], Neck: [10, 12], Shoulder: [15, 15], 'Upper arm': [13, 20], 'Inner bicep': [8, 15], Elbow: [8, 8], 'Back of elbow': [8, 10], Forearm: [10, 25], Wrist: [7, 5], Hand: [9, 10], Fingers: [2, 6], Armpit: [8, 10],
+  Collarbone: [18, 6], Chest: [25, 18], Breast: [15, 15], Sternum: [10, 20], Ribs: [18, 25], Stomach: [25, 20], Hip: [15, 18], Genitals: [8, 8], 'Upper back': [35, 25], Spine: [8, 45], 'Lower back': [30, 15], Bottom: [20, 20],
+  'Outer thigh': [18, 35], Thigh: [18, 30], 'Inner thigh': [12, 25], 'Back of thigh': [16, 30], Knee: [12, 12], 'Back of knee': [10, 10], Shin: [8, 30], Calf: [14, 25], 'Outer calf': [10, 22], 'Inner calf': [10, 22], Ankle: [8, 6], Foot: [10, 15] };
+const ttAreaCm = (n) => TT_AREA_CM[n] || null;
+const ttAreaFits = (n, need) => { const a = ttAreaCm(n); if (!a || !need) return true; const [w, h] = need; return (a[0] >= w && a[1] >= h) || (a[0] >= h && a[1] >= w); };
+/* How much skin a lesson or challenge needs (cm), from its box or by tracing its shape (drawn in mm), plus 1 cm. */
+const ttNeed = (T) => { if (!T) return null; if (T.box) return [T.box[2] / 10 + 1, T.box[3] / 10 + 1]; if (typeof T.path !== 'function') return null;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; const P = (x, y) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); };
+  const g = new Proxy({}, { get: (_, k) => (...a) => { if (k === 'arc' || k === 'ellipse') { const rx = a[2], ry = k === 'ellipse' ? a[3] : a[2]; P(a[0] - rx, a[1] - ry); P(a[0] + rx, a[1] + ry); }
+    else if (k === 'rect') { P(a[0], a[1]); P(a[0] + a[2], a[1] + a[3]); } else for (let i = 0; i + 1 < a.length; i += 2) if (typeof a[i] === 'number' && typeof a[i + 1] === 'number') P(a[i], a[i + 1]); } });
+  try { T.path(g); } catch { return null; } return x1 < x0 ? null : [(x1 - x0) / 10 + 1, (y1 - y0) / 10 + 1]; };
+const ttAreaAll = () => typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.placements : [['Forearm', 'Arms & hands', 2]];
+/* The picker: the level first, then an area in it. o2: { cur (area name), best(k) (text after a level), intro, keep (label
+   for keeping the current one), need ([w, h] cm the work needs) }. Resolves to an area name, or null. */
+function ttAreaPick(o2) { return new Promise((res) => { const A = ttAreaAll(), cur = A.find(a => a[0] === o2.cur) || ['Forearm', 'Arms & hands', 2], o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99; let tier = null;
+  const fits = (a) => ttAreaFits(a[0], o2.need), sz = (n) => { const a = ttAreaCm(n); return a ? `${a[0]} × ${a[1]} cm` : ''; };
+  const draw = () => { if (!tier) { o.innerHTML = `<div class="card tt-areas"><h2>How hard?</h2><p class="muted" style="margin-top:0">${o2.intro || 'The body area sets how quickly the client feels it.'}</p><div class="dz-ex">${TT_TIERS.map(([k, n, d]) => `<button data-tier="${k}" class="${ttTier(cur[2]) === k ? 'on' : ''}" ${A.some(a => ttTier(a[2]) === k && fits(a)) ? '' : 'disabled'}><b>${n}</b><small>${d}${o2.best?.(k) || ''}</small></button>`).join('')}</div><button class="btn" data-area="" style="width:100%;margin-top:10px">${o2.keep ? esc(o2.keep) : 'Cancel'}</button></div>`; return; }
+    const L = A.filter(a => ttTier(a[2]) === tier), groups = [...new Set(L.map(a => a[1]))];
+    o.innerHTML = `<div class="card tt-areas"><h2>${TT_TIERN[tier]}: where?</h2>${o2.need ? `<p class="muted" style="margin-top:0">This one needs about ${o2.need.map(v => Math.round(v)).join(' × ')} cm: smaller areas are greyed out.</p>` : ''}${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="tt-areag">${L.filter(a => a[1] === g).map(a => `<button data-area="${esc(a[0])}" class="${a[0] === cur[0] ? 'on' : ''}" ${fits(a) ? '' : 'disabled data-tip="Too small for this one"'}><b>${esc(a[0])}</b><i>${'●'.repeat(a[2])}${'○'.repeat(5 - a[2])}</i>${sz(a[0]) ? `<small>${sz(a[0])}</small>` : ''}</button>`).join('')}</div>`).join('')}<div class="row" style="gap:6px;margin-top:10px"><button class="btn" data-back style="flex:1">Back</button><button class="btn" data-area="" style="flex:1">Cancel</button></div></div>`; };
+  o.onclick = (e) => { const t = e.target.closest('[data-tier]'); if (t) { tier = t.dataset.tier; return draw(); } if (e.target.closest('[data-back]')) { tier = null; return draw(); }
+    const b2 = e.target.closest('[data-area]'); if (b2?.disabled) return; if (!b2 && e.target !== o) return; o.remove(); res(b2?.dataset.area || null); };
+  draw(); document.body.appendChild(o); }); }
 const ttMedalIco = (m, size = 22) => m ? `<svg class="tt-medal ${m[1]}" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="M8 2l4 7 4-7"/><circle cx="12" cy="15" r="6"/></svg>` : '';
 
 /* Skin for challenges and the exam (setting tt_chskin, an index into TT_SKINS). The three lightest play the same;
@@ -963,11 +988,12 @@ TT.list = async (el) => {
   };
 };
 function ttNewDlg() {
-  const st = { size: 1, skin: Settings.get('tt_skin', '#e2b493'), cw: 15, ch: 20, cheat: false, patOn: false, pat: { w: 60, ra: 1, rb: 1, ring: 1, clear: true } };
+  const st = { size: 1, area: Settings.get('tt_area', 'Forearm'), skin: Settings.get('tt_skin', '#e2b493'), cw: 15, ch: 20, cheat: false, patOn: false, pat: { w: 60, ra: 1, rb: 1, ring: 1, clear: true } };
   const PATS = typeof patOptsHtml === 'function';   /* the pattern options are shared with the design studio */
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const draw = () => { o.innerHTML = `<div class="card"><h2>New piece</h2>
-    ${st.cheat && st.patOn && PATS ? patOptsHtml(st.pat, 'Ink only', 'With skin') : `<div class="lbl">Page</div><div class="seg" style="flex-wrap:wrap;margin-bottom:8px">${[...TT_SIZES, ['Custom']].map(([n], i) => `<button data-s="${i}" class="${st.size === i ? 'on' : ''}">${n}</button>`).join('')}</div>
+    ${st.cheat ? '' : (() => { const A = ttAreaAll().find(a => a[0] === st.area) || ['Forearm', 'Arms & hands', 2]; return `<div class="lbl">Body area</div><button class="btn" id="tn-area" style="width:100%;justify-content:flex-start;margin-bottom:8px">${TT_TIERN[ttTier(A[2])]} · ${esc(A[0])} <i class="muted" style="font-style:normal;margin-left:6px">${'●'.repeat(A[2])}${'○'.repeat(5 - A[2])}</i>${ttAreaCm(A[0]) ? `<span class="muted" style="margin-left:auto">${ttAreaCm(A[0]).join(' × ')} cm</span>` : ''}</button>`; })()}
+    ${st.cheat && st.patOn && PATS ? patOptsHtml(st.pat, 'Ink only', 'With skin') : `<div class="lbl">Page</div><div class="seg" style="flex-wrap:wrap;margin-bottom:8px">${!st.cheat && ttAreaCm(st.area) ? `<button data-s="area" class="${st.size === 'area' ? 'on' : ''}" data-tip="The page is the size of the body area">${esc(st.area)} ${ttAreaCm(st.area).join(' × ')} cm</button>` : ''}${[...TT_SIZES, ['Custom']].map(([n], i) => `<button data-s="${i}" class="${st.size === i ? 'on' : ''}">${n}</button>`).join('')}</div>
     ${st.size === TT_SIZES.length ? `<div class="two"><label class="field"><span>Width (cm)</span><input class="in" id="tn-w" type="number" min="3" max="60" value="${st.cw}"></label>
       <label class="field"><span>Height (cm)</span><input class="in" id="tn-h" type="number" min="3" max="60" value="${st.ch}"></label></div>` : ''}`}
     <div class="lbl">Skin</div><div class="tt-skins">${TT_SKINS.map(([n, c]) => `<button data-k="${c}" class="${st.skin === c ? 'on' : ''}" style="background:${c}" data-tip="${n}" aria-label="${n}"></button>`).join('')}
@@ -979,15 +1005,16 @@ function ttNewDlg() {
     <div class="row"><button class="btn" id="tn-x">Cancel</button><button class="btn primary" id="tn-go" style="flex:1">Start</button></div></div>`; };
   o.onclick = async (e) => {
     const t = e.target;
-    if (t.closest('[data-s]')) { st.size = +t.closest('[data-s]').dataset.s; return draw(); }
+    if (t.closest('[data-s]')) { const v = t.closest('[data-s]').dataset.s; st.size = v === 'area' ? 'area' : +v; return draw(); }
+    if (t.closest('#tn-area')) { const pick = await ttAreaPick({ cur: st.area, intro: 'Where the piece goes: it sets how quickly the client feels it, and the size of the area, shown as an outline you can turn off.' }); if (pick) { st.area = pick; if (st.size === 'area' && !ttAreaCm(pick)) st.size = 1; } return draw(); }
     if (t.closest('[data-k]')) { st.skin = t.closest('[data-k]').dataset.k; return draw(); }
     if (t.id === 'tn-x') return o.remove();
     if (st.cheat && st.patOn && PATS && patOptsAct(st.pat, t)) return draw();
     if (t.id === 'tn-go') {
       const pat = st.cheat && st.patOn && PATS, [, w, h] = pat ? [0, Math.min(60, Math.max(1, st.pat.w / 10)), Math.min(60, Math.max(1, st.pat.w * st.pat.rb / st.pat.ra / 10))]
-        : st.size < TT_SIZES.length ? TT_SIZES[st.size] : [0, Math.min(60, Math.max(3, +$('#tn-w').value || 15)), Math.min(60, Math.max(3, +$('#tn-h').value || 20))];
-      await Settings.set('tt_skin', st.skin);
-      await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', [$('#tn-n').value.trim() || (pat ? 'Pattern tile' : 'Piece'), w, h, st.skin, st.cheat ? JSON.stringify(pat ? { cheat: true, pat: { ring: st.pat.ring, fade: 0.38, clear: st.pat.clear } } : { cheat: true }) : null]);
+        : st.size === 'area' && !st.cheat && ttAreaCm(st.area) ? [0, ...ttAreaCm(st.area).map(v => Math.min(60, v))] : st.size === 'area' ? TT_SIZES[1] : st.size < TT_SIZES.length ? TT_SIZES[st.size] : [0, Math.min(60, Math.max(3, +$('#tn-w').value || 15)), Math.min(60, Math.max(3, +$('#tn-h').value || 20))];
+      await Settings.set('tt_skin', st.skin); if (!st.cheat) await Settings.set('tt_area', st.area);
+      await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', [$('#tn-n').value.trim() || (pat ? 'Pattern tile' : 'Piece'), w, h, st.skin, st.cheat ? JSON.stringify(pat ? { cheat: true, pat: { ring: st.pat.ring, fade: 0.38, clear: st.pat.clear } } : { cheat: true }) : JSON.stringify({ area: st.area, abox: 1 })]);
       const id = (await DB.one('SELECT last_insert_rowid() AS id')).id; o.remove(); location.hash = 'tattoo/' + id;
     }
   };
@@ -1016,6 +1043,7 @@ TT.open = async (el, id) => {
   const st = { layer: meta.layer || 'line', needle: meta.needle || '3RL', tool: 'needle', hide: new Set(meta.hide || []), lockL: new Set(meta.lockL || []), op: { stencil: 0.45, ...(meta.op || {}) },
     ink: { c: ttHex(meta.ink || '#141414'), v: meta.inkV ?? 0, s: meta.inkS ?? 1, w: meta.inkW ?? 0 }, wash: !!meta.wash, capS: meta.capS || null, pal: meta.pal || 'default', caps: meta.caps ? (meta.caps.length < TT_CAPS.length ? [...meta.caps.slice(0, -1), ...TT_CAPS.slice(meta.caps.length - 1, -1), meta.caps[meta.caps.length - 1]] : meta.caps) : [...TT_CAPS] /* a piece saved before a cap was added gets it too, in before its white */, panel: null, dirty: false, name: row.name, skin: row.skin || '#e2b493',
     stretch: meta.stretch ?? TT_STRETCH, view: 'work', viewC: null, refsInit: meta.refs || [], magAng: meta.magAng ?? 75, magTilt: meta.magTilt ?? true, rot: meta.rot || 0 };
+  st.area = meta.area || null; st.abox = meta.abox == null ? !!meta.area : !!meta.abox;   /* the piece's body area, and its outline on the page */
   /* Pigment in the skin. Each ink layer's pixels hold how much ink that spot holds (alpha: 0 = none, 255 = fully
      saturated) and its colour. A puncture only adds ink into the room left, counting the ink of every layer at that
      spot; ink lighter than what's there is held back in proportion to how saturated it is (a light value can't take
@@ -1136,19 +1164,16 @@ TT.open = async (el, id) => {
   const painOn = () => !CHEAT && (EX ? !!EX.cur && !EX.done && !EX.cur.scored : true);
   /* normal mode keeps its own pain (not saved): it flashes and warns, but the client never taps out */
   const FREEP = { pain: 0, painPeak: 0 }, pcur = () => EX ? EX.cur : FREEP;
-  const painArea = () => { let T = null; try { T = EX ? exList()[EX.i] : null; } catch {} const n = EX?.cur?.area || T?.area || Settings.get('tt_area', 'Forearm'); return ttAreas().find(a => a[0] === n) || ['Forearm', 'Arms & hands', 2]; };
+  const painArea = () => { let T = null; try { T = EX ? exList()[EX.i] : null; } catch {} const n = EX?.cur?.area || T?.area || (!EX && st.area) || Settings.get('tt_area', 'Forearm'); return ttAreas().find(a => a[0] === n) || ['Forearm', 'Arms & hands', 2]; };
   let painT = 0, painTold = 0;
   /* Choosing where: first the level (easy, medium, hard), then a body area in it. Opens by itself at the start of a
      lesson or challenge (unless the challenge sets its area), and from the area button before the first stroke. */
-  const painPick = (auto) => new Promise((res) => { const A = ttAreas(), cur = painArea(), T = EX ? exList()[EX.i] : null, o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99; let tier = null;
+  const painNeed = () => EX ? ttNeed(exList()[EX.i]) : null;
+  const painPick = (auto) => { const cur = painArea(), T = EX ? exList()[EX.i] : null;
     const best = (k) => { if (!EX) return ''; const v = EX.lesson ? ttLessonProg().tier?.[EX.lesson]?.[k] : TT.aw.get().pb[T?.id]?.tiers?.[k]?.best; if (v == null) return ''; return ' · Best ' + v + (EX.lesson ? (v >= TT_LS_PASS ? ', passed' : '') : ttMedal(v) ? ', ' + ttMedal(v)[2].toLowerCase() : ''); };
-    const draw = () => { if (!tier) { o.innerHTML = `<div class="card tt-areas"><h2>How hard?</h2><p class="muted" style="margin-top:0">The body area sets how quickly the client feels it. ${EX ? `Each level keeps its own ${EX.lesson ? 'pass' : 'medal'}.` : 'In lessons and challenges each level keeps its own medal or pass.'}</p><div class="dz-ex">${TT_TIERS.map(([k, n, d]) => `<button data-tier="${k}" class="${ttTier(cur[2]) === k ? 'on' : ''}" ${A.some(a => ttTier(a[2]) === k) ? '' : 'disabled'}><b>${n}</b><small>${d}${best(k)}</small></button>`).join('')}</div><button class="btn" data-area="" style="width:100%;margin-top:10px">${auto ? 'Keep ' + esc(cur[0].toLowerCase()) : 'Cancel'}</button></div>`; return; }
-      const L = A.filter(a => ttTier(a[2]) === tier), groups = [...new Set(L.map(a => a[1]))];
-      o.innerHTML = `<div class="card tt-areas"><h2>${TT_TIERN[tier]}: where?</h2>${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="tt-areag">${L.filter(a => a[1] === g).map(a => `<button data-area="${esc(a[0])}" class="${a[0] === cur[0] ? 'on' : ''}"><b>${esc(a[0])}</b><i>${'●'.repeat(a[2])}${'○'.repeat(5 - a[2])}</i></button>`).join('')}</div>`).join('')}<div class="row" style="gap:6px;margin-top:10px"><button class="btn" data-back style="flex:1">Back</button><button class="btn" data-area="" style="flex:1">Cancel</button></div></div>`; };
-    o.onclick = (e) => { const t = e.target.closest('[data-tier]'); if (t) { tier = t.dataset.tier; return draw(); } if (e.target.closest('[data-back]')) { tier = null; return draw(); }
-      const b2 = e.target.closest('[data-area]'); if (!b2 && e.target !== o) return; o.remove(); res(b2?.dataset.area || null); };
-    draw(); document.body.appendChild(o); });
-  const painSet = async (pick) => { if (!pick) return; if (EX?.cur) EX.cur.area = pick; await Settings.set('tt_area', pick); if (EX) { st.dirty = true; exBar(); } painShow(); };
+    return ttAreaPick({ cur: cur[0], best, need: painNeed(), keep: auto && ttAreaFits(cur[0], painNeed()) ? 'Keep ' + cur[0].toLowerCase() : null,
+      intro: EX ? `The body area sets how quickly the client feels it. Each level keeps its own ${EX.lesson ? 'pass' : 'medal'}.` : 'The body area sets how quickly the client feels it, and the outline shows its size.' }); };
+  const painSet = async (pick) => { if (!pick) return; if (EX?.cur) EX.cur.area = pick; if (!EX) st.area = pick; await Settings.set('tt_area', pick); st.dirty = true; if (EX) exBar(); painShow(); paint(); };
   const painWord = (v) => v < 0.3 ? 'Relaxed' : v < 0.6 ? 'Uncomfortable' : v < 0.85 ? 'Wincing' : 'Needs a break';
   function painShow() { const el = $('#tt-pain'); if (!el) return; el.hidden = !painOn(); if (el.hidden) return; const v = Math.min(1, pcur().pain || 0), b = el.querySelector('b'), w = el.querySelector('em');
     b.style.width = (v * 100).toFixed(1) + '%'; b.style.background = `hsl(${Math.round(120 - 120 * v)} 70% 45%)`; w.textContent = painWord(v); }
@@ -1420,6 +1445,9 @@ TT.open = async (el, id) => {
       compAll = false; compR = null; x.drawImage(comp, 0, 0);
       if (PAT && PAT.ring) { const R = Math.min(3, PAT.ring | 0); x.globalAlpha = Math.max(0.05, Math.min(1, PAT.fade ?? 0.38)); for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) if (i || j) x.drawImage(comp, i * W, j * H); x.globalAlpha = 1;
         x.setLineDash([6 / k, 4 / k]); x.lineWidth = 1.5 / k; x.strokeStyle = 'rgba(232,154,69,.95)'; x.strokeRect(0, 0, W, H); x.setLineDash([]); } }
+    if (st.abox && !EX && st.area) { const a = ttAreaCm(st.area); if (a) { let [aw, ah] = (W >= H) === (a[0] >= a[1]) ? a : [a[1], a[0]]; aw *= R; ah *= R; const ax = (W - aw) / 2, ay = (H - ah) / 2;
+      x.save(); x.fillStyle = 'rgba(0,0,0,.10)'; x.beginPath(); x.rect(0, 0, W, H); x.rect(ax, ay, aw, ah); x.fill('evenodd'); x.setLineDash([8 / k, 6 / k]); x.lineWidth = 1.5 / k; x.strokeStyle = 'rgba(255,255,255,.85)'; x.strokeRect(ax, ay, aw, ah);
+      x.setLineDash([]); x.font = `${12 / k}px sans-serif`; x.fillStyle = 'rgba(255,255,255,.9)'; x.fillText(`${st.area} · ${a[0]} × ${a[1]} cm`, ax + 6 / k, ay + 16 / k); x.restore(); } }
     if (st.check === 'pain') { painDraw(); x.imageSmoothingEnabled = true; x.globalAlpha = 0.8; x.drawImage(dmgC, 0, 0, tw * TS, th * TS); }
     else if (st.check) { dmgDraw(); x.imageSmoothingEnabled = true; x.globalAlpha = 0.75; x.drawImage(dmgC, 0, 0, tw * TS, th * TS); }
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
@@ -2359,13 +2387,14 @@ TT.open = async (el, id) => {
   function tally() { const el = $('#tt-tally'); if (!el) return; const c = EX?.cur; if (!c) { el.hidden = true; return; } el.hidden = false; let T = {}; try { T = exList()[EX.i] || {}; } catch { /* the editor is still starting: the lesson list isn't set up yet */ } const free = T.crashFree ?? 0;
     const it = [['Crashes', c.crash || 0, (c.crash || 0) > free], ['Blowouts', c.blow || 0, (c.blow || 0) > (T.maxBlow ?? 0)], ['Overworked', c.over || 0, (c.over || 0) > 0], ['Bumps', c.bumps || 0, (c.bumps || 0) > 0]];
     el.innerHTML = it.map(([n, v, bad]) => `<span class="${bad ? 'bad' : v ? 'warn' : ''}">${n} <b>${v}</b></span>`).join(''); }
-  const chkRow = () => `<div class="tt-pain" id="tt-pain" hidden data-tip="How the client is coping: rises while you work (faster on painful areas, deeper, and on raw skin), settles when you lift off. At the top they tap out."><span>Pain</span><div class="tt-painb"><b></b></div><em></em></div><div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check === true ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>${!CHEAT ? `<button class="tt-peek tt-pmapb ${st.check === 'pain' ? 'on' : ''}" data-chkp data-tip="Pain map: how sore each patch of skin is. Blue is calm, violet sore, pink very sore. Tap again to carry on tattooing" aria-label="Pain map"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></button>` : ''}<em id="tt-dmginfo">${st.check === 'pain' ? 'Pain map on' : st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
+  const chkRow = () => `<div class="tt-pain" id="tt-pain" hidden data-tip="How the client is coping: rises while you work (faster on painful areas, deeper, and on raw skin), settles when you lift off. At the top they tap out."><span>Pain</span><div class="tt-painb"><b></b></div><em></em></div><div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check === true ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>${!EX && st.area && ttAreaCm(st.area) ? `<button class="tt-peek ${st.abox ? 'on' : ''}" data-abox data-tip="Body area outline: the size of the ${esc(st.area.toLowerCase())}, to keep the work in proportion. You can still work outside it" aria-label="Body area outline"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5"/></svg></button>` : ''}${!CHEAT ? `<button class="tt-peek tt-pmapb ${st.check === 'pain' ? 'on' : ''}" data-chkp data-tip="Pain map: how sore each patch of skin is. Blue is calm, violet sore, pink very sore. Tap again to carry on tattooing" aria-label="Pain map"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></button>` : ''}<em id="tt-dmginfo">${st.check === 'pain' ? 'Pain map on' : st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
   /* The eye: held down, the piece shows as healed; let go and it is back as it was. */
   let peekWas = null; const peekEnd = () => { if (peekWas == null) return; st.view = peekWas; peekWas = null; st.viewC = null; drawView(); paint(); meterEl.querySelector('[data-peek]')?.classList.remove('on'); };
   meterEl.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-peek]'); if (!b || peekWas != null) return; e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch {} peekWas = st.view; st.view = 'healed'; st.viewC = null; b.classList.add('on'); drawView(); paint(); });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => meterEl.addEventListener(ev, peekEnd));
   meterEl.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-peek]')) e.preventDefault(); });
-  meterEl.addEventListener('click', (e) => { if (e.target.closest('[data-chkp]')) { st.check = st.check === 'pain' ? false : 'pain'; meterBuild(); meter(lastM); drawCur(); paint(); if (st.check) toast('Pain map: tap it again to carry on tattooing.', 2000); return; }
+  meterEl.addEventListener('click', (e) => { if (e.target.closest('[data-abox]')) { st.abox = !st.abox; st.dirty = true; meterBuild(); meter(lastM); paint(); return; }
+    if (e.target.closest('[data-chkp]')) { st.check = st.check === 'pain' ? false : 'pain'; meterBuild(); meter(lastM); drawCur(); paint(); if (st.check) toast('Pain map: tap it again to carry on tattooing.', 2000); return; }
     if (!e.target.closest('[data-chk]')) return; st.check = st.check === true ? false : true; meterBuild(); meter(lastM); drawCur(); paint(); if (st.check) toast('Damage map: tap it again to carry on tattooing.', 2000); });
   meterEl.addEventListener('input', (e) => { if (e.target.matches('[data-smooth]')) { st.smooth = +e.target.value; st.dirty = true; e.target.nextElementSibling.textContent = st.smooth + '%'; return; }
     if (!e.target.matches('[data-chkr]')) return; st.checkR = +e.target.value; e.target.nextElementSibling.textContent = st.checkR + ' mm'; drawCur(); });
@@ -3206,7 +3235,7 @@ TT.open = async (el, id) => {
     tlDrop.push(...TL.refs.splice(0));
     await DB.run(`UPDATE tattoo_pieces SET name = ?, ${TT_LAYERS.map(([key]) => key + '_ref = ?').join(', ')}, thumb_ref = ?, skin_ref = ?, blow_ref = ?, meta = ?, updated_at = datetime('now') WHERE id = ?`,
       [$('#tt-name')?.value.trim() || st.name, ...TT_LAYERS.map(([key]) => layerRefs[key]), thumb, skinRef, blowRef,
-        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], lockL: st.lockL.size ? [...st.lockL] : undefined, op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, pat: PAT || undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
+        (keepPrefs(), JSON.stringify({ hc: hcRef || undefined, wk: hcRef ? 1 : undefined, layer: st.layer, needle: st.needle, hide: [...st.hide], lockL: st.lockL.size ? [...st.lockL] : undefined, op: st.op, ink: ttToHex(st.ink.c), inkV: st.ink.v, inkS: st.ink.s ?? 1, inkW: st.ink.w || 0, bu: 1, area: st.area || undefined, abox: st.area ? (st.abox ? 1 : 0) : undefined, wash: st.wash || undefined, caps: st.caps, capS: st.capS && st.capS.some(v => v < 1) ? st.capS : undefined, pal: st.pal !== 'default' ? st.pal : undefined, recent: st.recent.length ? st.recent : undefined, stretch: st.stretch, magAng: st.magAng, magRoll: st.magRoll || undefined, magTilt: st.magTilt, rot: st.rot, refs: refs.map(({ _u, ...r }) => r), exam: EX || undefined,  stats: SS, mk: st.mk, cheat: CHEAT || undefined, smooth: CHEAT ? st.smooth : undefined, ruler: CHEAT ? st.ruler : undefined, sym: CHEAT ? st.sym : undefined, blend: CHEAT ? st.blend : undefined, fillo: CHEAT ? st.fillo : undefined, shape: CHEAT ? st.shape : undefined, fast: CHEAT && st.fast || undefined, lassoAll: CHEAT && st.lassoAll || undefined, grid: CHEAT ? st.grid : undefined, pat: PAT || undefined, liq: CHEAT ? st.liq : undefined, letters: CHEAT && st.letters.length ? st.letters : undefined, letDef: CHEAT ? st.letDef : undefined, endless: CHEAT && st.endless || undefined, pathP: CHEAT ? st.pathP : undefined })), id]);
     for (const r of tlDrop) await Media.release(r);
     if (old) for (const r of [old.thumb_ref, old.skin_ref, old.blow_ref, ...TT_LAYERS.map(([key]) => old[key + '_ref'])]) if (r && !Object.values(layerRefs).includes(r) && ![thumb, skinRef, blowRef].includes(r)) await Media.release(r);
     if (!quiet) toast('Saved.');
@@ -3330,7 +3359,7 @@ TT.open = async (el, id) => {
     o.onclick = async (e) => {
       const t = e.target;
       if (t.id === 'tl-x' || t === o) return o.remove();
-      if (t.closest('#tl-area')) { o.remove(); await painSet(await painPick()); return; }
+      if (t.closest('#tl-area')) { o.remove(); await painSet(await painPick()); meterBuild(); meter(lastM); return; }
       if (t.id === 'tl-dmap' || t.id === 'tl-pmap') { o.remove(); st.check = t.id === 'tl-pmap' ? 'pain' : true; meterBuild(); meter(lastM); drawCur(); paint(); toast((t.id === 'tl-pmap' ? 'Pain' : 'Damage') + ' map: tap its button by the meter to carry on tattooing.', 2500); return; }
       if (t.id === 'tl-reset') { if (!await ask('Reset the stats for this piece?\n\nThe piece itself is not changed.')) return;
         Object.assign(SS, { strokes: 0, mm: 0, ms: 0, dips: 0, punct: 0, blow: 0, erase: 0, needles: {}, layers: {}, since: Date.now() });
@@ -3989,6 +4018,7 @@ function ttStyle() {
 #tt-hurt { position: fixed; inset: 0; pointer-events: none; z-index: 97; opacity: 0; background: radial-gradient(ellipse at center, rgba(200,0,0,0) 35%, rgba(200,0,0,calc(.55 * var(--hurt, .6))) 100%), rgba(200,0,0,calc(.12 * var(--hurt, .6))); }
 #tt-hurt.go { animation: tt-hurt .7s ease-out; } @keyframes tt-hurt { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
 .tt-pmapb.on { color: #b46cff; }
+.tt-areag button small { display: block; font-size: 10px; color: var(--ink2); } .tt-areag button[disabled] { opacity: .35; }
 .tt-sbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 2px 0 8px; background: var(--line); } .tt-sbar i { display: block; min-width: 2px; }
 .tt-skey { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink2); margin-bottom: 6px; } .tt-skey i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 .tt-tiers { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; } .tt-tiers i { font-style: normal; font-size: 10px; font-weight: 700; width: 16px; height: 16px; line-height: 14px; text-align: center; border-radius: 50%; border: 1px solid var(--line); color: var(--ink2); }
