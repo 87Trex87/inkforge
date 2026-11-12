@@ -1211,13 +1211,13 @@ TT.open = async (el, id) => {
     if (!el) { el = document.createElement('div'); el.id = 'tt-hurt'; document.body.appendChild(el); }
     el.style.setProperty('--hurt', Math.max(0.25, Math.min(1, v)).toFixed(2)); el.classList.remove('go'); void el.offsetWidth; el.classList.add('go'); }
   let PC = null, PK = null, pfMax = 0, painLast = 0; const pf = (pk) => pk < 0.4 ? 0 : pk * 0.5;
-  function painHit(q, depth, r) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = pcur(); painT = now;
+  function painHit(q, depth, r, jolt = 0) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = pcur(); painT = now;
     if (!PC || PC.length !== TR.length) { PC = new Float32Array(TR.length); PK = new Float32Array(TR.length); pfMax = 0; }
     /* every patch under the needle's footprint feels it, so a big magnum works (and hurts) a wide area at once; the
        worst-worn patch under it sets how much: swollen skin is very painful, overworked far more */
     r = Math.max(TS * 0.5, r || 0); const x0 = Math.max(0, Math.floor((q.x - r) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + r) / TS)), y0 = Math.max(0, Math.floor((q.y - r) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + r) / TS));
     let w = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) w = Math.max(w, TR[y * tw + x] || 0);
-    const add = dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.5, Math.min(1.6, depth / 0.6)) * (0.3 + 4 * Math.pow(Math.min(2, w), 1.8)) * Math.min(1.6, 0.85 + 0.15 * Math.sqrt(r / mm));
+    const add = dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.5, Math.min(1.6, depth / 0.6)) * (0.3 + 4 * Math.pow(Math.min(2, w), 1.8)) * Math.min(1.6, 0.85 + 0.15 * Math.sqrt(r / mm)) + jolt * PAIN_SENS[painArea()[2] - 1] * (0.6 + 1.4 * Math.min(2, w));   /* jolt: a sharp turn at speed (scrubbing) hurts there on top */
     let top = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = y * tw + x; PC[k] += add * (1 + 1.5 * PK[k]); if (PC[k] > PK[k]) { PK[k] = PC[k]; pfMax = Math.max(pfMax, pf(PK[k])); } top = Math.max(top, PC[k]); }
     c.pain = c.pain || 0; if (top > c.pain) c.pain = top; else if (top < c.pain - 0.15) c.pain = Math.max(top, pfMax, c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
     if (c.pain >= 0.6 && (painLast < 0.6 || (painLast < 0.85 && c.pain >= 0.85) || c.pain - painLast > 0.03)) hurtFlash(c.pain);   /* crossing into wincing, into needing a break, or a sharp spike */
@@ -1507,7 +1507,7 @@ TT.open = async (el, id) => {
     if (s.a != null) { let d = Math.abs(a - s.a); if (d > Math.PI) d = 2 * Math.PI - d;
       if (d > Math.PI / 2 && pen.speed > 30 && pen.speed > s.v * 0.6 && SCR.length < 5000) { const us = lay.map(q => q.u), vs = lay.map(q => q.v), mg = isMag() ? 1 : 0;
         SCR.push([Math.round(p.x), Math.round(p.y), mg ? +rowAng(ev).toFixed(2) : 0, Math.round((Math.max(...us) - Math.min(...us) + feel.size) * mm), Math.round((Math.max(...vs) - Math.min(...vs) + feel.size) * mm), mg]);
-        if (EX?.cur) EX.cur.scrub = (EX.cur.scrub || 0) + 1; st.dirty = true; } }
+        if (EX?.cur) EX.cur.scrub = (EX.cur.scrub || 0) + 1; st.dirty = true; painHit(p, 0.6, pen.foot, 0.035); } }
     s.v = s.v * 0.8 + pen.speed * 0.2; s.a = a; };
   // magFlip: the short row of a magnum leads (the rows swapped end for end), the way most artists hold one
   st.magFlip = Settings.get('tt_magflip', '1') === '1';
@@ -3252,7 +3252,7 @@ TT.open = async (el, id) => {
     if (!raw && SCR.length) { const bl = document.createElement('canvas'); bl.width = W; bl.height = H; const q = bl.getContext('2d');   /* scrub steps, healed: the ink there, darker, in the needle's shape */
       for (const key of INK) if (!st.hide.has(key)) q.drawImage(L[key], 0, 0); q.globalCompositeOperation = 'destination-in'; q.beginPath();
       for (const [x, y, a, w, h, mg] of SCR) { const ca = Math.cos(a), sa = Math.sin(a); if (mg) { const P = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([u, v]) => [x + u * ca - v * sa, y + u * sa + v * ca]); q.moveTo(...P[0]); for (const pt of P.slice(1)) q.lineTo(...pt); q.closePath(); } else { q.moveTo(x + w / 2, y); q.ellipse(x, y, w / 2, h / 2, 0, 0, Math.PI * 2); } }
-      q.fill(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = mode === 'aged' ? 0.45 : 0.6; g.drawImage(bl, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
+      q.fill(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = mode === 'aged' ? 0.65 : 0.85; g.drawImage(bl, 0, 0); g.drawImage(bl, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
     return c;
   };
   const blobOf = (c) => new Promise(r => c.toBlob(r, 'image/png'));
