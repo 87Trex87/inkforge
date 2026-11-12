@@ -1155,13 +1155,13 @@ TT.open = async (el, id) => {
   const WK = new Float32Array(tw * th), WK_GAIN = 2, WK_INK = 0.6, WK_KEEP = 0.5;
   const buAdd = (p, v) => { if (CHEAT) return; const i = Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS))); BU[i] = Math.min(1, BU[i] + v); trDirty = true; };
   const blowC = document.createElement('canvas'); blowC.width = Math.ceil(W / 2); blowC.height = Math.ceil(H / 2); const bx = blowC.getContext('2d');
-  let trDirty = true, trT = 0; const told = {};
+  let trDirty = true, trT = 0, swT = 0; const told = {}, SWF = new Uint8Array(tw * th);   /* SWF: a patch already flashed for swelling, re-armed once it settles below 0.6 */
   const trAdd = (p, r, v, flat) => { if (CHEAT) return;
     let swell = false; const cx0 = p.x / TS, cy0 = p.y / TS, R2 = Math.max(1, r / TS), now = performance.now(), px = Math.min(W - 1, Math.max(0, Math.round(p.x))), py = Math.min(H - 1, Math.max(0, Math.round(p.y))), inkHere = densAt((py * W + px) * 4);
     for (let y = Math.max(0, Math.floor(cy0 - R2)); y <= Math.min(th - 1, Math.ceil(cy0 + R2)); y++)
       for (let x2 = Math.max(0, Math.floor(cx0 - R2)); x2 <= Math.min(tw - 1, Math.ceil(cx0 + R2)); x2++) {
-        let f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (flat) f = Math.min(1, f * 2) * 0.57;   /* flat: even across the needle, the same total as the cone */ if (f > 0) { const c = y * tw + x2, dv = v * f * (1 + WK_GAIN * WK[c] + WK_INK * inkHere); if (TR[c] < 0.8 && TR[c] + dv >= 0.8) swell = true; TR[c] += dv; WK[c] += dv * WK_KEEP; if (TR[c] > TP[c]) TP[c] = TR[c]; THit[c] = now; } }
-    if (swell && typeof hurtFlash === 'function') hurtFlash(0.45); trDirty = true;
+        let f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (flat) f = Math.min(1, f * 2) * 0.57;   /* flat: even across the needle, the same total as the cone */ if (f > 0) { const c = y * tw + x2, dv = v * f * (1 + WK_GAIN * WK[c] + WK_INK * inkHere); if (TR[c] < 0.6) SWF[c] = 0; if (!SWF[c] && TR[c] < 0.8 && TR[c] + dv >= 0.8) { swell = true; SWF[c] = 1; } TR[c] += dv; WK[c] += dv * WK_KEEP; if (TR[c] > TP[c]) TP[c] = TR[c]; THit[c] = now; } }
+    if (swell && typeof hurtFlash === 'function' && now - swT > 6000) { swT = now; hurtFlash(0.45); } trDirty = true;   /* at most one swelling flash every 6 seconds */
   };
   /* Skin settles once the needle moves away: after a few seconds' rest, redness and swelling halve about every 30 seconds.
      Damage leaves a mark, though: once well into swelling, skin only comes down one stage, to a level set by the worst it
