@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 416;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 417;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7589,6 +7589,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 417, when: '2026-11-12T22:00', added: ['A sore patch only relaxes to half its worst pain and flares up faster next time.', 'Skin damage spreads evenly across the needle, so big magnums redden and swell skin sooner.'],
+    test: ['Hurt one patch badly, rest, then go back. Does the meter stay near half and spike quicker?', 'Pack with an 11M. Does the skin swell sooner than before?'] },
   { build: 416, when: '2026-11-12T21:00', added: ['Pain follows the needle: big magnums hurt across their whole width, and going back over swollen skin is now very painful.'],
     test: ['Pack colour with an 11M until the skin is swollen, then keep going. Does the client tap out within a few seconds?'] },
   { build: 415, when: '2026-11-12T20:00', added: ['Pain is felt per patch of skin: keep moving onto fresh skin and the meter holds; linger in one spot or go back over a sore patch and it spikes.'],
