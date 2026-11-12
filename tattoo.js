@@ -982,7 +982,7 @@ TT.sheet = async () => {
 TT.list = async (el) => {
   ttStyle();
   const rows = (await DB.all('SELECT id, name, w_cm, h_cm, thumb_ref, updated_at, meta FROM tattoo_pieces ORDER BY updated_at DESC, id DESC'))
-    .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} let m2 = {}; try { m2 = JSON.parse(r.meta || '{}'); } catch {} return { ...r, ch: ex?.mode === 'ch', cheat: !!m2.cheat, exam: ex ? (ex.done ? 2 : 1) : 0, tuneOnly: !!m2.tuneOnly }; }).filter(r => !r.ch && !r.tuneOnly);
+    .map(r => { let ex = null; try { ex = JSON.parse(r.meta || '{}').exam; } catch {} let m2 = {}; try { m2 = JSON.parse(r.meta || '{}'); } catch {} return { ...r, ch: ex?.mode === 'ch', cheat: !!m2.cheat, area: m2.area || null, exam: ex ? (ex.done ? 2 : 1) : 0, tuneOnly: !!m2.tuneOnly }; }).filter(r => !r.ch && !r.tuneOnly);
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   const all = rows.map((r, i) => ({ ...r, url: urls[i], kind: r.exam ? 'Exam' : r.cheat ? 'Cheat mode' : 'Piece', t: r.updated_at })), shown = Lib.apply('tattoo', all), redraw = () => TT.list(el);
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Experimental: draw with needle groupings in ink on skin. Works best with a pressure pen (like an S Pen).</p>
@@ -990,7 +990,7 @@ TT.list = async (el) => {
       <button class="btn" id="tt-chal" data-go="tattoo/challenges" data-tip="Each lesson as a challenge of its own: medals, personal bests and trophies">Challenges</button>
       <button class="btn primary" id="tt-new">+ New piece</button></div>
     ${rows.length ? Lib.bar('tattoo', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('tattoo', r.id)}<div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
-      <div class="dz-meta"><b>${esc(r.name || 'Piece')}</b><span class="muted">${r.exam ? (r.exam === 2 ? 'Exam · finished' : 'Exam · in progress') : `${+r.w_cm} × ${+r.h_cm} cm`}${r.cheat ? ' <span class="tt-cheat" style="display:inline-block;margin-left:4px">Cheat</span>' : ''}</span></div>
+      <div class="dz-meta"><b>${esc(r.name || 'Piece')}</b><span class="muted">${r.exam ? (r.exam === 2 ? 'Exam · finished' : 'Exam · in progress') : `${+r.w_cm} × ${+r.h_cm} cm`}${r.area && !r.exam ? (() => { const A = ttAreaAll().find(a => a[0] === r.area); return A ? ` · ${TT_TIERN[ttTier(A[2])]} · ${esc(A[0])}` : ''; })() : ''}${r.cheat ? ' <span class="tt-cheat" style="display:inline-block;margin-left:4px">Cheat</span>' : ''}</span></div>
       <button class="mini" data-del="${r.id}" aria-label="Delete" data-tip="Delete">✕</button></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.needle}</div><div style="font:24px var(--display)">Tattoo simulator</div>
         <div class="muted">Pick a page size and skin tone, load a stencil to trace, dip into the ink caps and tattoo in layers: linework, shadow, mid and light tones, highlights.</div></div>`}`;
