@@ -1133,22 +1133,24 @@ TT.open = async (el, id) => {
      what was done. Kept with the attempt (EX.cur.pain, painPeak, area). */
   const PAIN_SENS = [0.5, 0.8, 1.15, 1.6, 2.2], PAIN_RATE = 0.03;
   const ttAreas = () => typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.placements : [['Forearm', 'Arms & hands', 2]];
-  const painOn = () => !CHEAT && !!EX?.cur && !EX.done && !EX.cur.scored;
+  const painOn = () => !CHEAT && (EX ? !!EX.cur && !EX.done && !EX.cur.scored : true);
+  /* normal mode keeps its own pain (not saved): it flashes and warns, but the client never taps out */
+  const FREEP = { pain: 0, painPeak: 0 }, pcur = () => EX ? EX.cur : FREEP;
   const painArea = () => { let T = null; try { T = EX ? exList()[EX.i] : null; } catch {} const n = EX?.cur?.area || T?.area || Settings.get('tt_area', 'Forearm'); return ttAreas().find(a => a[0] === n) || ['Forearm', 'Arms & hands', 2]; };
   let painT = 0, painTold = 0;
   /* Choosing where: first the level (easy, medium, hard), then a body area in it. Opens by itself at the start of a
      lesson or challenge (unless the challenge sets its area), and from the area button before the first stroke. */
-  const painPick = (auto) => new Promise((res) => { const A = ttAreas(), cur = painArea(), T = exList()[EX.i], o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99; let tier = null;
-    const best = (k) => { const v = EX.lesson ? ttLessonProg().tier?.[EX.lesson]?.[k] : TT.aw.get().pb[T?.id]?.tiers?.[k]?.best; if (v == null) return ''; return ' · Best ' + v + (EX.lesson ? (v >= TT_LS_PASS ? ', passed' : '') : ttMedal(v) ? ', ' + ttMedal(v)[2].toLowerCase() : ''); };
-    const draw = () => { if (!tier) { o.innerHTML = `<div class="card tt-areas"><h2>How hard?</h2><p class="muted" style="margin-top:0">The body area sets how quickly the client feels it. Each level keeps its own ${EX.lesson ? 'pass' : 'medal'}.</p><div class="dz-ex">${TT_TIERS.map(([k, n, d]) => `<button data-tier="${k}" class="${ttTier(cur[2]) === k ? 'on' : ''}" ${A.some(a => ttTier(a[2]) === k) ? '' : 'disabled'}><b>${n}</b><small>${d}${best(k)}</small></button>`).join('')}</div><button class="btn" data-area="" style="width:100%;margin-top:10px">${auto ? 'Keep ' + esc(cur[0].toLowerCase()) : 'Cancel'}</button></div>`; return; }
+  const painPick = (auto) => new Promise((res) => { const A = ttAreas(), cur = painArea(), T = EX ? exList()[EX.i] : null, o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99; let tier = null;
+    const best = (k) => { if (!EX) return ''; const v = EX.lesson ? ttLessonProg().tier?.[EX.lesson]?.[k] : TT.aw.get().pb[T?.id]?.tiers?.[k]?.best; if (v == null) return ''; return ' · Best ' + v + (EX.lesson ? (v >= TT_LS_PASS ? ', passed' : '') : ttMedal(v) ? ', ' + ttMedal(v)[2].toLowerCase() : ''); };
+    const draw = () => { if (!tier) { o.innerHTML = `<div class="card tt-areas"><h2>How hard?</h2><p class="muted" style="margin-top:0">The body area sets how quickly the client feels it. ${EX ? `Each level keeps its own ${EX.lesson ? 'pass' : 'medal'}.` : 'In lessons and challenges each level keeps its own medal or pass.'}</p><div class="dz-ex">${TT_TIERS.map(([k, n, d]) => `<button data-tier="${k}" class="${ttTier(cur[2]) === k ? 'on' : ''}" ${A.some(a => ttTier(a[2]) === k) ? '' : 'disabled'}><b>${n}</b><small>${d}${best(k)}</small></button>`).join('')}</div><button class="btn" data-area="" style="width:100%;margin-top:10px">${auto ? 'Keep ' + esc(cur[0].toLowerCase()) : 'Cancel'}</button></div>`; return; }
       const L = A.filter(a => ttTier(a[2]) === tier), groups = [...new Set(L.map(a => a[1]))];
       o.innerHTML = `<div class="card tt-areas"><h2>${TT_TIERN[tier]}: where?</h2>${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="tt-areag">${L.filter(a => a[1] === g).map(a => `<button data-area="${esc(a[0])}" class="${a[0] === cur[0] ? 'on' : ''}"><b>${esc(a[0])}</b><i>${'●'.repeat(a[2])}${'○'.repeat(5 - a[2])}</i></button>`).join('')}</div>`).join('')}<div class="row" style="gap:6px;margin-top:10px"><button class="btn" data-back style="flex:1">Back</button><button class="btn" data-area="" style="flex:1">Cancel</button></div></div>`; };
     o.onclick = (e) => { const t = e.target.closest('[data-tier]'); if (t) { tier = t.dataset.tier; return draw(); } if (e.target.closest('[data-back]')) { tier = null; return draw(); }
       const b2 = e.target.closest('[data-area]'); if (!b2 && e.target !== o) return; o.remove(); res(b2?.dataset.area || null); };
     draw(); document.body.appendChild(o); });
-  const painSet = async (pick) => { if (!pick || !EX) return; if (EX.cur) EX.cur.area = pick; await Settings.set('tt_area', pick); st.dirty = true; exBar(); painShow(); };
+  const painSet = async (pick) => { if (!pick) return; if (EX?.cur) EX.cur.area = pick; await Settings.set('tt_area', pick); if (EX) { st.dirty = true; exBar(); } painShow(); };
   const painWord = (v) => v < 0.3 ? 'Relaxed' : v < 0.6 ? 'Uncomfortable' : v < 0.85 ? 'Wincing' : 'Needs a break';
-  function painShow() { const el = $('#tt-pain'); if (!el) return; el.hidden = !painOn(); if (el.hidden) return; const v = Math.min(1, EX.cur.pain || 0), b = el.querySelector('b'), w = el.querySelector('em');
+  function painShow() { const el = $('#tt-pain'); if (!el) return; el.hidden = !painOn(); if (el.hidden) return; const v = Math.min(1, pcur().pain || 0), b = el.querySelector('b'), w = el.querySelector('em');
     b.style.width = (v * 100).toFixed(1) + '%'; b.style.background = `hsl(${Math.round(120 - 120 * v)} 70% 45%)`; w.textContent = painWord(v); }
   /* Pain is felt per patch of skin (the wear grid's cells, PC): each patch builds its own soreness while the needle is
      in it, slowly on fresh skin and steeply on worked skin. The meter jumps up to a patch that hurts more than it does,
@@ -1164,7 +1166,7 @@ TT.open = async (el, id) => {
     if (!el) { el = document.createElement('div'); el.id = 'tt-hurt'; document.body.appendChild(el); }
     el.style.setProperty('--hurt', Math.max(0.25, Math.min(1, v)).toFixed(2)); el.classList.remove('go'); void el.offsetWidth; el.classList.add('go'); }
   let PC = null, PK = null, pfMax = 0, painLast = 0; const pf = (pk) => pk < 0.4 ? 0 : pk * 0.5;
-  function painHit(q, depth, r) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = EX.cur; painT = now;
+  function painHit(q, depth, r) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = pcur(); painT = now;
     if (!PC || PC.length !== TR.length) { PC = new Float32Array(TR.length); PK = new Float32Array(TR.length); pfMax = 0; }
     /* every patch under the needle's footprint feels it, so a big magnum works (and hurts) a wide area at once; the
        worst-worn patch under it sets how much: swollen skin is very painful, overworked far more */
@@ -1176,11 +1178,12 @@ TT.open = async (el, id) => {
     if (c.pain >= 0.6 && (painLast < 0.6 || (painLast < 0.85 && c.pain >= 0.85) || c.pain - painLast > 0.03)) hurtFlash(c.pain);   /* crossing into wincing, into needing a break, or a sharp spike */
     painLast = c.pain;
     c.painPeak = Math.max(c.painPeak || 0, c.pain); painShow();
-    if (c.pain >= 1 && !c.tapOut) { c.tapOut = true; toast('The client tapped out. The attempt is judged on what you got done.', 5000); setTimeout(() => { try { exDone(); } catch {} }, 250); }
+    if (!EX) { c.pain = Math.min(1, c.pain); if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); } else if (c.pain >= 0.6 && painTold < 1) { painTold = 1; toast('The client is wincing: ease off, or work another part for a while.', 3500); } }
+    else if (c.pain >= 1 && !c.tapOut) { c.tapOut = true; toast('The client tapped out. The attempt is judged on what you got done.', 5000); setTimeout(() => { try { exDone(); } catch {} }, 250); }
     else if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); }
     else if (c.pain >= 0.6 && painTold < 1) { painTold = 1; toast('The client is wincing: ease off, or work another part for a while.', 3500); } }
-  const painIv = setInterval(() => { try { if (!document.body.contains(stage)) return clearInterval(painIv); if (!painOn() || !EX.cur.pain) return;
-    const rest = performance.now() - painT > 1500; if (!rest) return; EX.cur.pain = Math.max(Math.min(EX.cur.pain, pfMax), EX.cur.pain - 0.02 * 0.5); if (PC) for (let i = 0; i < PC.length; i++) if (PC[i]) PC[i] = Math.max(Math.min(PC[i], pf(PK[i])), PC[i] - 0.02 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (EX.cur.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
+  const painIv = setInterval(() => { try { if (!document.body.contains(stage)) return clearInterval(painIv); const c = pcur(); if (!painOn() || !c.pain) return;
+    const rest = performance.now() - painT > 1500; if (!rest) return; c.pain = Math.max(Math.min(c.pain, pfMax), c.pain - 0.02 * 0.5); if (PC) for (let i = 0; i < PC.length; i++) if (PC[i]) PC[i] = Math.max(Math.min(PC[i], pf(PK[i])), PC[i] - 0.02 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (c.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
   const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
   // Raw skin: a mottled, bumpy texture of red and pink lumps, made once.
   const patty = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d');
@@ -1396,6 +1399,8 @@ TT.open = async (el, id) => {
       D[q] = c0[0] + (c1[0] - c0[0]) * f; D[q + 1] = c0[1] + (c1[1] - c0[1]) * f; D[q + 2] = c0[2] + (c1[2] - c0[2]) * f; D[q + 3] = 90 + 150 * Math.min(1, v); }
     g.putImageData(im, 0, 0); const el = $('#tt-dmginfo'), pc = (v) => Math.round(v / Math.max(1, n) * 100) + '%';
     if (el) el.textContent = n ? `Very sore ${pc(bad)} · Sore ${pc(sore)} · worst now: ${painWord(Math.min(1, worst)).toLowerCase()}` : 'No pain yet'; };
+  const skinSum = () => { let n = 0, red = 0, sw = 0, ow = 0, worst = 0; for (let i = 0; i < TR.length; i++) { if (HC[i] <= 0 && TR[i] < 0.02 && WK[i] < 0.01) continue; const v = Math.max(TR[i], WK[i] * 0.8); n++; if (v >= 1.4) ow++; else if (v >= 0.8) sw++; else if (v >= 0.3) red++; if (v > worst) worst = v; }
+    const d = Math.max(1, n); return { n, worst, ow: ow / d, sw: sw / d, red: red / d, fine: (n - ow - sw - red) / d }; };
   const dmgDraw = () => { const g = dmgC.getContext('2d'), im = g.createImageData(tw, th), D = im.data, stops = [[0, [60, 220, 120]], [0.3, [60, 220, 120]], [0.8, [240, 200, 60]], [1.1, [255, 140, 40]], [1.4, [235, 50, 50]], [2, [150, 20, 60]]]; let n = 0, red = 0, sw = 0, ow = 0, worst = 0;
     for (let i = 0; i < TR.length; i++) { if (HC[i] <= 0 && TR[i] < 0.02 && WK[i] < 0.01) continue; const v = Math.max(TR[i], WK[i] * 0.8); n++; if (v >= 1.4) ow++; else if (v >= 0.8) sw++; else if (v >= 0.3) red++; if (v > worst) worst = v;
       let j = 1; while (j < stops.length - 1 && v > stops[j][0]) j++; const [a0, c0] = stops[j - 1], [a1, c1] = stops[j], f = Math.max(0, Math.min(1, (v - a0) / Math.max(1e-6, a1 - a0))), q = i * 4;
@@ -2354,7 +2359,7 @@ TT.open = async (el, id) => {
   function tally() { const el = $('#tt-tally'); if (!el) return; const c = EX?.cur; if (!c) { el.hidden = true; return; } el.hidden = false; let T = {}; try { T = exList()[EX.i] || {}; } catch { /* the editor is still starting: the lesson list isn't set up yet */ } const free = T.crashFree ?? 0;
     const it = [['Crashes', c.crash || 0, (c.crash || 0) > free], ['Blowouts', c.blow || 0, (c.blow || 0) > (T.maxBlow ?? 0)], ['Overworked', c.over || 0, (c.over || 0) > 0], ['Bumps', c.bumps || 0, (c.bumps || 0) > 0]];
     el.innerHTML = it.map(([n, v, bad]) => `<span class="${bad ? 'bad' : v ? 'warn' : ''}">${n} <b>${v}</b></span>`).join(''); }
-  const chkRow = () => `<div class="tt-pain" id="tt-pain" hidden data-tip="How the client is coping: rises while you work (faster on painful areas, deeper, and on raw skin), settles when you lift off. At the top they tap out."><span>Pain</span><div class="tt-painb"><b></b></div><em></em></div><div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check === true ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>${EX && !CHEAT ? `<button class="tt-peek tt-pmapb ${st.check === 'pain' ? 'on' : ''}" data-chkp data-tip="Pain map: how sore each patch of skin is. Blue is calm, violet sore, pink very sore. Tap again to carry on tattooing" aria-label="Pain map"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></button>` : ''}<em id="tt-dmginfo">${st.check === 'pain' ? 'Pain map on' : st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
+  const chkRow = () => `<div class="tt-pain" id="tt-pain" hidden data-tip="How the client is coping: rises while you work (faster on painful areas, deeper, and on raw skin), settles when you lift off. At the top they tap out."><span>Pain</span><div class="tt-painb"><b></b></div><em></em></div><div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check === true ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>${!CHEAT ? `<button class="tt-peek tt-pmapb ${st.check === 'pain' ? 'on' : ''}" data-chkp data-tip="Pain map: how sore each patch of skin is. Blue is calm, violet sore, pink very sore. Tap again to carry on tattooing" aria-label="Pain map"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></button>` : ''}<em id="tt-dmginfo">${st.check === 'pain' ? 'Pain map on' : st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
   /* The eye: held down, the piece shows as healed; let go and it is back as it was. */
   let peekWas = null; const peekEnd = () => { if (peekWas == null) return; st.view = peekWas; peekWas = null; st.viewC = null; drawView(); paint(); meterEl.querySelector('[data-peek]')?.classList.remove('on'); };
   meterEl.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-peek]'); if (!b || peekWas != null) return; e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch {} peekWas = st.view; st.view = 'healed'; st.viewC = null; b.classList.add('on'); drawView(); paint(); });
@@ -2375,7 +2380,7 @@ TT.open = async (el, id) => {
   const meterBuild = () => { meterBands(); meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
     const badZ = low ? `left:0;width:${P(bad)}%` : `left:${P(bad)}%;right:0`;
     return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('') + chkRow(); tally(); };
-  meterBuild(); tally(); painShow(); if (CHEAT) meterEl.classList.add('cheat');   // no skin damage to show
+  meterBuild(); tally(); painShow(); setTimeout(painShow, 400); if (CHEAT) meterEl.classList.add('cheat');   // no skin damage to show
   const WHIP_GAP = 0.7;
   const meter = (m) => {
     const gr = meterEl.querySelector('[data-m="gap"]');
@@ -3297,7 +3302,18 @@ TT.open = async (el, id) => {
     const draw = () => {
       const ndl = Object.entries(SS.needles).sort((a, b) => b[1] - a[1]);
       const stat = (l, v) => `<div class="stat"><span>${l}</span><span>${v}</span></div>`;
-      o.innerHTML = `<div class="card" style="max-height:90dvh;overflow:auto"><h2>Stats</h2>
+      const sk = skinSum(), pc = pcur() || {}, pv = Math.min(1, pc.pain || 0), pk = Math.min(1, pc.painPeak || 0), ar = painArea(), pct = (v) => Math.round(v * 100) + '%';
+      const bar = (segs) => `<div class="tt-sbar">${segs.map(([v, c, n]) => v > 0 ? `<i style="flex:${v};background:${c}" data-tip="${n} ${pct(v)}"></i>` : '').join('')}</div>`;
+      const skinHtml = CHEAT ? '' : `<div class="lbl" style="margin-top:4px">Skin and client</div>
+        <div class="stat"><span>Body area</span><span><button class="btn small" id="tl-area">${TT_TIERN[ttTier(ar[2])]} · ${esc(ar[0])} ${'●'.repeat(ar[2])}${'○'.repeat(5 - ar[2])}</button></span></div>
+        <div class="stat"><span>Pain now</span><span>${painWord(pv)} · ${pct(pv)}</span></div>
+        <div class="tt-sbar"><i style="flex:${pv || 0.0001};background:hsl(${Math.round(120 - 120 * pv)} 70% 45%)"></i><i style="flex:${1 - pv};background:var(--line)"></i></div>
+        <div class="stat"><span>Worst pain</span><span>${pct(pk)}</span></div>
+        <div class="stat"><span>Skin worked</span><span>${sk.n ? `worst: ${skinWord(sk.worst)}` : 'none yet'}</span></div>
+        ${sk.n ? bar([[sk.fine, '#3cdc78', 'Fine'], [sk.red, '#f0c83c', 'Red'], [sk.sw, '#ff8c28', 'Swollen'], [sk.ow, '#eb3232', 'Overworked']]) + `<div class="tt-skey"><span><i style="background:#3cdc78"></i>Fine ${pct(sk.fine)}</span><span><i style="background:#f0c83c"></i>Red ${pct(sk.red)}</span><span><i style="background:#ff8c28"></i>Swollen ${pct(sk.sw)}</span><span><i style="background:#eb3232"></i>Overworked ${pct(sk.ow)}</span></div>` : ''}
+        <div class="row" style="gap:6px;margin:6px 0 4px"><button class="btn small" id="tl-dmap" style="flex:1">Damage map</button><button class="btn small" id="tl-pmap" style="flex:1">Pain map</button></div>
+        <div class="lbl" style="margin-top:10px">Work</div>`;
+      o.innerHTML = `<div class="card" style="max-height:90dvh;overflow:auto"><h2>Stats</h2>${skinHtml}
         ${stat('Strokes', SS.strokes.toLocaleString())}
         ${stat('Needle travelled', tlDist(SS.mm))}
         ${stat('Needle-down time', tlFmt(SS.ms))}
@@ -3314,6 +3330,8 @@ TT.open = async (el, id) => {
     o.onclick = async (e) => {
       const t = e.target;
       if (t.id === 'tl-x' || t === o) return o.remove();
+      if (t.closest('#tl-area')) { o.remove(); await painSet(await painPick()); return; }
+      if (t.id === 'tl-dmap' || t.id === 'tl-pmap') { o.remove(); st.check = t.id === 'tl-pmap' ? 'pain' : true; meterBuild(); meter(lastM); drawCur(); paint(); toast((t.id === 'tl-pmap' ? 'Pain' : 'Damage') + ' map: tap its button by the meter to carry on tattooing.', 2500); return; }
       if (t.id === 'tl-reset') { if (!await ask('Reset the stats for this piece?\n\nThe piece itself is not changed.')) return;
         Object.assign(SS, { strokes: 0, mm: 0, ms: 0, dips: 0, punct: 0, blow: 0, erase: 0, needles: {}, layers: {}, since: Date.now() });
         st.dirty = true; await save(true); return draw(); }
@@ -3971,6 +3989,8 @@ function ttStyle() {
 #tt-hurt { position: fixed; inset: 0; pointer-events: none; z-index: 97; opacity: 0; background: radial-gradient(ellipse at center, rgba(200,0,0,0) 35%, rgba(200,0,0,calc(.55 * var(--hurt, .6))) 100%), rgba(200,0,0,calc(.12 * var(--hurt, .6))); }
 #tt-hurt.go { animation: tt-hurt .7s ease-out; } @keyframes tt-hurt { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
 .tt-pmapb.on { color: #b46cff; }
+.tt-sbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 2px 0 8px; background: var(--line); } .tt-sbar i { display: block; min-width: 2px; }
+.tt-skey { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink2); margin-bottom: 6px; } .tt-skey i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 .tt-tiers { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; } .tt-tiers i { font-style: normal; font-size: 10px; font-weight: 700; width: 16px; height: 16px; line-height: 14px; text-align: center; border-radius: 50%; border: 1px solid var(--line); color: var(--ink2); }
 .tt-tiers i.tried { border-color: var(--ink2); } .tt-tiers i.bronze { border-color: #c88a55; color: #c88a55; } .tt-tiers i.silver { border-color: #c9d1d6; color: #c9d1d6; } .tt-tiers i.gold { border-color: #e2b34a; color: #e2b34a; } .tt-tiers i.pass { border-color: var(--teal); background: var(--teal); color: #fff; }
 .tt-chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 8px; }
