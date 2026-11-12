@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 425;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 426;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7593,6 +7593,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 426, when: '2026-11-13T20:00', added: ['Scrubbing hurts only a little more than smooth circles now.', 'Only sharp back-turns at full speed count as scrubbing, so ovals pass.'],
+    test: ['Shade with tight ovals. Does it heal smooth with no steps?', 'Scrub fast up and down. Do steps still show, with pain only a bit higher?'] },
   { build: 425, when: '2026-11-13T19:00', added: ['Scrub steps stand out more in the healed and 10 year views.', 'Scrubbing hurts: each sharp turn at speed jolts the client right there, more on sore skin.'],
     test: ['Scrub a patch fast. Does the pain jump quicker than with smooth circles?', 'Check the Healed preview. Are the steps easy to see now?'] },
   { build: 424, when: '2026-11-13T18:00', added: ['Scrubbing shows when it heals: rushing a shader or magnum back and forth, turning sharply without easing off, leaves darker steps the shape of the needle in the healed and 10 year views. Challenge reports point it out.'],
