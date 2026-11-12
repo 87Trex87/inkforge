@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 415;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 416;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7589,6 +7589,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 416, when: '2026-11-12T21:00', added: ['Pain follows the needle: big magnums hurt across their whole width, and going back over swollen skin is now very painful.'],
+    test: ['Pack colour with an 11M until the skin is swollen, then keep going. Does the client tap out within a few seconds?'] },
   { build: 415, when: '2026-11-12T20:00', added: ['Pain is felt per patch of skin: keep moving onto fresh skin and the meter holds; linger in one spot or go back over a sore patch and it spikes.'],
     test: ['Work steadily along a long line without stopping. Does the meter stay calm, then jump when you go back over the start?'] },
   { build: 414, when: '2026-11-12T18:00', added: ['Pain kicks in much sooner: overworking an area, going deep or going back over sore skin makes it spike fast, and it eases slowly while the client rests.', 'Lessons and challenges start by asking Easy, Medium or Hard, then a body area in that level. Each level keeps its own medal or pass (the E, M and H badges).'],
