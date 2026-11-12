@@ -2052,7 +2052,7 @@ DZ.edit = async (id) => {
     else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
     if (doc.chal && l.t === 'shape') own = `<button class="btn small" data-chcopy data-tip="An exact copy on top of this shape, to grade as something else: shading over the outline, say">Copy as…</button>` + sep + `<button class="btn small dz-chrole ${l.role ? 'on' : ''}" data-chrole data-tip="What this shape is in the challenge, and how it is graded">${l.role ? CH_ROLES.find(r => r[0] === l.role)[1] + (l.nd ? ' · ' + dzChNds(l).join('/') : '') : 'Grade as…'}</button>` + sep + own;
     const field = l.t === 'field';
-    if (doc.chal && l.t === 'image' && !l.lock) own = `<button class="btn small dz-chrole" data-chvs data-tip="Turn this picture into a shading zone: its light and dark posterized into value steps, to shade like a portrait study">Value study</button>` + sep + own;
+    if (doc.chal && l.t === 'image' && !l.lock) own = `<button class="btn small dz-chrole" data-chvs data-tip="Trace this picture into shapes to tattoo: outline, detail lines, colours or shading zones">Trace</button>` + sep + own;
     if (l.t === 'image' && l.ref && !l.logo && !l.lock) own += dzIB('data-adjc', '<circle cx="12" cy="12" r="8"/><path d="M12 4v16M12 4a8 8 0 0 1 0 16"/>', 'Adjust colour: exposure, contrast, saturation, hue and more');
     if (bendOK(l)) own += dzIB('data-bend', '<path d="M3 16c4-8 14-8 18 0"/><path d="M6 19c3-5 9-5 12 0"/>', 'Bend into an arc, as in the bend tool') + sep;
     if (doc.grid?.on && doc.grid.type === 'iso' && l.t === 'shape' && l.shape !== 'line' && !l.qr)   // isometric planes, as in Affinity Designer
@@ -3843,7 +3843,7 @@ DZ.edit = async (id) => {
     if (e.target.closest('[data-chcopy]') && layer()) { const l0 = layer(), [c] = dupInPlace([l0.id]); delete c.nds; delete c.sh; delete c.mixOf; delete c.ink; c.fill = 'none';
       c.role = l0.role === 'outline' || l0.role === 'detail' ? 'shade' : l0.role || 'shade'; if (c.role === 'shade') c.sh = { tech: 'stipple', grad: 'linear', ang: 90, dark: 0.85, light: 0.05, bias: 1 }; c.nd = c.role === 'shade' ? CH_SHADE.stipple[2] : c.nd; if (c.role === 'pack') { c.mixOf = [chCaps()[0]]; chInk(c); } chDefN(c);
       c.name = (l0.name || 'Shape') + ' (copy)'; select(c.id); changed(true); chTab.role = 'role'; return chOpen('role'); }
-    if (e.target.closest('[data-chvs]')) return chStudy(layer());
+    if (e.target.closest('[data-chvs]')) { const l0 = layer(); if (l0?.ref) { if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const sc = document.createElement('script'); sc.src = 'tattoo.js'; sc.onload = sc.onerror = res; document.head.appendChild(sc); }); return chTrace(l0.ref); } return; }
     if (e.target.closest('[data-bend]')) return bendOpen(layer());
     if (e.target.closest('[data-adjc]')) return adjOpen(layer());
     const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
@@ -4132,22 +4132,6 @@ DZ.edit = async (id) => {
     for (const t of hb.sort((a, z) => z[3] - a[3])) { if (t[3] < px.length * 0.002) break; const c = [t[0] / t[3], t[1] / t[3], t[2] / t[3]]; if (!near(c, [...cs, ...extra])) extra.push(c); }
     const base = cs.filter(c => lum(c) > 28 && lum(c) < 236).slice(0, Math.max(1, 8 - extra.length));
     return [...base, ...extra.slice(0, 8 - base.length)].sort((a, b) => lum(a) - lum(b)).map(hex).filter((h, i, a) => a.indexOf(h) === i); };
-  async function chStudy(l) { if (!l || l.t !== 'image') return; if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const sc = document.createElement('script'); sc.src = 'tattoo.js'; sc.onload = sc.onerror = res; document.head.appendChild(sc); });
-    let N = 160; const sc = Math.min(1, 1600 / Math.max(doc.w, doc.h)), c = document.createElement('canvas'); c.width = Math.round(doc.w * sc); c.height = Math.round(doc.h * sc);
-    await dzDraw(c, doc, sc, { only: new Set([l.id]), noBg: true });   /* the picture as it shows: crop, flips and colour adjustments included */
-    const z = dzS('rect', l.x, l.y, l.w, l.h, { fill: 'none', rot: l.rot || 0, role: 'shade', nd: '13CM', name: 'Value study' }), P = dzChPts(z).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
-    const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], m = (N = Math.max(96, Math.min(240, Math.round(Math.max(b[2], b[3])))), document.createElement('canvas')); m.width = m.height = N;   /* about a millimetre a cell */
-    const g = m.getContext('2d'); g.drawImage(c, b[0] * CH_PX * sc, b[1] * CH_PX * sc, b[2] * CH_PX * sc, b[3] * CH_PX * sc, 0, 0, N, N); const D = g.getImageData(0, 0, N, N).data, raw = new Uint8Array(N * N);
-    let lo = 255, hi = 0; for (let i = 0; i < N * N; i++) { const a = D[i * 4 + 3] / 255, lum = (D[i * 4] * 0.3 + D[i * 4 + 1] * 0.59 + D[i * 4 + 2] * 0.11) / 255, v = 255 * a * (1 - lum); raw[i] = v; if (a > 0.5) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
-    if (hi > lo) for (let i = 0; i < N * N; i++) raw[i] = Math.max(0, Math.min(255, (raw[i] - lo) / (hi - lo) * 255));   /* stretched so the picture's darkest is the darkest step */
-    for (let pass = 0; pass < 1; pass++) { const s = Float32Array.from(raw); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let t = 0, n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue; t += s[yy * N + xx]; n++; } raw[y * N + x] = t / n; } }   /* softened: no speckle where the picture is noisy */
-    const pals = doc.chal?.inkT === 'colour' ? Object.fromEntries([2, 3, 4, 5, 6, 7, 8].map(k => [k, chKCols(D, k)])) : undefined;
-    const RW = Math.max(8, Math.min(260, Math.round(b[2]))), RH = Math.max(8, Math.min(260, Math.round(b[3]))); let rgb;   /* the colour copy: the picture's own shape, a millimetre a cell, sharp */
-    if (pals) { const rc = document.createElement('canvas'); rc.width = RW; rc.height = RH; const rg = rc.getContext('2d'); rg.imageSmoothingQuality = 'high'; rg.drawImage(c, b[0] * CH_PX * sc, b[1] * CH_PX * sc, b[2] * CH_PX * sc, b[3] * CH_PX * sc, 0, 0, RW, RH); const RD = rg.getImageData(0, 0, RW, RH).data, a = new Uint8Array(RW * RH * 3);
-      for (let i = 0; i < RW * RH; i++) { const al = RD[i * 4 + 3] / 255; for (let q = 0; q < 3; q++) a[i * 3 + q] = RD[i * 4 + q] * al + 255 * (1 - al); } rgb = dzChMapEnc(a); }
-    z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1, pals, rgb, rgbW: rgb ? RW : undefined, rgbH: rgb ? RH : undefined }; chQuant(z.sh);
-    chDefN(z); const i = doc.layers.indexOf(l); doc.layers.splice(i + 1, 0, z); l.hide = true; changed(true); select(z.id); chTab.role = 'grad'; await chOpen('role');
-    toast(pals ? 'Value study made, with a palette from the picture\'s colours (plus black and white). The picture is hidden: show it from Layers to compare.' : 'Value study made. The picture is hidden: show it from Layers to compare.', 4000); }
   // The value study's picture, as it shows and cropped to the zone, into the stencil maker at the zone's width.
   /* From a picture: pick one, choose the style, tune the trace with a live preview, then it comes in as graded shapes
      (Outline, Detail lines, one Packing shape per colour) fitted into the tattoo area. The picture is kept, hidden, to
@@ -4240,6 +4224,7 @@ DZ.edit = async (id) => {
     else if (O.style === 'real' && cols.length && typeof ttPalSave === 'function') { const P2 = { id: C.autoPal || 'p' + Date.now().toString(36), name: (doc.name || 'Challenge').slice(0, 30) + ' colours', caps: [...new Set([TT_CAPS[0], ...cols.slice(0, 8), TT_CAPS[TT_CAPS.length - 1]])].map(c => ({ c, s: 1 })) }; ttPalSave(P2); C.autoPal = P2.id; C.pal = P2.id; C.inkT = 'colour'; }
     else if (O.style === 'bg') { C.inkT = 'bg'; C.pal = 'wash'; }
     else if (O.style !== 'colour') C.inkT = 'black';
+    C.style = { colour: 'New School', black: 'Blackwork', fine: 'Fine Line', bg: 'Black and Grey', real: 'Realism' }[O.style] || C.style;
     C.lines = !!(R.details.length || R.outer.length); changed(true); redraw(); toast(`Traced: ${news.length - 1} shapes. The picture is hidden in Layers to compare. Tap any shape to fine-tune its nodes.`, 5000); }
   async function chStencil(l, lines) { const pic = doc.layers.find(o => o.t === 'image' && o.ref === l.sh.src); if (!pic) return toast('The picture this study was made from is gone.', 3000);
     const b = chBox(l), sc = 2, c = document.createElement('canvas'); c.width = Math.round(b[2] * CH_PX * sc); c.height = Math.round(b[3] * CH_PX * sc);
@@ -4265,29 +4250,27 @@ DZ.edit = async (id) => {
     if (!b) { b = document.createElement('div'); b.id = 'dz-charea'; page.appendChild(b); }
     Object.assign(b.style, { left: A.x / 180 * 100 + '%', top: A.y / 130 * 100 + '%', width: A.w / 180 * 100 + '%', height: A.h / 130 * 100 + '%' }); b.dataset.label = `${dzMM(A.w / 10)} × ${dzMM(A.h / 10)} cm`; };
   async function chSetup() { if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const sc = document.createElement('script'); sc.src = 'tattoo.js'; sc.onload = sc.onerror = res; document.head.appendChild(sc); });
-    const C = doc.chal, A0 = C.area, STEPS = [['skin', 'Skin'], ['size', 'Size'], ['style', 'Style'], ['ink', 'Ink'], ['nd', 'Needles'], ['lines', 'Linework'], ['judge', 'Judging'], ['pics', 'Pictures']];
-    const W = { skin: C.skin ?? ttChSkin(), w: A0 ? A0.w / 10 : 9, h: A0 ? A0.h / 10 : 12, show: C.showArea !== false, style: C.style || '', ink: C.inkT || 'bg', lines: C.lines ?? true, needles: C.needles ? [...C.needles] : null,
-      focus: Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C.focus?.[k] ?? v])), refs: [...(C.refs || [])], work: null, study: true, barea: C.bodyArea || '' }; let at = 0;
+    /* Setup: the skin and body area, the size, the needles allowed, where the judging focuses and pictures to follow.
+       The ink and the linework come from the shapes themselves (a trace sets them), so they are not asked. */
+    const C = doc.chal, A0 = C.area, STEPS = [['skin', 'Skin and area'], ['size', 'Size'], ['nd', 'Needles'], ['judge', 'Judging'], ['pics', 'Pictures']];
+    const hasL = doc.layers.some(l => l.role === 'outline' || l.role === 'detail'), W = { skin: C.skin ?? ttChSkin(), w: A0 ? Math.round(A0.w) / 10 : 9, h: A0 ? Math.round(A0.h) / 10 : 12, show: C.showArea !== false, style: C.style || '', ink: C.inkT || 'bg', lines: C.lines ?? hasL, needles: C.needles ? [...C.needles] : null,
+      focus: Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C.focus?.[k] ?? v])), refs: [...(C.refs || [])], barea: C.bodyArea || '' }; let at = 0;
+    if (!W.lines && !C.focus) W.focus.line = 0;
     const o = document.createElement('div'); o.id = 'dz-chsetup'; o.className = 'dz-chsetup';
     const styles = (typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.styles.map(s => s[0]) : ['Realism', 'Portrait', 'Fine Line', 'Blackwork', 'Old School', 'New School', 'Japanese']);
     const ndBtn = (n) => `<button data-wn="${n}" class="${W.needles.includes(n) ? 'on' : ''}">${n}</button>`;
     const body = () => { const k = STEPS[at][0];
       if (k === 'skin') return `<p class="dz-chnote">The skin the challenge is tattooed on. Brown and Deep take no colour.</p><div class="dz-wskins">${TT_SKINS.map(([n, c], i) => `<button data-ws="${i}" class="${W.skin === i ? 'on' : ''}"><i style="background:${c}"></i>${n}</button>`).join('')}</div>
         <div class="gh" style="margin-top:12px">Body area</div><p class="dz-chnote">Sets how much it hurts (pain from quotes): on a painful area the client needs breaks sooner. Leave it to the artist to choose, or fix it.</p>
-        <select class="in" data-warea style="width:100%"><option value="">The artist chooses</option>${(typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.placements : []).map(a => `<option value="${esc(a[0])}" ${W.barea === a[0] ? 'selected' : ''}>${esc(a[0])} · pain ${a[2]} of 5</option>`).join('')}</select>`;
+        <select class="in" data-warea style="width:100%"><option value="">The artist chooses</option>${(typeof TT_TIERS !== 'undefined' ? TT_TIERS : []).map(([tk, tn]) => `<optgroup label="${tn}">${ttAreaAll().filter(a => ttTier(a[2]) === tk).map(a => { const cm = ttAreaCm(a[0]), fit = ttAreaFits(a[0], [W.w + 1, W.h + 1]); return `<option value="${esc(a[0])}" ${W.barea === a[0] ? 'selected' : ''} ${fit ? '' : 'disabled'}>${esc(a[0])}${cm ? ` · ${cm[0]} × ${cm[1]} cm` : ''}${fit ? '' : ' · too small'}</option>`; }).join('')}</optgroup>`).join('')}</select>
+        <p class="dz-chnote">Areas too small for a ${W.w} × ${W.h} cm tattoo (with a centimetre round it) can't be picked.</p>`;
       if (k === 'size') return `<p class="dz-chnote">How big the tattoo is. It is shown as a box on the 18 × 13 cm patch, and can be hidden.</p><div class="dz-wgrid">${CH_SIZES.map(([n, w, h]) => `<button data-wz="${w}x${h}" class="${W.w === w && W.h === h ? 'on' : ''}"><b>${n}</b><small>${w} × ${h} cm</small></button>`).join('')}</div>
         <div class="row" style="gap:8px;margin:10px 0;align-items:center"><span class="muted">Other</span><input class="in" data-wzw type="number" min="1" max="17" step="0.5" value="${W.w}" style="width:80px"><span>×</span><input class="in" data-wzh type="number" min="1" max="12" step="0.5" value="${W.h}" style="width:80px"><span class="muted">cm</span></div>
-        <label class="toggle"><input type="checkbox" data-wshow ${W.show ? 'checked' : ''}><span>Show the tattoo area on the canvas</span></label>`;
-      if (k === 'style') return `<p class="dz-chnote">The style, as in quotes. It sets the starting needles and goes in the brief.</p><div class="dz-wgrid">${styles.map(n => `<button data-wst="${esc(n)}" class="${W.style === n ? 'on' : ''}">${esc(n)}</button>`).join('')}</div>`;
-      if (k === 'ink') { const noC = W.skin >= 4; return `<p class="dz-chnote">Black sets the standard inks, black and grey the grey wash, colour the standard colours. You can change the palette later.</p><div class="dz-wgrid">${[['black', 'Black', 'Solid black only'], ['bg', 'Black and grey', 'Grey wash: black thinned with water'], ['colour', 'Colour', noC ? 'Not on this skin' : 'Mixed from the palette']].map(([v, n, sub]) => `<button data-wi="${v}" class="${W.ink === v ? 'on' : ''}" ${v === 'colour' && noC ? 'disabled' : ''}><b>${n}</b><small>${sub}</small></button>`).join('')}</div>`; }
+        <label class="toggle"><input type="checkbox" data-wshow ${W.show ? 'checked' : ''}><span>Show the tattoo area on the canvas</span></label>${A0 && doc.layers.some(l => l.role) ? '<p class="dz-chnote">A new size scales the shapes already there to fit, from the middle of the area.</p>' : ''}`;
       if (k === 'nd') { W.needles ||= chNdDefault(W); return `<p class="dz-chnote">The needles allowed. Ticked here, they are given to each part as you grade it (liners for lines, the rest for packing and shading), and you can change them per part.</p>${typeof TT_KINDS !== 'undefined' ? Object.entries(TT_KINDS).map(([kind, [, label]]) => `<div class="gh">${label}</div><div class="dz-wnd">${TT_NEEDLES.filter(n => n.kind === kind).map(n => ndBtn(n.id)).join('')}</div>`).join('') : ''}<button class="btn small" data-wnreset style="margin-top:8px">Back to the suggested ones</button>`; }
-      if (k === 'lines') return `<div class="dz-wgrid">${[[true, 'Yes', 'An outline and detail lines to follow'], [false, 'No', 'Shading or packing only, judged without lines']].map(([v, n, sub]) => `<button data-wl="${v ? 1 : 0}" class="${W.lines === v ? 'on' : ''}"><b>${n}</b><small>${sub}</small></button>`).join('')}</div>
-        <p class="dz-chnote" style="margin-top:10px">Even a portrait is worth a little linework: a few lines to shape the face and the main features. Without them, the face can blend into the background and into the skin, and detail is lost as the tattoo ages.</p>`;
       if (k === 'judge') return `<p class="dz-chnote">Where the judging focuses: how much each part counts.</p>${CH_FOCUS.map(([kk, n]) => `<label class="dz-gsz"><span style="width:84px">${n}</span><input type="range" min="0" max="1" step="0.05" data-wf="${kk}" value="${W.focus[kk]}" style="flex:1"><b style="width:40px;text-align:right">${Math.round(W.focus[kk] * 100)}%</b></label>`).join('')}`;
       return `<div class="gh">Reference pictures</div><p class="dz-chnote">Shown beside the skin in the simulator, to follow.</p><div class="dz-wrefs">${W.refs.map((r, i) => `<span><img data-wru="${esc(r.ref)}" alt=""><button data-wrx="${i}" aria-label="Remove">✕</button></span>`).join('')}<button class="btn small" data-wr="refs">From References</button><button class="btn small" data-wr="pf">Portfolio</button><button class="btn small" data-wr="file">This device</button></div>
-        <div class="gh" style="margin-top:12px">A picture to work from</div><p class="dz-chnote">Placed on the canvas, fitted inside the tattoo area, ready to trace or to make a value study from.</p>
-        <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">${W.work ? `<img data-wru="${esc(W.work.ref)}" alt="" style="height:56px;border-radius:6px"><button class="btn small" data-ww="x">Remove</button>` : '<button class="btn small" data-ww="refs">From References</button><button class="btn small" data-ww="pf">Portfolio</button><button class="btn small" data-ww="file">This device</button>'}</div>
-        ${W.work ? `<label class="toggle" style="margin-top:8px"><input type="checkbox" data-wstudy ${W.study ? 'checked' : ''}><span>Make a value study from it (portraits and realism)</span></label>${W.lines && W.study ? `<label class="toggle" style="margin-top:8px"><input type="checkbox" data-wtrace ${W.trace !== false ? 'checked' : ''}><span>Trace lines from it (opens the stencil maker): the lines come back as detail lines to follow</span></label>` : ''}` : ''}`; };
+`; };
     const draw = () => { o.innerHTML = `<div class="card dz-wcard"><div class="dz-whead"><h2>Challenge setup</h2><button class="dz-ib" data-wx aria-label="Close">✕</button></div>
         <div class="dz-chtabs dz-wtabs">${STEPS.map(([k, n], i) => `<button data-wt="${i}" class="${i === at ? 'on' : ''}">${n}</button>`).join('')}</div>
         <div class="dz-wbody">${body()}</div>
@@ -4299,29 +4282,26 @@ DZ.edit = async (id) => {
     o.addEventListener('click', async (e) => { const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
       if (t === o || t.closest('[data-wx]')) { if (!await ask('Close the setup without applying it?')) return; return o.remove(); }
       if (d('wt') != null) { at = +d('wt'); return draw(); } if (t.closest('[data-wb]')) { at = Math.max(0, at - 1); return draw(); } if (t.closest('[data-wn2]')) { at++; return draw(); }
-      if (d('ws') != null) { W.skin = +d('ws'); if (W.skin >= 4 && W.ink === 'colour') W.ink = 'bg'; return draw(); }
+      if (d('ws') != null) { W.skin = +d('ws'); return draw(); }
       if (d('wz')) { [W.w, W.h] = d('wz').split('x').map(Number); return draw(); }
-      if (d('wst')) { W.style = d('wst'); W.needles = null; return draw(); }
-      if (d('wi')) { W.ink = d('wi'); W.needles = null; return draw(); }
       if (d('wn')) { const n = d('wn'); W.needles = W.needles.includes(n) ? W.needles.filter(x => x !== n) : [...W.needles, n]; return draw(); }
       if (t.closest('[data-wnreset]')) { W.needles = chNdDefault(W); return draw(); }
-      if (d('wl') != null) { W.lines = d('wl') === '1'; W.needles = null; if (!W.lines) W.focus.line = 0; else if (!W.focus.line) W.focus.line = 1; return draw(); }
       if (d('wr')) { const r = await pick(d('wr')); if (r) W.refs.push(r); return draw(); } if (d('wrx') != null) { W.refs.splice(+d('wrx'), 1); return draw(); }
-      if (d('ww') === 'x') { W.work = null; return draw(); } if (d('ww')) { W.work = await pick(d('ww')); W.study = /Realism|Portrait|Surrealism/.test(W.style); return draw(); }
       if (t.closest('[data-wdone]')) { W.needles ||= chNdDefault(W); o.remove(); return chSetupApply(W); } });
     o.addEventListener('change', (e) => { const t = e.target;
       if (t.matches('[data-wzw], [data-wzh]')) { W.w = Math.max(1, Math.min(17, +o.querySelector('[data-wzw]').value || W.w)); W.h = Math.max(1, Math.min(12, +o.querySelector('[data-wzh]').value || W.h)); draw(); }
       if (t.matches('[data-warea]')) W.barea = t.value;
-      if (t.matches('[data-wshow]')) W.show = t.checked; if (t.matches('[data-wstudy]')) { W.study = t.checked; draw(); } if (t.matches('[data-wtrace]')) W.trace = t.checked; });
+      if (t.matches('[data-wshow]')) W.show = t.checked; });
     o.addEventListener('input', (e) => { if (e.target.matches('[data-wf]')) { W.focus[e.target.dataset.wf] = +e.target.value; const b = e.target.nextElementSibling; if (b) b.textContent = Math.round(e.target.value * 100) + '%'; } });
     draw(); document.body.appendChild(o); }
-  async function chSetupApply(W) { const C = doc.chal, mmW = W.w * 10, mmH = W.h * 10;
+  async function chSetupApply(W) { const C = doc.chal, mmW = W.w * 10, mmH = W.h * 10, old = C.area;
     C.skin = W.skin; doc.bg = { ...doc.bg, c: TT_SKINS[W.skin][1] }; C.area = { x: (180 - mmW) / 2, y: (130 - mmH) / 2, w: mmW, h: mmH }; C.showArea = W.show;
-    C.style = W.style || null; C.inkT = W.ink; C.pal = W.ink === 'bg' ? 'wash' : 'default'; C.lines = W.lines; C.needles = W.needles; C.focus = W.focus; C.refs = W.refs; C.bodyArea = W.barea || null; C.setup = true;
-    if (W.work) { const A = C.area, k0 = Math.min(A.w / 1, A.h / W.work.ar) * CH_PX, w = A.w * CH_PX, h = w * W.work.ar, fit = h > A.h * CH_PX ? A.h * CH_PX / h : 1;
-      const L = { id: dzId(), t: 'image', ref: W.work.ref, w: w * fit, h: h * fit, op: 1, rot: 0, name: 'Picture to work from' }; L.x = (A.x + A.w / 2) * CH_PX - L.w / 2; L.y = (A.y + A.h / 2) * CH_PX - L.h / 2; void k0;
-      doc.layers.push(L); changed(true); chAreaDraw(); if (W.study) { select(L.id); await chStudy(L); const z = layer(); if (W.lines && W.trace !== false && z?.sh?.src) return chStencil(z, true); } else select(L.id); }
-    else { changed(true); chAreaDraw(); }
+    C.needles = W.needles; C.focus = W.focus; C.refs = W.refs; C.bodyArea = W.barea || null; C.setup = true; if (!C.inkT) { C.inkT = W.ink; C.pal = C.pal || (W.ink === 'bg' ? 'wash' : 'default'); }
+    if (old && (Math.abs(old.w - mmW) > 0.5 || Math.abs(old.h - mmH) > 0.5 || Math.abs(old.x - C.area.x) > 0.5 || Math.abs(old.y - C.area.y) > 0.5)) {   /* the shapes follow the area: scaled from its middle, keeping their shape */
+      const k = Math.min(mmW / old.w, mmH / old.h), ocx = (old.x + old.w / 2) * CH_PX, ocy = (old.y + old.h / 2) * CH_PX, ncx = (C.area.x + mmW / 2) * CH_PX, ncy = (C.area.y + mmH / 2) * CH_PX;
+      for (const l of doc.layers) { l.x = ncx + (l.x - ocx) * k; l.y = ncy + (l.y - ocy) * k; l.w *= k; if (l.h != null) l.h *= k; if (l.fs) l.fs *= k;
+        const S = l.sh?.stencil; if (S?.box) S.box = [(ncx + (S.box[0] * CH_PX - ocx) * k) / CH_PX, (ncy + (S.box[1] * CH_PX - ocy) * k) / CH_PX, S.box[2] * k, S.box[3] * k].map(v => Math.round(v * 100) / 100); } }
+    changed(true); redraw(); chAreaDraw();
     toast('Challenge set up. Change any of it from the Challenge menu, or Setup again.', 3500); }
   setTimeout(() => { try { if (doc.chal) { chAreaDraw(); if (doc.chal.setup === false) chStart(); } } catch {} }, 500);
   /* A blank challenge starts by asking: from a picture (traced into shapes), or blank; then the setup. */
