@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 431;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 432;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7593,6 +7593,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 432, when: '2026-11-14T02:00', added: ['Magnums now wear the skin harder, and round shaders get some slack.', 'Try again and Start over bring back a fresh, unworn stencil.'],
+    test: ['Pack with a magnum on a Hard area. Does overworking it now redden and hurt?', 'Fade the stencil, then press Try again. Is the stencil back in full?'] },
   { build: 431, when: '2026-11-14T01:00', added: ['Far fewer red flashes: swelling flashes once per patch until it settles, and at most every 6 seconds.'],
     test: ['Pack a painful area. Do the flashes now only come now and then?'] },
   { build: 430, when: '2026-11-14T00:00', added: ['Lesson and challenge stats now include the body area and level, the client pain over time, red flashes, how much skin was red or swollen, and scrubbing.'],
