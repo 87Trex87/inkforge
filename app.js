@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 418;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 419;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7589,6 +7589,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 419, when: '2026-11-13T00:00', added: ['Normal mode now has the pain meter, red flashes and pain map too. The client never taps out, but they will let you know.', 'The Stats button at the top shows the body area, pain now and worst, and how much skin is red, swollen or overworked.'],
+    test: ['In a normal piece, overwork one spot. Does it flash red and warn you without ending anything?', 'Open Stats at the top. Do the pain and skin bars match what you see?'] },
   { build: 418, when: '2026-11-12T23:00', added: ['Challenge reports now have the heat map, like lessons.', 'A pain map in the meter shows how sore each patch is: blue calm, violet sore, pink very sore.', 'The screen flashes red when the client winces, spikes or the skin swells.'],
     test: ['Finish a challenge. Can you switch to the heat map on the report?', 'Overwork a patch. Does the screen flash red, and does the pain map show it pink?'] },
   { build: 417, when: '2026-11-12T22:00', added: ['A sore patch only relaxes to half its worst pain and flares up faster next time.', 'Skin damage spreads evenly across the needle, so big magnums redden and swell skin sooner.'],
