@@ -290,7 +290,8 @@ const TT_TROPHIES = [
   { id: 'first', tier: 'bronze', name: 'First ink', desc: 'Finish any challenge.', test: (a) => TT_CH.some(c => a.pb[c.id]) },
   { id: 'medal', tier: 'bronze', name: 'On the podium', desc: 'Win a medal on any challenge.', test: (a) => TT_CH.some(c => ttBest(a, c.id) >= 60) },
   ...TT_HUB.map(([k, n]) => ({ id: 'm-' + k, tier: 'silver', name: k === 'c1' ? 'Line master' : 'Pack and shade master', desc: `Gold on every ${n.replace(/^.*: /, '').toLowerCase()} challenge.`, test: (a) => ttHubCh(k).every(c => ttBest(a, c.id) >= 90) })),
-  { id: 'maker', tier: 'silver', name: 'Challenge maker', desc: 'Make your own challenge with at least 8 × 8 cm of work to judge, add it to My challenges and score gold on it.', test: (a) => Object.entries(a.pb).some(([k, p]) => k.startsWith('u-') && p.best >= 90 && p.size && p.size[0] * p.size[1] >= 64 && Math.min(...p.size) >= 6) },
+  { id: 'maker', tier: 'bronze', name: 'Challenge maker', desc: 'Make your own challenge in the design studio and finish it in the simulator.', test: (a) => Object.entries(a.pb).some(([k, p]) => k.startsWith('u-') && p.tries) },
+  { id: 'maker-gold', tier: 'silver', name: 'Master maker', desc: 'Score gold on your own challenge with at least 8 × 8 cm of work to judge.', test: (a) => Object.entries(a.pb).some(([k, p]) => k.startsWith('u-') && p.best >= 90 && p.size && p.size[0] * p.size[1] >= 64 && Math.min(...p.size) >= 6) },
   { id: 'all', tier: 'gold', name: 'Completionist', desc: 'Gold on every challenge.', test: (a) => TT_CH.every(c => ttBest(a, c.id) >= 90) }
 ];
 TT.aw = {
