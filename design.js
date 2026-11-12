@@ -134,7 +134,12 @@ async function dzChShade(x, doc, l, scale) { const sh = l.sh || {}, outs = doc.l
   const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], res = 0.2, cw = Math.max(1, Math.ceil(b[2] / res)), chh = Math.max(1, Math.ceil(b[3] / res));
   const c = document.createElement('canvas'); c.width = cw; c.height = chh; const g = c.getContext('2d'), im = g.createImageData(cw, chh), D = im.data;
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, CS = (sh.cols?.length ? sh.cols : ['#b3261e', '#f2c21b']).map(chHexRGB); if (CS.length < 2) CS.push(CS[0]);
+  const RGB = sh.rgb && sh.palC?.length > 1 ? Uint8Array.from(atob(sh.rgb), ch => ch.charCodeAt(0)) : null, RN = sh.rgbN || 80, PC = (sh.palC || []).map(chHexRGB);   /* a colour value study: the picture in the palette's colours */
   for (let j = 0; j < chh; j++) for (let i = 0; i < cw; i++) { const v = dzChAt(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b), k = (j * cw + i) * 4;
+    if (RGB) { const u = Math.max(0, Math.min(RN - 1, (i + 0.5) / cw * RN - 0.5)), w2 = Math.max(0, Math.min(RN - 1, (j + 0.5) / chh * RN - 0.5)), i0 = Math.floor(u), j0 = Math.floor(w2), i1 = Math.min(RN - 1, i0 + 1), j1 = Math.min(RN - 1, j0 + 1), fu = u - i0, fv = w2 - j0;
+      const px = [0, 1, 2].map(q => ((RGB[(j0 * RN + i0) * 3 + q] * (1 - fu) + RGB[(j0 * RN + i1) * 3 + q] * fu) * (1 - fv) + (RGB[(j1 * RN + i0) * 3 + q] * (1 - fu) + RGB[(j1 * RN + i1) * 3 + q] * fu) * fv));
+      let a1 = 0, a2 = 0, d1 = 1e9, d2 = 1e9; PC.forEach((c, n) => { const dd = (c[0] - px[0]) ** 2 + (c[1] - px[1]) ** 2 + (c[2] - px[2]) ** 2; if (dd < d1) { d2 = d1; a2 = a1; d1 = dd; a1 = n; } else if (dd < d2) { d2 = dd; a2 = n; } });
+      const t = Math.max(0, Math.min(0.5, 0.5 - (Math.sqrt(d2) - Math.sqrt(d1)) / 40)); for (let q = 0; q < 3; q++) D[k + q] = PC[a1][q] * (1 - t) + PC[a2][q] * t; D[k + 3] = 255; continue; }
     if (sh.tech === 'blend') { const [si, f] = dzChSeg(CS.length, v); for (let q = 0; q < 3; q++) D[k + q] = CS[si][q] + (CS[si + 1][q] - CS[si][q]) * f; D[k + 3] = 255; continue; } D[k] = D[k + 1] = D[k + 2] = 20; D[k + 3] = sh.tech === 'stipple' ? (rnd() < v * 0.9 ? 235 : 0) : v * 255; }
   g.putImageData(im, 0, 0);
   x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); if (outs.length) { const O = new Path2D(); for (const o of outs) O.addPath(dzChPath(o)); x.clip(O); } x.clip(dzChPath(l));
@@ -4004,7 +4009,7 @@ DZ.edit = async (id) => {
   const chAutoPal = (sh) => { const C = doc.chal; if (!C || C.inkT !== 'colour' || !sh.pals || typeof ttPalSave !== 'function') return;
     const K = Math.min(8, Math.max(2, Math.round(sh.levels || 5))), cols = sh.pals[K]; if (!cols?.length) return;
     const P = { id: C.autoPal || 'p' + Date.now().toString(36), name: (doc.name || 'Challenge').slice(0, 30) + ' colours', caps: [TT_CAPS[0], ...cols, TT_CAPS[TT_CAPS.length - 1]].map(c => ({ c, s: 1 })) };
-    ttPalSave(P); C.autoPal = P.id; C.pal = P.id; };
+    ttPalSave(P); C.autoPal = P.id; C.pal = P.id; sh.palC = P.caps.map(c => c.c); };
   /* The picture's colours averaged into K groups (k-means from evenly spaced shades), darkest first; ones too close to
      black or white are left to those caps. */
   const chKCols = (D, K) => { const px = []; for (let i = 0; i < D.length; i += 4) if (D[i + 3] > 128) px.push([D[i], D[i + 1], D[i + 2]]); if (px.length < K) return [];
@@ -4023,7 +4028,9 @@ DZ.edit = async (id) => {
     if (hi > lo) for (let i = 0; i < N * N; i++) raw[i] = Math.max(0, Math.min(255, (raw[i] - lo) / (hi - lo) * 255));   /* stretched so the picture's darkest is the darkest step */
     for (let pass = 0; pass < 2; pass++) { const s = Float32Array.from(raw); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let t = 0, n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue; t += s[yy * N + xx]; n++; } raw[y * N + x] = t / n; } }   /* softened: no speckle where the picture is noisy */
     const pals = doc.chal?.inkT === 'colour' ? Object.fromEntries([2, 3, 4, 5, 6, 7, 8].map(k => [k, chKCols(D, k)])) : undefined;
-    z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1, pals }; chQuant(z.sh);
+    let rgb; if (pals) { const RN = 80, rc = document.createElement('canvas'); rc.width = rc.height = RN; const rg = rc.getContext('2d'); rg.filter = 'blur(0.6px)'; rg.drawImage(m, 0, 0, RN, RN); const RD = rg.getImageData(0, 0, RN, RN).data, a = new Uint8Array(RN * RN * 3);
+      for (let i = 0; i < RN * RN; i++) { const al = RD[i * 4 + 3] / 255; for (let q = 0; q < 3; q++) a[i * 3 + q] = RD[i * 4 + q] * al + 255 * (1 - al); } rgb = dzChMapEnc(a); }
+    z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1, pals, rgb, rgbN: rgb ? 80 : undefined }; chQuant(z.sh);
     chDefN(z); const i = doc.layers.indexOf(l); doc.layers.splice(i + 1, 0, z); l.hide = true; changed(true); select(z.id); chTab.role = 'grad'; await chOpen('role');
     toast(pals ? 'Value study made, with a palette from the picture\'s colours (plus black and white). The picture is hidden: show it from Layers to compare.' : 'Value study made. The picture is hidden: show it from Layers to compare.', 4000); }
   // The value study's picture, as it shows and cropped to the zone, into the stencil maker at the zone's width.
