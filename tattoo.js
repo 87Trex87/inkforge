@@ -1497,17 +1497,17 @@ TT.open = async (el, id) => {
   const isMag = () => ['mag', 'soft'].includes(TT_NEEDLES.find(n => n.id === st.needle)?.kind);
   const rowAng = (ev) => { const tx = ev?.tiltX || 0, ty = ev?.tiltY || 0;
     return st.magTilt && Math.hypot(tx, ty) > 12 ? Math.atan2(ty, tx) + Math.PI / 2 + st.magAng * Math.PI / 180 : st.magAng * Math.PI / 180; };   // leaning: the angle is an offset on the lean
-  /* Scrubbing: shading rushed back and forth, turning sharply (more than 90 degrees) without easing off, instead of a
+  /* Scrubbing: shading rushed back and forth, turning back sharply (about 140 degrees or more within a millimetre) without easing off, so tight ovals still pass, instead of a
      pendulum swing that slows at each end. Fresh it looks saturated; healed, each turn shows as a darker step the shape
      of the needle (a bar for a magnum, a blot for a round shader). Each turn is kept with the piece (meta.scrub: x, y,
      angle, length and width in px, magnum) and drawn only in the healed and 10 year views, only where there is ink. */
   const SCR = Array.isArray(meta.scrub) ? meta.scrub.slice() : [];
   const scrubAdd = (p, ev) => { if (CHEAT || nk === 'liner') return; let s = pen.scr; if (!s || ev.timeStamp - s.t > 150) s = pen.scr = { x: p.x, y: p.y, a: null, v: pen.speed, n: 0, t: ev.timeStamp };
-    s.t = ev.timeStamp; const dx = p.x - s.x, dy = p.y - s.y; if (Math.hypot(dx, dy) < 0.6 * mm) return; const a = Math.atan2(dy, dx); s.x = p.x; s.y = p.y;
+    s.t = ev.timeStamp; const dx = p.x - s.x, dy = p.y - s.y; if (Math.hypot(dx, dy) < 1 * mm) return; const a = Math.atan2(dy, dx); s.x = p.x; s.y = p.y;
     if (s.a != null) { let d = Math.abs(a - s.a); if (d > Math.PI) d = 2 * Math.PI - d;
-      if (d > Math.PI / 2 && pen.speed > 30 && pen.speed > s.v * 0.6 && SCR.length < 5000) { const us = lay.map(q => q.u), vs = lay.map(q => q.v), mg = isMag() ? 1 : 0;
+      if (d > 2.4 && pen.speed > 30 && pen.speed > s.v * 0.75 && SCR.length < 5000) { const us = lay.map(q => q.u), vs = lay.map(q => q.v), mg = isMag() ? 1 : 0;
         SCR.push([Math.round(p.x), Math.round(p.y), mg ? +rowAng(ev).toFixed(2) : 0, Math.round((Math.max(...us) - Math.min(...us) + feel.size) * mm), Math.round((Math.max(...vs) - Math.min(...vs) + feel.size) * mm), mg]);
-        if (EX?.cur) EX.cur.scrub = (EX.cur.scrub || 0) + 1; st.dirty = true; painHit(p, 0.6, pen.foot, 0.035); } }
+        if (EX?.cur) EX.cur.scrub = (EX.cur.scrub || 0) + 1; st.dirty = true; painHit(p, 0.6, pen.foot, 0.008); } }
     s.v = s.v * 0.8 + pen.speed * 0.2; s.a = a; };
   // magFlip: the short row of a magnum leads (the rows swapped end for end), the way most artists hold one
   st.magFlip = Settings.get('tt_magflip', '1') === '1';
