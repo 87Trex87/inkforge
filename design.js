@@ -3994,19 +3994,38 @@ DZ.edit = async (id) => {
      the picture's darkness (96 x 96, kept raw in sh.raw) posterized into value steps between Lightest and Darkest,
      the way a portrait is blocked in. The technique and needle are chosen as for any shading zone, and the map can be
      airbrushed over; changing the steps or range starts again from the picture. The picture is hidden, not deleted. */
-  const chQuant = (sh) => { const R = Uint8Array.from(atob(sh.raw), ch => ch.charCodeAt(0)), K = Math.max(2, Math.round(sh.levels || 5)), dk = sh.dark ?? 0.95, lt = sh.light ?? 0.05;
-    sh.map = dzChMapEnc(Array.from(R, v => { const q = Math.round(v / 255 * (K - 1)) / (K - 1); return 255 * (lt + (dk - lt) * q); })); };
+  /* Values into steps, with a short soft edge between neighbouring steps (not a hard jag), so the study reads smoothly. */
+  const chQuant = (sh) => { const R = Uint8Array.from(atob(sh.raw), ch => ch.charCodeAt(0)), K = Math.max(2, Math.round(sh.levels || 5)), dk = sh.dark ?? 0.95, lt = sh.light ?? 0.05, w = 0.2;
+    sh.map = dzChMapEnc(Array.from(R, v => { const t = v / 255 * (K - 1), f = Math.min(K - 2, Math.floor(t)), r = t - f, u = Math.max(0, Math.min(1, (r - 0.5 + w) / (2 * w))), q = (f + u * u * (3 - 2 * u)) / (K - 1); return 255 * (lt + (dk - lt) * q); }));
+    chAutoPal(sh); };
+  /* Colour challenges: the value study's picture gives the palette, its colours averaged into as many caps as there
+     are value steps (at most 8), with black and white always there for mixing. Kept as one palette of yours, renewed
+     when the steps change. */
+  const chAutoPal = (sh) => { const C = doc.chal; if (!C || C.inkT !== 'colour' || !sh.pals || typeof ttPalSave !== 'function') return;
+    const K = Math.min(8, Math.max(2, Math.round(sh.levels || 5))), cols = sh.pals[K]; if (!cols?.length) return;
+    const P = { id: C.autoPal || 'p' + Date.now().toString(36), name: (doc.name || 'Challenge').slice(0, 30) + ' colours', caps: [TT_CAPS[0], ...cols, TT_CAPS[TT_CAPS.length - 1]].map(c => ({ c, s: 1 })) };
+    ttPalSave(P); C.autoPal = P.id; C.pal = P.id; };
+  /* The picture's colours averaged into K groups (k-means from evenly spaced shades), darkest first; ones too close to
+     black or white are left to those caps. */
+  const chKCols = (D, K) => { const px = []; for (let i = 0; i < D.length; i += 4) if (D[i + 3] > 128) px.push([D[i], D[i + 1], D[i + 2]]); if (px.length < K) return [];
+    const lum = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11, srt = [...px].sort((a, b) => lum(a) - lum(b)); let cs = Array.from({ length: K }, (_, k) => [...srt[Math.floor((k + 0.5) / K * srt.length)]]);
+    for (let it = 0; it < 12; it++) { const s = cs.map(() => [0, 0, 0, 0]); for (const p of px) { let bi = 0, bd = 1e9; cs.forEach((c, k) => { const d = (c[0] - p[0]) ** 2 + (c[1] - p[1]) ** 2 + (c[2] - p[2]) ** 2; if (d < bd) { bd = d; bi = k; } }); const t = s[bi]; t[0] += p[0]; t[1] += p[1]; t[2] += p[2]; t[3]++; }
+      cs = cs.map((c, k) => s[k][3] ? [s[k][0] / s[k][3], s[k][1] / s[k][3], s[k][2] / s[k][3]] : c); }
+    const hex = (c) => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+    return cs.sort((a, b) => lum(a) - lum(b)).filter(c => lum(c) > 28 && lum(c) < 236).map(hex).filter((h, i, a) => a.indexOf(h) === i); };
   async function chStudy(l) { if (!l || l.t !== 'image') return; if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const sc = document.createElement('script'); sc.src = 'tattoo.js'; sc.onload = sc.onerror = res; document.head.appendChild(sc); });
-    const N = 96, sc = Math.min(1, 1600 / Math.max(doc.w, doc.h)), c = document.createElement('canvas'); c.width = Math.round(doc.w * sc); c.height = Math.round(doc.h * sc);
+    const N = 160, sc = Math.min(1, 1600 / Math.max(doc.w, doc.h)), c = document.createElement('canvas'); c.width = Math.round(doc.w * sc); c.height = Math.round(doc.h * sc);
     await dzDraw(c, doc, sc, { only: new Set([l.id]), noBg: true });   /* the picture as it shows: crop, flips and colour adjustments included */
     const z = dzS('rect', l.x, l.y, l.w, l.h, { fill: 'none', rot: l.rot || 0, role: 'shade', nd: '13CM', name: 'Value study' }), P = dzChPts(z).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
     const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], m = document.createElement('canvas'); m.width = m.height = N;
     const g = m.getContext('2d'); g.drawImage(c, b[0] * CH_PX * sc, b[1] * CH_PX * sc, b[2] * CH_PX * sc, b[3] * CH_PX * sc, 0, 0, N, N); const D = g.getImageData(0, 0, N, N).data, raw = new Uint8Array(N * N);
     let lo = 255, hi = 0; for (let i = 0; i < N * N; i++) { const a = D[i * 4 + 3] / 255, lum = (D[i * 4] * 0.3 + D[i * 4 + 1] * 0.59 + D[i * 4 + 2] * 0.11) / 255, v = 255 * a * (1 - lum); raw[i] = v; if (a > 0.5) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
     if (hi > lo) for (let i = 0; i < N * N; i++) raw[i] = Math.max(0, Math.min(255, (raw[i] - lo) / (hi - lo) * 255));   /* stretched so the picture's darkest is the darkest step */
-    z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1 }; chQuant(z.sh);
+    for (let pass = 0; pass < 2; pass++) { const s = Float32Array.from(raw); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let t = 0, n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue; t += s[yy * N + xx]; n++; } raw[y * N + x] = t / n; } }   /* softened: no speckle where the picture is noisy */
+    const pals = doc.chal?.inkT === 'colour' ? Object.fromEntries([2, 3, 4, 5, 6, 7, 8].map(k => [k, chKCols(D, k)])) : undefined;
+    z.sh = { tech: 'wash', grad: 'paint', mapN: N, raw: dzChMapEnc(raw), src: l.ref, levels: 5, dark: 0.95, light: 0.05, ang: 90, bias: 1, pals }; chQuant(z.sh);
     chDefN(z); const i = doc.layers.indexOf(l); doc.layers.splice(i + 1, 0, z); l.hide = true; changed(true); select(z.id); chTab.role = 'grad'; await chOpen('role');
-    toast('Value study made. The picture is hidden: show it from Layers to compare.', 3500); }
+    toast(pals ? 'Value study made, with a palette from the picture\'s colours (plus black and white). The picture is hidden: show it from Layers to compare.' : 'Value study made. The picture is hidden: show it from Layers to compare.', 4000); }
   // The value study's picture, as it shows and cropped to the zone, into the stencil maker at the zone's width.
   async function chStencil(l) { const pic = doc.layers.find(o => o.t === 'image' && o.ref === l.sh.src); if (!pic) return toast('The picture this study was made from is gone.', 3000);
     const b = chBox(l), sc = 2, c = document.createElement('canvas'); c.width = Math.round(b[2] * CH_PX * sc); c.height = Math.round(b[3] * CH_PX * sc);
