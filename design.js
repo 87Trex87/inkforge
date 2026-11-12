@@ -193,6 +193,7 @@ function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 's
   else { T.zones = true; T.focus = Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C0.focus?.[k] ?? v])); }
   if (doc.chal?.pal === 'wash') { T.wash = true; T.ink = 'wash'; }
   if (doc.chal?.needles?.length) T.needles = [...new Set([...doc.chal.needles, ...T.needles])];   /* the setup's needles: ticked and allowed in the simulator */
+  if (doc.chal?.bodyArea) T.area = doc.chal.bodyArea;
   if (doc.chal?.refs?.length) T.refs = doc.chal.refs.map(r => ({ ref: r.ref, ar: r.ar || 1 }));
   const shs = S.filter(l => l.role === 'shade');
   if (shs.length) { T.shades = shs.map(l => { const pts = dzChPts(l), P = pts.flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
@@ -4032,12 +4033,14 @@ DZ.edit = async (id) => {
   async function chSetup() { if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const sc = document.createElement('script'); sc.src = 'tattoo.js'; sc.onload = sc.onerror = res; document.head.appendChild(sc); });
     const C = doc.chal, A0 = C.area, STEPS = [['skin', 'Skin'], ['size', 'Size'], ['style', 'Style'], ['ink', 'Ink'], ['nd', 'Needles'], ['lines', 'Linework'], ['judge', 'Judging'], ['pics', 'Pictures']];
     const W = { skin: C.skin ?? ttChSkin(), w: A0 ? A0.w / 10 : 9, h: A0 ? A0.h / 10 : 12, show: C.showArea !== false, style: C.style || '', ink: C.inkT || 'bg', lines: C.lines ?? true, needles: C.needles ? [...C.needles] : null,
-      focus: Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C.focus?.[k] ?? v])), refs: [...(C.refs || [])], work: null, study: true }; let at = 0;
+      focus: Object.fromEntries(CH_FOCUS.map(([k, , v]) => [k, C.focus?.[k] ?? v])), refs: [...(C.refs || [])], work: null, study: true, barea: C.bodyArea || '' }; let at = 0;
     const o = document.createElement('div'); o.id = 'dz-chsetup'; o.className = 'dz-chsetup';
     const styles = (typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.styles.map(s => s[0]) : ['Realism', 'Portrait', 'Fine Line', 'Blackwork', 'Old School', 'New School', 'Japanese']);
     const ndBtn = (n) => `<button data-wn="${n}" class="${W.needles.includes(n) ? 'on' : ''}">${n}</button>`;
     const body = () => { const k = STEPS[at][0];
-      if (k === 'skin') return `<p class="dz-chnote">The skin the challenge is tattooed on. Brown and Deep take no colour.</p><div class="dz-wskins">${TT_SKINS.map(([n, c], i) => `<button data-ws="${i}" class="${W.skin === i ? 'on' : ''}"><i style="background:${c}"></i>${n}</button>`).join('')}</div>`;
+      if (k === 'skin') return `<p class="dz-chnote">The skin the challenge is tattooed on. Brown and Deep take no colour.</p><div class="dz-wskins">${TT_SKINS.map(([n, c], i) => `<button data-ws="${i}" class="${W.skin === i ? 'on' : ''}"><i style="background:${c}"></i>${n}</button>`).join('')}</div>
+        <div class="gh" style="margin-top:12px">Body area</div><p class="dz-chnote">Sets how much it hurts (pain from quotes): on a painful area the client needs breaks sooner. Leave it to the artist to choose, or fix it.</p>
+        <select class="in" data-warea style="width:100%"><option value="">The artist chooses</option>${(typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.placements : []).map(a => `<option value="${esc(a[0])}" ${W.barea === a[0] ? 'selected' : ''}>${esc(a[0])} · pain ${a[2]} of 5</option>`).join('')}</select>`;
       if (k === 'size') return `<p class="dz-chnote">How big the tattoo is. It is shown as a box on the 18 × 13 cm patch, and can be hidden.</p><div class="dz-wgrid">${CH_SIZES.map(([n, w, h]) => `<button data-wz="${w}x${h}" class="${W.w === w && W.h === h ? 'on' : ''}"><b>${n}</b><small>${w} × ${h} cm</small></button>`).join('')}</div>
         <div class="row" style="gap:8px;margin:10px 0;align-items:center"><span class="muted">Other</span><input class="in" data-wzw type="number" min="1" max="17" step="0.5" value="${W.w}" style="width:80px"><span>×</span><input class="in" data-wzh type="number" min="1" max="12" step="0.5" value="${W.h}" style="width:80px"><span class="muted">cm</span></div>
         <label class="toggle"><input type="checkbox" data-wshow ${W.show ? 'checked' : ''}><span>Show the tattoo area on the canvas</span></label>`;
@@ -4074,12 +4077,13 @@ DZ.edit = async (id) => {
       if (t.closest('[data-wdone]')) { W.needles ||= chNdDefault(W); o.remove(); return chSetupApply(W); } });
     o.addEventListener('change', (e) => { const t = e.target;
       if (t.matches('[data-wzw], [data-wzh]')) { W.w = Math.max(1, Math.min(17, +o.querySelector('[data-wzw]').value || W.w)); W.h = Math.max(1, Math.min(12, +o.querySelector('[data-wzh]').value || W.h)); draw(); }
+      if (t.matches('[data-warea]')) W.barea = t.value;
       if (t.matches('[data-wshow]')) W.show = t.checked; if (t.matches('[data-wstudy]')) W.study = t.checked; });
     o.addEventListener('input', (e) => { if (e.target.matches('[data-wf]')) { W.focus[e.target.dataset.wf] = +e.target.value; const b = e.target.nextElementSibling; if (b) b.textContent = Math.round(e.target.value * 100) + '%'; } });
     draw(); document.body.appendChild(o); }
   async function chSetupApply(W) { const C = doc.chal, mmW = W.w * 10, mmH = W.h * 10;
     C.skin = W.skin; doc.bg = { ...doc.bg, c: TT_SKINS[W.skin][1] }; C.area = { x: (180 - mmW) / 2, y: (130 - mmH) / 2, w: mmW, h: mmH }; C.showArea = W.show;
-    C.style = W.style || null; C.inkT = W.ink; C.pal = W.ink === 'bg' ? 'wash' : 'default'; C.lines = W.lines; C.needles = W.needles; C.focus = W.focus; C.refs = W.refs; C.setup = true;
+    C.style = W.style || null; C.inkT = W.ink; C.pal = W.ink === 'bg' ? 'wash' : 'default'; C.lines = W.lines; C.needles = W.needles; C.focus = W.focus; C.refs = W.refs; C.bodyArea = W.barea || null; C.setup = true;
     if (W.work) { const A = C.area, k0 = Math.min(A.w / 1, A.h / W.work.ar) * CH_PX, w = A.w * CH_PX, h = w * W.work.ar, fit = h > A.h * CH_PX ? A.h * CH_PX / h : 1;
       const L = { id: dzId(), t: 'image', ref: W.work.ref, w: w * fit, h: h * fit, op: 1, rot: 0, name: 'Picture to work from' }; L.x = (A.x + A.w / 2) * CH_PX - L.w / 2; L.y = (A.y + A.h / 2) * CH_PX - L.h / 2; void k0;
       doc.layers.push(L); changed(true); chAreaDraw(); if (W.study) { select(L.id); await chStudy(L); } else select(L.id); }

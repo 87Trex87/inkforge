@@ -1795,3 +1795,12 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 /* Design workspaces: the tools for running a studio are hidden */
 .ws-design .nav-btn[data-view="clients"], .ws-design .nav-btn[data-view="book"], .ws-design [data-biz] { display: none !important; }
 .ws-dsg { background: var(--teal); color: #fff; }
+
+/* Pain meter and the body area */
+.tt-pain { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-top: 4px; } .tt-pain[hidden] { display: none; } .tt-pain span { width: 42px; }
+.tt-pb { flex: 1; height: 7px; border-radius: 4px; background: rgba(127,127,127,.25); overflow: hidden; } .tt-pb b { display: block; height: 100%; width: 0; border-radius: 4px; transition: width .2s, background .4s; }
+.tt-pain em { width: 84px; font-style: normal; text-align: right; color: var(--ink2); }
+.tt-area { border: 1px solid var(--line); background: none; color: inherit; border-radius: 99px; font: 600 10.5px Inter, sans-serif; padding: 2px 8px; white-space: nowrap; } .tt-area i { font-style: normal; color: #e0605a; letter-spacing: -1px; }
+.tt-areas { max-width: 640px; max-height: calc(100vh - 24px); overflow-y: auto; } .tt-areag { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 5px; margin-bottom: 6px; }
+.tt-areag button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 7px 9px; border-radius: 9px; border: 1px solid var(--line); background: none; color: inherit; font: 600 12.5px Inter, sans-serif; text-align: left; }
+.tt-areag button i { font-style: normal; color: #e0605a; font-size: 10px; letter-spacing: -1px; } .tt-areag button.on { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }

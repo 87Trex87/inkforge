@@ -1117,6 +1117,28 @@ TT.open = async (el, id) => {
     for (let i = 0; i < TR.length; i++) { const v = TR[i]; if (v <= 0 || now - THit[i] < HEAL_REST) continue; const fl = Math.max(healFloor(TP[i]), Math.min(0.5, WK[i] * 0.3)); if (v <= fl) continue; const nv = v - (v - fl) * k; TR[i] = nv < 0.005 ? 0 : nv; moved = Math.max(moved, v - nv);
       if (BU[i] && TP[i] < 1) BU[i] = Math.max(0, BU[i] - k * 0.8); }
     if (moved > 0.002) { trDirty = true; if (!pen && st.view === 'work') paint(); } }, 2000);
+  /* Pain (lessons and challenges, not cheat mode). The body area sets how much it hurts: its pain level from quotes
+     (1 to 5) scales how fast the meter rises while the needle is in. Deeper hurts more, and so does skin that has
+     already been worked (the same memory as the skin's wear), so going back over a raw area spikes it sooner. Lifting
+     off lets it settle: quickly during a real break (a couple of seconds or more), slowly while working elsewhere.
+     Wincing, then asking for a break, warn on the way up; at the top the client taps out and the attempt is judged on
+     what was done. Kept with the attempt (EX.cur.pain, painPeak, area). */
+  const PAIN_SENS = [0.55, 0.75, 1, 1.3, 1.65], PAIN_RATE = 0.007;
+  const ttAreas = () => typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.placements : [['Forearm', 'Arms & hands', 2]];
+  const painOn = () => !CHEAT && !!EX?.cur && !EX.done && !EX.cur.scored;
+  const painArea = () => { let T = null; try { T = EX ? exList()[EX.i] : null; } catch {} const n = EX?.cur?.area || T?.area || Settings.get('tt_area', 'Forearm'); return ttAreas().find(a => a[0] === n) || ['Forearm', 'Arms & hands', 2]; };
+  let painT = 0, painTold = 0;
+  const painWord = (v) => v < 0.3 ? 'Relaxed' : v < 0.6 ? 'Uncomfortable' : v < 0.85 ? 'Wincing' : 'Needs a break';
+  function painShow() { const el = $('#tt-pain'); if (!el) return; el.hidden = !painOn(); if (el.hidden) return; const v = Math.min(1, EX.cur.pain || 0), b = el.querySelector('b'), w = el.querySelector('em');
+    b.style.width = (v * 100).toFixed(1) + '%'; b.style.background = `hsl(${Math.round(120 - 120 * v)} 70% 45%)`; w.textContent = painWord(v); }
+  function painHit(q, depth) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = EX.cur; painT = now;
+    c.pain = (c.pain || 0) + dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.2, Math.min(1.6, depth / 0.6)) * (0.5 + 0.7 * Math.min(2, trAt(q)));
+    c.painPeak = Math.max(c.painPeak || 0, c.pain); painShow();
+    if (c.pain >= 1 && !c.tapOut) { c.tapOut = true; toast('The client tapped out. The attempt is judged on what you got done.', 5000); setTimeout(() => { try { exDone(); } catch {} }, 250); }
+    else if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); }
+    else if (c.pain >= 0.6 && painTold < 1) { painTold = 1; toast('The client is wincing: ease off, or work another part for a while.', 3500); } }
+  const painIv = setInterval(() => { try { if (!document.body.contains(stage)) return clearInterval(painIv); if (!painOn() || !EX.cur.pain) return;
+    const rest = performance.now() - painT > 2000; EX.cur.pain = Math.max(0, EX.cur.pain - (rest ? 0.012 : 0.002) * 0.5); if (EX.cur.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
   const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
   // Raw skin: a mottled, bumpy texture of red and pink lumps, made once.
   const patty = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d');
@@ -1519,7 +1541,7 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q); hcAdd(q, pen.foot); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH));   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          painHit(q, depth); trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH));   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * 3 * Math.pow(0.3 / blowSize(), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: too deep, too slow.', 2500); } }
@@ -2281,7 +2303,7 @@ TT.open = async (el, id) => {
   function tally() { const el = $('#tt-tally'); if (!el) return; const c = EX?.cur; if (!c) { el.hidden = true; return; } el.hidden = false; let T = {}; try { T = exList()[EX.i] || {}; } catch { /* the editor is still starting: the lesson list isn't set up yet */ } const free = T.crashFree ?? 0;
     const it = [['Crashes', c.crash || 0, (c.crash || 0) > free], ['Blowouts', c.blow || 0, (c.blow || 0) > (T.maxBlow ?? 0)], ['Overworked', c.over || 0, (c.over || 0) > 0], ['Bumps', c.bumps || 0, (c.bumps || 0) > 0]];
     el.innerHTML = it.map(([n, v, bad]) => `<span class="${bad ? 'bad' : v ? 'warn' : ''}">${n} <b>${v}</b></span>`).join(''); }
-  const chkRow = () => `<div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button><em id="tt-dmginfo">${st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
+  const chkRow = () => `<div class="tt-pain" id="tt-pain" hidden data-tip="How the client is coping: rises while you work (faster on painful areas, deeper, and on raw skin), settles when you lift off. At the top they tap out."><span>Pain</span><div class="tt-pb"><b></b></div><em></em></div><div class="tt-tally" id="tt-tally" hidden></div><div class="tt-chkrow"><button class="tt-peek" data-peek data-tip="Hold to see it healed" aria-label="Hold to see it healed"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="tt-peek ${st.check ? 'on' : ''}" data-chk data-tip="Skin damage map: green is fine, red is damaged. Tap again to carry on tattooing" aria-label="Skin damage map"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button><em id="tt-dmginfo">${st.check ? 'Damage map on' : ''}</em></div>${CHEAT ? `<div class="tt-chkrow"><span class="tt-smlbl">Smooth</span><input type="range" min="0" max="90" step="5" value="${st.smooth}" data-smooth aria-label="Line smoothing"><em>${st.smooth}%</em></div>` : ''}`;
   /* The eye: held down, the piece shows as healed; let go and it is back as it was. */
   let peekWas = null; const peekEnd = () => { if (peekWas == null) return; st.view = peekWas; peekWas = null; st.viewC = null; drawView(); paint(); meterEl.querySelector('[data-peek]')?.classList.remove('on'); };
   meterEl.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-peek]'); if (!b || peekWas != null) return; e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch {} peekWas = st.view; st.view = 'healed'; st.viewC = null; b.classList.add('on'); drawView(); paint(); });
@@ -2301,7 +2323,7 @@ TT.open = async (el, id) => {
   const meterBuild = () => { meterBands(); meterEl.innerHTML = MTR.map(([key, name, lo, hi, g0, g1, bad, , low]) => { const P = (v) => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
     const badZ = low ? `left:0;width:${P(bad)}%` : `left:${P(bad)}%;right:0`;
     return `<div class="tt-mr" data-m="${key}"><span>${name}</span><div class="tt-mb"><i class="bad" style="${badZ}"></i><i class="ok" style="left:${P(g0)}%;width:${P(g1) - P(g0)}%"></i><b></b></div><em></em></div>`; }).join('') + chkRow(); tally(); };
-  meterBuild(); tally(); if (CHEAT) meterEl.classList.add('cheat');   // no skin damage to show
+  meterBuild(); tally(); painShow(); if (CHEAT) meterEl.classList.add('cheat');   // no skin damage to show
   const WHIP_GAP = 0.7;
   const meter = (m) => {
     const gr = meterEl.querySelector('[data-m="gap"]');
@@ -3361,7 +3383,8 @@ TT.open = async (el, id) => {
   const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
-    if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0 }; }
+    if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
+    setTimeout(painShow);
     exStencil(T); st.hide.delete('stencil'); st.op.stencil = 0.6;
     (T.refs || []).forEach((R, k) => refNew({ gen: T.id, ref: R.ref, ar: R.ar || 1, w: 180, op: 1, x: 110 + k * 24, y: 170 + k * 40 }));   /* the challenge's own reference pictures */
     for (const S of T.stencils || []) Media.url(S.ref).then(u => { if (!u) return; const im = new Image(); im.onload = () => { L.stencil.getContext('2d').drawImage(im, S.box[0] * mm, S.box[1] * mm, S.box[2] * mm, S.box[3] * mm); touched.add('stencil'); paint(); }; im.src = u; });   /* a value study's stencil from the stencil maker */
@@ -3384,6 +3407,9 @@ TT.open = async (el, id) => {
   const colAt = (i) => { let r = 0, g2 = 0, b = 0, w = 0; for (const key of INK) { const D = imgd[key].data, a = D[i + 3] / 255; if (!a) continue; r += D[i] * a; g2 += D[i + 1] * a; b += D[i + 2] * a; w += a; } return w ? [r / w, g2 / w, b / w] : null; };
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 441;
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  /* Mess: the share of ink well outside the line or shape scales a score down. Up to `free` (the odd stray dot) costs
+     nothing, so clean attempts score as they always did; by free + 40% it is worth nothing, however well the rest went. */
+  const messGate = (sp, free) => 1 - clamp01((sp - free) / 0.4);
   const lineScore = (draw, coreW, covEase = 1, skip = null) => {   // covEase: the share of the strip that counts as full coverage
     coreW = Math.min(coreW, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35));   // never wider than the needle in use can make
     const core = maskOf(draw, false, coreW), band = maskOf(draw, false, coreW + 2.2), mid = maskOf(draw, false, Math.min(0.2, coreW * 0.4));
@@ -3394,7 +3420,7 @@ TT.open = async (el, id) => {
       if (d > 0.2) { ink++; if (band[i] < 30) out++; } }
     const mean = sum / Math.max(1, mn), sd = Math.sqrt(Math.max(0, sum2 / Math.max(1, mn) - mean * mean));
     const cov = Math.min(1, cin / Math.max(1, cn) / covEase), spill = out / Math.max(1, ink), cons = 1 - clamp01(sd / 0.8);
-    return { score: Math.round(100 * cov * (0.55 + 0.25 * (1 - spill) + 0.2 * cons)), coverage: Math.round(cov * 100), spill: Math.round(spill * 100), evenness: Math.round(cons * 100) };
+    return { score: Math.round(100 * cov * (0.55 + 0.25 * (1 - spill) + 0.2 * cons) * messGate(spill, 0.05)), coverage: Math.round(cov * 100), spill: Math.round(spill * 100), evenness: Math.round(cons * 100) };
   };
   const boxIdx = (b) => { const x0 = Math.round(b[0] * mm), y0 = Math.round(b[1] * mm), x1 = Math.round((b[0] + b[2]) * mm), y1 = Math.round((b[1] + b[3]) * mm); return { x0, y0, x1, y1 }; };
   const spillOut = (inside, margin) => { let ink = 0, out = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, d = densAt(i); if (d > 0.2) { ink++; if (!inside(x / mm, y / mm, margin)) out++; } } return out / Math.max(1, ink); };
@@ -3441,7 +3467,7 @@ TT.open = async (el, id) => {
     // Outline: how steady the 5RL's depth stayed (real lining varied 22%, an unsteady one 41%), and how straight the square's outer edge came out. Not lining with the 5RL scores nothing.
     const l5 = EX.cur?.tm?.by?.['5RL'], cvD = lineCv(l5), offs = []; for (let s = 1; s < b[2] - 1; s += 0.25) for (const [ox, oy, ux, uy] of [[b[0] + s, b[1], 0, -1], [b[0] + s, b[1] + b[3], 0, 1], [b[0], b[1] + s, -1, 0], [b[0] + b[2], b[1] + s, 1, 0]]) { for (let o = 2.5; o >= -1; o -= 1 / mm) { const X = Math.round((ox + ux * o) * mm), Y = Math.round((oy + uy * o) * mm); if (X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.2) { offs.push(o); break; } } }
     const om = offs.reduce((a, v) => a + v, 0) / Math.max(1, offs.length), osd = Math.sqrt(offs.reduce((a, v) => a + (v - om) * (v - om), 0) / Math.max(1, offs.length)), outl = offs.length ? clamp01(1 - (cvD - 0.2) / 0.4) * clamp01(1 - (osd - 0.1) / 0.5) : 0;
-    return { score: Math.round(100 * cov * (0.2 * sat + 0.65 * cons + 0.15 * (1 - sp)) * (0.5 + 0.5 * ctrl) * (0.3 + 0.7 * tech) * (0.9 + 0.1 * outl)), technique: Math.round(tech * 100), outline: Math.round(outl * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100) }; };
+    return { score: Math.round(100 * cov * (0.2 * sat + 0.65 * cons + 0.15 * (1 - sp)) * (0.5 + 0.5 * ctrl) * (0.3 + 0.7 * tech) * (0.9 + 0.1 * outl) * messGate(sp, 0.08)), technique: Math.round(tech * 100), outline: Math.round(outl * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100) }; };
   /* Colour packing in a circle: the same judging as Solid black, plus whether the colour is the mix asked for and
      whether it would heal solid (the same thin-spot check the Healed and 10 years views use). The line is the liner's
      steadiness and how round the outer edge came out. */
@@ -3456,7 +3482,7 @@ TT.open = async (el, id) => {
     const rs = EX.cur?.tm?.by?.[T.packNeedle], same = rs?.abs ? rs.net / rs.abs : 0, flips = rs?.mm ? rs.flips / rs.mm * 10 : 9, tech = clamp01((same - 0.3) / 0.5) * clamp01(1 - (flips - 0.2) / 0.6);
     const ln = EX.cur?.tm?.by?.[T.liner], cvD = lineCv(ln), offs = []; for (let a = 0; a < 360; a += 2) { const ca = Math.cos(a * Math.PI / 180), sa = Math.sin(a * Math.PI / 180); for (let o = 2.5; o >= -1; o -= 1 / mm) { const X = Math.round((cx + (r + o) * ca) * mm), Y = Math.round((cy + (r + o) * sa) * mm); if (X >= 0 && Y >= 0 && X < W && Y < H && densAt((Y * W + X) * 4) > 0.2) { offs.push(o); break; } } }
     const om = offs.reduce((a, v) => a + v, 0) / Math.max(1, offs.length), osd = Math.sqrt(offs.reduce((a, v) => a + (v - om) * (v - om), 0) / Math.max(1, offs.length)), outl = offs.length ? clamp01(1 - (cvD - 0.2) / 0.4) * clamp01(1 - (osd - 0.1) / 0.5) : 0;
-    return { score: Math.round(100 * cov * (0.15 * sat + 0.45 * cons + 0.15 * col + 0.1 * (1 - sp) + 0.15 * heal) * (0.5 + 0.5 * ctrl) * (0.3 + 0.7 * tech) * (0.85 + 0.15 * outl)), technique: Math.round(tech * 100), outline: Math.round(outl * 100), colour: Math.round(col * 100), healing: Math.round(heal * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100), yourColour: ttToHex(avg.map(v => v / 255)) }; };
+    return { score: Math.round(100 * cov * (0.15 * sat + 0.45 * cons + 0.15 * col + 0.1 * (1 - sp) + 0.15 * heal) * (0.5 + 0.5 * ctrl) * (0.3 + 0.7 * tech) * (0.85 + 0.15 * outl) * messGate(sp, 0.08)), technique: Math.round(tech * 100), outline: Math.round(outl * 100), colour: Math.round(col * 100), healing: Math.round(heal * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100), yourColour: ttToHex(avg.map(v => v / 255)) }; };
   /* Stipple shading, a first version to tune against real attempts. The rectangle is cut into ten bands along its
      length: the gradient is how far apart the two ends are, whether it keeps going one way, and whether any one step
      is a hard jump. Dots: how little of it went solid. Inside: ink past the line and whips that started or finished
@@ -3528,7 +3554,7 @@ TT.open = async (el, id) => {
       for (let s = 2; s < L - 2; s += 0.5) { const ox = p1[0] + ex * s / L, oy = p1[1] + ey * s / L; for (let o = 2.5; o >= -1; o -= 1 / mm) { const X = Math.round((ox + nx * o) * mm), Y2 = Math.round((oy + ny * o) * mm); if (X >= 0 && Y2 >= 0 && X < W && Y2 < H && densAt((Y2 * W + X) * 4) > 0.2) { offs.push(o); break; } } } }
     const om = offs.reduce((a, v) => a + v, 0) / Math.max(1, offs.length), osd = Math.sqrt(offs.reduce((a, v) => a + (v - om) * (v - om), 0) / Math.max(1, offs.length)), outl = offs.length ? clamp01(1 - (cvD - 0.2) / 0.4) * clamp01(1 - (osd - 0.1) / 0.5) : 0;
     const volts = ln ? clamp01(1 - (Math.abs((EX.cur?.lineV || 0) - T.lineVolt[0]) - T.lineVolt[1]) / 0.6) : 0;
-    return { score: Math.round(100 * cov * (0.15 * sat + 0.25 * col + 0.25 * blend + 0.25 * heal + 0.1 * (1 - sp)) * (0.8 + 0.2 * outl) * (0.9 + 0.1 * volts)), outline: Math.round(outl * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), colour: Math.round(col * 100), blend: Math.round(blend * 100), healing: Math.round(heal * 100), voltage: Math.round(volts * 100), spill: Math.round(sp * 100), bandColours: avg.map(c => c ? ttToHex(c.map(v => v / 255)) : '-').join(' ') }; };
+    return { score: Math.round(100 * cov * (0.15 * sat + 0.25 * col + 0.25 * blend + 0.25 * heal + 0.1 * (1 - sp)) * (0.8 + 0.2 * outl) * (0.9 + 0.1 * volts) * messGate(sp, 0.1)), outline: Math.round(outl * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), colour: Math.round(col * 100), blend: Math.round(blend * 100), healing: Math.round(heal * 100), voltage: Math.round(volts * 100), spill: Math.round(sp * 100), bandColours: avg.map(c => c ? ttToHex(c.map(v => v / 255)) : '-').join(' ') }; };
   /* Made challenges (Challenge maker), zone by zone: the outline and detail lines judged as lines, and a packing zone
      as the packing lessons judge it (saturation, coverage, even passes, the colour asked for, healing, the packing
      needle's motion), inside its own shape. The parts are weighted by the challenge's focus sliders. */
@@ -3550,7 +3576,10 @@ TT.open = async (el, id) => {
       parts.push([F.pack, pq], [F.colour, col], [F.heal, heal], [F.tech, tech * (0.5 + 0.5 * ctrl)]);
       Object.assign(out, { packing: Math.round(pq * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), colour: Math.round(col * 100), healing: Math.round(heal * 100), technique: Math.round(tech * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100), yourColour: ttToHex(avg.map(v => v / 255)) }); }
     (T.shades || []).forEach((Z, zi) => { const z = shadeZone(Z, T), nm = T.shades.length > 1 ? ' ' + (zi + 1) : ''; parts.push([F.shade ?? 1, z.score / 100]); for (const [k, v] of Object.entries(z)) out[(k === 'score' ? 'shading' : k) + nm] = v; });
-    const ws = parts.reduce((t, [w]) => t + w, 0); out.score = ws ? Math.round(100 * parts.reduce((t, [w, v]) => t + w * v, 0) / ws) : ln.score; return out; };
+    const zs = [...(T.packPts ? [T.packPts] : []), ...(T.shades || []).map(z => z.pts)], zFill = zs.length ? maskOf(zonePath(zs.flat()), true) : null, zGrow = zs.length ? maskOf(zonePath(zs.flat()), false, 2.4) : null, lBand = hasL ? maskOf(T.path, false, 3.2) : null;
+    let inkN = 0, outN = 0; for (let i = 3; i < (zFill || lBand || []).length; i += 8) { if (densAt(i - 3) <= 0.2) continue; inkN++; if (!(zFill && (zFill[i] > 128 || zGrow[i] > 128)) && !(lBand && lBand[i] > 128)) outN++; }
+    const spl = outN / Math.max(1, inkN); out.mess = Math.round(spl * 100);
+    const ws = parts.reduce((t, [w]) => t + w, 0); out.score = Math.round((ws ? 100 * parts.reduce((t, [w, v]) => t + w * v, 0) / ws : ln.score) * messGate(spl, 0.06)); return out; };
   /* A shading zone, in ten bands along its gradient (dzChP, shared with the design studio). Tones (stipple, whip,
      grey wash): the shape of the gradient against the one asked for (scaled to your own darkest, as the gradient
      challenges are), reaching the darkest asked, no sudden steps between bands, and each band even across.
@@ -3640,9 +3669,9 @@ TT.open = async (el, id) => {
     const strokes = T.linePhase ? (EX.cur?.lineN || 0) : T.strokeNeedle ? (EX.cur?.tm?.by?.[T.strokeNeedle]?.strokes || 0) : Object.values(EX.cur?.tm?.by || {}).reduce((a, n) => a + (n.strokes || 0), 0), extraStrokes = T.maxStrokes ? Math.max(0, strokes - T.maxStrokes) : 0;
     const allow = exAllowed(T), byN = EX.cur?.tm?.by || {}; let mmAll = 0, mmBad = 0; const wrongIds = []; for (const [id, r] of Object.entries(byN)) { mmAll += r.mm || 0; if (allow.size && !allow.has(id) && r.strokes) { mmBad += r.mm || 0; wrongIds.push(id); } }
     const wrongPts = wrongIds.length ? Math.min(25, 5 + Math.round(mmBad / Math.max(1e-6, mmAll) * 40)) : 0;
-    const total0 = empty ? 0 : Math.max(0, Math.round(sc.score * 0.85 + skin * 0.15 - Math.min(15, blow * 0.5) - pen.pts - extraStrokes * 3 - crashPts - wrongPts)), total = blowFail || crashFail || gradFail || packFail || washFail || laserFail ? Math.min(59, total0) : total0;
+    const total0 = empty ? 0 : Math.max(0, Math.round(sc.score * (0.85 + 0.15 * skin / 100) - Math.min(15, blow * 0.5) - pen.pts - extraStrokes * 3 - crashPts - wrongPts)), total = blowFail || crashFail || gradFail || packFail || washFail || laserFail ? Math.min(59, total0) : total0;
     const th = composite(Math.min(1, 220 / W)).toDataURL('image/jpeg', 0.7), c = EX.cur || {};
-    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, blowFail, crashFail, crashPts, laserFail, gradFail, packFail, washFail, crashes, strokesUsed: strokes, extraStrokes, wrongIds, wrongPts, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
+    const res = { id: T.id, title: T.title, cat: T.cat, total, parts: sc, skin: empty ? null : skin, empty, blowFail, crashFail, crashPts, laserFail, gradFail, packFail, washFail, crashes, strokesUsed: strokes, extraStrokes, wrongIds, wrongPts, area: EX.cur?.area, painPeak: Math.round(Math.min(1, EX.cur?.painPeak || 0) * 100), tapOut: !!EX.cur?.tapOut, traumaMax: +mx.toFixed(2), traumaAvg: +(n ? sum / n : 0).toFixed(2), blowouts: blow, undos: EX.cur?.undos || 0, lasers: EX.cur?.laser || 0, penalty: empty ? 0 : pen.pts, thumb: th,
       stats: { pressure: statOf(c.p || []), speed: statOf(c.v || []), depth: statOf(c.d || []), tilt: statOf(c.t || []), strokes: c.strokes || 0, dips: c.dips || 0, seconds: c.t0 ? Math.round((c.t1 - c.t0) / 1000) : 0 } };
     if (EX.cur) EX.cur.scored = true;
     EX.res = EX.res.filter(r => r.id !== T.id); EX.res.push(res); st.dirty = true; exBar(res);
@@ -3655,7 +3684,7 @@ TT.open = async (el, id) => {
     if (EX.done) { b.innerHTML = `<div class="tt-exh"><b>Exam finished</b></div><div class="row" style="gap:6px"><button class="btn small primary" data-ex="report">Report card</button></div>`; return; }
     const T = exList()[EX.i];
     if (EX.mode === 'ch') { const p = TT.aw.get().pb[T.id];
-      b.innerHTML = `<div class="tt-exh"><b>${T.title}</b>${ttStars(T.diff)}<span class="muted" style="font-size:11px">${p ? 'Best ' + p.best : ''}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      const ar = painArea(); b.innerHTML = `<div class="tt-exh"><b>${T.title}</b>${ttStars(T.diff)}<button class="tt-area" data-ex="area" data-tip="Where on the body: sets how much it hurts${T.area ? ' (set by this challenge)' : '. Change it before you start'}">${esc(ar[0])} <i>${'●'.repeat(ar[2])}${'○'.repeat(5 - ar[2])}</i></button><span class="muted" style="font-size:11px">${p ? 'Best ' + p.best : ''}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
         <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
         ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${EX.lesson ? 'Grade ' + ttGrade(res.total) : ttMedal(res.total)?.[2] || 'No medal'}</span></div>
           <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button><span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
@@ -3675,6 +3704,11 @@ TT.open = async (el, id) => {
     if (a === 'fold') { EX.fold = !EX.fold; return exBar(); }
     if (a === 'done') { ttBusy('Scoring your work', 0.1); await ttFrame(); return exDone(); }
     if (a === 'retry') { if (!await ask('Start this challenge again on clean skin?')) return; return exStart(true); }
+    if (a === 'area') { const T = exList()[EX.i]; if (T?.area) return toast(`This challenge is on the ${T.area.toLowerCase()}.`, 2000); if (EX.cur?.strokes) return toast('The area is set once you start. Start over to change it.', 2500);
+      const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99; const A = ttAreas(), groups = [...new Set(A.map(a => a[1]))];
+        o.innerHTML = `<div class="card tt-areas"><h2>Where are you tattooing?</h2><p class="muted" style="margin-top:0">Pain from quotes: the more dots, the sooner the client needs a break.</p>${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="tt-areag">${A.filter(a => a[1] === g).map(a => `<button data-area="${esc(a[0])}" class="${a[0] === painArea()[0] ? 'on' : ''}"><b>${esc(a[0])}</b><i>${'●'.repeat(a[2])}${'○'.repeat(5 - a[2])}</i></button>`).join('')}</div>`).join('')}<button class="btn" data-area="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+        o.onclick = (e) => { const b2 = e.target.closest('[data-area]'); if (!b2 && e.target !== o) return; o.remove(); res(b2?.dataset.area || null); }; document.body.appendChild(o); });
+      if (!pick) return; if (EX.cur) EX.cur.area = pick; await Settings.set('tt_area', pick); st.dirty = true; exBar(); return painShow(); }
     if (a === 'next') return exNext();
     if (a === 'report') return exReport();
     if (a === 'hub') return location.hash = EX.lesson ? 'tattoo/lessons' : 'tattoo/challenges';
@@ -3761,7 +3795,7 @@ TT.open = async (el, id) => {
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : res.laserFail ? 'Failed: the laser was used' : res.crashFail ? 'Failed: too many crash landings' : res.gradFail ? 'Failed: the gradient is uneven' : res.packFail ? 'Failed: that was packed, not whipped' : res.washFail ? 'Failed: the lighter washes were not used' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats tt-lscats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
-      ${res.wrongPts ? `<p class="muted" style="margin:4px 0;color:var(--danger, #d9534f)">Needle not allowed: ${res.wrongIds.join(', ')}, −${res.wrongPts} points</p>` : ''}
+      ${res.tapOut ? `<p class="muted" style="margin:4px 0;color:var(--danger, #d9534f)">The client tapped out: judged on what was done.</p>` : ''}${res.area ? `<p class="muted" style="margin:4px 0">${esc(res.area)} · pain peaked at ${res.painPeak}%</p>` : ''}${res.wrongPts ? `<p class="muted" style="margin:4px 0;color:var(--danger, #d9534f)">Needle not allowed: ${res.wrongIds.join(', ')}, −${res.wrongPts} points</p>` : ''}
       ${T.crashFree != null && res.crashes ? `<p class="muted" style="margin:4px 0">${res.crashes} crash landing${res.crashes === 1 ? '' : 's'}: ${T.crashFree} free${res.crashPts ? `, −${res.crashPts} point${res.crashPts === 1 ? '' : 's'}` : ''}. Land and lift off on the move.</p>` : ''}${res.packFail ? '<p class="muted" style="margin:4px 0">The curved mag went round in circles: that is packing. In this lesson every stroke has to be a whip.</p>' : ''}${res.washFail ? '<p class="muted" style="margin:4px 0">The gradient has to be built from the washes in turn, Black down to Light, not from black alone.</p>' : ''}${res.gradFail ? '<p class="muted" style="margin:4px 0">The gradient has to run smoothly and evenly from dark to light to pass. Gradient needs 45, evenness 55 and smoothness 50.</p>' : ''}${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowFail ? `${res.blowouts} blowouts. More than 1 is an instant fail.` : '1 blowout: that is your limit.'}</p>` : ''}${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points for undos</p>` : ''}${T.maxStrokes ? `<p class="muted" style="margin:4px 0">${res.strokesUsed} ${T.strokeNeedle ? T.strokeNeedle + ' ' : ''}stroke${res.strokesUsed === 1 ? '' : 's'} of ${T.maxStrokes} allowed${res.extraStrokes ? ` · −${res.extraStrokes * 3} points` : ''}</p>` : ''}
       ${ttTryBar()}${ttChips(statsTxt)}${ttShotHtml(purl, hurl, heat?.notes, !!(T.pack || T.tri || T.wgrad || T.stipple))}
       <div class="row" style="gap:6px;margin-top:12px"><button class="btn ${pass ? '' : 'primary'}" style="flex:1" data-lr="again">Try again</button>${pass ? '<button class="btn primary" style="flex:1" data-lr="out">Continue</button>' : ''}</div>
@@ -3783,7 +3817,7 @@ TT.open = async (el, id) => {
       ${info ? (info.newPb ? `<div class="tt-pb">New personal best! <span>was ${info.was}</span></div>` : info.first ? '<div class="tt-pb">First try: that\'s your score to beat.</div>' : `<div class="muted" style="margin:6px 0">Personal best: ${info.best}</div>`) : ''}
       <div class="tt-cats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${v}</b></div>`).join('')}
         ${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${res.skin >= 80 ? 'var(--teal)' : res.skin >= 65 ? '#e8b44c' : '#e0605a'}"></s></i><b>${res.skin}</b></div>` : ''}</div>
-${res.wrongPts ? `<p class="muted" style="margin:4px 0;color:var(--danger, #d9534f)">Needle not allowed: ${res.wrongIds.join(', ')}, −${res.wrongPts} points</p>` : ''}
+${res.tapOut ? `<p class="muted" style="margin:4px 0;color:var(--danger, #d9534f)">The client tapped out: judged on what was done.</p>` : ''}${res.area ? `<p class="muted" style="margin:4px 0">${esc(res.area)} · pain peaked at ${res.painPeak}%</p>` : ''}${res.wrongPts ? `<p class="muted" style="margin:4px 0;color:var(--danger, #d9534f)">Needle not allowed: ${res.wrongIds.join(', ')}, −${res.wrongPts} points</p>` : ''}
       ${res.blowouts ? `<p class="muted" style="margin:4px 0">${res.blowouts} blowout${res.blowouts === 1 ? '' : 's'}</p>` : ''}
       ${res.penalty ? `<p class="muted" style="margin:4px 0">−${res.penalty} points: ${[res.undos ? `${res.undos} undo${res.undos === 1 ? '' : 's'}` : '', res.lasers ? `laser ${res.lasers} time${res.lasers === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ')}</p>` : ''}
       <img class="tt-chshot" src="${res.thumb}" alt="">
