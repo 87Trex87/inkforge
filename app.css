@@ -1798,7 +1798,7 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 
 /* Pain meter and the body area */
 .tt-pain { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-top: 4px; } .tt-pain[hidden] { display: none; } .tt-pain span { width: 42px; }
-.tt-pb { flex: 1; height: 7px; border-radius: 4px; background: rgba(127,127,127,.25); overflow: hidden; } .tt-pb b { display: block; height: 100%; width: 0; border-radius: 4px; transition: width .2s, background .4s; }
+.tt-painb { flex: 1; height: 7px; border-radius: 4px; background: rgba(127,127,127,.25); overflow: hidden; } .tt-painb b { display: block; height: 100%; width: 0; border-radius: 4px; transition: width .2s, background .4s; }
 .tt-pain em { width: 84px; font-style: normal; text-align: right; color: var(--ink2); }
 .tt-area { border: 1px solid var(--line); background: none; color: inherit; border-radius: 99px; font: 600 10.5px Inter, sans-serif; padding: 2px 8px; white-space: nowrap; } .tt-area i { font-style: normal; color: #e0605a; letter-spacing: -1px; }
 .tt-areas { max-width: 640px; max-height: calc(100vh - 24px); overflow-y: auto; } .tt-areag { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 5px; margin-bottom: 6px; }
