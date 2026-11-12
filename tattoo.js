@@ -283,10 +283,14 @@ const TT_MEDALS = [[90, 'gold', 'Gold'], [75, 'silver', 'Silver'], [60, 'bronze'
 const ttMedal = (s) => s == null ? null : TT_MEDALS.find(([m]) => s >= m) || null;
 const ttHubCh = (sec) => TT_CH.filter(c => ttHubOf(c) === sec);
 const ttBest = (a, id) => a.pb[id]?.best ?? -1;
+// A made challenge's work to judge (lines, packing, shading), its width and height in cm.
+const ttChSize = (T) => { const P = [...(T.lines || []).flat(), ...(T.pack ? [T.pack[0], T.pack[1], T.pack[0] + T.pack[2], T.pack[1] + T.pack[3]] : []), ...(T.shades || []).flatMap(z => [z.box[0], z.box[1], z.box[0] + z.box[2], z.box[1] + z.box[3]])], xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
+  return xs.length ? [Math.round((Math.max(...xs) - Math.min(...xs)) / 10 * 10) / 10, Math.round((Math.max(...ys) - Math.min(...ys)) / 10 * 10) / 10] : [0, 0]; };
 const TT_TROPHIES = [
   { id: 'first', tier: 'bronze', name: 'First ink', desc: 'Finish any challenge.', test: (a) => TT_CH.some(c => a.pb[c.id]) },
   { id: 'medal', tier: 'bronze', name: 'On the podium', desc: 'Win a medal on any challenge.', test: (a) => TT_CH.some(c => ttBest(a, c.id) >= 60) },
   ...TT_HUB.map(([k, n]) => ({ id: 'm-' + k, tier: 'silver', name: k === 'c1' ? 'Line master' : 'Pack and shade master', desc: `Gold on every ${n.replace(/^.*: /, '').toLowerCase()} challenge.`, test: (a) => ttHubCh(k).every(c => ttBest(a, c.id) >= 90) })),
+  { id: 'maker', tier: 'silver', name: 'Challenge maker', desc: 'Make your own challenge with at least 8 × 8 cm of work to judge, add it to My challenges and score gold on it.', test: (a) => Object.entries(a.pb).some(([k, p]) => k.startsWith('u-') && p.best >= 90 && p.size && p.size[0] * p.size[1] >= 64 && Math.min(...p.size) >= 6) },
   { id: 'all', tier: 'gold', name: 'Completionist', desc: 'Gold on every challenge.', test: (a) => TT_CH.every(c => ttBest(a, c.id) >= 90) }
 ];
 TT.aw = {
@@ -297,7 +301,7 @@ TT.aw = {
   record(T, res, tier) {
     const a = this.get(), p = a.pb[T.id] || { best: 0, tries: 0 }, was = p.tries ? p.best : null;
     if (tier) { p.tiers = p.tiers || {}; const q = p.tiers[tier] || { best: 0, tries: 0 }; q.tries++; if (res.total > q.best) q.best = res.total; p.tiers[tier] = q; }
-    p.tries++; p.last = res.total; p.lastT = Date.now(); if (was == null || res.total > p.best) { p.best = res.total; p.bestT = Date.now(); }
+    p.tries++; p.last = res.total; p.lastT = Date.now(); if (was == null || res.total > p.best) { p.best = res.total; p.bestT = Date.now(); if (String(T.id).startsWith('u-')) p.size = ttChSize(T); }
     a.pb[T.id] = p; a.log.push({ id: T.id, s: res.total, t: Date.now(), skin: res.skin, blow: res.blowouts }); if (a.log.length > 1500) a.log.splice(0, a.log.length - 1500);
     const gained = this.check(a); this.put(a); return { was, best: p.best, newPb: was != null && res.total > was, first: was == null, gained };
   },
@@ -376,6 +380,7 @@ TT.hub = async (el) => {
     <div class="tt-chskin"><span class="lbl" style="margin:0">Skin for challenges</span>
       <div class="tt-skins" style="margin:0">${TT_SKINS.map(([n, c], i) => `<button data-chskin="${i}" class="${i === si ? 'on' : ''}" style="background:${c}" data-tip="${n}${TT_SKIN_NOTE[i] ? ': ' + TT_SKIN_NOTE[i] : ''}" aria-label="${n}"></button>`).join('')}</div>
       <span class="muted" style="font-size:12px">${TT_SKINS[si][0]}${TT_SKIN_NOTE[si] ? ' · ' + TT_SKIN_NOTE[si] : ''}</span></div>
+    <div id="tt-mych"></div>
     <div class="letter">Trophy cabinet</div>
     <div class="tt-cabinet">${TT_TROPHIES.map(t => `<div class="tt-trophy ${a.trophies[t.id] ? 'won' : ''}" data-tip="${esc(t.desc)}">${ttCup(a.trophies[t.id] ? t.tier : 'locked', 30)}<b>${esc(t.name)}</b><span>${a.trophies[t.id] ? new Date(a.trophies[t.id]).toLocaleDateString() : esc(t.desc)}</span></div>`).join('')}</div>
     ${TT_HUB.map(([k, n]) => `<div class="letter">${n}</div><div class="tt-chgrid">${ttHubCh(k).sort((x, y) => x.diff - y.diff).map(c => { const p = a.pb[c.id], m = ttMedal(p?.best);
@@ -391,8 +396,21 @@ TT.hub = async (el) => {
     if (e.target.closest('#tt-chreset')) { const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.innerHTML = '<div class="card" style="margin:auto;max-width:380px"><h2 style="margin-top:0">Reset</h2><p class="muted" style="margin-top:0">Clears scores so you can start over. Copies in your portfolio stay.</p><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" data-pk="">Cancel</button><span style="flex:1"></span><button class="btn" data-pk="ch">Challenges</button><button class="btn" data-pk="exam">Exam</button></div></div>'; o.onclick = (ev) => { const b = ev.target.closest('[data-pk]'); if (b) { o.remove(); res(b.dataset.pk); } }; document.body.appendChild(o); }); if (!pick) return;
       if (!await ask(pick === 'ch' ? 'Reset all challenges? Every best score, the history and the trophies they earned are cleared.' : 'Reset the apprentice exam? All exam results and exam pieces, finished or unfinished, are deleted.')) return; const A = TT.aw.get(); if (pick === 'ch') { A.pb = {}; A.log = []; let L0 = null; try { L0 = JSON.parse(Settings.get('tt_chlast', 'null')); } catch {} if (L0) { for (const k of ['ref', 'page']) if (L0[k]) await Media.release(L0[k]); await Settings.set('tt_chlast', ''); } } else { A.exam = []; await dropExamPieces(); } keepTrophies(A); TT.aw.put(A); return TT.hub(el); }
     const k = e.target.closest('[data-chskin]'); if (k) { await Settings.set('tt_chskin', +k.dataset.chskin); return TT.hub(el); }
+    const ed = e.target.closest('[data-myed]'); if (ed) { e.stopPropagation(); location.hash = 'design/' + ed.dataset.myed; return; }
+    const my = e.target.closest('[data-my]'); if (my) return ttMyStart(+my.dataset.my);
     const c = e.target.closest('[data-ch]'); if (c) return ttChStart(c.dataset.ch); if (e.target.closest('#tt-sheet')) return TT.sheet(); };
+  /* My challenges: made in the design studio's Challenge maker and added there. Medals and bests, but no trophies
+     beyond Challenge maker. */
+  const mine = (await DB.all(`SELECT id, name, thumb_ref, doc FROM designs WHERE doc LIKE '%"mine":true%' ORDER BY updated_at DESC`)).filter(r => { try { return JSON.parse(r.doc).chal?.mine; } catch { return false; } });
+  const box = el.querySelector('#tt-mych'); if (!box || !mine.length) return; const urls = await Promise.all(mine.map(r => r.thumb_ref ? Media.url(r.thumb_ref) : null));
+  box.innerHTML = `<div class="letter">My challenges</div><p class="muted" style="margin:-4px 2px 8px;font-size:12px">Your own, from the design studio. Medals and bests, no trophies except Challenge maker.</p><div class="tt-chgrid">${mine.map((r, i) => { const p = a.pb['u-' + r.id], m = ttMedal(p?.best);
+    return `<button class="tt-chc" data-my="${r.id}"><div class="tt-chimg">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</div><div class="tt-chmeta"><b>${esc(r.name || 'Challenge')}</b><span class="tt-chpb">${p ? `${ttMedalIco(m)} Best ${p.best}${ttTierChips(p.tiers)}` : '<i class="muted">Not tried yet</i>'} <i class="tt-chr" data-myed="${r.id}" data-tip="Change it in the design studio">Edit</i></span></div></button>`; }).join('')}</div>`;
 };
+// Play one of My challenges: the simulator piece made by its last Play in the design studio, started fresh.
+async function ttMyStart(did) { const rows = await DB.all(`SELECT id, meta FROM tattoo_pieces WHERE meta LIKE ?`, ['%"u-' + did + '"%']), hit = rows.find(r => { try { return JSON.parse(r.meta).exam?.custom?.id === 'u-' + did; } catch { return false; } });
+  if (!hit) { toast('Play it once from the design studio first.', 3000); location.hash = 'design/' + did; return; }
+  let m = {}; try { m = JSON.parse(hit.meta); } catch {} const ex = m.exam; await DB.run(`UPDATE tattoo_pieces SET meta = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify({ ...m, exam: { v: 1, mode: 'ch', list: ex.list, i: 0, res: [], started: Date.now(), custom: ex.custom } }), hit.id]);
+  location.hash = 'tattoo/' + hit.id; }
 
 /* ---------- Lessons ----------
    Chapters of lessons, each unlocked by completing and qualifying for the one before. A lesson is a list of steps like
@@ -3800,8 +3818,8 @@ TT.open = async (el, id) => {
       const ar = painArea(); b.innerHTML = `<div class="tt-exh"><b>${T.title}</b>${ttStars(T.diff)}<button class="tt-area" data-ex="area" data-tip="Where on the body: sets how much it hurts${T.area ? ' (set by this challenge)' : '. Change it before you start'}">${TT_TIERN[ttTier(ar[2])]} · ${esc(ar[0])} <i>${'●'.repeat(ar[2])}${'○'.repeat(5 - ar[2])}</i></button><span class="muted" style="font-size:11px">${p ? 'Best ' + p.best : ''}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
         <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
         ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${EX.lesson ? 'Grade ' + ttGrade(res.total) : ttMedal(res.total)?.[2] || 'No medal'}</span></div>
-          <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button><span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
-        : `${penLine()}<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button><button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
+          <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button>${EX.custom ? '<button class="btn small" data-ex="edit" data-tip="Back to this challenge in the design studio">Edit</button>' : ''}<span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
+        : `${penLine()}<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button>${EX.custom ? '<button class="btn small" data-ex="edit" data-tip="Back to this challenge in the design studio">Edit</button>' : ''}<button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
       return; }
     b.innerHTML = `<div class="tt-exh"><b>${EX.i + 1} / ${exList().length} · ${T.title}</b><span class="tt-exdots">${exList().map((c, j) => `<i class="${j < EX.i ? 'done' : j === EX.i ? 'on' : ''}"></i>`).join('')}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
       <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
@@ -3822,6 +3840,7 @@ TT.open = async (el, id) => {
     if (a === 'next') return exNext();
     if (a === 'report') return exReport();
     if (a === 'hub') return location.hash = EX.lesson ? 'tattoo/lessons' : 'tattoo/challenges';
+    if (a === 'edit' && EX.custom) return location.hash = 'design/' + String(EX.custom.id).slice(2);
     if (a === 'again') { EX.res = []; EX.info = null; return exStart(true); }
     if (a === 'card') { const r = EX.res[EX.res.length - 1]; if (r) chReport(exList()[0], r, EX.info); } });
   // The report card for one challenge: score and medal, against the personal best, its parts, and trophies won.
