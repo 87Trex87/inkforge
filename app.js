@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 417;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 418;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7589,6 +7589,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 418, when: '2026-11-12T23:00', added: ['Challenge reports now have the heat map, like lessons.', 'A pain map in the meter shows how sore each patch is: blue calm, violet sore, pink very sore.', 'The screen flashes red when the client winces, spikes or the skin swells.'],
+    test: ['Finish a challenge. Can you switch to the heat map on the report?', 'Overwork a patch. Does the screen flash red, and does the pain map show it pink?'] },
   { build: 417, when: '2026-11-12T22:00', added: ['A sore patch only relaxes to half its worst pain and flares up faster next time.', 'Skin damage spreads evenly across the needle, so big magnums redden and swell skin sooner.'],
     test: ['Hurt one patch badly, rest, then go back. Does the meter stay near half and spike quicker?', 'Pack with an 11M. Does the skin swell sooner than before?'] },
   { build: 416, when: '2026-11-12T21:00', added: ['Pain follows the needle: big magnums hurt across their whole width, and going back over swollen skin is now very painful.'],
