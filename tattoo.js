@@ -1116,8 +1116,8 @@ TT.open = async (el, id) => {
   /* Stencil wear: working the skin wipes the stencil off around the needle, as the wiping and the ink do on a real
      arm. A map on a 1 mm grid (1 = gone) that the stencil is drawn through; it reaches about half a centimetre past
      the needle, and lining wears it far less than packing and shading. Never in cheat mode; Refresh in Layers puts
-     the stencil back. Counted once a puncture (not per needle), so a spot is gone after roughly 5 to 8 passes: often before the skin even reddens. Not saved: a reopened piece starts with a fresh stencil. */
-  const WEAR_R = 5, WEAR_K = 0.0065, WEAR_LINE = 0.25, GW = Math.ceil(W / mm), GH = Math.ceil(H / mm), wear = new Float32Array(GW * GH);
+     the stencil back. Counted once a puncture (not per needle), so a spot is gone after roughly 6 to 10 passes: often before the skin even reddens. Not saved: a reopened piece starts with a fresh stencil. */
+  const WEAR_R = 5, WEAR_K = 0.0052, WEAR_LINE = 0.25, GW = Math.ceil(W / mm), GH = Math.ceil(H / mm), wear = new Float32Array(GW * GH);
   const wearC = document.createElement('canvas'); wearC.width = GW; wearC.height = GH; const wearX = wearC.getContext('2d'), wearI = wearX.createImageData(GW, GH);
   const stenV = document.createElement('canvas'); stenV.width = W; stenV.height = H; const stenX = stenV.getContext('2d');
   const markV = document.createElement('canvas'); markV.width = W; markV.height = H; const markX = markV.getContext('2d');   /* the skin marker wears off the same way */
