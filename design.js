@@ -141,32 +141,50 @@ function dzChRGBAt(sh, x, y, b) { const cols = sh.tech === 'blend' && sh.cols?.l
   const RW = sh.rgbW || sh.rgbN || 80, RH = sh.rgbH || sh.rgbN || 80, u = Math.max(0, Math.min(RW - 1, (x - b[0]) / (b[2] || 1) * RW - 0.5)), v = Math.max(0, Math.min(RH - 1, (y - b[1]) / (b[3] || 1) * RH - 0.5));
   const i0 = Math.floor(u), j0 = Math.floor(v), i1 = Math.min(RW - 1, i0 + 1), j1 = Math.min(RH - 1, j0 + 1), fu = u - i0, fv = v - j0, A = C.A, at = (i, j, q) => A[(j * RW + i) * 3 + q];
   const px = [0, 1, 2].map(q => (at(i0, j0, q) * (1 - fu) + at(i1, j0, q) * fu) * (1 - fv) + (at(i0, j1, q) * (1 - fu) + at(i1, j1, q) * fu) * fv);
-  const cand = [...new Set([C.idx[j0 * RW + i0], C.idx[j0 * RW + i1], C.idx[j1 * RW + i0], C.idx[j1 * RW + i1]])], dd = cand.map(k => Math.sqrt((C.PC[k][0] - px[0]) ** 2 + (C.PC[k][1] - px[1]) ** 2 + (C.PC[k][2] - px[2]) ** 2));
-  const o = dd.map((d, n) => n).sort((a, z) => dd[a] - dd[z]), a1 = cand[o[0]], a2 = cand[o[1] ?? o[0]], t = o.length > 1 ? Math.max(0, Math.min(0.5, 0.5 - (dd[o[1]] - dd[o[0]]) / 40)) : 0;
-  return { c: [0, 1, 2].map(q => C.PC[a1][q] * (1 - t) + C.PC[a2][q] * t), i: a1, edge: cand.length > 1 }; }
+  const q4 = [C.idx[j0 * RW + i0], C.idx[j0 * RW + i1], C.idx[j1 * RW + i0], C.idx[j1 * RW + i1]]; let a1 = -1, a2 = -1, d1 = 1e9, d2 = 1e9, edge = false;
+  for (let n = 0; n < 4; n++) { const k = q4[n]; if (n && k !== q4[0]) edge = true; if (k === a1 || k === a2) continue; const P = C.PC[k], d = Math.sqrt((P[0] - px[0]) ** 2 + (P[1] - px[1]) ** 2 + (P[2] - px[2]) ** 2); if (d < d1) { a2 = a1; d2 = d1; a1 = k; d1 = d; } else if (d < d2) { a2 = k; d2 = d; } }
+  if (a2 < 0) { a2 = a1; d2 = d1; } const t = edge ? Math.max(0, Math.min(0.5, 0.5 - (d2 - d1) / 40)) : 0, PA = C.PC[a1], PB = C.PC[a2];
+  return { c: [PA[0] * (1 - t) + PB[0] * t, PA[1] * (1 - t) + PB[1] * t, PA[2] * (1 - t) + PB[2] * t], i: a1, edge }; }
 // A shading zone as it should look: dots for stipple, a smooth tone for whip and wash, the colours for a blend.
+const dzChShadeC = new WeakMap();
 async function dzChShade(x, doc, l, scale) { const sh = l.sh || {}, outs = doc.layers.filter(o => o.t === 'shape' && o.role === 'outline' && !o.hide && (o.side || null) === (l.side || null));
-  const P = dzChPts(l).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2); if (!xs.length) return;
-  const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], res = 0.2, cw = Math.max(1, Math.ceil(b[2] / res)), chh = Math.max(1, Math.ceil(b[3] / res));
-  const c = document.createElement('canvas'); c.width = cw; c.height = chh; const g = c.getContext('2d'), im = g.createImageData(cw, chh), D = im.data;
+  const b = dzChBoxOf(dzChPts(l)); if (!b) return; const res = 0.2, cw = Math.max(1, Math.ceil(b[2] / res)), chh = Math.max(1, Math.ceil(b[3] / res));
+  const ck = b.join() + JSON.stringify(sh), hit = dzChShadeC.get(l); let c = hit && hit.key === ck ? hit.c : null;   /* the shading is only worked out again when it or the shape changes */
+  if (!c) { c = document.createElement('canvas'); c.width = cw; c.height = chh; const g = c.getContext('2d'), im = g.createImageData(cw, chh), D = im.data;
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, CS = (sh.cols?.length ? sh.cols : ['#b3261e', '#f2c21b']).map(chHexRGB); if (CS.length < 2) CS.push(CS[0]);
   const RGB = !!sh.rgb;   /* a colour value study: the picture in the palette's colours */
+  if (sh.tech === 'blend' && sh.grad === 'flat' && !RGB && CS.every(q => q.join() === CS[0].join())) { g.fillStyle = sh.cols[0]; g.fillRect(0, 0, cw, chh); dzChShadeC.set(l, { key: ck, c }); }
+  else {
   for (let j = 0; j < chh; j++) for (let i = 0; i < cw; i++) { const v = dzChAt(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b), k = (j * cw + i) * 4;
     if (RGB) { const r = dzChRGBAt(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b); if (r) { D[k] = r.c[0]; D[k + 1] = r.c[1]; D[k + 2] = r.c[2]; D[k + 3] = 255; continue; } }
     if (sh.tech === 'blend') { const [si, f] = dzChSeg(CS.length, v); for (let q = 0; q < 3; q++) D[k + q] = CS[si][q] + (CS[si + 1][q] - CS[si][q]) * f; D[k + 3] = 255; continue; } D[k] = D[k + 1] = D[k + 2] = 20; D[k + 3] = sh.tech === 'stipple' ? (rnd() < v * 0.9 ? 235 : 0) : v * 255; }
-  g.putImageData(im, 0, 0);
+  g.putImageData(im, 0, 0); dzChShadeC.set(l, { key: ck, c }); } }
   x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); if (outs.length) { const O = new Path2D(); for (const o of outs) O.addPath(dzChPath(o)); x.clip(O); } x.clip(dzChPath(l));
   x.imageSmoothingEnabled = sh.tech !== 'stipple'; x.drawImage(c, b[0] * CH_PX, b[1] * CH_PX, b[2] * CH_PX, b[3] * CH_PX); x.restore(); }
 // A shape's outline as a path on the page (its turn and flips included).
 const dzChPath = (L) => { const p = new Path2D(); p.addPath(new Path2D(dzSvgPath(L)), new DOMMatrix().translate(L.x + L.w / 2, L.y + (L.h || 0) / 2).rotate(L.rot || 0).scale(L.fx ? -1 : 1, L.fy ? -1 : 1)); return p; };
 // The same outline as lines of points in mm on the skin, one every 0.3 mm, for the simulator's stencil and judging.
-function dzChPts(L) { const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), out = [];
+/* Sampling a long traced outline through the browser is slow, so each shape keeps its last result until its
+   geometry changes (position, size, turn, flips and path all make the key). */
+const dzChPtsC = new WeakMap();
+const dzChBoxOf = (pts) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of pts) for (let i = 0; i < p.length; i += 2) { const x = p[i], y = p[i + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } return x0 === Infinity ? null : [x0, y0, x1 - x0, y1 - y0]; };
+function dzChPts(L) { const key = [L.x, L.y, L.w, L.h, L.rot || 0, L.fx ? 1 : 0, L.fy ? 1 : 0].join() + '|' + dzSvgPath(L), hit = dzChPtsC.get(L); if (hit && hit.key === key) return hit.pts; const pts = dzChPtsRaw(L); dzChPtsC.set(L, { key, pts }); return pts; }
+function dzChPtsRaw(L) { const subs = dzSubs(L); if (subs) return dzChPtsSubs(L, subs);
+  const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg'), out = [];
   svg.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden'; document.body.appendChild(svg);
   const M = new DOMMatrix().translate(L.x + L.w / 2, L.y + (L.h || 0) / 2).rotate(L.rot || 0).scale(L.fx ? -1 : 1, L.fy ? -1 : 1);
   try { for (const d of dzSvgPath(L).split(/(?=M)/)) { if (!d.trim()) continue; const pe = document.createElementNS(NS, 'path'); pe.setAttribute('d', d); svg.appendChild(pe);
       const len = pe.getTotalLength(), n = Math.max(2, Math.ceil(len / 3)), pts = [];
       for (let i = 0; i <= n; i++) { const q = M.transformPoint(pe.getPointAtLength(len * i / n)); pts.push(+(q.x / CH_PX).toFixed(2), +(q.y / CH_PX).toFixed(2)); }
       out.push(pts); } } finally { svg.remove(); }
+  return out; }
+// A node shape sampled by its own curves (a point about every 0.3 mm), turned and flipped like dzChPath: no browser path measuring.
+function dzChPtsSubs(L, subs) { const w = L.w, h = L.h || 0, cx = L.x + w / 2, cy = L.y + h / 2, a = (L.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), fx = L.fx ? -1 : 1, fy = L.fy ? -1 : 1, out = [];
+  const put = (pts, x, y) => { x *= fx; y *= fy; pts.push(Math.round((cx + x * ca - y * sa) / CH_PX * 100) / 100, Math.round((cy + x * sa + y * ca) / CH_PX * 100) / 100); };
+  for (const sp of subs) { const N = sp.nodes; if (!N?.length) continue; const pts = [], X = (n, d = 0) => (n.x + d - 0.5) * w, Y = (n, d = 0) => (n.y + d - 0.5) * h;
+    const seg = (A, B) => { const p0 = [X(A), Y(A)], p1 = [X(A, A.ox || 0), Y(A, A.oy || 0)], p2 = [X(B, B.ix || 0), Y(B, B.iy || 0)], p3 = [X(B), Y(B)], len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) + Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) + Math.hypot(p3[0] - p2[0], p3[1] - p2[1]), n = Math.max(1, Math.ceil(len / 3));
+      for (let i = 1; i <= n; i++) { const t = i / n, u = 1 - t, b0 = u * u * u, b1 = 3 * u * u * t, b2 = 3 * u * t * t, b3 = t * t * t; put(pts, b0 * p0[0] + b1 * p1[0] + b2 * p2[0] + b3 * p3[0], b0 * p0[1] + b1 * p1[1] + b2 * p2[1] + b3 * p3[1]); } };
+    put(pts, X(N[0]), Y(N[0])); for (let i = 1; i < N.length; i++) seg(N[i - 1], N[i]); if (sp.closed !== false && N.length > 1) seg(N.at(-1), N[0]); out.push(pts); }
   return out; }
 // Packing: the shape's colour, kept inside the challenge's outlines.
 async function dzChPack(x, doc, l, scale, one) { const outs = doc.layers.filter(o => o.t === 'shape' && o.role === 'outline' && !o.hide && (o.side || null) === (l.side || null));
@@ -303,10 +321,10 @@ function dzChSpec(doc, title, did) { const S = doc.layers.filter(l => l.t === 's
   if (doc.chal?.bodyArea) T.area = doc.chal.bodyArea;
   if (doc.chal?.refs?.length) T.refs = doc.chal.refs.map(r => ({ ref: r.ref, ar: r.ar || 1 }));
   const shs = S.filter(l => l.role === 'shade');
-  if (shs.length) { T.shades = shs.map(l => { const pts = dzChPts(l), P = pts.flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2);
-      const { raw, src, ...sh } = l.sh || {}; if (sh.stencil) (T.stencils ||= []).push(sh.stencil); return { pts, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], nd: l.nd || CH_SHADE[sh.tech || 'stipple'][2], nds: dzChNds(l), ...sh }; });
+  if (shs.length) { T.shades = shs.map(l => { const pts = dzChPts(l), bx = dzChBoxOf(pts) || [0, 0, 0, 0];
+      const { raw, src, ...sh } = l.sh || {}; if (sh.stencil) (T.stencils ||= []).push(sh.stencil); return { pts, box: bx, nd: l.nd || CH_SHADE[sh.tech || 'stipple'][2], nds: dzChNds(l), ...sh }; });
     T.needles = [...new Set([...T.needles, ...T.shades.flatMap(z => z.nds?.length ? z.nds : [z.nd])])]; T.cat = 'shade'; if (T.shades.some(z => z.tech === 'wash')) { T.wash = true; T.ink = 'wash'; } }
-  if (pk) { const P = dzChPts(pk).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2), x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys);
+  if (pk) { const bp = dzChBoxOf(dzChPts(pk)) || [0, 0, 0, 0], x0 = bp[0], y0 = bp[1], x1 = bp[0] + bp[2], y1 = bp[1] + bp[3];
     T.pack = [x0, y0, x1 - x0, y1 - y0].map(v => Math.round(v * 10) / 10); T.packNeedle = pk.nd || '7RS'; T.packNeedles = dzChNds(pk).length ? dzChNds(pk) : [T.packNeedle]; T.packPts = dzChPts(pk);
     const ink = pk.ink || '#141414'; T.packInk = ink;
     if (pk.shape === 'ellipse' && Math.abs(pk.w - (pk.h || 0)) < 4) { T.circle = [(x0 + x1) / 2, (y0 + y1) / 2, Math.min(x1 - x0, y1 - y0) / 2].map(v => Math.round(v * 100) / 100); T.mixOf = pk.mixOf?.[1] ? [pk.mixOf[0], pk.mixOf[1]] : [ink, ink]; } }
@@ -4323,7 +4341,7 @@ DZ.edit = async (id) => {
      only a dark rim. 3D: a ball lit from the far side, with its edge rolling into shadow. Cast shadow: dark along
      the shadow side, fading across. Darkest and Lightest set the range. */
   const CH_PRESETS = [['pillow', 'Pillow'], ['edge', 'Edge fade'], ['ball', '3D'], ['cast', 'Cast shadow']];
-  const chBox = (l) => { const P = dzChPts(l).flat(), xs = P.filter((_, i) => i % 2 === 0), ys = P.filter((_, i) => i % 2); return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs) || 1, Math.max(...ys) - Math.min(...ys) || 1]; };
+  const chBox = (l) => { const b = dzChBoxOf(dzChPts(l)) || [0, 0, 1, 1]; return [b[0], b[1], b[2] || 1, b[3] || 1]; };
   function chPreset(l, kind) { const sh = l.sh, b = chBox(l), N = CH_MAP, g = document.createElement('canvas').getContext('2d'), P = dzChPath(l), ins = new Uint8Array(N * N), cell = (i, j) => [b[0] + (i + 0.5) / N * b[2], b[1] + (j + 0.5) / N * b[3]];
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const [X, Y] = cell(i, j); ins[j * N + i] = g.isPointInPath(P, X * CH_PX, Y * CH_PX, 'evenodd') ? 1 : 0; }
     const outs = []; for (let k = 0; k < N * N; k++) if (!ins[k]) outs.push(cell(k % N, Math.floor(k / N)));
