@@ -1179,7 +1179,7 @@ TT.open = async (el, id) => {
      off lets it settle: quickly during a real break (a couple of seconds or more), slowly while working elsewhere.
      Wincing, then asking for a break, warn on the way up; at the top the client taps out and the attempt is judged on
      what was done. Kept with the attempt (EX.cur.pain, painPeak, area). */
-  const PAIN_SENS = [0.5, 0.8, 1.15, 1.6, 2.2], PAIN_RATE = 0.03;
+  const PAIN_SENS = [0.5, 0.8, 1.15, 1.6, 2.2], PAIN_RATE = 0.03, PAIN_BONE = [0.3, 0.3, 0.3, 0.45, 0.6];   /* PAIN_BONE: what fresh skin feels; bony areas (4 and 5) buzz even under a light touch */
   const ttAreas = () => typeof QUOTE_V2 !== 'undefined' ? QUOTE_V2.placements : [['Forearm', 'Arms & hands', 2]];
   const painOn = () => !CHEAT && (EX ? !!EX.cur && !EX.done && !EX.cur.scored : true);
   /* normal mode keeps its own pain (not saved): it flashes and warns, but the client never taps out */
@@ -1217,7 +1217,7 @@ TT.open = async (el, id) => {
        worst-worn patch under it sets how much: swollen skin is very painful, overworked far more */
     r = Math.max(TS * 0.5, r || 0); const x0 = Math.max(0, Math.floor((q.x - r) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + r) / TS)), y0 = Math.max(0, Math.floor((q.y - r) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + r) / TS));
     let w = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) w = Math.max(w, TR[y * tw + x] || 0);
-    const add = dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.5, Math.min(1.6, depth / 0.6)) * (0.3 + Math.pow(Math.min(2, w), 2) + (w > 0.8 ? 6 * Math.pow(Math.min(2, w) - 0.8, 1.3) : 0)) *   /* red skin only a little sorer; swollen (0.8 and up) climbs steeply */
+    const add = dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.5, Math.min(1.6, depth / 0.6)) * (PAIN_BONE[painArea()[2] - 1] + Math.pow(Math.min(2, w), 2) + (w > 0.8 ? 6 * Math.pow(Math.min(2, w) - 0.8, 1.3) : 0)) *   /* red skin only a little sorer; swollen (0.8 and up) climbs steeply */
       Math.min(1.6, 0.85 + 0.15 * Math.sqrt(r / mm)) * (nk === 'shader' ? 0.35 : 1) + jolt * PAIN_SENS[painArea()[2] - 1] * (0.6 + 1.4 * Math.min(2, w));   /* jolt: a sharp turn at speed (scrubbing) hurts there on top */
     let top = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = y * tw + x; PC[k] += add * (1 + 1.5 * PK[k]); if (PC[k] > PK[k]) { PK[k] = PC[k]; pfMax = Math.max(pfMax, pf(PK[k])); } top = Math.max(top, PC[k]); }
     c.pain = c.pain || 0; if (top > c.pain) c.pain = top; else if (top < c.pain - 0.15) c.pain = Math.max(top, pfMax, c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
