@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 413;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 414;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7589,6 +7589,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 414, when: '2026-11-12T18:00', added: ['Pain kicks in much sooner: overworking an area, going deep or going back over sore skin makes it spike fast, and it eases slowly while the client rests.', 'Lessons and challenges start by asking Easy, Medium or Hard, then a body area in that level. Each level keeps its own medal or pass (the E, M and H badges).'],
+    test: ['Hammer one spot on a hard area. Does the client tap out within a few seconds?', 'Pass a lesson on Easy, then try it on Hard. Do both badges show?'] },
   { build: 413, when: '2026-11-12T12:00', added: ['Grading is fairer: skin care no longer adds free points, mess outside the line or shape costs, and colour, blend and outline count only what is covered or lined.', 'Lessons and challenges have a body area (tap it on the card) and a pain meter: painful areas, deep work and going back over raw skin push it up, breaks ease it, and if the client taps out you are judged on what you got done.'],
     test: ['Redo one of your best lessons the right way. Is the score about the same as before?', 'Do a challenge on the ribs or spine and work one area hard. Does the client need breaks before the skin is overworked?'] },
   { build: 411, when: '2026-11-11T20:00', added: ['A new workspace can be design only: just the design tools, forms, notes and portfolio, without clients, bookings, quotes, stats and stock. Switch any workspace in Settings › Workspace type; nothing is deleted.'],
