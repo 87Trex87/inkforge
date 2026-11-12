@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 434;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 435;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7593,6 +7593,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 435, when: '2026-11-14T05:00', added: ['Pendulum and whip swings no longer count as scrubbing: it only counts while the needle stays in deep as it turns.'],
+    test: ['Blend with fast magnum swings. Does the Healed preview stay smooth?'] },
   { build: 434, when: '2026-11-14T04:00', added: ['Bony areas buzz: on the most painful areas the client feels even a light touch, like stipple or whip shading.'],
     test: ['Stipple or whip on Sternum. Does the client feel it a little now?', 'Pack on Sternum. Is it still passable?'] },
   { build: 433, when: '2026-11-14T03:00', added: ['Magnums wear the skin harder again: a rushed magnum fill on a painful area now reddens and hurts.'],
