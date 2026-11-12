@@ -210,7 +210,7 @@ function dzChCentre(mask, w, h, box) { const k = Math.min(1, box[2] / 0.2 / w), 
    Each colour's areas are traced along the pixel edges into rings (holes run the other way), smoothed and simplified.
    o: { k: colours, minPx: smallest patch in px, lineR: line half-width in px, lines: split lines out, darkLum }.
    Returns { cols: [[r,g,b]], rings: [{ ci, loops: [[[x,y]...]] }], thin: Uint8Array mask, sil: Uint8Array mask, dark }. */
-function dzTraceImg(D, W, H, o) {
+function dzTraceImg(D, W, H, o) { const prog = o.prog || (() => {}); prog(0.05, 'Finding the colours');
   const N = W * H, lum = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11, px = new Float32Array(N * 3), op = new Uint8Array(N);
   for (let i = 0; i < N; i++) { const a = D[i * 4 + 3] / 255; op[i] = a > 0.5 ? 1 : 0; for (let q = 0; q < 3; q++) px[i * 3 + q] = D[i * 4 + q] * a + 255 * (1 - a); }
   // k-means: K colours plus one for the background, from evenly spaced shades
@@ -219,7 +219,7 @@ function dzTraceImg(D, W, H, o) {
   let cs = Array.from({ length: K }, (_, k) => [...(sl[Math.min(sl.length - 1, Math.floor((k + 0.5) / K * sl.length))] || [255, 255, 255])]);
   const near = (r, g, b) => { let bi = 0, bd = 1e12; for (let k = 0; k < cs.length; k++) { const c = cs[k], d = (c[0] - r) ** 2 + (c[1] - g) ** 2 + (c[2] - b) ** 2; if (d < bd) { bd = d; bi = k; } } return bi; };
   for (let it = 0; it < 10; it++) { const s = cs.map(() => [0, 0, 0, 0]); for (const c of sl) { const t = s[near(c[0], c[1], c[2])]; t[0] += c[0]; t[1] += c[1]; t[2] += c[2]; t[3]++; } cs = cs.map((c, k) => s[k][3] ? [s[k][0] / s[k][3], s[k][1] / s[k][3], s[k][2] / s[k][3]] : c); }
-  const L = new Uint8Array(N); for (let i = 0; i < N; i++) L[i] = op[i] ? near(px[i * 3], px[i * 3 + 1], px[i * 3 + 2]) : 255;
+  prog(0.25, 'Clearing the noise'); const L = new Uint8Array(N); for (let i = 0; i < N; i++) L[i] = op[i] ? near(px[i * 3], px[i * 3 + 1], px[i * 3 + 2]) : 255;
   // the background: see-through, or the colour that holds most of the border
   const bc = new Array(K).fill(0); let bn = 0; for (let x = 0; x < W; x++) for (const y of [0, H - 1]) { const l = L[y * W + x]; if (l < 255) bc[l]++; bn++; } for (let y = 0; y < H; y++) for (const x of [0, W - 1]) { const l = L[y * W + x]; if (l < 255) bc[l]++; bn++; }
   const bgK = bc.indexOf(Math.max(...bc)); if (bc[bgK] > bn * 0.4) for (let i = 0; i < N; i++) if (L[i] === bgK) L[i] = 255;
@@ -231,16 +231,31 @@ function dzTraceImg(D, W, H, o) {
     for (let s0 = 0; s0 < N; s0++) { if (C[s0] >= 0) continue; const lab = L[s0], mem = [s0]; C[s0] = nc; st.length = 0; st.push(s0); const nb = new Map();
       while (st.length) { const i = st.pop(), x = i % W, y = (i - x) / W; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) { if (j < 0) continue; if (L[j] === lab) { if (C[j] < 0) { C[j] = nc; st.push(j); mem.push(j); } } else nb.set(L[j], (nb.get(L[j]) || 0) + 1); } }
       if (mem.length < o.minPx && nb.size) { let to = lab, tv = -1; for (const [k, v] of nb) if (v > tv) { tv = v; to = k; } for (const i of mem) L[i] = to; changed++; } nc++; } return changed; };
-  for (let r = 0; r < 3 && merge(); r++);
+  for (let r = 0; r < 3 && merge(); r++); prog(0.5, 'Finding the lines');
   // line work: the darkest colour, if dark, split into solid fills (kept by an opening of the line weight) and lines
   const used = [...new Set(L)].filter(v => v < 255), dark = o.lines ? used.reduce((m, k) => (m < 0 || lum(cs[k]) < lum(cs[m]) ? k : m), -1) : -1;
   let thin = null; if (dark >= 0 && lum(cs[dark]) < (o.darkLum ?? 100)) { const M = new Uint8Array(N); for (let i = 0; i < N; i++) M[i] = L[i] === dark ? 1 : 0;
-    const morph = (A, er) => { let B = A; for (let r = 0; r < o.lineR; r++) { const C2 = new Uint8Array(N); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x, v = [B[i], x > 0 ? B[i - 1] : 0, x < W - 1 ? B[i + 1] : 0, y > 0 ? B[i - W] : 0, y < H - 1 ? B[i + W] : 0]; C2[i] = er ? (v.every(Boolean) ? 1 : 0) : (v.some(Boolean) ? 1 : 0); } B = C2; } return B; };
-    const thick = morph(morph(M, true), false); thin = new Uint8Array(N); for (let i = 0; i < N; i++) if (M[i] && !thick[i]) { thin[i] = 1; L[i] = 254; } }
+    const thick = dzMorph(dzMorph(M, W, H, o.lineR, true), W, H, o.lineR, false); thin = new Uint8Array(N); for (let i = 0; i < N; i++) if (M[i] && !thick[i]) { thin[i] = 1; L[i] = 254; } }
   const sil = new Uint8Array(N); for (let i = 0; i < N; i++) sil[i] = L[i] < 255 ? 1 : 0;
-  const rings = []; for (const k of [...new Set(L)].filter(v => v < 254)) { const M = new Uint8Array(N); for (let i = 0; i < N; i++) M[i] = L[i] === k ? 1 : 0; const loops = dzTraceLoops(M, W, H).filter(lp => Math.abs(dzRingArea(lp)) >= o.minPx); if (loops.length) rings.push({ ci: k, loops }); }
+  prog(0.65, 'Tracing the shapes'); const rings = []; for (const k of [...new Set(L)].filter(v => v < 254)) { const M = new Uint8Array(N); for (let i = 0; i < N; i++) M[i] = L[i] === k ? 1 : 0; const loops = dzTraceLoops(M, W, H).filter(lp => Math.abs(dzRingArea(lp)) >= o.minPx); if (loops.length) rings.push({ ci: k, loops }); }
   return { cols: cs, rings, thin, sil, dark };
 }
+// A mask grown (er false) or shrunk (er true) by n pixels, four ways round, without making garbage.
+function dzMorph(A, W, H, n, er) { let B = A; for (let r = 0; r < n; r++) { const C = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) { const row = y * W; for (let x = 0; x < W; x++) { const i = row + x, c = B[i], l = x ? B[i - 1] : 0, rr = x < W - 1 ? B[i + 1] : 0, u = y ? B[i - W] : 0, d = y < H - 1 ? B[i + W] : 0;
+      C[i] = er ? (c & l & rr & u & d) : (c | l | rr | u | d); } } B = C; } return B; }
+/* The whole trace for a set of choices (run in a worker): the colour areas, the lines along their centre (in mm on
+   the skin), the outline (the silhouette's biggest edge) and the detail lines (the lines inside it, not on it). */
+function dzTraceRun(D, W, H, P, prog) { const R = dzTraceImg(D, W, H, { ...P, prog }), { ox, oy, s } = P;
+  if (P.linesOnly && R.thin) R.rings = R.rings.filter(r => r.ci !== R.dark);
+  prog(0.82, 'Following the lines'); R.lineSubs = R.thin ? dzChCentre(R.thin, W, H, [ox, oy, W * s, H * s]) : [];
+  R.outer = dzTraceLoops(R.sil, W, H).filter(lp => dzRingArea(lp) > 0).sort((a, b) => dzRingArea(b) - dzRingArea(a)).slice(0, 1);
+  const inner = dzMorph(R.sil, W, H, Math.max(1, Math.round(P.lw * 1.2 / s)), true), isIn = ([X, Y]) => { const x = Math.floor((X - ox) / s), y = Math.floor((Y - oy) / s); return x >= 0 && y >= 0 && x < W && y < H && inner[y * W + x]; };
+  const det = []; for (const sp of R.lineSubs) { let cur = []; for (const q of sp.pts) { if (isIn(q)) cur.push(q); else { if (cur.length > 1) det.push(cur); cur = []; } } if (cur.length > 1) det.push(cur); }
+  R.details = det.filter(p => p.reduce((t, q, i) => i ? t + Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) : 0, 0) >= 1.5); delete R.thin; delete R.sil; delete R.lineSubs; prog(1, 'Done'); return R; }
+// The trace in a worker of its own, so the screen never stalls: the functions it needs, sent as its source.
+const dzTraceWorker = () => new Worker(URL.createObjectURL(new Blob([[dzTraceImg, dzTraceLoops, dzMorph, dzChCentre, dzTraceRun].map(f => f.toString()).join('\n')
+  + '\nconst dzRingArea = ' + dzRingArea.toString() + ';\nonmessage = (e) => { const { id, D, W, H, P } = e.data; try { const R = dzTraceRun(D, W, H, P, (p, m) => postMessage({ id, p, m })); postMessage({ id, R }); } catch (err) { postMessage({ id, err: String(err && err.message || err) }); } };'], { type: 'text/javascript' })));
 // The edges of a mask (1 inside) as closed loops of pixel corners: outlines one way round, holes the other.
 function dzTraceLoops(M, W, H) { const out = new Map(), key = (x, y) => y * (W + 1) + x, add = (a, b) => { let l = out.get(a); if (!l) out.set(a, l = []); l.push(b); };
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (!M[y * W + x]) continue;
@@ -4150,25 +4165,22 @@ DZ.edit = async (id) => {
     const cv0 = document.createElement('canvas'); cv0.width = W; cv0.height = H; const g0 = cv0.getContext('2d', { willReadFrequently: true }); g0.imageSmoothingQuality = 'high'; g0.drawImage(im, 0, 0, W, H); const D = g0.getImageData(0, 0, W, H).data;
     const s = Math.min(A.w / W, A.h / H), ox = A.x + (A.w - W * s) / 2, oy = A.y + (A.h - H * s) / 2;   /* mm per trace px, and where it sits */
     const O = { style: 'colour', k: 4, detail: 2, smooth: 0.4, lw: 0.8 }; let R = null, timer = 0;
-    const run = () => { const S = TR_STYLES.find(x => x[0] === O.style)[3], k = S.k > 1 ? O.k : 1; R = dzTraceImg(D, W, H, { k, minPx: Math.max(4, Math.round(O.detail / (s * s))), lineR: Math.max(1, Math.round(O.lw / s / 2)), lines: S.lines });
-      if (S.linesOnly && R.thin) R.rings = R.rings.filter(r => r.ci !== R.dark);
-      R.lineSubs = R.thin ? dzChCentre(R.thin, W, H, [ox, oy, W * s, H * s]) : [];
-      R.outer = dzTraceLoops(R.sil, W, H).filter(lp => dzRingArea(lp) > 0).sort((a, b) => dzRingArea(b) - dzRingArea(a)).slice(0, 1);
-      const inner = (() => { const M = R.sil.slice(), r0 = Math.max(1, Math.round(O.lw * 1.2 / s)); for (let r = 0; r < r0; r++) { const C = M.slice(); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (C[i] && ((x && !C[i - 1]) || (x < W - 1 && !C[i + 1]) || (y && !C[i - W]) || (y < H - 1 && !C[i + W]))) M[i] = 0; } } return M; })();
-      const isIn = ([X, Y]) => { const x = Math.floor((X - ox) / s), y = Math.floor((Y - oy) / s); return x >= 0 && y >= 0 && x < W && y < H && inner[y * W + x]; };
-      const det = []; for (const sp of R.lineSubs) { let cur = []; for (const p of sp.pts) { if (isIn(p)) cur.push(p); else { if (cur.length > 1) det.push(cur); cur = []; } } if (cur.length > 1) det.push(cur); }
-      R.details = det.filter(p => p.reduce((t, q, i) => i ? t + Math.hypot(q[0] - p[i - 1][0], q[1] - p[i - 1][1]) : 0, 0) >= 1.5); draw(); };
+    const wk = dzTraceWorker(); let seq = 0;
+    const run = () => { const S = TR_STYLES.find(x => x[0] === O.style)[3], k = S.k > 1 ? O.k : 1, id = ++seq; bar(0.02, 'Starting');
+      wk.onmessage = (e) => { const m = e.data; if (m.id !== seq) return; if (m.err) { bar(null); return toast('The trace failed: ' + m.err, 4000); } if (m.R) { R = m.R; bar(null); return draw(); } bar(m.p, m.m); };
+      wk.postMessage({ id, D, W, H, P: { k, minPx: Math.max(4, Math.round(O.detail / (s * s))), lineR: Math.max(1, Math.round(O.lw / s / 2)), lines: S.lines, linesOnly: !!S.linesOnly, ox, oy, s, lw: O.lw } }); };
+    const bar = (p, m) => { const b = o.querySelector('#dz-trbar'); if (!b) return; b.hidden = p == null; if (p == null) return; b.querySelector('i').style.width = Math.round(p * 100) + '%'; b.querySelector('span').textContent = m || 'Tracing'; o.querySelector('[data-tr="ok"]').disabled = true; if (p >= 1) o.querySelector('[data-tr="ok"]').disabled = false; };
     const later = () => { clearTimeout(timer); timer = setTimeout(run, 220); };
     const hex = (c) => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
     const o = document.createElement('div'); o.id = 'dz-trace'; o.className = 'dz-chsetup';
     const sl = (k, n, mn, mx, st, unit) => `<label class="dz-gsz"><span style="width:96px">${n}</span><input type="range" min="${mn}" max="${mx}" step="${st}" data-tro="${k}" value="${O[k]}" style="flex:1"><b style="width:64px;text-align:right" data-trv="${k}">${O[k]}${unit}</b></label>`;
-    o.innerHTML = `<div class="card dz-trcard"><h2 style="margin-top:0">Trace the picture</h2><canvas id="dz-trprev"></canvas><p class="muted" id="dz-trsum" style="font-size:12px;margin:6px 2px"></p>
+    o.innerHTML = `<div class="card dz-trcard"><h2 style="margin-top:0">Trace the picture</h2><div class="dz-trwrap"><canvas id="dz-trprev"></canvas><div id="dz-trbar" hidden><span>Tracing</span><b><i></i></b></div></div><p class="muted" id="dz-trsum" style="font-size:12px;margin:6px 2px"></p>
       <div class="dz-wgrid" style="grid-template-columns:repeat(3,1fr)">${TR_STYLES.map(([k, n, d]) => `<button data-trs="${k}" class="${O.style === k ? 'on' : ''}"><b>${n}</b><small>${d}</small></button>`).join('')}</div>
       <div id="dz-trk">${sl('k', 'Colours', 2, 8, 1, '')}</div>${sl('detail', 'Detail', 0.5, 20, 0.5, ' mm²')}${sl('smooth', 'Smoothness', 0.1, 1.5, 0.05, ' mm')}${sl('lw', 'Line weight', 0.3, 2.5, 0.1, ' mm')}
       <p class="dz-chnote">Detail: the smallest shape kept, anything smaller joins its neighbour. Smoothness: how far a curve may stray to save nodes. Line weight: dark marks thinner than this are lines, thicker ones solid black.</p>
       <div class="row" style="gap:8px;margin-top:10px"><button class="btn" data-tr="x" style="flex:1">Cancel</button><button class="btn primary" data-tr="ok" style="flex:2">Use this trace</button></div></div>`;
     document.body.appendChild(o); const pc = o.querySelector('#dz-trprev');
-    function draw() { const k = Math.min(1, 560 / Math.max(W, H)) * 1.6, g = pc.getContext('2d'); pc.width = Math.round(W * k); pc.height = Math.round(H * k); pc.style.width = '100%'; g.fillStyle = '#e2b493'; g.fillRect(0, 0, pc.width, pc.height); g.save(); g.scale(k, k);
+    function draw() { if (!R) return; o.querySelector('[data-tr="ok"]').disabled = false; const k = Math.min(1, 560 / Math.max(W, H)) * 1.6, g = pc.getContext('2d'); pc.width = Math.round(W * k); pc.height = Math.round(H * k); pc.style.width = '100%'; g.fillStyle = '#e2b493'; g.fillRect(0, 0, pc.width, pc.height); g.save(); g.scale(k, k);
       let nodes = 0; for (const r of R.rings) { g.beginPath(); for (const lp of r.loops) { const P = dzTraceSmooth(lp, O.smooth / s); nodes += P.length; g.moveTo(...P[0]); for (const q of P.slice(1)) g.lineTo(...q); g.closePath(); } g.fillStyle = hex(R.cols[r.ci]); g.fill('evenodd'); }
       g.lineCap = g.lineJoin = 'round'; g.strokeStyle = '#141414'; g.lineWidth = Math.max(0.6, O.lw * 0.6 / s); for (const p of R.details) { g.beginPath(); g.moveTo((p[0][0] - ox) / s, (p[0][1] - oy) / s); for (const q of p.slice(1)) g.lineTo((q[0] - ox) / s, (q[1] - oy) / s); g.stroke(); }
       g.strokeStyle = '#1fb6a6'; g.lineWidth = Math.max(0.8, 1.2 / k); for (const lp of R.outer) { const P = dzTraceSmooth(lp, O.smooth / s); g.beginPath(); g.moveTo(...P[0]); for (const q of P.slice(1)) g.lineTo(...q); g.closePath(); g.stroke(); } g.restore();
@@ -4177,13 +4189,15 @@ DZ.edit = async (id) => {
     o.addEventListener('input', (e) => { const k = e.target.dataset.tro; if (!k) return; O[k] = +e.target.value; o.querySelector(`[data-trv="${k}"]`).textContent = O[k] + { k: '', detail: ' mm²', smooth: ' mm', lw: ' mm' }[k]; later(); });
     run();
     return new Promise((res) => { o.onclick = async (e) => { const st = e.target.closest('[data-trs]'); if (st) { O.style = st.dataset.trs; O.lw = TR_STYLES.find(x => x[0] === O.style)[3].lw; o.querySelector('[data-tro="lw"]').value = O.lw; o.querySelector('[data-trv="lw"]').textContent = O.lw + ' mm'; o.querySelectorAll('[data-trs]').forEach(b => b.classList.toggle('on', b === st)); return run(); }
-      const b = e.target.closest('[data-tr]'); if (!b) return; o.remove(); if (b.dataset.tr !== 'ok') return res(false); chTraceApply(R, { ref, W, H, s, ox, oy, O, hex }); res(true); }; }); }
+      const b = e.target.closest('[data-tr]'); if (!b || b.disabled) return; if (b.dataset.tr !== 'ok') { wk.terminate(); o.remove(); return res(false); }
+      bar(0.5, 'Fitting the curves'); await new Promise(r => setTimeout(r, 30)); wk.terminate(); await chTraceApply(R, { ref, W, H, s, ox, oy, O, hex, bar }); o.remove(); res(true); }; }); }
   // The trace into the challenge as shapes: the picture (hidden), one Packing shape per colour, Detail lines, the Outline.
-  function chTraceApply(R, P) { const { ref, W, H, s, ox, oy, O, hex } = P, PX = CH_PX, tol = Math.max(0.3, O.smooth * PX), C = doc.chal || (doc.chal = {});
+  async function chTraceApply(R, P) { const { ref, W, H, s, ox, oy, O, hex, bar } = P, PX = CH_PX, tol = Math.max(0.3, O.smooth * PX), C = doc.chal || (doc.chal = {});
     const liner = (C.needles || []).find(n => /RL$/.test(n)) || (O.style === 'fine' ? '3RL' : '5RL'), packer = (C.needles || []).find(n => /M1$|RS$/.test(n)) || '9M1', news = [];
     const img = { id: dzId(), t: 'image', ref, x: ox * PX, y: oy * PX, w: W * s * PX, h: H * s * PX, op: 1, rot: 0, name: 'Traced picture', hide: true }; news.push(img);
     const toPage = (lp) => dzTraceSmooth(lp, O.smooth / s).map(([x, y]) => ({ x: (ox + x * s) * PX, y: (oy + y * s) * PX }));
-    const cols = []; for (const r of [...R.rings].sort((a, b) => b.loops.reduce((t, l) => t + Math.abs(dzRingArea(l)), 0) - a.loops.reduce((t, l) => t + Math.abs(dzRingArea(l)), 0))) {
+    const cols = [], nR = R.rings.length; let done = 0; for (const r of [...R.rings].sort((a, b) => b.loops.reduce((t, l) => t + Math.abs(dzRingArea(l)), 0) - a.loops.reduce((t, l) => t + Math.abs(dzRingArea(l)), 0))) {
+      bar?.(0.1 + 0.85 * done++ / Math.max(1, nR), 'Fitting the curves'); await new Promise(r2 => setTimeout(r2, 0));   /* a breath between colours, so the bar moves */
       const subs = r.loops.map(lp => dzFitRing(toPage(lp), tol)).filter(sp => sp.nodes.length > 2); if (!subs.length) continue; const c = hex(R.cols[r.ci]); cols.push(c);
       const z = vecFromPage(subs, { fill: 'none', role: 'shade', nd: packer, name: 'Packing ' + c, sh: { tech: 'blend', grad: 'flat', cols: [c, c], mixs: [[c], [c]], dark: 0.85, light: 0.05, bias: 1 } }); chDefN(z); news.push(z); }
     if (R.details.length) { const z = dzChVec(R.details.map(p => ({ closed: false, pts: p })), { role: 'detail', nd: liner, name: 'Detail lines' }); chDefN(z); news.push(z); }
