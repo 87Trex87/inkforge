@@ -134,7 +134,7 @@ async function dzChShade(x, doc, l, scale) { const sh = l.sh || {}, outs = doc.l
   const b = [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], res = 0.2, cw = Math.max(1, Math.ceil(b[2] / res)), chh = Math.max(1, Math.ceil(b[3] / res));
   const c = document.createElement('canvas'); c.width = cw; c.height = chh; const g = c.getContext('2d'), im = g.createImageData(cw, chh), D = im.data;
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, CS = (sh.cols?.length ? sh.cols : ['#b3261e', '#f2c21b']).map(chHexRGB); if (CS.length < 2) CS.push(CS[0]);
-  const RGB = sh.rgb && sh.palC?.length > 1 ? Uint8Array.from(atob(sh.rgb), ch => ch.charCodeAt(0)) : null, RN = sh.rgbN || 80, PC = (sh.palC || []).map(chHexRGB);   /* a colour value study: the picture in the palette's colours */
+  const RGB = sh.rgb && (sh.palC?.length > 1 || sh.cols?.length > 1) ? Uint8Array.from(atob(sh.rgb), ch => ch.charCodeAt(0)) : null, RN = sh.rgbN || 80, PC = (sh.tech === 'blend' && sh.cols?.length > 1 ? sh.cols : sh.palC || []).map(chHexRGB);   /* a colour value study: the picture in the palette's colours */
   for (let j = 0; j < chh; j++) for (let i = 0; i < cw; i++) { const v = dzChAt(sh, b[0] + (i + 0.5) * res, b[1] + (j + 0.5) * res, b), k = (j * cw + i) * 4;
     if (RGB) { const u = Math.max(0, Math.min(RN - 1, (i + 0.5) / cw * RN - 0.5)), w2 = Math.max(0, Math.min(RN - 1, (j + 0.5) / chh * RN - 0.5)), i0 = Math.floor(u), j0 = Math.floor(w2), i1 = Math.min(RN - 1, i0 + 1), j1 = Math.min(RN - 1, j0 + 1), fu = u - i0, fv = w2 - j0;
       const px = [0, 1, 2].map(q => ((RGB[(j0 * RN + i0) * 3 + q] * (1 - fu) + RGB[(j0 * RN + i1) * 3 + q] * fu) * (1 - fv) + (RGB[(j1 * RN + i0) * 3 + q] * (1 - fu) + RGB[(j1 * RN + i1) * 3 + q] * fu) * fv));
@@ -4009,7 +4009,7 @@ DZ.edit = async (id) => {
   const chAutoPal = (sh) => { const C = doc.chal; if (!C || C.inkT !== 'colour' || !sh.pals || typeof ttPalSave !== 'function') return;
     const K = Math.min(8, Math.max(2, Math.round(sh.levels || 5))), cols = sh.pals[K]; if (!cols?.length) return;
     const P = { id: C.autoPal || 'p' + Date.now().toString(36), name: (doc.name || 'Challenge').slice(0, 30) + ' colours', caps: [TT_CAPS[0], ...cols, TT_CAPS[TT_CAPS.length - 1]].map(c => ({ c, s: 1 })) };
-    ttPalSave(P); C.autoPal = P.id; C.pal = P.id; sh.palC = P.caps.map(c => c.c); };
+    ttPalSave(P); C.autoPal = P.id; C.pal = P.id; sh.palC = P.caps.map(c => c.c); sh.tech = 'blend'; sh.cols = [...sh.palC]; sh.mixs = sh.cols.map(c => [c]); };   /* a colour blend, its colours the palette's, darkest first */
   /* The picture's colours averaged into K groups (k-means from evenly spaced shades), darkest first; ones too close to
      black or white are left to those caps. */
   const chKCols = (D, K) => { const px = []; for (let i = 0; i < D.length; i += 4) if (D[i + 3] > 128) px.push([D[i], D[i + 1], D[i + 2]]); if (px.length < K) return [];
