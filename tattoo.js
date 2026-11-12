@@ -1108,11 +1108,11 @@ TT.open = async (el, id) => {
   const buAdd = (p, v) => { if (CHEAT) return; const i = Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS))); BU[i] = Math.min(1, BU[i] + v); trDirty = true; };
   const blowC = document.createElement('canvas'); blowC.width = Math.ceil(W / 2); blowC.height = Math.ceil(H / 2); const bx = blowC.getContext('2d');
   let trDirty = true, trT = 0; const told = {};
-  const trAdd = (p, r, v) => { if (CHEAT) return;
+  const trAdd = (p, r, v, flat) => { if (CHEAT) return;
     const cx0 = p.x / TS, cy0 = p.y / TS, R2 = Math.max(1, r / TS), now = performance.now(), px = Math.min(W - 1, Math.max(0, Math.round(p.x))), py = Math.min(H - 1, Math.max(0, Math.round(p.y))), inkHere = densAt((py * W + px) * 4);
     for (let y = Math.max(0, Math.floor(cy0 - R2)); y <= Math.min(th - 1, Math.ceil(cy0 + R2)); y++)
       for (let x2 = Math.max(0, Math.floor(cx0 - R2)); x2 <= Math.min(tw - 1, Math.ceil(cx0 + R2)); x2++) {
-        const f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (f > 0) { const c = y * tw + x2, dv = v * f * (1 + WK_GAIN * WK[c] + WK_INK * inkHere); TR[c] += dv; WK[c] += dv * WK_KEEP; if (TR[c] > TP[c]) TP[c] = TR[c]; THit[c] = now; } }
+        let f = 1 - Math.hypot(x2 + 0.5 - cx0, y + 0.5 - cy0) / R2; if (flat) f = Math.min(1, f * 2) * 0.57;   /* flat: even across the needle, the same total as the cone */ if (f > 0) { const c = y * tw + x2, dv = v * f * (1 + WK_GAIN * WK[c] + WK_INK * inkHere); TR[c] += dv; WK[c] += dv * WK_KEEP; if (TR[c] > TP[c]) TP[c] = TR[c]; THit[c] = now; } }
     trDirty = true;
   };
   /* Skin settles once the needle moves away: after a few seconds' rest, redness and swelling halve about every 30 seconds.
@@ -1154,22 +1154,25 @@ TT.open = async (el, id) => {
      in it, slowly on fresh skin and steeply on worked skin. The meter jumps up to a patch that hurts more than it does,
      holds (easing a little) while you move over fresher skin, and everything settles during a real break. So keep
      moving: lingering or going back over a sore patch is what spikes it. */
-  let PC = null;
+  /* PK: the worst each patch has hurt. Once a patch has really hurt (0.4 or more) it only relaxes to half of that, and
+     the more it has hurt the faster it climbs again: pain never fully recovers during a session. pfMax is the highest of
+     those floors, which the meter itself never drops below. */
+  let PC = null, PK = null, pfMax = 0; const pf = (pk) => pk < 0.4 ? 0 : pk * 0.5;
   function painHit(q, depth, r) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = EX.cur; painT = now;
-    if (!PC || PC.length !== TR.length) PC = new Float32Array(TR.length);
+    if (!PC || PC.length !== TR.length) { PC = new Float32Array(TR.length); PK = new Float32Array(TR.length); pfMax = 0; }
     /* every patch under the needle's footprint feels it, so a big magnum works (and hurts) a wide area at once; the
        worst-worn patch under it sets how much: swollen skin is very painful, overworked far more */
     r = Math.max(TS * 0.5, r || 0); const x0 = Math.max(0, Math.floor((q.x - r) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + r) / TS)), y0 = Math.max(0, Math.floor((q.y - r) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + r) / TS));
     let w = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) w = Math.max(w, TR[y * tw + x] || 0);
     const add = dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.5, Math.min(1.6, depth / 0.6)) * (0.3 + 4 * Math.pow(Math.min(2, w), 1.8)) * Math.min(1.6, 0.85 + 0.15 * Math.sqrt(r / mm));
-    let top = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = y * tw + x; PC[k] += add; top = Math.max(top, PC[k]); }
-    c.pain = c.pain || 0; if (top > c.pain) c.pain = top; else if (top < c.pain - 0.15) c.pain = Math.max(top, c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
+    let top = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = y * tw + x; PC[k] += add * (1 + 1.5 * PK[k]); if (PC[k] > PK[k]) { PK[k] = PC[k]; pfMax = Math.max(pfMax, pf(PK[k])); } top = Math.max(top, PC[k]); }
+    c.pain = c.pain || 0; if (top > c.pain) c.pain = top; else if (top < c.pain - 0.15) c.pain = Math.max(top, pfMax, c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
     c.painPeak = Math.max(c.painPeak || 0, c.pain); painShow();
     if (c.pain >= 1 && !c.tapOut) { c.tapOut = true; toast('The client tapped out. The attempt is judged on what you got done.', 5000); setTimeout(() => { try { exDone(); } catch {} }, 250); }
     else if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); }
     else if (c.pain >= 0.6 && painTold < 1) { painTold = 1; toast('The client is wincing: ease off, or work another part for a while.', 3500); } }
   const painIv = setInterval(() => { try { if (!document.body.contains(stage)) return clearInterval(painIv); if (!painOn() || !EX.cur.pain) return;
-    const rest = performance.now() - painT > 1500; if (!rest) return; EX.cur.pain = Math.max(0, EX.cur.pain - 0.02 * 0.5); if (PC) for (let i = 0; i < PC.length; i++) if (PC[i]) PC[i] = Math.max(0, PC[i] - 0.02 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (EX.cur.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
+    const rest = performance.now() - painT > 1500; if (!rest) return; EX.cur.pain = Math.max(Math.min(EX.cur.pain, pfMax), EX.cur.pain - 0.02 * 0.5); if (PC) for (let i = 0; i < PC.length; i++) if (PC[i]) PC[i] = Math.max(Math.min(PC[i], pf(PK[i])), PC[i] - 0.02 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (EX.cur.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
   const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
   // Raw skin: a mottled, bumpy texture of red and pink lumps, made once.
   const patty = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d');
@@ -1572,7 +1575,7 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q); hcAdd(q, pen.foot); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          painHit(q, depth, pen.foot); trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, 1.1 * mm / pen.foot) * Math.pow(volt() / 7, 2) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH));   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          painHit(q, depth, pen.foot); trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, Math.sqrt(1.1 * mm / pen.foot)) * Math.pow(volt() / 7, 2) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH), true);   /* a wide needle spreads each hit, but works a lot more skin at once */   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * 3 * Math.pow(0.3 / blowSize(), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: too deep, too slow.', 2500); } }
@@ -1612,7 +1615,7 @@ TT.open = async (el, id) => {
         B.x0 = Math.min(B.x0, pen.dw.x - bp); B.y0 = Math.min(B.y0, pen.dw.y - bp); B.x1 = Math.max(B.x1, pen.dw.x + bp); B.y1 = Math.max(B.y1, pen.dw.y + bp);
         const u = flushPig(); if (u) paint({ x0: u.x0 - 4, y0: u.y0 - 4, x1: u.x1 + 4, y1: u.y1 + 4 }); }
       if (held < 0.3) return;
-      trAdd(pen.dw, pen.foot, 0.65 * dt * Math.pow(d / 0.6, 2) * (volt() / 7) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH));
+      trAdd(pen.dw, pen.foot, 0.65 * dt * Math.pow(d / 0.6, 2) * (volt() / 7) * (isMag() ? 0.7 : 1) / ((cal.tough || 1) * TT_TOUGH), true);
       SS.dwell = (SS.dwell || 0) + dt; if (EX?.cur) EX.cur.dwell = +((EX.cur.dwell || 0) + dt).toFixed(2);
       if (now - pen.dw.t > 900 && !told.dwell) { told.dwell = 1; toast('Keep moving: digging a hole.', 2500); } }, 100); };   // the redness shows when the needle lifts
   // A crash landing or take-off at p: the needle slams in, leaving a darker spot (a line of them along a shaded edge)
@@ -3411,7 +3414,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); PC = null; LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); PC = PK = null; pfMax = 0; LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
