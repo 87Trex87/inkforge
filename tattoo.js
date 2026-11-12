@@ -3486,7 +3486,7 @@ TT.open = async (el, id) => {
     setTimeout(painShow); if (fresh && EX.mode === 'ch' && !T.area && !CHEAT) setTimeout(async () => painSet(await painPick(true)), 350);
     exStencil(T); st.hide.delete('stencil'); st.op.stencil = 0.6;
     (T.refs || []).forEach((R, k) => refNew({ gen: T.id, ref: R.ref, ar: R.ar || 1, w: 180, op: 1, x: 110 + k * 24, y: 170 + k * 40 }));   /* the challenge's own reference pictures */
-    for (const S of T.stencils || []) Media.url(S.ref).then(u => { if (!u) return; const im = new Image(); im.onload = () => { L.stencil.getContext('2d').drawImage(im, S.box[0] * mm, S.box[1] * mm, S.box[2] * mm, S.box[3] * mm); touched.add('stencil'); paint(); }; im.src = u; });   /* a value study's stencil from the stencil maker */
+    for (const S of T.stencils || []) Media.url(S.ref).then(u => { if (!u) return; const im = new Image(); im.onload = () => { const sg = L.stencil.getContext('2d'); sg.save(); sg.globalAlpha = 0.4; sg.drawImage(im, S.box[0] * mm, S.box[1] * mm, S.box[2] * mm, S.box[3] * mm); sg.restore();   /* fainter than the lines to follow: a guide for the shading */ touched.add('stencil'); paint(); }; im.src = u; });   /* a value study's stencil from the stencil maker */
     refs = refs.filter(r => !r.gen);
     if (T.kind !== 'line') { const cr = exCrop(T), sr = stage.getBoundingClientRect(), w = Math.max(140, Math.min(280, sr.width * 0.28)), h = w * cr[3] / cr[2];
       refNew({ gen: T.id, ar: cr[3] / cr[2], w, op: 1, x: sr.width - w / 2 - 14, y: Math.min(sr.height - 90 - h / 2, Math.max(150 + h / 2, sr.height / 2)) }); }

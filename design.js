@@ -1040,9 +1040,11 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     for (const c of clips) await oneW(ox, c);
     x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(off, 0, 0);
   }
+  /* A value study's stencil, where it goes on the skin: under the judged lines (black, at their needle's width), faint
+     purple, so the two never look alike. Hidden with Stencil in the Challenge menu. */
+  if (doc.chal && !opts.noStencil && doc.chal.showSten !== false) for (const l of doc.layers) { const S = l.sh?.stencil; if (l.hide || !S) continue; const im = await dzImg(S.ref); if (!im) continue;
+    x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
   for (const l of chLines) await one(x, { ...l, fill: null, fm: undefined, stroke: '#141414', sw: (CH_NW[l.nd] || 0.7) * CH_PX, dash: '' });
-  if (doc.chal && !opts.noStencil) for (const l of doc.layers) { const S = l.sh?.stencil; if (l.hide || !S) continue; const im = await dzImg(S.ref); if (!im) continue;   /* a value study's stencil, where it goes on the skin */
-    x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.85; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
 }
 /* ---------- SVG ----------
    Shapes are vector, and so are their plain colours and gradients, so they write straight into an SVG the same
@@ -3971,7 +3973,7 @@ DZ.edit = async (id) => {
   const chFrame = (title, sub, tabs, body, foot = '') => `<div class="dz-chhead"><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</div>${tabs}<div class="dz-chbody">${body}</div>${foot ? `<div class="dz-chfoot">${foot}</div>` : ''}`;
   const chSetMenu = () => { const C = doc.chal, S = doc.layers.filter(l => l.t === 'shape' && l.role), n = (r) => S.filter(l => l.role === r).length, lj = C.base && C.lessonJudge !== false && C.sig === dzChSig(doc);
     const tabs = chTabs('set', [['brief', 'Brief'], ['pal', 'Palette'], ['judge', 'Judging']]);
-    const body = chTab.set === 'brief' ? `<div class="dz-gk" style="grid-template-columns:1fr 1fr;margin-bottom:6px"><button data-chsetup>Setup…</button><button data-charea class="${C.area && C.showArea !== false ? 'on' : ''}" ${C.area ? '' : 'disabled'}>Tattoo area</button></div><textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
+    const body = chTab.set === 'brief' ? `<div class="dz-gk" style="grid-template-columns:1fr 1fr;margin-bottom:6px"><button data-chsetup>Setup…</button><button data-charea class="${C.area && C.showArea !== false ? 'on' : ''}" ${C.area ? '' : 'disabled'}>Tattoo area</button>${doc.layers.some(o => o.sh?.stencil) ? `<button data-chstshow class="${C.showSten !== false ? 'on' : ''}" style="grid-column:span 2">Stencil</button>` : ''}</div>${doc.layers.some(o => o.sh?.stencil) ? chNote('<b>Black</b>: lines that are judged (Outline or Detail), at the width their needle makes. <b>Faint purple</b>: the stencil, a guide for the shading only.') : ''}<textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
         + chNote(`${n('outline')} outline, ${n('detail')} detail line${n('detail') === 1 ? '' : 's'}, ${n('pack')} packing, ${n('shade')} shading. Select a shape and press Grade as in the strip to give it a role.`)
       : chTab.set === 'pal' ? `<div class="dz-chpals">${chPals().map(p => `<button data-chpal="${esc(p.id)}" class="${C.pal === p.id ? 'on' : ''}"><span>${p.caps.map(c => `<i style="background:${c.c}"></i>`).join('')}</span>${esc(p.name)}</button>`).join('')}</div>
         <div class="dz-gk" style="grid-template-columns:1fr 1fr 1fr;margin-top:6px"><button data-chpe="new">New</button><button data-chpe="edit">${ttPalMine().some(x => x.id === C.pal) ? 'Edit' : 'Copy to edit'}</button><button data-chpe="imp">Import</button></div>
@@ -4251,6 +4253,7 @@ DZ.edit = async (id) => {
     if (d('chca') && l) { l.mixOf = [d('chca'), l.mixOf?.[1]]; chInk(l); changed(true); return chRe(); }
     if (d('chcb') != null && l) { const b = d('chcb'); l.mixOf = [l.mixOf?.[0] || chCaps()[0], b || undefined]; chInk(l); changed(true); return chRe(); }
     if (t.closest('[data-chsetup]')) { closePop(); return chSetup(); }
+    if (t.closest('[data-chstshow]')) { doc.chal.showSten = doc.chal.showSten === false; changed(true); redraw(); return chRe(); }
     if (t.closest('[data-charea]') && doc.chal.area) { doc.chal.showArea = doc.chal.showArea === false; changed(true); chAreaDraw(); return chRe(); }
     if (d('chpal')) { doc.chal.pal = d('chpal'); changed(true); return chRe(); }
     if (d('chpe')) { const k = d('chpe'), use = (P) => { doc.chal.pal = P.id; changed(true); chRe(); };
