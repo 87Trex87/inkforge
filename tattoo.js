@@ -1150,14 +1150,22 @@ TT.open = async (el, id) => {
   const painWord = (v) => v < 0.3 ? 'Relaxed' : v < 0.6 ? 'Uncomfortable' : v < 0.85 ? 'Wincing' : 'Needs a break';
   function painShow() { const el = $('#tt-pain'); if (!el) return; el.hidden = !painOn(); if (el.hidden) return; const v = Math.min(1, EX.cur.pain || 0), b = el.querySelector('b'), w = el.querySelector('em');
     b.style.width = (v * 100).toFixed(1) + '%'; b.style.background = `hsl(${Math.round(120 - 120 * v)} 70% 45%)`; w.textContent = painWord(v); }
+  /* Pain is felt per patch of skin (the wear grid's cells, PC): each patch builds its own soreness while the needle is
+     in it, slowly on fresh skin and steeply on worked skin. The meter jumps up to a patch that hurts more than it does,
+     holds (easing a little) while you move over fresher skin, and everything settles during a real break. So keep
+     moving: lingering or going back over a sore patch is what spikes it. */
+  let PC = null;
+  const pcI = (p) => Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)));
   function painHit(q, depth) { if (!painOn()) return; const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - painT) / 1000)), c = EX.cur; painT = now;
-    c.pain = (c.pain || 0) + dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.35, Math.min(1.6, depth / 0.6)) * (0.4 + 2.2 * Math.pow(Math.min(2, trAt(q)), 1.4));   /* worked skin hurts far more, and climbs steeply as it saturates: pain leads the damage */
+    if (!PC || PC.length !== TR.length) PC = new Float32Array(TR.length); const k = pcI(q);
+    PC[k] += dt * PAIN_RATE * PAIN_SENS[painArea()[2] - 1] * Math.max(0.35, Math.min(1.6, depth / 0.6)) * (0.4 + 2.2 * Math.pow(Math.min(2, trAt(q)), 1.4));   /* worked skin hurts far more, and climbs steeply as it saturates: pain leads the damage */
+    c.pain = c.pain || 0; if (PC[k] > c.pain) c.pain = PC[k]; else if (PC[k] < c.pain - 0.15) c.pain = Math.max(PC[k], c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
     c.painPeak = Math.max(c.painPeak || 0, c.pain); painShow();
     if (c.pain >= 1 && !c.tapOut) { c.tapOut = true; toast('The client tapped out. The attempt is judged on what you got done.', 5000); setTimeout(() => { try { exDone(); } catch {} }, 250); }
     else if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); }
     else if (c.pain >= 0.6 && painTold < 1) { painTold = 1; toast('The client is wincing: ease off, or work another part for a while.', 3500); } }
   const painIv = setInterval(() => { try { if (!document.body.contains(stage)) return clearInterval(painIv); if (!painOn() || !EX.cur.pain) return;
-    const rest = performance.now() - painT > 1500; if (!rest) return; EX.cur.pain = Math.max(0, EX.cur.pain - 0.02 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (EX.cur.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
+    const rest = performance.now() - painT > 1500; if (!rest) return; EX.cur.pain = Math.max(0, EX.cur.pain - 0.02 * 0.5); if (PC) for (let i = 0; i < PC.length; i++) if (PC[i]) PC[i] = Math.max(0, PC[i] - 0.02 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (EX.cur.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
   const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
   // Raw skin: a mottled, bumpy texture of red and pink lumps, made once.
   const patty = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d');
@@ -3399,7 +3407,7 @@ TT.open = async (el, id) => {
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
-  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
+  const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); PC = null; LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
   const exStart = (fresh) => {
     const T = exList()[EX.i]; if (!T) return;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
