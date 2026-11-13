@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 437;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 438;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7604,6 +7604,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 438, when: '2026-11-13T16:00', added: ['Design and simulator cards have a Print or save button, and the simulator can print a piece too.', 'The tool bars on the left (and the ink caps) go to two columns when they do not fit, so no tool is hidden.'],
+    test: ['Print a design and a simulator piece from their cards.', 'Make the window short. Do the tools spread into two columns?'] },
   { build: 437, when: '2026-11-13T14:00', added: ['Every design has Print and Save as at the top: a picture (PNG or JPG), a PDF, or a copy under a new name, background and all.', 'Tips now show when the S Pen hovers over an icon, no need to press and hold.'],
     test: ['Open a design and use Save as and Print. Is the background included?', 'Hover the S Pen over icons. Do their names show?'] },
   { build: 436, when: '2026-11-13T12:00', added: ['Challenge maker: start a challenge From a picture. Any drawing, photo or simulator piece is traced into shapes to tattoo: colour line work, blackwork, fine line, black and grey or colour realism, with sliders for colours or zones, detail, smoothness and line weight, and a button to hold to compare.', 'A trace makes a detailed stencil of every edge for the simulator, adds the picture beside the skin, and writes a first brief.', 'A slimmer Setup: skin and body area (by level, with sizes), size, needles, judging and pictures. A new size scales the shapes.', 'Big traced shapes no longer lag while you edit.'],
