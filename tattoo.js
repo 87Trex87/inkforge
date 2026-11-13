@@ -1711,7 +1711,7 @@ TT.open = async (el, id) => {
           const t0 = trAt(q); hcAdd(q, pen.foot); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           painHit(q, depth, pen.foot); trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, Math.sqrt(1.1 * mm / pen.foot)) * Math.pow(volt() / 7, 2) * (isMag() ? 1.6 : nk === 'shader' ? 0.75 : 1) / ((cal.tough || 1) * TT_TOUGH), true);   /* magnums work a wide strip hard; round shaders get some slack */   /* a wide needle spreads each hit, but works a lot more skin at once */   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
-          const risk = Math.max(0, Math.min(1, (blowGap(depth) - gapMm(pen.speed)) / 0.03)) * Math.max(0, Math.min(1, (depth - 0.45) / 0.25)) * (cal.blow ?? 1) * 2.2 * Math.pow(0.3 / blowSize(), 2);   /* slower than blowGap at this depth blows out; deeper, it comes at more ordinary speeds */   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
+          const risk = Math.max(0, Math.min(1, (blowGap(depth) - gapMm(pen.speed)) / 0.035)) * Math.max(0, Math.min(1, (depth - 0.45) / 0.25)) * (cal.blow ?? 1) * 1.5 * Math.pow(0.3 / blowSize(), 2);   /* slower than blowGap at this depth blows out; deeper, it comes at more ordinary speeds */   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: too deep, too slow.', 2500); } }
           if (t0 > 1.6 && EX?.cur && !pen.overN) { pen.overN = 1; EX.cur.over = (EX.cur.over || 0) + 1; tally(); } if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked skin: move on.', 2500); }
@@ -2465,9 +2465,9 @@ TT.open = async (el, id) => {
   function blowSize() { const s = feel.size || 0.3; return TT_NEEDLES.find(n => n.id === st.needle)?.kind === 'shader' ? Math.min(s, 0.3) : s; }
   function blowD() { return 0.8 - (0.3 - blowSize()) * 1.2; }
   /* The slowest safe pace (mm between punctures) at a depth. Shallow, anything goes; at the middle of the green only a
-     real crawl blows out (under about 0.045 mm); towards the top of the green a slow-normal pace (about 0.1 mm) does;
+     real crawl blows out (under about 0.035 mm); towards the top of the green a slow pace (about 0.08 mm) does;
      into the red, even an ordinary pace. */
-  function blowGap(depth) { const mid = (0.45 + blowD()) / 2, top = blowD() + 0.12; return depth <= mid ? 0.045 * Math.max(0, Math.min(1, (depth - 0.45) / (mid - 0.45))) : 0.045 + 0.09 * Math.min(1.4, (depth - mid) / (top - mid)); }
+  function blowGap(depth) { const mid = (0.45 + blowD()) / 2, top = blowD() + 0.12; return depth <= mid ? 0.035 * Math.max(0, Math.min(1, (depth - 0.45) / (mid - 0.45))) : 0.035 + 0.075 * Math.min(1.4, (depth - mid) / (top - mid)); }
   /* Check: the cursor becomes a circle that reads the skin inside it (its average wear as a score out of 100,
      and how worked the worst spot is) instead of tattooing; the slider sets the circle's size in mm. */
   st.checkR ??= 6;
