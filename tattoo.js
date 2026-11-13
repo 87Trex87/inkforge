@@ -701,29 +701,67 @@ const TT_LS_PASS = 70;
    Every number that sets how the skin and the needles behave, in one place: [key, tab, name, min, max, step, default].
    Changed only from the dev panel in the simulator (unlocked in Settings), kept in the setting tt_dev as the values
    that differ from the defaults, and used only while dev controls are on. DV holds the values in use. */
-const TT_DEV_TABS = [['skin', 'Skin'], ['pain', 'Pain'], ['areas', 'Body areas'], ['blow', 'Blowouts'], ['needles', 'Needles'], ['scrub', 'Scrubbing'], ['stencil', 'Stencil']];
+/* [key, tab, name, min, max, step, default, what it does]. Tabs marked advanced show behind the Advanced button. */
+const TT_DEV_TABS = [['skin', 'Skin'], ['pain', 'Pain'], ['areas', 'Body areas'], ['blow', 'Blowouts'], ['needles', 'Needles'], ['scrub', 'Scrubbing'], ['stencil', 'Stencil'],
+  ['look', 'Looks', 1], ['feel', 'Feel', 1], ['area1', 'Each area', 1], ['needle1', 'This needle', 1]];
 const TT_DEV = [
-  ['wearRate', 'skin', 'Skin wear per hit', 0.004, 0.03, 0.0002, 0.0128], ['wkGain', 'skin', 'Worked skin wears faster', 0, 5, 0.1, 2], ['wkInk', 'skin', 'Inked skin wears faster', 0, 2, 0.05, 0.6],
-  ['healHalf', 'skin', 'Redness settles (half-life, s)', 5, 120, 1, 30], ['healRest', 'skin', 'Rest before it settles (s)', 0.5, 10, 0.5, 3],
-  ['painRate', 'pain', 'Pain build-up rate', 0.005, 0.08, 0.001, 0.03], ['painBase', 'pain', 'Fresh skin pain', 0.05, 1, 0.01, 0.3], ['painShader', 'pain', 'Round shader pain', 0.1, 1.5, 0.05, 0.35],
-  ['painRest', 'pain', 'Pain eases while resting', 0.002, 0.05, 0.001, 0.01], ['flashGap', 'pain', 'Gap between swelling flashes (s)', 1, 20, 0.5, 6],
-  ['painL1', 'areas', 'Pain level 1: sensitivity', 0.1, 4, 0.05, 0.5], ['painL2', 'areas', 'Pain level 2: sensitivity', 0.1, 4, 0.05, 0.8], ['painL3', 'areas', 'Pain level 3: sensitivity', 0.1, 4, 0.05, 1.15],
-  ['painL4', 'areas', 'Pain level 4: sensitivity', 0.1, 4, 0.05, 1.6], ['painL5', 'areas', 'Pain level 5: sensitivity', 0.1, 4, 0.05, 2.2],
-  ['boneL4', 'areas', 'Pain level 4: bone buzz', 0, 1.5, 0.01, 0.45], ['boneL5', 'areas', 'Pain level 5: bone buzz', 0, 1.5, 0.01, 0.6],
-  ['wearL1', 'areas', 'Pain level 1: skin wear', 0.3, 2, 0.05, 1], ['wearL2', 'areas', 'Pain level 2: skin wear', 0.3, 2, 0.05, 1], ['wearL3', 'areas', 'Pain level 3: skin wear', 0.3, 2, 0.05, 1],
-  ['wearL4', 'areas', 'Pain level 4: skin wear', 0.3, 2, 0.05, 1], ['wearL5', 'areas', 'Pain level 5: skin wear', 0.3, 2, 0.05, 1],
-  ['blowMid', 'blow', 'Safe pace at mid-green (mm)', 0, 0.1, 0.001, 0.035], ['blowSlope', 'blow', 'Safe pace rise with depth (mm)', 0, 0.2, 0.001, 0.075],
-  ['blowRamp', 'blow', 'How sudden (mm)', 0.005, 0.1, 0.001, 0.035], ['blowRate', 'blow', 'Blowout chance', 0.2, 4, 0.05, 1.5],
-  ['wearLiner', 'needles', 'Liner skin wear', 0.2, 3, 0.05, 1], ['wearShader', 'needles', 'Round shader skin wear', 0.2, 3, 0.05, 0.75], ['wearMag', 'needles', 'Magnum skin wear', 0.2, 3, 0.05, 1.6],
-  ['scrubAngle', 'scrub', 'Turn that counts (degrees)', 90, 178, 1, 149], ['scrubRun', 'scrub', 'Straight run before it (mm)', 0, 6, 0.1, 2], ['scrubDepth', 'scrub', 'Depth it needs', 0, 1, 0.01, 0.4],
-  ['scrubPace', 'scrub', 'Pace kept through the turn', 0.3, 1, 0.01, 0.75], ['scrubPain', 'scrub', 'Pain per scrub turn', 0, 0.05, 0.001, 0.008],
-  ['stenWear', 'stencil', 'Stencil wears off', 0.0005, 0.02, 0.0001, 0.0052], ['stenLine', 'stencil', 'Lining wears it (share)', 0, 1, 0.05, 0.25]];
+  ['wearRate', 'skin', 'Skin wear per hit', 0.004, 0.03, 0.0002, 0.0128, 'How much each puncture reddens and wears the skin. Higher: skin gets red, swollen and overworked in fewer passes.'],
+  ['wkGain', 'skin', 'Worked skin wears faster', 0, 5, 0.1, 2, 'Going back over skin already worked wears it this much faster. Higher punishes repeated passes more.'],
+  ['wkInk', 'skin', 'Inked skin wears faster', 0, 2, 0.05, 0.6, 'Skin already full of ink takes damage faster. Higher makes over-packing a saturated area hurt the skin sooner.'],
+  ['healHalf', 'skin', 'Redness settles (half-life, s)', 5, 120, 1, 30, 'Seconds for resting skin to lose half its redness. Lower lets the skin calm down faster between passes.'],
+  ['healRest', 'skin', 'Rest before it settles (s)', 0.5, 10, 0.5, 3, 'How long a spot must be left alone before it starts to settle.'],
+  ['painRate', 'pain', 'Pain build-up rate', 0.005, 0.08, 0.001, 0.03, 'How fast the client\u2019s pain rises while the needle is in. The main pain dial.'],
+  ['painBase', 'pain', 'Fresh skin pain', 0.05, 1, 0.01, 0.3, 'How much untouched skin hurts, before any wear. Bony areas use their bone buzz instead.'],
+  ['painShader', 'pain', 'Round shader pain', 0.1, 1.5, 0.05, 0.35, 'How much packing with a round shader hurts compared with other needles (1 is the same).'],
+  ['painRest', 'pain', 'Pain eases while resting', 0.002, 0.05, 0.001, 0.01, 'How fast pain drops each moment you lift off. Higher means shorter breaks.'],
+  ['flashGap', 'pain', 'Gap between swelling flashes (s)', 1, 20, 0.5, 6, 'The least time between two red flashes when patches swell.'],
+  ['painL1', 'areas', 'Pain level 1: sensitivity', 0.1, 4, 0.05, 0.5, 'How quickly pain builds on the least painful areas (fleshy, easy).'],
+  ['painL2', 'areas', 'Pain level 2: sensitivity', 0.1, 4, 0.05, 0.8, 'How quickly pain builds on pain level 2 areas (easy).'],
+  ['painL3', 'areas', 'Pain level 3: sensitivity', 0.1, 4, 0.05, 1.15, 'How quickly pain builds on pain level 3 areas (medium).'],
+  ['painL4', 'areas', 'Pain level 4: sensitivity', 0.1, 4, 0.05, 1.6, 'How quickly pain builds on pain level 4 areas (hard).'],
+  ['painL5', 'areas', 'Pain level 5: sensitivity', 0.1, 4, 0.05, 2.2, 'How quickly pain builds on the most painful areas (ribs, sternum and the like).'],
+  ['boneL4', 'areas', 'Pain level 4: bone buzz', 0, 1.5, 0.01, 0.45, 'The steady pain on untouched skin over bone, for level 4 areas, even with a light touch.'],
+  ['boneL5', 'areas', 'Pain level 5: bone buzz', 0, 1.5, 0.01, 0.6, 'The steady pain on untouched skin over bone, for level 5 areas.'],
+  ['wearL1', 'areas', 'Pain level 1: skin wear', 0.3, 2, 0.05, 1, 'How fast skin wears on level 1 areas, times the skin wear per hit.'],
+  ['wearL2', 'areas', 'Pain level 2: skin wear', 0.3, 2, 0.05, 1, 'How fast skin wears on level 2 areas.'],
+  ['wearL3', 'areas', 'Pain level 3: skin wear', 0.3, 2, 0.05, 1, 'How fast skin wears on level 3 areas.'],
+  ['wearL4', 'areas', 'Pain level 4: skin wear', 0.3, 2, 0.05, 1, 'How fast skin wears on level 4 areas.'],
+  ['wearL5', 'areas', 'Pain level 5: skin wear', 0.3, 2, 0.05, 1, 'How fast skin wears on level 5 areas.'],
+  ['blowMid', 'blow', 'Safe pace at mid-green (mm)', 0, 0.1, 0.001, 0.035, 'At the middle of the green depth, going slower than this (mm between punctures) starts to blow out. Lower is more forgiving.'],
+  ['blowSlope', 'blow', 'Safe pace rise with depth (mm)', 0, 0.2, 0.001, 0.075, 'How much faster you must keep moving as you go deeper. Higher makes going deep blow out at ordinary speeds.'],
+  ['blowRamp', 'blow', 'How sudden (mm)', 0.005, 0.1, 0.001, 0.035, 'How quickly the chance goes from none to certain once you are too slow. Lower is a sharper edge.'],
+  ['blowRate', 'blow', 'Blowout chance', 0.2, 4, 0.05, 1.5, 'Overall chance of a blowout once you are past the safe pace.'],
+  ['wearLiner', 'needles', 'Liner skin wear', 0.2, 3, 0.05, 1, 'How hard round liners work the skin per hit.'],
+  ['wearShader', 'needles', 'Round shader skin wear', 0.2, 3, 0.05, 0.75, 'How hard round shaders work the skin per hit.'],
+  ['wearMag', 'needles', 'Magnum skin wear', 0.2, 3, 0.05, 1.6, 'How hard magnums work the skin per hit.'],
+  ['scrubAngle', 'scrub', 'Turn that counts (degrees)', 90, 178, 1, 149, 'How sharply a stroke must double back to count as scrubbing. Lower catches more; higher lets tighter ovals pass.'],
+  ['scrubRun', 'scrub', 'Straight run before it (mm)', 0, 6, 0.1, 2, 'How far the stroke must run straight before the turn for it to count.'],
+  ['scrubDepth', 'scrub', 'Depth it needs', 0, 1, 0.01, 0.4, 'Turns shallower than this are pendulum or whip swings and never count.'],
+  ['scrubPace', 'scrub', 'Pace kept through the turn', 0.3, 1, 0.01, 0.75, 'A turn only counts if you keep at least this share of your speed through it (easing off passes).'],
+  ['scrubPain', 'scrub', 'Pain per scrub turn', 0, 0.05, 0.001, 0.008, 'The jolt of pain each scrub turn adds where it happens.'],
+  ['stenWear', 'stencil', 'Stencil wears off', 0.0005, 0.02, 0.0001, 0.0052, 'How fast packing and shading wipe the stencil and skin marker off.'],
+  ['stenLine', 'stencil', 'Lining wears it (share)', 0, 1, 0.05, 0.25, 'How much lining wears the stencil, as a share of packing.'],
+  ['blotDark', 'look', 'Blowout blot darkness', 0, 2, 0.05, 0.6, 'How dark the soft blot of a fresh blowout is.'],
+  ['veinSoft', 'look', 'Blowout veins (soft areas)', 0, 12, 1, 3, 'How many fine ink veins run out of a blowout on soft areas.'],
+  ['veinBony', 'look', 'Blowout veins (bony areas)', 0, 12, 1, 5, 'How many veins on bony areas (pain 4 and 5).'],
+  ['veinLen', 'look', 'Vein length', 0.2, 3, 0.05, 1, 'How far the veins reach from the blowout.'],
+  ['veinDark', 'look', 'Vein darkness', 0, 1, 0.01, 0.3, 'How dark the veins are when fresh.'],
+  ['healBlow', 'look', 'Healed blowout strength', 0, 2, 0.05, 1, 'How strong blowouts look in the Healed view.'],
+  ['agedBlow', 'look', '10 year blowout strength', 0, 2, 0.05, 1, 'How strong blowouts look after ten years.'],
+  ['swellSmooth', 'look', 'Swelling roundness (mm)', 0.1, 3, 0.05, 0.7, 'How much swollen and raw patches are rounded off. Higher is softer and rounder.'],
+  ['blood', 'look', 'Blood amount', 0, 4, 0.05, 1, 'How much badly overworked skin bleeds.'],
+  ['scar', 'look', 'Healed scar strength', 0, 2, 0.05, 1, 'How strongly raised scarring shows in the Healed view.'],
+  ['scarSpacing', 'look', 'Scar ridge spacing', 0.6, 4, 0.05, 1.6, 'How far apart the scar\u2019s ridges are.'],
+  ['scrubStep', 'look', 'Scrub step darkness', 0, 1.5, 0.05, 0.85, 'How dark the healed steps from scrubbing are.'],
+  ['woundPain', 'feel', 'Red skin pain', 0, 3, 0.05, 1, 'How much red (worked) skin adds to the pain.'],
+  ['swellPain', 'feel', 'Swollen skin pain', 0, 15, 0.25, 6, 'How steeply pain climbs once the skin is swollen.'],
+  ['flashAt', 'feel', 'Wince flash at pain', 0.3, 1, 0.01, 0.6, 'The pain level where the client winces and the screen flashes red (on swollen skin).']];
 const DV = {};
 const ttDevOn = () => { try { return Settings.get('tt_devmode') === '1'; } catch { return false; } };
 const ttDevSaved = () => { try { const o = JSON.parse(Settings.get('tt_dev', '{}')); return o && typeof o === 'object' ? o : {}; } catch { return {}; } };
-const ttDevLoad = () => { const o = ttDevOn() ? ttDevSaved() : {}; for (const [k, , , , , , d] of TT_DEV) DV[k] = typeof o[k] === 'number' ? o[k] : d; return DV; };
+const ttDevLoad = () => { const o = ttDevOn() ? ttDevSaved() : {}; for (const k of Object.keys(DV)) if (k.startsWith('ar_')) delete DV[k]; for (const [k, , , , , , d] of TT_DEV) DV[k] = typeof o[k] === 'number' ? o[k] : d; for (const k of Object.keys(o)) if (k.startsWith('ar_') && typeof o[k] === 'number') DV[k] = o[k]; return DV; };
 // The dev values changed from the defaults, as [name, default, now], for reports and stats.
-const ttDevChanged = () => { if (!ttDevOn()) return []; const o = ttDevSaved(); return TT_DEV.filter(([k, , , , , , d]) => typeof o[k] === 'number' && o[k] !== d).map(([k, , n, , , , d]) => [n, d, o[k], k]); };
+const ttDevChanged = () => { if (!ttDevOn()) return []; const o = ttDevSaved(); return [...TT_DEV.filter(([k, , , , , , d]) => typeof o[k] === 'number' && o[k] !== d).map(([k, , n, , , , d]) => [n, d, o[k], k]), ...Object.keys(o).filter(k => k.startsWith('ar_') && o[k] !== 1).map(k => [k.slice(3) + ' intensity', 1, o[k], k])]; };
 ttDevLoad();
 const TT_BLOW_SEVERE = 7, TT_BLOW_JOKES = ['Did you nod off with your foot on the pedal?', 'That is not shading. That is a bruise with ambition.', 'Your mentor felt that from across town.', 'Somewhere, a client just googled laser removal.', 'The ink has left the building. So has my faith in you.', 'Chores. So many chores.', 'Fat layer says hi. Nobody invited it.'];
 const ttLessonRun = async (id) => { const T = TT_LS_CH.find(c => c.id === id), skin = TT_SKINS[ttChSkin()][1], exam = { v: 1, mode: 'ch', lesson: T.lesson, list: [id], i: 0, res: [], started: Date.now() };
@@ -1247,11 +1285,11 @@ TT.open = async (el, id) => {
        worst-worn patch under it sets how much: swollen skin is very painful, overworked far more */
     r = Math.max(TS * 0.5, r || 0); const x0 = Math.max(0, Math.floor((q.x - r) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + r) / TS)), y0 = Math.max(0, Math.floor((q.y - r) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + r) / TS));
     let w = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) w = Math.max(w, TR[y * tw + x] || 0);
-    const add = dt * DV.painRate * painSens(painArea()[2]) * Math.max(0.5, Math.min(1.6, depth / 0.6)) * (painBone(painArea()[2]) + Math.pow(Math.min(2, w), 2) + (w > 0.8 ? 6 * Math.pow(Math.min(2, w) - 0.8, 1.3) : 0)) *   /* red skin only a little sorer; swollen (0.8 and up) climbs steeply */
+    const add = dt * DV.painRate * (DV['ar_' + painArea()[0]] ?? 1) * painSens(painArea()[2]) * Math.max(0.5, Math.min(1.6, depth / 0.6)) * (painBone(painArea()[2]) + DV.woundPain * Math.pow(Math.min(2, w), 2) + (w > 0.8 ? DV.swellPain * Math.pow(Math.min(2, w) - 0.8, 1.3) : 0)) *   /* red skin only a little sorer; swollen (0.8 and up) climbs steeply */
       Math.min(1.6, 0.85 + 0.15 * Math.sqrt(r / mm)) * (nk === 'shader' ? DV.painShader : 1) + jolt * painSens(painArea()[2]) * (0.6 + 1.4 * Math.min(2, w));   /* jolt: a sharp turn at speed (scrubbing) hurts there on top */
     let top = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const k = y * tw + x; PC[k] += add * (1 + 1.5 * PK[k]); if (PC[k] > PK[k]) { PK[k] = PC[k]; pfMax = Math.max(pfMax, pf(PK[k])); } top = Math.max(top, PC[k]); }
     c.pain = c.pain || 0; if (top > c.pain) c.pain = top; else if (top < c.pain - 0.15) c.pain = Math.max(top, pfMax, c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
-    if (w >= 0.8 && c.pain >= 0.6 && (painLast < 0.6 || (painLast < 0.85 && c.pain >= 0.85) || c.pain - painLast > 0.03)) hurtFlash(c.pain);   /* only on swollen skin: crossing into wincing, into needing a break, or a sharp spike */
+    if (w >= 0.8 && c.pain >= DV.flashAt && (painLast < DV.flashAt || (painLast < 0.85 && c.pain >= 0.85) || c.pain - painLast > 0.03)) hurtFlash(c.pain);   /* only on swollen skin: crossing into wincing, into needing a break, or a sharp spike */
     painLast = c.pain; if (EX?.cur) { const PH = EX.cur.painH ||= new Array(10).fill(0); PH[Math.min(9, Math.floor(c.pain * 10))] += dt; }   /* needle time spent at each tenth of the pain meter, for the stats */
     c.painPeak = Math.max(c.painPeak || 0, c.pain); painShow();
     if (!EX) { c.pain = Math.min(1, c.pain); if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); } else if (c.pain >= 0.6 && painTold < 1) { painTold = 1; toast('The client is wincing: ease off, or work another part for a while.', 3500); } }
@@ -1281,7 +1319,7 @@ TT.open = async (el, id) => {
     for (let p2 = 0; p2 < passes; p2++) { blur(A, B, tw, 1, th, tw); blur(B, A, 1, tw, tw, th); } return A; };
   const buildTrauma = () => {
     const rg = trRed.getContext('2d'), mg = trMask.getContext('2d'), ri = rg.createImageData(tw, th), mi = mg.createImageData(tw, th);
-    const SM = fieldBlur(TR, Math.max(1, Math.round(0.7 * mm / TS)), 2);   /* the wear softened a little: rounded patches, not grid squares, but as strong at the middle */
+    const SM = fieldBlur(TR, Math.max(1, Math.round(DV.swellSmooth * mm / TS)), 2);   /* the wear softened a little: rounded patches, not grid squares, but as strong at the middle */
     for (let i = 0; i < TR.length; i++) { const t = SM[i] * 1.2, j = i * 4; if (!t) continue;
       ri.data[j] = 214; ri.data[j + 1] = 64; ri.data[j + 2] = 52; ri.data[j + 3] = Math.min(150, Math.max(0, t - 0.3) * 160);
       const m = Math.max(0, Math.min(1, (t - 1) / 1.2)); mi.data[j] = mi.data[j + 1] = mi.data[j + 2] = 255; mi.data[j + 3] = m * m * (3 - 2 * m) * 235; }
@@ -1299,7 +1337,7 @@ TT.open = async (el, id) => {
       tg.fillStyle = 'rgba(255,240,235,.75)'; tg.beginPath(); tg.arc(px - r * 0.38, py - r * 0.42, Math.max(0.25, r * 0.16), 0, 7); tg.fill(); }
     /* Blood: where the raw skin is at its worst, it starts to seep. Glossy dark-red beads, a few smeared or running a
        little way down, more the further past severe; the same spots each time it is drawn (seeded by the cell). */
-    for (let i = 0; i < SM.length; i++) { const t = SM[i] * 1.2; if (t < 1.35) continue; const h = Math.imul(i + 7919, 2654435761) >>> 0, chance = Math.min(0.035, (t - 1.35) * 0.05); if ((h & 1023) / 1023 > chance) continue;
+    for (let i = 0; i < SM.length; i++) { const t = SM[i] * 1.2; if (t < 1.35) continue; const h = Math.imul(i + 7919, 2654435761) >>> 0, chance = Math.min(0.035 * DV.blood, (t - 1.35) * 0.05 * DV.blood); if ((h & 1023) / 1023 > chance) continue;
       const u = ((h >> 10) & 255) / 255, v = ((h >> 18) & 255) / 255, px = ((i % tw) - 0.5 + u * 2) * bs, py = (Math.floor(i / tw) - 0.5 + v * 2) * bs, r = (0.3 + u * u * 0.6) * mm * ks / 2;
       if (v > 0.72) { const len = (0.4 + v * 1.1) * mm * ks / 2; const gr = tg.createLinearGradient(px, py, px, py + len); gr.addColorStop(0, 'rgba(120,8,12,.85)'); gr.addColorStop(1, 'rgba(120,8,12,0)'); tg.strokeStyle = gr; tg.lineCap = 'round'; tg.lineWidth = r * 0.9; tg.beginPath(); tg.moveTo(px, py); tg.quadraticCurveTo(px + (u - 0.5) * r * 2, py + len * 0.5, px + (u - 0.5) * r, py + len); tg.stroke(); }   /* running */
       const gr = tg.createRadialGradient(px - r * 0.3, py - r * 0.3, 0, px, py, r); gr.addColorStop(0, 'rgba(150,14,20,.9)'); gr.addColorStop(0.75, 'rgba(118,8,14,.88)'); gr.addColorStop(1, 'rgba(110,8,14,.35)');
@@ -1328,7 +1366,7 @@ TT.open = async (el, id) => {
     const c = st.ink.c.map((v, j) => Math.round((v * 0.45 + [0.34, 0.42, 0.68][j] * 0.55) * 255)), R = (footR + mm * (1.1 + risk * 1.8)) / 2, gx = p.x / 2, gy = p.y / 2;
     /* Not a neat circle: a few soft blots, off-centre */
     for (let k = 0; k < 3; k++) { const oa = Math.random() * 6.283, od = R * 0.35 * Math.random(), ox2 = gx + Math.cos(oa) * od, oy2 = gy + Math.sin(oa) * od, r2 = R * (0.6 + Math.random() * 0.35);
-      const gr = bx.createRadialGradient(ox2, oy2, 0, ox2, oy2, r2); gr.addColorStop(0, `rgba(${c},${(0.12 + risk * 0.16) * 0.6})`); gr.addColorStop(0.5, `rgba(${c},${(0.05 + risk * 0.07) * 0.6})`); gr.addColorStop(1, `rgba(${c},0)`);
+      const gr = bx.createRadialGradient(ox2, oy2, 0, ox2, oy2, r2); gr.addColorStop(0, `rgba(${c},${(0.12 + risk * 0.16) * DV.blotDark})`); gr.addColorStop(0.5, `rgba(${c},${(0.05 + risk * 0.07) * DV.blotDark})`); gr.addColorStop(1, `rgba(${c},0)`);
       bx.fillStyle = gr; bx.beginPath(); bx.arc(ox2, oy2, r2, 0, 7); bx.fill(); }
     /* Veins: the ink runs out along hair-fine channels under the skin, wandering and now and then branching, fading as
        they go. Plain to see on a small blowout, more and longer over bone. Healed, the blur softens them into a faint
@@ -1338,8 +1376,8 @@ TT.open = async (el, id) => {
       while (l < len) { const nx = x + Math.cos(a) * step, ny = y + Math.sin(a) * step, f = 1 - l / len; bx.strokeStyle = `rgba(${cv},${(al * f).toFixed(3)})`; bx.lineWidth = Math.max(0.35, w * f);
         bx.beginPath(); bx.moveTo(x, y); bx.lineTo(nx, ny); bx.stroke(); x = nx; y = ny; l += step; a += (Math.random() - 0.5) * 0.55;
         if (depth && Math.random() < 0.05) vein(x, y, a + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6), (len - l) * 0.6, w * 0.7, al * 0.8, depth - 1); } };
-    const nV = Math.round((bony ? 5 : 3) + risk * (bony ? 4 : 2) + Math.random() * 2);
-    for (let v = 0; v < nV; v++) vein(gx, gy, Math.random() * 6.283, Math.max(hm * 1.2, R * 0.6) * (1 + Math.random() * (bony ? 2.2 : 1.2)), hm * (0.08 + Math.random() * 0.06), 0.3 + risk * 0.2, 1);
+    const nV = Math.round((bony ? DV.veinBony : DV.veinSoft) + risk * (bony ? 4 : 2) + Math.random() * 2);
+    for (let v = 0; v < nV; v++) vein(gx, gy, Math.random() * 6.283, Math.max(hm * 1.2, R * 0.6) * (1 + Math.random() * (bony ? 2.2 : 1.2)) * DV.veinLen, hm * (0.08 + Math.random() * 0.06), DV.veinDark + risk * 0.2, 1);
     trAdd(p, footR * 2.2 + mm, 0.035 * risk);
   };
   { const bi = await loadImg(row.blow_ref); if (bi) bx.drawImage(bi, 0, 0, blowC.width, blowC.height);
@@ -1447,9 +1485,9 @@ TT.open = async (el, id) => {
       const aged = mode === 'aged', [b, a, sat] = aged ? [0.14, 0.8, 0.72] : [0.06, 0.92, 0.92], loss = falloutMask(aged);
       g.globalCompositeOperation = 'multiply';
       /* blowouts: never faded; the veins stay as a faint trace, and round them a grey-blue haze that spreads a little with the years */
-      g.filter = `blur(${Math.max(0.6, mm * (aged ? 0.35 : 0.25))}px)`; g.globalAlpha = aged ? 0.25 : 0.45; g.drawImage(blowC, 0, 0, W, H);   /* lighter than fresh, fainter again after ten years, and it hardly spreads */
-      g.filter = `blur(${Math.max(1, mm * (aged ? 0.6 : 0.5))}px) sepia(0.5) hue-rotate(170deg) saturate(1.3)`; g.globalAlpha = aged ? 0.4 : 0.6; g.drawImage(blowC, 0, 0, W, H);
-      g.filter = `blur(${Math.max(1.5, mm * (aged ? 1.2 : 1.1))}px) sepia(0.6) hue-rotate(170deg) saturate(1.5)`; g.globalAlpha = aged ? 0.25 : 0.45; g.drawImage(blowC, 0, 0, W, H); g.globalAlpha = 1;
+      g.filter = `blur(${Math.max(0.6, mm * (aged ? 0.35 : 0.25))}px)`; g.globalAlpha = (aged ? 0.25 : 0.45) * (aged ? DV.agedBlow : DV.healBlow); g.drawImage(blowC, 0, 0, W, H);   /* lighter than fresh, fainter again after ten years, and it hardly spreads */
+      g.filter = `blur(${Math.max(1, mm * (aged ? 0.6 : 0.5))}px) sepia(0.5) hue-rotate(170deg) saturate(1.3)`; g.globalAlpha = (aged ? 0.4 : 0.6) * (aged ? DV.agedBlow : DV.healBlow); g.drawImage(blowC, 0, 0, W, H);
+      g.filter = `blur(${Math.max(1.5, mm * (aged ? 1.2 : 1.1))}px) sepia(0.6) hue-rotate(170deg) saturate(1.5)`; g.globalAlpha = (aged ? 0.25 : 0.45) * (aged ? DV.agedBlow : DV.healBlow); g.drawImage(blowC, 0, 0, W, H); g.globalAlpha = 1;
       const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const tg = tmp.getContext('2d');
       for (const key of TT_DRAW) { if (key === 'stencil' || key === 'marker' || st.hide.has(key)) continue;
         tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, W, H); tg.drawImage(L[key], 0, 0);
@@ -1476,9 +1514,9 @@ TT.open = async (el, id) => {
       for (let k = 0; k < 340; k++) { const x0 = Math.random() * N, y0 = Math.random() * N, len = 14 + Math.random() * 40, an = -0.12 + (Math.random() - 0.5) * 0.22, dx = Math.cos(an) * len, dy = Math.sin(an) * len, w2 = 1 + Math.random() * 1.4;
         t.strokeStyle = `rgba(255,236,230,${0.35 + Math.random() * 0.35})`; t.lineWidth = w2; t.beginPath(); t.moveTo(x0, y0); t.lineTo(x0 + dx, y0 + dy); t.stroke();
         t.strokeStyle = `rgba(70,32,32,${0.18 + Math.random() * 0.2})`; t.lineWidth = w2 * 0.7; t.beginPath(); t.moveTo(x0 - Math.sin(an) * w2, y0 + Math.cos(an) * w2); t.lineTo(x0 + dx - Math.sin(an) * w2, y0 + dy + Math.cos(an) * w2); t.stroke(); } }
-    g.globalAlpha = 0.22; g.drawImage(lay('rgb(236,196,186)'), 0, 0); g.globalAlpha = 1;   /* paler raised tissue */
-    const rp = document.createElement('canvas').getContext('2d').createPattern(scarTile, 'repeat'); rp.setTransform(new DOMMatrix().scale(1.6)); g.globalAlpha = 0.55; g.drawImage(lay(rp), 0, 0); g.globalAlpha = 1;   /* the fibrous ridges, spread out */
-    const rc = document.createElement('canvas'); rc.width = tw; rc.height = th; rc.getContext('2d').putImageData(sh, 0, 0); g.save(); g.imageSmoothingEnabled = true; g.globalAlpha = 0.65; g.filter = `blur(${Math.max(2, mm * 0.8)}px)`; g.drawImage(rc, 0, 0, W, H); g.restore(); };   /* the raised rim, lit from above left */
+    g.globalAlpha = Math.min(1, 0.22 * DV.scar); g.drawImage(lay('rgb(236,196,186)'), 0, 0); g.globalAlpha = 1;   /* paler raised tissue */
+    const rp = document.createElement('canvas').getContext('2d').createPattern(scarTile, 'repeat'); rp.setTransform(new DOMMatrix().scale(DV.scarSpacing)); g.globalAlpha = Math.min(1, 0.55 * DV.scar); g.drawImage(lay(rp), 0, 0); g.globalAlpha = 1;   /* the fibrous ridges, spread out */
+    const rc = document.createElement('canvas'); rc.width = tw; rc.height = th; rc.getContext('2d').putImageData(sh, 0, 0); g.save(); g.imageSmoothingEnabled = true; g.globalAlpha = Math.min(1, 0.65 * DV.scar); g.filter = `blur(${Math.max(2, mm * 0.8)}px)`; g.drawImage(rc, 0, 0, W, H); g.restore(); };   /* the raised rim, lit from above left */
   /* Where overworked skin lost ink, as a mask (opaque = ink gone): nothing below swollen, then more the harder it
      was worked, broken up into blotches so it heals patchy rather than evenly lighter. The same blotches every
      time for a piece. */
@@ -1739,7 +1777,7 @@ TT.open = async (el, id) => {
         if (st.tool !== 'erase' && pen.cx.pig) {
           const t0 = trAt(q); hcAdd(q, pen.foot); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
-          painHit(q, depth, pen.foot); trAdd(q, pen.foot, DV.wearRate * DV['wearL' + painArea()[2]] * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, Math.sqrt(1.1 * mm / pen.foot)) * Math.pow(volt() / 7, 2) * (isMag() ? DV.wearMag : nk === 'shader' ? DV.wearShader : DV.wearLiner) / ((cal.tough || 1) * TT_TOUGH), true);   /* magnums work a wide strip hard; round shaders get some slack */   /* a wide needle spreads each hit, but works a lot more skin at once */   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
+          painHit(q, depth, pen.foot); trAdd(q, pen.foot, DV.wearRate * DV['wearL' + painArea()[2]] * (DV['ar_' + painArea()[0]] ?? 1) * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, Math.sqrt(1.1 * mm / pen.foot)) * Math.pow(volt() / 7, 2) * (isMag() ? DV.wearMag : nk === 'shader' ? DV.wearShader : DV.wearLiner) / ((cal.tough || 1) * TT_TOUGH), true);   /* magnums work a wide strip hard; round shaders get some slack */   /* a wide needle spreads each hit, but works a lot more skin at once */   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
           const risk = Math.max(0, Math.min(1, (blowGap(depth) - gapMm(pen.speed)) / DV.blowRamp)) * Math.max(0, Math.min(1, (depth - 0.45) / 0.25)) * (cal.blow ?? 1) * DV.blowRate * Math.pow(0.3 / blowSize(), 2);   /* slower than blowGap at this depth blows out; deeper, it comes at more ordinary speeds */   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: too deep, too slow.', 2500); } }
@@ -3338,7 +3376,7 @@ TT.open = async (el, id) => {
     if (!raw && SCR.length) { const bl = document.createElement('canvas'); bl.width = W; bl.height = H; const q = bl.getContext('2d');   /* scrub steps, healed: the ink there, darker, in the needle's shape */
       for (const key of INK) if (!st.hide.has(key)) q.drawImage(L[key], 0, 0); q.globalCompositeOperation = 'destination-in'; q.beginPath();
       for (const [x, y, a, w, h, mg] of SCR) { const ca = Math.cos(a), sa = Math.sin(a); if (mg) { const P = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([u, v]) => [x + u * ca - v * sa, y + u * sa + v * ca]); q.moveTo(...P[0]); for (const pt of P.slice(1)) q.lineTo(...pt); q.closePath(); } else { q.moveTo(x + w / 2, y); q.ellipse(x, y, w / 2, h / 2, 0, 0, Math.PI * 2); } }
-      q.fill(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = mode === 'aged' ? 0.65 : 0.85; g.drawImage(bl, 0, 0); g.drawImage(bl, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
+      q.fill(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = Math.min(1, (mode === 'aged' ? 0.65 : 0.85) / 0.85 * DV.scrubStep); g.drawImage(bl, 0, 0); g.drawImage(bl, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
     return c;
   };
   const blobOf = (c) => new Promise(r => c.toBlob(r, 'image/png'));
@@ -3403,23 +3441,38 @@ TT.open = async (el, id) => {
   railFit($('#tt-rail')); railFit($('#tt-tray')); ttDevLoad();   /* the dev values as now set (dev controls on or off) */
   /* The dev panel: the dev values in tabs, a slider each, beside the skin so you can tattoo while you change them.
      Changes take effect on the next stroke and are kept (tt_dev); Share sends what differs from the defaults. */
-  let devTab = 'skin';
+  let devTab = 'skin', devAdv = false;
   const devOpen = () => { let o = $('#tt-devp'); if (o) { o.remove(); return; } o = document.createElement('div'); o.id = 'tt-devp'; o.className = 'tt-devp';
     const fmt = (v, st2) => st2 < 0.001 ? (+v).toFixed(4) : st2 < 0.01 ? (+v).toFixed(3) : st2 < 1 ? (+v).toFixed(2) : String(+v);
     const draw = () => { const sv = ttDevSaved(), n = ttDevChanged().length;
       o.innerHTML = `<div class="tt-devh"><b>Dev controls</b><span class="muted">${n ? n + ' changed' : 'all defaults'}</span><span style="flex:1"></span><button class="dz-ib" data-dvx aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-        <div class="dz-chtabs tt-devtabs">${TT_DEV_TABS.map(([k, nm]) => `<button data-dvt="${k}" class="${devTab === k ? 'on' : ''}">${nm}${TT_DEV.some(r => r[1] === k && typeof sv[r[0]] === 'number' && sv[r[0]] !== r[6]) ? ' •' : ''}</button>`).join('')}</div>
-        <div class="tt-devbody">${TT_DEV.filter(r => r[1] === devTab).map(([k, , nm, mn, mx, stp, d]) => { const v = DV[k], ch = v !== d;
-          return `<label class="dz-sl tt-devsl ${ch ? 'ch' : ''}"><span>${esc(nm)}<b>${fmt(v, stp)}${ch ? ` <i>(${fmt(d, stp)})</i>` : ''}</b></span><input type="range" min="${mn}" max="${mx}" step="${stp}" value="${v}" data-dv="${k}"></label>`; }).join('')}
-          ${devTab === 'needles' ? '<p class="muted" style="font-size:12px">Each needle\u2019s ink flow, bleed, missed punctures, hang and tilt, and the skin toughness and blowout sensitivity, are in Settings while dev controls are on.</p>' : ''}</div>
+        <div class="dz-chtabs tt-devtabs">${TT_DEV_TABS.filter(t2 => devAdv || !t2[2]).map(([k, nm]) => `<button data-dvt="${k}" class="${devTab === k ? 'on' : ''}">${nm}${TT_DEV.some(r => r[1] === k && typeof sv[r[0]] === 'number' && sv[r[0]] !== r[6]) || (k === 'area1' && Object.keys(sv).some(x => x.startsWith('ar_'))) ? ' •' : ''}</button>`).join('')}<button data-dvadv class="${devAdv ? 'on' : ''}" data-tip="More values: looks, feel, each body area and this needle">Advanced</button></div>
+        <div class="tt-devbody">${devTab === 'area1' ? devAreas() : devTab === 'needle1' ? devNeedle() : TT_DEV.filter(r => r[1] === devTab).map(([k, , nm, mn, mx, stp, d, tip]) => { const v = DV[k], ch = v !== d;
+          return `<label class="dz-sl tt-devsl ${ch ? 'ch' : ''}" data-tip="${esc(tip || '')}"><span>${esc(nm)}<b>${fmt(v, stp)}${ch ? ` <i>(${fmt(d, stp)})</i>` : ''}</b></span><input type="range" min="${mn}" max="${mx}" step="${stp}" value="${v}" data-dv="${k}"></label>`; }).join('')}</div>
         <div class="row tt-devf"><button class="btn small" data-dvr="tab">Reset tab</button><button class="btn small" data-dvr="all">Reset all</button><span style="flex:1"></span><button class="btn small primary" data-dvs>Share</button></div>`; };
-    o.addEventListener('input', (e) => { const k = e.target.dataset.dv; if (!k) return; const sv = ttDevSaved(), r = TT_DEV.find(x => x[0] === k), v = +e.target.value; if (v === r[6]) delete sv[k]; else sv[k] = v;
+    /* Each area: one intensity per body area (pain and skin wear together, 1 is as its pain level sets). */
+    const devAreas = () => `<p class="muted" style="font-size:12px;margin:2px 0 6px">Each body area on top of its pain level: pain and skin wear together. 1 is unchanged.</p>` + ttAreaAll().map(([a, , lv]) => { const k = 'ar_' + a, v = DV[k] ?? 1, ch = v !== 1;
+      return `<label class="dz-sl tt-devsl ${ch ? 'ch' : ''}" data-tip="${esc(a)}: pain level ${lv}. Above 1 it hurts and wears faster than its level; below 1, slower."><span>${esc(a)} <i class="muted">· ${lv}</i><b>${v.toFixed(2)}${ch ? ' <i>(1.00)</i>' : ''}</b></span><input type="range" min="0.3" max="2.5" step="0.05" value="${v}" data-dva="${esc(k)}"></label>`; }).join('');
+    /* This needle: its own settings (kept with the needle, as in Settings), and the skin settings for every needle. */
+    const NDV = [['flow', 'Ink flow', 40, 5, 1, 'How much ink this needle puts in per puncture.'], ['bleed', 'Bleed into skin', 40, 0, 1, 'How far its ink spreads into the skin round each puncture.'], ['miss', 'Missed punctures when light', 40, 0, 1, 'How many punctures leave no ink when you work light.'],
+      ['hang', 'Needle hang', 40, 0, 1, 'How far the needle sticks out: more hang, a softer, wider mark.'], ['tiltSpread', 'Tilt spreads', 40, 0, 1, 'How much leaning the pen widens the mark.'], ['tiltFade', 'Tilt lightens', 30, 0, 1, 'How much leaning the pen lightens the mark.']];
+    const CDV = [['flow', 'Ink flow (all needles)', 1, 3, 0.05, 'Ink flow for every needle, times each needle\u2019s own.'], ['tough', 'Skin toughness', 0.1, 2.4, 0.05, 'How tough the skin is: higher takes longer to redden and swell.'], ['blow', 'Blowout sensitivity', 0, 2.4, 0.05, 'Your own blowout sensitivity, on top of the blowout chance.']];
+    const devNeedle = () => { const fb = TT.feelBase(st.needle); return `<p class="muted" style="font-size:12px;margin:2px 0 6px">The ${esc(st.needle)}: change needles in the rail to set another.</p>` + NDV.map(([k2, nm, w, fl, stp, tip]) => { const b = fb[k2] ?? feel[k2] ?? 0, mn = Math.max(fl, b - w), v = feel[k2] ?? b, ch = v !== b;
+        return `<label class="dz-sl tt-devsl ${ch ? 'ch' : ''}" data-tip="${esc(tip)}"><span>${nm}<b>${v}${ch ? ` <i>(${b})</i>` : ''}</b></span><input type="range" min="${mn}" max="${b + w}" step="${stp}" value="${v}" data-dvf="${k2}"></label>`; }).join('')
+        + '<div class="lbl" style="margin-top:8px">Every needle</div>' + CDV.map(([k2, nm, mn, mx, stp, tip]) => { const d = TT.calDefaults[k2] ?? 1, v = cal[k2] ?? d, ch = v !== d;
+        return `<label class="dz-sl tt-devsl ${ch ? 'ch' : ''}" data-tip="${esc(tip)}"><span>${nm}<b>${(+v).toFixed(2)}${ch ? ` <i>(${(+d).toFixed(2)})</i>` : ''}</b></span><input type="range" min="${mn}" max="${mx}" step="${stp}" value="${v}" data-dvc="${k2}"></label>`; }).join(''); };
+    o.addEventListener('input', (e) => { const fa = e.target.dataset.dva, ff = e.target.dataset.dvf, fc = e.target.dataset.dvc;
+      if (fa) { const sv = ttDevSaved(), v = +e.target.value; if (v === 1) delete sv[fa]; else sv[fa] = v; Settings.set('tt_dev', JSON.stringify(sv)); ttDevLoad(); e.target.closest('label').querySelector('b').innerHTML = v.toFixed(2) + (v !== 1 ? ' <i>(1.00)</i>' : ''); return; }
+      if (ff) { feel[ff] = +e.target.value; TT.setFeel(st.needle, feel); e.target.closest('label').querySelector('b').firstChild.textContent = e.target.value; return; }
+      if (fc) { cal[fc] = +e.target.value; TT.saveCal(cal); e.target.closest('label').querySelector('b').firstChild.textContent = (+e.target.value).toFixed(2); return; }
+      const k = e.target.dataset.dv; if (!k) return; const sv = ttDevSaved(), r = TT_DEV.find(x => x[0] === k), v = +e.target.value; if (v === r[6]) delete sv[k]; else sv[k] = v;
       Settings.set('tt_dev', JSON.stringify(sv)); ttDevLoad(); const lab = e.target.closest('label'); lab.classList.toggle('ch', v !== r[6]); lab.querySelector('b').innerHTML = fmt(v, r[5]) + (v !== r[6] ? ` <i>(${fmt(r[6], r[5])})</i>` : ''); o.querySelector('.tt-devh .muted').textContent = ttDevChanged().length ? ttDevChanged().length + ' changed' : 'all defaults'; trDirty = true; });
-    o.addEventListener('change', (e) => { if (e.target.dataset.dv) draw(); });
+    o.addEventListener('change', (e) => { if (e.target.dataset.dv || e.target.dataset.dva || e.target.dataset.dvf || e.target.dataset.dvc) draw(); });
     o.addEventListener('click', async (e) => { const t = e.target;
       if (t.closest('[data-dvx]')) return o.remove();
       const tb = t.closest('[data-dvt]'); if (tb) { devTab = tb.dataset.dvt; return draw(); }
-      const rs = t.closest('[data-dvr]'); if (rs) { const sv = ttDevSaved(); if (rs.dataset.dvr === 'all') { if (!await ask('Put every dev value back to its default?')) return; Settings.set('tt_dev', '{}'); } else { for (const r of TT_DEV) if (r[1] === devTab) delete sv[r[0]]; Settings.set('tt_dev', JSON.stringify(sv)); } ttDevLoad(); trDirty = true; return draw(); }
+      if (t.closest('[data-dvadv]')) { devAdv = !devAdv; if (!devAdv && TT_DEV_TABS.find(x => x[0] === devTab)?.[2]) devTab = 'skin'; return draw(); }
+      const rs = t.closest('[data-dvr]'); if (rs) { const sv = ttDevSaved(); if (rs.dataset.dvr === 'all') { if (!await ask('Put every dev value back to its default?')) return; Settings.set('tt_dev', '{}'); } else { if (devTab === 'area1') { for (const x of Object.keys(sv)) if (x.startsWith('ar_')) delete sv[x]; } else if (devTab === 'needle1') { const fb = TT.feelBase(st.needle); for (const [k2] of NDV) feel[k2] = fb[k2] ?? feel[k2]; TT.setFeel(st.needle, feel); for (const k2 of ['flow', 'tough', 'blow']) cal[k2] = TT.calDefaults[k2] ?? 1; TT.saveCal(cal); } else for (const r of TT_DEV) if (r[1] === devTab) delete sv[r[0]]; Settings.set('tt_dev', JSON.stringify(sv)); } ttDevLoad(); trDirty = true; return draw(); }
       if (t.closest('[data-dvs]')) { const ch = ttDevChanged(); if (!ch.length) return toast('Nothing changed from the defaults.', 2000);
         const txt = 'InkForge dev values, build ' + TT_BUILD + ':\n' + ch.map(([n, d, v, k]) => `${k} (${n}): ${d} -> ${v}`).join('\n') + '\n\n' + JSON.stringify(Object.fromEntries(ch.map(c => [c[3], c[2]])));
         try { if (navigator.share) { await navigator.share({ title: 'InkForge dev values', text: txt }); return; } } catch (err) { if (err.name === 'AbortError') return; }
