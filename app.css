@@ -1808,3 +1808,4 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 .dz-trwrap { position: relative; } #dz-trbar { position: absolute; left: 12%; right: 12%; top: 50%; transform: translateY(-50%); padding: 10px 12px; border-radius: 10px; background: rgba(16,19,20,.88); color: #fff; font-size: 13px; text-align: center; }
 #dz-trbar b { display: block; height: 6px; margin-top: 8px; border-radius: 3px; background: rgba(255,255,255,.15); overflow: hidden; } #dz-trbar i { display: block; height: 100%; width: 0; background: var(--teal); transition: width .2s; }
 #dz-trcmp { position: absolute; right: 8px; bottom: 8px; touch-action: none; user-select: none; }
+.dz-saveas { flex: none; white-space: nowrap; }

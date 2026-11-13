@@ -1755,7 +1755,9 @@ DZ.edit = async (id) => {
       <button class="dz-ib" id="dz-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
       <button class="dz-ib" id="dz-focus" aria-label="Full screen design" data-tip="Full screen: the design fills the screen (Focus hides the panels)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       <button class="dz-ib" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24">${DZ_UI.tpl}</svg></button>
-      <button class="dz-ib dz-go" id="dz-export" aria-label="Export" data-tip="Export: print, save or share"><svg viewBox="0 0 24 24">${DZ_UI.export}</svg></button>
+      <button class="dz-ib" id="dz-print" aria-label="Print" data-tip="Print it (or Save as PDF from the print screen)"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></button>
+      <button class="btn small dz-saveas" id="dz-saveas" data-tip="Save it as a picture or a PDF, or keep a copy">Save as…</button>
+      <button class="dz-ib dz-go" id="dz-export" aria-label="Share" data-tip="Share, and more ways to print and save"><svg viewBox="0 0 24 24">${DZ_UI.export}</svg></button>
     </div>
     <div class="dz-ctxw"><div class="dz-ctx" id="dz-ctx"></div><div class="dz-csnap" id="dz-csnap"></div></div>
     <div class="dz-body">
@@ -4893,6 +4895,8 @@ DZ.edit = async (id) => {
     setTimeout(() => document.addEventListener('pointerdown', function off(ev) { if (!ev.target.closest('#dz-panm, #dz-panels')) { m.remove(); document.removeEventListener('pointerdown', off, true); } }, true)); };
   dpApply(); dqDraw();
   $('#dz-export').onclick = () => { select(null); dzExport(doc, name); };
+  $('#dz-print').onclick = async () => { select(null); await flush(); dzPrintDoc(doc); };
+  $('#dz-saveas').onclick = async () => { select(null); await flush(); const cp = await dzSaveAs(doc, $('#dz-name').value.trim() || name, id); if (cp) location.hash = 'design/' + cp; };
   dzRO = new ResizeObserver(() => { fit(); redraw(); }); dzRO.observe(stage);
   fit(); drawSide(); await redraw();
   if (!row.thumb_ref) { dirty = true; flush(); }
@@ -4991,6 +4995,33 @@ function dzExport(doc, name) {
   });
   document.body.appendChild(o); draw();
 }
+/* Print any design, background and all: both sides of a two-sided one, forms blank to fill by hand, cards one to a
+   page. The print screen's Save as PDF makes a PDF of it. */
+async function dzPrintDoc(doc) { const kind = DZ_KINDS[doc.kind]; if (kind.form) return ffPrintBlank(doc); toast('Preparing…');
+  const cv = await dzCanvas(doc); if (doc.sides) { const b = await dzCanvas(doc, 1, 'b'); return printCanvas(...(kind.per ? [await dzSheet(cv, doc.kind, false), await dzSheet(b, doc.kind, false, true)] : [cv, b])); }
+  return printCanvas(kind.per ? await dzSheet(cv, doc.kind, false) : cv); }
+/* Save as: the design as a picture (PNG, full quality; JPG, smaller), a PDF (through the print screen), or a copy kept
+   in the studio under a new name. Resolves the copy's id when one is made. */
+function dzSaveAs(doc, name, did) { return new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; const kind = DZ_KINDS[doc.kind];
+  const file = (n) => (n || 'design').replace(/[^\w-]+/g, '_');
+  o.innerHTML = `<div class="card"><h2>Save as</h2><p class="muted" style="font-size:13px;margin-top:0">${esc(kind.label)}, with its background${doc.sides ? ', both sides' : ''}.</p>
+    <label class="lbl" for="sa-n">Name</label><input class="in" id="sa-n" value="${esc(name)}" style="width:100%;margin-bottom:10px">
+    <div class="dz-ex"><button data-sa="png"><b>Picture (PNG)</b><small>Full quality${kind.social ? '' : `, ${doc.dpi || 300} dpi`}: for printing elsewhere or posting</small></button>
+      <button data-sa="jpg"><b>Picture (JPG)</b><small>A smaller file, for sending</small></button>
+      <button data-sa="pdf"><b>PDF</b><small>Opens the print screen: choose Save as PDF as the printer</small></button>
+      <button data-sa="copy"><b>A copy in the studio</b><small>Keep this one as it is and carry on with a copy under the name above</small></button></div>
+    <button class="btn" data-sa="" style="width:100%;margin-top:12px">Cancel</button></div>`;
+  o.onclick = async (e) => { const b = e.target.closest('[data-sa]'); if (!b && e.target !== o) return; const a = b?.dataset.sa, nm = o.querySelector('#sa-n').value.trim() || name; o.remove(); if (!a) return res(null);
+    if (a === 'copy') { const r = await DB.one('SELECT * FROM designs WHERE id = ?', [did]); if (!r) return res(null);
+      await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [nm === name ? name + ' (copy)' : nm, r.kind, r.doc]); const nid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+      await DB.run('INSERT INTO design_assets (design_id, ref) SELECT ?, ref FROM design_assets WHERE design_id = ?', [nid, did]); toast('Copy saved. You are now working on the copy.', 3000); return res(nid); }
+    if (a === 'pdf') { res(null); return dzPrintDoc(doc); }
+    toast('Preparing…'); const faces = [await dzCanvas(doc)]; if (doc.sides) faces.push(await dzCanvas(doc, 1, 'b')); const nmF = dzFaceNames(doc);
+    for (let i = 0; i < faces.length; i++) { let c = faces[i]; if (a === 'jpg') { const w = document.createElement('canvas'); w.width = c.width; w.height = c.height; const g = w.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w.width, w.height); g.drawImage(c, 0, 0); c = w; }
+      const blob = await new Promise(r => c.toBlob(r, a === 'jpg' ? 'image/jpeg' : 'image/png', 0.92)), l = document.createElement('a'); l.href = URL.createObjectURL(blob);
+      l.download = file(nm) + (faces.length > 1 ? '_' + (i ? nmF.b : nmF.f).toLowerCase() : '') + '.' + a; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000); await new Promise(r => setTimeout(r, 250)); }
+    toast('Saved to your downloads.', 2500); res(null); };
+  document.body.appendChild(o); setTimeout(() => o.querySelector('#sa-n')?.select(), 50); }); }
 // An A4 page (300 dpi): the design once, centred, or as many copies as fit with cut marks.
 async function dzSheet(cv, kind, fill, back) {
   const W = 2480, H = 3508, pg = document.createElement('canvas'); pg.width = W; pg.height = H;
