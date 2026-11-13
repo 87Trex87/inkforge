@@ -1234,19 +1234,27 @@ TT.open = async (el, id) => {
     const rest = performance.now() - painT > 1500; if (!rest) return; c.pain = Math.max(Math.min(c.pain, pfMax), c.pain - 0.02 * 0.5); if (PC) for (let i = 0; i < PC.length; i++) if (PC[i]) PC[i] = Math.max(Math.min(PC[i], pf(PK[i])), PC[i] - 0.02 * 0.5);   /* only a real break (lifted off for 2 s or more) eases it */ if (c.pain < 0.45) painTold = 0; painShow(); } catch { /* the piece is still opening */ } }, 500);
   const trAt = (p) => TR[Math.min(th - 1, Math.max(0, Math.floor(p.y / TS))) * tw + Math.min(tw - 1, Math.max(0, Math.floor(p.x / TS)))] || 0;
   // Raw skin: a mottled, bumpy texture of red and pink lumps, made once.
-  const patty = (() => { const c = document.createElement('canvas'); c.width = c.height = 160; const g = c.getContext('2d');
-    g.fillStyle = '#a53a33'; g.fillRect(0, 0, 160, 160);
-    for (let i = 0; i < 520; i++) { const px = Math.random() * 160, py = Math.random() * 160, r = 2 + Math.random() * 6, gr = g.createRadialGradient(px - r * 0.35, py - r * 0.35, 0, px, py, r);
-      gr.addColorStop(0, `rgba(${226 + Math.random() * 20},${120 + Math.random() * 40},${105 + Math.random() * 30},.85)`); gr.addColorStop(0.6, 'rgba(160,52,45,.5)'); gr.addColorStop(1, 'rgba(95,24,22,0)');
+  /* Raw skin: a mottled, bumpy texture of red and pink lumps, pinprick burst capillaries and a few wet glints,
+     made once at full resolution so it stays sharp. */
+  const patty = (() => { const N = 320, c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d');
+    g.fillStyle = '#9c3330'; g.fillRect(0, 0, N, N);
+    for (let i = 0; i < 1500; i++) { const px = Math.random() * N, py = Math.random() * N, r = 2.5 + Math.random() * 8, gr = g.createRadialGradient(px - r * 0.35, py - r * 0.35, 0, px, py, r);
+      gr.addColorStop(0, `rgba(${222 + Math.random() * 22},${104 + Math.random() * 40},${92 + Math.random() * 30},.85)`); gr.addColorStop(0.55, 'rgba(158,46,40,.55)'); gr.addColorStop(1, 'rgba(90,20,20,0)');
       g.fillStyle = gr; g.beginPath(); g.arc(px, py, r, 0, 7); g.fill(); }
-    for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(70,15,14,${0.25 + Math.random() * 0.35})`; g.beginPath(); g.arc(Math.random() * 160, Math.random() * 160, 0.6 + Math.random() * 1.2, 0, 7); g.fill(); }
+    for (let i = 0; i < 1400; i++) { g.fillStyle = `rgba(${95 + Math.random() * 40},${10 + Math.random() * 12},${14 + Math.random() * 10},${0.45 + Math.random() * 0.45})`; g.beginPath(); g.arc(Math.random() * N, Math.random() * N, 0.5 + Math.random() * 1.1, 0, 7); g.fill(); }   /* burst capillaries */
+    for (let i = 0; i < 120; i++) { const px = Math.random() * N, py = Math.random() * N; g.strokeStyle = `rgba(120,18,22,${0.25 + Math.random() * 0.3})`; g.lineWidth = 0.5 + Math.random() * 0.6; g.beginPath(); g.moveTo(px, py); g.lineTo(px + (Math.random() - 0.5) * 9, py + (Math.random() - 0.5) * 9); g.stroke(); }   /* fine scratches */
+    for (let i = 0; i < 160; i++) { g.fillStyle = `rgba(255,236,228,${0.3 + Math.random() * 0.35})`; g.beginPath(); g.arc(Math.random() * N, Math.random() * N, 0.4 + Math.random() * 0.8, 0, 7); g.fill(); }   /* wet glints */
     return c; })();
   const trRed = document.createElement('canvas'), trMask = document.createElement('canvas'), trTex = document.createElement('canvas');
-  trRed.width = trMask.width = tw; trRed.height = trMask.height = th; trTex.width = Math.ceil(W / 2); trTex.height = Math.ceil(H / 2);
+  trRed.width = trMask.width = tw; trRed.height = trMask.height = th; trTex.width = W; trTex.height = H;
   const trGlow = document.createElement('canvas'), trPuff = document.createElement('canvas'); trGlow.width = trPuff.width = tw; trGlow.height = trPuff.height = th; const glowG = trGlow.getContext('2d'), puffG = trPuff.getContext('2d');
+  // A box blur of a grid field, R cells each way, `passes` times across then down (two or more is close to round).
+  const fieldBlur = (S, R, passes) => { const A = Float32Array.from(S), B = new Float32Array(S.length), blur = (Sx, D, n, step, lines, len) => { for (let l = 0; l < lines; l++) { let s2 = 0; const at = (k) => Sx[l * n + Math.max(0, Math.min(len - 1, k)) * step]; for (let k = -R; k <= R; k++) s2 += at(k); for (let k = 0; k < len; k++) { D[l * n + k * step] = s2 / (2 * R + 1); s2 += at(k + R + 1) - at(k - R); } } };
+    for (let p2 = 0; p2 < passes; p2++) { blur(A, B, tw, 1, th, tw); blur(B, A, 1, tw, tw, th); } return A; };
   const buildTrauma = () => {
     const rg = trRed.getContext('2d'), mg = trMask.getContext('2d'), ri = rg.createImageData(tw, th), mi = mg.createImageData(tw, th);
-    for (let i = 0; i < TR.length; i++) { const t = TR[i], j = i * 4; if (!t) continue;
+    const SM = fieldBlur(TR, Math.max(1, Math.round(0.7 * mm / TS)), 2);   /* the wear softened a little: rounded patches, not grid squares, but as strong at the middle */
+    for (let i = 0; i < TR.length; i++) { const t = SM[i] * 1.2, j = i * 4; if (!t) continue;
       ri.data[j] = 214; ri.data[j + 1] = 64; ri.data[j + 2] = 52; ri.data[j + 3] = Math.min(150, Math.max(0, t - 0.3) * 160);
       const m = Math.max(0, Math.min(1, (t - 1) / 1.2)); mi.data[j] = mi.data[j + 1] = mi.data[j + 2] = 255; mi.data[j + 3] = m * m * (3 - 2 * m) * 235; }
     rg.putImageData(ri, 0, 0); mg.putImageData(mi, 0, 0);
@@ -1254,9 +1262,9 @@ TT.open = async (el, id) => {
     tg.fillStyle = tg.createPattern(patty, 'repeat'); tg.fillRect(0, 0, trTex.width, trTex.height);
     tg.globalCompositeOperation = 'destination-in'; tg.imageSmoothingEnabled = true; tg.drawImage(trMask, 0, 0, trTex.width, trTex.height); tg.globalCompositeOperation = 'source-over';
     // Sores: tiny raised pimples, a pinprick with a flush round it and a speck of shine, each a little different.
-    const bs = trTex.width / tw;
+    const bs = trTex.width / tw, ks = trTex.width / (W / 2);   /* the sores were sized for a half-size layer */
     for (let i = 0; i < BU.length; i++) { const b = BU[i]; if (b < 0.15) continue; const h = Math.imul(i, 2654435761) >>> 0;
-      const px = ((i % tw) + 0.2 + (h & 255) / 255 * 0.6) * bs, py = (Math.floor(i / tw) + 0.2 + ((h >> 8) & 255) / 255 * 0.6) * bs, r = (0.2 + b * 0.22 + ((h >> 16) & 255) / 255 * 0.14) * mm / 4;
+      const px = ((i % tw) + 0.2 + (h & 255) / 255 * 0.6) * bs, py = (Math.floor(i / tw) + 0.2 + ((h >> 8) & 255) / 255 * 0.6) * bs, r = (0.2 + b * 0.22 + ((h >> 16) & 255) / 255 * 0.14) * mm / 4 * ks;
       let gr = tg.createRadialGradient(px, py, r * 0.4, px, py, r * 2.6); gr.addColorStop(0, 'rgba(205,60,52,.42)'); gr.addColorStop(1, 'rgba(205,60,52,0)'); tg.fillStyle = gr; tg.beginPath(); tg.arc(px, py, r * 2.6, 0, 7); tg.fill();
       gr = tg.createRadialGradient(px - r * 0.3, py - r * 0.35, 0, px, py, r); gr.addColorStop(0, 'rgba(236,128,116,.95)'); gr.addColorStop(0.6, 'rgba(186,48,44,.95)'); gr.addColorStop(1, 'rgba(140,28,28,.85)'); tg.fillStyle = gr; tg.beginPath(); tg.arc(px, py, r, 0, 7); tg.fill();
       tg.fillStyle = 'rgba(110,18,20,.85)'; tg.beginPath(); tg.arc(px, py, Math.max(0.35, r * 0.22), 0, 7); tg.fill();
