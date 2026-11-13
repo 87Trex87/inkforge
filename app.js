@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 440;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 441;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7604,6 +7604,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 441, when: '2026-11-13T20:00', added: ['Healed scarring is softer, with its ridges spread wider.'],
+    test: ['Look at a scarred patch in the Healed preview. Does it blend in better now?'] },
   { build: 440, when: '2026-11-13T19:00', added: ['Healed view: badly overworked skin heals raised and scarred, pale and ridged over the ink.'],
     test: ['Overwork a patch until it bleeds, then look at the Healed preview. Does it look scarred and raised?'] },
   { build: 439, when: '2026-11-13T18:00', added: ['Blowouts look more real: uneven, with hair-fine veins of ink running out (more over bone), healing to a faint grey-blue haze.', 'Swollen skin is rounded, not square, and the raw skin is sharp, with burst capillaries and a wet look.', 'Badly overworked skin starts to seep blood.'],
