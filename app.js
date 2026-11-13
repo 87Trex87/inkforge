@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 443;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 444;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7604,6 +7604,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 444, when: '2026-11-13T23:00', added: ['Quick restart in lessons and challenges: clean skin, same needle, settings, palette and body area. Just load your ink and go.'],
+    test: ['Change your needle size, then press Quick restart. Is everything kept but the ink?'] },
   { build: 443, when: '2026-11-13T22:00', added: ['Blowouts are a little more forgiving: you can go about a fifth slower at each depth before they start.'],
     test: ['Work at your usual depth and pace, then a bit slower. Does it only blow out when you really crawl or dig in?'] },
   { build: 442, when: '2026-11-13T21:00', added: ['Blowouts come easier and fairer: how slow you can safely go depends on depth. At the middle of the green only a crawl blows out; near the top a slow pace does; in the red even a normal pace. The speed meter turns red by the same rule.', 'Healed blowouts are lighter, and fainter with less spread after ten years.'],
