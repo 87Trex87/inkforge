@@ -1430,9 +1430,26 @@ TT.open = async (el, id) => {
         g.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; g.globalAlpha = a * (st.op[key] ?? 1) * wf;
         g.filter = `blur(${Math.max(0.4, mm * b)}px) saturate(${sat})`; g.drawImage(tmp, 0, 0); }
       g.filter = 'none'; g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      if (!aged) scarOver(g);
     }
     return c;
   };
+  /* Healed scarring: where the skin was badly overworked (its worst wear past swollen) it heals raised and lumpy, a
+     few months on: paler, slightly shiny tissue with fibrous ridges catching the light across it, over the ink, and a
+     lit rim where it rises. Only in the healed view; ten years has settled it. */
+  let scarTile = null;
+  const scarOver = (g) => { const S = fieldBlur(TP, Math.max(1, Math.round(0.6 * mm / TS)), 2), mc = document.createElement('canvas'); mc.width = tw; mc.height = th; const mx = mc.getContext('2d'), mi = mx.createImageData(tw, th), sh = mx.createImageData(tw, th); let any = false;
+    for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { const i = y * tw + x, v = Math.max(0, Math.min(1, (S[i] - 0.95) / 0.8)); if (v <= 0) continue; any = true; mi.data[i * 4 + 3] = Math.round(v * 255);
+      const gx = (S[i - 1] ?? S[i]) - (S[i + 1] ?? S[i]), gy = (S[i - tw] ?? S[i]) - (S[i + tw] ?? S[i]), l = (gx + gy) * 6; sh.data[i * 4] = sh.data[i * 4 + 1] = sh.data[i * 4 + 2] = l < 0 ? 255 : 50; sh.data[i * 4 + 3] = Math.min(110, Math.abs(l) * 255); }
+    if (!any) return; mx.putImageData(mi, 0, 0);
+    const lay = (fill) => { const c2 = document.createElement('canvas'); c2.width = W; c2.height = H; const x2 = c2.getContext('2d'); x2.fillStyle = fill; x2.fillRect(0, 0, W, H); x2.globalCompositeOperation = 'destination-in'; x2.imageSmoothingEnabled = true; x2.drawImage(mc, 0, 0, W, H); return c2; };
+    if (!scarTile) { const N = 256; scarTile = document.createElement('canvas'); scarTile.width = scarTile.height = N; const t = scarTile.getContext('2d'); t.lineCap = 'round';
+      for (let k = 0; k < 520; k++) { const x0 = Math.random() * N, y0 = Math.random() * N, len = 14 + Math.random() * 40, an = -0.12 + (Math.random() - 0.5) * 0.22, dx = Math.cos(an) * len, dy = Math.sin(an) * len, w2 = 1 + Math.random() * 1.4;
+        t.strokeStyle = `rgba(255,236,230,${0.35 + Math.random() * 0.35})`; t.lineWidth = w2; t.beginPath(); t.moveTo(x0, y0); t.lineTo(x0 + dx, y0 + dy); t.stroke();
+        t.strokeStyle = `rgba(70,32,32,${0.18 + Math.random() * 0.2})`; t.lineWidth = w2 * 0.7; t.beginPath(); t.moveTo(x0 - Math.sin(an) * w2, y0 + Math.cos(an) * w2); t.lineTo(x0 + dx - Math.sin(an) * w2, y0 + dy + Math.cos(an) * w2); t.stroke(); } }
+    g.globalAlpha = 0.32; g.drawImage(lay('rgb(236,196,186)'), 0, 0); g.globalAlpha = 1;   /* paler raised tissue */
+    const rp = document.createElement('canvas').getContext('2d').createPattern(scarTile, 'repeat'); g.globalAlpha = 0.9; g.drawImage(lay(rp), 0, 0); g.globalAlpha = 1;   /* the fibrous ridges */
+    const rc = document.createElement('canvas'); rc.width = tw; rc.height = th; rc.getContext('2d').putImageData(sh, 0, 0); g.save(); g.imageSmoothingEnabled = true; g.filter = `blur(${Math.max(2, mm * 0.8)}px)`; g.drawImage(rc, 0, 0, W, H); g.restore(); };   /* the raised rim, lit from above left */
   /* Where overworked skin lost ink, as a mask (opaque = ink gone): nothing below swollen, then more the harder it
      was worked, broken up into blotches so it heals patchy rather than evenly lighter. The same blotches every
      time for a piece. */
