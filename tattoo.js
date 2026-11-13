@@ -1418,9 +1418,9 @@ TT.open = async (el, id) => {
       const aged = mode === 'aged', [b, a, sat] = aged ? [0.14, 0.8, 0.72] : [0.06, 0.92, 0.92], loss = falloutMask(aged);
       g.globalCompositeOperation = 'multiply';
       /* blowouts: never faded; the veins stay as a faint trace, and round them a grey-blue haze that spreads a little with the years */
-      g.filter = `blur(${Math.max(0.6, mm * (aged ? 0.5 : 0.25))}px)`; g.globalAlpha = aged ? 0.45 : 0.6; g.drawImage(blowC, 0, 0, W, H);
-      g.filter = `blur(${Math.max(1, mm * (aged ? 0.9 : 0.5))}px) sepia(0.5) hue-rotate(170deg) saturate(1.3)`; g.globalAlpha = 0.8; g.drawImage(blowC, 0, 0, W, H);
-      g.filter = `blur(${Math.max(1.5, mm * (aged ? 1.8 : 1.1))}px) sepia(0.6) hue-rotate(170deg) saturate(1.5)`; g.globalAlpha = 0.6; g.drawImage(blowC, 0, 0, W, H); g.globalAlpha = 1;
+      g.filter = `blur(${Math.max(0.6, mm * (aged ? 0.35 : 0.25))}px)`; g.globalAlpha = aged ? 0.25 : 0.45; g.drawImage(blowC, 0, 0, W, H);   /* lighter than fresh, fainter again after ten years, and it hardly spreads */
+      g.filter = `blur(${Math.max(1, mm * (aged ? 0.6 : 0.5))}px) sepia(0.5) hue-rotate(170deg) saturate(1.3)`; g.globalAlpha = aged ? 0.4 : 0.6; g.drawImage(blowC, 0, 0, W, H);
+      g.filter = `blur(${Math.max(1.5, mm * (aged ? 1.2 : 1.1))}px) sepia(0.6) hue-rotate(170deg) saturate(1.5)`; g.globalAlpha = aged ? 0.25 : 0.45; g.drawImage(blowC, 0, 0, W, H); g.globalAlpha = 1;
       const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const tg = tmp.getContext('2d');
       for (const key of TT_DRAW) { if (key === 'stencil' || key === 'marker' || st.hide.has(key)) continue;
         tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, W, H); tg.drawImage(L[key], 0, 0);
@@ -1711,7 +1711,7 @@ TT.open = async (el, id) => {
           const t0 = trAt(q); hcAdd(q, pen.foot); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           painHit(q, depth, pen.foot); trAdd(q, pen.foot, 0.0128 * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, Math.sqrt(1.1 * mm / pen.foot)) * Math.pow(volt() / 7, 2) * (isMag() ? 1.6 : nk === 'shader' ? 0.75 : 1) / ((cal.tough || 1) * TT_TOUGH), true);   /* magnums work a wide strip hard; round shaders get some slack */   /* a wide needle spreads each hit, but works a lot more skin at once */   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
-          const risk = Math.max(0, Math.min(1, (0.035 - gapMm(pen.speed)) / 0.025)) * Math.max(0, Math.min(1, (depth - blowD()) / 0.15)) * (cal.blow ?? 1) * 3 * Math.pow(0.3 / blowSize(), 2);   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
+          const risk = Math.max(0, Math.min(1, (blowGap(depth) - gapMm(pen.speed)) / 0.03)) * Math.max(0, Math.min(1, (depth - 0.45) / 0.25)) * (cal.blow ?? 1) * 2.2 * Math.pow(0.3 / blowSize(), 2);   /* slower than blowGap at this depth blows out; deeper, it comes at more ordinary speeds */   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: too deep, too slow.', 2500); } }
           if (t0 > 1.6 && EX?.cur && !pen.overN) { pen.overN = 1; EX.cur.over = (EX.cur.over || 0) + 1; tally(); } if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked skin: move on.', 2500); }
@@ -2464,6 +2464,10 @@ TT.open = async (el, id) => {
   // A round shader's tight bundle lines like a liner, and blows out like one, whatever its needle size.
   function blowSize() { const s = feel.size || 0.3; return TT_NEEDLES.find(n => n.id === st.needle)?.kind === 'shader' ? Math.min(s, 0.3) : s; }
   function blowD() { return 0.8 - (0.3 - blowSize()) * 1.2; }
+  /* The slowest safe pace (mm between punctures) at a depth. Shallow, anything goes; at the middle of the green only a
+     real crawl blows out (under about 0.045 mm); towards the top of the green a slow-normal pace (about 0.1 mm) does;
+     into the red, even an ordinary pace. */
+  function blowGap(depth) { const mid = (0.45 + blowD()) / 2, top = blowD() + 0.12; return depth <= mid ? 0.045 * Math.max(0, Math.min(1, (depth - 0.45) / (mid - 0.45))) : 0.045 + 0.09 * Math.min(1.4, (depth - mid) / (top - mid)); }
   /* Check: the cursor becomes a circle that reads the skin inside it (its average wear as a score out of 100,
      and how worked the worst spot is) instead of tattooing; the slider sets the circle's size in mm. */
   st.checkR ??= 6;
@@ -2502,7 +2506,7 @@ TT.open = async (el, id) => {
       row.querySelector('span').textContent = whipShown ? 'Whip' : 'Speed'; row.querySelector('i.ok').style.width = P(whipShown ? WHIP_GAP : g1) - P(g0) + '%'; }
     for (const [key, , lo, hi, g0, g1raw, bad, fmt, low] of MTR) { const v = m[key], row = meterEl.querySelector(`[data-m="${key}"]`), g1 = key === 'gap' && m.whip ? WHIP_GAP : g1raw;
     let z = v >= g0 && v <= g1 ? 'ok' : (low ? v < bad : v > bad) ? 'bad' : 'warn';
-    if (key === 'gap' && z === 'bad' && m.depth < blowD()) z = 'warn';   // slow is only a danger while digging in
+    if (key === 'gap') { const lim = blowGap(m.depth || 0); z = !m.whip && v < lim && m.depth > 0.45 ? 'bad' : v >= g0 && v <= g1 ? 'ok' : 'warn'; }   /* too slow for this depth: red */
     row.querySelector('b').style.left = Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)) + '%'; row.className = 'tt-mr ' + z; row.querySelector('em').textContent = fmt(v); } };
   let lastM = { depth: 0, gap: 0.1, skin: 0 }; meter(lastM);
 
