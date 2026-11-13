@@ -794,7 +794,7 @@ const Undel = {
   async finish() { const me = this.cur; if (!me) return; this.cur = null; clearTimeout(me.t); for (const r of new Set(me.refs)) await Media.release(r); }
 };
 
-/* ---------- Tooltips: hover on mouse, tap on touch ---------- */
+/* ---------- Tooltips: hover on mouse and on a hovering pen (S Pen), hold on touch ---------- */
 (() => {
   const tip = $('#tip');
   const show = (el) => {
@@ -805,7 +805,15 @@ const Undel = {
     tip.style.left = x + 'px'; tip.style.top = y + 'px';
   };
   const hide = () => tip.hidden = true;
+  /* A pen held just above the screen reports its moves with no button down: the tip under it shows after a moment,
+     and goes when it moves off, leaves the screen or touches down. */
+  let penAt = 0, penEl = null, penT = 0;
+  document.addEventListener('pointermove', e => { if (e.pointerType !== 'pen' || e.buttons) return; penAt = performance.now();
+    const el = e.target.closest?.('[data-tip]'); if (el === penEl) return; penEl = el; clearTimeout(penT); if (!el) return hide(); penT = setTimeout(() => { if (penEl === el && el.isConnected) show(el); }, 220); }, true);
+  document.addEventListener('pointerout', e => { if (e.pointerType === 'pen' && !e.relatedTarget) { penEl = null; clearTimeout(penT); hide(); } }, true);
+  document.addEventListener('pointerdown', e => { if (e.pointerType === 'pen') { penEl = null; clearTimeout(penT); hide(); } }, true);
   document.addEventListener('mouseover', e => {
+    if (performance.now() - penAt < 600) return;   /* the pen's own hover, above, looks after it */
     const el = e.target.closest('[data-tip]');
     if (el && matchMedia('(hover: hover)').matches) show(el); else hide();
   });
