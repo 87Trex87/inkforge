@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 441;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 442;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7604,6 +7604,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 442, when: '2026-11-13T21:00', added: ['Blowouts come easier and fairer: how slow you can safely go depends on depth. At the middle of the green only a crawl blows out; near the top a slow pace does; in the red even a normal pace. The speed meter turns red by the same rule.', 'Healed blowouts are lighter, and fainter with less spread after ten years.'],
+    test: ['At the middle of the green, go a little slower than usual. Still fine? Now crawl. Does it blow out?', 'Press past the green at your normal pace. Does it blow out?'] },
   { build: 441, when: '2026-11-13T20:00', added: ['Healed scarring is softer, with its ridges spread wider.'],
     test: ['Look at a scarred patch in the Healed preview. Does it blend in better now?'] },
   { build: 440, when: '2026-11-13T19:00', added: ['Healed view: badly overworked skin heals raised and scarred, pale and ridged over the ink.'],
