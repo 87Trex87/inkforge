@@ -1813,3 +1813,4 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 .dz-rail.two, .tt-tray.two { display: grid; justify-items: center; grid-auto-flow: column; grid-template-rows: repeat(var(--rows), auto); max-height: none !important; overflow: visible !important; }
 .dz-rail.two .sep { width: auto; } .tt-tray.two { column-gap: 6px; }
 .dz-item [data-out] { right: 72px; } .dz-item .tt-outb { right: 40px; } .dz-item:has([data-out][data-out]) .dz-meta { padding-right: 104px; } .dz-item:has(.tt-outb) .dz-meta { padding-right: 72px; }
+.dev-bolt { display: block; margin: 18px auto 4px; width: 22px; height: 22px; padding: 0; border: 0; background: none; color: var(--ink2); opacity: .25; cursor: pointer; } .dev-bolt svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }

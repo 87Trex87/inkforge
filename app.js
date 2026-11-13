@@ -2133,6 +2133,7 @@ const VIEWS = {
     title: () => 'Settings',
     render() {
       return `
+      ${Settings.get('tt_devseen') === '1' ? `<div class="card su-again"><div><b>Dev controls</b><span class="muted">A panel in the simulator with every number behind the skin and the needles, to test changes while tattooing. Changes show on report cards and stats.</span></div><label class="toggle" style="flex:none"><input type="checkbox" data-devmode ${Settings.get('tt_devmode') === '1' ? 'checked' : ''}><span></span></label></div>` : ''}
       <div class="card su-again"><div><b>Workspace type</b><span class="muted">${wsDesign() ? 'Design only: the design tools, forms, notes and portfolio, without clients, bookings, quotes, stats and stock.' : 'Full studio: everything, from clients and bookings to design.'}</span></div>
         <span class="seg" style="flex:none">${[['full', 'Full studio'], ['design', 'Design only']].map(([v, n]) => `<button data-wsmode="${v}" class="${(wsDesign() ? 'design' : 'full') === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
       <div class="card su-again" data-biz><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
@@ -2222,6 +2223,12 @@ const VIEWS = {
       <p class="app-credit">Designed and crafted by Trevor Schuster using vibe coding.<br>Over 15 years of experience in tattooing.</p>`;
     },
     async mount() {
+      /* The hidden bolt: the password shows the dev controls switch (kept shown once unlocked). */
+      const bolt = document.createElement('button'); bolt.className = 'dev-bolt'; bolt.setAttribute('aria-label', 'What is this?'); bolt.innerHTML = '<svg viewBox="0 0 24 24"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg>'; document.querySelector('#view')?.appendChild(bolt);
+      bolt.onclick = async () => { const pw = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.innerHTML = '<div class="card" style="max-width:340px;margin:auto"><input class="in" id="dev-pw" type="password" autocomplete="off" style="width:100%"><div class="row" style="gap:6px;margin-top:10px"><button class="btn" data-pw="" style="flex:1">Cancel</button><button class="btn primary" data-pw="ok" style="flex:1">OK</button></div></div>';
+          o.onclick = (e) => { const b = e.target.closest('[data-pw]'); if (!b) return; const v = o.querySelector('#dev-pw').value; o.remove(); res(b.dataset.pw ? v : null); }; o.querySelector('#dev-pw').onkeydown = (e) => { if (e.key === 'Enter') o.querySelector('[data-pw="ok"]').click(); }; document.body.appendChild(o); o.querySelector('#dev-pw').focus(); });
+        if (pw == null) return; if (pw !== 'SpectraCut') return toast('No.', 1200); await Settings.set('tt_devseen', '1'); render(); };
+      document.querySelector('[data-devmode]')?.addEventListener('change', async (e) => { await Settings.set('tt_devmode', e.target.checked ? '1' : ''); if (typeof ttDevLoad === 'function') ttDevLoad(); toast(e.target.checked ? 'Dev controls on: the bolt in the simulator opens them.' : 'Dev controls off: everything back to the defaults.', 2600); });
       document.querySelectorAll('[data-wsmode]').forEach(b => b.onclick = async () => { const m = b.dataset.wsmode; if ((wsDesign() ? 'design' : 'full') === m) return;
         if (m === 'design' && !await ask('Make this a design-only workspace?\n\nClients, bookings, quotes, stats, stock and rules are hidden (nothing is deleted), and the design tools come to the front. You can switch back any time.')) return;
         await Settings.set('ws_mode', m); if (WS.cur) { WS.cur.mode = m; await WS.save(); } render(); toast(m === 'design' ? 'Design workspace.' : 'Full studio workspace.', 1800); });
@@ -2847,7 +2854,7 @@ const MERGE_TABLES = {
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'signed_form_pages', 'portfolio_items',
   'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
-const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|reel_templates$|reel_style$|forms_|lib_|ws_pass$|ws_mode$|dz_refs_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
+const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|tt_dev|reel_templates$|reel_style$|forms_|lib_|ws_pass$|ws_mode$|dz_refs_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
 
 function parseBackup(bytes) {
