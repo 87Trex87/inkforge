@@ -1601,6 +1601,7 @@ DZ.list = async () => {
     ${rows.length ? Lib.bar('designs', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('designs', r.id)}
         <div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
         <div class="dz-meta"><b>${esc(r.name)}</b><span class="muted">${esc(r.sub)}</span></div>
+        <button class="mini" data-out="${r.id}" aria-label="Print or save" data-tip="Print or save as"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></button>
         <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate">⧉</button>
         <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.design}</div><div style="font:24px var(--display)">Make something</div>
@@ -1619,6 +1620,10 @@ DZ.list = async () => {
       Undel.offer(`Deleted "${r.name}".`, snap, [r.thumb_ref, ...refs], DZ.list, () => rp && Settings.set('dz_refs_' + id0, rp));
       return DZ.list();
     }
+    if (d('out')) { e.stopPropagation(); const r = await DB.one('SELECT name, doc FROM designs WHERE id = ?', [+d('out')]); if (!r) return; const doc = JSON.parse(r.doc);
+      const how = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.innerHTML = `<div class="card"><h2>${esc(r.name)}</h2><div class="dz-ex"><button data-po="print"><b>Print</b><small>Or Save as PDF from the print screen</small></button><button data-po="save"><b>Save as</b><small>A picture (PNG or JPG), a PDF or a copy</small></button></div><button class="btn" data-po="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+        o.onclick = (ev) => { const b = ev.target.closest('[data-po]'); if (!b && ev.target !== o) return; o.remove(); res(b?.dataset.po || null); }; document.body.appendChild(o); });
+      if (how === 'print') return dzPrintDoc(doc); if (how === 'save') { await dzSaveAs(doc, r.name, +d('out')); return DZ.list(); } return; }
     if (d('dup')) {
       const r = await DB.one('SELECT * FROM designs WHERE id = ?', [+d('dup')]);
       await DB.run('INSERT INTO designs (name, kind, doc, thumb_ref) VALUES (?, ?, ?, ?)', [r.name + ' (copy)', r.kind, r.doc, r.thumb_ref]);
@@ -4895,6 +4900,7 @@ DZ.edit = async (id) => {
     setTimeout(() => document.addEventListener('pointerdown', function off(ev) { if (!ev.target.closest('#dz-panm, #dz-panels')) { m.remove(); document.removeEventListener('pointerdown', off, true); } }, true)); };
   dpApply(); dqDraw();
   $('#dz-export').onclick = () => { select(null); dzExport(doc, name); };
+  railFit($('#dz-rail'));
   $('#dz-print').onclick = async () => { select(null); await flush(); dzPrintDoc(doc); };
   $('#dz-saveas').onclick = async () => { select(null); await flush(); const cp = await dzSaveAs(doc, $('#dz-name').value.trim() || name, id); if (cp) location.hash = 'design/' + cp; };
   dzRO = new ResizeObserver(() => { fit(); redraw(); }); dzRO.observe(stage);

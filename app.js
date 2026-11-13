@@ -836,6 +836,13 @@ const Undel = {
   addEventListener('click', e => { if (held) { held = false; e.preventDefault(); e.stopPropagation(); } }, true);
 })();
 
+/* The left tool rail of the design studio and the simulator: when its tools don't fit the height it is given, it
+   becomes two columns instead of hiding the rest behind a scroll. Watched as the window, panels and tools change. */
+function railFit(rail) { if (!rail || rail._fit) return; const fit = () => { if (!rail.isConnected) { ro.disconnect(); mo.disconnect(); return; }
+    rail.classList.remove('two'); rail.style.removeProperty('--rows'); const n = rail.children.length; if (rail.scrollHeight <= rail.clientHeight + 2 || n < 4) return;
+    rail.classList.add('two'); rail.style.setProperty('--rows', Math.ceil(n / 2)); };
+  const later = () => { cancelAnimationFrame(rail._fr); rail._fr = requestAnimationFrame(fit); }, ro = new ResizeObserver(later), mo = new MutationObserver(later);
+  ro.observe(rail.parentElement); mo.observe(rail, { childList: true }); rail._fit = true; later(); }
 /* ---------- Views ---------- */
 const ICON = {
   needle: '<svg viewBox="0 0 24 24"><path d="M3 21l6-6"/><path d="M9 15l3-3 3 3-3 3zM12 12l7-7 2 2-7 7"/><path d="M17 3l4 4"/></svg>',

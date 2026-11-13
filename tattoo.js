@@ -991,6 +991,7 @@ TT.list = async (el) => {
       <button class="btn primary" id="tt-new">+ New piece</button></div>
     ${rows.length ? Lib.bar('tattoo', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('tattoo', r.id)}<div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
       <div class="dz-meta"><b>${esc(r.name || 'Piece')}</b><span class="muted">${r.exam ? (r.exam === 2 ? 'Exam · finished' : 'Exam · in progress') : `${+r.w_cm} × ${+r.h_cm} cm`}${r.area && !r.exam ? (() => { const A = ttAreaAll().find(a => a[0] === r.area); return A ? ` · ${TT_TIERN[ttTier(A[2])]} · ${esc(A[0])}` : ''; })() : ''}${r.cheat ? ' <span class="tt-cheat" style="display:inline-block;margin-left:4px">Cheat</span>' : ''}</span></div>
+      <button class="mini tt-outb" data-out="${r.id}" aria-label="Print or save" data-tip="Print or save as"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></button>
       <button class="mini" data-del="${r.id}" aria-label="Delete" data-tip="Delete">✕</button></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.needle}</div><div style="font:24px var(--display)">Tattoo simulator</div>
         <div class="muted">Pick a page size and skin tone, load a stencil to trace, dip into the ink caps and tattoo in layers: linework, shadow, mid and light tones, highlights.</div></div>`}`;
@@ -998,6 +999,7 @@ TT.list = async (el) => {
   Lib.wire(el, 'tattoo', redraw);
   el.onclick = async (e) => {
     if (await Lib.click(e, 'tattoo', redraw)) return;
+    const po = e.target.closest('[data-out]'); if (po) { e.stopPropagation(); sessionStorage.setItem('tt_out', po.dataset.out); location.hash = 'tattoo/' + po.dataset.out; return; }   /* opened, then straight to Print or save */
     const d = e.target.closest('[data-del]');
     if (d) { e.stopPropagation(); const r = await DB.one('SELECT * FROM tattoo_pieces WHERE id = ?', [+d.dataset.del]); if (!r || !await ask(`Delete "${r.name || 'this piece'}"?`)) return;
       const snap = await Undel.snap([['tattoo_pieces', 'id = ?', [r.id]]]); await DB.run('DELETE FROM tattoo_pieces WHERE id = ?', [r.id]);
@@ -1319,7 +1321,7 @@ TT.open = async (el, id) => {
       <button class="dz-ib" id="tt-fs" data-tip="Full screen" aria-label="Full screen" ${typeof FS !== 'undefined' && FS.can() ? '' : 'hidden'}></button>
       <button class="dz-ib" id="tt-pf" data-tip="Save to portfolio: fresh, healed and 10 years, with the stencil" aria-label="Save to portfolio"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><path d="M12 2v6M9 5l3 3 3-3"/></svg></button>
       <button class="dz-ib" id="tt-tl" data-tip="Stats" aria-label="Stats"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></button>
-      <button class="dz-ib" id="tt-png" data-tip="Save as PNG" aria-label="Save as PNG"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></button>
+      <button class="dz-ib" id="tt-png" data-tip="Print or save as PNG" aria-label="Print or save"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></button>
       <button class="dz-ib dz-go" id="tt-save" data-tip="Save" aria-label="Save"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></button>
     </div>
     <div class="dz-body"><div class="dz-stage tt-stage" id="tt-stage"><canvas id="tt-cv"></canvas><canvas id="tt-cur"></canvas>
@@ -3299,15 +3301,17 @@ TT.open = async (el, id) => {
   const drawView = () => { const b = $('#tt-view'); if (!b) return; b.querySelector('b').textContent = VIEWS.find(v => v[0] === st.view)[1]; b.classList.toggle('on', st.view !== 'work'); };
   $('#tt-view').onclick = () => { const i = VIEWS.findIndex(v => v[0] === st.view); st.view = VIEWS[(i + 1) % VIEWS.length][0]; st.viewC = null; drawView(); paint();
     toast({ work: 'As you worked it', fresh: 'Fresh: just tattooed, the skin around it red and raised', healed: 'Healed: settled into the skin, a touch softer', aged: 'After about 10 years: softer edges and faded colour' }[st.view], 2400); };
-  $('#tt-png').onclick = async () => {   // on its skin, or the ink alone on a clear background (to use anywhere)
+  $('#tt-png').onclick = async () => {   // print it, or save it on its skin or as the ink alone on a clear background (to use anywhere)
     const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
-      o.innerHTML = `<div class="card"><h2>Save as PNG</h2><div class="dz-ex"><button data-pg="skin"><b>On the skin</b><small>The whole page as you see it</small></button><button data-pg="clear"><b>Ink only</b><small>No skin: a clear background, cropped to the tattoo</small></button></div>
+      o.innerHTML = `<div class="card"><h2>Print or save</h2><div class="dz-ex"><button data-pg="print"><b>Print</b><small>On the skin, as you see it (or Save as PDF from the print screen)</small></button><button data-pg="skin"><b>Save as PNG, on the skin</b><small>The whole page as you see it</small></button><button data-pg="clear"><b>Save as PNG, ink only</b><small>No skin: a clear background, cropped to the tattoo</small></button></div>
         <button class="btn" data-pg="" style="width:100%;margin-top:10px">Cancel</button></div>`;
       o.onclick = (e) => { const b = e.target.closest('[data-pg]'); if (!b) return; o.remove(); res(b.dataset.pg); }; document.body.appendChild(o); });
     if (!pick) return; if (lsel) selCommit(); if (snapE) snapFinish();
+    if (pick === 'print') return printCanvas(composite());
     const c = pick === 'skin' ? composite() : inkPng(); if (!c) return toast('There\u2019s no ink to save yet.');
     const name = (($('#tt-name').value || 'tattoo').replace(/[^\w-]+/g, '_')) + (pick === 'clear' ? '-ink' : '') + '.png';
     await saveFiles([new File([await blobOf(c)], name, { type: 'image/png' })]); };
+  if (sessionStorage.getItem('tt_out') === String(id)) { sessionStorage.removeItem('tt_out'); setTimeout(() => $('#tt-png')?.click(), 400); }   /* from the library card's Print or save */
   /* ---------- Stats ---------- */
   const tlFmt = (ms) => { const s = Math.round(ms / 1000); return s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
   const tlDist = (mm) => mm >= 1000 ? (mm / 1000).toFixed(2) + ' m' : mm >= 100 ? (mm / 10).toFixed(1) + ' cm' : Math.round(mm) + ' mm';
@@ -3315,6 +3319,8 @@ TT.open = async (el, id) => {
   const fsBtn = $('#tt-fs'), fsShow = () => { if (!document.body.contains(fsBtn)) return document.removeEventListener('fullscreenchange', fsShow); const on = FS.on();
     fsBtn.innerHTML = on ? '<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
     fsBtn.dataset.tip = on ? 'Exit full screen' : 'Full screen'; setTimeout(fit, 120); };
+  railFit($('#tt-rail')); railFit($('#tt-tray'));
+  { const rl = $('#tt-rail'), tr = $('#tt-tray'); if (rl && tr) new ResizeObserver(() => { if (!rl.isConnected) return; tr.style.left = rl.offsetParent && rl.classList.contains('two') ? rl.offsetLeft + rl.offsetWidth + 6 + 'px' : ''; }).observe(rl); }   /* the ink tray keeps clear of a two-column rail */
   fsBtn.onclick = () => FS.set(!FS.on()); document.addEventListener('fullscreenchange', fsShow); fsShow();
   /* ---------- Save to portfolio ----------
      One picture of the piece: the stencil (if there is one), fresh, healed and 10 years side by side, cropped to the
