@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 435;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 436;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7589,6 +7589,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 436, when: '2026-11-13T12:00', added: ['Challenge maker: start a challenge From a picture. Any drawing, photo or simulator piece is traced into shapes to tattoo: colour line work, blackwork, fine line, black and grey or colour realism, with sliders for colours or zones, detail, smoothness and line weight, and a button to hold to compare.', 'A trace makes a detailed stencil of every edge for the simulator, adds the picture beside the skin, and writes a first brief.', 'A slimmer Setup: skin and body area (by level, with sizes), size, needles, judging and pictures. A new size scales the shapes.', 'Big traced shapes no longer lag while you edit.'],
+    test: ['Make a challenge From a picture with a drawing of yours. Does the trace look right, and play well?', 'Try Black and grey on a portrait. Do the zones and gradients follow the face?', 'Change the size in Setup. Do the shapes and stencil follow?'] },
   { build: 435, when: '2026-11-14T05:00', added: ['Pendulum and whip swings no longer count as scrubbing: it only counts while the needle stays in deep as it turns.'],
     test: ['Blend with fast magnum swings. Does the Healed preview stay smooth?'] },
   { build: 434, when: '2026-11-14T04:00', added: ['Bony areas buzz: on the most painful areas the client feels even a light touch, like stipple or whip shading.'],
