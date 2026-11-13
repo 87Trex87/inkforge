@@ -3577,10 +3577,13 @@ TT.open = async (el, id) => {
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
   };
   const exClear = () => { L.marker.getContext('2d').clearRect(0, 0, W, H); touched.add('marker'); for (const key of INK) { L[key].getContext('2d').clearRect(0, 0, W, H); syncIn(key); touched.add(key); } (TR.fill(0), TP.fill(0), HC.fill(0), WK.fill(0)); SCR.length = 0; wear.fill(0); wearAny = wearDirty = false; wearR = null; SWF.fill(0); PC = PK = null;   /* a fresh stencil and marker, unworn */ pfMax = 0; LIT = LITC = null; trDirty = true; bx.clearRect(0, 0, blowC.width, blowC.height); hist.length = fut.length = 0; };
-  const exStart = (fresh) => {
+  /* quick: Quick restart, clean skin and an empty needle, but the needle, its settings, the palette, the body area and
+     the view all as they were, so only the ink needs loading again. */
+  const exStart = (fresh, quick) => {
     const T = exList()[EX.i]; if (!T) return;
-    if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
-    setTimeout(painShow); if (fresh && EX.mode === 'ch' && !T.area && !CHEAT) setTimeout(async () => painSet(await painPick(true)), 350);
+    const keep = quick && EX.cur ? { area: EX.cur.area, needle: st.needle, layer: st.layer, caps: [...st.caps], capS: st.capS ? [...st.capS] : null, pal: st.pal, wash: st.wash, z, vx, vy, rot: st.rot, k } : null;
+    if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: keep?.area || T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
+    setTimeout(painShow); if (fresh && !keep && EX.mode === 'ch' && !T.area && !CHEAT) setTimeout(async () => painSet(await painPick(true)), 350);
     exStencil(T); st.hide.delete('stencil'); st.op.stencil = 0.6;
     (T.refs || []).forEach((R, k) => refNew({ gen: T.id, ref: R.ref, ar: R.ar || 1, w: 180, op: 1, x: 110 + k * 24, y: 170 + k * 40 }));   /* the challenge's own reference pictures */
     for (const S of T.stencils || []) Media.url(S.ref).then(u => { if (!u) return; const im = new Image(); im.onload = () => { const sg = L.stencil.getContext('2d'); sg.save(); sg.globalAlpha = 0.4; sg.drawImage(im, S.box[0] * mm, S.box[1] * mm, S.box[2] * mm, S.box[3] * mm); sg.restore();   /* fainter than the lines to follow: a guide for the shading */ touched.add('stencil'); paint(); }; im.src = u; });   /* a value study's stencil from the stencil maker */
@@ -3594,6 +3597,7 @@ TT.open = async (el, id) => {
     if (T.presets) for (const [id, f] of Object.entries(T.presets)) TT.setFeel(id, { ...TT.feel(id), ...f });   // each needle the lesson uses, set up as it asks
     setNeedle(T.needle); if (T.size || T.volt) { if (T.size) feel.size = T.size; if (T.volt) feel.volt = T.volt; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawSz(); drawVolt(); }   // a lesson that asks for a size and voltage starts there
     st.layer = T.layer; st.caps = [...TT_CAPS]; st.capS = null; st.pal = 'default'; { const P = EX.custom?.pal && (palAll().find(p => p.id === EX.custom.pal) || EX.custom.palData); if (P) { st.caps = P.caps.map(c => c.c); st.capS = P.caps.map(c => c.s ?? 1); st.pal = P.id; } } st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
+    if (keep) { setNeedle(keep.needle); st.layer = keep.layer; st.caps = keep.caps; st.capS = keep.capS; st.pal = keep.pal; st.wash = keep.wash; z = keep.z; vx = keep.vx; vy = keep.vy; st.rot = keep.rot; k = keep.k; }
     drawTray(); drawView(); drawRefs(); exBar(); tally(); paint(); st.dirty = true;
   };
   // ---- scoring ----
@@ -3897,8 +3901,8 @@ TT.open = async (el, id) => {
       const ar = painArea(); b.innerHTML = `<div class="tt-exh"><b>${T.title}</b>${ttStars(T.diff)}<button class="tt-area" data-ex="area" data-tip="Where on the body: sets how much it hurts${T.area ? ' (set by this challenge)' : '. Change it before you start'}">${TT_TIERN[ttTier(ar[2])]} · ${esc(ar[0])} <i>${'●'.repeat(ar[2])}${'○'.repeat(5 - ar[2])}</i></button><span class="muted" style="font-size:11px">${p ? 'Best ' + p.best : ''}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
         <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
         ${res ? `<div class="tt-exres"><b>${res.total}</b><span>${EX.lesson ? 'Grade ' + ttGrade(res.total) : ttMedal(res.total)?.[2] || 'No medal'}</span></div>
-          <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button>${EX.custom ? '<button class="btn small" data-ex="edit" data-tip="Back to this challenge in the design studio">Edit</button>' : ''}<span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small primary" data-ex="again">Try again</button></div>`
-        : `${penLine()}<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button>${EX.custom ? '<button class="btn small" data-ex="edit" data-tip="Back to this challenge in the design studio">Edit</button>' : ''}<button class="btn small" data-ex="retry">Start over</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
+          <div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button>${EX.custom ? '<button class="btn small" data-ex="edit" data-tip="Back to this challenge in the design studio">Edit</button>' : ''}<span style="flex:1"></span><button class="btn small" data-ex="card">Report card</button><button class="btn small" data-ex="quick" data-tip="Start again on clean skin with the same needle, settings, palette and body area: just reload your ink">Quick restart</button><button class="btn small primary" data-ex="again">Try again</button></div>`
+        : `${penLine()}<div class="row" style="gap:6px"><button class="btn small" data-ex="hub">${EX.lesson ? 'Lessons' : 'Challenges'}</button>${EX.custom ? '<button class="btn small" data-ex="edit" data-tip="Back to this challenge in the design studio">Edit</button>' : ''}<button class="btn small" data-ex="retry">Start over</button><button class="btn small" data-ex="quick" data-tip="Start again on clean skin with the same needle, settings, palette and body area: just reload your ink">Quick restart</button><span style="flex:1"></span><button class="btn small primary" data-ex="done">Done</button></div>`}`;
       return; }
     b.innerHTML = `<div class="tt-exh"><b>${EX.i + 1} / ${exList().length} · ${T.title}</b><span class="tt-exdots">${exList().map((c, j) => `<i class="${j < EX.i ? 'done' : j === EX.i ? 'on' : ''}"></i>`).join('')}</span><button class="dz-ib" data-ex="fold" data-tip="Show or hide the instructions" aria-label="Instructions"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></div>
       <p class="tt-ext" ${EX.fold ? 'hidden' : ''}>${T.text}</p>
@@ -3914,6 +3918,7 @@ TT.open = async (el, id) => {
     if (a === 'fold') { EX.fold = !EX.fold; return exBar(); }
     if (a === 'done') { ttBusy('Scoring your work', 0.1); await ttFrame(); return exDone(); }
     if (a === 'retry') { if (!await ask('Start this challenge again on clean skin?')) return; return exStart(true); }
+    if (a === 'quick') { if (EX.cur?.strokes && !EX.res?.length && !await ask('Start again on clean skin, keeping your needle, settings and body area?')) return; EX.res = []; EX.info = null; exStart(true, true); return toast('Clean skin. Load your ink and go.', 2200); }
     if (a === 'area') { const T = exList()[EX.i]; if (T?.area) return toast(`This challenge is on the ${T.area.toLowerCase()}.`, 2000); if (EX.cur?.strokes) return toast('The area is set once you start. Start over to change it.', 2500);
       return painSet(await painPick()); }
     if (a === 'next') return exNext();
