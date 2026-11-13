@@ -1269,6 +1269,15 @@ TT.open = async (el, id) => {
       gr = tg.createRadialGradient(px - r * 0.3, py - r * 0.35, 0, px, py, r); gr.addColorStop(0, 'rgba(236,128,116,.95)'); gr.addColorStop(0.6, 'rgba(186,48,44,.95)'); gr.addColorStop(1, 'rgba(140,28,28,.85)'); tg.fillStyle = gr; tg.beginPath(); tg.arc(px, py, r, 0, 7); tg.fill();
       tg.fillStyle = 'rgba(110,18,20,.85)'; tg.beginPath(); tg.arc(px, py, Math.max(0.35, r * 0.22), 0, 7); tg.fill();
       tg.fillStyle = 'rgba(255,240,235,.75)'; tg.beginPath(); tg.arc(px - r * 0.38, py - r * 0.42, Math.max(0.25, r * 0.16), 0, 7); tg.fill(); }
+    /* Blood: where the raw skin is at its worst, it starts to seep. Glossy dark-red beads, a few smeared or running a
+       little way down, more the further past severe; the same spots each time it is drawn (seeded by the cell). */
+    for (let i = 0; i < SM.length; i++) { const t = SM[i] * 1.2; if (t < 1.35) continue; const h = Math.imul(i + 7919, 2654435761) >>> 0, chance = Math.min(0.035, (t - 1.35) * 0.05); if ((h & 1023) / 1023 > chance) continue;
+      const u = ((h >> 10) & 255) / 255, v = ((h >> 18) & 255) / 255, px = ((i % tw) - 0.5 + u * 2) * bs, py = (Math.floor(i / tw) - 0.5 + v * 2) * bs, r = (0.3 + u * u * 0.6) * mm * ks / 2;
+      if (v > 0.72) { const len = (0.4 + v * 1.1) * mm * ks / 2; const gr = tg.createLinearGradient(px, py, px, py + len); gr.addColorStop(0, 'rgba(120,8,12,.85)'); gr.addColorStop(1, 'rgba(120,8,12,0)'); tg.strokeStyle = gr; tg.lineCap = 'round'; tg.lineWidth = r * 0.9; tg.beginPath(); tg.moveTo(px, py); tg.quadraticCurveTo(px + (u - 0.5) * r * 2, py + len * 0.5, px + (u - 0.5) * r, py + len); tg.stroke(); }   /* running */
+      const gr = tg.createRadialGradient(px - r * 0.3, py - r * 0.3, 0, px, py, r); gr.addColorStop(0, 'rgba(150,14,20,.9)'); gr.addColorStop(0.75, 'rgba(118,8,14,.88)'); gr.addColorStop(1, 'rgba(110,8,14,.35)');
+      tg.fillStyle = gr; tg.beginPath(); tg.ellipse(px, py, r * (1 + u * 0.8), r * (0.75 + v * 0.3), (h >> 26) / 64 * Math.PI, 0, 7); tg.fill();
+      if (u > 0.6) { tg.fillStyle = 'rgba(105,10,14,.45)'; tg.beginPath(); tg.ellipse(px + r * 0.8, py + r * 0.5, r * 1.6, r * 0.9, v * Math.PI, 0, 7); tg.fill(); }   /* a thin smear beside it */
+      tg.fillStyle = 'rgba(255,225,220,.55)'; tg.beginPath(); tg.ellipse(px - r * 0.3, py - r * 0.3, Math.max(0.4, r * 0.2), Math.max(0.3, r * 0.1), -0.6, 0, 7); tg.fill(); }   /* a wet shine */
     // Swelling and the flush round it: the wear spread out a few mm (three box blurs), as a red halo and as raised, lit skin.
     { const R = Math.max(2, Math.round(2.5 * mm / TS)), A = Float32Array.from(TR), B = new Float32Array(TR.length), blur = (S, D, n, step, lines, len) => { for (let l = 0; l < lines; l++) { let s = 0; const at = (k) => S[l * n + Math.max(0, Math.min(len - 1, k)) * step]; for (let k = -R; k <= R; k++) s += at(k); for (let k = 0; k < len; k++) { D[l * n + k * step] = s / (2 * R + 1); s += at(k + R + 1) - at(k - R); } } };
       for (let p = 0; p < 2; p++) { blur(A, B, tw, 1, th, tw); blur(B, A, 1, tw, tw, th); }
