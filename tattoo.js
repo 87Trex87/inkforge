@@ -1281,8 +1281,20 @@ TT.open = async (el, id) => {
     if (EX?.cur) { EX.cur.blow = (EX.cur.blow || 0) + 1; tally(); const sp = EX.cur.spots ||= [], near = sp.find(q => Math.hypot(q[0] - p.x, q[1] - p.y) < 3 * mm); if (near) near[2]++; else sp.push([p.x, p.y, 1]); } SS.blow++;   // spots for the heat map; hits within 3 mm are one spot
     // ink seen through the skin: bluer
     const c = st.ink.c.map((v, j) => Math.round((v * 0.45 + [0.34, 0.42, 0.68][j] * 0.55) * 255)), R = (footR + mm * (1.1 + risk * 1.8)) / 2, gx = p.x / 2, gy = p.y / 2;
-    const gr = bx.createRadialGradient(gx, gy, 0, gx, gy, R); gr.addColorStop(0, `rgba(${c},${0.12 + risk * 0.16})`); gr.addColorStop(0.5, `rgba(${c},${0.05 + risk * 0.07})`); gr.addColorStop(1, `rgba(${c},0)`);
-    bx.fillStyle = gr; bx.beginPath(); bx.arc(gx, gy, R, 0, 7); bx.fill();
+    /* Not a neat circle: a few soft blots, off-centre */
+    for (let k = 0; k < 3; k++) { const oa = Math.random() * 6.283, od = R * 0.35 * Math.random(), ox2 = gx + Math.cos(oa) * od, oy2 = gy + Math.sin(oa) * od, r2 = R * (0.6 + Math.random() * 0.35);
+      const gr = bx.createRadialGradient(ox2, oy2, 0, ox2, oy2, r2); gr.addColorStop(0, `rgba(${c},${(0.12 + risk * 0.16) * 0.6})`); gr.addColorStop(0.5, `rgba(${c},${(0.05 + risk * 0.07) * 0.6})`); gr.addColorStop(1, `rgba(${c},0)`);
+      bx.fillStyle = gr; bx.beginPath(); bx.arc(ox2, oy2, r2, 0, 7); bx.fill(); }
+    /* Veins: the ink runs out along hair-fine channels under the skin, wandering and now and then branching, fading as
+       they go. Plain to see on a small blowout, more and longer over bone. Healed, the blur softens them into a faint
+       grey-blue. (blowC is half size: a millimetre is mm / 2 there.) */
+    const hm = mm / 2, bony = painArea()[2] >= 4, cv = st.ink.c.map((v, j) => Math.round((v * 0.75 + [0.3, 0.36, 0.55][j] * 0.25) * 255)); bx.lineCap = 'round';
+    const vein = (x, y, a, len, w, al, depth) => { let l = 0; const step = hm * 0.22;
+      while (l < len) { const nx = x + Math.cos(a) * step, ny = y + Math.sin(a) * step, f = 1 - l / len; bx.strokeStyle = `rgba(${cv},${(al * f).toFixed(3)})`; bx.lineWidth = Math.max(0.35, w * f);
+        bx.beginPath(); bx.moveTo(x, y); bx.lineTo(nx, ny); bx.stroke(); x = nx; y = ny; l += step; a += (Math.random() - 0.5) * 0.55;
+        if (depth && Math.random() < 0.05) vein(x, y, a + (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6), (len - l) * 0.6, w * 0.7, al * 0.8, depth - 1); } };
+    const nV = Math.round((bony ? 5 : 3) + risk * (bony ? 4 : 2) + Math.random() * 2);
+    for (let v = 0; v < nV; v++) vein(gx, gy, Math.random() * 6.283, Math.max(hm * 1.2, R * 0.6) * (1 + Math.random() * (bony ? 2.2 : 1.2)), hm * (0.08 + Math.random() * 0.06), 0.3 + risk * 0.2, 1);
     trAdd(p, footR * 2.2 + mm, 0.035 * risk);
   };
   { const bi = await loadImg(row.blow_ref); if (bi) bx.drawImage(bi, 0, 0, blowC.width, blowC.height);
@@ -1388,8 +1400,10 @@ TT.open = async (el, id) => {
          ten years settles the edges only slightly (still crisp) and dulls the colour. */
       const aged = mode === 'aged', [b, a, sat] = aged ? [0.14, 0.8, 0.72] : [0.06, 0.92, 0.92], loss = falloutMask(aged);
       g.globalCompositeOperation = 'multiply';
-      g.filter = `blur(${Math.max(1, mm * (aged ? 0.9 : 0.5))}px)`; g.drawImage(blowC, 0, 0, W, H);   // blowouts: softened, never faded
-      g.filter = `blur(${Math.max(1.5, mm * (aged ? 1.8 : 1.1))}px)`; g.globalAlpha = 0.6; g.drawImage(blowC, 0, 0, W, H); g.globalAlpha = 1;
+      /* blowouts: never faded; the veins stay as a faint trace, and round them a grey-blue haze that spreads a little with the years */
+      g.filter = `blur(${Math.max(0.6, mm * (aged ? 0.5 : 0.25))}px)`; g.globalAlpha = aged ? 0.45 : 0.6; g.drawImage(blowC, 0, 0, W, H);
+      g.filter = `blur(${Math.max(1, mm * (aged ? 0.9 : 0.5))}px) sepia(0.5) hue-rotate(170deg) saturate(1.3)`; g.globalAlpha = 0.8; g.drawImage(blowC, 0, 0, W, H);
+      g.filter = `blur(${Math.max(1.5, mm * (aged ? 1.8 : 1.1))}px) sepia(0.6) hue-rotate(170deg) saturate(1.5)`; g.globalAlpha = 0.6; g.drawImage(blowC, 0, 0, W, H); g.globalAlpha = 1;
       const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H; const tg = tmp.getContext('2d');
       for (const key of TT_DRAW) { if (key === 'stencil' || key === 'marker' || st.hide.has(key)) continue;
         tg.globalCompositeOperation = 'source-over'; tg.clearRect(0, 0, W, H); tg.drawImage(L[key], 0, 0);
