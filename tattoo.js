@@ -751,6 +751,7 @@ const TT_DEV = [
   ['blowMid', 'blow', 'Safe pace at mid-green (mm)', 0, 0.1, 0.001, 0.035, 'At the middle of the green depth, going slower than this (mm between punctures) starts to blow out. Lower is more forgiving.'],
   ['blowSlope', 'blow', 'Safe pace rise with depth (mm)', 0, 0.2, 0.001, 0.075, 'How much faster you must keep moving as you go deeper. Higher makes going deep blow out at ordinary speeds.'],
   ['blowRamp', 'blow', 'How sudden (mm)', 0.005, 0.1, 0.001, 0.035, 'How quickly the chance goes from none to certain once you are too slow. Lower is a sharper edge.'],
+  ['blowMag', 'blow', 'Magnum safe pace (x)', 0.2, 1.5, 0.05, 0.6, 'A magnum spreads the hit over many needles, so it can go slower than a liner before blowing out. 1 is the same as a liner; lower is more forgiving.'],
   ['blowRate', 'blow', 'Blowout chance', 0.2, 4, 0.05, 1.5, 'Overall chance of a blowout once you are past the safe pace.'],
   ['tiltSnap', 'needles', 'Magnum tilt steps (1 on, 0 free)', 0, 1, 1, 1, 'On: a magnum\u2019s tilt goes in steps (all needles, then fewer) that hold their needle count as pressure changes. Off: the tilt follows the pen freely.'],
   ['tiltHold', 'needles', 'Tilt step hold', 0, 0.45, 0.01, 0.12, 'How far past the halfway point you must lean before the tilt moves to the next step. Higher holds a step more firmly.'],
@@ -1854,7 +1855,7 @@ TT.open = async (el, id) => {
           const t0 = trAt(q); hcAdd(q, pen.foot); if (packB) packHit(packB, q);
           if (t0 > 1.4) inkC *= Math.max(0.3, 1 - (t0 - 1.4) * 0.6) * (Math.random() < Math.min(0.5, (t0 - 1.6) * 0.5) ? 0 : 1);   // chewed skin: patchy
           painHit(q, depth, pen.foot); trAdd(q, pen.foot, DV.wearRate * DV['wearL' + painArea()[2]] * (DV['ar_' + painArea()[0]] ?? 1) * depth * depth * Math.sqrt(Math.max(0.02, gapMm(pen.speed)) / 0.1) * Math.min(2, Math.sqrt(1.1 * mm / pen.foot)) * Math.pow(volt() / 7, 2) * (isMag() ? DV.wearMag : nk === 'shader' ? DV.wearShader : DV.wearLiner) / ((cal.tough || 1) * TT_TOUGH), true);   /* magnums work a wide strip hard; round shaders get some slack */   /* a wide needle spreads each hit, but works a lot more skin at once */   // magnums spread each hit over more skin, so they wear it 30% less per pass   // and by the needle's width: a wide curved mag's big footprint overlaps itself far more per pass, so it no longer scars faster than a small mag   // per pass over a spot, not per hit, so widely spaced hits still wear the skin (slow passes a bit more): red in a few passes, overworked in ~10; light passes far less
-          const risk = Math.max(0, Math.min(1, (blowGap(depth) - gapMm(pen.speed)) / DV.blowRamp)) * Math.max(0, Math.min(1, (depth - 0.45) / 0.25)) * (cal.blow ?? 1) * DV.blowRate * Math.pow(0.3 / blowSize(), 2);   /* slower than blowGap at this depth blows out; deeper, it comes at more ordinary speeds */   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
+          const risk = Math.max(0, Math.min(1, (blowGap(depth) * (isMag() ? DV.blowMag : 1) - gapMm(pen.speed)) / DV.blowRamp)) * Math.max(0, Math.min(1, (depth - 0.45) / 0.25)) * (cal.blow ?? 1) * DV.blowRate * Math.pow(0.3 / blowSize(), 2);   /* slower than blowGap at this depth blows out; deeper, it comes at more ordinary speeds */   // a normal line lands ~0.1 mm apart; slowing into a curve is fine, stalling while digging in is not
           if (risk > 0.04 && pen.trav > 1.5 && Math.random() < Math.min(1, risk)) { blowAt(q, Math.min(1, risk), pen.foot);
             if (!told.blow) { told.blow = 1; toast('Blowout: too deep, too slow.', 2500); } }
           if (t0 > 1.6 && EX?.cur && !pen.overN) { pen.overN = 1; EX.cur.over = (EX.cur.over || 0) + 1; tally(); } if (t0 > 1.6 && !told.over) { told.over = 1; toast('Overworked skin: move on.', 2500); }
@@ -4019,7 +4020,7 @@ TT.open = async (el, id) => {
     const countS = mid.reduce((t, s) => t + (s[3] === M.hits ? 1 : Math.abs(s[3] - M.hits) === 1 ? 0.5 : 0), 0) / mid.length, ln6 = mid.map(s => Math.abs(s[5] || 0)), lm = ln6.reduce((a, b) => a + b, 0) / ln6.length,
       leanSd = Math.sqrt(ln6.reduce((t, v) => t + (v - lm) ** 2, 0) / ln6.length), tiltS = 0.4 * countS + 0.6 * cl(1 - (leanSd - 0.03) / 0.12);
     const dev = mid.reduce((t, s) => t + Math.abs(Math.hypot(s[0] - M.cx, s[1] - M.cy) - M.r), 0) / mid.length, steady = cl(1 - (dev - 0.4) / 2);
-    const spd = mid.reduce((t, s) => t + (s[4] || 0), 0) / mid.length, speedS = cl((spd - 8) / 12);   /* a confident pull, not crawling round */
+    const spd = mid.reduce((t, s) => t + (s[4] || 0), 0) / mid.length, speedS = cl((spd - 6) / 8);   /* a confident pull, not crawling round */
     const total = Math.round(100 * (0.25 * ln.score / 100 + 0.25 * depthS + 0.2 * tiltS + 0.2 * steady + 0.1 * speedS));
     return { ...ln, score: total, depth: Math.round(deepShare * 100), tilt: Math.round(tiltS * 100), steadiness: Math.round(steady * 100), pace: Math.round(speedS * 100), line: ln.score }; };
   const scoreOf = (T) => {
