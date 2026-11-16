@@ -470,55 +470,7 @@ const TT_LESSONS = [
       { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher unlocks the next lesson, and more than 1 blowout is still an instant fail.',
         more: 'Your score is your line score, the same as the last lesson, then reduced for poor corners, by up to 25% if all four are bad.' }
     ] },
-    { id: '1-4', title: 'Curves', sum: 'An S that runs on into a circle, with the same weight of line all the way. Grade C or higher moves you on.', task: 'l-curve', steps: [
-      { title: 'An S that becomes a circle', pic: { needles: ['5RL'] }, text: 'Same 5RL. This time the line starts as an S, and its second curl carries on around to form a circle that does not quite close. No corners to hide in: just flowing curves.' },
-      { title: 'Move from the arm', text: 'Small curves can come from the fingers, but big ones need your whole arm and shoulder moving together. Fingers alone make flat spots and wobbles.',
-        more: 'Practise the shape in the air above the skin first, so your arm knows the path before the needle lands.' },
-      { title: 'Stop and restart if you need to', text: 'You do not have to pull it in one go. Stop where it is comfortable, turn the page with two fingers, then land while moving, just behind where you stopped, and carry on along the same line.',
-        more: 'A restart that lands too heavy leaves a dark spot, and one that misses the line leaves a step. Ease in so the join disappears. Up to 8 strokes are allowed; each one more costs 3 points.' },
-      { title: 'Consistent weight', text: 'This is what you are judged on. The line should be the same thickness and darkness the whole way around. Curves tempt you to slow down and dig in, so keep your speed and pressure steady.',
-        more: 'A thick patch usually means you slowed down or pressed in. A thin patch means you sped up or lifted. Going back over a line to fix it usually makes it thicker there.' },
-      { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher unlocks the next lesson, and more than 1 blowout is still an instant fail.',
-        more: 'Your score is your line score, then reduced by up to 30% if the thickness of the line changes along the way, shown as Weight on your report card.' }
-    ] },
-    { id: '1-5', title: 'The flag', sum: 'Everything so far in one piece: straight lines, sharp corners and S curves. Grade C or higher finishes the chapter.', task: 'l-flag', steps: [
-      { title: 'Putting it all together', pic: { needles: ['5RL'] }, text: 'Your last beginner linework lesson: a flag on a pole, with the same 5RL. The pole is your straight line, the waving edges are your S curves, the corners are your corners, and the ball on top is your circle.' },
-      { title: 'Plan your order', text: 'Think before you start. Pull the long pole first, then the flag edges into it, then the end of the flag. Turn the page with two fingers whenever a pull feels awkward.',
-        more: 'Lines that meet another line should land right on it and stop. Do not cross the pole, and do not leave a gap.' },
-      { title: 'Everything counts', text: 'Your line stays on the stencil, even and solid. Your corners are sharp, not rounded and not running past. Your weight is the same on the straight parts as on the curves.',
-        more: 'Reload before the ink runs low, so a thin patch does not sneak into the last line. Keep the same speed and pressure on every line. Up to 12 strokes are allowed; each one more costs 3 points.' },
-      { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher finishes the chapter, and more than 1 blowout is still an instant fail.',
-        more: 'Your score is your line score, reduced by up to 20% for poor corners and up to 10% for changing line weight. Both reductions apply together.' }
-    ] }
-  ] },
-  { name: 'Chapter 2: Intermediate', lessons: [
-    { id: '2-1', title: 'Solid black', sum: 'Line a small square, then pack it solid black with no patches. Grade C or higher moves you on.', task: 'l-pack', steps: [
-      { title: 'Two needles, one small square', pic: { needles: ['5RL', '7RS'] }, text: 'A 1 cm square. Line it first with a #10 5RL, then change to a #12 7RS and pack it solid black. You choose the needle in the workspace, so remember to change it.',
-        more: 'The outline gives you a wall to work up to. Line it the way you learned in Chapter 1, sharp corners included: up to 8 strokes with the 5RL, two per side, and each one more costs 3 points. Packing with the 7RS has no stroke limit.' },
-      { title: 'The circular motion', pic: { motion: true }, text: 'There are a few ways to get solid colour, but the easiest to grasp is tight little circles. Stack 3 to 4 rows at once as you move across: 3 up, 1 to the right, 3 down, 1 to the right, and repeat to the far side. Then come back the same way.',
-        more: 'Every circle overlaps the one before, and each trip overlaps the previous row. The picture is one continuous stroke, stretched out so you can see the path. On skin the circles sit far tighter, with no skin showing between them.' },
-      { title: 'Keep it consistent', text: 'Your movement and depth must always stay the same. Keep the circles tight and do not dig. Consistency matters most here: patchy work is not allowed.',
-        more: 'A patch usually comes from speeding up, lifting a little, or running low on ink. Digging in to fix a light spot chews up the skin and makes it worse, so come back over it with the same steady motion.' },
-      { title: 'No scratching', text: 'Do not scrub back and forth like colouring in with a crayon. It can look dark, but it scratches ink in unevenly and chews up the skin. Your motion is graded: circles or ovals keep turning the same way, while scrubbing keeps changing direction and can take off up to 70%.' },
-      { title: 'Stay inside the line', text: 'Work up to your outline without going over it. Slow your sweep slightly as you reach the edge and turn back, rather than running out past it.' },
-      { title: 'Take a break if you need to', text: 'You do not have to do it all in one go. If the skin is getting bruised, stop and let it settle, then carry on. With consistent work it can easily be done in one go.',
-        more: 'Skin starts settling a few seconds after the needle moves away, but badly overworked skin stays damaged and will not take ink well.' },
-      { title: 'Your grade', text: 'When it is solid and the skin has settled, press Done. Grade C (70) or higher moves you on, and more than 1 blowout is an instant fail.',
-        more: 'Consistency counts most: how evenly your passes are layered across the square, even where it already looks dark. Then saturation, how much is solid and staying inside the line. A shaky or missing outline can take off up to 10%. Technique can take off up to 70% if your motion keeps changing direction, and Control up to half if you rush or your speed and depth keep changing. Skin condition is part of the grade, as always.' }
-    ] },
-    { id: '2-2', title: 'Orange circle', sum: 'Line a small circle in black, then pack it in orange that heals solid. Grade C or higher moves you on.', task: 'l-orange', steps: [
-      { title: 'Line, then pack in colour', pic: { needles: ['7RL', '7M1'] }, text: 'A 1.2 cm circle. Line it in black with a #10 7RL, then change to a #12 7M magnum and pack it solid orange. Your line is judged as well as your packing.',
-        more: 'A new needle starts clean, so the black from your lining won\'t muddy the orange. Up to 4 strokes are allowed for the line; each one more costs 3 points.' },
-      { title: 'Mixing orange', pic: { caps: true }, text: 'There is no orange cap: mix it. Hold the pen in the red cap, then in the yellow, about the same time in each. More red makes a deeper orange, more yellow a brighter one.',
-        more: 'Ink mixes like real pigment. Your orange is judged against an even mix of the red and yellow caps, so aim for the middle.' },
-      { title: 'Same circles, a little oval', pic: { motion: true }, text: 'Pack with the same tight circular motion as Solid black, stretched into slight ovals so the magnum\'s flat edge lays the colour down evenly. Keep turning the same way.',
-        more: 'Overlap every pass, keep your speed and depth steady, and meet the line rather than going over it.' },
-      { title: 'Colour has to last', text: 'Colour needs plenty of passes to heal solid. You are judged on how it holds up over 10 years, so keep layering evenly until it is fully saturated, without chewing up the skin.',
-        more: 'Thin spots look fine fresh but heal patchy, and patches show more in colour than in black. Check the Healed and 10 years views on your report.' },
-      { title: 'Your grade', text: 'When it is solid and the skin has settled, press Done. Grade C (70) or higher moves you on, and more than 1 blowout is an instant fail.',
-        more: 'Consistency counts most, then how it heals, your colour, saturation and staying inside the line. Your line, technique and control are part of the grade too, and skin condition counts as always.' }
-    ] },
-    { id: '2-3', title: 'Stipple shading', sum: 'Line a rectangle, then shade a smooth gradient inside it using only the dots a fast whip leaves. Grade C or higher moves you on.', task: 'l-stipple', steps: [
+    { id: '1-4', title: 'Stipple shading', sum: 'Line a rectangle, then shade a smooth gradient inside it using only the dots a fast whip leaves. Grade C or higher moves you on.', task: 'l-stipple', steps: [
       { title: 'Line at full power', pic: { needles: ['3RL'] }, text: 'A 0.6 × 2 cm rectangle. Line it in black with a #08 3RL at about 7.2 volts (7.0 to 7.6): the lesson starts you there. Up to 8 strokes for the line; each one more costs 3 points.',
         more: 'A lining machine needs to run strong so the needle goes in clean and the line heals solid. Leave the voltage where it is until the line is done.' },
       { title: 'Turn it right down', text: 'Keep the same needle and lower the voltage to between 4.8 and 5.8 volts. Running slow, each pass of the needle leaves separate little dots instead of a solid line.',
@@ -532,7 +484,45 @@ const TT_LESSONS = [
       { title: 'Your grade', text: 'When the gradient is done and the skin has settled, press Done. Grade C (70) or higher moves you on. An uneven or patchy gradient or more than 1 blowout is an instant fail. One crash landing is free; each one after costs a point.',
         more: 'Trevor\'s example sits beside you while you work: aim for that look. The gradient counts most: dark at one end, light at the other, smooth in between and even from side to side. Then keeping it to dots, staying inside the line, whipping, your voltage for each part, and how straight your outline is. Skin condition counts as always.' }
     ] }
-,
+  ] },
+  { name: 'Chapter 2: Intermediate', lessons: [
+    { id: '2-1', title: 'Curves', sum: 'An S that runs on into a circle, with the same weight of line all the way. Grade C or higher moves you on.', task: 'l-curve', steps: [
+      { title: 'An S that becomes a circle', pic: { needles: ['5RL'] }, text: 'Same 5RL. This time the line starts as an S, and its second curl carries on around to form a circle that does not quite close. No corners to hide in: just flowing curves.' },
+      { title: 'Move from the arm', text: 'Small curves can come from the fingers, but big ones need your whole arm and shoulder moving together. Fingers alone make flat spots and wobbles.',
+        more: 'Practise the shape in the air above the skin first, so your arm knows the path before the needle lands.' },
+      { title: 'Stop and restart if you need to', text: 'You do not have to pull it in one go. Stop where it is comfortable, turn the page with two fingers, then land while moving, just behind where you stopped, and carry on along the same line.',
+        more: 'A restart that lands too heavy leaves a dark spot, and one that misses the line leaves a step. Ease in so the join disappears. Up to 8 strokes are allowed; each one more costs 3 points.' },
+      { title: 'Consistent weight', text: 'This is what you are judged on. The line should be the same thickness and darkness the whole way around. Curves tempt you to slow down and dig in, so keep your speed and pressure steady.',
+        more: 'A thick patch usually means you slowed down or pressed in. A thin patch means you sped up or lifted. Going back over a line to fix it usually makes it thicker there.' },
+      { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher unlocks the next lesson, and more than 1 blowout is still an instant fail.',
+        more: 'Your score is your line score, then reduced by up to 30% if the thickness of the line changes along the way, shown as Weight on your report card.' }
+    ] },
+    { id: '2-2', title: 'Solid black', sum: 'Line a small square, then pack it solid black with no patches. Grade C or higher moves you on.', task: 'l-pack', steps: [
+      { title: 'Two needles, one small square', pic: { needles: ['5RL', '7RS'] }, text: 'A 1 cm square. Line it first with a #10 5RL, then change to a #12 7RS and pack it solid black. You choose the needle in the workspace, so remember to change it.',
+        more: 'The outline gives you a wall to work up to. Line it the way you learned in Chapter 1, sharp corners included: up to 8 strokes with the 5RL, two per side, and each one more costs 3 points. Packing with the 7RS has no stroke limit.' },
+      { title: 'The circular motion', pic: { motion: true }, text: 'There are a few ways to get solid colour, but the easiest to grasp is tight little circles. Stack 3 to 4 rows at once as you move across: 3 up, 1 to the right, 3 down, 1 to the right, and repeat to the far side. Then come back the same way.',
+        more: 'Every circle overlaps the one before, and each trip overlaps the previous row. The picture is one continuous stroke, stretched out so you can see the path. On skin the circles sit far tighter, with no skin showing between them.' },
+      { title: 'Keep it consistent', text: 'Your movement and depth must always stay the same. Keep the circles tight and do not dig. Consistency matters most here: patchy work is not allowed.',
+        more: 'A patch usually comes from speeding up, lifting a little, or running low on ink. Digging in to fix a light spot chews up the skin and makes it worse, so come back over it with the same steady motion.' },
+      { title: 'No scratching', text: 'Do not scrub back and forth like colouring in with a crayon. It can look dark, but it scratches ink in unevenly and chews up the skin. Your motion is graded: circles or ovals keep turning the same way, while scrubbing keeps changing direction and can take off up to 70%.' },
+      { title: 'Stay inside the line', text: 'Work up to your outline without going over it. Slow your sweep slightly as you reach the edge and turn back, rather than running out past it.' },
+      { title: 'Take a break if you need to', text: 'You do not have to do it all in one go. If the skin is getting bruised, stop and let it settle, then carry on. With consistent work it can easily be done in one go.',
+        more: 'Skin starts settling a few seconds after the needle moves away, but badly overworked skin stays damaged and will not take ink well.' },
+      { title: 'Your grade', text: 'When it is solid and the skin has settled, press Done. Grade C (70) or higher moves you on, and more than 1 blowout is an instant fail.',
+        more: 'Consistency counts most: how evenly your passes are layered across the square, even where it already looks dark. Then saturation, how much is solid and staying inside the line. A shaky or missing outline can take off up to 10%. Technique can take off up to 70% if your motion keeps changing direction, and Control up to half if you rush or your speed and depth keep changing. Skin condition is part of the grade, as always.' }
+    ] },
+    { id: '2-3', title: 'Orange circle', sum: 'Line a small circle in black, then pack it in orange that heals solid. Grade C or higher moves you on.', task: 'l-orange', steps: [
+      { title: 'Line, then pack in colour', pic: { needles: ['7RL', '7M1'] }, text: 'A 1.2 cm circle. Line it in black with a #10 7RL, then change to a #12 7M magnum and pack it solid orange. Your line is judged as well as your packing.',
+        more: 'A new needle starts clean, so the black from your lining won\'t muddy the orange. Up to 4 strokes are allowed for the line; each one more costs 3 points.' },
+      { title: 'Mixing orange', pic: { caps: true }, text: 'There is no orange cap: mix it. Hold the pen in the red cap, then in the yellow, about the same time in each. More red makes a deeper orange, more yellow a brighter one.',
+        more: 'Ink mixes like real pigment. Your orange is judged against an even mix of the red and yellow caps, so aim for the middle.' },
+      { title: 'Same circles, a little oval', pic: { motion: true }, text: 'Pack with the same tight circular motion as Solid black, stretched into slight ovals so the magnum\'s flat edge lays the colour down evenly. Keep turning the same way.',
+        more: 'Overlap every pass, keep your speed and depth steady, and meet the line rather than going over it.' },
+      { title: 'Colour has to last', text: 'Colour needs plenty of passes to heal solid. You are judged on how it holds up over 10 years, so keep layering evenly until it is fully saturated, without chewing up the skin.',
+        more: 'Thin spots look fine fresh but heal patchy, and patches show more in colour than in black. Check the Healed and 10 years views on your report.' },
+      { title: 'Your grade', text: 'When it is solid and the skin has settled, press Done. Grade C (70) or higher moves you on, and more than 1 blowout is an instant fail.',
+        more: 'Consistency counts most, then how it heals, your colour, saturation and staying inside the line. Your line, technique and control are part of the grade too, and skin condition counts as always.' }
+    ] },
     { id: '2-4', title: 'Whip shading', sum: 'Line a rectangle, then whip a smooth grey wash gradient into it with a curved magnum, from black to the lightest wash. Grade C or higher moves you on.', task: 'l-whipgrey', steps: [
       { title: 'Line it', pic: { needles: ['9RL', '13CM'] }, text: 'A 1 × 2.5 cm rectangle. Line it in black with a #10 9RL at about 7.5 volts. The lesson starts you on it, set up.',
         more: 'The ink tray is on the grey wash set: Black is full strength, then Dark, Mid and Light. Line with Black.' },
@@ -548,8 +538,29 @@ const TT_LESSONS = [
         more: 'A holiday is a light gap between your line and your shade, about as thick as the line. This is your first lesson in tilting the needle: tilted, the mag makes a harder edge; flat, a soft one.' },
       { title: 'Your grade', text: 'When the gradient is done and the skin has settled, press Done. Grade C (70) or higher moves you on. Packing, an uneven gradient, not using the lighter washes or more than 1 blowout is an instant fail. One crash landing is free; each one after costs a point.',
         more: 'The gradient counts most: dark to light, smooth and even from side to side. Then whipping instead of packing, using the washes in turn, hard edges with no holidays, staying inside the line, and your voltage on each needle. Skin condition counts as always.' }
+    ] }
+  ] },
+  { name: 'Chapter 3: Advanced', lessons: [
+    { id: '3-1', title: 'Lining with a magnum', sum: 'Tilt a #10 15 magnum until only 3 needles are in, and line a third of a circle with it in one stroke. Grade C or higher moves you on.', task: 'l-magline', steps: [
+      { title: 'Set up your tilt', tilt: true, text: 'Lining with a magnum means tilting it onto one end so only a few needles reach the skin. First set how your pen leans. Hold the pen as you normally would and draw on the pad: that is your natural angle. Then lean it as far as is still comfortable along the magnum\u2019s row: that is your steepest lean. The readout shows which step a 15 magnum would be on: 15, 9 or 3 needles.',
+        more: 'These are the same as Natural angle and Steepest lean in the simulator\u2019s Settings, under All needles. A pen that reports no tilt can use Auto tilt instead: it holds the magnum tilted for you. It is fine to use, and it is noted on your report and stats.' },
+      { title: 'Three needles in', pic: { needles: ['15M1'] }, text: 'Lean the magnum onto its end until the cursor shows 3 of 15 needles in the skin. The tilt goes in steps and holds the step you are on, so a small wobble will not change it.',
+        more: 'Very light pressure with the pen tipped over gives a faint line, around 0.1 deep: a temporary line, like a blood line, that will not hold. Add a little pressure to commit it, into the green on the depth meter.' },
+      { title: 'One stroke', text: 'Pull the curve in one motion, at the speed of a normal liner line or a little faster, keeping the tilt so it stays at 3 needles all the way. Easing in and out at the ends is fine: what counts is that most of the line, about two thirds, is at a committed depth.',
+        more: 'Left-handed? Turn the page round so the curve sits where you can pull it comfortably. Lean back a little in the middle of the curve rather than twisting your wrist, so the row of needles stays across the line.' },
+      { title: 'Your grade', text: 'When you have pulled it, let the skin settle, then press Done. Grade C (70) or higher moves you on. One stroke only; more than 1 blowout is an instant fail.',
+        more: 'Judged on how much of the line is at a committed depth (not a temporary line), how steadily the tilt held 3 needles, how closely you followed the curve, and how solid the line is. The ends are left out, so feathering in and out is fine.' }
     ] },
-    { id: '2-5', title: 'Colour blend', sum: 'Line a long triangle in red, then blend it from a dark red shadow at the point, through red and orange, to yellow at the wide end. Grade C or higher moves you on.', task: 'l-blend', steps: [
+    { id: '3-2', title: 'The flag', sum: 'Everything so far in one piece: straight lines, sharp corners and S curves. Grade C or higher moves you on.', task: 'l-flag', steps: [
+      { title: 'Putting it all together', pic: { needles: ['5RL'] }, text: 'Your last beginner linework lesson: a flag on a pole, with the same 5RL. The pole is your straight line, the waving edges are your S curves, the corners are your corners, and the ball on top is your circle.' },
+      { title: 'Plan your order', text: 'Think before you start. Pull the long pole first, then the flag edges into it, then the end of the flag. Turn the page with two fingers whenever a pull feels awkward.',
+        more: 'Lines that meet another line should land right on it and stop. Do not cross the pole, and do not leave a gap.' },
+      { title: 'Everything counts', text: 'Your line stays on the stencil, even and solid. Your corners are sharp, not rounded and not running past. Your weight is the same on the straight parts as on the curves.',
+        more: 'Reload before the ink runs low, so a thin patch does not sneak into the last line. Keep the same speed and pressure on every line. Up to 12 strokes are allowed; each one more costs 3 points.' },
+      { title: 'Your grade', text: 'Leave the skin to settle for about a minute, then press Done. Grade C (70) or higher moves you on, and more than 1 blowout is still an instant fail.',
+        more: 'Your score is your line score, reduced by up to 20% for poor corners and up to 10% for changing line weight. Both reductions apply together.' }
+    ] },
+    { id: '3-3', title: 'Colour blend', sum: 'Line a long triangle in red, then blend it from a dark red shadow at the point, through red and orange, to yellow at the wide end. Grade C or higher moves you on.', task: 'l-blend', steps: [
       { title: 'Line it in red', pic: { needles: ['7RL', '11M1'] }, text: 'A triangle 1.5 cm wide and 5 cm long. Line it in red with a #12 7RL at about 7.5 volts. The lesson starts you on it, set up.',
         more: 'For a really sharp point, give the line a slight whip as you pull out of the corner, so it tapers off a little.' },
       { title: 'The shadow at the point', text: 'Change to the #10 11 magnum. Mix black and red for the shadow and start at the sharp point: whip into it, angling and tilting the magnum to squeeze into the corner without going over the line. Whip it out to a little past a quarter of the way along.',
@@ -564,18 +575,8 @@ const TT_LESSONS = [
         more: 'Yellow is light and shows every patch, so lay it evenly and keep going until it is solid.' },
       { title: 'Your grade', text: 'When it is blended and the skin has settled, press Done. Grade C (70) or higher moves you on. More than 1 blowout is an instant fail. One crash landing is free; each one after costs a point.',
         more: 'Judged on your linework and a sharp point, saturation, how evenly the colours blend, how close each part is to the colours asked for, and solid healing with no patches. Your voltage, staying inside the line and skin condition count too.' }
-    ] }  ] },
-  { name: 'Chapter 3: Advanced', lessons: [
-    { id: '3-1', title: 'Lining with a magnum', sum: 'Tilt a #10 15 magnum until only 3 needles are in, and line a third of a circle with it in one stroke. Grade C or higher moves you on.', task: 'l-magline', steps: [
-      { title: 'Set up your tilt', tilt: true, text: 'Lining with a magnum means tilting it onto one end so only a few needles reach the skin. First set how your pen leans. Hold the pen as you normally would and draw on the pad: that is your natural angle. Then lean it as far as is still comfortable along the magnum\u2019s row: that is your steepest lean. The readout shows which step a 15 magnum would be on: 15, 9 or 3 needles.',
-        more: 'These are the same as Natural angle and Steepest lean in the simulator\u2019s Settings, under All needles. A pen that reports no tilt can use Auto tilt instead: it holds the magnum tilted for you. It is fine to use, and it is noted on your report and stats.' },
-      { title: 'Three needles in', pic: { needles: ['15M1'] }, text: 'Lean the magnum onto its end until the cursor shows 3 of 15 needles in the skin. The tilt goes in steps and holds the step you are on, so a small wobble will not change it.',
-        more: 'Very light pressure with the pen tipped over gives a faint line, around 0.1 deep: a temporary line, like a blood line, that will not hold. Add a little pressure to commit it, into the green on the depth meter.' },
-      { title: 'One stroke', text: 'Pull the curve in one motion, at the speed of a normal liner line or a little faster, keeping the tilt so it stays at 3 needles all the way. Easing in and out at the ends is fine: what counts is that most of the line, about two thirds, is at a committed depth.',
-        more: 'Left-handed? Turn the page round so the curve sits where you can pull it comfortably. Lean back a little in the middle of the curve rather than twisting your wrist, so the row of needles stays across the line.' },
-      { title: 'Your grade', text: 'When you have pulled it, let the skin settle, then press Done. Grade C (70) or higher moves you on. One stroke only; more than 1 blowout is an instant fail.',
-        more: 'Judged on how much of the line is at a committed depth (not a temporary line), how steadily the tilt held 3 needles, how closely you followed the curve, and how solid the line is. The ends are left out, so feathering in and out is fine.' }
-    ] }] }
+    ] }
+  ] }
 ];
 // A flag on a pole, in mm: pole, ball, two waving edges (each an S) and the flag's end.
 const TT_FLAG = [['l', 45, 30, 45, 110], ['a', 45, 26, 4, 90, 450], ['c', 45, 36, 60, 18, 72, 18, 77.5, 36], ['c', 77.5, 36, 83, 54, 97, 36, 110, 36], ['l', 110, 36, 110, 70], ['c', 45, 70, 60, 52, 72, 52, 77.5, 70], ['c', 77.5, 70, 83, 88, 97, 70, 110, 70]];
@@ -593,24 +594,24 @@ const TT_LS_CH = [{ id: 'l-first', lesson: '1-2', cat: 'line', diff: 1, title: '
   { id: 'l-rect', lesson: '1-3', cat: 'line', diff: 1, title: 'Sharp corners', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, maxStrokes: 8, corners: [[60, 45, -1, -1], [120, 45, 1, -1], [120, 85, 1, 1], [60, 85, -1, 1]],
     text: 'Black ink, 5RL. Line the rectangle: four clean sides with sharp corners, not rounded and not crossing, in no more than 8 strokes. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
     path: (g) => { g.moveTo(60, 45); g.lineTo(120, 45); g.lineTo(120, 85); g.lineTo(60, 85); g.closePath(); } },
-  { id: 'l-curve', lesson: '1-4', cat: 'line', diff: 1, title: 'Curves', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, arcs: [[78, 42, 15, -30, -270], [78, 79, 22, -90, 245]], maxStrokes: 8,
+  { id: 'l-curve', lesson: '2-1', cat: 'line', diff: 2, title: 'Curves', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, arcs: [[78, 42, 15, -30, -270], [78, 79, 22, -90, 245]], maxStrokes: 8,
     text: 'Black ink, 5RL. Follow the S and on around the circle, with the same weight of line all the way. You can stop and restart, in no more than 8 strokes. Let the skin settle for about a minute, then press Done. C or higher unlocks the next lesson.',
     path: (g) => { g.moveTo(78 + 15 * Math.cos(-Math.PI / 6), 42 + 15 * Math.sin(-Math.PI / 6)); g.arc(78, 42, 15, -Math.PI / 6, -1.5 * Math.PI, true); g.arc(78, 79, 22, -Math.PI / 2, 245 * Math.PI / 180); } },
-  { id: 'l-flag', lesson: '1-5', cat: 'line', diff: 1, title: 'The flag', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, geom: TT_FLAG, joints: [[45, 36], [45, 70], [45, 30], [110, 36], [110, 70]],
+  { id: 'l-flag', lesson: '3-2', cat: 'line', diff: 3, title: 'The flag', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.86, maxBlow: 1, geom: TT_FLAG, joints: [[45, 36], [45, 70], [45, 30], [110, 36], [110, 70]],
     maxStrokes: 12, corners: [[110, 36, 1, -1, 0, 'Top right'], [110, 70, 1, 1, 0, 'Bottom right'], [45, 36, -1, -1, 1, 'Top edge at the pole'], [45, 70, -1, -1, 1, 'Bottom edge at the pole']],
     text: 'Black ink, 5RL. Line the flag: straight pole, ball on top, waving edges and sharp corners, in no more than 12 strokes. Stop edges on the pole without crossing it. Let the skin settle for about a minute, then press Done.',
     path: (g) => ttGeomDraw(g, TT_FLAG) }];
 const ttPackPath = (b) => (g) => { g.moveTo(b[0], b[1]); g.lineTo(b[0] + b[2], b[1]); g.lineTo(b[0] + b[2], b[1] + b[3]); g.lineTo(b[0], b[1] + b[3]); g.closePath(); };
-TT_LS_CH.push({ id: 'l-stipple', lesson: '2-3', cat: 'pack', diff: 2, title: 'Stipple shading', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, stipple: [87, 50, 6, 20], needles: ['3RL'], size: 0.25, volt: 7.2, crashFree: 1, refImg: 'img/ref/stipple-example.jpg', refAr: 420 / 220, maxStrokes: 8, linePhase: 6.4, lineVolt: [7.2, 0.4], shadeVolt: [4.8, 5.8], voltMin: 4.5, path: ttPackPath([87, 50, 6, 20]),
+TT_LS_CH.push({ id: 'l-stipple', lesson: '1-4', cat: 'pack', diff: 1, title: 'Stipple shading', needle: '3RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, stipple: [87, 50, 6, 20], needles: ['3RL'], size: 0.25, volt: 7.2, crashFree: 1, refImg: 'img/ref/stipple-example.jpg', refAr: 420 / 220, maxStrokes: 8, linePhase: 6.4, lineVolt: [7.2, 0.4], shadeVolt: [4.8, 5.8], voltMin: 4.5, path: ttPackPath([87, 50, 6, 20]),
   text: 'Line the rectangle with the #08 3RL at about 7.2 volts, in no more than 8 strokes. Then turn it down to 4.8 to 5.8 volts and shade a smooth gradient, dark at one end to light at the other, using only the dots from quick, even whips. Start and finish every whip inside the line. Aim for the look of the example beside you.' });
 TT_LS_CH.push({ id: 'l-whipgrey', lesson: '2-4', cat: 'shade', diff: 2, title: 'Whip shading', needle: '9RL', layer: 'line', ink: 'wash', wash: true, kind: 'line', core: 0.6, maxBlow: 1, crashFree: 1, wgrad: [85, 47, 10, 25], needles: ['9RL', '13CM'], lineNeedle: '9RL', shadeNeedle: '13CM', presets: { '9RL': { size: 0.3, volt: 7.5 }, '13CM': { volt: 6.6 } }, refImg: 'img/ref/whip-example.jpg', refAr: 415 / 220, lineVolt: [7.5, 0.4], shadeVolt: [6.6, 0.4], path: ttPackPath([85, 47, 10, 25]),
   text: 'Line the rectangle with the #10 9RL at about 7.5 volts. Then change to the 13 curved mag at about 6.6 volts and whip a smooth gradient: Black at one end, then each lighter wash faded off the last, down to Light. Whips only, no packing. Tilt the mag against the line for a hard edge. Aim for the look of the example beside you.' });
-TT_LS_CH.push({ id: 'l-blend', lesson: '2-5', cat: 'pack', diff: 2, title: 'Colour blend', needle: '7RL', layer: 'line', ink: 'red', kind: 'line', core: 0.6, maxBlow: 1, crashFree: 1, tri: [[90, 92.5], [82.5, 42.5], [97.5, 42.5]], needles: ['7RL', '11M1'], liner: '7RL', packNeedle: '11M1', presets: { '7RL': { size: 0.35, volt: 7.5 }, '11M1': { size: 0.3, volt: 6.6 } }, refImg: 'img/ref/blend-example.jpg', refAr: 480 / 195, lineVolt: [7.5, 0.4],
+TT_LS_CH.push({ id: 'l-blend', lesson: '3-3', cat: 'pack', diff: 3, title: 'Colour blend', needle: '7RL', layer: 'line', ink: 'red', kind: 'line', core: 0.6, maxBlow: 1, crashFree: 1, tri: [[90, 92.5], [82.5, 42.5], [97.5, 42.5]], needles: ['7RL', '11M1'], liner: '7RL', packNeedle: '11M1', presets: { '7RL': { size: 0.35, volt: 7.5 }, '11M1': { size: 0.3, volt: 6.6 } }, refImg: 'img/ref/blend-example.jpg', refAr: 480 / 195, lineVolt: [7.5, 0.4],
   path: (g) => { g.moveTo(90, 92.5); g.lineTo(82.5, 42.5); g.lineTo(97.5, 42.5); g.closePath(); },
   text: 'Line the triangle in red with the #12 7RL at about 7.5 volts. Then with the #10 11 magnum: a black and red shadow whipped into the point, red packed over it, orange feathered out to three quarters, and yellow packed into the wide end. Blend every change of colour. Aim for the look of the example beside you.' });
-TT_LS_CH.push({ id: 'l-pack', lesson: '2-1', cat: 'pack', diff: 2, title: 'Solid black', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [85, 55, 10, 10], needles: ['5RL', '7RS'], maxStrokes: 8, strokeNeedle: '5RL', path: ttPackPath([85, 55, 10, 10]),
+TT_LS_CH.push({ id: 'l-pack', lesson: '2-2', cat: 'pack', diff: 2, title: 'Solid black', needle: '5RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [85, 55, 10, 10], needles: ['5RL', '7RS'], maxStrokes: 8, strokeNeedle: '5RL', path: ttPackPath([85, 55, 10, 10]),
   text: 'Black ink. Line the square with the 5RL in no more than 8 strokes, then change to the 7RS and pack it solid with tight overlapping circles. Take a break if the skin bruises. Let it settle, then press Done.' });
-TT_LS_CH.push({ id: 'l-orange', lesson: '2-2', cat: 'pack', diff: 2, title: 'Orange circle', needle: '7RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [84, 54, 12, 12], circle: [90, 60, 6], needles: ['7RL', '7M1'], packNeedle: '7M1', liner: '7RL', maxStrokes: 4, strokeNeedle: '7RL', mixOf: ['#b3261e', '#f2c21b'],
+TT_LS_CH.push({ id: 'l-orange', lesson: '2-3', cat: 'pack', diff: 2, title: 'Orange circle', needle: '7RL', layer: 'line', ink: 'black', kind: 'line', core: 0.6, maxBlow: 1, pack: [84, 54, 12, 12], circle: [90, 60, 6], needles: ['7RL', '7M1'], packNeedle: '7M1', liner: '7RL', maxStrokes: 4, strokeNeedle: '7RL', mixOf: ['#b3261e', '#f2c21b'],
   path: (g) => { g.moveTo(96, 60); g.arc(90, 60, 6, 0, Math.PI * 2); },
   text: 'Line the circle in black with the 7RL in no more than 4 strokes. Then change to the 7M magnum, mix orange from the red and yellow caps, and pack it solid with tight ovals. It has to heal solid. Let it settle, then press Done.' });
 // Each lesson task again as a challenge: same stencil, needles and judging, without the unlock wording.
@@ -794,7 +795,12 @@ const ttLessonRun = async (id) => { const T = TT_LS_CH.find(c => c.id === id), s
   await DB.run('INSERT INTO tattoo_pieces (name, w_cm, h_cm, skin, meta) VALUES (?, ?, ?, ?, ?)', ['Lesson: ' + T.title, 18, 13, skin, JSON.stringify({ exam })]);
   location.hash = 'tattoo/' + (await DB.one('SELECT last_insert_rowid() AS id')).id; };
 const ttLessonList = () => TT_LESSONS.flatMap(c => c.lessons);
-const ttLessonProg = () => { try { return { done: {}, ...JSON.parse(Settings.get('tt_lessons', '{}')) }; } catch { return { done: {} }; } };
+/* Lessons were renumbered when they were rearranged (order 2): saved progress is moved to the new numbers once. */
+const TT_LS_RENUM = { '1-4': '2-1', '1-5': '3-2', '2-1': '2-2', '2-2': '2-3', '2-3': '1-4', '2-5': '3-3' };
+const ttLessonProg = () => { let p; try { p = { done: {}, ...JSON.parse(Settings.get('tt_lessons', '{}')) }; } catch { return { done: {} }; }
+  if ((p.order || 1) < 2) { for (const k of ['done', 'best', 'tier', 'results']) if (p[k]) { const o = {}; for (const [id, v] of Object.entries(p[k])) o[TT_LS_RENUM[id] || id] = v; p[k] = o; }
+    if (p.last?.lesson) p.last.lesson = TT_LS_RENUM[p.last.lesson] || p.last.lesson; p.order = 2; Settings.set('tt_lessons', JSON.stringify(p)); }
+  return p; };
 // A lesson opens once every lesson before it is done.
 const ttLessonOpen = (id, p) => { const a = ttLessonList(), n = a.findIndex(l => l.id === id); return a.slice(0, n).every(l => p.done[l.id]); };
 // Needle tips from below, drawn from the same layout the simulator tattoos with.
