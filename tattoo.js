@@ -774,6 +774,7 @@ const TT_DEV = [
   ['blowMag', 'blow', 'Magnum safe pace (x)', 0.2, 1.5, 0.05, 0.6, 'A magnum spreads the hit over many needles, so it can go slower than a liner before blowing out. 1 is the same as a liner; lower is more forgiving.'],
   ['blowRate', 'blow', 'Blowout chance', 0.2, 4, 0.05, 1.5, 'Overall chance of a blowout once you are past the safe pace.'],
   ['letterThin', 'needles', 'Script: single-line limit (mm)', 0.4, 2.5, 0.05, 1.1, 'In the lettering lesson, letter strokes thinner than this are pulled as one line; thicker ones are outlined and packed.'],
+  ['letterSpur', 'needles', 'Script: stub trim (mm)', 0, 3, 0.1, 1, 'In the lettering lesson, loose line ends shorter than this, the little stubs where strokes join, are left off the stencil.'],
   ['tiltSnap', 'needles', 'Magnum tilt steps (1 on, 0 free)', 0, 1, 1, 1, 'On: a magnum\u2019s tilt goes in steps (all needles, then fewer) that hold their needle count as pressure changes. Off: the tilt follows the pen freely.'],
   ['tiltHold', 'needles', 'Tilt step hold', 0, 0.45, 0.01, 0.12, 'How far past the halfway point you must lean before the tilt moves to the next step. Higher holds a step more firmly.'],
   ['wearLiner', 'needles', 'Liner skin wear', 0.2, 3, 0.05, 1, 'How hard round liners work the skin per hit.'],
@@ -3791,7 +3792,7 @@ TT.open = async (el, id) => {
   const exCrop = ttCrop;
   const exStencil = (T) => {
     const g = L.stencil.getContext('2d'); g.clearRect(0, 0, W, H); touched.add('stencil'); g.strokeStyle = 'rgba(78,40,150,.9)'; g.lineWidth = 0.32 * mm; g.lineJoin = g.lineCap = 'round';
-    if (T.letter) { const M = letterMask(false, 0.32), im = g.createImageData(W, H); for (let i = 3; i < M.length; i += 4) if (M[i]) { im.data[i - 3] = 78; im.data[i - 2] = 40; im.data[i - 1] = 150; im.data[i] = 230; } const tc = document.createElement('canvas'); tc.width = W; tc.height = H; tc.getContext('2d').putImageData(im, 0, 0); g.drawImage(tc, 0, 0); tc.width = 0; }
+    if (T.letter) ltDraw(g, ltBase().paths, 0.32 * mm);
     else if (T.kind === 'line') { Mm(g, T.path); g.stroke(); }
     else if (T.box) { g.setLineDash([2 * mm, 1.5 * mm]); g.strokeRect(T.box[0] * mm, T.box[1] * mm, T.box[2] * mm, T.box[3] * mm); g.setLineDash([]); }
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
@@ -3840,7 +3841,21 @@ TT.open = async (el, id) => {
     for (let i = 0; i < F.length; i++) thin[i] = F[i] && !near[i] ? 1 : 0;
     ltThin(thin);   /* the thin strokes down to their centre line */
     for (let i = 0; i < F.length; i++) line[i] = (thick[i] && !inner[i]) || thin[i] ? 1 : 0;
-    return LTM = { key, line, thick }; };
+    ltThin(line); const paths = ltPaths(line);   /* one pixel wide, then traced into lines that are smoothed and drawn */
+    return LTM = { key, paths, thick }; };
+  /* The one-pixel line traced into polylines (between ends and junctions, plus closed loops), short stubs dropped,
+     each smoothed so it reads as one flowing pen line rather than pixel steps. Points in page pixels. */
+  const ltPaths = (A) => { const N = [-W, 1, W, -1, -W - 1, -W + 1, W + 1, W - 1], deg = (i) => { let n = 0; for (const o of N) n += A[i + o]; return n; }, node = (i) => deg(i) !== 2, seen = new Uint8Array(A.length), raw = [];
+    const walk = (a, b) => { const pts = [a]; let prev = a, cur = b; for (let g = 0; g < 20000; g++) { pts.push(cur); if (node(cur) || cur === a) break; seen[cur] = 1; let nx = -1; for (const o of N) { const j = cur + o; if (A[j] && j !== prev && (!seen[j] || j === a) && !(pts.length < 3 && j === a)) { nx = j; break; } } if (nx < 0) break; prev = cur; cur = nx; } return pts; };
+    for (let i = W; i < A.length - W; i++) if (A[i] && node(i)) for (const o of N) { const j = i + o; if (A[j] && !seen[j]) { if (!node(j)) seen[j] = 1; raw.push(walk(i, j)); } }
+    for (let i = W; i < A.length - W; i++) if (A[i] && !seen[i] && !node(i)) { seen[i] = 1; const o = N.find(o => A[i + o]); raw.push(walk(i, i + o)); }
+    const minLen = DV.letterSpur * mm, out = [];
+    for (const P of raw) { if (P.length < 2) continue; const open = deg(P[0]) === 1 || deg(P[P.length - 1]) === 1; if (open && P.length < minLen) continue;   /* a stub off a join */
+      let q = P.map(i => [i % W, Math.floor(i / W)]); const r = Math.max(2, Math.round(0.45 * mm)), closed = P[0] === P[P.length - 1];
+      for (let pass = 0; pass < 3; pass++) q = q.map((pt, k) => { if (!closed && (k === 0 || k === q.length - 1)) return pt; let sx = 0, sy = 0, n = 0; for (let d = -r; d <= r; d++) { let m = k + d; if (closed) m = (m + q.length - 1) % (q.length - 1); else if (m < 0 || m >= q.length) continue; sx += q[m][0]; sy += q[m][1]; n++; } return [sx / n, sy / n]; });
+      out.push(q); }
+    return out; };
+  const ltDraw = (g, paths, wpx) => { g.lineWidth = wpx; g.lineCap = g.lineJoin = 'round'; g.beginPath(); for (const P of paths) { g.moveTo(P[0][0], P[0][1]); for (let k = 1; k < P.length; k++) g.lineTo(P[k][0], P[k][1]); } g.stroke(); };
   /* smooths a mask's stair steps: averaged over a (2r+1) square, kept where at least half is set */
   const ltSmooth = (A, r) => { const B = new Float32Array(A.length), C = new Uint8Array(A.length), k = 2 * r + 1;
     for (let y = 0; y < H; y++) { let n = 0; const o = y * W; for (let x = -r; x < W; x++) { if (x + r < W) n += A[o + x + r]; if (x - r - 1 >= 0) n -= A[o + x - r - 1]; if (x >= 0) B[o + x] = n; } }
@@ -3855,7 +3870,8 @@ TT.open = async (el, id) => {
         let t = 0; for (let k = 0; k < 8; k++) if (!P[k] && P[(k + 1) % 8]) t++; if (t !== 1) continue;
         if (step ? (P[0] && P[2] && P[6]) || (P[0] && P[4] && P[6]) : (P[0] && P[2] && P[4]) || (P[2] && P[4] && P[6])) continue; del.push(i); }
       for (const i of del) A[i] = 0; if (del.length) ch = true; } } };
-  const letterMask = (fill, width) => { const B = ltBase(), M = fill ? B.thick : ltMorph(B.line, Math.max(0, Math.round((width || 0.3) * mm / 2)), 1), out = new Uint8ClampedArray(W * H * 4); for (let i = 0; i < M.length; i++) if (M[i]) out[i * 4 + 3] = 255; return out; };
+  const letterMask = (fill, width) => { const B = ltBase(); if (!fill) { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); ltDraw(g, B.paths, Math.max(1, (width || 0.3) * mm)); const d = g.getImageData(0, 0, W, H).data; c.width = 0; return d; }
+    const out = new Uint8ClampedArray(W * H * 4); for (let i = 0; i < B.thick.length; i++) if (B.thick[i]) out[i * 4 + 3] = 255; return out; };
   const maskOf = (draw, fill, width) => { if (draw === ttLetterPath) return letterMask(fill, width); const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.lineCap = g.lineJoin = 'round';
     g.save(); g.scale(mm, mm); g.beginPath(); if (draw(g, fill, width) !== true) { if (fill) g.fill(); else { g.lineWidth = width; g.stroke(); } } g.restore(); return g.getImageData(0, 0, W, H).data; };
   const densAt = (i) => { let keep = 1; for (const key of INK) keep *= 1 - imgd[key].data[i + 3] / 255; return 1 - keep; };
