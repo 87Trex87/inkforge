@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 445;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 446;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7611,6 +7611,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 446, when: '2026-11-16T10:00', added: ['Long, fast strokes keep up with the pen better, especially zoomed in: the simulator now redraws only what changed while you work.'],
+    test: ['Pack fast with a magnum, zoomed in, without lifting for a while. Does the needle keep up?'] },
   { build: 444, when: '2026-11-13T23:00', added: ['Quick restart in lessons and challenges: clean skin, same needle, settings, palette and body area. Just load your ink and go.'],
     test: ['Change your needle size, then press Quick restart. Is everything kept but the ink?'] },
   { build: 443, when: '2026-11-13T22:00', added: ['Blowouts are a little more forgiving: you can go about a fifth slower at each depth before they start.'],
