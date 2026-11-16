@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 451;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 452;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7617,6 +7617,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 452, when: '2026-11-16T23:00', added: ['Lessons rearranged: 4 per chapter. Stipple is now Beginner, Curves Intermediate, The flag and Colour blend Advanced, and Lining with a magnum is 3-4.', 'New Advanced lesson 3-1, Script lettering: line a random word in a curly script with a 5RL, then fill the thick parts solid with a 5RS or 7RS.', 'The first lesson of every chapter is open, so you can start in Intermediate or Advanced. The rest unlock in order within each chapter.'],
+    test: ['Do Script lettering a few times. Is the word a good size, and does the grade feel fair?', 'Check your earlier lesson passes still show under their new numbers.'] },
   { build: 451, when: '2026-11-16T20:00', added: ['Full screen no longer gets stuck after a save dialog drops it: tap the button to go back.', 'Report cards have a Quick restart: clean skin, keeping your needle, settings, palette and body area.'],
     test: ['Save a PDF over an existing file while full screen. Does the button bring full screen back?', 'Use Quick restart from a report card. Is everything kept as it was?'] },
   { build: 450, when: '2026-11-16T18:00', added: ['Magnums are more forgiving of a slower pace before blowing out, like a real magnum.', 'Lesson 3-1 Pace is now judged against a normal magnum lining speed.'],
