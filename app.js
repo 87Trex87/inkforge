@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 458;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 459;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -930,7 +930,7 @@ const VIEWS = {
     render: () => `
       <div class="search-bar">
         <input class="in" id="c-search" type="search" placeholder="Search name, phone, tag…" autocomplete="off" value="${esc(VIEWS.clients.q || '')}">
-        <button class="btn icon-btn" id="c-print" data-tip="Print your phonebook as a table" aria-label="Print phonebook"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
+        <a class="btn icon-btn" href="#clients-table" data-tip="All contacts as a table: search, filter, edit, export and print" aria-label="Contacts table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a>
         <button class="btn primary icon-btn" id="c-add" data-tip="Add contact" aria-label="Add contact">
           <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
@@ -940,10 +940,22 @@ const VIEWS = {
       const s = $('#c-search');
       s.addEventListener('input', () => { VIEWS.clients.q = s.value; renderClientList(); });
       $('#c-add').onclick = () => location.hash = 'client-edit/new';
-      $('#c-print').onclick = openPhonebookPrint;
       $('#c-cats').onclick = (e) => { const b = e.target.closest('[data-cat]'); if (!b) return; VIEWS.clients.cat = b.dataset.cat; renderClientList(); };
       renderClientList();
     }
+  },
+  /* Contacts as a table, the same look as the bookings table: search, categories, sortable and hideable columns,
+     open, edit and delete, and CSV and print of the rows shown. */
+  'clients-table': {
+    title: () => 'Contacts',
+    render: () => `<div class="bkt-page"><div class="bkt-top">
+        <label class="bkt-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" id="ct-q" placeholder="Search contacts" value="${esc(CT.q || '')}" aria-label="Search contacts"></label>
+        <div class="bkt-acts">
+          <button class="bkt-btn" id="ct-csv" data-tip="Spreadsheet of the contacts shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
+          <button class="bkt-btn" id="ct-print" data-tip="Print the contacts shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn pri" id="ct-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New contact</span></button></div></div>
+      <div class="bkt-panel"><div id="ct-f"></div><div id="ct"></div></div></div>`,
+    async mount() { await ctTable(); }
   },
   client: {
     title: () => 'Client',
@@ -1741,6 +1753,18 @@ const VIEWS = {
     render: () => '<div id="ql"></div>',
     mount() { qlDraw(); }
   },
+  /* Saved quotes as a table, the same look as the bookings table. */
+  'quotes-table': {
+    title: () => 'Quotes',
+    render: () => `<div class="bkt-page"><div class="bkt-top">
+        <label class="bkt-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" id="qt-q" placeholder="Search quotes" value="${esc(QT.q || '')}" aria-label="Search quotes"></label>
+        <div class="bkt-acts">
+          <button class="bkt-btn" id="qt-csv" data-tip="Spreadsheet of the quotes shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
+          <button class="bkt-btn" id="qt-print" data-tip="Print the quotes shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn pri" id="qt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New quote</span></button></div></div>
+      <div class="bkt-panel"><div id="qt-f"></div><div id="qt"></div></div></div>`,
+    async mount() { await qtTable(); }
+  },
   stats: {
     title: () => 'Stats',
     render: () => `
@@ -1773,6 +1797,7 @@ const VIEWS = {
       <div class="search-bar">
         <input class="in" id="inv-q" type="search" placeholder="Search stock…" value="${esc(INV.q)}" autocomplete="off">
         <button class="btn icon-btn" id="inv-print" data-tip="Print a blank stock sheet, or your current stock" aria-label="Print stock"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
+        <a class="btn icon-btn" href="#inventory-table" data-tip="All stock as a table: search, filter, adjust, export and print" aria-label="Inventory table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a>
         <button class="btn primary icon-btn" id="inv-add" data-tip="Add item" aria-label="Add item"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="row" style="margin-bottom:12px">
@@ -1808,6 +1833,18 @@ const VIEWS = {
       };
       renderInventory();
     }
+  },
+  /* Inventory as a table, the same look as the bookings table. */
+  'inventory-table': {
+    title: () => 'Stock',
+    render: () => `<div class="bkt-page"><div class="bkt-top">
+        <label class="bkt-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" id="it-q" placeholder="Search stock" value="${esc(IT.q || '')}" aria-label="Search stock"></label>
+        <div class="bkt-acts">
+          <button class="bkt-btn" id="it-csv" data-tip="Spreadsheet of the items shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
+          <button class="bkt-btn" id="it-print" data-tip="Print the items shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn pri" id="it-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New item</span></button></div></div>
+      <div class="bkt-panel"><div id="it-f"></div><div id="it"></div></div></div>`,
+    async mount() { await itTable(); }
   },
   'inv-edit': {
     title: (id) => id === 'new' ? 'New item' : 'Edit item',
@@ -4465,6 +4502,72 @@ async function qzOpenQuote(id, stay) {
 
 /* Saved quotes: open ones to pick up again, completed ones kept for comparing quoted time with the real time. */
 const QL = { f: 'open' };
+/* The quotes table. Columns: [key, heading, on by default]; client is always shown. Status: open, booked (open with a
+   booking), completed. Choices are kept in the setting qt_table. */
+const QT_COLS = [['summary', 'Summary', true], ['saved', 'Saved', true], ['created', 'Created', false], ['total', 'Quote', true], ['hours', 'Est. time', true],
+  ['status', 'Status', true], ['booked', 'Booked for', true], ['took', 'Real time', false], ['paid', 'Paid', false], ['reply', 'Client reply', false]];
+const QT = { q: '', st: 'all', range: 'all', sort: { k: 'saved', dir: -1 } };
+const qtStatus = (r) => r.completed ? 'Completed' : r.booking_id ? 'Booked' : r.reply ? 'Replied' : 'Open';
+const qtCell = (r, k) => k === 'client' ? r.client_name || 'No name' : k === 'summary' ? r.summary || '' : k === 'saved' ? fmtDay(r.updated_at.slice(0, 10)) : k === 'created' ? fmtDay(r.created_at.slice(0, 10))
+  : k === 'total' ? (r.total != null ? money(r.total) : '') : k === 'hours' ? (r.hours ? fmtH(r.hours) : '') : k === 'status' ? qtStatus(r) : k === 'booked' ? (r.b_start ? fmtDay(r.b_start.slice(0, 10)) : '')
+  : k === 'took' ? (r.b_done && r.b_min ? fmtH(r.b_min / 60) : '') : k === 'paid' ? (r.b_paid != null ? money(r.b_paid) : '') : k === 'reply' ? (() => { if (!r.reply) return ''; try { return replyLine(JSON.parse(r.reply)); } catch { return ''; } })() : '';
+async function qtRows() {
+  const rows = await DB.all(`SELECT q.*, b.completed AS b_done, b.time_min AS b_min, b.paid AS b_paid, b.start_at AS b_start FROM quotes q LEFT JOIN bookings b ON b.id = q.booking_id`);
+  const t = new Date(), from = { all: '', month: ymd(new Date(t.getFullYear(), t.getMonth(), 1)), '3m': ymd(addDays(t, -91)), year: `${t.getFullYear()}-01-01` }[QT.range] || '', q = QT.q.trim().toLowerCase();
+  return rows.filter(r => r.updated_at.slice(0, 10) >= from && (QT.st === 'all' || (QT.st === 'open' ? !r.completed && !r.booking_id : QT.st === 'booked' ? !r.completed && !!r.booking_id : !!r.completed))
+    && (!q || [r.client_name, r.summary, qtCell(r, 'reply')].some(v => v && String(v).toLowerCase().includes(q)))); }
+async function qtTable() {
+  let saved = {}; try { saved = JSON.parse(Settings.get('qt_table', '{}')); } catch {}
+  const cols = new Set(saved.cols || QT_COLS.filter(c => c[2]).map(c => c[0])), remember = () => Settings.set('qt_table', JSON.stringify({ cols: [...cols] }));
+  let rows = [], open = null; const MONEY = ['total', 'paid'];
+  const filters = () => { const hid = QT_COLS.filter(c => !cols.has(c[0])).length;
+    const menu = (id, label, items) => `<div class="bkt-dd ${open === id ? 'open' : ''}"><button class="bkt-sel" data-dd="${id}">${label}<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>${open === id ? `<div class="bkt-menu">${items}</div>` : ''}</div>`;
+    $('#qt-f').innerHTML = `<div class="bkt-filters">
+      <label class="bkt-sel"><select id="qt-range" aria-label="Saved">${[['all', 'Any date'], ['month', 'Saved this month'], ['3m', 'Last 3 months'], ['year', 'This year']].map(([k, l]) => `<option value="${k}" ${QT.range === k ? 'selected' : ''}>${l}</option>`).join('')}</select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
+      <div class="bkt-seg">${[['all', 'All'], ['open', 'Open'], ['booked', 'Booked'], ['done', 'Completed']].map(([k, l]) => `<button data-qs="${k}" class="${QT.st === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <span style="flex:1"></span>
+      ${menu('cols', `Columns${hid ? ` <b>${QT_COLS.length - hid}/${QT_COLS.length}</b>` : ''}`, QT_COLS.map(([k, l]) => `<label><input type="checkbox" data-qcol="${k}" ${cols.has(k) ? 'checked' : ''}>${l}</label>`).join('') + '<p>Hidden columns are left out of the print and the CSV too. Client is always shown.</p>')}</div>`; };
+  const table = async () => { rows = await qtRows(); const C = QT_COLS.filter(c => cols.has(c[0])), S = QT.sort;
+    const key = (r) => S.k === 'saved' ? r.updated_at : S.k === 'created' ? r.created_at : S.k === 'booked' ? r.b_start || '' : S.k === 'total' ? r.total ?? -1 : S.k === 'hours' ? r.hours ?? -1 : S.k === 'paid' ? r.b_paid ?? -1 : S.k === 'took' ? r.b_min ?? -1 : S.k === 'done' ? (r.completed ? 1 : 0) : String(qtCell(r, S.k)).toLowerCase();
+    rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
+    const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${S.k === k ? 'on' : ''}">${l}<i>${S.k === k ? (S.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
+    const cell = (r, k) => k === 'status' ? `<span class="qt-st qt-${qtStatus(r).toLowerCase()}">${qtStatus(r)}</span>` : esc(qtCell(r, k));
+    qtTable.shown = { rows, cols: C }; const sum = (f) => rows.reduce((t, r) => t + (f(r) || 0), 0);
+    $('#qt').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('done', '', 'c-done')}${th('client', 'Client')}${C.map(c => th(c[0], c[1], MONEY.includes(c[0]) || c[0] === 'hours' || c[0] === 'took' ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
+      `<tr data-qid="${r.id}" class="${r.completed ? 'done' : ''}"><td class="c-done"><input type="checkbox" data-qdone="${r.id}" ${r.completed ? 'checked' : ''} aria-label="Completed" data-tip="Completed quotes are kept for comparing, not deleted"></td><td class="nw"><b>${esc(qtCell(r, 'client'))}</b></td>${C.map(c => `<td class="qt-${c[0]} ${MONEY.includes(c[0]) || c[0] === 'hours' || c[0] === 'took' ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
+        <td class="c-act"><button class="bkt-ib" data-qedit="${r.id}" data-tip="Open in the quote calculator" aria-label="Open quote"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-qdel="${r.id}" data-tip="Delete" aria-label="Delete quote"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody>
+      ${C.some(c => MONEY.includes(c[0])) ? `<tfoot><tr><td></td><td>Total</td>${C.map(c => `<td class="num">${c[0] === 'total' ? esc(money(sum(r => r.total))) : c[0] === 'paid' ? esc(money(sum(r => r.b_paid))) : ''}</td>`).join('')}<td></td></tr></tfoot>` : ''}</table></div>
+      <div class="bkt-foot">${rows.length} quote${rows.length === 1 ? '' : 's'} · ${rows.filter(r => r.booking_id).length} booked · ${rows.filter(r => r.completed).length} completed</div>`
+      : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg><b>No quotes match</b><span class="muted">Try another status or date, or clear the search.</span></div>`;
+    $('#qt-csv').disabled = $('#qt-print').disabled = !rows.length; };
+  const both = async () => { filters(); await table(); };
+  await both();
+  let qq; $('#qt-q').oninput = (e) => { QT.q = e.target.value; clearTimeout(qq); qq = setTimeout(table, 200); };
+  $('#qt-add').onclick = () => { if (QZ.design) URL.revokeObjectURL(QZ.design.url); Object.assign(QZ, QZ_RESET); location.hash = 'quote'; };
+  $('#qt-csv').onclick = () => { const { rows: R, cols: C } = qtTable.shown;
+    return saveCsv(`InkForge-quotes-${ymd(new Date())}.csv`, ['Client', ...C.map(c => c[1])], R.map(r => [r.client_name || '', ...C.map(c => c[0] === 'total' ? r.total : c[0] === 'paid' ? r.b_paid : c[0] === 'hours' ? r.hours : c[0] === 'took' ? (r.b_done && r.b_min ? Math.round(r.b_min / 6) / 10 : '')
+      : c[0] === 'saved' ? r.updated_at.slice(0, 10) : c[0] === 'created' ? r.created_at.slice(0, 10) : c[0] === 'booked' ? (r.b_start || '').slice(0, 10) : qtCell(r, c[0]))])); };
+  $('#qt-print').onclick = () => { const { rows: R, cols: C } = qtTable.shown, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Quotes';
+    let p = $('#print-area'); if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+    const tot = C.some(c => MONEY.includes(c[0])) ? `<tfoot><tr class="bk-total"><td>Total</td>${C.map(c => `<td>${c[0] === 'total' ? esc(money(R.reduce((t, r) => t + (r.total || 0), 0))) : c[0] === 'paid' ? esc(money(R.reduce((t, r) => t + (r.b_paid || 0), 0))) : ''}</td>`).join('')}</tr></tfoot>` : '';
+    p.innerHTML = `<div class="pbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>Quotes</b>${QT.q.trim() ? ' · “' + esc(QT.q.trim()) + '”' : ''}<br>${R.length} quote${R.length === 1 ? '' : 's'} · ${esc(fmtDay(ymd(new Date())))}</div></div>
+      <table><thead><tr><th>Client</th>${C.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>${R.map(r => `<tr><td><b>${esc(qtCell(r, 'client'))}</b></td>${C.map(c => `<td class="pb-${c[0]}">${esc(qtCell(r, c[0]))}</td>`).join('')}</tr>`).join('')}</tbody>${tot}</table></div>`;
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+    afterPrint(done); window.print(); };
+  const F = $('#qt-f');
+  F.onchange = async (e) => { const t = e.target; if (t.id === 'qt-range') QT.range = t.value; if (t.dataset.qcol) { t.checked ? cols.add(t.dataset.qcol) : cols.delete(t.dataset.qcol); await remember(); } both(); };
+  F.onclick = (e) => { const dd = e.target.closest('[data-dd]')?.dataset.dd; if (dd) { open = open === dd ? null : dd; return filters(); }
+    const qs = e.target.closest('[data-qs]')?.dataset.qs; if (qs) { QT.st = qs; return both(); } };
+  const shut = (e) => { if (!document.contains(F)) return removeEventListener('pointerdown', shut, true); if (open && !e.target.closest('.bkt-dd')) { open = null; filters(); } };
+  addEventListener('pointerdown', shut, true);
+  $('#qt').onclick = async (e) => { const t = e.target;
+    const sk = t.closest('[data-sk]')?.dataset.sk; if (sk) { QT.sort = QT.sort.k === sk ? { k: sk, dir: -QT.sort.dir } : { k: sk, dir: 1 }; return table(); }
+    const cb = t.closest('[data-qdone]'); if (cb) { await DB.run(`UPDATE quotes SET completed = ?, updated_at = datetime('now') WHERE id = ?`, [cb.checked ? 1 : 0, +cb.dataset.qdone]); return table(); }
+    const del = t.closest('[data-qdel]'); if (del) { const id = +del.dataset.qdel, q = rows.find(x => x.id === id); if (!q || !await ask(`Delete the quote${q.client_name ? ' for ' + q.client_name : ''}?`)) return;
+      const snap = await Undel.snap([['quotes', 'id = ?', [id]]]); await DB.run('DELETE FROM quotes WHERE id = ?', [id]); Undel.offer('Quote deleted.', snap, [q.design_ref], table); if (QZ.id === id) QZ.id = null; return table(); }
+    const tr = t.closest('[data-qedit]') || t.closest('[data-qid]'); if (tr) return qzOpenQuote(+(tr.dataset.qedit || tr.dataset.qid)); };
+}
 async function qlDraw() {
   const el = $('#ql'); if (!el) return;
   const rows = await DB.all(`SELECT q.*, b.completed AS b_done, b.time_min AS b_min, b.paid AS b_paid, b.start_at AS b_start
@@ -4481,7 +4584,8 @@ async function qlDraw() {
     <div class="row" style="gap:8px;margin-bottom:12px">
       <div class="seg" id="ql-f">${[['open', 'Open'], ['done', 'Completed'], ['all', 'All']].map(([k, l]) =>
         `<button data-f="${k}" class="${QL.f === k ? 'on' : ''}">${l} (${n[k]})</button>`).join('')}</div>
-      <button class="btn small" id="ql-reply" style="margin-left:auto" data-tip="Read the reply a client sent from a quote link">Paste client reply</button>
+      <a class="btn small icon-btn" href="#quotes-table" style="margin-left:auto" data-tip="All quotes as a table: search, filter, export and print" aria-label="Quotes table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a>
+      <button class="btn small" id="ql-reply" data-tip="Read the reply a client sent from a quote link">Paste client reply</button>
       <button class="btn small primary" id="ql-new">New quote</button></div>
     ${cmp.length ? `<div class="card ql-cmp"><b>Quoted vs real time</b>
       <p>Across ${cmp.length} completed tattoo${cmp.length === 1 ? '' : 's'}, the real time was ${Math.abs(Math.round(avg)) < 1 ? 'right on the estimate' : `<b>${Math.abs(Math.round(avg))}% ${avg > 0 ? 'longer' : 'shorter'}</b> than quoted`} on average.
@@ -5790,6 +5894,80 @@ async function renderInventory() {
 /* Stock print: a blank count sheet (to fill in by hand during a stock take) or the current stock
    (table, with a small dashboard on the first page, or CSV). Active items only, filtered by category,
    optionally just what's running low. Rows are kept tight so as many fit on a page as possible. */
+/* The inventory table. Columns: [key, heading, on by default]; name is always shown. Quantities step with - and + as
+   on the list. Choices are kept in the setting it_table. */
+const IT_COLS = [['category', 'Category', true], ['qty', 'In stock', true], ['unit', 'Unit', true], ['min', 'Minimum', true], ['status', 'Status', true],
+  ['supplier', 'Supplier', true], ['cost', 'Cost each', false], ['value', 'Stock value', false], ['notes', 'Notes', false], ['updated', 'Updated', false]];
+const IT = { q: '', st: 'active', cats: null, sups: null, sort: { k: 'name', dir: 1 } };
+const itStatus = (r) => !r.active ? 'Not stocked' : r.qty <= 0 ? 'Out' : r.qty <= r.min_qty ? 'Low' : 'OK';
+const itCell = (r, k) => k === 'name' ? r.name : k === 'category' ? r.category || '' : k === 'qty' ? String(fmtQty(r.qty)) : k === 'unit' ? r.unit || '' : k === 'min' ? String(fmtQty(r.min_qty)) : k === 'status' ? itStatus(r)
+  : k === 'supplier' ? r.supplier || '' : k === 'cost' ? (r.cost != null ? money(r.cost) : '') : k === 'value' ? (r.cost != null ? money(r.cost * r.qty) : '') : k === 'notes' ? r.notes || '' : k === 'updated' ? fmtDay(r.updated_at.slice(0, 10)) : '';
+async function itTable() {
+  let saved = {}; try { saved = JSON.parse(Settings.get('it_table', '{}')); } catch {}
+  const cols = new Set(saved.cols || IT_COLS.filter(c => c[2]).map(c => c[0])), remember = () => Settings.set('it_table', JSON.stringify({ cols: [...cols] }));
+  let all = [], rows = [], open = null; const NUM = ['qty', 'min', 'cost', 'value'];
+  const opts = (f) => [...new Set(all.map(f).map(v => v || ''))].sort((a, b) => a.localeCompare(b));
+  const filters = () => { const hid = IT_COLS.filter(c => !cols.has(c[0])).length, cats = opts(r => r.category), sups = opts(r => r.supplier), nm = (v) => v || 'None';
+    const menu = (id, label, items) => `<div class="bkt-dd ${open === id ? 'open' : ''}"><button class="bkt-sel" data-dd="${id}">${label}<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>${open === id ? `<div class="bkt-menu">${items}</div>` : ''}</div>`;
+    const pick = (set, list, attr) => list.map(v => `<label><input type="checkbox" data-${attr}="${esc(v)}" ${!set || set.has(v) ? 'checked' : ''}>${esc(nm(v))}</label>`).join('');
+    $('#it-f').innerHTML = `<div class="bkt-filters">
+      ${menu('cats', `Categories <b>${IT.cats ? IT.cats.size : 'All'}</b>`, pick(IT.cats, cats, 'icat'))}
+      ${menu('sups', `Suppliers <b>${IT.sups ? IT.sups.size : 'All'}</b>`, pick(IT.sups, sups, 'isup'))}
+      <div class="bkt-seg">${[['active', 'Stocked'], ['low', 'Running low'], ['off', 'Not stocked'], ['all', 'All']].map(([k, l]) => `<button data-is="${k}" class="${IT.st === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <span style="flex:1"></span>
+      ${menu('cols', `Columns${hid ? ` <b>${IT_COLS.length - hid}/${IT_COLS.length}</b>` : ''}`, IT_COLS.map(([k, l]) => `<label><input type="checkbox" data-icol="${k}" ${cols.has(k) ? 'checked' : ''}>${l}</label>`).join('') + '<p>Hidden columns are left out of the print and the CSV too. Name is always shown.</p>')}</div>`; };
+  const table = async () => { all = await DB.all('SELECT * FROM inventory_items'); const q = IT.q.trim().toLowerCase(), C = IT_COLS.filter(c => cols.has(c[0])), S = IT.sort;
+    rows = all.filter(r => (!IT.cats || IT.cats.has(r.category || '')) && (!IT.sups || IT.sups.has(r.supplier || '')) && (IT.st === 'all' || (IT.st === 'active' ? r.active : IT.st === 'off' ? !r.active : r.active && r.qty <= r.min_qty))
+      && (!q || [r.name, r.category, r.supplier, r.notes, r.unit].some(v => v && String(v).toLowerCase().includes(q))));
+    const key = (r) => S.k === 'qty' ? r.qty : S.k === 'min' ? r.min_qty : S.k === 'cost' ? r.cost ?? -1 : S.k === 'value' ? (r.cost ?? 0) * r.qty : S.k === 'updated' ? r.updated_at : S.k === 'status' ? ['Out', 'Low', 'OK', 'Not stocked'].indexOf(itStatus(r)) : String(itCell(r, S.k)).toLowerCase() || '￿';
+    rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
+    const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${S.k === k ? 'on' : ''}">${l}<i>${S.k === k ? (S.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
+    const cell = (r, k) => k === 'status' ? `<span class="qt-st it-${itStatus(r).split(' ')[0].toLowerCase()}">${itStatus(r)}</span>`
+      : k === 'qty' ? `<span class="it-step"><button data-istep="-1" data-iid="${r.id}" aria-label="One less">−</button><b>${fmtQty(r.qty)}</b><button data-istep="1" data-iid="${r.id}" aria-label="One more">+</button></span>` : esc(itCell(r, k));
+    itTable.shown = { rows, cols: C };
+    $('#it').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('name', 'Item')}${C.map(c => th(c[0], c[1], NUM.includes(c[0]) ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
+      `<tr data-iid="${r.id}" class="${r.active ? '' : 'done'} ${r.active && r.qty <= r.min_qty ? 'late' : ''}"><td class="nw"><b>${esc(r.name)}</b></td>${C.map(c => `<td class="it-${c[0]} ${NUM.includes(c[0]) ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
+        <td class="c-act"><button class="bkt-ib" data-iedit="${r.id}" data-tip="Edit" aria-label="Edit item"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-idel="${r.id}" data-tip="Delete" aria-label="Delete item"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody>
+      ${C.some(c => c[0] === 'value') ? `<tfoot><tr><td>Total</td>${C.map(c => `<td class="num">${c[0] === 'value' ? esc(money(rows.reduce((t, r) => t + (r.cost || 0) * r.qty, 0))) : ''}</td>`).join('')}<td></td></tr></tfoot>` : ''}</table></div>
+      <div class="bkt-foot">${rows.length} item${rows.length === 1 ? '' : 's'} · ${rows.filter(r => r.active && r.qty <= r.min_qty).length} running low</div>`
+      : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg><b>No items match</b><span class="muted">Try other filters, or clear the search.</span></div>`;
+    $('#it-csv').disabled = $('#it-print').disabled = !rows.length; };
+  const both = async () => { await table(); filters(); };
+  await both();
+  let qq; $('#it-q').oninput = (e) => { IT.q = e.target.value; clearTimeout(qq); qq = setTimeout(table, 200); };
+  $('#it-add').onclick = () => { location.hash = 'inv-edit/new'; };
+  $('#it-csv').onclick = () => { const { rows: R, cols: C } = itTable.shown;
+    return saveCsv(`InkForge-stock-${ymd(new Date())}.csv`, ['Item', ...C.map(c => c[1])], R.map(r => [r.name, ...C.map(c => c[0] === 'qty' ? r.qty : c[0] === 'min' ? r.min_qty : c[0] === 'cost' ? r.cost : c[0] === 'value' ? (r.cost != null ? +(r.cost * r.qty).toFixed(2) : '') : c[0] === 'updated' ? r.updated_at.slice(0, 10) : itCell(r, c[0]))])); };
+  $('#it-print').onclick = () => { const { rows: R, cols: C } = itTable.shown, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Stock';
+    let p = $('#print-area'); if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+    const tot = C.some(c => c[0] === 'value') ? `<tfoot><tr class="bk-total"><td>Total</td>${C.map(c => `<td>${c[0] === 'value' ? esc(money(R.reduce((t, r) => t + (r.cost || 0) * r.qty, 0))) : ''}</td>`).join('')}</tr></tfoot>` : '';
+    p.innerHTML = `<div class="pbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>Stock</b>${IT.q.trim() ? ' · “' + esc(IT.q.trim()) + '”' : ''}<br>${R.length} item${R.length === 1 ? '' : 's'} · ${esc(fmtDay(ymd(new Date())))}</div></div>
+      <table><thead><tr><th>Item</th>${C.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>${R.map(r => `<tr><td><b>${esc(r.name)}</b></td>${C.map(c => `<td class="pb-${c[0]}">${esc(itCell(r, c[0]))}</td>`).join('')}</tr>`).join('')}</tbody>${tot}</table></div>`;
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+    afterPrint(done); window.print(); };
+  const F = $('#it-f');
+  const toggle = (key, list, v, on) => { const S = IT[key] || new Set(list); on ? S.add(v) : S.delete(v); IT[key] = S.size === list.length ? null : S; };
+  F.onchange = async (e) => { const t = e.target;
+    if (t.dataset.icat != null) toggle('cats', opts(r => r.category), t.dataset.icat, t.checked);
+    if (t.dataset.isup != null) toggle('sups', opts(r => r.supplier), t.dataset.isup, t.checked);
+    if (t.dataset.icol) { t.checked ? cols.add(t.dataset.icol) : cols.delete(t.dataset.icol); await remember(); }
+    both(); };
+  F.onclick = (e) => { const dd = e.target.closest('[data-dd]')?.dataset.dd; if (dd) { open = open === dd ? null : dd; return filters(); }
+    const st = e.target.closest('[data-is]')?.dataset.is; if (st) { IT.st = st; return both(); } };
+  const shut = (e) => { if (!document.contains(F)) return removeEventListener('pointerdown', shut, true); if (open && !e.target.closest('.bkt-dd')) { open = null; filters(); } };
+  addEventListener('pointerdown', shut, true);
+  let stepQ = Promise.resolve();   /* - and + taps one after another, so quick taps all count */
+  $('#it').onclick = async (e) => { const t = e.target;
+    const sk = t.closest('[data-sk]')?.dataset.sk; if (sk) { IT.sort = IT.sort.k === sk ? { k: sk, dir: -IT.sort.dir } : { k: sk, dir: 1 }; return table(); }
+    const sb = t.closest('[data-istep]'); if (sb) { const id = +sb.dataset.iid, up = +sb.dataset.istep > 0;
+      stepQ = stepQ.then(async () => { const it = await DB.one('SELECT qty, step FROM inventory_items WHERE id = ?', [id]); if (!it) return; const st = +it.step || 1, n = it.qty / st;
+        const q = Math.max(0, +((up ? Math.floor(n + 1e-6) + 1 : Math.ceil(n - 1e-6) - 1) * st).toFixed(4));
+        await DB.run(`UPDATE inventory_items SET qty = ?, updated_at = datetime('now') WHERE id = ?`, [q, id]); await table(); }).catch(() => {}); return; }
+    const del = t.closest('[data-idel]'); if (del) { const it = rows.find(x => x.id === +del.dataset.idel); if (!it || !await ask(`Delete "${it.name}" from inventory?`)) return;
+      await DB.run('DELETE FROM inventory_items WHERE id = ?', [it.id]); toast('Item deleted.'); return both(); }
+    const tr = t.closest('[data-iedit]') || t.closest('tr[data-iid]'); if (tr) location.hash = 'inv-edit/' + (tr.dataset.iedit || tr.dataset.iid); };
+}
 async function openStockPrint() {
   const cats = await DB.all(`SELECT coalesce(category, 'Uncategorised') AS c, COUNT(*) AS n FROM inventory_items WHERE active = 1 GROUP BY 1 ORDER BY 1 COLLATE NOCASE`);
   if (!cats.length) return toast('No active stock items yet.');
@@ -7446,6 +7624,80 @@ async function renderClientList() {
    real text so a long list flows over as many pages as it needs, with the header row repeated. */
 const PB_COLS = [['phone', 'Phone', true], ['email', 'Email', true], ['instagram', 'Instagram', false], ['dob', 'Birthday', false],
   ['tags', 'Tags', false], ['notes', 'Notes', false], ['medical', 'Medical', false]];
+/* The contacts table. Columns: [key, heading, on by default]; name is always shown. Bookings, last and next visit come
+   from the bookings. Choices are kept in the setting ct_table. */
+const CT_COLS = [['category', 'Category', true], ['phone', 'Phone', true], ['email', 'Email', true], ['instagram', 'Instagram', false], ['dob', 'Birthday', false],
+  ['pronouns', 'Pronouns', false], ['tags', 'Tags', false], ['visits', 'Bookings', true], ['last', 'Last visit', true], ['next', 'Next booking', true],
+  ['added', 'Added', false], ['notes', 'Notes', false], ['medical', 'Medical', false]];
+const CT = { q: '', cats: null, sort: { k: 'name', dir: 1 }, when: 'all' };
+const ctDate = (v) => v ? fmtDay(v.slice(0, 10)) : '';
+const ctCell = (r, k) => k === 'name' ? fullName(r) : k === 'instagram' ? (r.instagram ? '@' + r.instagram.replace(/^@/, '') : '') : k === 'dob' ? (r.dob ? new Date(r.dob + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+  : k === 'visits' ? String(r.visits || 0) : k === 'last' ? ctDate(r.last) : k === 'next' ? ctDate(r.next) : k === 'added' ? ctDate(r.created_at) : r[k] || '';
+async function ctRows() { const today = ymd(new Date()) + 'T00:00';
+  const rows = await DB.all(`SELECT c.*, (SELECT COUNT(*) FROM bookings b WHERE b.client_id = c.id) AS visits,
+      (SELECT MAX(start_at) FROM bookings b WHERE b.client_id = c.id AND b.start_at < ?) AS last, (SELECT MIN(start_at) FROM bookings b WHERE b.client_id = c.id AND b.start_at >= ?) AS next
+    FROM clients c ORDER BY c.first_name COLLATE NOCASE, c.last_name COLLATE NOCASE`, [today, today]);
+  const q = CT.q.trim().toLowerCase(), yr = ymd(new Date(Date.now() - 365 * 864e5));
+  return rows.filter(r => (!CT.cats || CT.cats.has(r.category)) && (!q || [fullName(r), r.phone, r.email, r.instagram, r.tags, r.notes, r.category, r.pronouns].some(v => v && String(v).toLowerCase().includes(q)))
+    && (CT.when === 'all' || (CT.when === 'booked' ? !!r.next : CT.when === 'lapsed' ? !r.next && (!r.last || r.last.slice(0, 10) < yr) : !r.visits))); }
+async function ctTable() {
+  let saved = {}; try { saved = JSON.parse(Settings.get('ct_table', '{}')); } catch {}
+  const cols = new Set(saved.cols || CT_COLS.filter(c => c[2]).map(c => c[0])), remember = () => Settings.set('ct_table', JSON.stringify({ cols: [...cols] }));
+  const allCats = (await DB.all(`SELECT category AS c, COUNT(*) AS n FROM clients GROUP BY category ORDER BY (category = 'Client') DESC, category COLLATE NOCASE`));
+  if (!CT.cats && VIEWS.clients.cat && VIEWS.clients.cat !== 'all') CT.cats = new Set([VIEWS.clients.cat]);
+  let rows = [], open = null;
+  const filters = () => { const hid = CT_COLS.filter(c => !cols.has(c[0])).length, nC = CT.cats ? CT.cats.size : allCats.length;
+    const menu = (id, label, items) => `<div class="bkt-dd ${open === id ? 'open' : ''}"><button class="bkt-sel" data-dd="${id}">${label}<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>${open === id ? `<div class="bkt-menu">${items}</div>` : ''}</div>`;
+    $('#ct-f').innerHTML = `<div class="bkt-filters">
+      ${menu('cats', `Categories <b>${nC === allCats.length ? 'All' : nC}</b>`, allCats.map(x => `<label><input type="checkbox" data-ccat="${esc(x.c)}" ${!CT.cats || CT.cats.has(x.c) ? 'checked' : ''}>${esc(x.c)}<span class="muted" style="margin-left:auto">${x.n}</span></label>`).join(''))}
+      <div class="bkt-seg">${[['all', 'All'], ['booked', 'Booked in'], ['lapsed', 'Not seen in a year'], ['never', 'Never booked']].map(([k, l]) => `<button data-cw="${k}" class="${CT.when === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <span style="flex:1"></span>
+      ${menu('cols', `Columns${hid ? ` <b>${CT_COLS.length - hid}/${CT_COLS.length}</b>` : ''}`, CT_COLS.map(([k, l]) => `<label><input type="checkbox" data-cc="${k}" ${cols.has(k) ? 'checked' : ''}>${l}</label>`).join('') + '<p>Hidden columns are left out of the print and the CSV too. Name is always shown.</p>')}</div>`; };
+  const NUMK = ['visits'], DATEK = { last: 'last', next: 'next', added: 'created_at', dob: 'dob' };
+  const table = async () => { rows = await ctRows(); const C = CT_COLS.filter(c => cols.has(c[0])), S = CT.sort;
+    const key = (r) => S.k === 'name' ? fullName(r).toLowerCase() : S.k === 'visits' ? r.visits || 0 : DATEK[S.k] ? (r[DATEK[S.k]] || (S.dir > 0 ? '9' : '')) : String(ctCell(r, S.k)).toLowerCase() || (S.dir > 0 ? '￿' : '');
+    rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
+    const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${S.k === k ? 'on' : ''}">${l}<i>${S.k === k ? (S.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
+    const cell = (r, k) => k === 'medical' && r.medical ? `<span class="ct-med">${esc(r.medical)}</span>` : k === 'next' && r.next ? `<span class="ct-next">${esc(ctCell(r, k))}</span>` : esc(ctCell(r, k));
+    ctTable.shown = { rows, cols: C };
+    $('#ct').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('name', 'Name')}${C.map(c => th(c[0], c[1], NUMK.includes(c[0]) ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
+      `<tr data-cid="${r.id}"><td class="nw"><b>${esc(fullName(r)) || '<span class="muted">No name</span>'}</b></td>${C.map(c => `<td class="ct-${c[0]} ${NUMK.includes(c[0]) ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
+        <td class="c-act"><button class="bkt-ib" data-cedit="${r.id}" data-tip="Edit" aria-label="Edit contact"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-cdel="${r.id}" data-tip="Delete" aria-label="Delete contact"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody></table></div>
+      <div class="bkt-foot">${rows.length} contact${rows.length === 1 ? '' : 's'}${rows.length ? ` · ${rows.filter(r => r.next).length} booked in` : ''}</div>`
+      : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 4-7 8-7s7 2 8 7"/></svg><b>No contacts match</b><span class="muted">Try other categories or clear the search.</span></div>`;
+    $('#ct-csv').disabled = $('#ct-print').disabled = !rows.length; };
+  const both = async () => { filters(); await table(); };
+  await both();
+  let qt; $('#ct-q').oninput = (e) => { CT.q = e.target.value; clearTimeout(qt); qt = setTimeout(table, 200); };
+  $('#ct-add').onclick = () => { location.hash = 'client-edit/new'; };
+  $('#ct-csv').onclick = () => { const { rows: R, cols: C } = ctTable.shown; return saveCsv(`InkForge-contacts-${ymd(new Date())}.csv`, ['First name', 'Last name', ...C.map(c => c[1])],
+    R.map(r => [r.first_name, r.last_name, ...C.map(c => c[0] === 'visits' ? r.visits || 0 : ['last', 'next'].includes(c[0]) ? (r[c[0]] || '').slice(0, 10) : c[0] === 'added' ? (r.created_at || '').slice(0, 10) : c[0] === 'dob' ? r.dob || '' : ctCell(r, c[0]))])); };
+  $('#ct-print').onclick = () => { const { rows: R, cols: C } = ctTable.shown, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Contacts';
+    let p = $('#print-area'); if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+    const cats = CT.cats ? [...CT.cats].join(', ') : 'All categories';
+    p.innerHTML = `<div class="pbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>Contacts</b> · ${esc(cats)}${CT.q.trim() ? ' · “' + esc(CT.q.trim()) + '”' : ''}<br>${R.length} contact${R.length === 1 ? '' : 's'} · ${esc(fmtDay(ymd(new Date())))}</div></div>
+      <table><thead><tr><th>Name</th>${C.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>${R.map(r => `<tr><td><b>${esc(fullName(r))}</b></td>${C.map(c => `<td class="pb-${c[0]}">${esc(ctCell(r, c[0]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+    afterPrint(done); window.print(); };
+  const F = $('#ct-f');
+  F.onchange = async (e) => { const t = e.target;
+    if (t.dataset.ccat != null) { const S = CT.cats || new Set(allCats.map(x => x.c)); t.checked ? S.add(t.dataset.ccat) : S.delete(t.dataset.ccat); CT.cats = S.size === allCats.length ? null : S; }
+    if (t.dataset.cc) { t.checked ? cols.add(t.dataset.cc) : cols.delete(t.dataset.cc); await remember(); }
+    both(); };
+  F.onclick = (e) => { const dd = e.target.closest('[data-dd]')?.dataset.dd; if (dd) { open = open === dd ? null : dd; return filters(); }
+    const cw = e.target.closest('[data-cw]')?.dataset.cw; if (cw) { CT.when = cw; return both(); } };
+  const shut = (e) => { if (!document.contains(F)) return removeEventListener('pointerdown', shut, true); if (open && !e.target.closest('.bkt-dd')) { open = null; filters(); } };
+  addEventListener('pointerdown', shut, true);
+  $('#ct').onclick = async (e) => { const t = e.target;
+    const sk = t.closest('[data-sk]')?.dataset.sk; if (sk) { CT.sort = CT.sort.k === sk ? { k: sk, dir: -CT.sort.dir } : { k: sk, dir: 1 }; return table(); }
+    const del = t.closest('[data-cdel]'); if (del) { const c = rows.find(x => x.id === +del.dataset.cdel); if (!c) return;
+      if (!await ask(`Delete ${fullName(c) || 'this contact'}?\n\nThis permanently removes the contact and their photo. Their bookings stay on the calendar without a client.`)) return;
+      await DB.run('UPDATE bookings SET gcal_synced_at = NULL WHERE client_id = ?', [c.id]); await DB.run('DELETE FROM clients WHERE id = ?', [c.id]);
+      Gcal.soon(); await Media.release(c.photo_ref); toast('Contact deleted.'); return both(); }
+    const ed = t.closest('[data-cedit]'); if (ed) { location.hash = 'client-edit/' + ed.dataset.cedit; return; }
+    const tr = t.closest('[data-cid]'); if (tr) location.hash = 'client/' + tr.dataset.cid; };
+}
 async function openPhonebookPrint() {
   const cats = await DB.all(`SELECT category AS c, COUNT(*) AS n FROM clients GROUP BY category ORDER BY (category = 'Client') DESC, category COLLATE NOCASE`);
   if (!cats.length) return toast('Your phonebook is empty.');
@@ -7693,6 +7945,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 459, when: '2026-11-17T05:30', added: ['New Contacts table (the table icon in Clients): search, filter by category or when they last came in, pick columns, edit, delete, export CSV or print.', 'New Quotes table (the table icon in Saved quotes): open, booked and completed, quoted vs real time, totals, CSV and print.', 'New Stock table (the table icon in Inventory): adjust counts with − and +, filter by category, supplier or running low, stock value, CSV and print.'] },
   { build: 458, when: '2026-11-17T04:00', added: ['Completed bookings now show a green tick on the calendar.', 'New Bookings table (the table icon in Book): search, filter, sort, hide columns, tick to complete, add, edit and delete, then export CSV, print or save as PDF, or share your openings.'] },
   { build: 457, when: '2026-11-17T02:30', added: ['Make your own lettering challenge in the design studio: pick the Script lettering template and type your word.'] },
   { build: 456, when: '2026-11-17T01:30', added: ['Challenges now cover every lesson, in Beginner, Intermediate and Advanced chapters, including Script lettering and Lining with a magnum.', '4 new trophies: Dedicated, Signwriter, Heavy hitter and All-rounder.', 'Challenge cards show the right picture again.'] },
@@ -8047,11 +8300,11 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
    reel maker), forms, notes and the portfolio, without the tools for running a studio (clients, bookings, quotes,
    stats, stock, rules). Kept in the workspace (setting ws_mode, so backups carry it) and on its list entry; the
    body gets the class ws-design, which hides what is marked data-biz, and those pages lead home. */
-const WS_BIZ = new Set(['clients', 'client', 'client-edit', 'book', 'bookings', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
+const WS_BIZ = new Set(['inventory-table', 'quotes-table', 'clients', 'clients-table', 'client', 'client-edit', 'book', 'bookings', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
 const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) === 'design'; } catch { return WS.cur?.mode === 'design'; } };
 /* ---------- Router ---------- */
-const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'booking-edit': 'book', bookings: 'book',
-  quote: 'more', 'quote-cal': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
+const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',
+  quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'inventory-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
   reel: 'studio', reels: 'studio', stencil: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
