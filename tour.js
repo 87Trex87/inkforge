@@ -59,7 +59,7 @@ const TOUR_STEPS = [
   { id: 'book', basic: 1, route: 'book', sel: '.mwrap, #cal', title: 'Your calendar',
     pre: () => { Cal.mode = 'month'; Cal.date = new Date(); },
     text: 'Names on every day, coloured by booking type.',
-    more: 'Switch between day, week and month. Tap a day to see its bookings; + Book adds one. Days off are greyed out, and bookings can sync both ways with Google Calendar.' },
+    more: 'Switch between day, week and month. Tap a day to see its bookings; + Book adds one. Days off are greyed out, and bookings can sync both ways with Google Calendar. Completed ones get a green tick. The table icon opens all your bookings as a table to search, filter, edit, export, print or share.' },
   { id: 'booking', route: () => 'booking-edit/' + Tour.ids.bk, sel: '#b-form', title: 'A booking',
     text: 'Who, when, the tattoo, price and deposit on one screen.',
     more: 'Mark the deposit as paid, add reference photos and notes. After the session, tick Tattoo completed to record what was paid and how long it took; then send a thank-you receipt or book a healing check.' },
