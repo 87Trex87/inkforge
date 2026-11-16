@@ -541,15 +541,15 @@ const TT_LESSONS = [
     ] }
   ] },
   { name: 'Chapter 3: Advanced', lessons: [
-    { id: '3-1', title: 'Lining with a magnum', sum: 'Tilt a #10 15 magnum until only 3 needles are in, and line a third of a circle with it in one stroke. Grade C or higher moves you on.', task: 'l-magline', steps: [
-      { title: 'Set up your tilt', tilt: true, text: 'Lining with a magnum means tilting it onto one end so only a few needles reach the skin. First set how your pen leans. Hold the pen as you normally would and draw on the pad: that is your natural angle. Then lean it as far as is still comfortable along the magnum\u2019s row: that is your steepest lean. The readout shows which step a 15 magnum would be on: 15, 9 or 3 needles.',
-        more: 'These are the same as Natural angle and Steepest lean in the simulator\u2019s Settings, under All needles. A pen that reports no tilt can use Auto tilt instead: it holds the magnum tilted for you. It is fine to use, and it is noted on your report and stats.' },
-      { title: 'Three needles in', pic: { needles: ['15M1'] }, text: 'Lean the magnum onto its end until the cursor shows 3 of 15 needles in the skin. The tilt goes in steps and holds the step you are on, so a small wobble will not change it.',
-        more: 'Very light pressure with the pen tipped over gives a faint line, around 0.1 deep: a temporary line, like a blood line, that will not hold. Add a little pressure to commit it, into the green on the depth meter.' },
-      { title: 'One stroke', text: 'Pull the curve in one motion, at the speed of a normal liner line or a little faster, keeping the tilt so it stays at 3 needles all the way. Easing in and out at the ends is fine: what counts is that most of the line, about two thirds, is at a committed depth.',
-        more: 'Left-handed? Turn the page round so the curve sits where you can pull it comfortably. Lean back a little in the middle of the curve rather than twisting your wrist, so the row of needles stays across the line.' },
-      { title: 'Your grade', text: 'When you have pulled it, let the skin settle, then press Done. Grade C (70) or higher moves you on. One stroke only; more than 1 blowout is an instant fail.',
-        more: 'Judged on how much of the line is at a committed depth (not a temporary line), how steadily the tilt held 3 needles, how closely you followed the curve, and how solid the line is. The ends are left out, so feathering in and out is fine.' }
+    { id: '3-1', title: 'Script lettering', sum: 'Line a word in flowing script with a 5RL, then fill the thick parts of the letters solid with a 5RS or 7RS. A new word each attempt. Grade C or higher moves you on.', task: 'l-letter', steps: [
+      { title: 'Your word', pic: { needles: ['5RL'] }, text: 'Each attempt gives you a different word of 7 to 10 letters in a curly script, so you practise every kind of join, loop and swash. Line it in black with a #10 5RL.',
+        more: 'Script is unforgiving: a wobble in a loop or a join that does not meet shows straight away. Turn the page as you go so you can always pull the line in the direction that feels best.' },
+      { title: 'Line the outlines', text: 'Follow the outline of every letter. Where a stroke is thin, its two sides meet as one line: pull it once. Ease in and out of each stroke, and start the next one exactly where the last ended so the joins disappear.',
+        more: 'Pull long sweeps and loops in one confident movement rather than many short dabs, which leave a lumpy, uneven line. Keep the same speed and depth all the way round a curl.' },
+      { title: 'Fill the thick parts', pic: { needles: ['5RS', '7RS'] }, text: 'Switch to a 5RS or 7RS and pack the insides of the thick strokes solid black with small, tight circles that always turn the same way. Stay inside your lines.',
+        more: 'Tight circles are the method judged here, but artists fill gaps in other ways too: small back and forth passes along the stroke, or the same liner pulled in close lines side by side. Whatever you use, it has to heal solid without chewing up the skin.' },
+      { title: 'Your grade', text: 'Let the skin settle, then press Done. Grade C (70) or higher moves you on. More than 1 blowout is an instant fail. Try again for a new word.',
+        more: 'Judged on your lines (on the outline, solid and even), accuracy (no ink outside the letters), how solid the thick parts are, how steady your liner depth stayed, and whether your fill turned in circles. Skin condition counts as always.' }
     ] },
     { id: '3-2', title: 'The flag', sum: 'Everything so far in one piece: straight lines, sharp corners and S curves. Grade C or higher moves you on.', task: 'l-flag', steps: [
       { title: 'Putting it all together', pic: { needles: ['5RL'] }, text: 'Your last beginner linework lesson: a flag on a pole, with the same 5RL. The pole is your straight line, the waving edges are your S curves, the corners are your corners, and the ball on top is your circle.' },
@@ -575,9 +575,26 @@ const TT_LESSONS = [
         more: 'Yellow is light and shows every patch, so lay it evenly and keep going until it is solid.' },
       { title: 'Your grade', text: 'When it is blended and the skin has settled, press Done. Grade C (70) or higher moves you on. More than 1 blowout is an instant fail. One crash landing is free; each one after costs a point.',
         more: 'Judged on your linework and a sharp point, saturation, how evenly the colours blend, how close each part is to the colours asked for, and solid healing with no patches. Your voltage, staying inside the line and skin condition count too.' }
+    ] },
+    { id: '3-4', title: 'Lining with a magnum', sum: 'Tilt a #10 15 magnum until only 3 needles are in, and line a third of a circle with it in one stroke. Grade C or higher moves you on.', task: 'l-magline', steps: [
+      { title: 'Set up your tilt', tilt: true, text: 'Lining with a magnum means tilting it onto one end so only a few needles reach the skin. First set how your pen leans. Hold the pen as you normally would and draw on the pad: that is your natural angle. Then lean it as far as is still comfortable along the magnum\u2019s row: that is your steepest lean. The readout shows which step a 15 magnum would be on: 15, 9 or 3 needles.',
+        more: 'These are the same as Natural angle and Steepest lean in the simulator\u2019s Settings, under All needles. A pen that reports no tilt can use Auto tilt instead: it holds the magnum tilted for you. It is fine to use, and it is noted on your report and stats.' },
+      { title: 'Three needles in', pic: { needles: ['15M1'] }, text: 'Lean the magnum onto its end until the cursor shows 3 of 15 needles in the skin. The tilt goes in steps and holds the step you are on, so a small wobble will not change it.',
+        more: 'Very light pressure with the pen tipped over gives a faint line, around 0.1 deep: a temporary line, like a blood line, that will not hold. Add a little pressure to commit it, into the green on the depth meter.' },
+      { title: 'One stroke', text: 'Pull the curve in one motion, at the speed of a normal liner line or a little faster, keeping the tilt so it stays at 3 needles all the way. Easing in and out at the ends is fine: what counts is that most of the line, about two thirds, is at a committed depth.',
+        more: 'Left-handed? Turn the page round so the curve sits where you can pull it comfortably. Lean back a little in the middle of the curve rather than twisting your wrist, so the row of needles stays across the line.' },
+      { title: 'Your grade', text: 'When you have pulled it, let the skin settle, then press Done. Grade C (70) or higher moves you on. One stroke only; more than 1 blowout is an instant fail.',
+        more: 'Judged on how much of the line is at a committed depth (not a temporary line), how steadily the tilt held 3 needles, how closely you followed the curve, and how solid the line is. The ends are left out, so feathering in and out is fine.' }
     ] }
   ] }
 ];
+/* Script lettering (lesson 3-1): a random word each attempt, in a curly script, centred on the page. TT_LT holds the
+   word and its size for the current attempt; the task's path draws it, as outlines or filled. */
+const TT_LETTER_WORDS = ['Believe', 'Blessed', 'Courage', 'Destiny', 'Freedom', 'Harmony', 'Lullaby', 'Fearless', 'Faithful', 'Grateful', 'Serenity', 'Eternity', 'Infinity', 'Strength', 'Survivor', 'Florence', 'Isabella', 'Juliette', 'Butterfly', 'Beautiful', 'Gabriella', 'Stephanie', 'Wanderlust', 'Wildflower'];
+let TT_LT = null, ttLtFontP = null;
+const ttLetterFont = () => ttLtFontP || (ttLtFontP = new Promise(res => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap'; l.onload = () => document.fonts.load('30px "Great Vibes"').then(res, res); l.onerror = res; document.head.appendChild(l); setTimeout(res, 6000); }));
+const ttLetterFit = (word) => { const g = document.createElement('canvas').getContext('2d'); g.font = '30px "Great Vibes", cursive'; const w = g.measureText(word).width || 120; return { word, size: Math.min(38, 30 * 125 / w) }; };
+const ttLetterPath = (g, fill, w) => { const L = TT_LT; if (!L) return true; g.font = `${L.size}px "Great Vibes", cursive`; g.textAlign = 'center'; g.textBaseline = 'middle'; if (fill) g.fillText(L.word, 90, 62); else { g.lineWidth = w ?? 0.3; g.lineJoin = g.lineCap = 'round'; g.strokeText(L.word, 90, 62); } return true; };   /* returns true: it draws itself (see maskOf) */
 // A flag on a pole, in mm: pole, ball, two waving edges (each an S) and the flag's end.
 const TT_FLAG = [['l', 45, 30, 45, 110], ['a', 45, 26, 4, 90, 450], ['c', 45, 36, 60, 18, 72, 18, 77.5, 36], ['c', 77.5, 36, 83, 54, 97, 36, 110, 36], ['l', 110, 36, 110, 70], ['c', 45, 70, 60, 52, 72, 52, 77.5, 70], ['c', 77.5, 70, 83, 88, 97, 70, 110, 70]];
 const ttGeomDraw = (g, segs) => { for (const s of segs) { if (s[0] === 'l') { g.moveTo(s[1], s[2]); g.lineTo(s[3], s[4]); } else if (s[0] === 'c') { g.moveTo(s[1], s[2]); g.bezierCurveTo(s[3], s[4], s[5], s[6], s[7], s[8]); } else { const a0 = s[4] * Math.PI / 180; g.moveTo(s[1] + s[3] * Math.cos(a0), s[2] + s[3] * Math.sin(a0)); g.arc(s[1], s[2], s[3], a0, s[5] * Math.PI / 180); } } };
@@ -617,7 +634,9 @@ TT_LS_CH.push({ id: 'l-orange', lesson: '2-3', cat: 'pack', diff: 2, title: 'Ora
 // Each lesson task again as a challenge: same stencil, needles and judging, without the unlock wording.
 /* Lining with a magnum: a third of a circle, the left side (left-handed artists turn the page). magline: centre, radius
    and its ends in degrees, and the needles to hold in. Not a challenge yet (noCh). */
-TT_LS_CH.push({ id: 'l-magline', lesson: '3-1', cat: 'line', diff: 3, title: 'Lining with a magnum', needle: '15M1', size: 0.3, volt: 7.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.75, maxBlow: 1, maxStrokes: 1, noCh: true,
+TT_LS_CH.push({ id: 'l-letter', lesson: '3-1', cat: 'line', diff: 3, title: 'Script lettering', needle: '5RL', size: 0.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.85, maxBlow: 1, letter: true,
+  text: 'Black ink. Line the word with a #10 5RL, then fill the thick parts of the letters solid with a 5RS or 7RS in small, tight circles. Stay inside the letters. Let the skin settle, then press Done. A new word each attempt.', path: ttLetterPath });
+TT_LS_CH.push({ id: 'l-magline', lesson: '3-4', cat: 'line', diff: 3, title: 'Lining with a magnum', needle: '15M1', size: 0.3, volt: 7.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.75, maxBlow: 1, maxStrokes: 1, noCh: true,
   magline: { cx: 108, cy: 65, r: 30, a0: 120, a1: 240, hits: 3 },
   text: 'Black ink, #10 15 magnum. Tilt it until 3 needles are in, then line the curve in one stroke, keeping the tilt. Most of the line must be at a committed depth, not a faint temporary line. Feathering in and out at the ends is fine. Let the skin settle, then press Done.',
   path: (g) => { g.moveTo(108 + 30 * Math.cos(2 * Math.PI / 3), 65 + 30 * Math.sin(2 * Math.PI / 3)); g.arc(108, 65, 30, 2 * Math.PI / 3, 4 * Math.PI / 3); } });
@@ -800,9 +819,11 @@ const TT_LS_RENUM = { '1-4': '2-1', '1-5': '3-2', '2-1': '2-2', '2-2': '2-3', '2
 const ttLessonProg = () => { let p; try { p = { done: {}, ...JSON.parse(Settings.get('tt_lessons', '{}')) }; } catch { return { done: {} }; }
   if ((p.order || 1) < 2) { for (const k of ['done', 'best', 'tier', 'results']) if (p[k]) { const o = {}; for (const [id, v] of Object.entries(p[k])) o[TT_LS_RENUM[id] || id] = v; p[k] = o; }
     if (p.last?.lesson) p.last.lesson = TT_LS_RENUM[p.last.lesson] || p.last.lesson; p.order = 2; Settings.set('tt_lessons', JSON.stringify(p)); }
+  if (p.order < 3) { const R = { '3-1': '3-4' }; for (const k of ['done', 'best', 'tier', 'results']) if (p[k]) { const o = {}; for (const [id, v] of Object.entries(p[k])) o[R[id] || id] = v; p[k] = o; }
+    if (p.last?.lesson) p.last.lesson = R[p.last.lesson] || p.last.lesson; p.order = 3; Settings.set('tt_lessons', JSON.stringify(p)); }   /* script lettering became 3-1, magnum lining moved to 3-4 */
   return p; };
 // A lesson opens once every lesson before it is done.
-const ttLessonOpen = (id, p) => { const a = ttLessonList(), n = a.findIndex(l => l.id === id); return a.slice(0, n).every(l => p.done[l.id]); };
+const ttLessonOpen = (id, p) => { const ch = TT_LESSONS.find(c => c.lessons.some(l => l.id === id)), a = ch ? ch.lessons : ttLessonList(), n = a.findIndex(l => l.id === id); return a.slice(0, n).every(l => p.done[l.id]); };   /* each chapter's first lesson is open; the rest unlock in order within it */
 // Needle tips from below, drawn from the same layout the simulator tattoos with.
 const ttNeedleSvg = (id, size) => { const nd = TT_NEEDLES.find(n => n.id === id), f = size ?? TT.feelBase(id).size, lay = ttLayout(nd, f), R = Math.max(0.5, ...lay.map(q => Math.hypot(q.u, q.v) + f)) * 1.1;
   return `<svg viewBox="${-R} ${-R} ${R * 2} ${R * 2}" role="img" aria-label="${esc(nd.name)}"><circle r="${(R * 0.99).toFixed(3)}" class="tt-lsbg"/>${lay.map(q => `<circle cx="${q.u.toFixed(3)}" cy="${q.v.toFixed(3)}" r="${(f * 0.42).toFixed(3)}" class="tt-lsdot"/>`).join('')}</svg>`; };
@@ -3769,7 +3790,8 @@ TT.open = async (el, id) => {
   const exCrop = ttCrop;
   const exStencil = (T) => {
     const g = L.stencil.getContext('2d'); g.clearRect(0, 0, W, H); touched.add('stencil'); g.strokeStyle = 'rgba(78,40,150,.9)'; g.lineWidth = 0.32 * mm; g.lineJoin = g.lineCap = 'round';
-    if (T.kind === 'line') { Mm(g, T.path); g.stroke(); }
+    if (T.letter) { g.save(); g.scale(mm, mm); T.path(g, false, 0.32); g.restore(); }
+    else if (T.kind === 'line') { Mm(g, T.path); g.stroke(); }
     else if (T.box) { g.setLineDash([2 * mm, 1.5 * mm]); g.strokeRect(T.box[0] * mm, T.box[1] * mm, T.box[2] * mm, T.box[3] * mm); g.setLineDash([]); }
     else if (T.shape) { Mm(g, T.shape); g.stroke(); }
     else if (T.kind === 'piece') { Mm(g, T.lines); g.stroke(); }
@@ -3782,6 +3804,8 @@ TT.open = async (el, id) => {
     const keep = quick && EX.cur ? { area: EX.cur.area, needle: st.needle, layer: st.layer, caps: [...st.caps], capS: st.capS ? [...st.capS] : null, pal: st.pal, wash: st.wash, z, vx, vy, rot: st.rot, k } : null;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: keep?.area || T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
     setTimeout(painShow); if (fresh && !keep && EX.mode === 'ch' && !T.area && !CHEAT) setTimeout(async () => painSet(await painPick(true)), 350);
+    if (T.letter && EX.cur) { if (!EX.cur.word) EX.cur.word = TT_LETTER_WORDS[Math.floor(Math.random() * TT_LETTER_WORDS.length)]; TT_LT = ttLetterFit(EX.cur.word); const w0 = EX.cur.word;
+      ttLetterFont().then(() => { if (EX.cur?.word !== w0) return; TT_LT = ttLetterFit(w0); if (!EX.cur.strokes) { exStencil(T); paint(); } }); }
     exStencil(T); st.hide.delete('stencil'); st.op.stencil = 0.6;
     (T.refs || []).forEach((R, k) => refNew({ gen: T.id, ref: R.ref, ar: R.ar || 1, w: 180, op: 1, x: 110 + k * 24, y: 170 + k * 40 }));   /* the challenge's own reference pictures */
     for (const S of T.stencils || []) Media.url(S.ref).then(u => { if (!u) return; const im = new Image(); im.onload = () => { const sg = L.stencil.getContext('2d'); sg.save(); sg.globalAlpha = 0.4; sg.drawImage(im, S.box[0] * mm, S.box[1] * mm, S.box[2] * mm, S.box[3] * mm); sg.restore();   /* fainter than the lines to follow: a guide for the shading */ touched.add('stencil'); paint(); }; im.src = u; });   /* a value study's stencil from the stencil maker */
@@ -3801,7 +3825,7 @@ TT.open = async (el, id) => {
   };
   // ---- scoring ----
   const maskOf = (draw, fill, width) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.lineCap = g.lineJoin = 'round';
-    g.save(); g.scale(mm, mm); g.beginPath(); draw(g); if (fill) g.fill(); else { g.lineWidth = width; g.stroke(); } g.restore(); return g.getImageData(0, 0, W, H).data; };
+    g.save(); g.scale(mm, mm); g.beginPath(); if (draw(g, fill, width) !== true) { if (fill) g.fill(); else { g.lineWidth = width; g.stroke(); } } g.restore(); return g.getImageData(0, 0, W, H).data; };
   const densAt = (i) => { let keep = 1; for (const key of INK) keep *= 1 - imgd[key].data[i + 3] / 255; return 1 - keep; };
   const colAt = (i) => { let r = 0, g2 = 0, b = 0, w = 0; for (const key of INK) { const D = imgd[key].data, a = D[i + 3] / 255; if (!a) continue; r += D[i] * a; g2 += D[i + 1] * a; b += D[i + 2] * a; w += a; } return w ? [r / w, g2 / w, b / w] : null; };
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / 441;
@@ -4029,6 +4053,17 @@ TT.open = async (el, id) => {
     const spd = mid.reduce((t, s) => t + (s[4] || 0), 0) / mid.length, speedS = cl((spd - 6) / 8);   /* a confident pull, not crawling round */
     const total = Math.round(100 * (0.25 * ln.score / 100 + 0.25 * depthS + 0.2 * tiltS + 0.2 * steady + 0.1 * speedS));
     return { ...ln, score: total, depth: Math.round(deepShare * 100), tilt: Math.round(tiltS * 100), steadiness: Math.round(steady * 100), pace: Math.round(speedS * 100), line: ln.score }; };
+  /* Script lettering: the outline lined (coverage and evenness), accuracy (ink outside the letters), the thick parts
+     packed solid, the liner's depth held steady, and the fill turned in circles with the 5RS or 7RS. */
+  const letterScore = (T) => { const coreW = Math.min(T.core, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35)), fill = maskOf(T.path, true), core = maskOf(T.path, false, coreW), band = maskOf(T.path, false, coreW + 2.2), mid = maskOf(T.path, false, Math.min(0.2, coreW * 0.4));
+    let cn = 0, cin = 0, mn = 0, sum = 0, sum2 = 0, fn = 0, fs = 0, ink = 0, out = 0;
+    for (let i = 3; i < core.length; i += 4) { const d = densAt(i - 3); if (core[i] > 128) { cn++; if (d > 0.28) cin++; } if (mid[i] > 128 && fill[i] < 128) { mn++; sum += d; sum2 += d * d; }
+      if (fill[i] > 128 && core[i] < 128) { fn++; if (d > 0.7) fs++; } if (d > 0.2) { ink++; if (band[i] < 30 && fill[i] < 30) out++; } }
+    const mean = sum / Math.max(1, mn), sd = Math.sqrt(Math.max(0, sum2 / Math.max(1, mn) - mean * mean)), cov = Math.min(1, cin / Math.max(1, cn) / T.covEase), even = 1 - clamp01(sd / 0.8), spill = out / Math.max(1, ink);
+    const solid = clamp01(fs / Math.max(1, fn) / 0.85), by = EX.cur?.tm?.by || {}, ctrl = by['5RL'] ? 1 - clamp01((lineCv(by['5RL']) - 0.25) / 0.35) : 0;
+    const rs = [by['5RS'], by['7RS']].filter(Boolean).sort((a, b) => (b.mm || 0) - (a.mm || 0))[0], same = rs?.abs ? rs.net / rs.abs : 0, flips = rs?.mm ? rs.flips / rs.mm * 10 : 9, tech = rs ? clamp01((same - 0.3) / 0.5) * clamp01(1 - (flips - 0.2) / 0.6) : 0;
+    const lines = cov * (0.75 + 0.25 * even), acc = messGate(spill, 0.03), total = Math.round(100 * (0.35 * lines + 0.15 * acc + 0.3 * solid + 0.1 * ctrl + 0.1 * tech) * (0.4 + 0.6 * Math.min(1, cov / 0.5)));
+    return { score: total, lines: Math.round(lines * 100), accuracy: Math.round(acc * 100), solid: Math.round(solid * 100), control: Math.round(ctrl * 100), technique: Math.round(tech * 100), evenness: Math.round(even * 100), coverage: Math.round(cov * 100), spill: Math.round(spill * 100) }; };
   const scoreOf = (T) => {
     if (T.magline) return maglineScore(T);
     if (T.zones) return zoneScore(T);
@@ -4040,6 +4075,7 @@ TT.open = async (el, id) => {
     if (T.geom) { const hv = ttGeomPts(T.geom).map(q => HC[Math.floor(q.y * mm / TS) * tw + Math.floor(q.x * mm / TS)] || 0).filter(v => v > 0).sort((a, b) => a - b), med = hv[Math.floor(hv.length / 2)] || 0, skip = (px, py) => T.joints.some(j => Math.hypot(j[0] * mm - px, j[1] * mm - py) < 3 * mm) || (med && (HC[Math.floor(py / TS) * tw + Math.floor(px / TS)] || 0) > med * 1.6); const ln = lineScore(T.path, T.core, T.covEase, skip), cr = cornerScore(T.corners), wt = weightScore(T.geom, T.joints); return { ...ln, score: Math.round(ln.score * (0.8 + 0.2 * cr / 100) * (0.9 + 0.1 * wt / 100)), corners: cr, weight: wt }; }
     if (T.arcs) { const ln = lineScore(T.path, T.core, T.covEase), wt = weightScore(T.arcs.map(a => ['a', ...a])); return { ...ln, score: Math.round(ln.score * (0.7 + 0.3 * wt / 100)), weight: wt }; }
     if (T.corners) { const ln = lineScore(T.path, T.core, T.covEase), cr = cornerScore(T.corners); return { ...ln, score: Math.round(ln.score * (0.75 + 0.25 * cr / 100)), corners: cr }; }
+    if (T.letter) return letterScore(T);
     if (T.kind === 'line') return lineScore(T.path, T.core, T.covEase);
     if (T.kind === 'grad') {   // judged on its shape (scaled to your own darkest) and on getting reasonably dark
       const { x0, y0, x1, y1 } = boxIdx(T.box), cs = [], ts = [];
@@ -4146,7 +4182,7 @@ TT.open = async (el, id) => {
   /* The attempt as a heat map, zoomed to the stencil: green where the strip the score looks at has ink, red where it
      hasn't, orange for ink outside the band that counts as spill, purple for skin worked into swelling, blue for blowouts.
      Uses the same strip and band as the line score, so it shows what was actually judged. */
-  const heatOf = (T, res) => { const coreW = Math.min(T.core, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35)), core = T.pack ? maskOf(T.path, true) : maskOf(T.path, false, coreW), band = T.pack || T.stipple || T.wgrad || T.tri ? (() => { const f = maskOf(T.path, true), e = maskOf(T.path, false, 2.4); for (let i = 3; i < f.length; i += 4) f[i] = Math.max(f[i], e[i]); return f; })() : maskOf(T.path, false, coreW + 2.2);
+  const heatOf = (T, res) => { const coreW = Math.min(T.core, 1.7 * (Math.max(...lay.map(n => Math.hypot(n.u, n.v))) + feel.size * 0.35)), core = T.pack ? maskOf(T.path, true) : maskOf(T.path, false, coreW), band = T.pack || T.stipple || T.wgrad || T.tri || T.letter ? (() => { const f = maskOf(T.path, true), e = maskOf(T.path, false, 2.4); for (let i = 3; i < f.length; i += 4) f[i] = Math.max(f[i], e[i]); return f; })() : maskOf(T.path, false, coreW + 2.2);
     const ZS = T.zones ? [...(T.packPts ? [T.packPts] : []), ...(T.shades || []).map(z => z.pts)] : [], zP = ZS.length ? zonePath(ZS.flat()) : null;   /* a made challenge's zones are part of the shape too */
     if (zP) { const f = maskOf(zP, true), e = maskOf(zP, false, 2.4); for (let i = 3; i < band.length; i += 4) band[i] = Math.max(band[i], f[i], e[i]); }
     let x0 = W, y0 = H, x1 = 0, y1 = 0; for (let y = 0; y < H; y += 2) for (let x = 0; x < W; x += 2) if (band[(y * W + x) * 4 + 3] > 30) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
@@ -4193,6 +4229,9 @@ TT.open = async (el, id) => {
     if (res.blowouts) notes.push(`Blue with a white ring is blowout, ${spots.length} spot${spots.length === 1 ? '' : 's'}: pressing deep while moving slowly. Keep moving whenever the needle is in.`);
     if (res.skin != null && res.skin < 90) notes.push('Purple is overworked skin. Make fewer passes, and let it settle before pressing Done.');
     if ((EX.cur?.scrub || 0) >= 6) notes.push(`Scrubbing: ${EX.cur.scrub} times the shading turned back sharply at full speed. It looks solid now, but healed each turn shows as a darker step the shape of the needle (see the Healed preview). Swing it like a pendulum, easing off at each end.`);
+    if (T.letter && res.parts) { const P = res.parts; if (P.lines < 70) notes.push('Parts of the outline are missing or light. Follow every edge of each letter, and pull each loop in one smooth movement.');
+      if (P.solid < 75) notes.push('The thick parts of the letters are not solid yet. Pack them with a 5RS or 7RS in small, tight circles until no skin shows through.'); if (P.accuracy < 75) notes.push('Ink went outside the letters. Slow down as you near the edge of a thick stroke and turn your circle back sooner.');
+      if (P.control < 60) notes.push('Your liner depth changed a lot as you went. Keep one steady depth through the curls, easing in and out only at the ends of a stroke.'); if (P.technique < 50) notes.push(P.technique ? 'Your fill went back and forth instead of circling one way. Tight circles that keep turning the same way heal most solid.' : 'You did not fill with a 5RS or 7RS. Switch to one of them to pack the thick parts.'); }
     if (T.magline && res.parts) { const P = res.parts; if (P.depth < 60) notes.push(`Only ${P.depth}% of the line was at a committed depth: the rest was a faint temporary line. Add a little pressure once the tilt is set, into the green.`);
       if (P.tilt < 60) notes.push('Your lean wavered round the curve. Set the tilt before you start and hold the same lean the whole way, letting the wrist turn with the curve.'); if (P.pace < 60) notes.push('The pull was slow. Once the tilt is set, take it round at your usual lining pace: a slow crawl wobbles and overworks the skin.'); if (P.steadiness < 60) notes.push('The line wandered off the curve: slow down a touch and let your arm swing round from the elbow.'); }
     if (EX.cur?.autoTilt) notes.push(`Auto tilt was used (${Math.round(EX.cur.autoTilt * 100)}%): the magnum was held tilted, for a pen without tilt.`);
