@@ -616,7 +616,7 @@ TT_LS_CH.push({ id: 'l-orange', lesson: '2-2', cat: 'pack', diff: 2, title: 'Ora
 // Each lesson task again as a challenge: same stencil, needles and judging, without the unlock wording.
 /* Lining with a magnum: a third of a circle, the left side (left-handed artists turn the page). magline: centre, radius
    and its ends in degrees, and the needles to hold in. Not a challenge yet (noCh). */
-TT_LS_CH.push({ id: 'l-magline', lesson: '3-1', cat: 'line', diff: 3, title: 'Lining with a magnum', needle: '15M1', size: 0.3, volt: 7.3, layer: 'line', ink: 'black', kind: 'line', core: 0.9, covEase: 0.8, maxBlow: 1, maxStrokes: 1, noCh: true,
+TT_LS_CH.push({ id: 'l-magline', lesson: '3-1', cat: 'line', diff: 3, title: 'Lining with a magnum', needle: '15M1', size: 0.3, volt: 7.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.75, maxBlow: 1, maxStrokes: 1, noCh: true,
   magline: { cx: 108, cy: 65, r: 30, a0: 120, a1: 240, hits: 3 },
   text: 'Black ink, #10 15 magnum. Tilt it until 3 needles are in, then line the curve in one stroke, keeping the tilt. Most of the line must be at a committed depth, not a faint temporary line. Feathering in and out at the ends is fine. Let the skin settle, then press Done.',
   path: (g) => { g.moveTo(108 + 30 * Math.cos(2 * Math.PI / 3), 65 + 30 * Math.sin(2 * Math.PI / 3)); g.arc(108, 65, 30, 2 * Math.PI / 3, 4 * Math.PI / 3); } });
@@ -864,6 +864,9 @@ const ttZoom = (pu, hu, start) => { const o = document.createElement('div'); o.i
   document.body.appendChild(o); };
 // A small progress card for the few seconds between pressing Done and the report card. ttFrame lets it paint first.
 const ttFrame = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+/* Gives a canvas's memory back straight away. Mobile browsers are slow to reclaim big canvases on their own, so the
+   reports, which build many at full size, got slower after every retry. */
+const ttFree = (...cs) => { for (const c of cs) if (c && c.width) c.width = c.height = 0; };
 const ttBusy = (label, frac) => { let o = document.getElementById('tt-busy'); if (label == null) { o?.remove(); return; } if (!o) { o = document.createElement('div'); o.id = 'tt-busy'; o.innerHTML = '<div class="card"><b></b><i><s></s></i></div>'; document.body.appendChild(o); } o.querySelector('b').textContent = label + '…'; o.querySelector('s').style.width = Math.round(frac * 100) + '%'; };
 /* ---------- Compare stats ----------
    Two attempts side by side: yours from this device, a pasted stats block, a file (the stats text, or a PDF this app
@@ -1523,7 +1526,7 @@ TT.open = async (el, id) => {
       const m = document.createElement('canvas'); m.width = W; m.height = H; const mg = m.getContext('2d');
       mg.filter = `blur(${Math.max(2, mm * 2.2)}px)`; for (const key of ['light', 'mid', 'shadow', 'line']) if (!st.hide.has(key)) mg.drawImage(L[key], 0, 0);
       mg.filter = 'none'; mg.globalCompositeOperation = 'source-in'; mg.fillStyle = '#d4483e'; mg.fillRect(0, 0, W, H);
-      g.globalCompositeOperation = 'multiply'; g.globalAlpha = 0.8; g.drawImage(m, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      g.globalCompositeOperation = 'multiply'; g.globalAlpha = 0.8; g.drawImage(m, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; ttFree(m, ink);
     } else {
       /* Healed: overworked skin has pushed ink out and under-packed areas don't hold it, so those parts come back patchy, more of it gone the harder
          they were worked; blowouts stay for good as a soft blue-grey haze that spreads a little with the years;
@@ -1542,7 +1545,7 @@ TT.open = async (el, id) => {
         const sk = ttHex(st.skin), skL = sk[0] * 0.3 + sk[1] * 0.59 + sk[2] * 0.11, wf = key === 'high' ? (aged ? 0.4 : 0.55) * Math.max(0, Math.min(1, (skL - 0.3) / 0.35)) : 1;
         g.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply'; g.globalAlpha = a * (st.op[key] ?? 1) * wf;
         g.filter = `blur(${Math.max(0.4, mm * b)}px) saturate(${sat})`; g.drawImage(tmp, 0, 0); }
-      g.filter = 'none'; g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+      g.filter = 'none'; g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; ttFree(tmp);
       if (!aged) scarOver(g);
     }
     return c;
@@ -1716,7 +1719,7 @@ TT.open = async (el, id) => {
     const te = Math.min(1, Math.abs(nd.t - s * tau)); return Math.max(0, depth * (0.22 + 0.78 * Math.pow(Math.cos(te * Math.PI / 2), 1.5)) - tau * 0.25 * q); };
   // The set tilt plus the way the pen is leaning along the row (leaning towards an end puts that end down).
   const setRoll = (ev, a) => { let lean = 0; if (isMag() && ev && st.magTilt) { const tx = ev.tiltX || 0, ty = ev.tiltY || 0, h = Math.hypot(tx, ty); if (h > 1) lean = tiltOf(ev) * (tx * -Math.sin(a) + ty * Math.cos(a)) / h; }
-    const raw = isMag() ? Math.max(-1, Math.min(1, (st.magRoll || 0) + lean)) : 0; rollNow = raw;
+    const raw = isMag() ? Math.max(-1, Math.min(1, (st.magRoll || 0) + lean)) : 0; rollNow = raw; if (pen) pen.rawLean = raw;
     const steps = TT_MAG_STEPS[st.needle]; if (!raw || !steps || !DV.tiltSnap || !pen) return;
     /* The lean picks a step; it stays on the step it is on until the lean goes clearly past the halfway point to the
        next (DV.tiltHold): a stabiliser, so a wobbling stylus keeps the same needles in. */
@@ -1862,7 +1865,7 @@ TT.open = async (el, id) => {
             if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or too much voltage.', 2500); } } }
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
         setRoll(ev, turnOf(pen.a, ev)); st.lastD = depth;
-        if (ML && ML.length < 8000) { let hn = 0; if (isMag()) { for (const nd of lay) if (magReach(nd, depth, rollNow) > depth * 0.004) hn++; } else hn = lay.length; ML.push([Math.round(q.x / mm * 100) / 100, Math.round(q.y / mm * 100) / 100, Math.round(depth * 1000) / 1000, hn, Math.round(pen.speed)]); }
+        if (ML && ML.length < 8000) { let hn = 0; if (isMag()) { for (const nd of lay) if (magReach(nd, depth, rollNow) > depth * 0.004) hn++; } else hn = lay.length; ML.push([Math.round(q.x / mm * 100) / 100, Math.round(q.y / mm * 100) / 100, Math.round(depth * 1000) / 1000, hn, Math.round(pen.speed), Math.round((pen.rawLean || 0) * 100) / 100]); }
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, pageTurn(pen.a, ev), depth, tilt, inkC * pen.cx.alsoHi.w, false);
         if (pen.sym) symPunc(q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
@@ -3455,7 +3458,7 @@ TT.open = async (el, id) => {
     if (!raw && SCR.length) { const bl = document.createElement('canvas'); bl.width = W; bl.height = H; const q = bl.getContext('2d');   /* scrub steps, healed: the ink there, darker, in the needle's shape */
       for (const key of INK) if (!st.hide.has(key)) q.drawImage(L[key], 0, 0); q.globalCompositeOperation = 'destination-in'; q.beginPath();
       for (const [x, y, a, w, h, mg] of SCR) { const ca = Math.cos(a), sa = Math.sin(a); if (mg) { const P = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([u, v]) => [x + u * ca - v * sa, y + u * sa + v * ca]); q.moveTo(...P[0]); for (const pt of P.slice(1)) q.lineTo(...pt); q.closePath(); } else { q.moveTo(x + w / 2, y); q.ellipse(x, y, w / 2, h / 2, 0, 0, Math.PI * 2); } }
-      q.fill(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = Math.min(1, (mode === 'aged' ? 0.65 : 0.85) / 0.85 * DV.scrubStep); g.drawImage(bl, 0, 0); g.drawImage(bl, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
+      q.fill(); g.globalCompositeOperation = 'multiply'; g.globalAlpha = Math.min(1, (mode === 'aged' ? 0.65 : 0.85) / 0.85 * DV.scrubStep); g.drawImage(bl, 0, 0); g.drawImage(bl, 0, 0); ttFree(bl); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
     return c;
   };
   const blobOf = (c) => new Promise(r => c.toBlob(r, 'image/png'));
@@ -4010,11 +4013,15 @@ TT.open = async (el, id) => {
   const maglineScore = (T) => { const M = T.magline, ln = lineScore(T.path, T.core, T.covEase), S = EX.cur?.ml || [], span = M.a1 - M.a0;
     const mid = S.filter(([x, y]) => { let a = Math.atan2(y - M.cy, x - M.cx) * 180 / Math.PI; if (a < 0) a += 360; const f = (a - M.a0) / span; return f >= 0.1 && f <= 0.9 && Math.abs(Math.hypot(x - M.cx, y - M.cy) - M.r) < 4; });
     if (mid.length < 10) return { ...ln, score: Math.round(ln.score * 0.3), depth: 0, tilt: 0, steadiness: 0 };
-    const dLo = 0.3, dHi = blowD() + 0.12, deepShare = mid.filter(s => s[2] >= dLo && s[2] <= dHi).length / mid.length, depthS = Math.min(1, deepShare / 0.65);
-    const tiltS = mid.reduce((t, s) => t + (s[3] === M.hits ? 1 : Math.abs(s[3] - M.hits) === 1 ? 0.5 : 0), 0) / mid.length;
-    const dev = mid.reduce((t, s) => t + Math.abs(Math.hypot(s[0] - M.cx, s[1] - M.cy) - M.r), 0) / mid.length, steady = Math.max(0, Math.min(1, 1 - (dev - 0.25) / 1.25));
-    const total = Math.round(100 * (0.25 * ln.score / 100 + 0.3 * depthS + 0.25 * tiltS + 0.2 * steady));
-    return { ...ln, score: total, depth: Math.round(deepShare * 100), tilt: Math.round(tiltS * 100), steadiness: Math.round(steady * 100), line: ln.score }; };
+    const cl = (v) => Math.max(0, Math.min(1, v)), dLo = 0.45, dHi = blowD() + 0.05, deepShare = mid.filter(s => s[2] >= dLo && s[2] <= dHi).length / mid.length, depthS = Math.min(1, deepShare / 0.65);   /* the green band, not just past a temp line */
+    /* Tilt: the step stabiliser keeps the needle count steady, so the count alone is nearly always right; the lean itself
+       is judged too, by how much it wavered round the curve. */
+    const countS = mid.reduce((t, s) => t + (s[3] === M.hits ? 1 : Math.abs(s[3] - M.hits) === 1 ? 0.5 : 0), 0) / mid.length, ln6 = mid.map(s => Math.abs(s[5] || 0)), lm = ln6.reduce((a, b) => a + b, 0) / ln6.length,
+      leanSd = Math.sqrt(ln6.reduce((t, v) => t + (v - lm) ** 2, 0) / ln6.length), tiltS = 0.4 * countS + 0.6 * cl(1 - (leanSd - 0.03) / 0.12);
+    const dev = mid.reduce((t, s) => t + Math.abs(Math.hypot(s[0] - M.cx, s[1] - M.cy) - M.r), 0) / mid.length, steady = cl(1 - (dev - 0.4) / 2);
+    const spd = mid.reduce((t, s) => t + (s[4] || 0), 0) / mid.length, speedS = cl((spd - 8) / 12);   /* a confident pull, not crawling round */
+    const total = Math.round(100 * (0.25 * ln.score / 100 + 0.25 * depthS + 0.2 * tiltS + 0.2 * steady + 0.1 * speedS));
+    return { ...ln, score: total, depth: Math.round(deepShare * 100), tilt: Math.round(tiltS * 100), steadiness: Math.round(steady * 100), pace: Math.round(speedS * 100), line: ln.score }; };
   const scoreOf = (T) => {
     if (T.magline) return maglineScore(T);
     if (T.zones) return zoneScore(T);
@@ -4147,16 +4154,16 @@ TT.open = async (el, id) => {
       if (d > 0.2 && band[j + 3] < 30) put(i, 255, 150, 40);
       if (T.pack && core[j + 3] > 128) { cn++; const hv = hmv((px / mm - T.pack[0]), (py / mm - T.pack[1])); if (!(d > 0.7 && hv >= 0.75)) miss++; }
       else if (!T.stipple && !T.wgrad && !T.tri && core[j + 3] > 128) { cn++; if (d > 0.28) put(i, 60, 220, 120); else { put(i, 240, 60, 60); miss++; sx += px; sy += py; third[Math.min(2, Math.floor((py - y0 - m) / Math.max(1, ch - 2 * m) * 3))]++; } } }
-    const ov = document.createElement('canvas'); ov.width = cw; ov.height = ch; ov.getContext('2d').putImageData(im, 0, 0); g.filter = `blur(${Math.max(2, mm * 0.5) * HS}px)`; g.globalAlpha = 0.55; g.drawImage(ov, 0, 0); g.filter = 'none'; g.globalAlpha = 1; g.drawImage(ov, 0, 0);
+    const ov = document.createElement('canvas'); ov.width = cw; ov.height = ch; ov.getContext('2d').putImageData(im, 0, 0); g.filter = `blur(${Math.max(2, mm * 0.5) * HS}px)`; g.globalAlpha = 0.55; g.drawImage(ov, 0, 0); g.filter = 'none'; g.globalAlpha = 1; g.drawImage(ov, 0, 0); ttFree(ov);
     if (T.pack) { const N = T.pack[2] * 2, pm = document.createElement('canvas'); pm.width = pm.height = N; const pg = pm.getContext('2d'), pi = pg.createImageData(N, N), mix = (a, b, f) => a.map((v, n) => v + (b[n] - v) * f), RED = [235, 60, 60], YEL = [240, 200, 60], GRN = [60, 220, 120], ORG = [255, 150, 40];
       for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const cd = T.circle ? Math.hypot(T.pack[0] + (i + 0.5) / 2 - T.circle[0], T.pack[1] + (j + 0.5) / 2 - T.circle[1]) - T.circle[2] : 0; if (T.circle && cd > 0.25) { pi.data[(j * N + i) * 4 + 3] = 0; continue; } const edge = T.circle ? cd > -1 : i < 2 || j < 2 || i >= N - 2 || j >= N - 2, dE = edge ? densAt((Math.round((T.pack[1] + (j + 0.5) / 2) * mm) * W + Math.round((T.pack[0] + (i + 0.5) / 2) * mm)) * 4) : 0, r = edge && dE > 0.7 ? 1 : (hm[j * 30 + i] || 0) / Math.max(1, hmM), c0 = r < 0.7 ? RED : r < 0.9 ? mix(RED, YEL, (r - 0.7) / 0.2) : r < 1.05 ? mix(YEL, GRN, (r - 0.9) / 0.15) : r < 1.3 ? GRN : mix(GRN, ORG, Math.min(1, (r - 1.3) / 0.3)), q = (j * N + i) * 4; pi.data[q] = c0[0]; pi.data[q + 1] = c0[1]; pi.data[q + 2] = c0[2]; pi.data[q + 3] = 255; }
-      pg.putImageData(pi, 0, 0); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(pm, T.pack[0] * mm - x0, T.pack[1] * mm - y0, T.pack[2] * mm, T.pack[3] * mm); g.strokeStyle = 'rgba(255,255,255,.7)'; g.lineWidth = Math.max(1, mm * 0.1); if (T.circle) { g.beginPath(); g.arc(T.circle[0] * mm - x0, T.circle[1] * mm - y0, T.circle[2] * mm, 0, 7); g.stroke(); } else g.strokeRect(T.pack[0] * mm - x0, T.pack[1] * mm - y0, T.pack[2] * mm, T.pack[3] * mm); }
+      pg.putImageData(pi, 0, 0); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(pm, T.pack[0] * mm - x0, T.pack[1] * mm - y0, T.pack[2] * mm, T.pack[3] * mm); ttFree(pm); g.strokeStyle = 'rgba(255,255,255,.7)'; g.lineWidth = Math.max(1, mm * 0.1); if (T.circle) { g.beginPath(); g.arc(T.circle[0] * mm - x0, T.circle[1] * mm - y0, T.circle[2] * mm, 0, 7); g.stroke(); } else g.strokeRect(T.pack[0] * mm - x0, T.pack[1] * mm - y0, T.pack[2] * mm, T.pack[3] * mm); }
     if (T.tri || T.wgrad || T.stipple || zP) { const fm = maskOf(zP || T.path, true), cells = []; let sum = 0;   /* passes per skin cell inside the shape, against the average there */
       for (let y = Math.floor(y0 / TS); y <= Math.min(th - 1, Math.ceil(y1 / TS)); y++) for (let x = Math.floor(x0 / TS); x <= Math.min(tw - 1, Math.ceil(x1 / TS)); x++) { const px = Math.min(W - 1, Math.round((x + 0.5) * TS)), py = Math.min(H - 1, Math.round((y + 0.5) * TS)); if (fm[(py * W + px) * 4 + 3] < 128) continue; const h = HC[y * tw + x] || 0; cells.push([x, y, h]); sum += h; }
       const avg = sum / Math.max(1, cells.length), mix = (a, b, f) => a.map((v, n) => v + (b[n] - v) * f), RED = [235, 60, 60], YEL = [240, 200, 60], GRN = [60, 220, 120], ORG = [255, 150, 40];
       if (avg > 0) { const pc = document.createElement('canvas'); pc.width = cw; pc.height = ch; const pg = pc.getContext('2d');
         for (const [x, y, h] of cells) { const r = h / avg, c0 = r < 0.5 ? RED : r < 0.85 ? mix(RED, YEL, (r - 0.5) / 0.35) : r < 1.05 ? mix(YEL, GRN, (r - 0.85) / 0.2) : r < 1.5 ? GRN : mix(GRN, ORG, Math.min(1, (r - 1.5) / 0.5)); pg.fillStyle = `rgb(${c0.map(Math.round).join(',')})`; pg.fillRect(x * TS - x0, y * TS - y0, TS + 0.5, TS + 0.5); }
-        g.save(); g.filter = `blur(${Math.max(1, TS * 0.6)}px)`; g.globalAlpha = 0.85; g.drawImage(pc, 0, 0); g.restore(); }
+        g.save(); g.filter = `blur(${Math.max(1, TS * 0.6)}px)`; g.globalAlpha = 0.85; g.drawImage(pc, 0, 0); g.restore(); ttFree(pc); }
       g.strokeStyle = 'rgba(255,255,255,.7)'; g.lineWidth = Math.max(1, mm * 0.1); g.save(); g.translate(-x0, -y0); g.scale(mm, mm); g.beginPath(); T.path(g); zP?.(g); g.restore(); g.stroke(); }
     // A ring around every blowout, and for a really bad one, an arrow and the level of disappointment.
     const u = mm, ringR = (s) => Math.min(6, 2.5 + s[2] * 0.1) * u; g.lineWidth = 0.4 * u; g.strokeStyle = '#fff'; for (const s of spots) { g.beginPath(); g.arc(s[0] - x0, s[1] - y0, ringR(s), 0, 7); g.stroke(); }
@@ -4180,20 +4187,20 @@ TT.open = async (el, id) => {
     if (res.skin != null && res.skin < 90) notes.push('Purple is overworked skin. Make fewer passes, and let it settle before pressing Done.');
     if ((EX.cur?.scrub || 0) >= 6) notes.push(`Scrubbing: ${EX.cur.scrub} times the shading turned back sharply at full speed. It looks solid now, but healed each turn shows as a darker step the shape of the needle (see the Healed preview). Swing it like a pendulum, easing off at each end.`);
     if (T.magline && res.parts) { const P = res.parts; if (P.depth < 60) notes.push(`Only ${P.depth}% of the line was at a committed depth: the rest was a faint temporary line. Add a little pressure once the tilt is set, into the green.`);
-      if (P.tilt < 60) notes.push(`3 needles were held for ${P.tilt}% of the line. Set the tilt before you start and keep your lean as you go round the curve.`); if (P.steadiness < 60) notes.push('The line wandered off the curve: slow down a touch and let your arm swing round from the elbow.'); }
+      if (P.tilt < 60) notes.push('Your lean wavered round the curve. Set the tilt before you start and hold the same lean the whole way, letting the wrist turn with the curve.'); if (P.pace < 60) notes.push('The pull was slow. Once the tilt is set, take it round at your usual lining pace: a slow crawl wobbles and overworks the skin.'); if (P.steadiness < 60) notes.push('The line wandered off the curve: slow down a touch and let your arm swing round from the elbow.'); }
     if (EX.cur?.autoTilt) notes.push(`Auto tilt was used (${Math.round(EX.cur.autoTilt * 100)}%): the magnum was held tilted, for a pen without tilt.`);
     { const dch = ttDevChanged(); if (dch.length) notes.push(`Dev values changed: ${dch.map(([n, d, v]) => `${n} ${d} \u2192 ${v}`).join(', ')}.`); }
     const sf = settingsCheck(T); if (sf.length) notes.push(`Settings past their limit, which can make this easier: ${sf.map(s => `${s.name} ${s.value} (default ${s.default})`).join(', ')}.`);
     if (!notes.length) notes.push(T.tri ? 'Nothing stands out: a clean attempt. To score higher, blend each colour further into the next and keep the point dark and sharp.' : T.wgrad ? 'Nothing stands out: a clean attempt. To score higher, fade each wash further into the last and keep the edges hard against the line.' : T.stipple ? 'Nothing stands out: a clean attempt. To score higher, take the dark end a little darker and keep every row of dots even from side to side.' : T.pack ? 'Nothing stands out: a clean attempt. To score higher, layer your passes more evenly so no spot gets fewer than the rest.' : 'Nothing stands out: a clean attempt. To score higher, keep the line dead centre on the stencil and the speed steady from start to finish.');
     return { c, notes, crop: [x0, y0, cw, ch] }; };
   // The attempt on one A4 page: report, finished piece and heat map, then fresh, healed and 10 years, cropped the same.
-  const reportPage = async (T, res, heat, parts) => { const P = 1240, Q = 1754, m = 60, c = document.createElement('canvas'); c.width = P; c.height = Q; const g = c.getContext('2d'), [x0, y0, cw, ch] = heat.crop; g.fillStyle = '#fff'; g.fillRect(0, 0, P, Q); const ink = '#171a1b', soft = '#5f6a6b', col = (v) => v >= 80 ? '#17a697' : v >= 65 ? '#d29a26' : '#d3524c';
+  const reportPage = async (T, res, heat, parts, comp) => { const P = 1240, Q = 1754, m = 60, c = document.createElement('canvas'); c.width = P; c.height = Q; const g = c.getContext('2d'), [x0, y0, cw, ch] = heat.crop; g.fillStyle = '#fff'; g.fillRect(0, 0, P, Q); const ink = '#171a1b', soft = '#5f6a6b', col = (v) => v >= 80 ? '#17a697' : v >= 65 ? '#d29a26' : '#d3524c';
     g.fillStyle = ink; g.font = '700 44px Inter, sans-serif'; g.fillText(EX.lesson ? `Lesson ${EX.lesson}: ${T.title}` : `Challenge: ${T.title}`, m, 90); g.fillStyle = soft; g.font = '500 24px Inter, sans-serif'; g.fillText(`${new Date().toLocaleString()}  ·  Build ${TT_BUILD}  ·  ${res.blowouts || 0} blowouts  ·  ${res.undos || 0} undos`, m, 130);
     g.textAlign = 'right'; g.fillStyle = col(res.total); g.font = '800 92px Inter, sans-serif'; g.fillText(ttGrade(res.total), P - m, 100); g.font = '700 28px Inter, sans-serif'; g.fillText(`${res.total} / 100`, P - m, 138); g.textAlign = 'left';
     const rows = [...parts, ...(res.skin != null ? [['skin', res.skin]] : [])]; rows.forEach(([k, v], i) => { const cx = m + (i % 2) * 570, y = 178 + Math.floor(i / 2) * 42; g.fillStyle = ink; g.font = '500 24px Inter, sans-serif'; g.fillText(k[0].toUpperCase() + k.slice(1), cx, y + 18); g.fillStyle = '#e5e8e8'; g.fillRect(cx + 170, y, 300, 20); g.fillStyle = col(v); g.fillRect(cx + 170, y, 3 * v, 20); g.fillStyle = ink; g.textAlign = 'right'; g.fillText(String(v), cx + 530, y + 18); g.textAlign = 'left'; });
     const top = 190 + Math.ceil(rows.length / 2) * 42, fit = (src, label, bx, by, bw, bh, sx = x0, sy = y0, sw = cw, sh = ch) => { const s = Math.min(bw / sw, (bh - 34) / sh), dw = sw * s, dh = sh * s; g.fillStyle = soft; g.font = '600 22px Inter, sans-serif'; g.fillText(label, bx, by + 22); g.drawImage(src, sx, sy, sw, sh, bx + (bw - dw) / 2, by + 34, dw, dh); };
-    const half = (P - 2 * m - 30) / 2, third = (P - 2 * m - 40) / 3, h1 = 640; g.imageSmoothingQuality = 'high'; if (heat.none) fit(composite(1), 'Finished piece', m, top, P - 2 * m, h1); else { fit(composite(1), 'Finished piece', m, top, half, h1); fit(heat.c, 'Heat map', m + half + 30, top, half, h1, 0, 0, heat.c.width, heat.c.height); }
-    const y2 = top + h1 + 20; [['fresh', 'Fresh'], ['healed', 'Healed'], ['aged', '10 years']].forEach(([md, lb], i) => fit(viewOf(md), lb, m + i * (third + 20), y2, third, 400));
+    const half = (P - 2 * m - 30) / 2, third = (P - 2 * m - 40) / 3, h1 = 640; g.imageSmoothingQuality = 'high'; const fin = comp || composite(1), fs = fin.width / W, cx = x0 * fs, cy = y0 * fs, cw2 = cw * fs, ch2 = ch * fs; if (heat.none) fit(fin, 'Finished piece', m, top, P - 2 * m, h1, cx, cy, cw2, ch2); else { fit(fin, 'Finished piece', m, top, half, h1, cx, cy, cw2, ch2); fit(heat.c, 'Heat map', m + half + 30, top, half, h1, 0, 0, heat.c.width, heat.c.height); } if (fin !== comp) ttFree(fin);
+    const y2 = top + h1 + 20; [['fresh', 'Fresh'], ['healed', 'Healed'], ['aged', '10 years']].forEach(([md, lb], i) => { const v = viewOf(md); fit(v, lb, m + i * (third + 20), y2, third, 400); ttFree(v); });
     const y3 = y2 + 420; g.fillStyle = ink; g.font = '400 21px Inter, sans-serif'; let yy = y3; for (const n of heat.notes) { const words = n.split(' '); let ln = ''; for (const w of words) { const nx = ln ? ln + ' ' + w : w; if (g.measureText(nx).width > P - 2 * m) { if (yy < Q - 30) g.fillText(ln, m, yy); yy += 27; ln = w; } else ln = nx; } if (yy < Q - 30) g.fillText(ln, m, yy); yy += 33; }
     return c; };
   const shareStats = (T, res, heat, parts, statsTxt) => { const o = document.createElement('div'); o.id = 'tt-share'; o.className = 'tt-tune'; o.style.cssText = 'position:fixed;inset:0;z-index:110;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.6)';
@@ -4205,15 +4212,15 @@ TT.open = async (el, id) => {
   async function lessonReport(T, res) {
     const g = ttGrade(res.total), pass = !res.empty && res.total >= TT_LS_PASS, parts = Object.entries(res.parts).filter(([kk, v]) => kk !== 'score' && typeof v === 'number');
     const p = ttLessonProg(); p.best = p.best || {}; if (!res.empty) { p.best[EX.lesson] = Math.max(p.best[EX.lesson] ?? 0, res.total); const tk = ttTier(painArea()[2]); p.tier = p.tier || {}; p.tier[EX.lesson] = p.tier[EX.lesson] || {}; p.tier[EX.lesson][tk] = Math.max(p.tier[EX.lesson][tk] ?? 0, res.total); } if (pass) p.done[EX.lesson] = p.done[EX.lesson] || Date.now();
-    ttBusy('Making the heat map', 0.35); await ttFrame(); const heat = res.empty ? null : heatOf(T, res), hurl = heat?.c.toDataURL('image/jpeg', 0.92), purl = composite(Math.min(1, 1600 / W)).toDataURL('image/jpeg', 0.9), old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
-    if (pass && (!old || res.total > old.total)) { const sc = Math.min(1, 1600 / W), blob = await new Promise(r => composite(sc).toBlob(r, 'image/jpeg', 0.9));
+    ttBusy('Making the heat map', 0.35); await ttFrame(); const heat = res.empty ? null : heatOf(T, res), hurl = heat?.c.toDataURL('image/jpeg', 0.92), comp = composite(Math.min(1, 1600 / W)), purl = comp.toDataURL('image/jpeg', 0.9), old = p.results?.[EX.lesson];   // the best passed attempt, kept as proof: the finished piece with its report card
+    if (pass && (!old || res.total > old.total)) { const blob = await new Promise(r => comp.toBlob(r, 'image/jpeg', 0.9));
       p.results = p.results || {}; p.results[EX.lesson] = { ref: await Media.save(blob, 'jpg'), total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, penalty: res.penalty, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, heat: await Media.save(await new Promise(r => heat.c.toBlob(r, 'image/jpeg', 0.92)), 'jpg'), notes: heat.notes }; if (old?.ref) await Media.release(old.ref); if (old?.heat) await Media.release(old.heat); }
     await Settings.set('tt_lessons', JSON.stringify(p));
     const statsTxt = JSON.stringify(tmReport(T, res)); if (pass && p.results?.[EX.lesson]?.when && p.results[EX.lesson].total === res.total) { p.results[EX.lesson].stats = statsTxt; await Settings.set('tt_lessons', JSON.stringify(p)); }
     /* The last attempt, pass or fail, kept so it can be reopened after leaving the app. Only one is kept. Saved at slightly
        different quality from the best result so the two never share a file (media files are named by their content). */
-    ttBusy('Saving your attempt', 0.65); await ttFrame(); if (heat) { const jpg = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q)), prev = p.last, pg = await reportPage(T, res, heat, parts); p.last = { lesson: EX.lesson, ref: await Media.save(await jpg(composite(Math.min(1, 1600 / W)), 0.89), 'jpg'), heat: await Media.save(await jpg(heat.c, 0.91), 'jpg'), page: await Media.save(await jpg(pg, 0.87), 'jpg'), pw: pg.width, ph: pg.height, notes: heat.notes, total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, stats: statsTxt, pass };
-      await Settings.set('tt_lessons', JSON.stringify(p)); for (const k of ['ref', 'heat', 'page']) if (prev?.[k] && prev[k] !== p.last[k]) await Media.release(prev[k]); }
+    ttBusy('Saving your attempt', 0.65); await ttFrame(); if (heat) { const jpg = (c, q) => new Promise(r => c.toBlob(r, 'image/jpeg', q)), prev = p.last, pg = await reportPage(T, res, heat, parts, comp); p.last = { lesson: EX.lesson, ref: await Media.save(await jpg(comp, 0.89), 'jpg'), heat: await Media.save(await jpg(heat.c, 0.91), 'jpg'), page: await Media.save(await jpg(pg, 0.87), 'jpg'), pw: pg.width, ph: pg.height, notes: heat.notes, total: res.total, parts, skin: res.skin, blowouts: res.blowouts, undos: res.undos, strokes: res.stats?.strokes || 0, when: Date.now(), build: TT_BUILD, stats: statsTxt, pass };
+      await Settings.set('tt_lessons', JSON.stringify(p)); for (const k of ['ref', 'heat', 'page']) if (prev?.[k] && prev[k] !== p.last[k]) await Media.release(prev[k]); ttFree(pg); } ttFree(comp);
     const col = v => v >= 80 ? 'var(--teal)' : v >= 65 ? '#e8b44c' : '#e0605a', o = document.createElement('div'); o.id = 'merge-dlg'; o.className = 'tt-tune'; o.style.zIndex = 98;
     o.innerHTML = `<div class="card tt-tcard tt-report tt-chrep"><div class="tt-grade"><b>${res.empty ? '–' : g}</b><div><h2 style="margin:0">${esc(T.title)}</h2><span class="muted">Build ${TT_BUILD} · ${res.empty ? 'Nothing tattooed yet' : `${res.total} / 100 · ${res.blowFail ? 'Failed: too much blowout' : res.laserFail ? 'Failed: the laser was used' : res.crashFail ? 'Failed: too many crash landings' : res.gradFail ? 'Failed: the gradient is uneven' : res.packFail ? 'Failed: that was packed, not whipped' : res.washFail ? 'Failed: the lighter washes were not used' : pass ? 'Passed: the next lesson is unlocked' : 'C (70) or higher moves you on'}`}</span></div></div>
       <div class="tt-cats tt-lscats">${parts.map(([kk, v]) => `<div><span>${kk[0].toUpperCase() + kk.slice(1)}</span><i><s style="width:${v}%;background:${col(v)}"></s></i><b>${v}</b></div>`).join('')}${res.skin != null ? `<div><span>Skin</span><i><s style="width:${res.skin}%;background:${col(res.skin)}"></s></i><b>${res.skin}</b></div>` : ''}</div>
