@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 450;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 451;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7617,6 +7617,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 451, when: '2026-11-16T20:00', added: ['Full screen no longer gets stuck after a save dialog drops it: tap the button to go back.', 'Report cards have a Quick restart: clean skin, keeping your needle, settings, palette and body area.'],
+    test: ['Save a PDF over an existing file while full screen. Does the button bring full screen back?', 'Use Quick restart from a report card. Is everything kept as it was?'] },
   { build: 450, when: '2026-11-16T18:00', added: ['Magnums are more forgiving of a slower pace before blowing out, like a real magnum.', 'Lesson 3-1 Pace is now judged against a normal magnum lining speed.'],
     test: ['Line with a magnum zoomed out. Do blowouts still come too easily?', 'Do lesson 3-1 again. Does the Pace score feel fair?'] },
   { build: 449, when: '2026-11-16T16:00', added: ['Report cards load quickly again after several Try agains.', 'Lesson 3-1 judging rebalanced: it now looks at how steady your lean is, depth in the green, and a new Pace score.'],
