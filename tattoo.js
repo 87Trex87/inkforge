@@ -565,7 +565,17 @@ const TT_LESSONS = [
       { title: 'Your grade', text: 'When it is blended and the skin has settled, press Done. Grade C (70) or higher moves you on. More than 1 blowout is an instant fail. One crash landing is free; each one after costs a point.',
         more: 'Judged on your linework and a sharp point, saturation, how evenly the colours blend, how close each part is to the colours asked for, and solid healing with no patches. Your voltage, staying inside the line and skin condition count too.' }
     ] }  ] },
-  { name: 'Chapter 3: Advanced', lessons: [] }
+  { name: 'Chapter 3: Advanced', lessons: [
+    { id: '3-1', title: 'Lining with a magnum', sum: 'Tilt a #10 15 magnum until only 3 needles are in, and line a third of a circle with it in one stroke. Grade C or higher moves you on.', task: 'l-magline', steps: [
+      { title: 'Set up your tilt', tilt: true, text: 'Lining with a magnum means tilting it onto one end so only a few needles reach the skin. First set how your pen leans. Hold the pen as you normally would and draw on the pad: that is your natural angle. Then lean it as far as is still comfortable along the magnum\u2019s row: that is your steepest lean. The readout shows which step a 15 magnum would be on: 15, 9 or 3 needles.',
+        more: 'These are the same as Natural angle and Steepest lean in the simulator\u2019s Settings, under All needles. A pen that reports no tilt can use Auto tilt instead: it holds the magnum tilted for you. It is fine to use, and it is noted on your report and stats.' },
+      { title: 'Three needles in', pic: { needles: ['15M1'] }, text: 'Lean the magnum onto its end until the cursor shows 3 of 15 needles in the skin. The tilt goes in steps and holds the step you are on, so a small wobble will not change it.',
+        more: 'Very light pressure with the pen tipped over gives a faint line, around 0.1 deep: a temporary line, like a blood line, that will not hold. Add a little pressure to commit it, into the green on the depth meter.' },
+      { title: 'One stroke', text: 'Pull the curve in one motion, at the speed of a normal liner line or a little faster, keeping the tilt so it stays at 3 needles all the way. Easing in and out at the ends is fine: what counts is that most of the line, about two thirds, is at a committed depth.',
+        more: 'Left-handed? Turn the page round so the curve sits where you can pull it comfortably. Lean back a little in the middle of the curve rather than twisting your wrist, so the row of needles stays across the line.' },
+      { title: 'Your grade', text: 'When you have pulled it, let the skin settle, then press Done. Grade C (70) or higher moves you on. One stroke only; more than 1 blowout is an instant fail.',
+        more: 'Judged on how much of the line is at a committed depth (not a temporary line), how steadily the tilt held 3 needles, how closely you followed the curve, and how solid the line is. The ends are left out, so feathering in and out is fine.' }
+    ] }] }
 ];
 // A flag on a pole, in mm: pole, ball, two waving edges (each an S) and the flag's end.
 const TT_FLAG = [['l', 45, 30, 45, 110], ['a', 45, 26, 4, 90, 450], ['c', 45, 36, 60, 18, 72, 18, 77.5, 36], ['c', 77.5, 36, 83, 54, 97, 36, 110, 36], ['l', 110, 36, 110, 70], ['c', 45, 70, 60, 52, 72, 52, 77.5, 70], ['c', 77.5, 70, 83, 88, 97, 70, 110, 70]];
@@ -604,7 +614,13 @@ TT_LS_CH.push({ id: 'l-orange', lesson: '2-2', cat: 'pack', diff: 2, title: 'Ora
   path: (g) => { g.moveTo(96, 60); g.arc(90, 60, 6, 0, Math.PI * 2); },
   text: 'Line the circle in black with the 7RL in no more than 4 strokes. Then change to the 7M magnum, mix orange from the red and yellow caps, and pack it solid with tight ovals. It has to heal solid. Let it settle, then press Done.' });
 // Each lesson task again as a challenge: same stencil, needles and judging, without the unlock wording.
-TT_CH.push(...[...TT_LS_CH].sort((x, y) => x.lesson.localeCompare(y.lesson)).map(c => ({ ...c, id: 'ch-' + c.id.slice(2), lesson: undefined, thumb: 'img/ref/ch-' + c.lesson + '.jpg',   /* a calibrated attempt, shown on the card */
+/* Lining with a magnum: a third of a circle, the left side (left-handed artists turn the page). magline: centre, radius
+   and its ends in degrees, and the needles to hold in. Not a challenge yet (noCh). */
+TT_LS_CH.push({ id: 'l-magline', lesson: '3-1', cat: 'line', diff: 3, title: 'Lining with a magnum', needle: '15M1', size: 0.3, volt: 7.3, layer: 'line', ink: 'black', kind: 'line', core: 0.9, covEase: 0.8, maxBlow: 1, maxStrokes: 1, noCh: true,
+  magline: { cx: 108, cy: 65, r: 30, a0: 120, a1: 240, hits: 3 },
+  text: 'Black ink, #10 15 magnum. Tilt it until 3 needles are in, then line the curve in one stroke, keeping the tilt. Most of the line must be at a committed depth, not a faint temporary line. Feathering in and out at the ends is fine. Let the skin settle, then press Done.',
+  path: (g) => { g.moveTo(108 + 30 * Math.cos(2 * Math.PI / 3), 65 + 30 * Math.sin(2 * Math.PI / 3)); g.arc(108, 65, 30, 2 * Math.PI / 3, 4 * Math.PI / 3); } });
+TT_CH.push(...[...TT_LS_CH].filter(c => !c.noCh).sort((x, y) => x.lesson.localeCompare(y.lesson)).map(c => ({ ...c, id: 'ch-' + c.id.slice(2), lesson: undefined, thumb: 'img/ref/ch-' + c.lesson + '.jpg',   /* a calibrated attempt, shown on the card */
   hub: 'c' + c.lesson[0], diff: +c.lesson[0],
   text: c.text.replace(/\s*(Grade )?C or higher (unlocks the next lesson|moves you on|finishes the chapter)\./g, '') })));
 /* A challenge made in the design studio's Challenge maker: its stencil lines come as points in mm. Judged like the
@@ -1004,6 +1020,7 @@ TT.lesson = (el, id, i) => { const l = ttLessonList().find(x => x.id === id), S 
       <div class="card tt-lscard"><div class="tt-tsteps">${S.map((_, j) => `<i class="${j < i ? 'done' : j === i ? 'on' : ''}"></i>`).join('')}</div>
         <h2>${esc(s.title)}</h2>${ttLessonPic(s.pic)}<p>${esc(s.text)}</p>
         ${s.more ? (more ? `<p class="muted">${esc(s.more)}</p>` : '<button class="btn small" data-l="more">See more</button>') : ''}
+        ${s.tilt ? ttTiltPad() : ''}
         ${s.tune ? `<p class="tt-tmsg">${tuned ? 'This device is tuned in. You can run it again if you like.' : ''}</p><div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn ${tuned ? '' : 'primary'}" data-l="tune">${tuned ? 'Tune in again' : 'Tune in now'}</button>${tuned ? '' : '<button class="btn" data-l="skip">Skip for now</button>'}</div>` : ''}
         <div class="row" style="gap:6px;margin-top:14px"><button class="btn" data-l="prev" ${i ? '' : 'disabled'}>Back</button><span style="flex:1"></span><button class="btn primary" data-l="${last && l.task ? 'run' : 'next'}" ${s.tune && !tuned ? 'disabled' : ''}>${last ? (l.task ? 'Go to the workspace' : 'Finish lesson') : 'Next'}</button></div></div></div>`; };
   el.onclick = async (e) => { const a = e.target.closest('[data-l]')?.dataset.l; if (!a) return;
@@ -1012,10 +1029,29 @@ TT.lesson = (el, id, i) => { const l = ttLessonList().find(x => x.id === id), S 
     if (a === 'prev') { i--; more = false; return draw(); }
     if (a === 'run') return ttLessonRun(l.task);
     if (a === 'tune') { TT.lessonBack = { id, i }; return ttTuneOnly(); }
-    if (a === 'skip' || a === 'next') { if (i < S.length - 1) { i++; more = false; return draw(); }
+    if (a === 'skip' || a === 'next') { if (S[i].tilt) ttTiltSave(el); if (i < S.length - 1) { i++; more = false; return draw(); }
       const p = ttLessonProg(); p.done[id] = Date.now(); await Settings.set('tt_lessons', JSON.stringify(p)); toast('Lesson complete.'); return TT.lessons(el); } };
-  draw();
+  draw(); ttTiltWire(el);
 };
+/* The tilt set-up in a lesson step: a pad to draw on that reads the pen's lean live (and which step a 15 magnum
+   would be on), the natural angle, the steepest lean, and Auto tilt for a pen that reports no tilt. Saved on Next
+   (into the same settings as the simulator's: tt_cal and tt_autotilt). */
+const ttTiltPad = () => { const c = TT.cal(), at = +Settings.get('tt_autotilt', '0') || 0, sl = (k, n, mn, mx, v, u) => `<label class="dz-sl"><span>${n}<b data-tv="${k}">${v}${u}</b></span><input type="range" min="${mn}" max="${mx}" step="1" value="${v}" data-tilt="${k}"></label>`;
+  return `<div class="tt-tiltset"><canvas class="tt-pad" id="tt-tpad" width="560" height="170"></canvas><div class="tt-live" id="tt-tlive">Draw on the pad with your pen</div>
+    ${sl('tilt0', 'Natural angle', 20, 50, c.tilt0 ?? 35, '°')}${sl('tiltMax', 'Steepest lean', 35, 85, c.tiltMax ?? 60, '°')}
+    <label class="toggle" style="margin:6px 0"><input type="checkbox" data-tiltauto ${at ? 'checked' : ''}><span>My pen has no tilt: use Auto tilt</span></label>
+    <div data-tiltautobox ${at ? '' : 'hidden'}>${sl('auto', 'Auto tilt', 0, 100, Math.round(at * 100) || 90, '%')}<p class="muted" style="font-size:12px;margin:0">How far the magnum is held tilted for you: 75% and up holds a 15 magnum at 3 needles, about half at 9. Noted on your report and stats.</p></div></div>`; };
+const ttTiltWire = (el) => { const pad = el.querySelector('#tt-tpad'); if (!pad) return; const g = pad.getContext('2d'), live = el.querySelector('#tt-tlive'); let last = null;
+  const val = (k) => +el.querySelector(`[data-tilt="${k}"]`)?.value, steps = TT_MAG_STEPS['15M1'];
+  pad.addEventListener('pointermove', (e) => { const h = Math.hypot(e.tiltX || 0, e.tiltY || 0), t0 = val('tilt0'), tm = val('tiltMax'), auto = el.querySelector('[data-tiltauto]')?.checked;
+    const lean = auto ? val('auto') / 100 : Math.max(0, Math.min(1, (h - t0) / Math.max(10, tm - t0))), n = steps[Math.round(lean * (steps.length - 1))];
+    live.textContent = auto ? `Auto tilt ${val('auto')}%: about ${n} of 15 needles in` : e.pointerType !== 'pen' ? 'Use the pen: a mouse or finger has no tilt' : `Pen at ${Math.round(h)}°, lean ${Math.round(lean * 100)}%: about ${n} of 15 needles in`;
+    if (e.buttons) { const r = pad.getBoundingClientRect(), x = (e.clientX - r.left) * pad.width / r.width, y = (e.clientY - r.top) * pad.height / r.height; g.strokeStyle = n <= 3 ? '#1fb6a6' : n <= 9 ? '#f2c14e' : '#cfd6d8'; g.lineCap = 'round'; g.lineWidth = Math.max(1.5, n * 0.8);
+      if (last) { g.beginPath(); g.moveTo(last.x, last.y); g.lineTo(x, y); g.stroke(); } last = { x, y }; } else last = null; });
+  pad.addEventListener('pointerup', () => { last = null; });
+  el.addEventListener('input', (e) => { const k = e.target.dataset.tilt; if (k) el.querySelector(`[data-tv="${k}"]`).textContent = e.target.value + (k === 'auto' ? '%' : '°'); if (e.target.matches('[data-tiltauto]')) el.querySelector('[data-tiltautobox]').hidden = !e.target.checked; }); };
+const ttTiltSave = (el) => { const v = (k) => +el.querySelector(`[data-tilt="${k}"]`)?.value; if (!el.querySelector('#tt-tpad')) return; const c = TT.cal(); c.tilt0 = v('tilt0'); c.tiltMax = Math.max(c.tilt0 + 10, v('tiltMax')); TT.saveCal(c);
+  Settings.set('tt_autotilt', el.querySelector('[data-tiltauto]')?.checked ? String(v('auto') / 100) : '0'); };
 // Tune in lives inside an open piece, so the lessons reach it through one hidden piece kept for the purpose.
 const ttTuneOnly = async () => { const rows = await DB.all('SELECT id, meta FROM tattoo_pieces'), r = rows.find(x => { try { return JSON.parse(x.meta || '{}').tuneOnly; } catch { return false; } });
   if (r) { location.hash = 'tattoo/' + r.id; return; }
@@ -1779,11 +1815,12 @@ TT.open = async (el, id) => {
     let linePasses = null; if (!T.pack && T.path) { const mk = maskOf(T.path, false, 0.6), v = []; for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) { const px = Math.min(W - 1, x * TS + 2), py = Math.min(H - 1, y * TS + 2); if (mk[(py * W + px) * 4 + 3] > 128) v.push(HC[y * tw + x]); } if (v.length) { const s2 = [...v].sort((a, b) => a - b), m2 = v.reduce((a, b) => a + b, 0) / v.length; linePasses = { mean: r1(m2), sd: r1(Math.sqrt(v.reduce((a, b) => a + (b - m2) * (b - m2), 0) / v.length)), untouched: Math.round(v.filter(x => !x).length / v.length * 100), p10: s2[Math.floor(s2.length * 0.1)], median: s2[Math.floor(s2.length / 2)], p90: s2[Math.floor(s2.length * 0.9)], max: s2[s2.length - 1] }; } }   // hits along the stencil: going back over a line shows up as more hits
     const hm = c.hm || [], box = T.pack; let passes = null; if (box) { const v = []; for (let j = 2; j < box[3] * 2 - 2; j++) for (let i = 2; i < box[2] * 2 - 2; i++) if (!T.circle || Math.hypot(box[0] + (i + 0.5) / 2 - T.circle[0], box[1] + (j + 0.5) / 2 - T.circle[1]) < T.circle[2] - 1) v.push(hm[j * 30 + i] || 0); const s = [...v].sort((a, b) => a - b), m = v.reduce((a, b) => a + b, 0) / Math.max(1, v.length); passes = { mean: r1(m), sd: r1(Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / Math.max(1, v.length))), min: s[0], p10: s[Math.floor(s.length * 0.1)], median: s[Math.floor(s.length / 2)], p90: s[Math.floor(s.length * 0.9)], max: s[s.length - 1] }; }
     return { inkforge_stats: 1, artist: Settings.get('artist_name') || '', build: TT_BUILD, lesson: EX.lesson, task: T.id, when: new Date().toISOString(), grade: ttGrade(res.total), total: res.total, parts: res.parts, skin: res.skin, traumaMax: res.traumaMax, traumaAvg: res.traumaAvg, blowouts: res.blowouts, blowSpots: (c.spots || []).map(s => s[2]), maxStrokes: T.maxStrokes || null, extraStrokes: res.extraStrokes || 0, undos: res.undos || 0, lasers: res.lasers || 0, penalty: res.penalty || 0, ...(() => { const A = painArea(), PH = c.painH || [], tot = PH.reduce((a, v) => a + v, 0), sec = (from) => Math.round(PH.slice(from).reduce((a, v) => a + v, 0) * 10) / 10; let n = 0, sw = 0, red = 0; for (const v of TR) { if (v > 0.004) { n++; if (v >= 0.8) sw++; else if (v >= 0.3) red++; } }
-      return { area: A[0], level: TT_TIERN[ttTier(A[2])], areaPain: A[2], pain: { peak: Math.round((c.painPeak || 0) * 100) / 100, end: Math.round((c.pain || 0) * 100) / 100, secondsOver60: sec(6), secondsOver90: sec(9), hist: PH.map(v => Math.round(v * 10) / 10), histSeconds: Math.round(tot * 10) / 10, flashes: c.flashes || 0 }, skinWorked: { redPct: n ? Math.round(red / n * 100) : 0, swollenPct: n ? Math.round(sw / n * 100) : 0 }, scrubs: c.scrub || 0 }; })(), dev: ttDevChanged().length ? Object.fromEntries(ttDevChanged().map(c => [c[3], { from: c[1], to: c[2] }])) : undefined, dips: c.dips || 0, needleSeconds: r1(Object.values(tm.by).reduce((a, n) => a + n.ms, 0) / 1000), pauses: tm.pauses || 0, pauseSeconds: Math.round((tm.pauseMs || 0) / 1000), zoomHist: (tm.zoom || []).map(Math.round), passes, linePasses, tryingSettingsOf: ttTrying()?.name || null, settingsFlags: settingsCheck(T), settingsUnsaved: TT.changed(), savedSettings: TT.savedGet(), needles: by, edges: TM_EDGES, settings: { cal: { ...cal }, look: { thin: nlook.thin, tex: nlook.tex }, stretch: st.stretch, skin: st.skin, feel: JSON.parse(Settings.get('tt_feel', '{}')) }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } }; };
+      return { area: A[0], level: TT_TIERN[ttTier(A[2])], areaPain: A[2], pain: { peak: Math.round((c.painPeak || 0) * 100) / 100, end: Math.round((c.pain || 0) * 100) / 100, secondsOver60: sec(6), secondsOver90: sec(9), hist: PH.map(v => Math.round(v * 10) / 10), histSeconds: Math.round(tot * 10) / 10, flashes: c.flashes || 0 }, skinWorked: { redPct: n ? Math.round(red / n * 100) : 0, swollenPct: n ? Math.round(sw / n * 100) : 0 }, scrubs: c.scrub || 0 }; })(), autoTilt: c.autoTilt ? Math.round(c.autoTilt * 100) / 100 : undefined, dev: ttDevChanged().length ? Object.fromEntries(ttDevChanged().map(c => [c[3], { from: c[1], to: c[2] }])) : undefined, dips: c.dips || 0, needleSeconds: r1(Object.values(tm.by).reduce((a, n) => a + n.ms, 0) / 1000), pauses: tm.pauses || 0, pauseSeconds: Math.round((tm.pauseMs || 0) / 1000), zoomHist: (tm.zoom || []).map(Math.round), passes, linePasses, tryingSettingsOf: ttTrying()?.name || null, settingsFlags: settingsCheck(T), settingsUnsaved: TT.changed(), savedSettings: TT.savedGet(), needles: by, edges: TM_EDGES, settings: { cal: { ...cal }, look: { thin: nlook.thin, tex: nlook.tex }, stretch: st.stretch, skin: st.skin, feel: JSON.parse(Settings.get('tt_feel', '{}')) }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } }; };
   const hcAdd = (q, r) => { const R0 = Math.max(TS, r), x0 = Math.max(0, Math.floor((q.x - R0) / TS)), x1 = Math.min(tw - 1, Math.floor((q.x + R0) / TS)), y0 = Math.max(0, Math.floor((q.y - R0) / TS)), y1 = Math.min(th - 1, Math.floor((q.y + R0) / TS)); for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (Math.hypot((x + 0.5) * TS - q.x, (y + 0.5) * TS - q.y) <= R0) HC[y * tw + x]++; };
   const packHit = (b, q) => { const hm = EX.cur.hm ||= new Array(900).fill(0), r = Math.max(0.3, pen.foot / mm), x = q.x / mm - b[0], y = q.y / mm - b[1]; for (let i = Math.max(0, Math.floor((x - r) * 2)); i <= Math.min(b[2] * 2 - 1, Math.floor((x + r) * 2)); i++) for (let j = Math.max(0, Math.floor((y - r) * 2)); j <= Math.min(b[3] * 2 - 1, Math.floor((y + r) * 2)); j++) if (Math.hypot((i + 0.5) / 2 - x, (j + 0.5) / 2 - y) <= r) hm[j * 30 + i]++; };
   const packMotion = (d, depth) => { const m = EX.cur.mv ||= { all: 0, fast: 0, n: 0, vm: 0, vs: 0, dm: 0, ds: 0 }, l = d / mm, v = pen.speed || 0; m.all += l; if (v > 110) m.fast += l; m.n++; const a = v - m.vm; m.vm += a / m.n; m.vs += a * (v - m.vm); const b = depth - m.dm; m.dm += b / m.n; m.ds += b * (depth - m.dm); };
   const strokeFlush = () => { if (!pen) return; pen.raf = 0; const evs = pen.q; pen.q = []; if (!evs.length) return;
+    let ML = null; try { ML = EX?.cur && !CHEAT && st.tool !== 'erase' && pen.cx.pig && exList()[EX.i]?.magline ? (EX.cur.ml ||= []) : null; } catch {}   /* magnum lining: each hit's place, depth and needles in */
     for (const ev of evs) {
       if (pen.snapped) continue;
       const p = gridPt(rulerPt(smoothPt(toPage(ev)))), dx = p.x - pen.last.x, dy = p.y - pen.last.y, d = Math.hypot(dx, dy), dt = Math.max(1, ev.timeStamp - pen.t) / 1000;
@@ -1825,6 +1862,7 @@ TT.open = async (el, id) => {
             if (!told.bump) { told.bump = 1; toast('Red bumps: too deep or too much voltage.', 2500); } } }
         if (st.tool !== 'erase' && pen.cx.pig) pen.mt = { whip: pen.whip, depth, gap: gapMm(pen.speed), skin: Math.max(trAt(q), pen.mt?.fresh ? 0 : pen.mt?.skin || 0) };   // the most worked spot this moment
         setRoll(ev, turnOf(pen.a, ev)); st.lastD = depth;
+        if (ML && ML.length < 8000) { let hn = 0; if (isMag()) { for (const nd of lay) if (magReach(nd, depth, rollNow) > depth * 0.004) hn++; } else hn = lay.length; ML.push([Math.round(q.x / mm * 100) / 100, Math.round(q.y / mm * 100) / 100, Math.round(depth * 1000) / 1000, hn, Math.round(pen.speed)]); }
         puncture(pen.cx, q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
         if (pen.cx.alsoHi) puncture(pen.cx.alsoHi, q, pageTurn(pen.a, ev), depth, tilt, inkC * pen.cx.alsoHi.w, false);
         if (pen.sym) symPunc(q, pageTurn(pen.a, ev), st.tool === 'erase' ? 1 : depth, tilt, inkC, st.tool === 'erase');
@@ -3744,6 +3782,7 @@ TT.open = async (el, id) => {
       refNew({ gen: T.id, src: T.refImg, ar: T.refAr, w, op: 1, x: sr.width - w / 2 - 14, y: top + h / 2 }); }
     refSel = null;
     st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; st.wash = !!T.wash;   // each challenge starts with a clean, empty needle
+    if (T.magline) { st.magTilt = true; st.magRoll = +Settings.get('tt_autotilt', '0') || 0; if (EX.cur) EX.cur.autoTilt = st.magRoll; }   /* a pen without tilt: held tilted for it (noted on the report) */
     if (T.presets) for (const [id, f] of Object.entries(T.presets)) TT.setFeel(id, { ...TT.feel(id), ...f });   // each needle the lesson uses, set up as it asks
     setNeedle(T.needle); if (T.size || T.volt) { if (T.size) feel.size = T.size; if (T.volt) feel.volt = T.volt; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawSz(); drawVolt(); }   // a lesson that asks for a size and voltage starts there
     st.layer = T.layer; st.caps = [...TT_CAPS]; st.capS = null; st.pal = 'default'; { const P = EX.custom?.pal && (palAll().find(p => p.id === EX.custom.pal) || EX.custom.palData); if (P) { st.caps = P.caps.map(c => c.c); st.capS = P.caps.map(c => c.s ?? 1); st.pal = P.id; } } st.view = 'work'; st.viewC = null; z = 1; vx = vy = 0; st.rot = 0; k = fitK;
@@ -3965,7 +4004,19 @@ TT.open = async (el, id) => {
     const reach = clamp01(Math.max(0, ...mean) / Math.max(0.1, (Z.dark ?? 0.85) * 0.85)), stp = steps(mean.map((m, i) => i ? Math.abs(m - mean[i - 1]) : 0), (i) => Math.abs(tv[i] - tv[i - 1]) * a + 0.08), smooth = clamp01(1 - stp / 0.25);
     const ev = used.map(B => { const cs = [...B.cells.values()].filter(c => c[1] > 2).map(c => c[0] / c[1]), m = cs.reduce((s, v) => s + v, 0) / Math.max(1, cs.length); return cs.length > 1 ? Math.sqrt(cs.reduce((s, v) => s + (v - m) * (v - m), 0) / cs.length) : 0; }), even = clamp01(1 - (ev.reduce((s, v) => s + v, 0) / Math.max(1, ev.length) - 0.04) / 0.2);
     return { score: Math.round(100 * (0.4 * match + 0.2 * reach + 0.2 * smooth + 0.2 * even) * (0.75 + 0.25 * needle) * clamp01(reach / 0.5)), gradient: Math.round(match * 100), darkness: Math.round(reach * 100), smoothness: Math.round(smooth * 100), evenness: Math.round(even * 100), needle: Math.round(needle * 100) }; };
+  /* Lining with a magnum: the line itself (coverage, spill, evenness), and from each hit in the middle 80% of the curve
+     (the ends are left free, for feathering in and out): the share at a committed depth (green, not a faint temporary
+     line; about two thirds is full marks), the share holding the needles asked for, and how closely it followed the curve. */
+  const maglineScore = (T) => { const M = T.magline, ln = lineScore(T.path, T.core, T.covEase), S = EX.cur?.ml || [], span = M.a1 - M.a0;
+    const mid = S.filter(([x, y]) => { let a = Math.atan2(y - M.cy, x - M.cx) * 180 / Math.PI; if (a < 0) a += 360; const f = (a - M.a0) / span; return f >= 0.1 && f <= 0.9 && Math.abs(Math.hypot(x - M.cx, y - M.cy) - M.r) < 4; });
+    if (mid.length < 10) return { ...ln, score: Math.round(ln.score * 0.3), depth: 0, tilt: 0, steadiness: 0 };
+    const dLo = 0.3, dHi = blowD() + 0.12, deepShare = mid.filter(s => s[2] >= dLo && s[2] <= dHi).length / mid.length, depthS = Math.min(1, deepShare / 0.65);
+    const tiltS = mid.reduce((t, s) => t + (s[3] === M.hits ? 1 : Math.abs(s[3] - M.hits) === 1 ? 0.5 : 0), 0) / mid.length;
+    const dev = mid.reduce((t, s) => t + Math.abs(Math.hypot(s[0] - M.cx, s[1] - M.cy) - M.r), 0) / mid.length, steady = Math.max(0, Math.min(1, 1 - (dev - 0.25) / 1.25));
+    const total = Math.round(100 * (0.25 * ln.score / 100 + 0.3 * depthS + 0.25 * tiltS + 0.2 * steady));
+    return { ...ln, score: total, depth: Math.round(deepShare * 100), tilt: Math.round(tiltS * 100), steadiness: Math.round(steady * 100), line: ln.score }; };
   const scoreOf = (T) => {
+    if (T.magline) return maglineScore(T);
     if (T.zones) return zoneScore(T);
     if (T.tri) return triScore(T);
     if (T.wgrad) return washGradScore(T);
@@ -4128,6 +4179,9 @@ TT.open = async (el, id) => {
     if (res.blowouts) notes.push(`Blue with a white ring is blowout, ${spots.length} spot${spots.length === 1 ? '' : 's'}: pressing deep while moving slowly. Keep moving whenever the needle is in.`);
     if (res.skin != null && res.skin < 90) notes.push('Purple is overworked skin. Make fewer passes, and let it settle before pressing Done.');
     if ((EX.cur?.scrub || 0) >= 6) notes.push(`Scrubbing: ${EX.cur.scrub} times the shading turned back sharply at full speed. It looks solid now, but healed each turn shows as a darker step the shape of the needle (see the Healed preview). Swing it like a pendulum, easing off at each end.`);
+    if (T.magline && res.parts) { const P = res.parts; if (P.depth < 60) notes.push(`Only ${P.depth}% of the line was at a committed depth: the rest was a faint temporary line. Add a little pressure once the tilt is set, into the green.`);
+      if (P.tilt < 60) notes.push(`3 needles were held for ${P.tilt}% of the line. Set the tilt before you start and keep your lean as you go round the curve.`); if (P.steadiness < 60) notes.push('The line wandered off the curve: slow down a touch and let your arm swing round from the elbow.'); }
+    if (EX.cur?.autoTilt) notes.push(`Auto tilt was used (${Math.round(EX.cur.autoTilt * 100)}%): the magnum was held tilted, for a pen without tilt.`);
     { const dch = ttDevChanged(); if (dch.length) notes.push(`Dev values changed: ${dch.map(([n, d, v]) => `${n} ${d} \u2192 ${v}`).join(', ')}.`); }
     const sf = settingsCheck(T); if (sf.length) notes.push(`Settings past their limit, which can make this easier: ${sf.map(s => `${s.name} ${s.value} (default ${s.default})`).join(', ')}.`);
     if (!notes.length) notes.push(T.tri ? 'Nothing stands out: a clean attempt. To score higher, blend each colour further into the next and keep the point dark and sharp.' : T.wgrad ? 'Nothing stands out: a clean attempt. To score higher, fade each wash further into the last and keep the edges hard against the line.' : T.stipple ? 'Nothing stands out: a clean attempt. To score higher, take the dark end a little darker and keep every row of dots even from side to side.' : T.pack ? 'Nothing stands out: a clean attempt. To score higher, layer your passes more evenly so no spot gets fewer than the rest.' : 'Nothing stands out: a clean attempt. To score higher, keep the line dead centre on the stencil and the speed steady from start to finish.');
