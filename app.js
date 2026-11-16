@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 448;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 449;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7611,6 +7611,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 449, when: '2026-11-16T16:00', added: ['Report cards load quickly again after several Try agains.', 'Lesson 3-1 judging rebalanced: it now looks at how steady your lean is, depth in the green, and a new Pace score.'],
+    test: ['Do a few Try agains in a row. Does the report card still come up quickly?', 'Do lesson 3-1 again and send the stats. Does the grade feel fair now?'] },
   { build: 448, when: '2026-11-16T14:00', added: ['First advanced lesson, 3-1 Lining with a magnum: set up your pen tilt on a test pad (or use Auto tilt for a pen without tilt), then line a third of a circle with a #10 15 magnum, 3 needles in, in one stroke.'],
     test: ['Do lesson 3-1. Does the tilt set-up help, and does the grade feel fair?', 'Send the stats from your attempts so the judging can be tuned.'] },
   { build: 447, when: '2026-11-16T12:00', added: ['Magnums tilt in steady steps: lean along the row to go from all the needles to fewer (a 9M goes 9, 5, 3), and each step holds its needles as your pressure changes. Set your steepest lean in Settings, All needles.', 'New needle: the 11CM curved magnum.'],
