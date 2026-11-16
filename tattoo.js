@@ -634,7 +634,7 @@ TT_LS_CH.push({ id: 'l-orange', lesson: '2-3', cat: 'pack', diff: 2, title: 'Ora
 // Each lesson task again as a challenge: same stencil, needles and judging, without the unlock wording.
 /* Lining with a magnum: a third of a circle, the left side (left-handed artists turn the page). magline: centre, radius
    and its ends in degrees, and the needles to hold in. Not a challenge yet (noCh). */
-TT_LS_CH.push({ id: 'l-letter', lesson: '3-1', cat: 'line', diff: 3, title: 'Script lettering', needle: '5RL', size: 0.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.85, maxBlow: 1, letter: true,
+TT_LS_CH.push({ id: 'l-letter', lesson: '3-1', cat: 'line', diff: 3, title: 'Script lettering', needle: '5RL', needles: ['5RL', '5RS', '7RS'], size: 0.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.85, maxBlow: 1, letter: true,
   text: 'Black ink. Line the word with a #10 5RL, then fill the thick parts of the letters solid with a 5RS or 7RS in small, tight circles. Stay inside the letters. Let the skin settle, then press Done. A new word each attempt.', path: ttLetterPath });
 TT_LS_CH.push({ id: 'l-magline', lesson: '3-4', cat: 'line', diff: 3, title: 'Lining with a magnum', needle: '15M1', size: 0.3, volt: 7.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.75, maxBlow: 1, maxStrokes: 1, noCh: true,
   magline: { cx: 108, cy: 65, r: 30, a0: 120, a1: 240, hits: 3 },
