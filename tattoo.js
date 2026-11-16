@@ -1252,7 +1252,9 @@ TT.open = async (el, id) => {
   const painOn = () => !CHEAT && (EX ? !!EX.cur && !EX.done && !EX.cur.scored : true);
   /* normal mode keeps its own pain (not saved): it flashes and warns, but the client never taps out */
   const FREEP = { pain: 0, painPeak: 0 }, pcur = () => EX ? EX.cur : FREEP;
-  const painArea = () => { let T = null; try { T = EX ? exList()[EX.i] : null; } catch {} const n = EX?.cur?.area || T?.area || (!EX && st.area) || Settings.get('tt_area', 'Forearm'); return ttAreas().find(a => a[0] === n) || ['Forearm', 'Arms & hands', 2]; };
+  let paC = null, paT = 0;
+  const painArea = () => { const now = performance.now(); if (paC && now - paT < 400) return paC; paT = now; return (paC = painAreaNow()); };   /* asked several times a needle hit: kept for a moment */
+  const painAreaNow = () => { let T = null; try { T = EX ? exList()[EX.i] : null; } catch {} const n = EX?.cur?.area || T?.area || (!EX && st.area) || Settings.get('tt_area', 'Forearm'); return ttAreas().find(a => a[0] === n) || ['Forearm', 'Arms & hands', 2]; };
   let painT = 0, painTold = 0;
   /* Choosing where: first the level (easy, medium, hard), then a body area in it. Opens by itself at the start of a
      lesson or challenge (unless the challenge sets its area), and from the area button before the first stroke. */
@@ -1261,8 +1263,9 @@ TT.open = async (el, id) => {
     const best = (k) => { if (!EX) return ''; const v = EX.lesson ? ttLessonProg().tier?.[EX.lesson]?.[k] : TT.aw.get().pb[T?.id]?.tiers?.[k]?.best; if (v == null) return ''; return ' · Best ' + v + (EX.lesson ? (v >= TT_LS_PASS ? ', passed' : '') : ttMedal(v) ? ', ' + ttMedal(v)[2].toLowerCase() : ''); };
     return ttAreaPick({ cur: cur[0], best, need: painNeed(), keep: auto && ttAreaFits(cur[0], painNeed()) ? 'Keep ' + cur[0].toLowerCase() : null,
       intro: EX ? `The body area sets how quickly the client feels it. Each level keeps its own ${EX.lesson ? 'pass' : 'medal'}.` : 'The body area sets how quickly the client feels it, and the outline shows its size.' }); };
-  const painSet = async (pick) => { if (!pick) return; if (EX?.cur) EX.cur.area = pick; if (!EX) st.area = pick; await Settings.set('tt_area', pick); st.dirty = true; if (EX) exBar(); painShow(); paint(); };
+  const painSet = async (pick) => { if (!pick) return; paC = null; if (EX?.cur) EX.cur.area = pick; if (!EX) st.area = pick; await Settings.set('tt_area', pick); st.dirty = true; if (EX) exBar(); painShow(); paint(); };
   const painWord = (v) => v < 0.3 ? 'Relaxed' : v < 0.6 ? 'Uncomfortable' : v < 0.85 ? 'Wincing' : 'Needs a break';
+  let painRaf = 0;
   function painShow() { const el = $('#tt-pain'); if (!el) return; el.hidden = !painOn(); if (el.hidden) return; const v = Math.min(1, pcur().pain || 0), b = el.querySelector('b'), w = el.querySelector('em');
     b.style.width = (v * 100).toFixed(1) + '%'; b.style.background = `hsl(${Math.round(120 - 120 * v)} 70% 45%)`; w.textContent = painWord(v); }
   /* Pain is felt per patch of skin (the wear grid's cells, PC): each patch builds its own soreness while the needle is
@@ -1291,7 +1294,7 @@ TT.open = async (el, id) => {
     c.pain = c.pain || 0; if (top > c.pain) c.pain = top; else if (top < c.pain - 0.15) c.pain = Math.max(top, pfMax, c.pain - dt * 0.012);   /* fresh skin: the meter holds and eases a little */
     if (w >= 0.8 && c.pain >= DV.flashAt && (painLast < DV.flashAt || (painLast < 0.85 && c.pain >= 0.85) || c.pain - painLast > 0.03)) hurtFlash(c.pain);   /* only on swollen skin: crossing into wincing, into needing a break, or a sharp spike */
     painLast = c.pain; if (EX?.cur) { const PH = EX.cur.painH ||= new Array(10).fill(0); PH[Math.min(9, Math.floor(c.pain * 10))] += dt; }   /* needle time spent at each tenth of the pain meter, for the stats */
-    c.painPeak = Math.max(c.painPeak || 0, c.pain); painShow();
+    c.painPeak = Math.max(c.painPeak || 0, c.pain); if (!painRaf) painRaf = requestAnimationFrame(() => { painRaf = 0; painShow(); });
     if (!EX) { c.pain = Math.min(1, c.pain); if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); } else if (c.pain >= 0.6 && painTold < 1) { painTold = 1; toast('The client is wincing: ease off, or work another part for a while.', 3500); } }
     else if (c.pain >= 1 && !c.tapOut) { c.tapOut = true; toast('The client tapped out. The attempt is judged on what you got done.', 5000); setTimeout(() => { try { exDone(); } catch {} }, 250); }
     else if (c.pain >= 0.85 && painTold < 2) { painTold = 2; toast('The client needs a break. Lift off and let them rest a moment.', 3500); }
@@ -1548,7 +1551,7 @@ TT.open = async (el, id) => {
     cg.clearRect(x0, y0, w, h); cg.drawImage(skin, 0, 0); skinUnder(cg, true);
     for (const key of TT_DRAW) { if (st.hide.has(key)) continue;
       cg.globalAlpha = key === 'stencil' ? st.op.stencil : (st.op[key] ?? (key === 'marker' ? 0.9 : 1)); cg.globalCompositeOperation = key === 'high' ? 'source-over' : 'multiply';
-      if ((key === 'stencil' || key === 'marker') && wearAny && !CHEAT) { if (wearDirty || (x0 === 0 && y0 === 0 && w === W && h === H)) stenBuild(); cg.drawImage(key === 'marker' ? markV : stenV, 0, 0); } else cg.drawImage(L[key], 0, 0);
+      if ((key === 'stencil' || key === 'marker') && wearAny && !CHEAT) { if (key === 'stencil' && (wearDirty || (x0 === 0 && y0 === 0 && w === W && h === H))) stenBuild(); cg.drawImage(key === 'marker' ? markV : stenV, 0, 0); } else cg.drawImage(L[key], 0, 0);
       if (key === 'high') cg.drawImage(L[key], 0, 0); }   // white laid twice: fresh white ink reads bright, not grey
     cg.globalAlpha = 1; cg.globalCompositeOperation = 'source-over'; skinOver(cg); if (CHEAT && st.letters?.length && !st.hide.has('stencil')) cg.drawImage(LT, 0, 0); cg.restore(); };
   /* Damage map: every patch of skin that has been worked, coloured by how irritated it is now and how worn it is from
@@ -1570,12 +1573,20 @@ TT.open = async (el, id) => {
       D[q] = c0[0] + (c1[0] - c0[0]) * f; D[q + 1] = c0[1] + (c1[1] - c0[1]) * f; D[q + 2] = c0[2] + (c1[2] - c0[2]) * f; D[q + 3] = 200; }
     g.putImageData(im, 0, 0); const el = $('#tt-dmginfo'), pc = (v) => Math.round(v / Math.max(1, n) * 100) + '%';
     if (el) el.textContent = n ? `Overworked ${pc(ow)} · Swollen ${pc(sw)} · Red ${pc(red)} · worst: ${skinWord(worst)}` : 'Nothing worked yet'; };
+  let paintVk = '';
   const paint = (rect) => { if (rect && wearR) { const a = wearR; wearR = null; paint(a); } if (rect) compR = compR ? { x0: Math.min(compR.x0, rect.x0), y0: Math.min(compR.y0, rect.y0), x1: Math.max(compR.x1, rect.x1), y1: Math.max(compR.y1, rect.y1) } : rect; else compAll = true;
     cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
     const dpr = cv.width / (stage.clientWidth || 1), { cx, cy } = org();
-    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
+    /* While working with the view still, only the screen round the changed patch is drawn again (the rest of the
+       canvas already shows it): redrawing every screen pixel each frame, shadow and all, was what let a long stroke
+       fall behind, worst when zoomed in. Anything else (a move, a zoom, a preview, the damage map) draws it all. */
+    const vk = [cv.width, cv.height, k, vx, vy, st.rot, st.view, st.check, st.abox, st.area, st.hide.size].join(), R0 = compR;
+    const part = !compAll && R0 && vk === paintVk && st.view === 'work' && !st.check && !PAT && !(trDirty && !pen) && R0.x0 > 2 && R0.y0 > 2 && R0.x1 < W - 2 && R0.y1 < H - 2; paintVk = vk;
+    x.setTransform(1, 0, 0, 1, 0, 0); if (!part) x.clearRect(0, 0, cv.width, cv.height);
     x.setTransform(dpr, 0, 0, dpr, 0, 0); x.translate(cx, cy); x.rotate(st.rot); x.scale(k, k); x.translate(-W / 2, -H / 2);
-    x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 24; x.fillStyle = '#000'; x.fillRect(0, 0, W, H); x.shadowBlur = 0;
+    if (part) { const M = x.getTransform(), P = [[R0.x0, R0.y0], [R0.x1, R0.y0], [R0.x0, R0.y1], [R0.x1, R0.y1]].map(([a, b]) => M.transformPoint({ x: a, y: b })), X0 = Math.floor(Math.min(...P.map(q => q.x))) - 2, Y0 = Math.floor(Math.min(...P.map(q => q.y))) - 2, X1 = Math.ceil(Math.max(...P.map(q => q.x))) + 2, Y1 = Math.ceil(Math.max(...P.map(q => q.y))) + 2;
+      x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.beginPath(); x.rect(X0, Y0, X1 - X0, Y1 - Y0); x.clip(); x.setTransform(M); }
+    else { x.shadowColor = 'rgba(0,0,0,.45)'; x.shadowBlur = 24; x.fillStyle = '#000'; x.fillRect(0, 0, W, H); x.shadowBlur = 0; }
     if (st.view !== 'work') { x.drawImage(skin, 0, 0); st.viewC ||= viewOf(st.view); x.drawImage(st.viewC, 0, 0); }
     else { if (trDirty && !pen) { buildTrauma(); compAll = true; }   // the skin's redness catches up when the needle lifts
       if (compAll) recomp(0, 0, W, H);
@@ -1591,10 +1602,15 @@ TT.open = async (el, id) => {
     x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
     const deg = Math.round(((st.rot * 180 / Math.PI) % 360 + 360) % 360);
     $('#tt-zl') && ($('#tt-zl').textContent = Math.abs(z - 1) < 0.01 && !vx && !vy && !deg ? 'Fit' : Math.round(z * 100) + '%' + (deg ? ' · ' + deg + '°' : ''));
+    if (part) x.restore();
     if (CHEAT) { const vk = k + ',' + vx + ',' + vy + ',' + st.rot; if (vk !== lastVk) { lastVk = vk; placeGuides(); } }
   }); };
   const zoomAt = (nz, px, py) => { const p = fromScreen(px, py); z = Math.max(0.5, Math.min(12, nz)); k = fitK * z; pinTo(p, px, py); paint(); };
-  const toPage = (e) => { const r = stage.getBoundingClientRect(); return fromScreen(e.clientX - r.left, e.clientY - r.top); };
+  /* Where the stage sits on screen, kept until it resizes or the page scrolls: asking on every pen event made the
+     browser lay the page out again each time (the meters change every frame). */
+  let stR = null; const stRect = () => stR || (stR = stage.getBoundingClientRect()), stRo = new ResizeObserver(() => { stR = null; if (!stage.isConnected) { stRo.disconnect(); removeEventListener('scroll', stDrop, true); removeEventListener('resize', stDrop); } }), stDrop = () => { stR = null; };
+  stRo.observe(stage); addEventListener('scroll', stDrop, true); addEventListener('resize', stDrop);
+  const toPage = (e) => { const r = stRect(); return fromScreen(e.clientX - r.left, e.clientY - r.top); };
 
   /* ---------- Needle engine ---------- */
   let cal = TT.cal();
@@ -2601,7 +2617,7 @@ TT.open = async (el, id) => {
 
   const cur = $('#tt-cur'), cux = cur.getContext('2d'); let curAt = null;
   const drawCur = (e) => { cv.style.cursor = st.check ? "crosshair" : "";   /* the damage map draws no needle, so show the mouse */
-    const r = stage.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1);
+    const r = stRect(), dpr = Math.min(2, devicePixelRatio || 1);
     if (cur.width !== Math.round(r.width * dpr)) { cur.width = Math.round(r.width * dpr); cur.height = Math.round(r.height * dpr); cur.style.width = r.width + 'px'; cur.style.height = r.height + 'px'; }
     cux.setTransform(1, 0, 0, 1, 0, 0); cux.clearRect(0, 0, cur.width, cur.height); drawGuides();
     if (e) curAt = { x: e.clientX - r.left, y: e.clientY - r.top, ev: e };
@@ -2644,7 +2660,8 @@ TT.open = async (el, id) => {
       cux.fillStyle = '#fff'; cux.fill(); cux.globalAlpha = Math.max(0.12, st.ink.s ?? 1); cux.fillStyle = ttToHex(st.ink.c); cux.fill(); cux.globalAlpha = 1;
       cux.lineWidth = 1.5; cux.strokeStyle = 'rgba(0,0,0,.7)'; cux.stroke(); }
   };
-  cv.addEventListener('pointerleave', () => { curAt = null; drawCur(); });
+  let curNext = null, curRaf = 0;
+  cv.addEventListener('pointerleave', () => { curAt = null; cancelAnimationFrame(curRaf); curRaf = 0; drawCur(); });
 
   /* ---------- Pointer: pen draws; fingers move the page (or draw too, when allowed) ---------- */
   const pts = new Map(); let pinch = null, pan = null, space = false;
@@ -2683,7 +2700,7 @@ TT.open = async (el, id) => {
     if (mk && e.pointerId === mk.id) { if (mk.snapped && snapE?.grab) snapDrag(e); else mkMove(e); }
     if (pen && e.pointerId === pen.id) { if (pen.snapped && snapE?.grab) snapDrag(e); else strokeMove(e);
       if (CHEAT && !pen.snapped) { const h0 = pen.hold; if (!h0 || Math.hypot(e.clientX - h0.x, e.clientY - h0.y) > 4) { clearTimeout(h0?.t); pen.hold = { x: e.clientX, y: e.clientY, t: setTimeout(snapNow, 550) }; } } }
-    if (e.pointerType !== 'touch' || ((st.check || td || mk) && !pan)) { const pr = e.getPredictedEvents?.(); drawCur(pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e); }   // a slow line follows the pen exactly; prediction only helps quick sweeps
+    if (e.pointerType !== 'touch' || ((st.check || td || mk) && !pan)) { const pr = e.getPredictedEvents?.(); curNext = pen && pen.speed > 60 && pr?.length ? pr[pr.length - 1] : e; if (!curRaf) curRaf = requestAnimationFrame(() => { curRaf = 0; drawCur(curNext); }); }   /* once a frame, at the newest point */   // a slow line follows the pen exactly; prediction only helps quick sweeps
     calLive(e);
   });
   // a quick tap of two fingers (undo) or three (redo) that didn't move: cheat mode only
