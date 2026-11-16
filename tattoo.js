@@ -15,7 +15,7 @@ const TT_BUILD = APP_BUILD;   // shown on the lessons screen and report card, so
 /* ---------- Needles ----------
    Offsets in mm: u across the stroke, v along it. Diameter by needle size (#10 = 0.30 mm, #12 = 0.35 mm). */
 const TT_KINDS = { liner: ['RL', 'Round liners'], shader: ['RS', 'Round shaders'], mag: ['M1', 'Magnums'], soft: ['CM', 'Soft edge magnums'] };
-const TT_NEEDLES = [['liner', [1, 3, 5, 7, 9, 11, 14]], ['shader', [5, 7, 9, 11, 14]], ['mag', [7, 9, 11, 13, 15]], ['soft', [9, 13, 15, 23, 31]]]
+const TT_NEEDLES = [['liner', [1, 3, 5, 7, 9, 11, 14]], ['shader', [5, 7, 9, 11, 14]], ['mag', [7, 9, 11, 13, 15]], ['soft', [9, 11, 13, 15, 23, 31]]]
   .flatMap(([kind, ns]) => ns.map(n => ({ id: n + TT_KINDS[kind][0], kind, n,
     name: `${{ liner: 'Liner', shader: 'Shader', mag: 'Magnum', soft: 'Soft edge magnum' }[kind]}, ${n} needle${n > 1 ? 's' : ''}` })));
 function ttLayout(nd, dia) {
@@ -49,9 +49,14 @@ const TT_LIMITS = { cal: { flow: [1, 0.25], hand: [-1, 0.5], fade: [-1, 0.2], to
 // A measured working speed sets hand speed, fade and voltage, along the same curve the old presets sat on. 60 mm/s is the reference packing speed for the default hand of 4.1.
 const ttHandFrom = (v) => { const hand = Math.max(1.27, Math.min(5, 4.1 * 60 / Math.max(5, v))), P = [...TT_PROFILES].sort((a, b) => a[2] - b[2]); let i = 0; while (i < P.length - 2 && hand > P[i + 1][2]) i++; const f = (hand - P[i][2]) / (P[i + 1][2] - P[i][2]), mix = (n) => P[i][n] + (P[i + 1][n] - P[i][n]) * f; return { hand: +hand.toFixed(2), fade: +mix(3).toFixed(3), voltOff: +mix(4).toFixed(2) }; };
 const TT_LOOK = { thin: 45, tex: 100 }, TT_STRETCH = 75;
+/* Magnum tilt steps: how many needles stay in the skin at each step of tilting the stack, flat first. Easier to hold
+   with a stylus than an exact angle: the lean picks a step, and the tilt that keeps exactly that many in at the depth
+   you are working is found from the needles themselves (so it holds as pressure changes). */
+const TT_MAG_STEPS = { '7M1': [7, 3], '9M1': [9, 5, 3], '11M1': [11, 5, 3], '13M1': [13, 7, 3], '15M1': [15, 9, 3],
+  '9CM': [9, 5, 3], '11CM': [11, 5, 3], '13CM': [13, 7, 3], '15CM': [15, 9, 3], '23CM': [23, 15, 11, 5], '31CM': [31, 17, 9, 5] };
 const TT_TOUGH = 1.8;   // what Skin toughness 1 means
 const TT_VOLT = { '1RL': 7.0, '3RL': 7.55, '5RL': 7.35, '7RL': 7.5, '9RL': 7.6, '11RL': 7.7, '14RL': 7.9, '5RS': 6.6, '7RS': 6.7, '9RS': 6.8, '11RS': 6.9, '14RS': 7,
-  '7M1': 6.5, '9M1': 6.55, '11M1': 6.6, '13M1': 8.25, '15M1': 6.55, '9CM': 6.5, '13CM': 6.6, '15CM': 7.45, '23CM': 6.7, '31CM': 6.75 };
+  '7M1': 6.5, '9M1': 6.55, '11M1': 6.6, '13M1': 8.25, '15M1': 6.55, '9CM': 6.5, '11CM': 6.55, '13CM': 6.6, '15CM': 7.45, '23CM': 6.7, '31CM': 6.75 };
 // Single groupings set apart from their kind, tuned on a real tablet by a relatively slow hand.
 const TT_FEEL_ID = { '1RL': { size: 0.25 }, '15M1': { speedFade: 100, tiltSpread: 55, size: 0.3, hang: 51 }, '23CM': { tiltSpread: 49, flow: 85, bleed: 35, miss: 40, hang: 65 }, '31CM': { hand: 31, speedFade: 47, tiltFade: 38, flow: 85 } };
 /* Hand speed: how fast this artist moves. Each sets a starting hand speed, how much fast strokes fade and an offset
@@ -168,7 +173,7 @@ const TT = {
   /* Overall calibration, for this device and hand, on top of every needle's own feel: the pen's pressure range,
      a pressure curve, hand speed (how far apart punctures land), how much fast strokes lighten, the angle the pen
      is naturally held at (tilt counts from there) and ink flow. Set by Tune in, or by hand. */
-  calDefaults: { penOnly: true, pMin: 0.2, pMax: 0.866, curve: -75, hand: 4.1, fade: 0.35, flow: 2, tilt0: 35, profile: 'slow', voltOff: 0, blow: 1.2, tough: 1.25, t3: 1, t4: 1, b3: 1, t5: 1 },
+  calDefaults: { penOnly: true, pMin: 0.2, pMax: 0.866, curve: -75, hand: 4.1, fade: 0.35, flow: 2, tilt0: 35, tiltMax: 60, profile: 'slow', voltOff: 0, blow: 1.2, tough: 1.25, t3: 1, t4: 1, b3: 1, t5: 1 },
   // Toughness scale: rescaled twice (each time × 1 became what × 2.5 was); t2/t3 mark which scale a saved value is
   // on, and older ones are moved across.
   cal() { try { const s = JSON.parse(Settings.get('tt_cal', '{}')); if (s.tough != null && !s.t3) { s.tough = Math.round(s.tough / (s.t2 ? 2.5 : 6.25) * 100) / 100; s.t3 = 1; } if (s.tough != null && !s.t4) { s.tough = Math.round(s.tough / 1.8 * 100) / 100; s.t4 = 1; } if (s.tough === 1.5 && !s.t5) { s.tough = 1.25; s.t5 = 1; } if (s.blow != null && !s.b3) { s.blow = Math.round(s.blow / 3 * 100) / 100; s.b3 = 1; } return { ...TT.calDefaults, ...s }; } catch { return { ...TT.calDefaults }; } },
@@ -731,6 +736,8 @@ const TT_DEV = [
   ['blowSlope', 'blow', 'Safe pace rise with depth (mm)', 0, 0.2, 0.001, 0.075, 'How much faster you must keep moving as you go deeper. Higher makes going deep blow out at ordinary speeds.'],
   ['blowRamp', 'blow', 'How sudden (mm)', 0.005, 0.1, 0.001, 0.035, 'How quickly the chance goes from none to certain once you are too slow. Lower is a sharper edge.'],
   ['blowRate', 'blow', 'Blowout chance', 0.2, 4, 0.05, 1.5, 'Overall chance of a blowout once you are past the safe pace.'],
+  ['tiltSnap', 'needles', 'Magnum tilt steps (1 on, 0 free)', 0, 1, 1, 1, 'On: a magnum\u2019s tilt goes in steps (all needles, then fewer) that hold their needle count as pressure changes. Off: the tilt follows the pen freely.'],
+  ['tiltHold', 'needles', 'Tilt step hold', 0, 0.45, 0.01, 0.12, 'How far past the halfway point you must lean before the tilt moves to the next step. Higher holds a step more firmly.'],
   ['wearLiner', 'needles', 'Liner skin wear', 0.2, 3, 0.05, 1, 'How hard round liners work the skin per hit.'],
   ['wearShader', 'needles', 'Round shader skin wear', 0.2, 3, 0.05, 0.75, 'How hard round shaders work the skin per hit.'],
   ['wearMag', 'needles', 'Magnum skin wear', 0.2, 3, 0.05, 1.6, 'How hard magnums work the skin per hit.'],
@@ -1618,7 +1625,7 @@ TT.open = async (el, id) => {
   const curve = (p, c) => Math.pow(Math.max(0, Math.min(1, p)), Math.pow(2, Math.max(-150, Math.min(150, c)) / 50));   // c -100..100: soft (light presses go deep) .. firm (press harder)
   // The input, through the overall calibration and then the needle's feel.
   const pNorm = (ev) => ev.pointerType === 'mouse' ? 0.6 : Math.max(0, Math.min(1, ((ev.pressure || 0.5) - cal.pMin) / Math.max(0.05, cal.pMax - cal.pMin)));
-  const tiltOf = (ev) => Math.max(0, Math.min(1, (Math.hypot(ev.tiltX || 0, ev.tiltY || 0) - cal.tilt0) / Math.max(10, 60 - cal.tilt0)));
+  const tiltOf = (ev) => Math.max(0, Math.min(1, (Math.hypot(ev.tiltX || 0, ev.tiltY || 0) - cal.tilt0) / Math.max(10, (cal.tiltMax ?? 60) - cal.tilt0)));   /* 0 at your natural angle, 1 at the steepest lean you set */
   const depthOf = (pr, speed, tilt0) => { const tilt = isMag() ? 0 : tilt0, d = (feel.dMin + (feel.dMax - feel.dMin) * curve(pr, feel.pCurve + cal.curve)) * (0.8 + (volt() - 6.5) * 0.15);   // harder hits at higher voltage
     return Math.max(0.02, Math.min(1, d * (1 - Math.min(0.9, speed / 200 * feel.speedFade / 100 * cal.fade) - tilt * feel.tiltFade / 100 * 0.6))); };
   const volt = () => Math.max(4, Math.min(11, (feel.volt ?? 7) + (cal.voltOff || 0)));
@@ -1673,7 +1680,20 @@ TT.open = async (el, id) => {
     const te = Math.min(1, Math.abs(nd.t - s * tau)); return Math.max(0, depth * (0.22 + 0.78 * Math.pow(Math.cos(te * Math.PI / 2), 1.5)) - tau * 0.25 * q); };
   // The set tilt plus the way the pen is leaning along the row (leaning towards an end puts that end down).
   const setRoll = (ev, a) => { let lean = 0; if (isMag() && ev && st.magTilt) { const tx = ev.tiltX || 0, ty = ev.tiltY || 0, h = Math.hypot(tx, ty); if (h > 1) lean = tiltOf(ev) * (tx * -Math.sin(a) + ty * Math.cos(a)) / h; }
-    rollNow = isMag() ? Math.max(-1, Math.min(1, (st.magRoll || 0) + lean)) : 0; };
+    const raw = isMag() ? Math.max(-1, Math.min(1, (st.magRoll || 0) + lean)) : 0; rollNow = raw;
+    const steps = TT_MAG_STEPS[st.needle]; if (!raw || !steps || !DV.tiltSnap || !pen) return;
+    /* The lean picks a step; it stays on the step it is on until the lean goes clearly past the halfway point to the
+       next (DV.tiltHold): a stabiliser, so a wobbling stylus keeps the same needles in. */
+    const n = steps.length - 1, at = Math.abs(raw) * n, cur = pen.tiltI ?? Math.round(at);
+    const i = at > cur + 0.5 + DV.tiltHold ? Math.min(n, Math.round(at)) : at < cur - 0.5 - DV.tiltHold ? Math.max(0, Math.round(at)) : cur; pen.tiltI = i;
+    rollNow = i ? Math.sign(raw) * magRollFor(steps[i], st.lastD ?? 0.5) : 0; };
+  /* The tilt (0 to 1) that keeps exactly `count` needles in the skin at this depth: the middle of the range of tilts
+     that do, found by trying them along the stack. Kept for a moment per needle, count and depth. */
+  const rollC = new Map();
+  const magRollFor = (count, depth) => { const key = st.needle + '|' + count + '|' + depth.toFixed(2) + '|' + feel.size; let v = rollC.get(key); if (v != null) return v;
+    const hits = (t) => { let h = 0; for (const nd of lay) if (magReach(nd, depth, t) > depth * 0.004) h++; return h; }; let lo = -1, hi = -1, best = 4, bd = 1e9;
+    for (let t = 0.02; t <= 6.0001; t += 0.02) { const h = hits(t);   /* past a full tilt: a big curved magnum needs a steep stack to keep only 3 or 5 in */ if (h === count) { if (lo < 0) lo = t; hi = t; } const dd = Math.abs(h - count); if (dd < bd) { bd = dd; best = t; } }
+    v = lo >= 0 ? (lo + hi) / 2 : best; if (rollC.size > 400) rollC.clear(); rollC.set(key, v); return v; };
   // Round shaders take to the skin less readily, and less again the faster they move, so packing has to be worked in rather than scrubbed.
   const wideTex = () => isMag() ? nlook.tex : 1;
   const puncture = (cx, p, a, depth, tilt0, inkC, erase, sc = mm) => {
@@ -3115,7 +3135,8 @@ TT.open = async (el, id) => {
         <div class="lbl">Your pen</div>
         ${cslider('curve', 'Pressure curve', -150, 0, 1, cal.curve, v => v < 0 ? 'soft ' + -v : v > 0 ? 'firm ' + v : 'even')}
         ${cslider('pMin', 'Lightest pen reading', 0, 0.4, 0.01, cal.pMin, v => Math.round(v * 100) + '%')}${cslider('pMax', 'Hardest pen reading', 0.732, 1, 0.002, cal.pMax, v => Math.round(v * 100) + '%')}
-        ${cslider('tilt0', 'Natural angle', 20, 50, 1, cal.tilt0, v => v + '°')}
+        ${cslider('tilt0', 'Natural angle', 20, 50, 1, cal.tilt0, v => v + '°')}${cslider('tiltMax', 'Steepest lean', 35, 85, 1, cal.tiltMax ?? 60, v => v + '°')}
+        <button class="btn small" data-tiltset data-tip="Lean the pen as far as you like to tilt a magnum, then tap here with it: that becomes your steepest lean">Set steepest lean with the pen</button>
         <button class="btn small" data-calreset>Reset all needles</button> <button class="btn small" data-toolreset>Reset tool settings</button>`,
       look: () => intro('How the needles look, for all needles and pieces. It takes effect on your next stroke.') + `<label class="dz-sl"><span>Needle thickness<b id="tt-thinv">${Math.round(nlook.thin * 100)}%</b></span><input type="range" min="20" max="70" step="5" value="${Math.round(nlook.thin * 100)}" data-nthin>${zoneHtml(20, 70, TT_LOOK.thin, TT_LIMITS.look.thin)}</label>
         <label class="dz-sl"><span>Magnum needle texture<b id="tt-texv">${Math.round(nlook.tex * 100)}%</b></span><input type="range" min="0" max="100" step="5" value="${Math.round(nlook.tex * 100)}" data-ntex>${zoneHtml(0, 100, TT_LOOK.tex, TT_LIMITS.look.tex)}</label>
@@ -3128,6 +3149,7 @@ TT.open = async (el, id) => {
       <div class="tt-ffoot"><span class="tt-unsaved" ${TT.changed() ? '' : 'hidden'}>Unsaved changes</span><button class="btn small" data-setsave ${TT.changed() ? '' : 'disabled'} data-tip="Keep these as your settings from now on. Unsaved changes reset when the app next loads.">Save settings</button><button class="btn small" data-setexp data-tip="Save your settings to a file, to load in another workspace or on another device">Export</button><button class="btn small" data-setimp data-tip="Load settings from an exported file">Import</button></div>`;
     padInit();
   };
+  side.addEventListener('pointerdown', (e) => { side._lastPd = e; }, true);   /* the pen's lean when a button is tapped (Set steepest lean) */
   side.addEventListener('click', async (e) => {
     const t = e.target;
     if (t.closest('[data-close]')) { st.panel = null; return drawSide(); }
@@ -3149,6 +3171,8 @@ TT.open = async (el, id) => {
       st.layer = ly; st.dirty = true; return drawSide();
     }
     if (t.closest('[data-nnew]')) { nlook.thin = 0.45; nlook.tex = 1; Settings.set('tt_thin', String(Math.round(nlook.thin * 100))); Settings.set('tt_tex', String(Math.round(nlook.tex * 100))); drawCur(); return drawSide(); }
+    if (t.closest('[data-tiltset]')) { const ev = side._lastPd; if (!ev || ev.pointerType !== 'pen') return toast('Tap it with the pen, leaning as far as you like to tilt a magnum.', 3000); const h = Math.round(Math.hypot(ev.tiltX || 0, ev.tiltY || 0));
+      if (h < cal.tilt0 + 8) return toast(`That lean (${h}°) is too close to your natural angle (${cal.tilt0}°). Lean further and tap again.`, 3500); cal.tiltMax = h; TT.saveCal(cal); toast(`Steepest lean set: ${h}°.`, 2000); return drawSide(); }
     if (t.closest('[data-sz]')) { feel.size = +t.closest('[data-sz]').dataset.sz; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawCur(); drawSz(); return drawSide(); }
     if (t.closest('[data-feelreset]')) { TT.setFeel(st.needle, null); setNeedle(st.needle); return drawSide(); }
     if (t.closest('[data-padclear]')) return padInit();

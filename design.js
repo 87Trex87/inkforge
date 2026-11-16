@@ -88,9 +88,9 @@ const PAT_SIZES = [20, 40, 60, 100, 150];
    which can be the only one allowed while it is played. Play builds the challenge for the simulator (dzChSpec). */
 const CH_PX = 10;
 const CH_NW = { '1RL': 0.25, '3RL': 0.57, '5RL': 0.7, '7RL': 0.77, '9RL': 0.91, '11RL': 0.91, '14RL': 1.06, '5RS': 1.12, '7RS': 1.26, '9RS': 1.54, '11RS': 1.54, '14RS': 1.82,
-  '7M1': 1.4, '9M1': 1.75, '11M1': 2.1, '13M1': 2.45, '15M1': 2.4, '9CM': 1.75, '13CM': 2.45, '15CM': 2.8, '23CM': 4.2, '31CM': 5.6 };   /* mm, from the simulator's needle layouts */
+  '7M1': 1.4, '9M1': 1.75, '11M1': 2.1, '13M1': 2.45, '15M1': 2.4, '9CM': 1.75, '11CM': 2.1, '13CM': 2.45, '15CM': 2.8, '23CM': 4.2, '31CM': 5.6 };   /* mm, from the simulator's needle layouts */
 const CH_LINERS = ['1RL', '3RL', '5RL', '7RL', '9RL', '11RL', '14RL'];
-const CH_PACKERS = ['5RS', '7RS', '9RS', '11RS', '14RS', '7M1', '9M1', '11M1', '13M1', '15M1', '9CM', '13CM', '15CM', '23CM', '31CM'];
+const CH_PACKERS = ['5RS', '7RS', '9RS', '11RS', '14RS', '7M1', '9M1', '11M1', '13M1', '15M1', '9CM', '11CM', '13CM', '15CM', '23CM', '31CM'];
 /* Packing and shading can allow several needles (l.nds), any of which the artist may use and mix, like lining with a
    7RL then packing with a 7M1, 13M1 or 23CM; l.nd is the first. Lines keep one needle. */
 const dzChOr = (a) => a.length > 1 ? 'the ' + a.slice(0, -1).join(', ') + ' or ' + a.at(-1) + ' (mix and match them as you like)' : 'the ' + (a[0] || '');
