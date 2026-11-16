@@ -1488,6 +1488,7 @@ TT.open = async (el, id) => {
       <button class="dz-ib" id="tt-panels" data-tip="Panels: show or hide each one" aria-label="Panels"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 9h6"/></svg></button>
       <button class="dz-ib" id="tt-undo" data-tip="Undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
       <button class="dz-ib" id="tt-redo" data-tip="Redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+      <button class="dz-ib" id="tt-restart" data-tip="Start over: clear all the tattooing" aria-label="Start over"><svg viewBox="0 0 24 24"><path d="M4 4v6h6"/><path d="M5.5 15a7.5 7.5 0 1 0 1.7-7.8L4 10"/></svg></button>
       <button class="dz-ib tt-viewb" id="tt-view" data-tip="Preview: as worked, fresh, healed or after 10 years" aria-label="Preview"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg><b></b></button>
       <button class="dz-ib" id="tt-stencilmk" data-tip="Send to the stencil maker" aria-label="Stencil maker">${ICON.stencil}</button>
       <button class="dz-ib" id="tt-fs" data-tip="Full screen" aria-label="Full screen" ${typeof FS !== 'undefined' && FS.can() ? '' : 'hidden'}></button>
@@ -3526,6 +3527,13 @@ TT.open = async (el, id) => {
   addEventListener('hashchange', onHash); document.addEventListener('visibilitychange', onVis);
   $('#tt-name').onchange = () => { st.dirty = true; };
   $('#tt-undo').onclick = undo; $('#tt-redo').onclick = redo;
+  /* Start over: in a lesson or challenge, a Quick restart (fresh stencil and marker); on a piece of your own, the ink and
+     the skin are cleared and the stencil and marker kept. Undo history goes with it. */
+  $('#tt-restart').onclick = async () => {
+    if (!await ask('Start over? All the tattooing is cleared and the skin is fresh again. This cannot be undone.')) return;
+    if (EX && !EX.done && EX.cur) exStart(true, true);
+    else { const mg = L.marker.getContext('2d'), mk = mg.getImageData(0, 0, W, H); exClear(); mg.putImageData(mk, 0, 0); tally(); paint(); st.dirty = true; }
+    hist.length = fut.length = 0; };
   const VIEWS = [['work', ''], ['fresh', 'Fresh'], ['healed', 'Healed'], ['aged', '10 yrs']];
   const drawView = () => { const b = $('#tt-view'); if (!b) return; b.querySelector('b').textContent = VIEWS.find(v => v[0] === st.view)[1]; b.classList.toggle('on', st.view !== 'work'); };
   $('#tt-view').onclick = () => { const i = VIEWS.findIndex(v => v[0] === st.view); st.view = VIEWS[(i + 1) % VIEWS.length][0]; st.viewC = null; drawView(); paint();
@@ -3815,7 +3823,7 @@ TT.open = async (el, id) => {
     if (T.refImg) { const sr = stage.getBoundingClientRect(), eb = $('#tt-exbar')?.getBoundingClientRect(), top = eb?.height ? eb.bottom - sr.top + 10 : 150, h = Math.max(100, Math.min(260, sr.height - top - 140)), w = h / T.refAr;   // an example of the finished look, under the instructions
       refNew({ gen: T.id, src: T.refImg, ar: T.refAr, w, op: 1, x: sr.width - w / 2 - 14, y: top + h / 2 }); }
     refSel = null;
-    st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; st.wash = !!T.wash;   // each challenge starts with a clean, empty needle
+    st.ink = { c: [1, 1, 1], v: 0, s: 1, w: 0 }; st.wash = !!T.wash; st.recent = [];   /* recent mixes cleared: colours are mixed from scratch each attempt */   // each challenge starts with a clean, empty needle
     if (T.magline) { st.magTilt = true; st.magRoll = +Settings.get('tt_autotilt', '0') || 0; if (EX.cur) EX.cur.autoTilt = st.magRoll; }   /* a pen without tilt: held tilted for it (noted on the report) */
     if (T.presets) for (const [id, f] of Object.entries(T.presets)) TT.setFeel(id, { ...TT.feel(id), ...f });   // each needle the lesson uses, set up as it asks
     setNeedle(T.needle); if (T.size || T.volt) { if (T.size) feel.size = T.size; if (T.volt) feel.volt = T.volt; TT.setFeel(st.needle, feel); lay = ttLayout(TT_NEEDLES.find(n => n.id === st.needle), feel.size); drawSz(); drawVolt(); }   // a lesson that asks for a size and voltage starts there
