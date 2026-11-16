@@ -599,7 +599,7 @@ const TT_LETTER_WORDS = ['Believe', 'Blessed', 'Courage', 'Destiny', 'Freedom', 
 let TT_LT = null, ttLtFontP = null;
 const ttLetterFont = () => ttLtFontP || (ttLtFontP = new Promise(res => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap'; l.onload = () => document.fonts.load('30px "Great Vibes"').then(res, res); l.onerror = res; document.head.appendChild(l); setTimeout(res, 6000); }));
 const ttLetterFit = (word) => { const g = document.createElement('canvas').getContext('2d'); g.font = '30px "Great Vibes", cursive'; const w = g.measureText(word).width || 120; return { word, size: Math.min(19, 30 * 56 / w) }; };   /* wrist size: about 5.5 cm across */
-const ttLetterPath = (g, fill, w) => { const L = TT_LT; if (!L) return true; g.font = `${L.size}px "Great Vibes", cursive`; g.textAlign = 'center'; g.textBaseline = 'middle'; if (fill) g.fillText(L.word, 90, 62); else { g.lineWidth = w ?? 0.3; g.lineJoin = g.lineCap = 'round'; g.strokeText(L.word, 90, 62); } return true; };   /* returns true: it draws itself (see maskOf) */
+const ttLetterPath = (g, fill, w) => { const L = TT_LT; if (!L) return true; g.font = `${L.size}px "Great Vibes", cursive`; g.textAlign = 'center'; g.textBaseline = 'middle'; const cx = L.cx ?? 90, cy = L.cy ?? 62; if (fill) g.fillText(L.word, cx, cy); else { g.lineWidth = w ?? 0.3; g.lineJoin = g.lineCap = 'round'; g.strokeText(L.word, cx, cy); } return true; };   /* returns true: it draws itself (see maskOf) */
 // A flag on a pole, in mm: pole, ball, two waving edges (each an S) and the flag's end.
 const TT_FLAG = [['l', 45, 30, 45, 110], ['a', 45, 26, 4, 90, 450], ['c', 45, 36, 60, 18, 72, 18, 77.5, 36], ['c', 77.5, 36, 83, 54, 97, 36, 110, 36], ['l', 110, 36, 110, 70], ['c', 45, 70, 60, 52, 72, 52, 77.5, 70], ['c', 77.5, 70, 83, 88, 97, 70, 110, 70]];
 const ttGeomDraw = (g, segs) => { for (const s of segs) { if (s[0] === 'l') { g.moveTo(s[1], s[2]); g.lineTo(s[3], s[4]); } else if (s[0] === 'c') { g.moveTo(s[1], s[2]); g.bezierCurveTo(s[3], s[4], s[5], s[6], s[7], s[8]); } else { const a0 = s[4] * Math.PI / 180; g.moveTo(s[1] + s[3] * Math.cos(a0), s[2] + s[3] * Math.sin(a0)); g.arc(s[1], s[2], s[3], a0, s[5] * Math.PI / 180); } } };
@@ -651,7 +651,7 @@ TT_CH.push(...[...TT_LS_CH].filter(c => !c.noCh).sort((x, y) => x.lesson.localeC
 /* A challenge made in the design studio's Challenge maker: its stencil lines come as points in mm. Judged like the
    lessons for now (a line, a packed box or circle); judging from the challenge's own zones comes next. */
 const ttChCustomC = new WeakMap();
-const ttChCustom = (S) => { const B = S.base && TT_CH.find(c => c.id === S.base); if (B && !ttChCustomC.has(S)) ttChCustomC.set(S, { ...B, id: S.id, title: S.title, text: S.text, pal: S.pal, lock: S.lock, refImg: S.refImg || B.refImg, refAr: S.refImg ? S.refAr : B.refAr });
+const ttChCustom = (S) => { const B = S.base && TT_CH.find(c => c.id === S.base); if (B && !ttChCustomC.has(S)) ttChCustomC.set(S, { ...B, id: S.id, title: S.title, text: S.text, pal: S.pal, lock: S.lock, refImg: S.refImg || B.refImg, refAr: S.refImg ? S.refAr : B.refAr, ...(S.word ? { word: S.word, letterSize: S.letterSize, letterAt: S.letterAt, area: S.area, refs: S.refs } : {}) });
   if (!ttChCustomC.has(S)) ttChCustomC.set(S, { kind: 'line', layer: 'line', ink: 'black', core: 0.6, maxBlow: 1, diff: 1, ...S,
   path: (g) => { for (const p of S.lines || []) { g.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1]); } } }); return ttChCustomC.get(S); };
 /* ---------- Ink palettes (shared) ----------
@@ -3817,8 +3817,10 @@ TT.open = async (el, id) => {
     const keep = quick && EX.cur ? { area: EX.cur.area, needle: st.needle, layer: st.layer, caps: [...st.caps], capS: st.capS ? [...st.capS] : null, pal: st.pal, wash: st.wash, z, vx, vy, rot: st.rot, k } : null;
     if (fresh || !EX.cur) { exClear(); EX.cur = { id: T.id, p: [], v: [], d: [], t: [], blow: 0, strokes: 0, dips: 0, area: keep?.area || T.area || Settings.get('tt_area', 'Forearm'), pain: 0 }; painTold = 0; }
     setTimeout(painShow); if (fresh && !keep && EX.mode === 'ch' && !T.area && !CHEAT) setTimeout(async () => painSet(await painPick(true)), 350);
-    if (T.letter && EX.cur) { if (!EX.cur.word) EX.cur.word = TT_LETTER_WORDS[Math.floor(Math.random() * TT_LETTER_WORDS.length)]; TT_LT = ttLetterFit(EX.cur.word); const w0 = EX.cur.word;
-      ttLetterFont().then(() => { if (EX.cur?.word !== w0) return; TT_LT = ttLetterFit(w0); if (!EX.cur.strokes) { exStencil(T); paint(); } }); }
+    if (T.letter && EX.cur) { if (T.word) EX.cur.word = T.word; if (!EX.cur.word) EX.cur.word = TT_LETTER_WORDS[Math.floor(Math.random() * TT_LETTER_WORDS.length)];
+      const fit = (w) => T.word ? { word: w, size: T.letterSize, cx: T.letterAt[0], cy: T.letterAt[1] } : ttLetterFit(w);   /* your own word from the design studio: its size and place as drawn there */
+      TT_LT = fit(EX.cur.word); const w0 = EX.cur.word;
+      ttLetterFont().then(() => { if (EX.cur?.word !== w0) return; TT_LT = fit(w0); if (!EX.cur.strokes) { exStencil(T); paint(); } }); }
     exStencil(T); st.hide.delete('stencil'); st.op.stencil = 0.6;
     (T.refs || []).forEach((R, k) => refNew({ gen: T.id, ref: R.ref, ar: R.ar || 1, w: 180, op: 1, x: 110 + k * 24, y: 170 + k * 40 }));   /* the challenge's own reference pictures */
     for (const S of T.stencils || []) Media.url(S.ref).then(u => { if (!u) return; const im = new Image(); im.onload = () => { const sg = L.stencil.getContext('2d'); sg.save(); sg.globalAlpha = 0.4; sg.drawImage(im, S.box[0] * mm, S.box[1] * mm, S.box[2] * mm, S.box[3] * mm); sg.restore();   /* fainter than the lines to follow: a guide for the shading */ touched.add('stencil'); paint(); }; im.src = u; });   /* a value study's stencil from the stencil maker */

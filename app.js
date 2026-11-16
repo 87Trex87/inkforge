@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 456;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 457;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7617,6 +7617,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 457, when: '2026-11-17T02:30', added: ['Make your own lettering challenge in the design studio: pick the Script lettering template and type your word.'] },
   { build: 456, when: '2026-11-17T01:30', added: ['Challenges now cover every lesson, in Beginner, Intermediate and Advanced chapters, including Script lettering and Lining with a magnum.', '4 new trophies: Dedicated, Signwriter, Heavy hitter and All-rounder.', 'Challenge cards show the right picture again.'] },
   { build: 455, when: '2026-11-17T00:30', added: ['New Start over button in the top bar: clears all the tattooing for a fresh start (it asks first).', 'Lessons and challenges now start with no recent colours, so every attempt is mixed from scratch.'] },
   { build: 452, when: '2026-11-16T23:00', added: ['Lessons rearranged: 4 per chapter. Stipple is now Beginner, Curves Intermediate, The flag and Colour blend Advanced, and Lining with a magnum is 3-4.', 'New Advanced lesson 3-1, Script lettering: line a random word in a curly script with a 5RL, then fill the thick parts solid with a 5RS or 7RS.', 'The first lesson of every chapter is open, so you can start in Intermediate or Advanced. The rest unlock in order within each chapter.'],
