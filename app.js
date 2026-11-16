@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 459;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 460;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1953,6 +1953,7 @@ const VIEWS = {
       <div class="row" style="margin-bottom:12px">
         <button class="btn" id="r-share" style="flex:1" data-tip="Send the rules you're viewing as text, e.g. to a client or apprentice">Share</button>
         <button class="btn icon-btn" id="r-print" data-tip="Print or export your rules" aria-label="Print or export rules"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
+        <a class="btn icon-btn" href="#rules-table" data-tip="All rules as a table: search, filter, edit, export and print" aria-label="Rules table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a>
         <button class="btn primary" id="r-add" style="flex:1">+ Add rule</button>
       </div>
       <div class="c-cats" id="r-cats"></div>
@@ -1981,6 +1982,18 @@ const VIEWS = {
       });
       renderRules();
     }
+  },
+  /* The rule book as a table, the same look as the bookings table. */
+  'rules-table': {
+    title: () => 'Rules',
+    render: () => `<div class="bkt-page"><div class="bkt-top">
+        <label class="bkt-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" id="rt-q" placeholder="Search rules" value="${esc(RT.q || '')}" aria-label="Search rules"></label>
+        <div class="bkt-acts">
+          <button class="bkt-btn" id="rt-csv" data-tip="Spreadsheet of the rules shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
+          <button class="bkt-btn" id="rt-print" data-tip="Print the rules shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn pri" id="rt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New rule</span></button></div></div>
+      <div class="bkt-panel"><div id="rt-f"></div><div id="rt"></div></div></div>`,
+    async mount() { await rtTable(); }
   },
   'rule-edit': {
     title: (id) => id === 'new' ? 'New rule' : 'Edit rule',
@@ -5968,6 +5981,66 @@ async function itTable() {
       await DB.run('DELETE FROM inventory_items WHERE id = ?', [it.id]); toast('Item deleted.'); return both(); }
     const tr = t.closest('[data-iedit]') || t.closest('tr[data-iid]'); if (tr) location.hash = 'inv-edit/' + (tr.dataset.iedit || tr.dataset.iid); };
 }
+/* The rule book table. Columns: [key, heading, on by default]; title is always shown. Order is the rule book's own
+   order (category, then the order set with the arrows). Choices are kept in the setting rt_table. */
+const RT_COLS = [['no', 'No.', true], ['category', 'Category', true], ['body', 'Rule', true], ['words', 'Words', false]];
+const RT = { q: '', cats: null, sort: { k: 'order', dir: 1 } };
+const rtWords = (r) => (r.body || '').trim() ? (r.body || '').trim().split(/\s+/).length : 0;
+const rtCell = (r, k) => k === 'title' ? r.title : k === 'no' ? String(r._no) : k === 'category' ? r.category || '' : k === 'body' ? r.body || '' : k === 'words' ? String(rtWords(r)) : '';
+async function rtTable() {
+  let saved = {}; try { saved = JSON.parse(Settings.get('rt_table', '{}')); } catch {}
+  const cols = new Set(saved.cols || RT_COLS.filter(c => c[2]).map(c => c[0])), remember = () => Settings.set('rt_table', JSON.stringify({ cols: [...cols] }));
+  if (!RT.cats && typeof RULES !== 'undefined' && RULES.cat && RULES.cat !== 'all') RT.cats = new Set([RULES.cat]);
+  let all = [], rows = [], open = null;
+  const catList = () => [...new Set(all.map(r => r.category))].sort((a, b) => (b === 'Client rules') - (a === 'Client rules') || a.localeCompare(b));
+  const filters = () => { const hid = RT_COLS.filter(c => !cols.has(c[0])).length, cats = catList();
+    const menu = (id, label, items) => `<div class="bkt-dd ${open === id ? 'open' : ''}"><button class="bkt-sel" data-dd="${id}">${label}<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>${open === id ? `<div class="bkt-menu">${items}</div>` : ''}</div>`;
+    $('#rt-f').innerHTML = `<div class="bkt-filters">
+      ${menu('cats', `Categories <b>${RT.cats ? RT.cats.size : 'All'}</b>`, cats.map(c => `<label><input type="checkbox" data-rcat="${esc(c)}" ${!RT.cats || RT.cats.has(c) ? 'checked' : ''}>${esc(c)}<span class="muted" style="margin-left:auto">${all.filter(r => r.category === c).length}</span></label>`).join(''))}
+      <span style="flex:1"></span>
+      ${menu('cols', `Columns${hid ? ` <b>${RT_COLS.length - hid}/${RT_COLS.length}</b>` : ''}`, RT_COLS.map(([k, l]) => `<label><input type="checkbox" data-rcol="${k}" ${cols.has(k) ? 'checked' : ''}>${l}</label>`).join('') + '<p>Hidden columns are left out of the print and the CSV too. Title is always shown.</p>')}</div>`; };
+  const table = async () => { all = await DB.all(`SELECT * FROM rules ORDER BY (category = 'Client rules') DESC, category COLLATE NOCASE, sort, id`);
+    const per = {}; all.forEach(r => { r._no = per[r.category] = (per[r.category] || 0) + 1; r._o = all.indexOf(r); });
+    const q = RT.q.trim().toLowerCase(), C = RT_COLS.filter(c => cols.has(c[0])), S = RT.sort;
+    rows = all.filter(r => (!RT.cats || RT.cats.has(r.category)) && (!q || [r.title, r.body, r.category].some(v => v && String(v).toLowerCase().includes(q))));
+    const key = (r) => S.k === 'order' || S.k === 'no' ? r._o : S.k === 'words' ? rtWords(r) : String(rtCell(r, S.k)).toLowerCase();
+    rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
+    const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${S.k === k || (k === 'no' && S.k === 'order') ? 'on' : ''}">${l}<i>${S.k === k || (k === 'no' && S.k === 'order') ? (S.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
+    rtTable.shown = { rows, cols: C };
+    const ord = C.filter(c => c[0] === 'no'), rest = C.filter(c => c[0] !== 'no');
+    $('#rt').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${ord.map(c => th('no', c[1], 'num')).join('')}${th('title', 'Title')}${rest.map(c => th(c[0], c[1], c[0] === 'words' ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
+      `<tr data-rid="${r.id}">${ord.length ? `<td class="num muted">${r._no}</td>` : ''}<td class="rt-title"><b>${esc(r.title)}</b></td>${rest.map(c => `<td class="rt-${c[0]} ${c[0] === 'words' ? 'num' : ''}">${esc(rtCell(r, c[0]))}</td>`).join('')}
+        <td class="c-act"><button class="bkt-ib" data-redit="${r.id}" data-tip="Edit" aria-label="Edit rule"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-rdel="${r.id}" data-tip="Delete" aria-label="Delete rule"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody></table></div>
+      <div class="bkt-foot">${rows.length} rule${rows.length === 1 ? '' : 's'} · the order is set with the arrows on the rule book</div>`
+      : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><b>No rules match</b><span class="muted">Try other categories, or clear the search.</span></div>`;
+    $('#rt-csv').disabled = $('#rt-print').disabled = !rows.length; };
+  const both = async () => { await table(); filters(); };
+  await both();
+  let qq; $('#rt-q').oninput = (e) => { RT.q = e.target.value; clearTimeout(qq); qq = setTimeout(table, 200); };
+  $('#rt-add').onclick = () => { location.hash = 'rule-edit/new'; };
+  $('#rt-csv').onclick = () => { const { rows: R, cols: C } = rtTable.shown; return saveCsv(`InkForge-rules-${ymd(new Date())}.csv`, [...(C.some(c => c[0] === 'no') ? ['No.'] : []), 'Title', ...C.filter(c => c[0] !== 'no').map(c => c[1])],
+    R.map(r => [...(C.some(c => c[0] === 'no') ? [r._no] : []), r.title, ...C.filter(c => c[0] !== 'no').map(c => c[0] === 'words' ? rtWords(r) : rtCell(r, c[0]))])); };
+  $('#rt-print').onclick = () => { const { rows: R, cols: C } = rtTable.shown, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Rules', O = C.filter(c => c[0] === 'no'), X = C.filter(c => c[0] !== 'no');
+    let p = $('#print-area'); if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+    p.innerHTML = `<div class="pbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>Rule book</b>${RT.cats ? ' · ' + esc([...RT.cats].join(', ')) : ''}${RT.q.trim() ? ' · “' + esc(RT.q.trim()) + '”' : ''}<br>${R.length} rule${R.length === 1 ? '' : 's'} · ${esc(fmtDay(ymd(new Date())))}</div></div>
+      <table><thead><tr>${O.map(c => `<th>${c[1]}</th>`).join('')}<th>Title</th>${X.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>${R.map(r => `<tr>${O.length ? `<td>${r._no}</td>` : ''}<td><b>${esc(r.title)}</b></td>${X.map(c => `<td class="pb-${c[0]}" style="white-space:pre-wrap">${esc(rtCell(r, c[0]))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+    afterPrint(done); window.print(); };
+  const F = $('#rt-f');
+  F.onchange = async (e) => { const t = e.target;
+    if (t.dataset.rcat != null) { const L = catList(), S = RT.cats || new Set(L); t.checked ? S.add(t.dataset.rcat) : S.delete(t.dataset.rcat); RT.cats = S.size === L.length ? null : S; }
+    if (t.dataset.rcol) { t.checked ? cols.add(t.dataset.rcol) : cols.delete(t.dataset.rcol); await remember(); }
+    both(); };
+  F.onclick = (e) => { const dd = e.target.closest('[data-dd]')?.dataset.dd; if (dd) { open = open === dd ? null : dd; return filters(); } };
+  const shut = (e) => { if (!document.contains(F)) return removeEventListener('pointerdown', shut, true); if (open && !e.target.closest('.bkt-dd')) { open = null; filters(); } };
+  addEventListener('pointerdown', shut, true);
+  $('#rt').onclick = async (e) => { const t = e.target;
+    const sk = t.closest('[data-sk]')?.dataset.sk; if (sk) { const k = sk === 'no' ? 'order' : sk; RT.sort = RT.sort.k === k ? { k, dir: -RT.sort.dir } : { k, dir: 1 }; return table(); }
+    const del = t.closest('[data-rdel]'); if (del) { const r = rows.find(x => x.id === +del.dataset.rdel); if (!r || !await ask(`Delete the rule "${r.title}"?`)) return;
+      await DB.run('DELETE FROM rules WHERE id = ?', [r.id]); toast('Rule deleted.'); return both(); }
+    const tr = t.closest('[data-redit]') || t.closest('tr[data-rid]'); if (tr) location.hash = 'rule-edit/' + (tr.dataset.redit || tr.dataset.rid); };
+}
 async function openStockPrint() {
   const cats = await DB.all(`SELECT coalesce(category, 'Uncategorised') AS c, COUNT(*) AS n FROM inventory_items WHERE active = 1 GROUP BY 1 ORDER BY 1 COLLATE NOCASE`);
   if (!cats.length) return toast('No active stock items yet.');
@@ -7945,6 +8018,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 460, when: '2026-11-17T09:00', added: ['New Rule book table (the table icon in Rule book): search, filter by category, pick columns, edit, delete, CSV and print.', 'Design studio: pictures and shapes now have side handles to stretch or squash them, and the chain button beside W and H switches between corners keeping proportions, every handle keeping them, or free. Shift swaps while dragging, Ctrl sizes from the centre.'] },
   { build: 459, when: '2026-11-17T05:30', added: ['New Contacts table (the table icon in Clients): search, filter by category or when they last came in, pick columns, edit, delete, export CSV or print.', 'New Quotes table (the table icon in Saved quotes): open, booked and completed, quoted vs real time, totals, CSV and print.', 'New Stock table (the table icon in Inventory): adjust counts with − and +, filter by category, supplier or running low, stock value, CSV and print.'] },
   { build: 458, when: '2026-11-17T04:00', added: ['Completed bookings now show a green tick on the calendar.', 'New Bookings table (the table icon in Book): search, filter, sort, hide columns, tick to complete, add, edit and delete, then export CSV, print or save as PDF, or share your openings.'] },
   { build: 457, when: '2026-11-17T02:30', added: ['Make your own lettering challenge in the design studio: pick the Script lettering template and type your word.'] },
@@ -8300,11 +8374,11 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
    reel maker), forms, notes and the portfolio, without the tools for running a studio (clients, bookings, quotes,
    stats, stock, rules). Kept in the workspace (setting ws_mode, so backups carry it) and on its list entry; the
    body gets the class ws-design, which hides what is marked data-biz, and those pages lead home. */
-const WS_BIZ = new Set(['inventory-table', 'quotes-table', 'clients', 'clients-table', 'client', 'client-edit', 'book', 'bookings', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
+const WS_BIZ = new Set(['rules-table', 'inventory-table', 'quotes-table', 'clients', 'clients-table', 'client', 'client-edit', 'book', 'bookings', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
 const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) === 'design'; } catch { return WS.cur?.mode === 'design'; } };
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',
-  quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'inventory-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
+  quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'inventory-table': 'more', 'rules-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
   reel: 'studio', reels: 'studio', stencil: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;

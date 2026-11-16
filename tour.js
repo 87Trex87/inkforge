@@ -109,7 +109,7 @@ const TOUR_STEPS = [
     more: 'Forms are designed in the Design studio with text boxes, check boxes, radio and combo boxes and signatures. Fill them in here, print them, or save an interactive PDF. Completed copies are kept here and on the client\'s card; aftercare can go with the receipt.' },
   { id: 'more', basic: 1, route: 'more', sel: '#view', title: 'Running the studio',
     text: 'Quotes, stats, stock, your rule book and settings.',
-    more: 'Stats shows tattoos, hours and earnings over time. Inventory tracks stock with low-stock alerts and stock takes. The rule book keeps your studio rules for clients and staff, with search, favourites and folders.' },
+    more: 'Stats shows tattoos, hours and earnings over time. Inventory tracks stock with low-stock alerts and stock takes. The rule book keeps your studio rules for clients and staff, with search, favourites and folders, and a table view to export or print.' },
   { id: 'stock', route: 'inventory', sel: '#view', title: 'Stock',
     text: 'Items running low are flagged and go on a shopping list.',
     more: 'Do a stock take on your phone, print a blank count sheet, or the current stock with values. Folders work as stock sections: one item can sit in several (a needles sheet and an ordering list), and printing a folder gives just that sheet. The table icon shows all your stock as a table to filter, adjust, export or print.' },

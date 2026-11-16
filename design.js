@@ -390,7 +390,10 @@ function dzFold(type, sheet) {
     fold: { type, out: r(out), inn: r(inn), lo, li } };
 }
 // Keep proportions: pictures and the logo by default, shapes not; text sizes with its letters.
-const dzKeep = (l) => l.frame ? !!l.keep : l.t === 'text' || (l.keep ?? (l.t !== 'shape' || l.shape === 'path'));
+/* Three ways (l.keep): 'all' (true) every handle keeps them; 'corners' the corners keep them and the side handles
+   stretch or squash; 'none' (false) every handle is free. Shift swaps keep and free while dragging. */
+const dzKeepMode = (l) => l.t === 'text' && !l.frame ? 'all' : l.keep === 'corners' ? 'corners' : l.keep === true ? 'all' : l.keep === false || l.frame ? 'none' : (l.t !== 'shape' || l.shape === 'path') ? 'corners' : 'none';
+const dzKeep = (l) => dzKeepMode(l) !== 'none';
 
 /* ---------- Fonts ---------- */
 const DZF = {
@@ -1086,8 +1089,10 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
         if (L.t === 'image') {
         const r = Math.min(L.r || 0, L.w / 2, L.h / 2), clip = L.cover || r;
         if (clip) { x.save(); x.beginPath(); x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, r); x.clip(); }
-        // cover = fill the box and crop the overflow (photos); otherwise the whole picture fits inside (logos, stickers).
-        if (im) { const s = (L.cover ? Math.max : Math.min)(L.w / im.naturalWidth, L.h / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
+        // cover = fill the box and crop the overflow (photos); stretch = squashed or stretched to the box (resized without
+        // keeping its proportions); otherwise the whole picture fits inside (logos, stickers).
+        if (im && L.stretch && !L.cover && !L.logo) x.drawImage(im, -L.w / 2, -L.h / 2, L.w, L.h);
+        else if (im) { const s = (L.cover ? Math.max : Math.min)(L.w / im.naturalWidth, L.h / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
           x.drawImage(im, -w / 2 + (L.cover ? (L.px || 0) * (w - L.w) / 2 : 0), -h / 2 + (L.cover ? (L.py || 0) * (h - L.h) / 2 : 0), w, h); }
         else if (L.slot != null) { x.fillStyle = 'rgba(128,128,128,.18)'; x.fillRect(-L.w / 2, -L.h / 2, L.w, L.h);
           x.fillStyle = 'rgba(128,128,128,.8)'; x.font = `600 ${Math.max(14, Math.min(L.w, L.h) * 0.08)}px Inter, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('Photo', 0, 0); }
@@ -2044,13 +2049,13 @@ DZ.edit = async (id) => {
     const l = layer(); if (!l) return null;
     return { mode: 'l', x: l.x, y: l.y, w: l.w, h: l.h || 0, l, noH: (l.t === 'text' && !l.frame) || l.t === 'check' || (l.t === 'field' && !['area', 'sign', 'button'].includes(l.ft)), lock: !!l.lock, noSize: !!l.on }; };
   const drawXf = () => { const b = $('#dz-xf'); if (!b) return; const v = xfNow(); b.hidden = !v; if (!v) { xfKey = ''; return; }
-    const l = v.l, key = [v.mode, dzUnit(doc), l?.id, l && dzKeep(l), v.noH, v.noSize, v.lock, v.d != null].join('|');
+    const l = v.l, key = [v.mode, dzUnit(doc), l?.id, l && dzKeepMode(l), v.noH, v.noSize, v.lock, v.d != null].join('|');
     const f = (k, n, off, tip) => `<label data-tip="${tip}"><span>${n}</span><input class="in" type="text" inputmode="text" data-calc data-xf="${k}" ${off ? 'disabled' : ''} aria-label="${tip}"></label>`;
     // A rebuild (the link toggled while typing) keeps the box in use: its focus, what's typed and the cursor.
     const fa = b.contains(document.activeElement) && document.activeElement.dataset.xf ? document.activeElement : null, fk = fa && { k: fa.dataset.xf, v: fa.value, s: fa.selectionStart, e: fa.selectionEnd };
     if (key !== xfKey) { xfKey = key; b.innerHTML = f('x', 'X', v.lock, 'Across from the left of the page') + f('y', 'Y', v.lock, 'Down from the top of the page') + f('w', 'W', v.noSize || v.lock, 'Width') + f('h', 'H', v.noSize || v.noH || v.lock, 'Height')
-      + `<div class="dz-xfr">${l ? `<button class="dz-chain ${dzKeep(l) ? 'on' : ''}" data-act="keep" ${l.t === 'text' && !l.frame ? 'disabled' : ''} title="${dzKeep(l) ? 'Proportions kept: width and height change together' : 'Width and height change separately'}" aria-label="Keep proportions">
-          <svg viewBox="0 0 24 24">${dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
+      + `<div class="dz-xfr">${l ? `<button class="dz-chain ${dzKeep(l) ? 'on' : ''} ${dzKeepMode(l) === 'corners' ? 'half' : ''}" data-act="keep" ${l.t === 'text' && !l.frame ? 'disabled' : ''} title="${{ all: 'Proportions kept on every handle. Tap: free', corners: 'Corners keep the proportions; side handles stretch or squash. Tap: keep on every handle', none: 'Free: width and height change separately. Tap: corners keep the proportions' }[dzKeepMode(l)]} (Shift swaps while dragging)" aria-label="Proportions">
+          <svg viewBox="0 0 24 24">${dzKeepMode(l) === 'corners' ? '<path d="M10.5 13.5a3 3 0 0 0 4.2 0l2.3-2.3a3 3 0 0 0-4.2-4.2l-.8.8M13.5 10.5a3 3 0 0 0-4.2 0L7 12.8a3 3 0 0 0 4.2 4.2l.8-.8M3 7V3h4M21 17v4h-4"/>' : dzKeep(l) ? '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'
             : '<path d="M15.7 14l3-3a4 4 0 0 0-5.7-5.7l-1 1M8.3 10l-3 3a4 4 0 0 0 5.7 5.7l1-1M8 4v2M4 8h2M16 20v-2M20 16h-2"/>'}</svg></button>` : ''}${v.d != null ? '<span class="dz-xfd" data-tip="Distance from node to node, in the order you picked them"><b>D</b> <i></i></span>' : ''}<select class="in" data-unit aria-label="Unit">${(DZ_KINDS[doc.kind].social ? ['px', 'mm', 'cm', 'in'] : ['mm', 'cm', 'in', 'px']).map(u => `<option ${dzUnit(doc) === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>`;
       if (fk) { const n = b.querySelector(`[data-xf="${fk.k}"]`); if (n && !n.disabled) { n.value = fk.v; n.dataset.was = fa.dataset.was ?? ''; xfRefocus = true; n.focus({ preventScroll: true }); xfRefocus = false; n.setSelectionRange(fk.s, fk.e); } } }
     for (const kk of ['x', 'y', 'w', 'h']) { const i = b.querySelector(`[data-xf="${kk}"]`); if (i && document.activeElement !== i) i.value = dzToU(doc, v[kk]); }
@@ -2059,7 +2064,7 @@ DZ.edit = async (id) => {
     if (v.mode === 'n') { if (k !== 'x' && k !== 'y') return; const L = nodeLayer(); for (const [s2, i] of nodes.sel) { const n = L.subs[s2]?.nodes[i]; if (!n) continue; const q = n2p(L, n.x, n.y), u = p2n(L, { x: q.x + dx, y: q.y + dy }); n.x = u.u; n.y = u.v; } refit(L); drawNodes(); return redraw(); }
     if (v.mode === 'm') { for (const m of picked()) if (!m.lock && !(m.on && picks.has(m.on))) { m.x += dx; m.y += dy; } return; }
     const l = v.l; if (k === 'x') l.x = val; if (k === 'y') l.y = val;
-    if (k === 'w' || k === 'h') { if (!(val > 0)) return; const keep = dzKeep(l) && (l.t !== 'text' || l.frame), r = l.w / (l.h || 1); if (k === 'w') { l.w = val; if (keep) l.h = val / r; } else { l.h = val; if (keep) l.w = val * r; } } };
+    if (k === 'w' || k === 'h') { if (!(val > 0)) return; const keep = dzKeep(l) && (l.t !== 'text' || l.frame), r = l.w / (l.h || 1); if (k === 'w') { l.w = val; if (keep) l.h = val / r; } else { l.h = val; if (keep) l.w = val * r; } if (!keep && l.t === 'image' && !l.logo && !l.cover) l.stretch = true; } };
   /* The strip under the top bar: quick tools and properties for what's selected, a different set per kind of layer. */
   let cpop = null;
   const drawCtx = () => { const b = $('#dz-ctx'); if (!b) return; const l = layer(), sl = b.scrollLeft, sep = '<i class="dz-csep"></i>';
@@ -2379,9 +2384,9 @@ DZ.edit = async (id) => {
     const im = await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref); if (!im) return toast('The picture could not be read.');
     toast('Tracing…');
     const tr = dzTrace(im); if (!tr) return toast('No shape found: the picture needs see-through parts, or a dark shape on a light background.', 6000);
-    const nw = im.naturalWidth, nh = im.naturalHeight, sc = Math.min(l.w / nw, l.h / nh);   // the picture fits inside its box
-    const w = tr.box.w * nw * sc, h = tr.box.h * nh * sc;
-    let dx = ((tr.box.x + tr.box.w / 2) - 0.5) * nw * sc, dy = ((tr.box.y + tr.box.h / 2) - 0.5) * nh * sc;
+    const nw = im.naturalWidth, nh = im.naturalHeight, sc = Math.min(l.w / nw, l.h / nh), scx = l.stretch ? l.w / nw : sc, scy = l.stretch ? l.h / nh : sc;   // the picture fits inside its box, or fills it when stretched
+    const w = tr.box.w * nw * scx, h = tr.box.h * nh * scy;
+    let dx = ((tr.box.x + tr.box.w / 2) - 0.5) * nw * scx, dy = ((tr.box.y + tr.box.h / 2) - 0.5) * nh * scy;
     if (l.fx) dx = -dx; if (l.fy) dy = -dy;
     const a = (l.rot || 0) * Math.PI / 180, cx = l.x + l.w / 2 + dx * Math.cos(a) - dy * Math.sin(a), cy = l.y + l.h / 2 + dx * Math.sin(a) + dy * Math.cos(a);
     const sh = { id: dzId(), t: 'shape', shape: 'path', path: tr.loops, fill: '@accent', stroke: 'none', sw: 0, x: cx - w / 2, y: cy - h / 2, w, h,
@@ -3601,10 +3606,11 @@ DZ.edit = async (id) => {
       l.rot = e.altKey ? Math.round(deg * 10) / 10 : Math.round(deg);
     } else {
       // Resize around the opposite corner/side, measured in the layer's own (rotated) frame.
-      // Shift: keep (or, for pictures, break) the proportions. Ctrl: from the centre. Alt: fine, and no snapping.
+      // Proportions as the layer's setting (dzKeepMode: corners only, every handle, or none); Shift swaps keep and free.
+      // Ctrl: from the centre. Alt: fine, and no snapping.
       const fine = e.altKey ? 0.25 : 1, mid = e.ctrlKey ? 2 : 1, dx = (p.x - drag.p0.x) * fine, dy = (p.y - drag.p0.y) * fine, lx = dx * cos + dy * sin, ly = -dx * sin + dy * cos;
       const sx = drag.h.includes('e') ? 1 : drag.h.includes('w') ? -1 : 0, sy = drag.h.includes('s') ? 1 : drag.h.includes('n') ? -1 : 0;
-      const oh = o.h || 1, normal = o.t === 'text' && !o.frame, keep = o.shape !== 'line' && (normal ? sx && sy : dzKeep(o) !== e.shiftKey);
+      const oh = o.h || 1, normal = o.t === 'text' && !o.frame, km = dzKeepMode(o), keep = o.shape !== 'line' && (normal ? sx && sy : (sx && sy ? km !== 'none' : km === 'all') !== e.shiftKey);
       let w = Math.max(20, o.w + sx * lx * mid), hgt = Math.max(10, oh + sy * ly * mid), snapX = null, snapY = null;
       const ocx = o.x + o.w / 2, ocy = o.y + oh / 2;
       if (!o.rot && !e.altKey && (snapO.on || gSnap())) { const { tx, ty } = snapTargets(new Set([l.id]));
@@ -3616,6 +3622,7 @@ DZ.edit = async (id) => {
       const ax = -sx * o.w / 2, ay = -sy * oh / 2, wx = ocx + ax * cos - ay * sin, wy = ocy + ax * sin + ay * cos;
       const nax = -sx * w / 2, nay = -sy * hgt / 2, ncx = mid > 1 ? ocx : wx - (nax * cos - nay * sin), ncy = mid > 1 ? ocy : wy - (nax * sin + nay * cos);
       l.w = w; if (!normal) l.h = hgt;
+      if (!keep && o.t === 'image' && !o.logo && !o.cover) l.stretch = true;   /* squashed or stretched: the picture fills its box */
       l.x = ncx - w / 2; l.y = ncy - (normal ? oh * (w / o.w) : hgt) / 2;
     }
     redraw();
@@ -3801,7 +3808,7 @@ DZ.edit = async (id) => {
       if (a === 'lock') l.lock = !l.lock;
       if (a === 'fx') l.fx = !l.fx;
       if (a === 'fy') l.fy = !l.fy;
-      if (a === 'keep') l.keep = !dzKeep(l);
+      if (a === 'keep') { const m = dzKeepMode(l); l.keep = m === 'none' ? 'corners' : m === 'corners' ? true : false; toast({ none: 'Corners keep the proportions; sides stretch.', corners: 'Every handle keeps the proportions.', all: 'Free: width and height change separately.' }[m], 2500); }
       changed(true); return drawSide();
     }
     if (d('al')) { l.al = d('al'); changed(true); return drawSide(); }
@@ -3854,7 +3861,7 @@ DZ.edit = async (id) => {
         <div class="lbl">Snap to</div>${ck('page', 'Page edges and centre', 'The sides and middle of the page')}${ck('edges', 'Edges of other items', 'Edges line up with edges')}${ck('mids', 'Centres of other items', 'Middles line up with middles')}
         <label class="dz-sl"><span>Snap distance<b>${snapO.dist}</b></span><input type="range" min="3" max="30" step="1" value="${snapO.dist}" data-snv="dist"></label>
         <label class="field" style="margin-bottom:8px" data-tip="Also snap this far outside other items, so spaces between them come out the same"><span>Gap between items (${dzUnit(doc)})</span><input class="in" type="text" inputmode="text" data-calc min="0" step="any" value="${dzToU(doc, snapO.gap || 0)}" data-sng></label>
-        <details class="dz-keys"><summary>Shift, Ctrl and Alt</summary><ul><li><b>Resizing:</b> Shift evens or frees the proportions, Ctrl sizes from the centre, Alt is fine and doesn't snap.</li><li><b>Moving:</b> Shift goes straight across or down, Alt is fine and doesn't snap, Ctrl+Alt drags a copy.</li><li><b>Rotating:</b> Shift is 15° steps, Alt is free and fine.</li><li><b>Arrow keys:</b> Shift is a big step, Alt is one pixel.</li><li><b>Selecting:</b> Ctrl or Shift adds or removes.</li></ul></details></div>` : ''); };
+        <details class="dz-keys"><summary>Shift, Ctrl and Alt</summary><ul><li><b>Resizing:</b> the chain button beside W and H sets the proportions: corners only (side handles stretch or squash), every handle, or free. Shift swaps keep and free while dragging, Ctrl sizes from the centre, Alt is fine and doesn't snap.</li><li><b>Moving:</b> Shift goes straight across or down, Alt is fine and doesn't snap, Ctrl+Alt drags a copy.</li><li><b>Rotating:</b> Shift is 15° steps, Alt is free and fine.</li><li><b>Arrow keys:</b> Shift is a big step, Alt is one pixel.</li><li><b>Selecting:</b> Ctrl or Shift adds or removes.</li></ul></details></div>` : ''); };
   drawSnap();
   const snapSave = () => Settings.set('dz_snap', JSON.stringify(snapO));
   $('#dz-csnap').addEventListener('click', (e) => { if (e.target.closest('[data-snapb]')) { snapPop = !snapPop; drawSnap(); } });
