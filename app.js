@@ -5140,15 +5140,21 @@ function receiptText(b, p) {
    Hides the browser's bars. iPhones don't let web pages do this; there, adding InkForge to the Home Screen
    opens it without the bars. The design studio's own full screen (design.js) uses this too. */
 const FS = {
-  on: () => !!(document.fullscreenElement || document.webkitFullscreenElement),
+  el: () => document.fullscreenElement || document.webkitFullscreenElement,
+  /* Really full screen: the browser says so and the page fills the screen. A save dialog on Android can drop the page
+     out of full screen while the browser still reports it, which left the button stuck trying to exit. */
+  on: () => !!FS.el() && innerHeight >= screen.height * 0.9,
   can: () => !!(document.fullscreenEnabled || document.webkitFullscreenEnabled),
   async set(want) {
+    const exit = async () => { try { await (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch {} };
     try {
-      if (want && !FS.on()) await (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement);
-      else if (!want && FS.on()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      if (want && !FS.on()) { if (FS.el()) await exit(); await (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement); }
+      else if (!want && FS.el()) await exit();
     } catch {}
+    document.dispatchEvent(new Event('fullscreenchange'));
   }
 };
+{ let was = null; addEventListener('resize', () => { const o = FS.on(); if (o !== was) { was = o; document.dispatchEvent(new Event('fullscreenchange')); } }); }   /* keeps the buttons right when it drops out without telling us */
 (() => {
   const b = document.getElementById('fs-btn'); if (!b) return;
   const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
