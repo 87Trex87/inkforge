@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 446;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 447;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7611,6 +7611,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 447, when: '2026-11-16T12:00', added: ['Magnums tilt in steady steps: lean along the row to go from all the needles to fewer (a 9M goes 9, 5, 3), and each step holds its needles as your pressure changes. Set your steepest lean in Settings, All needles.', 'New needle: the 11CM curved magnum.'],
+    test: ['Lean a magnum while lining. Does it hold 3 needles steadily?', 'Set your steepest lean with the pen in Settings, then try again.'] },
   { build: 446, when: '2026-11-16T10:00', added: ['Long, fast strokes keep up with the pen better, especially zoomed in: the simulator now redraws only what changed while you work.'],
     test: ['Pack fast with a magnum, zoomed in, without lifting for a while. Does the needle keep up?'] },
   { build: 444, when: '2026-11-13T23:00', added: ['Quick restart in lessons and challenges: clean skin, same needle, settings, palette and body area. Just load your ink and go.'],
