@@ -241,7 +241,7 @@ const fAnchor = (g) => { ttCirc(g, 90, 28, 7); g.moveTo(90, 35); g.lineTo(90, 10
 /* The challenges are the lessons' tasks for now, played on their own for medals and personal bests (filled in
    below, once the lesson tasks exist). The Challenge maker in the design studio will add more. */
 const TT_CH = [];
-const TT_HUB = [['c1', 'Chapter 1: Lining'], ['c2', 'Chapter 2: Packing and shading']];
+const TT_HUB = [['c1', 'Chapter 1: Beginner'], ['c2', 'Chapter 2: Intermediate'], ['c3', 'Chapter 3: Advanced']];
 const ttHubOf = (c) => c.hub || c.cat;
 // A stencil picture recoloured to the transfer purple the challenges use: the darker the line, the stronger.
 function ttPurple(g, w, h) { const im = g.getImageData(0, 0, w, h), d = im.data;
@@ -259,7 +259,8 @@ function ttExGen(T, skin) {
   g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.scale(sc, sc); g.lineCap = g.lineJoin = 'round';
   const hiC = document.createElement('canvas'); hiC.width = c.width; hiC.height = c.height; const hg = hiC.getContext('2d'); hg.scale(sc, sc);
   const dots = (x0, y0, w, h, f, col) => { g.fillStyle = col; for (let i = 0; i < w * h * 3; i++) { const px = x0 + Math.random() * w, py = y0 + Math.random() * h, a = f((px - x0) / w); if (Math.random() < a) { g.globalAlpha = 0.6 + a * 0.4; g.beginPath(); g.arc(px, py, 0.35, 0, 7); g.fill(); } } g.globalAlpha = 1; };
-  if (T.kind === 'line') { g.strokeStyle = '#141414'; g.lineWidth = Math.max(0.5, T.core); g.beginPath(); T.path(g); g.stroke(); }
+  if (T.letter) { ttLetterFont(); g.fillStyle = '#141414'; g.font = '40px "Great Vibes", cursive'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('Lettering', 90, 65); }   /* the word is random: a sample on the card */
+  else if (T.kind === 'line') { g.strokeStyle = '#141414'; g.lineWidth = Math.max(0.5, T.core); g.beginPath(); T.path(g); g.stroke(); }
   if (T.kind === 'grad') dots(...T.box, T.wash ? (f) => T.prof(f) * 0.5 : T.prof, '#141414');
   if (T.kind === 'pack') { g.fillStyle = '#161616'; g.fillRect(...T.box); }
   if (T.kind === 'fill') { g.fillStyle = T.col; g.beginPath(); T.shape(g); g.fill(); }
@@ -294,9 +295,13 @@ const ttChSize = (T) => { const P = [...(T.lines || []).flat(), ...(T.pack ? [T.
 const TT_TROPHIES = [
   { id: 'first', tier: 'bronze', name: 'First ink', desc: 'Finish any challenge.', test: (a) => TT_CH.some(c => a.pb[c.id]) },
   { id: 'medal', tier: 'bronze', name: 'On the podium', desc: 'Win a medal on any challenge.', test: (a) => TT_CH.some(c => ttBest(a, c.id) >= 60) },
-  ...TT_HUB.map(([k, n]) => ({ id: 'm-' + k, tier: 'silver', name: k === 'c1' ? 'Line master' : 'Pack and shade master', desc: `Gold on every ${n.replace(/^.*: /, '').toLowerCase()} challenge.`, test: (a) => ttHubCh(k).every(c => ttBest(a, c.id) >= 90) })),
+  ...TT_HUB.map(([k, n]) => ({ id: 'm-' + k, tier: 'silver', name: { c1: 'Beginner master', c2: 'Intermediate master', c3: 'Advanced master' }[k], desc: `Gold on every ${n.replace(/^.*: /, '').toLowerCase()} challenge.`, test: (a) => ttHubCh(k).every(c => ttBest(a, c.id) >= 90) })),
   { id: 'maker', tier: 'bronze', name: 'Challenge maker', desc: 'Make your own challenge in the design studio and finish it in the simulator.', test: (a) => Object.entries(a.pb).some(([k, p]) => k.startsWith('u-') && p.tries) },
   { id: 'maker-gold', tier: 'silver', name: 'Master maker', desc: 'Score gold on your own challenge with at least 8 × 8 cm of work to judge.', test: (a) => Object.entries(a.pb).some(([k, p]) => k.startsWith('u-') && p.best >= 90 && p.size && p.size[0] * p.size[1] >= 64 && Math.min(...p.size) >= 6) },
+  { id: 'tries', tier: 'bronze', name: 'Dedicated', desc: 'Finish 25 challenge attempts.', test: (a) => TT_CH.reduce((n, c) => n + (a.pb[c.id]?.tries || 0), 0) >= 25 },
+  { id: 'letter', tier: 'silver', name: 'Signwriter', desc: 'Gold on Script lettering.', test: (a) => ttBest(a, 'ch-letter') >= 90 },
+  { id: 'magline', tier: 'silver', name: 'Heavy hitter', desc: 'Gold on Lining with a magnum.', test: (a) => ttBest(a, 'ch-magline') >= 90 },
+  { id: 'round', tier: 'silver', name: 'All-rounder', desc: 'A medal on every challenge.', test: (a) => TT_CH.every(c => ttBest(a, c.id) >= 60) },
   { id: 'all', tier: 'gold', name: 'Completionist', desc: 'Gold on every challenge.', test: (a) => TT_CH.every(c => ttBest(a, c.id) >= 90) }
 ];
 TT.aw = {
@@ -633,14 +638,14 @@ TT_LS_CH.push({ id: 'l-orange', lesson: '2-3', cat: 'pack', diff: 2, title: 'Ora
   text: 'Line the circle in black with the 7RL in no more than 4 strokes. Then change to the 7M magnum, mix orange from the red and yellow caps, and pack it solid with tight ovals. It has to heal solid. Let it settle, then press Done.' });
 // Each lesson task again as a challenge: same stencil, needles and judging, without the unlock wording.
 /* Lining with a magnum: a third of a circle, the left side (left-handed artists turn the page). magline: centre, radius
-   and its ends in degrees, and the needles to hold in. Not a challenge yet (noCh). */
+   and its ends in degrees, and the needles to hold in. Also a challenge. */
 TT_LS_CH.push({ id: 'l-letter', lesson: '3-1', cat: 'line', diff: 3, title: 'Script lettering', needle: '5RL', needles: ['5RL', '5RS', '7RS'], size: 0.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.85, maxBlow: 1, letter: true,
   text: 'Black ink. Line the word with a #10 5RL, then fill the thick parts of the letters solid with a 5RS or 7RS in small, tight circles. Stay inside the letters. Let the skin settle, then press Done. A new word each attempt.', path: ttLetterPath });
-TT_LS_CH.push({ id: 'l-magline', lesson: '3-4', cat: 'line', diff: 3, title: 'Lining with a magnum', needle: '15M1', size: 0.3, volt: 7.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.75, maxBlow: 1, maxStrokes: 1, noCh: true,
+TT_LS_CH.push({ id: 'l-magline', lesson: '3-4', cat: 'line', diff: 3, title: 'Lining with a magnum', needle: '15M1', size: 0.3, volt: 7.3, layer: 'line', ink: 'black', kind: 'line', core: 0.6, covEase: 0.75, maxBlow: 1, maxStrokes: 1,
   magline: { cx: 108, cy: 65, r: 30, a0: 120, a1: 240, hits: 3 },
   text: 'Black ink, #10 15 magnum. Tilt it until 3 needles are in, then line the curve in one stroke, keeping the tilt. Most of the line must be at a committed depth, not a faint temporary line. Feathering in and out at the ends is fine. Let the skin settle, then press Done.',
   path: (g) => { g.moveTo(108 + 30 * Math.cos(2 * Math.PI / 3), 65 + 30 * Math.sin(2 * Math.PI / 3)); g.arc(108, 65, 30, 2 * Math.PI / 3, 4 * Math.PI / 3); } });
-TT_CH.push(...[...TT_LS_CH].filter(c => !c.noCh).sort((x, y) => x.lesson.localeCompare(y.lesson)).map(c => ({ ...c, id: 'ch-' + c.id.slice(2), lesson: undefined, thumb: 'img/ref/ch-' + c.lesson + '.jpg',   /* a calibrated attempt, shown on the card */
+TT_CH.push(...[...TT_LS_CH].filter(c => !c.noCh).sort((x, y) => x.lesson.localeCompare(y.lesson)).map(c => ({ ...c, id: 'ch-' + c.id.slice(2), lesson: undefined, thumb: c.letter || c.id === 'l-magline' ? undefined : 'img/ref/ch-' + c.id.slice(2) + '.jpg',   /* a calibrated attempt, shown on the card */
   hub: 'c' + c.lesson[0], diff: +c.lesson[0],
   text: c.text.replace(/\s*(Grade )?C or higher (unlocks the next lesson|moves you on|finishes the chapter)\./g, '') })));
 /* A challenge made in the design studio's Challenge maker: its stencil lines come as points in mm. Judged like the
