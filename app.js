@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 469;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 470;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2044,23 +2044,41 @@ const VIEWS = {
       <div class="reel-top st-strip"><button class="btn icon-btn" data-go="reels" aria-label="All reels" data-tip="All reels"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
         <input class="in" id="reel-name" aria-label="Reel name" placeholder="Reel name">
         <button class="btn icon-btn" id="reel-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
-        <button class="btn icon-btn" id="reel-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
-        <i class="st-sep"></i><button class="btn primary" id="reel-export">Export reel</button></div>
+        <button class="btn icon-btn" id="reel-redo" aria-label="Redo" data-tip="Redo (Ctrl Y)"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+        <i class="st-sep"></i>
+        <label class="btn icon-btn rib" data-tip="Add photos or videos" aria-label="Add photos or videos">${ri('media')}<input type="file" accept="image/*,video/*" multiple hidden id="reel-file2"></label>
+        ${rib('data-top="text"', 'text', 'Add text (T)')}
+        ${rib('data-top="blank"', 'page', 'Add a blank page')}
+        <i class="st-sep"></i>
+        <button class="btn icon-btn" data-top="dup" data-tip="Duplicate the selected text, sticker or clip (Ctrl D)" aria-label="Duplicate"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
+        <button class="btn icon-btn" data-top="split" data-tip="Split the video clip at the playhead (S)" aria-label="Split"><svg viewBox="0 0 24 24"><path d="M12 3v18M6 8l-3 4 3 4M18 8l3 4-3 4"/></svg></button>
+        <button class="btn icon-btn" data-top="del" data-tip="Delete the selected text, sticker or clip (Delete)" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+        <i class="st-sep"></i>
+        ${rib('data-top="snap" id="reel-snap"', 'snap', 'Snap to the centre and other layers (hold Ctrl to skip once)')}
+        <span class="reel-mods" data-tip="For tablets: tap to hold a key down">${[['shift', '⇧', 'Shift'], ['ctrl', 'Ctrl', 'Ctrl'], ['alt', 'Alt', 'Alt']].map(([m, l, n]) => `<button class="btn" data-mod="${m}" aria-label="Hold ${n}">${l}</button>`).join('')}</span>
+        <button class="btn rib-t" data-top="size" id="reel-size" data-tip="The reel's shape: vertical, portrait, square or landscape">9:16</button>
+        ${rib('data-top="watch"', 'watch', 'Watch full screen (Esc or tap to stop)')}
+        ${rib('data-top="keys"', 'keys', 'Shortcuts')}
+        <button class="btn icon-btn" data-top="fs" id="reel-fs" aria-label="Full screen" data-tip="Full screen: hides the browser's bars"></button>
+        <i class="st-sep"></i><button class="btn primary rib-x" id="reel-export" data-tip="Export the reel as a video">${ri('export')}<span>Export</span></button></div>
       <div class="reel-wrap">
         <div class="reel-stage">
-          <canvas id="reel-cv" width="${PREVIEW_W}" height="${PREVIEW_H}"></canvas>
+          <div class="reel-vp" id="reel-vp"><canvas id="reel-cv" width="${PREVIEW_W}" height="${PREVIEW_H}"></canvas>
+            <div class="reel-zoom"><button class="btn icon-btn" data-z="-" aria-label="Zoom out" data-tip="Zoom out (Ctrl −)">−</button><button class="btn" data-z="fit" id="reel-zv" data-tip="Fit (Ctrl 0)">Fit</button><button class="btn icon-btn" data-z="+" aria-label="Zoom in" data-tip="Zoom in (Ctrl +)">+</button></div></div>
           <div class="reel-ctrl">
             <button class="btn icon-btn" id="reel-restart" aria-label="Play from the start" data-tip="Play from the start"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5l-10 7 10 7z"/></svg></button>
             <button class="btn icon-btn" id="reel-play" aria-label="Play"></button>
             <input type="range" id="reel-scrub" min="0" step="0.01" value="0" aria-label="Scrub">
             <span id="reel-time" class="muted"></span>
+            <span class="tl-zoom" data-tip="Timeline zoom: also Ctrl + wheel, or pinch on the timeline"><button class="btn icon-btn" data-tz="-" aria-label="Zoom the timeline out">−</button><button class="btn" data-tz="fit" aria-label="Fit the whole reel">Fit</button><button class="btn icon-btn" data-tz="+" aria-label="Zoom the timeline in">+</button></span>
+            <label class="reel-pbar" data-tip="A thin accent bar along the top that fills as the reel plays"><input type="checkbox" id="reel-pbar"><span>Progress bar</span></label>
           </div>
           <div class="reel-tl" id="reel-tl"></div>
           <div class="reel-quick" id="reel-quick" hidden></div>
         </div>
         <div class="reel-side">
           <div class="seg" id="reel-tabs" style="margin-bottom:12px">
-            ${[['edit', 'Edit'], ['style', 'Style'], ['music', 'Music'], ['tpl', 'Templates']].map(([k, l]) => `<button data-t="${k}" class="${R.tab === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}
+            ${[['edit', 'Edit'], ['style', 'Style'], ['music', 'Sound'], ['tpl', 'Templates']].map(([k, l]) => `<button data-t="${k}" class="${R.tab === k ? 'on' : ''}" style="flex:1" data-tip="${l}" aria-label="${l}">${ri(k)}<span>${l}</span></button>`).join('')}
           </div>
           <div id="reel-panel"></div>
         </div>
@@ -2069,6 +2087,7 @@ const VIEWS = {
       if (!id) { location.replace('#reels'); return; }
       const v = $('#view'); v.style.opacity = 0.4; v.style.pointerEvents = 'none';
       if (!(await reelOpen(+id)) || !$('#reel-cv')) return;
+      { const cv0 = $('#reel-cv'); cv0.width = PREVIEW_W; cv0.height = PREVIEW_H; }   /* the reel's own shape */
       v.style.opacity = ''; v.style.pointerEvents = '';
       const nm = $('#reel-name'); nm.value = RS.name; nm.oninput = () => { RS.name = nm.value; };
       $('#reel-undo').onclick = () => reelUndo(-1); $('#reel-redo').onclick = () => reelUndo(1); reelUndoBtns();
@@ -2081,7 +2100,40 @@ const VIEWS = {
       sc.addEventListener('change', () => { R.scrubbing = false; });
       $('#reel-tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; R.tab = b.dataset.t;
         $('#reel-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); reelPanel(); };
-      $('#reel-export').onclick = () => reelExport();
+      document.querySelector('.tl-zoom').onclick = (e) => { const b = e.target.closest('[data-tz]'); if (!b) return; const z = b.dataset.tz; z === 'fit' ? reelTlZoom(1, null, true) : reelTlZoom(z === '+' ? 1.5 : 1 / 1.5); };
+      $('#reel-export').onclick = () => {
+        const o = document.createElement('div'); o.id = 'merge-dlg'; const q = reelStyle().quality;
+        o.innerHTML = `<div class="card" style="max-width:420px"><h2>Export reel</h2><p class="muted" style="margin-top:0">Recorded in real time, so keep this screen open until it finishes.</p>
+          <div class="dz-ex"><button data-q="720" class="${q !== '1080' ? 'on' : ''}"><b>720p</b><small>Smaller file, quick to send. Fine for most phones.</small></button>
+          <button data-q="1080" class="${q === '1080' ? 'on' : ''}"><b>1080p</b><small>Sharper, bigger file. Heavier on older phones.</small></button></div>
+          <button class="btn" data-q="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+        o.onclick = (e) => { const b = e.target.closest('[data-q]'); if (!b && e.target !== o) return; o.remove(); if (b?.dataset.q) { reelSetStyle('quality', b.dataset.q); reelExport(); } };
+        document.body.appendChild(o);
+      };
+      /* The top strip: add, edit, the held keys for tablets and the shortcut list. */
+      R.mods ||= {}; reelModsDraw();
+      R.snap = Settings.get('reel_snap', '1') !== '0'; reelSnapBtn(); reelSizeBtn();
+      const fsb = $('#reel-fs'), fsShow = () => { if (!fsb.isConnected) return document.removeEventListener('fullscreenchange', fsShow); const on = FS.on();
+        fsb.innerHTML = on ? '<svg viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+        fsb.classList.toggle('on', on); fsb.dataset.tip = on ? 'Exit full screen' : "Full screen: hides the browser's bars"; };
+      document.addEventListener('fullscreenchange', fsShow); fsShow();
+      reelViewBind();
+      const pb = $('#reel-pbar'); if (pb) { pb.checked = !!reelStyle().progress; pb.onchange = () => { reelSetStyle('progress', pb.checked); reelRender(); }; }
+      document.querySelector('.reel-top').onclick = (e) => {
+        const m = e.target.closest('[data-mod]'); if (m) { R.mods[m.dataset.mod] = !R.mods[m.dataset.mod]; return reelModsDraw(); }
+        const b = e.target.closest('[data-top]'); if (!b) return; const a = b.dataset.top, c = R.clips[R.sel], lay = R.layer?.startsWith('stk');
+        if (a === 'text') { if (!c) return toast('Add a clip or a page first.'); return reelAddText(c); }
+        if (a === 'blank') return reelAddBlank();
+        if (a === 'dup') { if (lay) return reelLayerAct('dup'); return reelClipDup(c); }
+        if (a === 'del') { if (lay) return reelLayerAct('del'); if (c && R.pick?.kind === 'clip') return reelRemoveClip(R.sel); return toast('Pick a clip, text or sticker first.'); }
+        if (a === 'split') return reelClipSplit(c);
+        if (a === 'keys') return reelKeysHelp();
+        if (a === 'size') return reelSizePick(R.ar).then(k => { if (!k || k === R.ar) return; reelSetAspect(k); const cv = $('#reel-cv'); cv.width = PREVIEW_W; cv.height = PREVIEW_H; R.vpFit?.(); reelSizeBtn(); reelChanged(); toast(reelSize(k)[1] + '.', 1500); });
+        if (a === 'watch') return reelWatch();
+        if (a === 'fs') return FS.can() ? FS.set(!FS.on()) : toast('On iPhone: tap Share, then "Add to Home Screen". InkForge then opens full screen.', 6000);
+        if (a === 'snap') { R.snap = !R.snap; Settings.set('reel_snap', R.snap ? '1' : '0'); return reelSnapBtn(); }
+      };
+      $('#reel-file2').onchange = (e) => { const f = $('#reel-file'); if (!f) return; const dt = new DataTransfer(); [...e.target.files].forEach(x => dt.items.add(x)); f.files = dt.files; f.dispatchEvent(new Event('change')); e.target.value = ''; };
       if (!['edit', 'style', 'music', 'tpl'].includes(R.tab)) R.tab = 'edit';
       reelCanvasBind($('#reel-cv'));
       reelTimeline(); reelPanel();
@@ -6203,7 +6255,8 @@ async function openRulesPrint() {
 
 /* ---------- Reel UI (engine in reel.js) ---------- */
 // The draft stays in memory while the app is open, so leaving the Reel screen loses nothing.
-function reelChanged() { reelTimeline(); reelRender(); if (!R.quickDrag) reelQuick(); }
+function reelChanged() { const { total } = reelSegments(); for (const o of R.ovl || []) { if (o.t1 > total) o.t1 = total; if (o.t0 > o.t1 - 0.2) o.t0 = Math.max(0, o.t1 - 0.2); }
+  reelTimeline(); reelRender(); if (!R.quickDrag) reelQuick(); }
 
 /* ---------- Saved reels ----------
    A reel is kept like a design: its edit as JSON (clips, cards, transitions, music settings and the style), with its
@@ -6221,9 +6274,9 @@ function reelKeep(obj, file) {
   RS.pend.push(p); return p;
 }
 // The edit as JSON. `hist`: for undo, without the media file names (they arrive in the background and are no edit).
-const reelDocJSON = (hist) => JSON.stringify({ v: 1,
+const reelDocJSON = (hist) => JSON.stringify({ v: 1, ar: R.ar || '9:16',
   clips: R.clips.map(c => { const o = {}; for (const [k, v] of Object.entries(c)) if (!['el', 'url', 'thumb', 'gain'].includes(k) && !(hist && k === 'ref') && (v == null || typeof v !== 'object' || Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) o[k] = v; return o; }),
-  trans: R.trans, music: R.music ? { ref: hist ? undefined : R.music.ref, name: R.music.name, offset: R.music.offset, vol: R.music.vol } : null, style: reelStyle() });
+  trans: R.trans, ovl: R.ovl || [], aud: (R.aud || []).map(({ buffer, ref, ...a }) => ({ ...a, ref: hist ? undefined : ref })), style: reelStyle() });
 
 /* Undo and redo: a copy of the edit once it has held still for a moment (checked twice a second; never mid-drag),
    up to 60 steps. Going back rebuilds the clip list from the copy, reusing each clip's loaded video or photo (kept
@@ -6232,7 +6285,7 @@ const RH = { list: [], i: -1, last: '', live: new Map(), songs: new Map() };
 function reelHistReset() { RH.list = [reelDocJSON(true)]; RH.i = 0; RH.last = RH.list[0]; RH.live = new Map(); RH.songs = new Map(); reelHistKeep(); reelUndoBtns(); }
 function reelHistKeep() {
   for (const c of R.clips) RH.live.set(c.id, { el: c.el, url: c.url, thumb: c.thumb, gain: c.gain, ref: c.ref, w: c.w, h: c.h, srcDur: c.srcDur });
-  if (R.music) RH.songs.set(R.music.name, { buffer: R.music.buffer, ref: R.music.ref });
+  for (const a of R.aud || []) RH.songs.set(a.id, { buffer: a.buffer, ref: a.ref });
 }
 function reelUndoBtns() { const u = $('#reel-undo'), r = $('#reel-redo'); if (u) u.disabled = RH.i <= 0; if (r) r.disabled = RH.i >= RH.list.length - 1; }
 setInterval(() => {
@@ -6252,8 +6305,8 @@ function reelUndo(d) {
   for (const c of R.clips) if (c.type === 'video') c.el.pause();
   R.clips = doc.clips.filter(sv => RH.live.has(sv.id)).map(sv => ({ ...sv, ...RH.live.get(sv.id) }));
   R.trans = doc.trans || {};
-  const song = doc.music && RH.songs.get(doc.music.name);
-  R.music = song ? { ...doc.music, ...song } : null;
+  R.ovl = doc.ovl || [];
+  R.aud = (doc.aud || []).filter(a => RH.songs.has(a.id)).map(a => ({ ...a, ...RH.songs.get(a.id) }));
   Settings.set('reel_style', JSON.stringify(doc.style));
   RH.last = RH.list[n];
   R.sel = Math.min(R.sel, R.clips.length - 1);
@@ -6271,8 +6324,8 @@ async function reelSave() {
     const old = await DB.one('SELECT doc, thumb_ref FROM reels WHERE id = ?', [RS.id]); if (!old) return;
     let thumb = old.thumb_ref;
     const seg = reelSegments().segs.find(x => x.kind === 'clip');
-    if (seg && !R.playing) { const c = document.createElement('canvas'); c.width = 270; c.height = 480;
-      reelDraw(c.getContext('2d'), 270, 480, seg.start + Math.min(0.5, seg.dur / 2)); thumb = await Media.save(await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8)), 'jpg'); }
+    if (seg && !R.playing) { const c = document.createElement('canvas'); c.width = Math.round(PREVIEW_W / 2); c.height = Math.round(PREVIEW_H / 2);
+      reelDraw(c.getContext('2d'), c.width, c.height, seg.start + Math.min(0.5, seg.dur / 2)); thumb = await Media.save(await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8)), 'jpg'); }
     await DB.run(`UPDATE reels SET name = ?, doc = ?, thumb_ref = ?, updated_at = datetime('now') WHERE id = ?`, [name, json, thumb, RS.id]);
     RS.saved = name + json;
     for (const r of new Set(String(old.doc || '').match(MEDIA_REF_RE) || [])) if (!json.includes(r)) await Media.release(r);
@@ -6296,13 +6349,15 @@ async function reelOpen(id) {
   // The last reel's players and file links go, removed clips kept for undo too.
   for (const c of [...R.clips, ...RH.live.values()]) { if (c.el?.pause) { c.el.pause(); c.el.removeAttribute('src'); c.el.load?.(); } if (c.url?.startsWith('blob:')) URL.revokeObjectURL(c.url); }
   RH.live = new Map(); RH.songs = new Map();
-  Object.assign(R, { clips: [], sel: -1, pick: null, trans: {}, music: null, t: 0, tplId: null });
+  Object.assign(R, { clips: [], sel: -1, pick: null, trans: {}, music: null, ovl: [], aud: [], t: 0, tplId: null });
   RS.id = id; RS.loaded = false; RS.name = row.name || 'Reel'; RS.pend = [];
   let doc = {}; try { doc = JSON.parse(row.doc || '{}'); } catch {}
+  reelSetAspect(doc.ar || '9:16');
   if (doc.style) await Settings.set('reel_style', JSON.stringify(doc.style));
   R.trans = doc.trans || {};
   let missing = 0;
   for (const sv of doc.clips || []) {
+    if (sv.type === 'blank') { const c = reelBlank(sv); R.clips.push(c); R.seq = Math.max(R.seq, c.id); continue; }
     // The stored file itself (read from storage as it plays), not a copy of a whole video in memory.
     let f = null; try { f = sv.ref && await (await (await Media.dir()).getFileHandle(sv.ref)).getFile(); } catch {}
     if (!f) { missing++; continue; }
@@ -6311,13 +6366,84 @@ async function reelOpen(id) {
       const { id: sid, ...rest } = sv; Object.assign(c, rest); if (sid != null) c.id = sid; R.seq = Math.max(R.seq, c.id);
     } catch { missing++; }
   }
-  if (doc.music?.ref) {
-    const u = await Media.url(doc.music.ref);
-    try { if (!u) throw 0; R.music = { ...doc.music, buffer: await reelAudio().decodeAudioData(await (await fetch(u)).arrayBuffer()) }; } catch { missing++; }
-  }
+  R.ovl = doc.ovl || [];
+  const tracks = doc.aud || (doc.music?.ref ? [{ id: 1, row: 0, name: doc.music.name, ref: doc.music.ref, t0: 0, off: doc.music.offset || 0, len: 0, vol: doc.music.vol ?? 0.8, fadeIn: doc.music.fadeIn || 0, fadeOut: doc.music.fadeOut ?? 1, old: true }] : []);
+  for (const a of tracks) { const u = await Media.url(a.ref);
+    try { if (!u) throw 0; R.aud.push({ ...a, buffer: await reelAudio().decodeAudioData(await (await fetch(u)).arrayBuffer()) }); R.audSeq = Math.max(R.audSeq || 0, a.id); } catch { missing++; } }
+  reelOvMigrate();
+  for (const a of R.aud) if (a.old) { delete a.old; a.len = Math.min(a.buffer.duration - a.off, reelSegments().total) || a.buffer.duration; }   /* an older reel's one song: the whole reel */
   if (missing) toast(`${missing} file${missing > 1 ? 's' : ''} of this reel could not be found.`, 5000);
   RS.loaded = true; RS.saved = RS.name + reelDocJSON(); reelHistReset();
   return true;
+}
+/* A blank page clip: a colour (or a top-to-bottom gradient) to fill with text stickers, stickers and a caption. */
+function reelBlankThumb(c) { const cv = document.createElement('canvas'); cv.width = 54; cv.height = 96; drawMedia(cv.getContext('2d'), c, 54, 96, 0); return cv.toDataURL(); }
+function reelBlank(o = {}) { const c = { id: ++R.seq, type: 'blank', name: 'Blank page', bg: '#111416', bg2: '', dur: 3, w: 1080, h: 1920, el: null, motion: 'none', fit: 'cover', caption: '', mute: true, filter: 'none', speed: 1, rot: 0, flip: false, ...o };
+  c.thumb = reelBlankThumb(c); return c; }
+/* Captions and text stickers were two kinds of text; there is one now. A clip's old caption becomes a text layer
+   in the same place, size, font, look and colour. */
+function reelCapToText(c) {
+  if (!c.caption) return;
+  const s = reelStyle(), y = c.cap?.y ?? (s.captionPos === 'top' ? 0.15 : s.captionPos === 'middle' ? 0.5 : 0.74);
+  (c.stickers ||= []).push({ text: c.caption, x: c.cap?.x ?? 0.5, y, s: (c.cap?.s || 1) * (REEL_CAP_PX[s.capSize] || 78) / 72, font: c.capFont, look: c.capLook, color: c.capColor,
+    anim: c.capAnim === 'none' ? 'none' : c.capAnim || 'fade', out: c.capOut });
+  c.caption = ''; delete c.cap;
+}
+/* Adds a text or sticker to the reel at the playhead, for `len` seconds (3 by default), and selects it. */
+function reelOvAdd(o, len = 3) {
+  const { total } = reelSegments(), L = Math.max(0.5, Math.min(len || 3, total || 3)); let t0 = Math.max(0, Math.min(R.t, (total || L) - L));
+  R.ovl ||= []; R.ovl.push({ ...o, t0, t1: t0 + L }); R.layer = 'stk' + (R.ovl.length - 1); R.ovOpen = true; reelChanged(); reelPanel(); return R.ovl.at(-1);
+}
+/* Older reels kept text and stickers on each clip; they move onto the reel's own layers, over the same time. */
+function reelOvMigrate() {
+  const segs = reelSegments().segs; R.ovl ||= [];
+  for (const c of R.clips) { reelCapToText(c); const g = segs.find(x => x.clip === c); if (!c.stickers?.length || !g) continue;
+    for (const st of c.stickers) R.ovl.push({ ...st, t0: g.start + (st.at || 0), t1: g.start + g.dur, at: 0 });
+    c.stickers = []; }
+}
+/* A quick look at a text or sticker's entrance and effects: plays its first moments, then goes back to where you were.
+   Also when the Appear speed or Effect speed slider is let go. */
+function reelStkPeek(st) {
+  if (!st || R.recording) return; clearTimeout(R.peekT); const back = R.peekBack ?? R.t; R.peekBack = back;
+  if (R.playing) reelPause(); reelShow(st.t0 + 0.001); reelPlay();
+  R.peekT = setTimeout(() => { reelPause(); reelShow(back); R.peekBack = null; }, Math.min(st.t1 - st.t0, (st.animDur || 0.5) + 1.3) * 1000);
+}
+function reelAddText(c, text = 'Your text') {
+  const s = reelStyle(); 
+  R.tool = 'text'; reelOvAdd({ text, x: 0.5, y: s.captionPos === 'top' ? 0.15 : s.captionPos === 'middle' ? 0.5 : 0.74, s: (REEL_CAP_PX[s.capSize] || 78) / 72, anim: 'pop' });
+  setTimeout(() => { const ta = document.querySelector('[data-stt]'); if (ta) { ta.focus(); ta.select(); } }, 30);
+}
+/* Acts on the selected layer (text or sticker) of the selected clip: del, dup, flip, up, down, unstretch, nudge, size, turn. */
+function reelLayerAct(a, v = 0) {
+  const i = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1, st = R.ovl?.[i]; if (!st) return false;
+  if (a === 'del') { R.ovl.splice(i, 1); R.layer = null; }
+  else if (a === 'dup') { const { img, ...rest } = st; R.ovl.push({ ...JSON.parse(JSON.stringify(rest)), img, x: Math.min(0.95, st.x + 0.04), y: Math.min(0.95, st.y + 0.04) }); R.layer = 'stk' + (R.ovl.length - 1); }
+  else if (a === 'flip') st.flip = !st.flip;
+  else if (a === 'unstretch') { delete st.sx; delete st.sy; }
+  else if (a === 'up' || a === 'down') { const j = a === 'up' ? Math.min(R.ovl.length - 1, i + 1) : Math.max(0, i - 1); [R.ovl[i], R.ovl[j]] = [R.ovl[j], R.ovl[i]]; R.layer = 'stk' + j; }
+  else if (a === 'nudge') { st.x = Math.max(0, Math.min(1, st.x + v[0])); st.y = Math.max(0, Math.min(1, st.y + v[1])); }
+  else if (a === 'size') st.s = Math.max(0.2, Math.min(4, (st.s || 1) * v));
+  else if (a === 'turn') st.rot = (((st.rot || 0) + v + 540) % 360) - 180;
+  reelChanged(); if (!['nudge', 'size', 'turn'].includes(a)) reelPanel(); return true;
+}
+function reelKeysHelp() {
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const rows = [['Space', 'Play or pause'], ['T', 'Add text'], ['Delete', 'Delete the selected text, sticker or clip'], ['Arrows', 'Nudge (Shift: further)'], ['+ / −', 'Bigger or smaller (Shift: faster)'],
+    ['[ / ]', 'Turn 15° (Shift: 1°)'], ['H', 'Flip'], ['Ctrl D', 'Duplicate'], ['Ctrl C / V', 'Copy and paste a text or sticker, onto any clip'], ['Ctrl ] / [', 'Bring forward or send back'],
+    ['S', 'Split a video at the playhead'], ['Ctrl Z / Y', 'Undo and redo'], ['Esc', 'Deselect'], ['Ctrl + / − / 0', 'Zoom the preview in, out, or fit'], ['Wheel or pinch', 'Zoom the preview'], ['Drag empty space, Space + drag', 'Pan when zoomed in'],
+    ['Snap button', 'Snapping on or off (Ctrl while moving skips it once)'], ['Corner handles', 'Size (Shift: stretch freely)'], ['Side handles', 'Stretch a picture'],
+    ['Gold dot', 'Turn (Shift: 15° steps)'], ['Alt drag', 'Leave a copy behind'], ['Shift / Ctrl / Alt buttons', 'For tablets: tap to hold the key down']];
+  o.innerHTML = `<div class="card" style="max-width:520px"><h2>Reel shortcuts</h2><div class="keys-list">${rows.map(([k, d]) => `<div><kbd>${k}</kbd><span>${d}</span></div>`).join('')}</div><button class="btn" style="width:100%;margin-top:12px" data-x>Close</button></div>`;
+  o.onclick = (e) => { if (e.target === o || e.target.closest('[data-x]')) o.remove(); }; document.body.appendChild(o);
+}
+/* The size picker for a new reel (and Size in the top strip): each shape drawn to scale, with where it is used. */
+function reelSizePick(cur = '9:16') {
+  return new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
+    o.innerHTML = `<div class="card" style="max-width:520px"><h2>Reel size</h2><p class="muted" style="margin-top:0">Pick where it will be posted. Cards, text and stickers fit themselves to it.</p>
+      <div class="rs-grid">${REEL_SIZES.map(([k, l, d, w, h]) => `<button data-ar="${k}" class="${k === cur ? 'on' : ''}"><i style="aspect-ratio:${w}/${h}"></i><b>${l}</b><small>${d}</small><em>${w} × ${h}</em></button>`).join('')}</div>
+      <button class="btn" data-ar="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+    o.onclick = (e) => { const b = e.target.closest('[data-ar]'); if (!b && e.target !== o) return; o.remove(); res(b?.dataset.ar || null); };
+    document.body.appendChild(o); });
 }
 // The list of saved reels, like the designs and the simulator's pieces.
 async function reelList() {
@@ -6340,8 +6466,9 @@ async function reelList() {
     if (await Lib.click(e, 'reels', reelList)) return;
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('#reel-new')) {
+      const ar = await reelSizePick(); if (!ar) return;
       const n = (await DB.one('SELECT COUNT(*) AS n FROM reels')).n;
-      await DB.run('INSERT INTO reels (name, doc) VALUES (?, ?)', [`Reel ${n + 1}`, JSON.stringify({ v: 1, clips: [], trans: {}, music: null, style: reelStyle() })]);
+      await DB.run('INSERT INTO reels (name, doc) VALUES (?, ?)', [`Reel ${n + 1}`, JSON.stringify({ v: 1, ar, clips: [], trans: {}, music: null, style: reelStyle() })]);
       location.hash = 'reel/' + (await DB.one('SELECT last_insert_rowid() AS id')).id; return;
     }
     if (d('del')) {
@@ -6369,23 +6496,21 @@ function reelQuickSpec() {
   if (!p) return [];
   if (p.kind === 'clip') {
     const c = R.clips.find(x => x.id === p.key); if (!c) return [];
-    return c.type === 'video'
-      ? [['inP', 'Start', 0, c.srcDur, 0.1, c.inP], ['outP', 'End', 0, c.srcDur, 0.1, c.outP]]
-      : [['dur', 'Length', 0.5, 8, 0.1, c.dur]];
+    return c.type === 'video' ? [['speed', 'Speed', 0.25, 4, 0.25, c.speed || 1], ['vol', 'Sound', 0, 2, 0.05, c.mute ? 0 : c.vol ?? 1]] : [];   /* lengths: drag the clip's ends */
   }
-  if ((p.kind === 'intro' || p.kind === 'outro') && s[p.kind]) return [[p.kind + 'Dur', 'Duration', 0.8, 6, 0.1, +s[p.kind + 'Dur']]];
   if (p.kind === 'trans') {
     const tr = reelTrans(s, { key: p.key });
     return tr.type === 'cut' ? [] : [['tdur', 'Transition', 0.1, 1.2, 0.05, tr.dur]];
   }
   return [];
 }
+const reelQFmt = (k, v) => k === 'speed' ? v + '×' : k === 'vol' ? (v ? Math.round(v * 100) + '%' : 'Off') : v.toFixed(k === 'tdur' ? 2 : 1) + 's';
 function reelQuick() {
   const el = $('#reel-quick'); if (!el) return;
   const spec = reelQuickSpec();
   el.hidden = !spec.length;
   el.innerHTML = spec.map(([k, l, min, max, step, v]) => `<label class="q-sl"><span>${l}</span>
-    <input type="range" min="${min}" max="${(+max).toFixed(2)}" step="${step}" value="${v}" data-q="${k}"><b>${(+v).toFixed(k === 'tdur' ? 2 : 1)}s</b></label>`).join('');
+    <input type="range" min="${min}" max="${(+max).toFixed(2)}" step="${step}" value="${v}" data-q="${k}"><b>${reelQFmt(k, +v)}</b></label>`).join('');
 }
 function reelQuickBind(el) {
   el.addEventListener('input', (e) => {
@@ -6393,6 +6518,7 @@ function reelQuickBind(el) {
     const v = +e.target.value, p = R.pick; R.quickDrag = true;
     if (p.kind === 'clip') {
       const c = R.clips.find(x => x.id === p.key); if (!c) return;
+      if (k === 'vol') { c.mute = !v; c.vol = v || c.vol; if (c.gain) c.gain.gain.value = v; e.target.nextElementSibling.textContent = reelQFmt(k, v); return; }
       c[k] = v;
       if (k === 'inP' && c.outP - c.inP < 0.5) c.outP = Math.min(c.srcDur, c.inP + 0.5);
       if (k === 'outP' && c.outP - c.inP < 0.5) c.inP = Math.max(0, c.outP - 0.5);
@@ -6401,7 +6527,7 @@ function reelQuickBind(el) {
     } else if (k === 'tdur') {
       R.trans[p.key] = { ...reelTrans(reelStyle(), { key: p.key }), ...R.trans[p.key], dur: v };
     } else reelSetStyle(k, v);
-    e.target.nextElementSibling.textContent = v.toFixed(k === 'tdur' ? 2 : 1) + 's';
+    e.target.nextElementSibling.textContent = reelQFmt(k, v);
     reelChanged();
   });
   // On release: refresh the panel so its own sliders show the new value; preview transitions.
@@ -6414,13 +6540,83 @@ function reelQuickBind(el) {
 
 // The timeline under the preview is the main way around: tap a clip, card or transition and the
 // Edit tab shows that item's settings. Style holds the shared look; Music the soundtrack.
-const REEL_CLIP_TOOLS = [['trim', 'Trim'], ['look', 'Look'], ['frame', 'Frame'], ['text', 'Text'], ['stickers', 'Stickers'], ['arrange', 'Arrange']];
-const REEL_STYLE_TABS = [['text', 'Text'], ['brand', 'Brand'], ['trans', 'Transitions'], ['export', 'Export']];
+const REEL_CLIP_TOOLS = [['look', 'Look'], ['frame', 'Frame'], ['text', 'Text'], ['stickers', 'Stickers']];
+/* The reel's text defaults, shown folded in the Text tool: the font for cards and any text left on "Same as style",
+   the text colour, and where and how big new text starts. Saved in the style like before. */
+function reelTextDefaults() {
+  const s = reelStyle(), seg = (k, opts) => `<div class="seg" data-st="${k}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  return `<details class="reel-def" ${R.defOpen ? 'open' : ''}><summary><b>Text defaults</b><span class="muted">${esc(reelFontDef(s.font)[1])} · new text at the ${s.captionPos || 'bottom'}</span></summary>
+    <div class="field"><span class="lbl">Font ${help('For the intro and outro cards, and every text set to Same as style.')}</span>${reelFontBtn(s.font, 'style', false)}</div>
+    <div class="reel-row"><span class="lbl">Colour</span><span class="ink-dots" data-sw="color">${REEL_COLORS.map(c => `<button class="ink ${s.color === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span></div>
+    <div class="two tight"><div class="field"><span class="lbl">New text starts</span>${seg('captionPos', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
+      <div class="field"><span class="lbl">New text size</span>${seg('capSize', [['s', 'S'], ['m', 'M'], ['l', 'L']])}</div></div></details>`;
+}
+/* Icons for the reel editor's buttons (24 px grid, drawn in the button's colour). */
+const RI = {
+  media: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>',
+  text: '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>', page: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M12 9v6M9 12h6"/>',
+  snap: '<path d="M6 3v8a6 6 0 0 0 12 0V3"/><path d="M6 7h4M14 7h4"/>', watch: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/>',
+  export: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/>', keys: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
+  edit: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+  style: '<path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-.9 2-2 0-1.2-1-1.5-1-2.5 0-1 .8-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
+  music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>', tpl: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+  look: '<path d="M4 20L16 8"/><path d="M15 3l1.2 2.8L19 7l-2.8 1.2L15 11l-1.2-2.8L11 7l2.8-1.2z"/>', frame: '<path d="M6 2v16h16M2 6h16v16"/>',
+  sticker: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01"/>',
+  dup: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>', flip: '<path d="M12 3v18M8 7l-5 5 5 5zM16 7l5 5-5 5z"/>',
+  up: '<path d="M12 19V7M7 11l5-5 5 5M5 3h14"/>', down: '<path d="M12 5v12M7 13l5 5 5-5M5 21h14"/>', unstretch: '<path d="M14 4h6v6M10 20H4v-6M20 4l-6 6M4 20l6-6"/>',
+  whole: '<path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/>', del: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  toend: '<path d="M4 12h13M13 7l5 5-5 5M21 5v14"/>', xf: '<path d="M3 6c6 0 12 12 18 12M3 18c6 0 12-12 18-12"/>', row: '<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', split: '<path d="M12 3v18M6 8l-3 4 3 4M18 8l3 4-3 4"/>', freeze: '<path d="M12 2v20M4.9 4.9l14.2 14.2M2 12h20M4.9 19.1L19.1 4.9"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', device: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>', pf: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>'
+};
+const ri = (k) => `<svg viewBox="0 0 24 24">${RI[k]}</svg>`;
+const rib = (attrs, k, tip) => `<button class="btn icon-btn rib" ${attrs} data-tip="${tip}" aria-label="${tip.replace(/ \(.*\)$/, '')}">${ri(k)}</button>`;
+// Font choices for a select: built in, your own, and Import.
+const reelFontOpts = (cur, same) => [...(same ? [['', 'Same as style']] : []), ...reelFontsAll().map(([k, l]) => [k, l]), ['+imp', 'Import a font file…']]
+  .map(([k, l]) => `<option value="${k}" ${(cur || '') === k ? 'selected' : ''}>${esc(l)}</option>`).join('');
+// Imports a font (shared with the design studio) and resolves its reel key.
+async function reelFontImport() { if (typeof dzImportFont !== 'function') return null; const n = await dzImportFont(); return n ? 'u:' + n : null; }
+/* Shift, Ctrl and Alt: the real keys, or the latch buttons in the top strip for tablets. */
+const reelMod = (e, k) => !!(e?.[k + 'Key'] || (k === 'ctrl' && e?.metaKey) || R.mods?.[k]);
+function reelModsDraw() { document.querySelectorAll('[data-mod]').forEach(b => b.classList.toggle('on', !!R.mods?.[b.dataset.mod])); }
+addEventListener('keydown', (e) => {
+  if (!location.hash.startsWith('#reel/') || R.recording || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const ctrl = reelMod(e, 'ctrl'), shift = reelMod(e, 'shift'), k = e.key, lay = R.layer?.startsWith('stk'), c = R.clips[R.sel];
+  const go = (f) => { e.preventDefault(); f(); };
+  if (ctrl && (k === '0')) return go(() => R.zoomFit?.());
+  if (ctrl && (k === '=' || k === '+')) return go(() => R.zoomAt?.(1.25));
+  if (ctrl && (k === '-' || k === '_')) return go(() => R.zoomAt?.(0.8));
+  if (k === ' ') return go(() => R.playing ? reelPause() : reelPlay());
+  if (k === 'Escape') return go(() => { R.layer = null; reelRender(); reelPanel(); });
+  if (ctrl && k.toLowerCase() === 'c' && lay) return go(() => { const st = R.ovl[+R.layer.slice(3)], { img, ...rest } = st; R.clip = { ...JSON.parse(JSON.stringify(rest)), img }; toast('Copied.', 900); });
+  if (ctrl && k.toLowerCase() === 'v' && R.clip) return go(() => { const { img, ...rest } = R.clip; reelOvAdd({ ...JSON.parse(JSON.stringify(rest)), img }, (rest.t1 - rest.t0) || 3); });
+  if (ctrl && k.toLowerCase() === 'd') return go(() => lay ? reelLayerAct('dup') : reelClipDup(c));
+  if (ctrl && k === ']' && lay) return go(() => reelLayerAct('up'));
+  if (ctrl && k === '[' && lay) return go(() => reelLayerAct('down'));
+  if (k === 'Delete' || k === 'Backspace') return go(() => { if (lay) reelLayerAct('del'); else if (c && R.pick?.kind === 'clip') reelRemoveClip(R.sel); });
+  if (k.startsWith('Arrow') && lay) { const d = shift ? 0.05 : 0.005; return go(() => reelLayerAct('nudge', k === 'ArrowLeft' ? [-d, 0] : k === 'ArrowRight' ? [d, 0] : k === 'ArrowUp' ? [0, -d] : [0, d])); }
+  if ((k === '+' || k === '=') && lay) return go(() => reelLayerAct('size', shift ? 1.25 : 1.05));
+  if ((k === '-' || k === '_') && lay) return go(() => reelLayerAct('size', shift ? 0.8 : 1 / 1.05));
+  if ((k === ']' || k === '[') && lay) return go(() => reelLayerAct('turn', (k === ']' ? 1 : -1) * (shift ? 1 : 15)));
+  if (k.toLowerCase() === 'h' && lay && !ctrl) return go(() => reelLayerAct('flip'));
+  if (k.toLowerCase() === 't' && !ctrl && c) return go(() => reelAddText(c));
+  if (k.toLowerCase() === 's' && !ctrl && c?.type === 'video') return go(() => reelClipSplit(c));
+});
+const REEL_EMOJI = ['🔥', '✨', '❤️', '🖤', '💀', '🌹', '⚡', '👑', '💉', '🎨', '✅', '⭐', '😍', '👀', '📍', '🗓️'];
+const REEL_CAP_LOOKS = [['outline', 'Outline'], ['shadow', 'Shadow'], ['box', 'Box'], ['abox', 'Accent box'], ['neon', 'Neon'], ['plain', 'Plain']];
+const REEL_CAP_ANIMS = [['fade', 'Fade'], ['pop', 'Pop'], ['slide', 'Slide up'], ['bounce', 'Bounce'], ['type', 'Typewriter'], ['none', 'None']];
+const REEL_STYLE_TABS = [['brand', 'Brand'], ['trans', 'Transitions']];
 const REEL_TRANSITIONS = [['cut', 'Cut', 'Straight cut'], ['fade', 'Fade', 'Dip to black'], ['flash', 'Flash', 'White flash, good on the beat'],
-  ['zoom', 'Zoom', 'Punch-in between clips'], ['wipe', 'Wipe', 'Before / after reveal, e.g. stencil to finished'], ['slide', 'Slide', 'Next clip pushes in from the side']];
-const REEL_TR_ICON = { cut: '|', fade: '◐', flash: '✦', zoom: '⤢', wipe: '▧', slide: '⇥' };
-const REEL_PPS = 34;   // timeline pixels per second
-R.tool ||= 'trim'; R.stab ||= 'text';
+  ['zoom', 'Zoom', 'Punch-in between clips'], ['wipe', 'Wipe', 'Before / after reveal, e.g. stencil to finished'], ['slide', 'Slide', 'Next clip pushes in from the side'],
+  ['dissolve', 'Dissolve', 'Blends smoothly into the next'], ['whip', 'Whip pan', 'A fast blurred swipe'], ['iris', 'Circle', 'Opens in a circle from the middle'],
+  ['heart', 'Heart', 'Opens in a heart shape'], ['doors', 'Doors', 'Opens from the middle'], ['spin', 'Spin', 'Twists into the next clip'],
+  ['blur', 'Blur', 'Blurs out and back in'], ['glitch', 'Glitch', 'Digital glitch on the cut']];
+const REEL_TR_ICON = { cut: '|', fade: '◐', flash: '✦', zoom: '⤢', wipe: '▧', slide: '⇥', dissolve: '◑', whip: '≫', iris: '◯', heart: '♥', doors: '⇔', spin: '↻', blur: '◌', glitch: '▤' };
+const REEL_PPS = 34;   // timeline pixels per second at the normal zoom
+/* A segment's width on the timeline at the current zoom (R.pps). Short clips keep a minimum width so they can be tapped,
+   except when zoomed far out to see a long reel whole. */
+const reelSegW = (g) => Math.max((R.pps || REEL_PPS) >= 20 ? 26 : 4, g.dur * (R.pps || REEL_PPS));
+R.tool ||= 'look'; R.stab ||= 'brand'; R.lookTab ||= 'filters';
 
 /* ---------- Timeline ---------- */
 function reelTimeline() {
@@ -6429,12 +6625,12 @@ function reelTimeline() {
   const on = (kind, key) => p && p.kind === kind && String(p.key) === String(key) ? 'on' : '';
   let x = 0, blocks = '', marks = '';
   segs.forEach((g, i) => {
-    const w = Math.max(26, g.dur * REEL_PPS);
+    const w = reelSegW(g);
     if (g.kind === 'clip') {
       const c = g.clip;
-      blocks += `<button class="tl-b tl-clip ${on('clip', c.id)}" data-pk="clip" data-key="${c.id}" style="width:${w}px;background-image:url('${c.thumb || ''}')" aria-label="Clip ${i}">
-        <span>${g.dur.toFixed(1)}s</span></button>`;
-    } else blocks += `<button class="tl-b tl-card ${on(g.kind, g.kind)}" data-pk="${g.kind}" data-key="${g.kind}" style="width:${w}px">${g.kind === 'intro' ? 'Intro' : 'Outro'}</button>`;
+      blocks += `<button class="tl-b tl-clip ${on('clip', c.id)} ${w < 34 ? 'tiny' : ''}" data-pk="clip" data-key="${c.id}" style="width:${w}px;background-image:url('${c.thumb || ''}')" aria-label="Clip ${i}">
+        <span>${g.dur.toFixed(1)}s</span>${c.type === 'video' ? `<i class="tl-edge l" data-len="l" data-key="${c.id}"></i>` : ''}<i class="tl-edge r" data-len="r" data-key="${c.id}"></i></button>`;
+    } else blocks += `<button class="tl-b tl-card ${on(g.kind, g.kind)}" data-pk="${g.kind}" data-key="${g.kind}" style="width:${w}px">${g.kind === 'intro' ? 'Intro' : 'Outro'}<i class="tl-edge r" data-len="r" data-key="${g.kind}"></i></button>`;
     x += w;
     const next = segs[i + 1];
     if (next) {
@@ -6444,11 +6640,9 @@ function reelTimeline() {
     }
   });
   el.innerHTML = `<div class="tl-track" id="tl-track">
-      ${s.intro ? '' : '<button class="tl-ghost" data-pk="add-intro">+ Intro</button>'}
-      <div class="tl-row" id="tl-row">${blocks}${marks}<i class="tl-head" id="tl-head"></i></div>
-      <label class="tl-ghost tl-add" data-tip="Add photos or videos">+<input type="file" accept="image/*,video/*" multiple hidden id="reel-file"></label>
-      <button class="tl-ghost tl-add" id="reel-pf" data-tip="Add from your portfolio">${ICON.portfolio}</button>
-      ${s.outro ? '' : '<button class="tl-ghost" data-pk="add-outro">+ Outro</button>'}
+      <div class="tl-addw"><button class="tl-addb" data-addmenu aria-label="Add" data-tip="Add photos, videos, a page, or the intro and outro">+</button>
+        <input type="file" accept="image/*,video/*" multiple hidden id="reel-file"></div>
+      <div class="tl-stack" id="tl-stack">${reelTlOv(segs, x)}<div class="tl-row" id="tl-row">${blocks}${marks}</div>${reelTlAud(x)}<i class="tl-head" id="tl-head"></i></div>
     </div>`;
   el.dataset.total = total;
   $('#reel-file').addEventListener('change', async (e) => {
@@ -6458,22 +6652,271 @@ function reelTimeline() {
     const c = R.clips[R.clips.length - 1];
     if (c) reelPick('clip', c.id); else reelChanged();
   });
-  $('#reel-pf').onclick = reelPortfolioPicker;
+  reelTlDrag(el); reelTlLanes(el); reelTlZoomBind(el); reelTlLen(el);
   el.onclick = (e) => {
+    if (R.lenMoved) { R.lenMoved = false; return; }
+    if (e.target.closest('[data-addmenu]')) return reelAddMenu(e.target.closest('[data-addmenu]'));
+    if (e.target.closest('[data-ovfold]')) { R.ovOpen = !R.ovOpen; return reelTimeline(); }
+    if (R.laneMoved) { R.laneMoved = false; return; }
+    const ob = e.target.closest('[data-ov]'); if (ob) { const i = +ob.dataset.ov, st = R.ovl[i]; R.layer = 'stk' + i; R.tab = 'edit'; R.tool = st.text != null ? 'text' : 'stickers';
+      document.querySelectorAll('#reel-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === 'edit'));
+      if (!(R.t >= st.t0 && R.t < st.t1)) R.t = st.t0 + 0.01; const c = R.pick?.kind === 'clip' ? R.clips.find(x => x.id === R.pick.key) : R.clips[0]; if (c && R.pick?.kind !== 'clip') R.pick = { kind: 'clip', key: c.id };
+      reelSyncVideos(R.t, false); reelTimeline(); reelRender(); return reelPanel(); }
+    const ab = e.target.closest('[data-au]'); if (ab) { R.audSel = +ab.dataset.au; R.tab = 'music'; document.querySelectorAll('#reel-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === 'music')); reelTimeline(); return reelPanel(); }
+    if (R.tlMoved) { R.tlMoved = false; return; }
     const b = e.target.closest('[data-pk]'); if (!b) return;
     const k = b.dataset.pk;
     if (k === 'add-intro' || k === 'add-outro') { const w = k.slice(4); reelSetStyle(w, true); reelPick(w, w); return; }
+    if (k === 'add-blank') { const c = reelBlank(); R.clips.splice(R.sel >= 0 ? R.sel + 1 : R.clips.length, 0, c); reelPick('clip', c.id);
+      const g = reelSegments().segs.find(x => x.clip === c); R.t = g.start + 0.01; R.tool = 'text'; reelOvAdd({ text: 'Your text', x: 0.5, y: 0.45, s: 1.2, anim: 'pop' }, g.dur); return; }
     reelPick(k, k === 'clip' ? +b.dataset.key : b.dataset.key);
   };
   reelTlHead();
 }
+/* Reordering on the timeline: drag a clip sideways (with a mouse), or hold it a moment first (touch, so the
+   timeline still scrolls). A line shows where it will land. */
+function reelTlDrag(el) {
+  let d = null;
+  const blocks = () => [...el.querySelectorAll('.tl-clip')];
+  el.onpointerdown = (e) => {
+    const b = e.target.closest('.tl-clip'); if (!b || e.target.closest('.tl-ob, .tl-ab')) return;
+    d = { b, id: +b.dataset.key, x0: e.clientX, on: false, pid: e.pointerId, touch: e.pointerType !== 'mouse' };
+    if (d.touch) d.t = setTimeout(() => { if (d) { d.on = true; b.classList.add('tl-drag'); navigator.vibrate?.(15); } }, 280);
+  };
+  el.onpointermove = (e) => {
+    if (!d) return;
+    if (!d.on) { if (d.touch) { if (Math.abs(e.clientX - d.x0) > 8) { clearTimeout(d.t); d = null; } return; } if (Math.abs(e.clientX - d.x0) < 6) return; d.on = true; d.b.classList.add('tl-drag'); }
+    try { el.setPointerCapture(d.pid); } catch {}
+    e.preventDefault();
+    d.b.style.transform = `translateX(${e.clientX - d.x0}px)`;
+    const bs = blocks().filter(x => x !== d.b); let to = bs.length;
+    for (let i = 0; i < bs.length; i++) { const r = bs[i].getBoundingClientRect(); if (e.clientX < r.left + r.width / 2) { to = i; break; } }
+    d.to = to; let mk = el.querySelector('.tl-drop'); if (!mk) { mk = document.createElement('i'); mk.className = 'tl-drop'; el.querySelector('#tl-row')?.appendChild(mk); }
+    const row = el.querySelector('#tl-row').getBoundingClientRect(), ref = bs[to]?.getBoundingClientRect() || (bs.at(-1) || d.b).getBoundingClientRect();
+    mk.style.left = ((bs[to] ? ref.left : ref.right) - row.left) + 'px';
+  };
+  const up = () => {
+    if (!d) return; clearTimeout(d.t);
+    if (d.on && d.to != null) {
+      const from = R.clips.findIndex(c => c.id === d.id), [c] = R.clips.splice(from, 1); R.clips.splice(d.to, 0, c);
+      R.tlMoved = true; setTimeout(() => R.tlMoved = false, 50); R.sel = R.clips.indexOf(c); reelPick('clip', c.id);
+    } else if (d.on) { d.b.style.transform = ''; d.b.classList.remove('tl-drag'); }
+    el.querySelector('.tl-drop')?.remove(); d = null;
+  };
+  el.onpointerup = up; el.onpointercancel = up;
+}
+function reelSizeBtn() { const b = $('#reel-size'); if (b) b.textContent = R.ar || '9:16'; }
+/* Watching: the preview fills the screen (and the device's full screen where allowed), plays from the start with no
+   editing marks, and closes at the end, with Esc, or a tap. */
+function reelWatch() {
+  const vp = $('#reel-vp'); if (!vp || !reelSegments().total) return toast('Add a clip first.');
+  R.layer = null; R.watching = true; R.zoomFit?.(); vp.classList.add('watching'); R.vpFit?.();
+  const ui = document.createElement('div'); ui.className = 'rw-ui'; vp.appendChild(ui);
+  const P = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
+  ui.innerHTML = `<button class="rw-x" data-w="close" aria-label="Close" data-tip="Close (Esc)">${P('<path d="M6 6l12 12M18 6L6 18"/>')}</button>
+    <div class="rw-bar"><button data-w="restart" aria-label="From the start" data-tip="From the start">${P('<path d="M6 5v14M19 5l-10 7 10 7z"/>')}</button>
+      <button data-w="play" class="rw-play" aria-label="Play or pause" data-tip="Play or pause (Space)"></button>
+      <input type="range" class="rw-scrub" min="0" step="0.01" aria-label="Position"><span class="rw-time"></span></div>`;
+  const sc = ui.querySelector('.rw-scrub'), tm = ui.querySelector('.rw-time'), pb = ui.querySelector('.rw-play'); let raf = 0, idle = 0, scrubbing = false;
+  const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  const tick = () => { const { total } = reelSegments(); sc.max = total; if (!scrubbing) sc.value = R.t; tm.textContent = `${fmt(R.t)} / ${fmt(total)}`;
+    pb.innerHTML = R.playing ? P('<path d="M8 5v14M16 5v14"/>') : P('<path d="M7 4l13 8-13 8z"/>'); if (R.watching) raf = requestAnimationFrame(tick); };
+  const wake = () => { ui.classList.remove('rw-hide'); clearTimeout(idle); idle = setTimeout(() => { if (R.playing) ui.classList.add('rw-hide'); }, 2500); };
+  const toggle = () => { if (R.playing) reelPause(); else { if (R.t >= reelSegments().total - 0.05) reelShow(0); reelPlay(); } wake(); };
+  const stop = () => { if (!R.watching) return; R.watching = false; cancelAnimationFrame(raf); clearTimeout(idle); reelPause(); ui.remove(); vp.classList.remove('watching'); R.onEnd = null;
+    removeEventListener('keydown', key, true); vp.removeEventListener('pointermove', wake);
+    if (FS.on() && R.watchFS) FS.set(false); R.watchFS = false; setTimeout(() => R.vpFit?.(), 50); };
+  const key = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); stop(); }
+    else if (e.key === ' ' || e.key === 'k') { e.preventDefault(); e.stopPropagation(); toggle(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); reelShow(Math.max(0, Math.min(reelSegments().total, R.t + (e.key === 'ArrowLeft' ? -5 : 5)))); wake(); } };
+  addEventListener('keydown', key, true); vp.addEventListener('pointermove', wake);
+  ui.addEventListener('click', (e) => { const b = e.target.closest('[data-w]'); e.stopPropagation(); if (!b) return; const w = b.dataset.w;
+    if (w === 'close') stop(); else if (w === 'play') toggle(); else if (w === 'restart') { reelShow(0); reelPlay(); wake(); } });
+  ui.addEventListener('pointerdown', (e) => e.stopPropagation());
+  vp.querySelector('#reel-cv').addEventListener('click', () => { if (R.watching) toggle(); });
+  sc.addEventListener('input', () => { scrubbing = true; if (R.playing) reelPause(); reelShow(+sc.value); wake(); });
+  sc.addEventListener('change', () => { scrubbing = false; });
+  if (FS.can() && !FS.on()) { R.watchFS = true; FS.set(true); }
+  R.onEnd = () => wake();   /* stays open at the end, ready to play again */
+  setTimeout(() => { R.vpFit?.(); reelShow(0); reelPlay(); tick(); wake(); }, 250);
+}
+function reelSnapBtn() { const b = $('#reel-snap'); if (b) b.classList.toggle('on', R.snap !== false); }
+/* Zoom and pan of the preview (only on screen; never recorded): the canvas is scaled and moved inside its frame.
+   Wheel or the buttons zoom around the pointer; drag the empty frame (or an empty part of the picture), the
+   middle button, or hold Space to pan; two fingers pinch. Fit puts it back. */
+function reelViewBind() {
+  const vp = $('#reel-vp'), cv = $('#reel-cv'); if (!vp || !cv) return;
+  R.vz = { z: 1, x: 0, y: 0 };
+  /* The picture fitted into the frame at 9:16, whatever the frame's shape; refitted when the frame resizes. */
+  const fit = () => { if (!document.body.classList.contains('reel-full')) return; const r = vp.getBoundingClientRect(), pad = vp.classList.contains('watching') ? 0 : 16, f = Math.min((r.width - pad) / PREVIEW_W, (r.height - pad) / PREVIEW_H);
+    if (f > 0) { cv.style.width = Math.floor(PREVIEW_W * f) + 'px'; cv.style.height = Math.floor(PREVIEW_H * f) + 'px'; } };
+  R.vpObs?.disconnect(); R.vpObs = new ResizeObserver(fit); R.vpObs.observe(vp); fit(); R.vpFit = fit;
+  const apply = () => { const v = R.vz; cv.style.transform = v.z === 1 && !v.x && !v.y ? '' : `translate(${v.x}px, ${v.y}px) scale(${v.z})`; const l = $('#reel-zv'); if (l) l.textContent = v.z === 1 ? 'Fit' : Math.round(v.z * 100) + '%'; vp.classList.toggle('zoomed', v.z > 1); };
+  const zoomAt = (f, cx, cy) => { const v = R.vz, r = vp.getBoundingClientRect(), px = (cx ?? r.left + r.width / 2) - r.left - r.width / 2, py = (cy ?? r.top + r.height / 2) - r.top - r.height / 2;
+    const z = Math.max(1, Math.min(6, v.z * f)), k = z / v.z; v.x = px - (px - v.x) * k; v.y = py - (py - v.y) * k; v.z = z; if (z === 1) { v.x = 0; v.y = 0; } apply(); };
+  R.zoomAt = zoomAt; R.zoomFit = () => { R.vz = { z: 1, x: 0, y: 0 }; apply(); };
+  vp.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY); }, { passive: false });
+  vp.querySelector('.reel-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return; b.dataset.z === 'fit' ? R.zoomFit() : zoomAt(b.dataset.z === '+' ? 1.25 : 0.8); };
+  const pts = new Map(); let pan = null;
+  const start = (e) => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { vp.setPointerCapture(e.pointerId); } catch {}
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pan = { pinch: true, d0: Math.hypot(a.x - b.x, a.y - b.y), z0: R.vz.z, x0: R.vz.x, y0: R.vz.y, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; }
+    else pan = { sx: e.clientX, sy: e.clientY, x0: R.vz.x, y0: R.vz.y }; };
+  R.panStart = start;
+  vp.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.reel-zoom')) return;
+    if (R.watching) return;
+    if (e.target === vp || e.button === 1 || R.space) { e.preventDefault(); start(e); }
+  });
+  vp.addEventListener('pointermove', (e) => {
+    if (!pan || !pts.has(e.pointerId)) return; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pan.pinch && pts.size > 1) { const [a, b] = [...pts.values()], f = Math.hypot(a.x - b.x, a.y - b.y) / pan.d0; R.vz.z = pan.z0; R.vz.x = pan.x0; R.vz.y = pan.y0; zoomAt(f, pan.cx, pan.cy); return; }
+    if (R.vz.z === 1) return;   /* nothing to pan at the fitted size */
+    R.vz.x = pan.x0 + e.clientX - pan.sx; R.vz.y = pan.y0 + e.clientY - pan.sy; apply();
+  });
+  const end = (e) => { pts.delete(e.pointerId); if (!pts.size) pan = null; else if (pan?.pinch) { const [a] = [...pts.values()]; pan = { sx: a.x, sy: a.y, x0: R.vz.x, y0: R.vz.y }; } };
+  vp.addEventListener('pointerup', end); vp.addEventListener('pointercancel', end);
+  apply();
+}
+addEventListener('keydown', (e) => { if (e.key === ' ' && location.hash.startsWith('#reel/')) R.space = true; });
+addEventListener('keyup', (e) => { if (e.key === ' ') R.space = false; });
+/* Time to timeline x and back. Short clips get a minimum width, so the scale goes block by block. */
+function reelTX(t) { const { segs } = reelSegments(); let x = 0;
+  for (const g of segs) { const w = reelSegW(g); if (t < g.start + g.dur || g === segs.at(-1)) return x + Math.max(0, Math.min(1, (t - g.start) / g.dur)) * w; x += w; } return x; }
+function reelXT(x) { const { segs, total } = reelSegments(); let X = 0;
+  for (const g of segs) { const w = reelSegW(g); if (x < X + w) return g.start + Math.max(0, (x - X) / w) * g.dur; X += w; } return total; }
+/* Text and sticker rows above the clips: each layer a small block from its start to its end, stacked into up to
+   6 rows where they overlap. Folds to one thin line. */
+function reelTlOv(segs, W) {
+  const L = R.ovl || []; if (!L.length) return '';
+  const rows = [], at = L.map((o, i) => [o, i]).sort((p, q) => p[0].t0 - q[0].t0).map(([o, i]) => { let r = rows.findIndex(end => end <= o.t0 + 1e-3); if (r < 0) { r = rows.length < 6 ? rows.length : 5; } rows[r] = Math.max(rows[r] || 0, o.t1); return [o, i, r]; });
+  const n = Math.max(1, rows.length), sel = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1;
+  if (!R.ovOpen) return `<div class="tl-ov fold" style="width:${W}px"><button class="tl-ovt" data-ovfold>▸ ${L.length} text and sticker${L.length > 1 ? 's' : ''}</button>${at.map(([o]) => `<i style="left:${reelTX(o.t0)}px;width:${Math.max(4, reelTX(o.t1) - reelTX(o.t0))}px"></i>`).join('')}</div>`;
+  return `<div class="tl-ov" style="width:${W}px;height:${n * 24 + 14}px"><button class="tl-ovt" data-ovfold>▾ Layers</button>${at.map(([o, i, r]) => { const x0 = reelTX(o.t0), w = Math.max(18, reelTX(o.t1) - x0);
+    return `<div class="tl-ob ${i === sel ? 'on' : ''}" data-ov="${i}" style="left:${x0}px;width:${w}px;top:${14 + r * 24}px">${o.text != null ? `<b>T</b><span>${esc(String(o.text).split('\n')[0])}</span>` : `<img src="${o.url || ''}" alt="">`}<em data-edge="l"></em><em data-edge="r"></em></div>`; }).join('')}</div>`;
+}
+// Two sound rows under the clips: tracks where they play, with their fades drawn in.
+function reelTlAud(W) {
+  const A = R.aud || []; if (!A.length) return '';
+  return `<div class="tl-au" style="width:${W}px">${[0, 1].map(r => `<div class="tl-aur">${A.filter(a => a.row === r).map(a => { const x0 = reelTX(a.t0), w = Math.max(18, reelTX(a.t0 + a.len) - x0), fi = (a.fadeIn || 0) / a.len * 100, fo = (a.fadeOut ?? 1) / a.len * 100;
+    return `<div class="tl-ab ${a.id === R.audSel ? 'on' : ''} ${r ? 'r2' : ''}" data-au="${a.id}" style="left:${x0}px;width:${w}px;--fi:${fi}%;--fo:${fo}%"><span>♪ ${esc(a.name)}</span><em data-edge="l"></em><em data-edge="r"></em></div>`; }).join('')}</div>`).join('')}</div>`;
+}
+/* Dragging layer and sound blocks: the middle moves them, either end trims (for sound, the left end trims into the
+   song). Sound can be dragged to the other row. */
+function reelTlLanes(el) {
+  if (el._lanes) return; el._lanes = true;   /* bound once: the timeline redraws often, and stacked listeners froze the page */
+  let d = null, raf = 0;
+  el.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest('.tl-ob, .tl-ab'); if (!b) return;
+    e.stopPropagation(); e.preventDefault(); const ov = b.classList.contains('tl-ob'), o = ov ? R.ovl[+b.dataset.ov] : R.aud.find(a => a.id === +b.dataset.au);
+    d = { b, ov, o, edge: e.target.dataset.edge || 'm', x0: e.clientX, y0: e.clientY, s: { ...o }, moved: false, pid: e.pointerId };
+  }, true);
+  el.addEventListener('pointermove', (e) => {
+    if (!d) return; const dx = e.clientX - d.x0; if (!d.moved && Math.abs(dx) < 4 && Math.abs(e.clientY - d.y0) < 6) return;
+    if (!d.moved) { d.moved = true; try { el.setPointerCapture(d.pid); } catch {} }
+    e.preventDefault(); const { total } = reelSegments(), o = d.o, s0 = d.s, T = (t) => reelXT(reelTX(t) + dx);
+    if (d.ov) {
+      if (d.edge === 'l') o.t0 = Math.max(0, Math.min(s0.t1 - 0.2, T(s0.t0)));
+      else if (d.edge === 'r') o.t1 = Math.min(total, Math.max(s0.t0 + 0.2, T(s0.t1)));
+      else { const len = s0.t1 - s0.t0; o.t0 = Math.max(0, Math.min(total - len, T(s0.t0))); o.t1 = o.t0 + len; }
+    } else {
+      const dt = T(s0.t0) - s0.t0;
+      const rt = o.rate || 1;
+      if (d.edge === 'r') o.len = Math.max(0.3, Math.min((o.buffer.duration - (o.off || 0)) / rt, reelXT(reelTX(s0.t0 + s0.len) + dx) - s0.t0));
+      else if (d.edge === 'l') { const k = Math.max(-(s0.off || 0) / rt, Math.min(s0.len - 0.3, dt)); o.t0 = Math.max(0, s0.t0 + k); o.off = (s0.off || 0) + (o.t0 - s0.t0) * rt; o.len = s0.len - (o.t0 - s0.t0); }
+      else { o.t0 = Math.max(0, s0.t0 + dt); if (Math.abs(e.clientY - d.y0) > 22) o.row = e.clientY > d.y0 ? 1 : 0; }
+    }
+    R.laneMoved = true; R.dragLane = true;
+    const x0 = reelTX(d.ov ? o.t0 : o.t0), x1 = reelTX(d.ov ? o.t1 : o.t0 + o.len);
+    d.b.style.left = x0 + 'px'; d.b.style.width = Math.max(18, x1 - x0) + 'px';
+    if (!d.ov) { d.b.style.setProperty('--fi', (o.fadeIn || 0) / o.len * 100 + '%'); d.b.style.setProperty('--fo', (o.fadeOut ?? 1) / o.len * 100 + '%');
+      const row = el.querySelectorAll('.tl-aur')[o.row]; if (row && d.b.parentElement !== row) row.appendChild(d.b); d.b.classList.toggle('r2', !!o.row); }
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; reelRender(); });
+  });
+  const up = () => { if (!d) return; const moved = d.moved; d = null; R.dragLane = false; if (moved) { setTimeout(() => R.laneMoved = false, 60); reelTimeline(); reelRender(); if (R.playing) reelMusicStart(R.t); reelPanel(); } };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+}
+/* Timeline zoom and pan. Zoom keeps the moment under the pointer (or the middle) in place: Ctrl + wheel, a pinch,
+   or the − Fit + buttons. The wheel scrolls it sideways; with a mouse, drag an empty part to pan. */
+function reelTlZoom(f, clientX, fit) {
+  const tl = $('#reel-tl'), st = $('#tl-stack'); if (!tl || !st) return;
+  const { total } = reelSegments(), r = tl.getBoundingClientRect(), px = (clientX ?? r.left + r.width / 2) - r.left, sl = st.offsetLeft;
+  const t = reelXT(tl.scrollLeft + px - sl);
+  R.pps = fit ? Math.max(1, Math.min(240, (tl.clientWidth - sl - 170) / Math.max(1, total))) : Math.max(1, Math.min(240, (R.pps || REEL_PPS) * f));
+  reelTimeline();
+  tl.scrollLeft = fit ? 0 : reelTX(t) + sl - px;
+}
+function reelTlZoomBind(el) {
+  if (el._zoom) return; el._zoom = true;
+  el.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) { e.preventDefault(); return reelTlZoom(Math.exp(-e.deltaY * 0.01), e.clientX); }
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); el.scrollLeft += e.deltaY; }
+  }, { passive: false });
+  let pin = null;   /* two fingers: pinch to zoom (touch events, so the page itself never zooms) */
+  el.addEventListener('touchstart', (e) => { if (e.touches.length === 2) { const [a, b] = e.touches; pin = { d: Math.abs(a.clientX - b.clientX) || 1, p: R.pps || REEL_PPS }; } }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    if (!pin || e.touches.length !== 2) return; e.preventDefault();
+    const [a, b] = e.touches, want = pin.p * (Math.abs(a.clientX - b.clientX) || 1) / pin.d;
+    if (Math.abs(want - (R.pps || REEL_PPS)) / want > 0.04) reelTlZoom(want / (R.pps || REEL_PPS), (a.clientX + b.clientX) / 2);
+  }, { passive: false });
+  el.addEventListener('touchend', (e) => { if (e.touches.length < 2) pin = null; });
+  let pan = null;   /* mouse: drag empty timeline to pan */
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse' || e.target.closest('button, .tl-b, .tl-ob, .tl-ab, label, input')) return;
+    pan = { x: e.clientX, s: el.scrollLeft }; el.classList.add('panning');
+  });
+  addEventListener('pointermove', (e) => { if (pan) el.scrollLeft = pan.s - (e.clientX - pan.x); });
+  addEventListener('pointerup', () => { if (pan) { pan = null; el.classList.remove('panning'); } });
+}
+/* The add menu from the + at the left of the timeline. */
+function reelAddMenu(btn) {
+  document.getElementById('reel-addm')?.remove();
+  const s = reelStyle(), m = document.createElement('div'); m.id = 'reel-addm'; m.className = 'reel-addm';
+  m.innerHTML = `<button data-am="file"><b>＋</b>Photos or videos</button><button data-am="pf"><b>${ICON.portfolio}</b>From your portfolio</button><button data-am="blank"><b>□</b>Blank page</button>
+    ${s.intro ? '' : '<button data-am="intro"><b>▸</b>Intro card</button>'}${s.outro ? '' : '<button data-am="outro"><b>◂</b>Outro card</button>'}`;
+  document.body.appendChild(m); const r = btn.getBoundingClientRect(), h = m.offsetHeight;
+  m.style.left = Math.max(6, r.left) + 'px'; m.style.top = (r.top - h - 6 > 6 ? r.top - h - 6 : r.bottom + 6) + 'px';
+  const close = (e) => { if (!m.contains(e.target) && e.target !== btn) { m.remove(); removeEventListener('pointerdown', close, true); } };
+  setTimeout(() => addEventListener('pointerdown', close, true));
+  m.onclick = (e) => { const b = e.target.closest('[data-am]'); if (!b) return; const a = b.dataset.am; m.remove(); removeEventListener('pointerdown', close, true);
+    if (a === 'file') return $('#reel-file')?.click();
+    if (a === 'pf') return reelPortfolioPicker();
+    if (a === 'intro' || a === 'outro') { reelSetStyle(a, true); return reelPick(a, a); }
+    if (a === 'blank') reelAddBlank(); };
+}
+function reelAddBlank() { const c = reelBlank(); R.clips.splice(R.sel >= 0 ? R.sel + 1 : R.clips.length, 0, c); reelPick('clip', c.id);
+  const g = reelSegments().segs.find(x => x.clip === c); R.t = g.start + 0.01; R.tool = 'text'; reelOvAdd({ text: 'Your text', x: 0.5, y: 0.45, s: 1.2, anim: 'pop' }, g.dur); }
+/* Changing a clip's length on the timeline: drag its right end (a photo, page or card lasts longer or shorter; a
+   video ends later or sooner), or a video's left end (it starts later or sooner in the file). */
+function reelTlLen(el) {
+  if (el._len) return; el._len = true;
+  let d = null, raf = 0;
+  el.addEventListener('pointerdown', (e) => {
+    const h = e.target.closest('[data-len]'); if (!h) return; e.stopPropagation(); e.preventDefault();
+    const key = h.dataset.key, c = isNaN(+key) ? null : R.clips.find(x => x.id === +key);
+    d = { side: h.dataset.len, key, c, x0: e.clientX, s: c ? { dur: c.dur, inP: c.inP, outP: c.outP } : { dur: +reelStyle()[key + 'Dur'] }, moved: false };
+    try { el.setPointerCapture(e.pointerId); } catch {}
+  }, true);
+  el.addEventListener('pointermove', (e) => {
+    if (!d) return; const dx = e.clientX - d.x0; if (!d.moved && Math.abs(dx) < 3) return; d.moved = true; e.preventDefault();
+    const dt = dx / (R.pps || REEL_PPS), c = d.c, s0 = d.s;
+    if (!c) reelSetStyle(d.key + 'Dur', +Math.max(0.8, Math.min(8, s0.dur + dt)).toFixed(2));
+    else if (c.type !== 'video') c.dur = +Math.max(0.5, Math.min(30, s0.dur + dt)).toFixed(2);
+    else if (d.side === 'r') c.outP = Math.max(c.inP + 0.3, Math.min(c.srcDur, s0.outP + dt * (c.speed || 1)));
+    else c.inP = Math.max(0, Math.min(c.outP - 0.3, s0.inP + dt * (c.speed || 1)));
+    R.lenMoved = true;
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; reelChanged();
+      const g = reelSegments().segs.find(x => (c ? x.clip === c : x.kind === d?.key)); if (g && d) reelShow(d.side === 'l' ? g.start + 0.01 : g.start + g.dur - 0.05); });
+  });
+  const up = () => { if (!d) return; const m = d.moved; d = null; if (m) { setTimeout(() => R.lenMoved = false, 60); reelPanel(); } };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+}
 // Moves the playhead line; while playing, keeps it in view.
 function reelTlHead() {
-  const h = $('#tl-head'), row = $('#tl-row'); if (!h || !row) return;
+  const h = $('#tl-head'), row = $('#tl-stack'); if (!h || !row) return;
   // Blocks have a minimum width, so map time to position block by block rather than t * PPS.
   const { segs } = reelSegments(); let x = 0;
   for (const g of segs) {
-    const w = Math.max(26, g.dur * REEL_PPS);
+    const w = reelSegW(g);
     if (R.t < g.start + g.dur || g === segs[segs.length - 1]) { x += Math.min(1, (R.t - g.start) / g.dur) * w; break; }
     x += w;
   }
@@ -6488,11 +6931,12 @@ function reelCanvasBind(cv) {
   let drag = null;   // { o, mode: 'move'|'scale', sx, sy, box, pos, d0 }
   const toCv = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height, k: cv.width / r.width }; };
   // Read and write a layer's normalised position { x, y, s }.
-  const getPos = (o) => o.kind === 'cap' ? o.clip.cap || { x: o.box.cx / cv.width, y: o.box.cy / cv.height, s: 1 }
+  const getPos = (o) => o.kind === 'wm' ? reelStyle().wmXY || { x: o.box.cx / cv.width, y: o.box.cy / cv.height, s: 1 } : o.kind === 'cap' ? o.clip.cap || { x: o.box.cx / cv.width, y: o.box.cy / cv.height, s: 1 }
     : o.kind === 'stk' ? o.clip.stickers[o.i] : reelStyle()[o.card + 'Pos'] || { x: o.box.cx / cv.width, y: o.box.cy / cv.height, s: 1 };
   const setPos = (o, p) => {
     if (o.kind === 'cap') o.clip.cap = { x: p.x, y: p.y, s: p.s };
     else if (o.kind === 'stk') Object.assign(o.clip.stickers[o.i], { x: p.x, y: p.y, s: p.s });
+    else if (o.kind === 'wm') { const st = reelStyle(); st.wmXY = { x: p.x, y: p.y, s: p.s }; Settings.cache.reel_style = JSON.stringify(st); }
     else {   // card text lives in the saved style: update the cache now, write to the database on release
       const st = reelStyle(); st[o.card + 'Pos'] = { x: p.x, y: p.y, s: p.s };
       Settings.cache.reel_style = JSON.stringify(st);
@@ -6501,12 +6945,16 @@ function reelCanvasBind(cv) {
   // Opens the panel that belongs to a layer, so its controls are right there.
   const openFor = (o, seg) => {
     if (o.kind === 'card') { if (R.pick?.kind !== o.card) reelPick(o.card, o.card); return; }
-    const want = o.kind === 'cap' ? 'text' : 'stickers';
-    if (R.pick?.kind !== 'clip' || R.pick.key !== seg.key || R.tool !== want) { R.tool = want; reelPick('clip', seg.key); }
+    if (o.kind === 'wm') return;   /* moved straight on the preview; its settings are in Style › Brand */
+    const want = o.kind === 'cap' || o.clip.stickers?.[o.i]?.text != null ? 'text' : 'stickers';
+    const ck = seg.kind === 'clip' ? seg.key : (R.clips[R.sel] || R.clips[0])?.id;   /* on a card: keep a clip's tools open */
+    R.tab = 'edit'; document.querySelectorAll('#reel-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === 'edit'));
+    if (ck != null && (R.pick?.kind !== 'clip' || R.pick.key !== ck || R.tool !== want)) { const t = R.t; R.tool = want; reelPick('clip', ck); reelShow(t); }
     else reelPanel();
+    reelTimeline();
   };
   cv.addEventListener('pointerdown', (e) => {
-    if (R.recording) return;
+    if (R.recording || R.watching) return;
     try { cv.setPointerCapture(e.pointerId); } catch {}
     const p = toCv(e); pts.set(e.pointerId, p);
     if (R.playing) reelPause();
@@ -6518,13 +6966,23 @@ function reelCanvasBind(cv) {
     }
     const sel = list.find(x => x.id === R.layer);
     const hk = 22 * p.k;
-    if (sel && Math.hypot(p.x - (sel.box.cx + sel.box.w / 2 + 6 * p.k), p.y - (sel.box.cy + sel.box.h / 2 + 6 * p.k)) < hk) {
+    if (sel?.kind === 'stk') {   /* the design studio's handles: corners size, sides stretch, the knob turns */
+      R.pxk = p.k; const st = sel.clip.stickers[sel.i], hk2 = Math.max(Math.min(cv.width, cv.height) / 540, p.k);
+      const h = reelHandles(sel.box, st, hk2).map(q => [q, Math.hypot(p.x - q.x, p.y - q.y)]).filter(([, d]) => d < 13 * p.k).sort((a, b) => a[1] - b[1])[0]?.[0];   /* the nearest one */
+      if (h) { drag = { o: sel, mode: h.kind, h, st0: { ...st }, box: { ...sel.box }, sx: p.x, sy: p.y, a0: Math.atan2(p.y - sel.box.cy, p.x - sel.box.cx) }; R.dragging = true; return; }
+    }
+    if (sel && sel.kind !== 'stk' && Math.hypot(p.x - (sel.box.cx + sel.box.w / 2 + 6 * p.k), p.y - (sel.box.cy + sel.box.h / 2 + 6 * p.k)) < hk) {
       drag = { o: sel, mode: 'scale', pos: { ...getPos(sel) }, d0: Math.hypot(p.x - sel.box.cx, p.y - sel.box.cy) };
       return;
     }
-    const hit = [...list].reverse().find(o => Math.abs(p.x - o.box.cx) <= o.box.w / 2 + 8 * p.k && Math.abs(p.y - o.box.cy) <= o.box.h / 2 + 8 * p.k);
-    if (!hit) { drag = null; if (R.layer) { R.layer = null; reelRender(); } return; }
-    R.layer = hit.id; R.dragging = true;
+    const inBox = (o) => { const a = -(o.kind === 'stk' ? o.clip.stickers[o.i].rot || 0 : 0) * Math.PI / 180, dx = p.x - o.box.cx, dy = p.y - o.box.cy;
+      return Math.abs(dx * Math.cos(a) - dy * Math.sin(a)) <= o.box.w / 2 + 8 * p.k && Math.abs(dx * Math.sin(a) + dy * Math.cos(a)) <= o.box.h / 2 + 8 * p.k; };
+    const hit = [...list].reverse().find(inBox);
+    if (!hit) { drag = null; if (R.layer) { R.layer = null; reelRender(); } pts.delete(e.pointerId); R.panStart?.(e); return; }
+    R.layer = hit.id; R.dragging = true; R.pxk = p.k;
+    if (hit.kind === 'stk' && reelMod(e, 'alt')) {   /* Alt-drag leaves a copy behind and moves the new one */
+      const st = hit.clip.stickers[hit.i], { img, ...rest } = st; hit.clip.stickers.splice(hit.i, 0, { ...JSON.parse(JSON.stringify(rest)), img }); hit.i++; hit.id = 'stk' + hit.i; R.layer = hit.id;
+    }
     drag = { o: hit, mode: 'move', sx: p.x, sy: p.y, box: { ...hit.box }, pos: { ...getPos(hit) }, others: list.filter(o => o.id !== hit.id) };
     openFor(hit, seg);
     reelRender();
@@ -6536,6 +6994,17 @@ function reelCanvasBind(cv) {
     if (drag.mode === 'pinch' && pts.size > 1) {
       const [a, b] = [...pts.values()];
       setPos(o, { ...drag.pos, s: Math.max(0.3, Math.min(4, drag.pos.s * Math.hypot(a.x - b.x, a.y - b.y) / drag.d0)) });
+    } else if (drag.mode === 'corner' || drag.mode === 'side' || drag.mode === 'rot') {
+      const st = o.clip.stickers[o.i], b0 = drag.box, s0 = drag.st0, a = (s0.rot || 0) * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
+      const lx = (p.x - b0.cx) * cs + (p.y - b0.cy) * sn, ly = -(p.x - b0.cx) * sn + (p.y - b0.cy) * cs;   /* pointer in the sticker's own frame */
+      if (drag.mode === 'rot') { let deg = (s0.rot || 0) + (Math.atan2(p.y - b0.cy, p.x - b0.cx) - drag.a0) * 180 / Math.PI;
+        deg = ((deg + 540) % 360) - 180; if (reelMod(e, 'shift')) deg = Math.round(deg / 15) * 15; else if (R.snap !== false && Math.abs(deg) < 3) deg = 0; st.rot = Math.round(deg); }
+      else if (drag.mode === 'side' && st.text != null) st.bw = Math.max(0.15, Math.min(1, (s0.bw || 0.7) * Math.abs(lx) / (b0.w / 2 + 4 * p.k)));
+      else if (drag.mode === 'side') { const h = drag.h;
+        if (h.ux) st.sx = Math.max(0.1, (s0.sx || 1) * Math.abs(lx) / (b0.w / 2 + 4 * p.k)); else st.sy = Math.max(0.1, (s0.sy || 1) * Math.abs(ly) / (b0.h / 2 + 4 * p.k)); }
+      else if (reelMod(e, 'shift') && st.text == null) {   /* Shift on a corner: free size, stretching both ways */
+        st.sx = Math.max(0.1, (s0.sx || 1) * Math.abs(lx) / (b0.w / 2 + 4 * p.k)); st.sy = Math.max(0.1, (s0.sy || 1) * Math.abs(ly) / (b0.h / 2 + 4 * p.k)); }
+      else st.s = Math.max(0.15, Math.min(6, (s0.s || 1) * Math.hypot(lx, ly) / Math.hypot(b0.w / 2 + 4 * p.k, b0.h / 2 + 4 * p.k)));
     } else if (drag.mode === 'scale') {
       const c = { x: drag.pos.x * W, y: drag.pos.y * H };
       setPos(o, { ...drag.pos, s: Math.max(0.3, Math.min(4, drag.pos.s * Math.hypot(p.x - c.x, p.y - c.y) / drag.d0)) });
@@ -6545,7 +7014,8 @@ function reelCanvasBind(cv) {
       // Candidate lines: frame centre, plus every other layer's centre and edges.
       const xs = [W / 2], ys = [H / 2];
       for (const q of drag.others) { xs.push(q.box.cx, q.box.cx - q.box.w / 2, q.box.cx + q.box.w / 2); ys.push(q.box.cy, q.box.cy - q.box.h / 2, q.box.cy + q.box.h / 2); }
-      const snap = (v, half, lines) => {
+      const snapOn = R.snap !== false && !reelMod(e, 'ctrl');
+      const snap = (v, half, lines) => { if (!snapOn) return [v, null];
         for (const L of lines) for (const off of [0, -half, half]) if (Math.abs(v + off - L) < th) return [L - off, L];
         return [v, null];
       };
@@ -6561,8 +7031,8 @@ function reelCanvasBind(cv) {
   const end = (e) => {
     pts.delete(e.pointerId);
     if (pts.size) { if (drag?.mode === 'pinch') drag = null; return; }
-    if (drag?.o.kind === 'card') Settings.set('reel_style', Settings.cache.reel_style);
-    if (drag?.o.kind === 'card' || drag?.o.kind === 'cap') reelPanel();   // enables the reset buttons
+    if (drag?.o.kind === 'card' || drag?.o.kind === 'wm') Settings.set('reel_style', Settings.cache.reel_style);
+    if (drag?.o.kind === 'card' || drag?.o.kind === 'cap' || ['corner', 'side', 'rot'].includes(drag?.mode)) reelPanel();   // enables the reset buttons, updates the sliders
     drag = null; R.dragging = false; R.guides = []; reelRender();
   };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
@@ -6613,6 +7083,7 @@ async function reelPanel() {
   el.addEventListener('click', reelStyleClick);
   el.addEventListener('change', reelStyleChange);
   el.addEventListener('click', reelTplClick);
+  el.addEventListener('toggle', reelDefToggle, true);
   if (!R.quickDrag) reelQuick();
   if (R.tab === 'edit') {
     const p = R.pick;
@@ -6620,14 +7091,17 @@ async function reelPanel() {
     const seg = p?.kind === 'trans' ? reelSegments().segs.find(x => String(x.key) === String(p.key)) : null;
     if (c) {
       R.sel = R.clips.indexOf(c);
-      el.innerHTML = `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      el.innerHTML = `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}" data-tip="${l}" aria-label="${l}">${ri({ look: 'look', frame: 'frame', text: 'text', stickers: 'sticker' }[k])}<span>${l}</span></button>`).join('')}</div>
         <div class="card reel-clip-ed">
-          <div class="reel-clip-head"><b>${c.type === 'video' ? 'Video' : 'Photo'} ${R.sel + 1} of ${R.clips.length}</b>
-            <button class="btn small danger" data-act="del">Remove clip</button></div>
+          <div class="reel-clip-head"><b>${c.type === 'video' ? 'Video' : c.type === 'blank' ? 'Blank page' : 'Photo'} ${R.sel + 1} of ${R.clips.length}</b>
+            <span class="rib-inl">${rib('data-cact="dup"', 'dup', 'Duplicate clip (Ctrl D)')}${c.type === 'video' ? rib('data-cact="split"', 'split', 'Split at the playhead (S)') + rib('data-cact="freeze"', 'freeze', 'Freeze frame: a still of this moment, held for 2 seconds') : ''}${rib('data-cact="still"', 'camera', 'Save this frame as a picture')}</span>
+            <button class="reel-x" data-act="del" data-tip="Remove this clip (Delete)" aria-label="Remove clip"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
           ${reelClipTool(c)}</div>`;
       $('#reel-tools').onclick = (e) => { const b = e.target.closest('[data-tool]'); if (!b) return; R.tool = b.dataset.tool; reelPanel(); };
+      el.querySelector('.rib-inl')?.addEventListener('click', (e) => { const b = e.target.closest('[data-cact]'); if (!b) return; const a = b.dataset.cact;
+        if (a === 'dup') reelClipDup(c); else if (a === 'split') reelClipSplit(c); else if (a === 'freeze') reelFreeze(c); else if (a === 'still') reelStill(); });
       const ed = el.querySelector('.reel-clip-ed');
-      reelClipBind(ed, c); if (R.tool === 'look') reelFilterThumbs(c);
+      reelClipBind(ed, c); if (R.tool === 'look' && (R.lookTab || 'filters') === 'filters') reelFilterThumbs(c);
     } else if (p && (p.kind === 'intro' || p.kind === 'outro') && s[p.kind]) {
       el.innerHTML = `<div class="card">${await reelCardPanel(s, p.kind)}</div>`;
     } else if (seg) {
@@ -6635,8 +7109,8 @@ async function reelPanel() {
     } else {
       R.pick = null; reelQuick();
       el.innerHTML = `<div class="card reel-hint">${R.clips.length
-        ? '<b>Tap the timeline to edit.</b><span class="muted">A clip opens its trim, look and text tools. A card opens its text and background. The small dots between them are transitions: each one can be different.</span>'
-        : '<b>Add photos or videos to start.</b><span class="muted">Use the + at the end of the timeline above, or pick from your portfolio.</span>'}</div>`;
+        ? '<b>Tap the timeline to edit.</b><span class="muted">A clip opens its look, frame, text and sticker tools; drag its ends to change its length. A card opens its text and background. The small dots between them are transitions: each one can be different.</span>'
+        : '<b>Add photos or videos to start.</b><span class="muted">Use the + at the left of the timeline, or + Media at the top.</span>'}</div>`;
     }
   } else if (R.tab === 'tpl') {
     el.innerHTML = reelTplPanel();
@@ -6648,61 +7122,133 @@ async function reelPanel() {
     el.addEventListener('click', reelStyleClick);
     el.addEventListener('change', reelStyleChange);
   } else {
-    const m = R.music, { total } = reelSegments();
+    const { total } = reelSegments(), A = R.aud || [], a = A.find(x => x.id === R.audSel) || null;
     el.innerHTML = `<div class="card">
-      ${m ? `<div class="row" style="flex-wrap:nowrap;margin-bottom:12px"><span class="ava">♪</span><b style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.name)}</b>
-          <button class="btn small danger" id="reel-mrm">Remove</button></div>
-        <label class="slider"><span>Start song at ${help('Skip the intro of the song so the good part plays.')}<b>${m.offset.toFixed(1)}s</b></span>
-          <input type="range" min="0" max="${Math.max(0, m.buffer.duration - Math.min(total, m.buffer.duration) - 0.1).toFixed(1)}" step="0.1" value="${m.offset}" data-m="offset"></label>
-        <label class="slider"><span>Volume<b>${Math.round(m.vol * 100)}%</b></span>
-          <input type="range" min="0" max="1" step="0.05" value="${m.vol}" data-m="vol"></label>
-        <p class="muted" style="font-size:13px">Song: ${m.buffer.duration.toFixed(0)}s · Reel: ${total.toFixed(1)}s. Fades out at the end.</p>`
-      : `<p class="muted" style="margin-top:0">Add a song or sound from this device. Use audio you have the rights to. Most social apps also let you add music after you upload.</p>`}
-      <label class="btn ${m ? '' : 'primary'}" style="width:100%">${m ? 'Change sound' : 'Choose audio file'}<input type="file" accept="audio/*" hidden id="reel-mfile"></label>
+      <div class="reel-addrow"><label class="btn small primary rib-x" data-tip="A song on row 1">${ri('music')}<span>Add music</span><input type="file" accept="audio/*" hidden id="reel-mfile" data-row="0"></label>
+        <label class="btn small rib-x" data-tip="A second row: a voiceover, or a song that blends into the next">${ri('plus')}<span>Voice / row 2</span><input type="file" accept="audio/*" hidden id="reel-mfile2" data-row="1"></label></div>
+      ${A.length ? `<div class="aud-list">${A.map(x => `<button class="aud-it ${x === a ? 'on' : ''}" data-aud="${x.id}"><i>${x.row ? '2' : '1'}</i><b>${esc(x.name)}</b><span>${(x.rate || 1) !== 1 ? x.rate.toFixed(2) + '× · ' : ''}${x.t0.toFixed(1)}s · ${x.len.toFixed(1)}s</span></button>`).join('')}</div>` : ''}
+      ${a ? `<div class="reel-sub"><div class="rib-row">${rib('data-aact="fit"', 'toend', 'Run to the end of the reel')}${rib('data-aact="xf"', 'xf', 'Cross-fade with the track before it')}${rib('data-aact="row"', 'row', `Move to row ${a.row ? 1 : 2}`)}<i class="rib-gap"></i>${rib('data-aact="del"', 'del', 'Remove this track')}</div>
+        ${reelSlider('data-m', 'off', `Start in the song ${help('Skip to the good part.')}`, 0, Math.max(0, a.buffer.duration - 1).toFixed(1), 0.1, a.off || 0, (a.off || 0).toFixed(1) + 's')}
+        ${reelSlider('data-m', 'len', 'Length', 0.5, Math.max(1, (a.buffer.duration - (a.off || 0)) / (a.rate || 1)).toFixed(1), 0.1, a.len, a.len.toFixed(1) + 's')}
+        ${reelSlider('data-m', 'rate', `Speed ${help('Faster or slower, e.g. to tighten a voiceover. The pitch goes up or down with it.')}`, 0.5, 2, 0.05, a.rate || 1, (a.rate || 1).toFixed(2) + '×')}
+        ${reelSlider('data-m', 'vol', 'Volume', 0, 1.5, 0.05, a.vol ?? 0.8, Math.round((a.vol ?? 0.8) * 100) + '%')}
+        ${reelSlider('data-m', 'fadeIn', 'Fade in', 0, 5, 0.1, a.fadeIn || 0, (a.fadeIn || 0).toFixed(1) + 's')}
+        ${reelSlider('data-m', 'fadeOut', 'Fade out', 0, 5, 0.1, a.fadeOut ?? 1, (a.fadeOut ?? 1).toFixed(1) + 's')}
+</div>`
+      : `<p class="muted" style="font-size:12px;margin:8px 0 0">${A.length ? 'Tap a track here or on the timeline to set it. Drag it on the timeline to move it, drag its end to change its length.' : 'Add a song or a voiceover from this device. Free music without credit: pixabay.com/music.'} Reel: ${total.toFixed(1)}s.</p>`}
     </div>`;
-    $('#reel-mfile').addEventListener('change', async (e) => {
-      const f = e.target.files[0]; if (!f) return;
+    for (const id of ['#reel-mfile', '#reel-mfile2']) $(id).addEventListener('change', async (e) => {
+      const f = e.target.files[0]; if (!f) return; const row = +e.target.dataset.row;
       try {
-        const ctx = reelAudio();
-        const buffer = await ctx.decodeAudioData(await f.arrayBuffer());
-        R.music = { name: f.name, buffer, offset: 0, vol: 0.8 }; reelKeep(R.music, f);
-        reelPanel();
+        const buffer = await reelAudio().decodeAudioData(await f.arrayBuffer()), { total } = reelSegments();
+        const end = Math.max(0, ...R.aud.filter(x => x.row === row).map(x => x.t0 + x.len)), t0 = end >= total - 0.5 ? 0 : end;
+        const tr = { id: (R.audSeq = (R.audSeq || 0) + 1), row, name: f.name.replace(/\.\w+$/, ''), buffer, t0, off: 0, len: Math.min(buffer.duration, Math.max(1, total - t0)), vol: row ? 1 : 0.8, fadeIn: 0, fadeOut: 1 };
+        R.aud.push(tr); reelKeep(tr, f); R.audSel = tr.id; reelTimeline(); reelPanel();
       } catch { toast('Could not read that audio file.'); }
     });
-    const rm = $('#reel-mrm'); if (rm) rm.onclick = () => { reelPause(); R.music = null; reelPanel(); };
+    el.onclick = (e) => {
+      if (R.tab !== 'music') return;
+      const it = e.target.closest('[data-aud]'); if (it) { R.audSel = +it.dataset.aud; reelTimeline(); return reelPanel(); }
+      const b = e.target.closest('[data-aact]'), a = R.aud.find(x => x.id === R.audSel); if (!b || !a) return;
+      const { total } = reelSegments(), act = b.dataset.aact;
+      if (act === 'del') { R.aud = R.aud.filter(x => x !== a); R.audSel = null; }
+      else if (act === 'fit') a.len = Math.max(0.5, Math.min((a.buffer.duration - (a.off || 0)) / (a.rate || 1), total - a.t0));
+      else if (act === 'row') a.row = a.row ? 0 : 1;
+      else if (act === 'xf') { const prev = R.aud.filter(x => x !== a && x.row === a.row && x.t0 < a.t0).sort((p, q) => q.t0 - p.t0)[0];
+        if (!prev) return toast('No track before this one on its row.'); a.t0 = Math.max(0, prev.t0 + prev.len - 2); prev.fadeOut = 2; a.fadeIn = 2; }
+      if (R.playing) reelMusicStart(R.t); reelTimeline(); reelPanel();
+    };
     el.addEventListener('input', reelMusicInput);
   }
 }
 
 function reelClipTool(c) {
   const video = c.type === 'video';
+  if (!reelClipTool.inner && (R.tool === 'adjust' || R.tool === 'fx')) { R.lookTab = R.tool; R.tool = 'look'; }   /* an older tool name */
+  if (R.tool === 'look') {   /* one Look tool: filters, adjustments and effects as small tabs */
+    const sub = R.lookTab || 'filters', n = c.adj && Object.values(c.adj).some(Boolean), f = c.fx?.length || 0;
+    const head = `<div class="seg reel-subtabs" data-looktab>${[['filters', 'Filters'], ['adjust', 'Adjust' + (n ? ' •' : '')], ['fx', 'Effects' + (f ? ` (${f})` : '')]].map(([k, l]) => `<button type="button" data-v="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    R.tool = sub; reelClipTool.inner = true; let body; try { body = reelClipTool(c); } finally { reelClipTool.inner = false; R.tool = 'look'; }
+    return head + body;
+  }
+  if (!REEL_CLIP_TOOLS.some(([k]) => k === R.tool) && !reelClipTool.inner) R.tool = 'look';   /* Trim and Arrange moved to the timeline and the top strip */
   if (R.tool === 'trim') return video ? `
       ${reelSlider('data-c', 'inP', `Start ${help('Where this video clip begins.')}`, 0, c.srcDur.toFixed(2), 0.1, c.inP, c.inP.toFixed(1) + 's')}
       ${reelSlider('data-c', 'outP', 'End', 0, c.srcDur.toFixed(2), 0.1, c.outP, c.outP.toFixed(1) + 's')}
       <div class="lbl">Speed ${help('Slow motion for detail shots, faster for time-lapses of the session.')}</div>
       ${reelSeg('speed', c.speed || 1, [[0.5, '0.5×'], [1, '1×'], [1.5, '1.5×'], [2, '2×'], [4, '4×']])}
-      <label class="toggle" style="display:inline-flex"><input type="checkbox" data-c="sound" ${c.mute ? '' : 'checked'}><span>Clip sound</span></label>`
+      <label class="toggle" style="display:inline-flex;margin-bottom:10px"><input type="checkbox" data-c="sound" ${c.mute ? '' : 'checked'}><span>Clip sound</span></label>
+      ${c.mute ? '' : reelSlider('data-c', 'vol', 'Clip volume', 0, 2, 0.05, c.vol ?? 1, Math.round((c.vol ?? 1) * 100) + '%')}`
     : reelSlider('data-c', 'dur', 'Length', 0.5, 8, 0.1, c.dur, c.dur.toFixed(1) + 's');
-  if (R.tool === 'look') return `<div class="fx-grid">${REEL_FILTERS.map(([k, l]) =>
+  if (R.tool === 'filters') return `<div class="fx-grid">${REEL_FILTERS.map(([k, l]) =>
       `<button class="fx ${(c.filter || 'none') === k ? 'on' : ''}" data-fx="${k}"><canvas width="54" height="96"></canvas><span>${l}</span></button>`).join('')}</div>`;
+  if (R.tool === 'adjust') { const a = c.adj || {};
+    return `${REEL_ADJ.map(([k, l, mn, mx]) => reelSlider('data-adj', k, l, mn, mx, 1, a[k] || 0, String(a[k] || 0))).join('')}
+      <div class="row"><button class="btn small" data-act="adjreset" ${Object.values(a).some(Boolean) ? '' : 'disabled'}>Reset adjustments</button>
+        <button class="btn small" data-act="adjall" data-tip="Give every clip these adjustments and this filter">Apply to all clips</button></div>`; }
+  if (R.tool === 'fx') return `<p class="muted" style="font-size:12px;margin:0 0 10px">Tap to turn on; mix as many as you like.</p>
+      <div class="fx-list">${REEL_FX.map(([k, l, d]) => `<button class="tr tr-s ${c.fx?.includes(k) ? 'on' : ''}" data-fxk="${k}" data-tip="${d}"><b>${l}</b></button>`).join('')}</div>
+      ${c.fx?.length ? '<div class="row" style="margin-top:10px"><button class="btn small" data-act="fxclear">Turn all off</button></div>' : ''}`;
+  if (R.tool === 'frame' && c.type === 'blank') { const sw = (k) => `<span class="ink-dots">${['#111416', '#000000', '#ffffff', '#e9e3d6', '#1fb5a8', '#f0c75e', '#d2453b', '#3b5bdb', ...(k === 'bg2' ? [''] : [])].map(col => `<button class="ink ${(c[k] || '') === col ? 'on' : ''}" data-blk="${k}" data-v="${col}" style="background:${col || 'repeating-linear-gradient(45deg,#333 0 4px,#555 4px 8px)'}" aria-label="${col || 'None'}"></button>`).join('')}<input type="color" data-blkc="${k}" value="${c[k] || '#000000'}" aria-label="Any colour"></span>`;
+    return `<div class="lbl">Background</div><div style="margin-bottom:12px">${sw('bg')}</div><div class="lbl">Fade to ${help('A second colour makes a gradient from top to bottom.')}</div><div style="margin-bottom:12px">${sw('bg2')}</div>`; }
   if (R.tool === 'frame') return `
       <div class="lbl">Motion ${help('Slow zoom or pan keeps photos alive.')}</div>
       ${reelSeg('motion', c.motion, [['none', 'Still'], ['in', 'Zoom in'], ['out', 'Zoom out'], ['pan', 'Pan']])}
       <div class="lbl">Framing ${help('Fill crops to the full screen. Fit shows the whole image, over a soft blurred copy of itself or a plain black background.')}</div>
       ${reelSeg('fit', c.fit, [['cover', 'Fill'], ['blur', 'Fit + blur'], ['plain', 'Fit + black']])}
-      <div class="row"><button class="btn small" data-act="rot">↻ Rotate</button><button class="btn small ${c.flip ? 'on' : ''}" data-act="flip">⇋ Mirror</button></div>`;
-  if (R.tool === 'text') return `
-      <label class="field"><span>Caption</span><input class="in" data-c="caption" value="${esc(c.caption)}" placeholder="e.g. Fine-line peony, healed"></label>
-      ${c.caption ? `${reelSlider('data-cs', 's', 'Size', 0.4, 2.5, 0.05, c.cap?.s || 1, Math.round((c.cap?.s || 1) * 100) + '%')}
-        <div class="row"><button class="btn small" data-act="capreset" ${c.cap ? '' : 'disabled'}>Reset position and size</button></div>` : ''}
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Drag the caption on the preview to move it; drag its corner dot to resize. It snaps to the centre and to stickers.</p>`;
-  if (R.tool === 'stickers') {
-    const list = c.stickers || [];
+      <div class="row" style="margin-bottom:10px"><button class="btn small" data-act="rot">↻ Rotate</button><button class="btn small ${c.flip ? 'on' : ''}" data-act="flip">⇋ Mirror</button></div>
+      <div class="lbl">Crop ${help('Zoom in and move the picture to frame the tattoo.')}</div>
+      ${reelSlider('data-c', 'zoom', 'Zoom', 1, 3, 0.05, c.zoom || 1, (c.zoom || 1).toFixed(2) + '×')}
+      ${reelSlider('data-c', 'ox', 'Left / right', -0.5, 0.5, 0.01, c.ox || 0, Math.round((c.ox || 0) * 100) + '%')}
+      ${reelSlider('data-c', 'oy', 'Up / down', -0.5, 0.5, 0.01, c.oy || 0, Math.round((c.oy || 0) * 100) + '%')}
+      ${c.zoom > 1 || c.ox || c.oy ? '<div class="row"><button class="btn small" data-act="cropreset">Reset crop</button></div>' : ''}`;
+  if (R.tool === 'text' || R.tool === 'stickers') {
+    const txt = R.tool === 'text', list = R.ovl || [], si = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1, st = list[si];
+    const mine = (o) => (o.text != null) === txt, shown = list.map((o, i) => [o, i]).filter(([o]) => mine(o));
+    const sseg = (k, cur, opts) => `<div class="seg" data-stseg="${k}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${cur === v ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     return `
-      <div class="stk-list">${list.map((st, i) => `<span class="stk ${R.layer === 'stk' + i ? 'on' : ''}" data-stk="${i}"><img src="${st.url}" alt="">
-        <b data-stkdel="${i}" role="button" aria-label="Remove sticker">&times;</b></span>`).join('')}
-        <label class="stk add" data-tip="Add a PNG (transparent background works best)">+<input type="file" accept="image/png,image/webp,image/*" multiple hidden data-stkfile></label></div>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Stickers sit on this clip only. Drag on the preview to move; drag the corner dot (or pinch) to resize.</p>`;
+      <div class="stk-list">${shown.map(([o, i]) => `<span class="stk ${si === i ? 'on' : ''} ${txt ? 'is-t' : ''}" data-stk="${i}">${txt ? `<i class="stk-t">${esc(String(o.text).split('\n')[0].slice(0, 14) || 'Text')}</i>` : `<img src="${o.url || ''}" alt="">`}
+        <b data-stkdel="${i}" role="button" aria-label="Remove">&times;</b></span>`).join('')}</div>
+      ${txt ? `<div class="reel-addrow"><button class="btn small primary rib-x" data-act="stktext" data-tip="A heading: one line or a few, as wide as its words">${ri('text')}<span>Heading</span></button>
+        <button class="btn small rib-x" data-act="stkpara" data-tip="A paragraph in a frame: words wrap to the frame's width; drag its sides to make it wider">${ri('page')}<span>Paragraph</span></button></div>${reelTextDefaults()}`
+      : `<div class="reel-addrow">
+        <label class="btn small rib-x" data-tip="A PNG with a see-through background works best">${ri('device')}<span>Device</span><input type="file" accept="image/png,image/webp,image/*" multiple hidden data-stkfile></label>
+        <button class="btn small rib-x" data-act="stkpf" data-tip="A photo from your portfolio or references">${ri('pf')}<span>Portfolio</span></button></div>
+      <div class="emo-row">${REEL_EMOJI.map(m => `<button type="button" data-emoji="${m}">${m}</button>`).join('')}</div>`}
+      ${st && mine(st) ? `<div class="reel-sub"><div class="rib-row">${rib('data-act="stkdup"', 'dup', 'Duplicate (Ctrl D)')}${rib('data-act="stkflip"', 'flip', 'Flip (H)')}${rib('data-act="stkup"', 'up', 'Bring forward (Ctrl ])')}${rib('data-act="stkdown"', 'down', 'Send back (Ctrl [)')}${st.sx || st.sy ? rib('data-act="stkunstretch"', 'unstretch', 'Unstretch') : ''}${rib('data-act="stkall"', 'whole', 'Show for the whole reel')}<i class="rib-gap"></i>${rib(`data-stkdel="${si}"`, 'del', 'Delete (Delete)')}</div>
+        ${txt ? `<textarea class="in rt-ta" rows="2" data-stt placeholder="Type here">${esc(st.text)}</textarea>
+          <div class="rt-bar">${reelFontBtn(st.font, 'st', true)}
+            <button class="rt-b ${st.bold === false ? '' : 'on'}" data-sttog="bold" data-tip="Bold" aria-label="Bold"><b>B</b></button><button class="rt-b ${st.ital ? 'on' : ''}" data-sttog="ital" data-tip="Italic" aria-label="Italic"><i>I</i></button>
+            <i class="rt-sep"></i>${['left', 'center', 'right'].map(a => `<button class="rt-b ${(st.align || 'center') === a ? 'on' : ''}" data-stalign="${a}" data-tip="Align ${a}" aria-label="Align ${a}"><svg viewBox="0 0 24 24">${{ left: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>', center: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>', right: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>' }[a]}</svg></button>`).join('')}</div>
+          <div class="reel-row"><span class="lbl">Fill</span><span class="ink-dots">${['', ...REEL_COLORS, '#000000'].map(col => `<button class="ink ${(st.color || '') === col ? 'on' : ''}" data-stcol="${col}" style="background:${col || 'linear-gradient(135deg,#e9e3d6 50%,#1fb5a8 50%)'}" aria-label="${col || 'Style colour'}"></button>`).join('')}<input type="color" data-stcolc value="${st.color || '#ffffff'}" aria-label="Any colour"></span></div>
+          <div class="lbl">Look</div>${sseg('look', st.look || 'outline', REEL_CAP_LOOKS)}
+          ${(st.look || 'outline') === 'outline' ? `<div class="reel-row"><span class="lbl">Outline</span><span class="ink-dots">${['', '#000000', '#ffffff', ...REEL_COLORS.slice(2)].map(col => `<button class="ink ${(st.oc || '') === col ? 'on' : ''}" data-stoc="${col}" style="background:${col || 'rgba(0,0,0,.6)'}" aria-label="${col || 'Soft black'}"></button>`).join('')}<input type="color" data-stocc value="${st.oc || '#000000'}" aria-label="Any outline colour"></span></div>
+            ${reelSlider('data-stk-n', 'ow', 'Outline width', 0, 0.4, 0.01, st.ow ?? 0.14, Math.round((st.ow ?? 0.14) * 100) + '%')}` : ''}
+          ${reelFold('space', 'Spacing', `${(st.lh || 1.12).toFixed(2)} lines`, `
+            ${reelSlider('data-stk-n', 'lh', 'Line spacing', 0.7, 2.5, 0.02, st.lh || 1.12, (st.lh || 1.12).toFixed(2))}
+            ${reelSlider('data-stk-n', 'ls', 'Letter spacing', -0.1, 0.6, 0.01, st.ls || 0, Math.round((st.ls || 0) * 100) + '%')}
+            ${st.look === 'box' || st.look === 'abox' ? reelSlider('data-stk-n', 'pad', 'Padding', 0, 1, 0.02, st.pad ?? 0.28, Math.round((st.pad ?? 0.28) * 100) + '%') : ''}
+            ${st.box ? reelSlider('data-stk-n', 'bw', 'Frame width', 0.15, 1, 0.01, st.bw || 0.7, Math.round((st.bw || 0.7) * 100) + '%') : ''}`)}
+          ${reelFold('shape', 'Shape', REEL_TXT_SHAPES.find(x => x[0] === (st.shape || 'none'))[1], `
+            ${sseg('shape', st.shape || 'none', REEL_TXT_SHAPES)}
+            ${['arc', 'wave', 'rise', 'bulge'].includes(st.shape) ? reelSlider('data-stk-n', 'amt', st.shape === 'arc' ? 'Bend (left: down, right: up)' : 'Amount', -100, 100, 1, st.amt ?? 50, String(st.amt ?? 50)) : ''}
+            ${st.shape === 'wave' ? `<label class="toggle" style="display:inline-flex"><input type="checkbox" data-stwave ${st.waveMove ? 'checked' : ''}><span>Keep it moving</span></label>` : ''}`)}` : ''}
+        ${reelFold('motion', 'Motion', `${REEL_STK_ANIMS.find(x => x[0] === (st.anim || 'none'))[1]}${st.fx?.length ? ' · ' + st.fx.length + ' effect' + (st.fx.length > 1 ? 's' : '') : ''}`, `
+          <div class="lbl">Appear</div>${sseg('anim', st.anim || 'none', REEL_STK_ANIMS)}
+          ${REEL_STK_DIRS[st.anim] ? sseg('adir', st.adir && REEL_STK_DIRS[st.anim].some(([v]) => v === st.adir) ? st.adir : REEL_STK_DIRS[st.anim][0][0], REEL_STK_DIRS[st.anim]) : ''}
+          ${(st.anim || 'none') !== 'none' ? `${reelSlider('data-stk-n', 'animDur', 'Appear speed', 0.15, 2, 0.05, st.animDur || 0.5, (st.animDur || 0.5).toFixed(2) + 's')}
+            <label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Plays the entrance backwards at the end, so it leaves the way it came"><input type="checkbox" data-stexit ${st.exit ? 'checked' : ''}><span>Leave the same way</span></label>` : ''}
+          <div class="lbl">Effects</div><div class="seg multi" data-stfx>${REEL_STK_FX.map(([v, l]) => `<button type="button" data-v="${v}" class="${st.fx?.includes(v) ? 'on' : ''}">${l}</button>`).join('')}</div>
+          ${st.fx?.includes('spin') || st.fx?.includes('float') ? `<div class="row" style="gap:6px;flex-wrap:nowrap">${st.fx.includes('spin') ? sseg('spinDir', st.spinDir || 'cw', [['cw', '↻ Spin'], ['ccw', '↺ Spin']]) : ''}${st.fx.includes('float') ? sseg('floatDir', st.floatDir || 'y', [['y', '↕ Float'], ['x', '↔ Float']]) : ''}</div>` : ''}
+          ${st.fx?.some(f => ['float', 'pulse', 'spin', 'wiggle'].includes(f)) ? reelSlider('data-stk-n', 'fxSpeed', 'Effect speed', 0.25, 3, 0.05, st.fxSpeed || 1, (st.fxSpeed || 1).toFixed(2) + '×') : ''}
+          ${reelSlider('data-stk-n', 'at', 'Appears after', 0, 5, 0.1, st.at || 0, (st.at || 0).toFixed(1) + 's')}
+          <label class="toggle" style="display:inline-flex"><input type="checkbox" data-stout ${st.out ? 'checked' : ''}><span>Fade out at the end</span></label>`)}
+        ${reelFold('place', 'Size and turn', `${Math.round((st.s || 1) * 100)}% · ${st.rot || 0}°`, `
+          ${reelSlider('data-stk-n', 's', 'Size', 0.2, 4, 0.05, st.s || 1, Math.round((st.s || 1) * 100) + '%')}
+          ${reelSlider('data-stk-n', 'rot', 'Turn', -180, 180, 1, st.rot || 0, (st.rot || 0) + '°')}
+          ${reelSlider('data-stk-n', 'op', 'Opacity', 0.1, 1, 0.05, st.op ?? 1, Math.round((st.op ?? 1) * 100) + '%')}`)}
+</div>`
+      : `<p class="muted" style="font-size:12px;margin:8px 0 0">${txt ? 'Tap a text above or on the preview to edit it.' : 'Tap a sticker above or on the preview to set how it appears and moves.'} Corners size it, sides stretch it, the gold dot turns it. Keys: Delete, arrows, + −, [ ], Ctrl D, Ctrl C / V.</p>`}`;
   }
   const here = reelSegments().segs.find(x => x.clip === c);
   const canSplit = video && here && R.t > here.start + 0.3 && R.t < here.start + here.dur - 0.3;
@@ -6727,6 +7273,29 @@ function reelFilterThumbs(c) {
 function reelClipBind(ed, c) {
   const el = $('#reel-panel');
   ed.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.dataset.blkc) { c[t.dataset.blkc] = t.value; c.thumb = reelBlankThumb(c); return reelChanged(); }
+    if (t.dataset.adj) { c.adj = { ...c.adj, [t.dataset.adj]: +t.value }; t.closest('.slider').querySelector('b').textContent = t.value; return reelChanged(); }
+    if (t.hasAttribute('data-cf')) { if (t.value === '+imp') { reelFontImport().then(k => { if (k) c.capFont = k; reelChanged(); reelPanel(); }); return; }
+      c.capFont = t.value || undefined; if (t.value) reelFontLoad(t.value); return reelChanged(); }
+    const stI = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1, stO = R.ovl?.[stI];
+    if (stO && t.hasAttribute('data-stt')) { stO.text = t.value; return reelRender(); }
+    if (stO && t.hasAttribute('data-stf')) { if (t.value === '+imp') { reelFontImport().then(k => { if (k) stO.font = k; reelChanged(); reelPanel(); }); return; } stO.font = t.value || undefined; return reelChanged(); }
+    if (stO && t.dataset.stkN) { const k = t.dataset.stkN; stO[k] = +t.value;
+      t.closest('.slider').querySelector('b').textContent = ['op', 's', 'ow', 'ls', 'pad', 'bw'].includes(k) ? Math.round(stO[k] * 100) + '%' : k === 'rot' ? stO.rot + '°' : k === 'fxSpeed' ? stO.fxSpeed.toFixed(2) + '×' : k === 'lh' ? stO.lh.toFixed(2) : k === 'amt' ? String(stO.amt) : stO[k].toFixed(k === 'animDur' ? 2 : 1) + 's';
+      return reelRender(); }
+    if (stO && t.hasAttribute('data-stwave')) { stO.waveMove = t.checked; return reelRender(); }
+    if (stO && t.dataset.stcolc != null) { stO.color = t.value; return reelRender(); }
+    if (stO && t.dataset.stocc != null) { stO.oc = t.value; return reelRender(); }
+    if (stO && t.hasAttribute('data-stout')) { stO.out = t.checked; return reelRender(); }
+    if (stO && t.hasAttribute('data-stexit')) { stO.exit = t.checked; if (t.checked) { const back = R.t; clearTimeout(R.peekT); reelShow(Math.max(stO.t0, stO.t1 - (stO.animDur || 0.5) - 0.6)); reelPlay(); R.peekT = setTimeout(() => { reelPause(); reelShow(back); }, ((stO.animDur || 0.5) + 0.7) * 1000); } return reelRender(); }
+    if (t.dataset.c === 'capOut') { c.capOut = t.checked; return reelChanged(); }
+    if (['zoom', 'ox', 'oy', 'vol'].includes(t.dataset.c)) {
+      const k = t.dataset.c; c[k] = +t.value;
+      t.closest('.slider').querySelector('b').textContent = k === 'zoom' ? c.zoom.toFixed(2) + '×' : Math.round(c[k] * 100) + '%';
+      if (k === 'vol' && c.gain) c.gain.gain.value = c.vol;
+      return reelChanged();
+    }
     if (e.target.dataset.cs) {
       const L = capLayout($('#reel-cv').getContext('2d'), reelStyle(), c, PREVIEW_W, PREVIEW_H);
       c.cap = { x: L.cx / PREVIEW_W, y: L.cy / PREVIEW_H, ...c.cap, s: +e.target.value };
@@ -6748,22 +7317,25 @@ function reelClipBind(ed, c) {
     reelChanged();
   });
   ed.addEventListener('change', async (e) => {
+    if (['animDur', 'fxSpeed'].includes(e.target.dataset.stkN)) { const i = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1; return reelStkPeek(R.ovl?.[i]); }   /* see the new speed */
     if (e.target.dataset.c === 'inP' || e.target.dataset.c === 'outP') reelPanel();
     if (e.target.dataset.c === 'caption' && R.tool === 'text') reelPanel();   // show size controls once there is text
+    if (e.target.dataset.c === 'sound' || ['zoom', 'ox', 'oy'].includes(e.target.dataset.c)) reelPanel();   // volume slider / Reset crop appear
     if (e.target.hasAttribute('data-stkfile')) {
       // Stickers stay in memory with the draft, like the clips themselves.
-      c.stickers ||= [];
+      
       for (const f of e.target.files) {
         const url = URL.createObjectURL(f), img = new Image(); img.src = url;
         try { await img.decode(); } catch { toast(`Could not read ${f.name}.`); continue; }
-        c.stickers.push({ url, img, x: 0.5, y: 0.4, s: 1 });
+        let ref = ''; try { ref = await Media.save(await pngBlob(f, 1200), 'png'); } catch {}
+        R.ovl.push({ url, img, ref, x: 0.5, y: 0.4, s: 1, t0: Math.min(R.t, Math.max(0, reelSegments().total - 3)), t1: Math.min(reelSegments().total, Math.min(R.t, Math.max(0, reelSegments().total - 3)) + 3) });
       }
-      R.layer = 'stk' + (c.stickers.length - 1); reelRender(); reelPanel();
+      R.layer = 'stk' + (R.ovl.length - 1); reelRender(); reelPanel();
     }
   });
   ed.addEventListener('click', (e) => {
     const sd = e.target.closest('[data-stkdel]');
-    if (sd) { const [gone] = c.stickers.splice(+sd.dataset.stkdel, 1);
+    if (sd) { const [gone] = R.ovl.splice(+sd.dataset.stkdel, 1);
       if (!R.clips.some(x => x.stickers?.some(o => o.url === gone.url))) URL.revokeObjectURL(gone.url);
       R.layer = null; reelRender(); return reelPanel(); }
     const sk = e.target.closest('[data-stk]');
@@ -6776,6 +7348,37 @@ function reelClipBind(ed, c) {
       if (k === 'speed') { const tile = el.querySelector(`.reel-clip[data-i="${R.sel}"] span`); if (tile) tile.textContent = clipDur(c).toFixed(1) + 's'; }
       reelChanged(); return;
     }
+    const lt = e.target.closest('[data-looktab] button');
+    if (lt) { R.lookTab = lt.dataset.v; return reelPanel(); }
+    const stI = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1, stO = R.ovl?.[stI];
+    const ss = e.target.closest('[data-stseg] button');
+    if (ss && stO) { const k = ss.parentElement.dataset.stseg; stO[k] = ss.dataset.v; ss.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === ss)); reelChanged(); if (k === 'anim' || k === 'shape' || k === 'look') reelPanel(); if (['anim', 'adir', 'spinDir', 'floatDir'].includes(k)) reelStkPeek(stO); return; }
+    const sf = e.target.closest('[data-stfx] button');
+    if (sf && stO) { const v = sf.dataset.v; stO.fx = (stO.fx || []).includes(v) ? stO.fx.filter(x => x !== v) : [...(stO.fx || []), v]; sf.classList.toggle('on', stO.fx.includes(v)); reelChanged(); reelPanel(); if (stO.fx.includes(v)) reelStkPeek(stO); return; }
+    const tg = e.target.closest('[data-sttog]');
+    if (tg && stO) { const k = tg.dataset.sttog; stO[k] = k === 'bold' ? stO.bold === false : !stO[k]; tg.classList.toggle('on', k === 'bold' ? stO.bold !== false : !!stO[k]); return reelChanged(); }
+    const sa = e.target.closest('[data-stalign]');
+    if (sa && stO) { stO.align = sa.dataset.stalign; ed.querySelectorAll('[data-stalign]').forEach(x => x.classList.toggle('on', x === sa)); return reelChanged(); }
+    const soc = e.target.closest('[data-stoc]');
+    if (soc && stO) { stO.oc = soc.dataset.stoc || undefined; ed.querySelectorAll('[data-stoc]').forEach(x => x.classList.toggle('on', x === soc)); return reelChanged(); }
+    const fp = e.target.closest('[data-fpick="st"]');
+    if (fp && stO) return reelFontMenu(fp, stO.font, true, (k) => { stO.font = k || undefined; reelChanged(); reelPanel(); });
+    const sc2 = e.target.closest('[data-stcol]');
+    if (sc2 && stO) { stO.color = sc2.dataset.stcol || undefined; ed.querySelectorAll('[data-stcol]').forEach(x => x.classList.toggle('on', x === sc2)); return reelChanged(); }
+    const fk = e.target.closest('[data-fxk]');
+    if (fk) { const k = fk.dataset.fxk; c.fx = (c.fx || []).includes(k) ? c.fx.filter(x => x !== k) : [...(c.fx || []), k]; fk.classList.toggle('on', c.fx.includes(k)); reelChanged(); if (c.fx.length <= 1) reelPanel(); return; }
+    const bk = e.target.closest('[data-blk]');
+    if (bk) { c[bk.dataset.blk] = bk.dataset.v; c.thumb = reelBlankThumb(c); reelChanged(); return reelPanel(); }
+    const cc = e.target.closest('[data-ccol]');
+    if (cc) { c.capColor = cc.dataset.ccol || undefined; ed.querySelectorAll('[data-ccol]').forEach(x => x.classList.toggle('on', x === cc)); return reelChanged(); }
+    const em = e.target.closest('[data-emoji]');
+    if (em) return (async () => {   /* an emoji drawn big into a picture, used like any sticker */
+      const cv = document.createElement('canvas'); cv.width = cv.height = 640; const x = cv.getContext('2d');   /* big enough to stay crisp at any size */
+      x.font = '520px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(em.dataset.emoji, 320, 350);
+      const blob = await new Promise(r => cv.toBlob(r, 'image/png')), url = URL.createObjectURL(blob), img = new Image(); img.src = url; await img.decode().catch(() => {});
+      let ref = ''; try { ref = await Media.save(blob, 'png'); } catch {}
+      reelOvAdd({ url, img, ref, x: 0.5, y: 0.35, s: 0.5 });
+    })();
     const fx = e.target.closest('[data-fx]');
     if (fx) { c.filter = fx.dataset.fx; ed.querySelectorAll('.fx').forEach(x => x.classList.toggle('on', x === fx)); reelChanged(); return; }
     const a = e.target.closest('[data-act]'); if (!a || a.disabled) return;
@@ -6783,6 +7386,16 @@ function reelClipBind(ed, c) {
     if (act === 'rot') { c.rot = ((c.rot || 0) + 90) % 360; reelChanged(); return; }
     if (act === 'flip') { c.flip = !c.flip; a.classList.toggle('on', c.flip); reelChanged(); return; }
     if (act === 'capreset') { delete c.cap; R.layer = 'cap'; reelRender(); return reelPanel(); }
+    if (act === 'adjreset') { delete c.adj; reelChanged(); return reelPanel(); }
+    if (act === 'stktext') { reelAddText(c); return; }
+    if (act === 'stkpara') { R.tool = 'text'; reelOvAdd({ text: 'Write a few lines here. They wrap inside the frame.', box: true, bw: 0.72, align: 'left', x: 0.5, y: 0.6, s: 0.7, lh: 1.25, anim: 'fade' }, 4); return; }
+    if (stO && ['stkdup', 'stkflip', 'stkup', 'stkdown', 'stkunstretch'].includes(act)) return reelLayerAct(act.slice(3));
+    if (act === 'stkpf') return (async () => { const ref = await dzPortfolioPick(true); if (!ref) return; const url = await Media.url(ref); if (!url) return toast('Could not open that picture.');
+      const img = new Image(); img.src = url; await img.decode().catch(() => {}); reelOvAdd({ url, img, ref, x: 0.5, y: 0.4, s: 0.8, anim: 'pop' }); })();
+    if (act === 'stkall' && stO) { stO.t0 = 0; stO.t1 = reelSegments().total; toast('It now shows for the whole reel.'); reelChanged(); return reelPanel(); }
+    if (act === 'adjall') { for (const o of R.clips) { o.adj = c.adj ? { ...c.adj } : undefined; o.filter = c.filter; } toast('Every clip has this look now.'); reelChanged(); return; }
+    if (act === 'fxclear') { c.fx = []; reelChanged(); return reelPanel(); }
+    if (act === 'cropreset') { delete c.zoom; delete c.ox; delete c.oy; reelChanged(); return reelPanel(); }
     if (act === 'del') return reelRemoveClip(i);
     let pick = c;
     // Copies get their own caption position and sticker list, so moving one never moves the other.
@@ -6801,6 +7414,34 @@ function reelClipBind(ed, c) {
   });
 }
 
+// Copy of a clip with its own caption position and sticker list, so moving one never moves the other.
+const reelClipCopy = (c, extra) => reelOwnVideo({ ...c, id: ++R.seq, cap: c.cap && { ...c.cap }, stickers: [], ...extra });
+function reelClipDup(c = R.clips[R.sel]) { if (!c) return; const i = R.clips.indexOf(c), n = reelClipCopy(c); R.clips.splice(i + 1, 0, n); reelPick('clip', n.id); }
+function reelClipSplit(c = R.clips[R.sel]) {
+  if (c?.type !== 'video') return toast('Pick a video clip and put the playhead where to cut.');
+  const seg = reelSegments().segs.find(x => x.clip === c), cut = seg && c.inP + (R.t - seg.start) * (c.speed || 1);
+  if (!seg || !(cut > c.inP + 0.2 && cut < c.outP - 0.2)) return toast('Move the playhead onto this clip, away from its ends, to split it there.');
+  const n = reelClipCopy(c, { inP: cut }); R.clips.splice(R.clips.indexOf(c) + 1, 0, n); c.outP = cut; toast('Clip split.'); reelPick('clip', n.id);
+}
+/* Freeze frame: the video's picture at the playhead becomes a 2-second photo clip right after a split there. */
+async function reelFreeze(c) {
+  const seg = reelSegments().segs.find(x => x.clip === c); if (!seg) return;
+  const at = c.inP + Math.max(0, Math.min(seg.dur, R.t - seg.start)) * (c.speed || 1), cv = document.createElement('canvas'); cv.width = c.w; cv.height = c.h;
+  c.el.currentTime = at; await new Promise(r => { c.el.onseeked = r; setTimeout(r, 800); }); c.el.onseeked = null; cv.getContext('2d').drawImage(c.el, 0, 0);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92)); const ph = await reelAddFile(new File([blob], 'freeze.jpg', { type: 'image/jpeg' }));
+  R.clips.splice(R.clips.indexOf(ph), 1); Object.assign(ph, { dur: 2, motion: 'none', fit: c.fit, filter: c.filter, adj: c.adj && { ...c.adj }, fx: c.fx && [...c.fx], rot: c.rot, flip: c.flip, zoom: c.zoom, ox: c.ox, oy: c.oy });
+  const cut = at > c.inP + 0.2 && at < c.outP - 0.2, i = R.clips.indexOf(c);
+  if (cut) { const n = reelClipCopy(c, { inP: at }); c.outP = at; R.clips.splice(i + 1, 0, ph, n); } else R.clips.splice(at <= c.inP + 0.2 ? i : i + 1, 0, ph);
+  toast('Freeze frame added.', 1500); reelPick('clip', ph.id);
+}
+/* Saves the frame at the playhead as a picture at the reel's export size (1080p). */
+async function reelStill() {
+  const [, , , w, h] = reelSize(R.ar), cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const was = R.layer; R.layer = null; reelDraw(cv.getContext('2d'), w, h, R.t); R.layer = was;
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.93)), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `${(RS.name || 'reel').replace(/[^\w-]+/g, '_')}-${R.t.toFixed(1)}s.jpg`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('Frame saved to your downloads.', 2000);
+}
 // Removes a clip from the draft only; the original photo or video on the device is untouched.
 function reelRemoveClip(i) {
   const [gone] = R.clips.splice(i, 1); if (!gone) return;
@@ -6851,7 +7492,7 @@ function reelTransPanel(s, seg) {
   return `
     <div class="reel-clip-head"><b>${name(prev)} → ${name(seg)}</b><span class="chip">${own ? 'Custom' : 'Default'}</span></div>
     <div class="tr-grid" style="margin-bottom:12px">${REEL_TRANSITIONS.map(([k, l, d]) =>
-      `<button data-tt="${k}" class="tr ${tr.type === k ? 'on' : ''}"><b>${REEL_TR_ICON[k]} ${l}</b><span>${d}</span></button>`).join('')}</div>
+      `<button data-tt="${k}" class="tr tr-s ${tr.type === k ? 'on' : ''}" data-tip="${d}"><i>${REEL_TR_ICON[k]}</i><b>${l}</b></button>`).join('')}</div>
     ${REEL_TR_VARIANTS[tr.type] ? `<div class="lbl">${tr.type === 'wipe' || tr.type === 'slide' ? 'Comes in from' : 'Version'}</div>
       <div class="seg ${REEL_TR_VARIANTS[tr.type].length > 2 ? 'dir4' : ''}" style="margin-bottom:12px">${REEL_TR_VARIANTS[tr.type].map(([v, l]) =>
         `<button data-td="${v}" class="${trVariant(tr) === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>` : ''}
@@ -6868,33 +7509,29 @@ async function reelStyleSection(s) {
   const seg = (k, opts) => `<div class="seg" data-st="${k}" style="margin-bottom:12px">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`;
   const hasLogo = !!reelLogoRef(s);
   const noLogo = '<p class="muted" style="font-size:12px;margin:-4px 0 12px">Add your studio logo in More › Settings to use it here.</p>';
-  if (R.stab === 'text') return `
-      <div class="lbl">Font</div>${seg('font', [['display', 'Tattoo'], ['clean', 'Clean']])}
-      <div class="lbl">Caption position</div>${seg('captionPos', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}
-      <div class="lbl">Caption size</div>${seg('capSize', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']])}
-      <div class="row" style="margin-bottom:12px"><span class="lbl" style="margin:0;width:70px">Text</span>${swatches('color')}</div>
-      <div class="row"><span class="lbl" style="margin:0;width:70px">Accent</span>${swatches('accent')}</div>`;
+  if (!REEL_STYLE_TABS.some(([k]) => k === R.stab)) R.stab = 'brand';
   if (R.stab === 'brand') {
-    const lu = s.logoRef ? await Media.url(s.logoRef) : '';
+    const lu = reelLogoRef(s) ? await Media.url(reelLogoRef(s)) : '';
     return `
+      <div class="reel-row"><span class="lbl">Accent colour</span>${swatches('accent')}</div>
       <label class="field"><span>Handle</span><input class="in" data-s="handle" value="${esc(s.handle)}" placeholder="@yourhandle" autocapitalize="off"></label>
       <div class="lbl">Logo ${help('Uses your studio logo from Settings, unless you pick a different one for this style, e.g. for another artist\'s template.')}</div>
       <div class="row" style="margin-bottom:12px;flex-wrap:nowrap">
-        <span class="logo-box">${lu ? `<img src="${lu}" alt="">` : '<span class="muted">Studio</span>'}</span>
+        <span class="logo-box">${lu ? `<img src="${lu}" alt="">` : '<span class="muted">None</span>'}</span>
         <label class="btn small">${s.logoRef ? 'Change' : 'Use a different logo'}<input type="file" accept="image/png,image/*" hidden data-logofile></label>
         ${s.logoRef ? '<button class="btn small" data-logoclear>Use studio logo</button>' : ''}
       </div>
       <div class="lbl">Watermark ${help('Shown in a corner of every clip so reposts still point back to you.')}</div>
       ${seg('wmMode', [['off', 'Off'], ['text', 'Handle'], ['logo', 'Logo']])}
       ${s.wmMode === 'logo' && !hasLogo ? noLogo : ''}
-      <div class="lbl">Corner</div>${seg('wmPos', [['tl', '↖ Top left'], ['tr', 'Top right ↗'], ['bl', '↙ Bottom left'], ['br', 'Bottom right ↘']])}
-      ${reelSlider('data-s', 'wmOp', 'Opacity', 0.2, 1, 0.05, s.wmOp, Math.round(s.wmOp * 100) + '%')}`;
+      ${s.wmMode !== 'off' ? `${reelSlider('data-s', 'wmOp', 'Opacity', 0.2, 1, 0.05, s.wmOp, Math.round(s.wmOp * 100) + '%')}
+      <p class="muted" style="font-size:12px;margin:4px 0 0">Drag the watermark on the preview to place it; its corner dot sizes it. ${s.wmXY ? '<button class="link" data-wmreset>Back to bottom right</button>' : ''}</p>` : ''}`;
   }
   if (R.stab === 'trans') {
     const custom = Object.keys(R.trans).length;
     return `<p class="muted" style="font-size:13px;margin:0 0 12px">The default for every transition. To change just one, tap its dot on the timeline.</p>
       <div class="tr-grid" data-st="transition" style="margin-bottom:12px">${REEL_TRANSITIONS.map(([k, l, d]) =>
-      `<button data-v="${k}" class="tr ${s.transition === k ? 'on' : ''}"><b>${REEL_TR_ICON[k]} ${l}</b><span>${d}</span></button>`).join('')}</div>
+      `<button data-v="${k}" class="tr tr-s ${s.transition === k ? 'on' : ''}" data-tip="${d}"><i>${REEL_TR_ICON[k]}</i><b>${l}</b></button>`).join('')}</div>
       ${REEL_TR_VARIANTS[s.transition] ? `<div class="lbl">${s.transition === 'wipe' || s.transition === 'slide' ? 'Comes in from' : 'Version'}</div>
         <div class="seg ${REEL_TR_VARIANTS[s.transition].length > 2 ? 'dir4' : ''}" data-st="transDir" style="margin-bottom:12px">${REEL_TR_VARIANTS[s.transition].map(([v, l]) =>
           `<button data-v="${v}" class="${trVariant({ type: s.transition, dir: s.transDir }) === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>` : ''}
@@ -6904,11 +7541,32 @@ async function reelStyleSection(s) {
   return `<div class="lbl">Export quality ${help('1080p looks sharper but makes bigger files and is heavier on older phones.')}</div>${seg('quality', [['720', '720p'], ['1080', '1080p']])}`;
 }
 
+function reelDefToggle(e) { const f = e.target.dataset?.fold; if (f) { (R.folds ||= {})[f] = e.target.open; return; } if (e.target.classList?.contains('reel-def')) R.defOpen = e.target.open; }
+/* A folding section of the panel; remembers whether it was open. */
+const reelFold = (k, title, sum, body) => `<details class="reel-def" data-fold="${k}" ${(R.folds ||= { motion: false })[k] ? 'open' : ''}><summary><b>${title}</b><span class="muted">${sum}</span></summary>${body}</details>`;
+/* Font picker: a button in the chosen font, opening a list with every font drawn in itself. */
+function reelFontBtn(cur, who, same) {
+  const [, l, fam] = cur ? reelFontDef(cur) : (same ? ['', 'Same as style', 'inherit'] : reelFontDef(reelStyle().font)); if (cur) reelFontLoad(cur);
+  return `<button class="fpick" data-fpick="${who}" data-tip="Font" style="font-family:${String(fam).replace(/"/g, "'")}"><span>${esc(l)}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>`;
+}
+function reelFontMenu(btn, cur, same, pick) {
+  document.getElementById('reel-fmenu')?.remove();
+  const m = document.createElement('div'); m.id = 'reel-fmenu'; m.className = 'reel-fmenu';
+  m.innerHTML = `${same ? `<button data-f="" class="${!cur ? 'on' : ''}">Same as style</button>` : ''}${reelFontsAll().map(([k, l, fam]) => { reelFontLoad(k); return `<button data-f="${k}" class="${cur === k ? 'on' : ''}" style="font-family:${String(fam).replace(/"/g, "'")}">${esc(l)}</button>`; }).join('')}<button data-f="+imp" class="imp">＋ Import a font file…</button>`;
+  document.body.appendChild(m); const r = btn.getBoundingClientRect(), h = Math.min(m.scrollHeight, innerHeight * 0.6);
+  m.style.left = Math.min(innerWidth - m.offsetWidth - 6, r.left) + 'px'; m.style.top = (r.bottom + h + 8 < innerHeight ? r.bottom + 4 : Math.max(6, r.top - h - 4)) + 'px'; m.style.maxHeight = h + 'px';
+  m.querySelector('.on')?.scrollIntoView({ block: 'center' });
+  const close = (e) => { if (!m.contains(e.target)) { m.remove(); removeEventListener('pointerdown', close, true); } };
+  setTimeout(() => addEventListener('pointerdown', close, true));
+  m.onclick = async (e) => { const b = e.target.closest('[data-f]'); if (!b) return; m.remove(); removeEventListener('pointerdown', close, true);
+    if (b.dataset.f === '+imp') { const k = await reelFontImport(); if (k) pick(k); return; } pick(b.dataset.f); };
+}
 function reelMusicInput(e) {
-  const k = e.target.dataset.m; if (!k || !R.music) return;
-  R.music[k] = +e.target.value;
-  e.target.closest('.slider').querySelector('b').textContent = k === 'vol' ? Math.round(R.music.vol * 100) + '%' : R.music.offset.toFixed(1) + 's';
-  if (R.playing) reelMusicStart(R.t);
+  const k = e.target.dataset.m, a = (R.aud || []).find(x => x.id === R.audSel); if (!k || !a) return;
+  a[k] = +e.target.value;
+  if (k === 'off' || k === 'rate') a.len = Math.max(0.3, Math.min(a.len, (a.buffer.duration - (a.off || 0)) / (a.rate || 1)));
+  e.target.closest('.slider').querySelector('b').textContent = k === 'vol' ? Math.round(a.vol * 100) + '%' : k === 'rate' ? a.rate.toFixed(2) + '×' : a[k].toFixed(1) + 's';
+  reelTimeline(); if (R.playing) reelMusicStart(R.t);
 }
 // Panel listeners are named functions: #reel-panel survives re-renders, and re-adding the same
 // function reference is a no-op, so they never stack up. Each only reacts to its own data- attributes.
@@ -6927,7 +7585,9 @@ function reelStyleInput(e) {
     return reelShowCard(t.dataset.bg === 'introBg' ? 'intro' : 'outro');
   }
   const k = t.dataset.s; if (!k) return;
+  if (k === 'font' && t.value === '+imp') { reelFontImport().then(f => { if (f) reelSetStyle('font', f); reelChanged(); reelPanel(); }); return; }
   const v = t.type === 'checkbox' ? t.checked : t.type === 'range' ? +t.value : t.value;
+  if (k === 'font') { reelFontLoad(v); reelSetStyle(k, v); reelChanged(); return reelPanel(); }
   reelSetStyle(k, v);
   if (t.type === 'range') t.closest('.slider').querySelector('b').textContent =
     k === 'transDur' ? v.toFixed(2) + 's' : /Dur$/.test(k) ? v.toFixed(1) + 's' : Math.round(v * 100) + '%';
@@ -6955,6 +7615,9 @@ async function reelStyleClick(e) {
     if (t.closest('[data-tpeek]')) return reelPeekTransition(key);
   }
   if (t.closest('[data-tclear]')) { R.trans = {}; reelChanged(); return reelPanel(); }
+  if (t.closest('[data-wmreset]')) { reelSetStyle('wmXY', null); reelSetStyle('wmPos', 'br'); reelRender(); return reelPanel(); }
+  const fpS = t.closest('[data-fpick="style"]'); if (fpS) return reelFontMenu(fpS, reelStyle().font, false, (k) => { reelSetStyle('font', k); reelFontLoad(k); reelChanged(); reelPanel(); });
+  if (t.closest('[data-fontimp]')) { const k = await reelFontImport(); if (k) { reelSetStyle('font', k); reelChanged(); } return reelPanel(); }
   if (t.closest('[data-logoclear]')) {
     const old = reelStyle().logoRef; reelSetStyle('logoRef', ''); await Media.release(old); reelRender(); return reelPanel();
   }
@@ -7011,7 +7674,7 @@ async function reelStyleChange(e) {
    New photos/videos added after applying one take the recipe for their position; beyond the
    recipe's length the last entry repeats. Stored as JSON in settings (key reel_templates);
    images stay in the media folder and are kept alive because their names appear in that JSON. */
-const REEL_SLOT_KEYS = ['dur', 'motion', 'fit', 'filter', 'speed', 'rot', 'flip', 'mute'];
+const REEL_SLOT_KEYS = ['dur', 'motion', 'fit', 'filter', 'speed', 'rot', 'flip', 'mute', 'adj', 'fx', 'capFont', 'capLook', 'capAnim', 'capColor', 'capOut', 'vol'];
 function reelTemplates() { try { return JSON.parse(Settings.get('reel_templates', '[]')); } catch { return []; } }
 const reelSaveTemplates = (list) => Settings.set('reel_templates', JSON.stringify(list));
 
@@ -7022,7 +7685,9 @@ function reelTplCapture(name, id) {
     slots: R.clips.map(c => Object.fromEntries(REEL_SLOT_KEYS.filter(k => c[k] !== undefined && !(k === 'dur' && c.type === 'video')).map(k => [k, c[k]]))),
     // Joins into clip i (i = 0 is from the intro) and into the outro, so the outro keeps its own.
     clipTrans: segs.filter(g => g.kind === 'clip').map(g => R.trans[g.key] || null),
-    outroTrans: R.trans.outro || null
+    outroTrans: R.trans.outro || null,
+    ar: R.ar || '9:16',
+    texts: (R.ovl || []).filter(o => o.text != null).map(({ img, url, ...o }) => o)   /* the words and their look, at their times */
   };
 }
 const pickN = (arr, i) => arr.length ? arr[Math.min(i, arr.length - 1)] : null;
@@ -7040,6 +7705,8 @@ function reelTplRecipe(from) {
 function reelTplApply(t) {
   Settings.set('reel_style', JSON.stringify(t.style));
   R.tplId = t.id; R.trans = {};
+  if (t.ar && t.ar !== R.ar) { reelSetAspect(t.ar); const cv = $('#reel-cv'); if (cv) { cv.width = PREVIEW_W; cv.height = PREVIEW_H; R.vpFit?.(); } reelSizeBtn(); }
+  if (t.texts?.length && !(R.ovl || []).some(o => o.text != null)) R.ovl = [...(R.ovl || []), ...t.texts.map(o => ({ ...o }))];   /* its text, when the reel has none of its own yet */
   reelTplRecipe(0);
   reelChanged(); reelPanel();
   toast(`"${t.name}" applied.`);
@@ -8019,6 +8686,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 470, when: '2026-11-18T12:00', added: ['Reel maker, rebuilt: it fills the screen, with a top strip of buttons, zoom and pan on the preview, snap on or off, and ▶ Watch to play it full screen with pause and a scrub bar.', 'Pick a size for each reel: vertical 9:16, portrait 4:5, square or landscape 16:9.', 'Text, stickers and sound sit on their own timeline rows: drag them to move and their ends to set the timing. Two sound rows for cross-fades or a voiceover, with speed and fades. Clips change length by dragging their ends, and drag to reorder.', 'Many more looks: 24 filters with adjustments, 12 effects, 14 transitions, 18 fonts plus your own, text shapes (arc, circle, wave), headings and paragraphs, sticker entrances with directions, freeze frame and save frame.', 'Sharper logos and stickers in exported videos.'], test: ['Make a reel with music and text, export it at 1080p and check the sound and text line up.', 'Try the reel maker on your phone held upright.'] },
   { build: 469, when: '2026-11-18T00:30', added: ['New look for the booking form, quote calculator, Calibrate quotes and Settings: buttons in a strip at the top, cleaner sections and tidier fields.', 'Quotes: Which side? now sits at the top, and body parts are grouped in tabs (Head and neck, Arms and hands and so on).', 'Quotes: moving the size sliders is enough to go on, no preset needed.', 'The last quote page has every button in one strip: Save, Print, Share, Text, Link and Book it.'], test: ['Make a quote from start to finish and book it. Does every button still do what it should?', 'Save a new booking and check it shows in the calendar.'] },
   { build: 468, when: '2026-11-17T22:00', added: ['Stencil maker, bend tool, split for printing and reel maker: every button now sits in one strip along the top, and each screen fits a landscape tablet or phone without scrolling.', 'Stencil maker: Save to device is now just Save.'], test: ['Turn your device sideways and open each of the four tools: everything should fit on one screen.'] },
   { build: 467, when: '2026-11-17T20:00', added: ['Your own challenges: zones of the same type now share one set of score meters and one line in the brief, instead of one per zone.', 'A challenge with colour in it now starts on the Inks tray, even with grey wash zones. Grey wash is still in the Inks menu.'], test: ['Play a challenge with several shading zones and check the score shows one set of meters.'] },
@@ -8401,6 +9069,7 @@ function render() {
   const v = VIEWS[key] || VIEWS.home;
   $('#view-title').textContent = v.title(arg);
   const view = $('#view');
+  document.body.classList.toggle('reel-full', key === 'reel');   /* the reel editor fills the screen */
   view.innerHTML = v.render(arg);
   view.style.animation = 'none'; view.offsetHeight; view.style.animation = '';
   const active = NAV_PARENT[key] || key;
@@ -8468,7 +9137,7 @@ addEventListener('hashchange', () => { if (booted) render(); });
     if (!have()) await new Promise(res => { const sc = document.createElement('script'); sc.src = src + '?v=' + Date.now(); sc.onload = sc.onerror = res; document.head.appendChild(sc); });
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
-  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 7 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1 || typeof TOUR_VERSION === 'undefined' || TOUR_VERSION !== 1) {
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 10 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1 || typeof TOUR_VERSION === 'undefined' || TOUR_VERSION !== 1) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
     if (!tried) { await Promise.all(['./', 'index.html', 'reel.js', 'design.js', 'tour.js', 'app.js', 'app.css', 'sw.js'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }
