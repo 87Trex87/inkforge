@@ -1930,8 +1930,9 @@ DZ.edit = async (id) => {
   // A change: redraw, remember for undo, save.
   let histT = null;
   const push = () => { histT = null; const s = docJSON(); if (s !== hist[hi]) { hist.splice(hi + 1); hist.push(s); if (hist.length > 60) hist.shift(); hi = hist.length - 1; } };
+  let geoRev = 0;   // bumped on every change, so cached snap geometry knows when to rebuild
   const changed = (now) => {
-    redraw(); save();
+    geoRev++; redraw(); save();
     clearTimeout(histT);
     if (now) push(); else histT = setTimeout(push, 450);
   };
@@ -2066,7 +2067,24 @@ DZ.edit = async (id) => {
     const l = v.l; if (k === 'x') l.x = val; if (k === 'y') l.y = val;
     if (k === 'w' || k === 'h') { if (!(val > 0)) return; const keep = dzKeep(l) && (l.t !== 'text' || l.frame), r = l.w / (l.h || 1); if (k === 'w') { l.w = val; if (keep) l.h = val / r; } else { l.h = val; if (keep) l.w = val * r; } if (!keep && l.t === 'image' && !l.logo && !l.cover) l.stretch = true; } };
   /* The strip under the top bar: quick tools and properties for what's selected, a different set per kind of layer. */
-  let cpop = null;
+  let cpop = null, mcpop = null;   // mcpop: the colour menu open in the strip for several picked items
+  /* Several picked items styled together: fill, line colour, line width and line style for shapes (a line's colour
+     is its fill), text colour for text, an outline for pictures. Each shows the value they share, or blank. */
+  const mStyleable = (l) => !l.lock && (l.t === 'shape' || l.t === 'text' || (l.t === 'image' && !l.logo));
+  const mKeyOf = (l, key) => key === 'fill' ? (l.t === 'text' ? 'c' : l.t === 'shape' ? 'fill' : null) : key === 'stroke' ? (l.t === 'shape' ? (l.shape === 'line' ? 'fill' : 'stroke') : l.t === 'image' ? 'stroke' : null) : key === 'sw' ? (l.t === 'shape' && l.shape !== 'line' || l.t === 'image' ? 'sw' : l.t === 'shape' ? 'h' : null) : key;
+  const mShared = (L, key) => { const v = L.filter(mStyleable).map(l => mKeyOf(l, key) && l[mKeyOf(l, key)]).filter(v => v !== undefined && v !== null && v !== false); return v.length && v.every(x => x === v[0]) ? v[0] : null; };
+  const mStyleUI = (L) => { const S = L.filter(mStyleable), cb = (key, ic, tip) => { const c = mShared(S, key), paint = c && c !== 'none' ? dzCol(doc, c) : 'transparent';
+      return `<button class="dz-cbtn ${mcpop === key ? 'on' : ''}" data-mcpop="${key}" data-tip="${tip}" aria-label="${tip}"><small>${ic}</small><i style="background:${paint}${c == null ? ';background-image:linear-gradient(135deg,transparent 45%,#888 45% 55%,transparent 55%)' : ''}"></i></button>`; };
+    const sw = mShared(S.filter(l => l.t !== 'text'), 'sw'), dash = (() => { const D = S.filter(l => l.t === 'shape').map(l => l.dash || ''); return D.length && D.every(d => d === D[0]) ? D[0] : null; })();
+    return cb('fill', 'Fill', 'Fill colour (text colour for text), for all of them') + cb('stroke', 'Line', 'Line colour, for all of them')
+      + `<label class="dz-cnum" data-tip="Line width, for all of them"><input class="in" type="text" inputmode="decimal" data-mck="sw" value="${sw == null ? '' : Math.round(sw)}" placeholder="–" aria-label="Line width"></label>`
+      + `<select class="in dz-cdash" data-mdash aria-label="Line style" data-tip="Line style, for all of them">${dash == null ? '<option value="" selected disabled>Style</option>' : ''}${[['solid', 'Solid'], ['dash', 'Dashed'], ['dot', 'Dotted']].map(([v, nm]) => `<option value="${v}" ${dash === (v === 'solid' ? '' : v) ? 'selected' : ''}>${nm}</option>`).join('')}</select>`
+      + (mcpop ? `<div class="dz-cpop">${swatches(mcpop, mShared(S, mcpop), true)}</div>` : ''); };
+  const mApply = (key, v) => { for (const l of picked().filter(mStyleable)) { const kk = mKeyOf(l, key); if (!kk) continue;
+      if (key === 'sw') { if (l.t === 'shape' && l.shape === 'line') l.h = Math.max(1, v); else { l.sw = v; if (v > 0 && (!l.stroke || l.stroke === 'none')) l.stroke = '@fg'; } continue; }
+      if (v === 'none' && kk === 'c') continue;   // text always has a colour
+      l[kk] = v; if (kk === 'fill' || kk === 'c') l.fm = 'solid'; if (key === 'stroke' && v !== 'none' && kk === 'stroke' && !l.sw) l.sw = 4; }
+    changed(true); };
   const drawCtx = () => { const b = $('#dz-ctx'); if (!b) return; const l = layer(), sl = b.scrollLeft, sep = '<i class="dz-csep"></i>';
     if (many() && !toolOn() && !cut && !nodes && !cropping) { cpop = null; const L = picked(), n = L.length, dis = n ? '' : 'disabled', all = (f) => n && L.every(f);
       if (n && all(l => l.lock)) { b.innerHTML = dzIB('data-mact="all"', 'all', 'Select all') + dzIB('data-mact="none"', 'none', 'Select none') + sep + `<span class="muted dz-chint" style="padding-right:8px">Locked</span>` + dzIB('data-mact="lock"', 'lock', 'Unlock', 'on') + dzIB('data-mact="dup"', 'copy', 'Duplicate'); b.scrollLeft = 0; return; }
@@ -2074,7 +2092,9 @@ DZ.edit = async (id) => {
         + dzIB(`data-mact="dup" ${dis}`, 'copy', 'Duplicate') + dzIB(`data-mact="hide" ${dis}`, all(l => l.hide) ? 'eyeoff' : 'eye', all(l => l.hide) ? 'Show' : 'Hide') + dzIB(`data-mact="lock" ${dis}`, all(l => l.lock) ? 'lock' : 'unlock', all(l => l.lock) ? 'Unlock' : 'Lock', all(l => l.lock) ? 'on' : '') + dzIB(`data-mact="clip" ${dis}`, 'clip', 'Clip to the layer below: each only shows inside it', all(l => l.clip) ? 'on' : '') + sep
         + AL.map(([a, tp, ic]) => `<button class="dz-ib" data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} data-tip="Align: ${tp}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${tp}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('') + sep
         + [['add', 'Add: weld them into one outline'], ['subtract', 'Subtract: the bottom one, with the rest cut out of it'], ['intersect', 'Intersect: only where they all overlap'], ['xor', 'Exclude: everything except where they overlap'], ['divide', 'Divide: cut into every separate piece the overlaps make'], ['separate', 'Separate: split each into its separate pieces'], ['contour', 'Contour: grow or shrink the outline (O)']].map(([v, tp]) => `<button class="dz-ib" data-bool="${v}" ${!n || (n < 2 && !['separate', 'contour'].includes(v)) ? 'disabled' : ''} data-tip="${tp}" aria-label="${tp.split(':')[0]}">${DZ_BOOL_ICON[v]}</button>`).join('') + sep
-        + dzIB(`data-mact="merge" ${dis}`, 'merge', 'Merge into one picture (Undo brings the layers back)') + dzIB(`data-mact="del" ${dis}`, 'del', 'Delete', 'danger');
+        + dzIB(`data-mact="merge" ${dis}`, 'merge', 'Merge into one picture (Undo brings the layers back)') + dzIB(`data-mact="del" ${dis}`, 'del', 'Delete', 'danger')
+        + (n && L.some(mStyleable) ? sep + mStyleUI(L) + dzIB('data-mact="nodes"', 'nodes', 'Edit nodes of all the picked shapes together (A)') : '');
+      if (mcpop) { const q = b.querySelector(`[data-mcpop="${mcpop}"]`)?.getBoundingClientRect(), pp = b.querySelector('.dz-cpop'); if (q && pp) { pp.style.left = Math.max(8, Math.min(innerWidth - 300, q.left)) + 'px'; pp.style.top = q.bottom + 6 + 'px'; } }
       b.scrollLeft = sl; return; }
     if (!l || many() || toolOn() || cut || nodes || cropping || l.t === 'shortcut' || l.t === 'check') { cpop = null; b.innerHTML = '<span class="muted dz-chint">Select something to see its tools here.</span>'; return; }
     const tog = (k, s, tip) => `<button class="dz-ib ${l[k] ? 'on' : ''}" data-tog="${k}" data-tip="${tip}" style="${s}">${tip[0]}</button>`;
@@ -2165,7 +2185,7 @@ DZ.edit = async (id) => {
       const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; return; }
     if (a === 'grid') { const p0 = pop(); if (!p0.hidden && btn?.classList.contains('open')) return closePop(); closePop(); p0.innerHTML = gridMenu(); p0.hidden = false; btn?.classList.add('open'); p0.classList.add('dz-gpop');
       const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; return; }
-    if (a === 'nodes') { closePop(); const l = layer(); if (canNodes(l)) return startNodes(l); nodeArm = true; drawRail(); return toast('Tap a shape to edit its nodes.', 2000); }
+    if (a === 'nodes') { closePop(); if (many()) { const M = picked().filter(x => canNodes(x) && !x.lock); if (M.length) return startNodes(M[0], M.slice(1)); } const l = layer(); if (canNodes(l)) return startNodes(l); nodeArm = true; drawRail(); return toast('Tap a shape to edit its nodes.', 2000); }
     if (a === 'select') { closePop(); endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); tab = 'edit'; return select(null); }
     if (a === 'refs') { closePop(); tab = tab === 'refs' ? 'edit' : 'refs'; return drawSide(); }
     if (a === 'layers' || a === 'doc') { closePop(); if (a === 'doc' && tab !== 'doc') { sel = null; picks = new Set(); picking = false; placeSel(); } tab = tab === a ? 'edit' : a; return drawSide(); }
@@ -2565,34 +2585,48 @@ DZ.edit = async (id) => {
   const bez = (a, b, t) => { const u = 1 - t, P = [a.x, a.x + a.ox, b.x + b.ix, b.x], Q = [a.y, a.y + a.oy, b.y + b.iy, b.y];
     const f = (V) => u * u * u * V[0] + 3 * u * u * t * V[1] + 3 * u * t * t * V[2] + t * t * t * V[3]; return { x: f(P), y: f(Q) }; };
   const segs = (sp) => { const N = sp.nodes, out = []; for (let i = 0; i < N.length - (sp.closed === false ? 1 : 0); i++) out.push([i, (i + 1) % N.length]); return out; };
-  const startNodes = (l) => {
+  /* More than one shape (more): their nodes are edited together. Each keeps its own picks (nodes.other, by id; the
+     shape last tapped is nodes.id with nodes.sel); a drag moves every picked node on every shape by the same amount,
+     and the node buttons work on all of them. */
+  const toVecShape = (l) => { if (l.shape === 'vec') return true; const g = DZ_GEN[l.shape]; if (!g) return false;   // any shape becomes a free node path
+    l.subs = JSON.parse(JSON.stringify(g(l))); l.shape = 'vec'; for (const k of ['n', 'inner', 'th', 'path', 'r']) delete l[k]; return true; };
+  const nodeIds = () => nodes ? (nodes.ids || [nodes.id]) : [];
+  const nodeLayersAll = () => nodeIds().map(id => doc.layers.find(x => x.id === id)).filter(Boolean);
+  const selOf = (id) => id === nodes.id ? nodes.sel : (nodes.other?.[id] || []);
+  const nodeSwitch = (id) => { if (!nodes || id === nodes.id) return; (nodes.other ||= {})[nodes.id] = nodes.sel; nodes.id = id; nodes.sel = nodes.other[id] || []; delete nodes.other[id]; };
+  const nodePicks = () => nodes ? nodes.sel.length + Object.values(nodes.other || {}).reduce((a, q) => a + q.length, 0) : 0;
+  const startNodes = (l, more = []) => {
     if (l.lock) return toast('Unlock it first.');
-    if (l.shape !== 'vec') {   // any shape becomes a free node path
-      const g = DZ_GEN[l.shape]; if (!g) return;
-      l.subs = JSON.parse(JSON.stringify(g(l))); l.shape = 'vec';
-      for (const k of ['n', 'inner', 'th', 'path', 'r']) delete l[k];
-      changed(true);
-    }
-    endCrop(); endCut(); nodes = { id: l.id, sel: [] }; placeSel(); drawSide(); drawNodes();
+    const all = [l, ...more].filter(x => !x.lock && toVecShape(x)); if (!all.length) return;
+    if (all.some(x => x.shape === 'vec')) changed(true);
+    endCrop(); endCut(); nodes = { id: all[0].id, sel: [], ids: all.length > 1 ? all.map(x => x.id) : null, other: {} }; if (all.length > 1) { picks = new Set(); picking = false; sel = all[0].id; }
+    placeSel(); drawSide(); drawNodes(); drawPen(); if (all.length > 1) toast(`Editing the nodes of ${all.length} shapes together.`, 2000);
   };
-  function endNodes() { if (!nodes) return; nodes = null; ndrag = null; drawNodes(); placeSel(); }
+  function endNodes() { if (!nodes) return; nodes = null; ndrag = null; drawNodes(); drawPen(); placeSel(); }
   function drawNodes() {
     const oc = $('#dz-nodecv'); if (!oc) return;
     const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
     if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
-    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); const L = nodes && nodeLayer(); oc.hidden = !L; if (!L) return;
+    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); const L0 = nodes && nodeLayer(); oc.hidden = !L0; if (!L0) return;
+    if (ndrag?.kind === 'box' && ndrag.moved) { const a = ndrag.p0, b = ndrag.p1; x.save(); x.setLineDash([5, 4]); x.strokeStyle = '#1fb6a6'; x.fillStyle = 'rgba(31,182,166,.08)'; x.lineWidth = 1;
+      x.fillRect(Math.min(a.x, b.x) * k, Math.min(a.y, b.y) * k, Math.abs(b.x - a.x) * k, Math.abs(b.y - a.y) * k); x.strokeRect(Math.min(a.x, b.x) * k + 0.5, Math.min(a.y, b.y) * k + 0.5, Math.abs(b.x - a.x) * k, Math.abs(b.y - a.y) * k); x.restore(); }
+    for (const L of nodeLayersAll()) { const SEL = selOf(L.id), active = L === L0;
     const S = (u, v) => { const q = n2p(L, u, v); return [q.x * k, q.y * k]; };
     x.lineWidth = 1.5; x.strokeStyle = '#1fb6a6'; x.beginPath();
     for (const sp of L.subs) { const N = sp.nodes; if (!N.length) continue; x.moveTo(...S(N[0].x, N[0].y));
       for (const [i, j] of segs(sp)) { for (let t = 1; t <= 16; t++) { const q = bez(N[i], N[j], t / 16); x.lineTo(...S(q.x, q.y)); } } }
     x.stroke();
-    nodes.sel.forEach(([s2, i]) => { const n = L.subs[s2]?.nodes[i]; if (!n) return; const c = S(n.x, n.y);
+    SEL.forEach(([s2, i]) => { const n = L.subs[s2]?.nodes[i]; if (!n) return; const c = S(n.x, n.y);
       for (const [hx, hy] of [[n.ix, n.iy], [n.ox, n.oy]]) if (hx || hy) { const h = S(n.x + hx, n.y + hy);
         x.strokeStyle = 'rgba(255,255,255,.7)'; x.beginPath(); x.moveTo(...c); x.lineTo(...h); x.stroke();
         x.fillStyle = '#fff'; x.beginPath(); x.arc(h[0], h[1], 4.5, 0, Math.PI * 2); x.fill(); } });
-    L.subs.forEach((sp, s2) => sp.nodes.forEach((n, i) => { const [cx, cy] = S(n.x, n.y), on = nodes.sel.some(q => q[0] === s2 && q[1] === i);
+    if (symOn() && active && SEL.length <= 60) for (const [s2, i] of SEL) { if (!L.subs[s2]?.nodes[i]) continue; for (const q of symPartners(L, s2, i)) { if (q.self) continue; const n = L.subs[q.s].nodes[q.i], [cx, cy] = S(n.x, n.y);
+      x.strokeStyle = '#d678ff'; x.lineWidth = 1.5; x.beginPath(); x.arc(cx, cy, 9, 0, Math.PI * 2); x.stroke(); } }
+    L.subs.forEach((sp, s2) => sp.nodes.forEach((n, i) => { const [cx, cy] = S(n.x, n.y), on = SEL.some(q => q[0] === s2 && q[1] === i);
       x.fillStyle = on ? '#1fb6a6' : '#fff'; x.strokeStyle = on ? '#fff' : '#1fb6a6'; x.lineWidth = 1.5; x.beginPath();
-      if (n.t === 'corner') x.rect(cx - 4.5, cy - 4.5, 9, 9); else x.arc(cx, cy, 5, 0, Math.PI * 2); x.fill(); x.stroke(); }));
+      if (n.t === 'corner') x.rect(cx - 4.5, cy - 4.5, 9, 9); else x.arc(cx, cy, 5, 0, Math.PI * 2); x.fill(); x.stroke();
+      if (sp.closed === false && (i === 0 || i === sp.nodes.length - 1)) { x.strokeStyle = '#f0a030'; x.lineWidth = 1.5; x.beginPath(); x.arc(cx, cy, 8, 0, Math.PI * 2); x.stroke(); } }));   /* an open end: a ring, as it can be joined */
+    }
   }
   // What's under the pointer: a handle of a picked node, a node, or the outline (with where along it).
   const nodeHit = (L, p) => {
@@ -2636,9 +2670,10 @@ DZ.edit = async (id) => {
   const nodeDown = (e) => {
     const L = nodeLayer(); if (!L) return endNodes();
     e.dzHit = true; e.preventDefault(); page.setPointerCapture(e.pointerId);
-    const p = toPage(e), h = nodeHit(L, p), add = e.ctrlKey || e.metaKey || e.shiftKey;
+    const p = toPage(e), add = e.ctrlKey || e.metaKey || e.shiftKey; let h = nodeHit(L, p);
+    if (!h || h.kind === 'seg') for (const O of nodeLayersAll()) { if (O === L) continue; const h2 = nodeHit(O, p); if (h2 && h2.kind !== 'seg' || (h2 && !h)) { if (!add && !selOf(O.id).some(q => q[0] === h2.s && q[1] === h2.i)) { nodes.other = {}; nodes.sel = []; } nodeSwitch(O.id); return nodeDown(e); } }   // another of the shapes: work on it
     const base = JSON.parse(JSON.stringify(L.subs));
-    if (!h) { if (!add) nodes.sel = []; drawNodes(); drawSide(); return; }
+    if (!h) { ndrag = { kind: 'box', p0: p, p1: p, add, moved: false }; return; }   // a drag on empty space boxes nodes (Shift or Ctrl: added to what's picked); a tap clears
     if (h.kind === 'h') { ndrag = { kind: 'h', h, p0: p, base, alt: e.altKey };
       if (e.pointerType !== 'mouse') { const dd = ndrag; dd.holdT = setTimeout(() => { if (ndrag === dd && !dd.moved) { dd.alt = true; navigator.vibrate?.(25); toast('This handle now moves on its own.', 1800); } }, 500); }
       return; }
@@ -2647,8 +2682,8 @@ DZ.edit = async (id) => {
       if (now - lastTap.t < 320 && lastTap.s === h.s && lastTap.i === h.i) { lastTap = { t: 0 }; nodes.sel = [[h.s, h.i]]; return nodeOp(L.subs[h.s].nodes[h.i].t === 'corner' ? 'smooth' : 'corner'); }
       lastTap = { t: now, s: h.s, i: h.i };
       if (add) nodes.sel = isSel(h.s, h.i) ? nodes.sel.filter(q => !(q[0] === h.s && q[1] === h.i)) : [...nodes.sel, [h.s, h.i]];
-      else if (!isSel(h.s, h.i)) nodes.sel = [[h.s, h.i]];
-      ndrag = { kind: 'n', p0: p, base }; drawNodes(); drawSide();
+      else if (!isSel(h.s, h.i)) { nodes.sel = [[h.s, h.i]]; nodes.other = {}; }
+      ndrag = { kind: 'n', p0: p, base, sym: symDragPlan(L), others: nodeLayersAll().filter(O => O !== L && selOf(O.id).length).map(O => ({ O, base: JSON.parse(JSON.stringify(O.subs)) })) }; drawNodes(); drawSide();
       { const dd = ndrag; dd.holdT = setTimeout(() => { if (ndrag === dd && !dd.moved) { ndrag = null; navigator.vibrate?.(25); openNodeMenu(L, h); } }, 650); }
       return;
     }
@@ -2656,19 +2691,24 @@ DZ.edit = async (id) => {
   };
   const nodeMove = (e) => {
     const L = nodeLayer(), d = ndrag; if (!L || !d) return;
+    if (d.kind === 'box') { d.p1 = toPage(e); if (Math.hypot(d.p1.x - d.p0.x, d.p1.y - d.p0.y) * k > 3) d.moved = true; return drawNodes(); }
     if (pinch) { L.subs = d.base; ndrag = null; redraw(); return drawNodes(); }   // zooming instead
     const p = d.kind === 'n' && !e.shiftKey ? snapPt(toPage(e), e, new Set([L.id])) : toPage(e), q0 = p2n(L, d.p0), q1 = p2n(L, p); let du = q1.u - q0.u, dv = q1.v - q0.v;
     if (!d.moved && Math.hypot(p.x - d.p0.x, p.y - d.p0.y) * k < 3) return; d.moved = true; clearTimeout(d.holdT);
     L.subs = JSON.parse(JSON.stringify(d.base));
     if (d.kind === 'n') {
       if (e.shiftKey) { const px = du * L.w, py = du * 0 + dv * L.h; if (Math.abs(px) > Math.abs(py)) dv = 0; else du = 0; }
-      for (const [s2, i] of nodes.sel) { const n = L.subs[s2]?.nodes[i]; if (n) { n.x += du; n.y += dv; } }
+      if (d.sym) symDragApply(L, d.sym, d.base, du, dv);
+      else for (const [s2, i] of nodes.sel) { const n = L.subs[s2]?.nodes[i]; if (n) { n.x += du; n.y += dv; } }
+      if (d.others?.length) { const a0 = n2p(L, 0.5, 0.5), a1 = n2p(L, 0.5 + du, 0.5 + dv), mx = a1.x - a0.x, my = a1.y - a0.y;   // the same move, in page px, on the other shapes
+        for (const { O, base: B } of d.others) { O.subs = JSON.parse(JSON.stringify(B)); for (const [s2, i] of selOf(O.id)) { const n = O.subs[s2]?.nodes[i]; if (!n) continue; const q = n2p(O, n.x, n.y), u = p2n(O, { x: q.x + mx, y: q.y + my }); n.x = u.u; n.y = u.v; } } }
     } else if (d.kind === 'h') {
       const n = L.subs[d.h.s].nodes[d.h.i], sd = d.h.side;
       let hx = n[sd + 'x'] + du, hy = n[sd + 'y'] + dv;
       if (e.shiftKey) { const a = Math.atan2(hy * L.h, hx * L.w), r = Math.hypot(hx * L.w, hy * L.h), s45 = Math.round(a / (Math.PI / 4)) * Math.PI / 4; hx = r * Math.cos(s45) / L.w; hy = r * Math.sin(s45) / L.h; }
       n[sd + 'x'] = hx; n[sd + 'y'] = hy;
       if (e.altKey || d.alt) n.t = 'corner'; else handleMoved(L, n, sd);
+      if (symOn()) symHandles(L, d.h.s, d.h.i, sd, e.altKey || d.alt);
     } else {   // bending the outline: the point under the pointer follows it, weighted to the nearer node
       const N = L.subs[d.h.s].nodes, a = N[d.h.i], b = N[d.h.j], t = Math.max(0.08, Math.min(0.92, d.h.t)), u = 1 - t, Nn = 3 * u * u * u * t + 3 * u * t * t * t;
       a.ox += du * u / Nn; a.oy += dv * u / Nn; b.ix += du * t / Nn; b.iy += dv * t / Nn;
@@ -2678,16 +2718,75 @@ DZ.edit = async (id) => {
   };
   const nodeUp = () => {
     const L = nodeLayer(), d = ndrag; ndrag = null; if (!L || !d) return; clearTimeout(d.holdT);
-    if (d.kind === 'seg' && !d.moved) { const i = splitAt(L, d.h.s, d.h.i, d.h.j, d.h.t); nodes.sel = [[d.h.s, i]]; }   // a tap on the outline adds a node
+    if (d.kind === 'box') { if (!d.add) { nodes.sel = []; nodes.other = {}; }
+      if (d.moved) { const x0 = Math.min(d.p0.x, d.p1.x), x1 = Math.max(d.p0.x, d.p1.x), y0 = Math.min(d.p0.y, d.p1.y), y1 = Math.max(d.p0.y, d.p1.y);
+        for (const O of nodeLayersAll()) { const S = selOf(O.id).slice(); O.subs.forEach((sp, s2) => sp.nodes.forEach((n, i) => { const q = n2p(O, n.x, n.y); if (q.x >= x0 && q.x <= x1 && q.y >= y0 && q.y <= y1 && !S.some(t => t[0] === s2 && t[1] === i)) S.push([s2, i]); }));
+          if (O.id === nodes.id) nodes.sel = S; else (nodes.other ||= {})[O.id] = S; } }
+      drawNodes(); return drawSide(); }
+    if (d.kind === 'seg' && !d.moved) {   // a tap on the outline adds a node (and its mirror twin, with the mirror on)
+      const all = [{ s: d.h.s, i: d.h.i, j: d.h.j, t: d.h.t, me: true }, ...symSplits(L, d.h.s, d.h.i, d.h.j, d.h.t)].sort((a, b) => a.s - b.s || b.i - a.i);
+      let mine = null; for (const q of all) { const at = splitAt(L, q.s, q.i, q.j, q.t); if (q.me) mine = at; else if (mine != null && q.s === d.h.s && q.i < d.h.i) mine++; }
+      nodes.sel = [[d.h.s, mine]]; }
     else if (!d.moved) return drawNodes();
-    refit(L); changed(true); drawNodes(); drawSide();
+    refit(L); for (const o of d.others || []) refit(o.O); changed(true); drawNodes(); drawSide();
   };
+  /* Affinity's curve actions. Break: each picked node splits its path there (a closed one opens at that node).
+     Close: a picked node's open path is closed (ends that touch become one node). Reverse: the paths with picked
+     nodes (all of them when none are picked) run the other way round. Each works on every shape being edited. */
+  const subsWithPicks = (O) => { const S = selOf(O.id); return new Set(S.map(q => q[0])); };
+  const revNodes = (N) => N.slice().reverse().map(n => ({ ...n, ix: n.ox, iy: n.oy, ox: n.ix, oy: n.iy }));
+  const nodeCurve = (a) => { let did = 0;
+    for (const O of nodeLayersAll()) { const S = selOf(O.id), touched = subsWithPicks(O);
+      if (a === 'reverse') { O.subs = O.subs.map((sp, s2) => (touched.size && !touched.has(s2)) ? sp : (did++, { ...sp, nodes: revNodes(sp.nodes) })); continue; }
+      if (a === 'close') { O.subs.forEach((sp, s2) => { if (!touched.has(s2) || sp.closed !== false || sp.nodes.length < 3) return; const f = sp.nodes[0], l = sp.nodes.at(-1), q0 = n2p(O, f.x, f.y), q1 = n2p(O, l.x, l.y);
+          if (Math.hypot(q0.x - q1.x, q0.y - q1.y) * k < 3) { f.ix = l.ix; f.iy = l.iy; f.t = symJoinType(f); sp.nodes.pop(); } sp.closed = true; did++; }); continue; }
+      if (a === 'break') { const out = [];
+        O.subs.forEach((sp, s2) => { let cuts = [...new Set(S.filter(q => q[0] === s2).map(q => q[1]))].sort((x, y) => x - y); if (!cuts.length) return out.push(sp);
+          let N = sp.nodes.map(n => ({ ...n })); const len = N.length;
+          if (sp.closed !== false) { const c = cuts[0]; N = [...N.slice(c), ...N.slice(0, c), { ...N[c] }]; N[0].ix = N[0].iy = 0; N.at(-1).ox = N.at(-1).oy = 0; N[0].t = N.at(-1).t = 'corner'; cuts = cuts.slice(1).map(i => (i - c + len) % len).sort((x, y) => x - y); did++; }
+          let start = 0; for (const i of cuts) { if (i <= start || i >= N.length - 1) continue; const piece = N.slice(start, i + 1).map(n => ({ ...n })); piece.at(-1).ox = piece.at(-1).oy = 0; piece.at(-1).t = 'corner'; out.push({ closed: false, nodes: piece }); N[i] = { ...N[i], ix: 0, iy: 0, t: 'corner' }; start = i; did++; }
+          out.push({ closed: false, nodes: N.slice(start) }); });
+        O.subs = out.filter(sp => sp.nodes.length >= 2); } }
+    if (!did) return toast(a === 'break' ? 'Pick the node to break the path at.' : a === 'close' ? 'Pick a node of an open path to close it.' : 'Nothing to reverse.', 2400);
+    for (const O of nodeLayersAll()) refit(O); nodes.sel = a === 'reverse' ? nodes.sel : []; if (a !== 'reverse') nodes.other = {};
+    changed(true); drawNodes(); drawSide(); toast({ break: 'Broken into separate paths.', close: 'Closed.', reverse: 'Reversed.' }[a], 1600); };
+  const nodeNudge = (dx, dy) => { let any = false;
+    for (const O of nodeLayersAll()) for (const [s2, i] of selOf(O.id)) { const n = O.subs[s2]?.nodes[i]; if (!n) continue; const q = n2p(O, n.x, n.y), u = p2n(O, { x: q.x + dx, y: q.y + dy }); n.x = u.u; n.y = u.v; any = true; }
+    if (!any) return; for (const O of nodeLayersAll()) refit(O); changed(); drawNodes(); };
   const nodeOp = (a) => {
+    if (!nodes) return; if (a === 'join') return nodeJoin(); if (['break', 'close', 'reverse'].includes(a)) return nodeCurve(a);
+    if (a === 'all') { for (const O of nodeLayersAll()) { const A = O.subs.flatMap((sp, s2) => sp.nodes.map((_, i) => [s2, i])); if (O.id === nodes.id) nodes.sel = A; else (nodes.other ||= {})[O.id] = A; } drawNodes(); return drawSide(); }
+    const ids = nodeIds().filter(id => id !== nodes.id && nodes.other?.[id]?.length);
+    if (!ids.length || ['done', 'simp'].includes(a)) return nodeOp1(a);
+    const home = nodes.id; for (const id of [home, ...ids]) { if (!nodes) return; nodeSwitch(id); if (nodes.sel.length) nodeOp1(a); }
+    if (nodes && doc.layers.some(x => x.id === home)) { nodeSwitch(home); drawNodes(); drawSide(); } };
+  /* Join: two picked open ends (of one path, or of two paths, on one shape or two) become one path. Ends that meet are
+     welded into one node; otherwise a straight line joins them. Both ends of one path close it. */
+  const nodeJoin = () => {
+    const P = []; for (const O of nodeLayersAll()) for (const [s2, i] of selOf(O.id)) P.push({ O, s: s2, i });
+    const isEnd = (q) => { const sp = q.O.subs[q.s]; return sp && sp.closed === false && (q.i === 0 || q.i === sp.nodes.length - 1); };
+    if (P.length !== 2 || !P.every(isEnd)) return toast('Pick two open ends to join (the nodes with an orange ring).', 2800);
+    const [A, B] = P, rev = (sp) => ({ closed: false, nodes: sp.nodes.slice().reverse().map(n => ({ ...n, ix: n.ox, iy: n.oy, ox: n.ix, oy: n.iy })) });
+    const pa = subToPage(A.O, A.O.subs[A.s]), close = A.O === B.O && A.s === B.s;
+    let merged;
+    if (close) { const N = pa.nodes, f = N[0], l = N.at(-1); if (Math.hypot(f.x - l.x, f.y - l.y) * k < 3) { f.ix = l.ix; f.iy = l.iy; f.t = symJoinType(f); N.pop(); } merged = { closed: true, nodes: N }; }
+    else { let a = A.i === 0 ? rev(pa) : pa, b = subToPage(B.O, B.O.subs[B.s]); if (B.i !== 0) b = rev(b);
+      const t = a.nodes.at(-1), h = b.nodes[0];
+      if (Math.hypot(t.x - h.x, t.y - h.y) * k < 3) { t.ox = h.ox; t.oy = h.oy; t.t = symJoinType(t); merged = { closed: false, nodes: [...a.nodes, ...b.nodes.slice(1)] }; }
+      else merged = { closed: false, nodes: [...a.nodes, ...b.nodes] }; }
+    const keepA = A.O.subs.map((sp, s2) => s2 === A.s || (A.O === B.O && s2 === B.s) ? null : subToPage(A.O, sp)).filter(Boolean);
+    const v = vecFromPage([...keepA, merged], {}); Object.assign(A.O, { x: v.x, y: v.y, w: v.w, h: v.h, rot: 0, subs: v.subs }); delete A.O.fx; delete A.O.fy;
+    if (A.O.shape === 'vec' && merged.closed && (!A.O.fill || A.O.fill === 'none') && A.O.stroke === 'none') A.O.stroke = '@accent';
+    if (B.O !== A.O) { B.O.subs.splice(B.s, 1); if (!B.O.subs.length) { doc.layers = doc.layers.filter(x => x !== B.O); if (nodes.ids) nodes.ids = nodes.ids.filter(id => id !== B.O.id); } else refit(B.O); }
+    nodeSwitch(A.O.id); nodes.sel = []; nodes.other = {}; changed(true); drawNodes(); drawSide(); redraw();
+    toast(close ? 'Closed into one shape.' : 'Joined into one path.', 1800); };
+  const nodeOp1 = (a) => {
     const L = nodeLayer(); if (!L) return endNodes();
     if (a === 'done') { endNodes(); return drawSide(); }
     if (a === 'all') { nodes.sel = L.subs.flatMap((sp, s2) => sp.nodes.map((_, i) => [s2, i])); drawNodes(); return drawSide(); }
     if (a === 'simp') return simplify(L);
     if (!nodes.sel.length) return toast('Pick a node first: tap it.');
+    if (symOn()) nodes.sel = symExpand(L, nodes.sel);   // corner, smooth, straight and delete do the mirror too
     if (a === 'del') {
       const gone = new Set(nodes.sel.map(q => q.join(':')));
       L.subs = L.subs.map((sp, s2) => ({ ...sp, nodes: sp.nodes.filter((_, i) => !gone.has(s2 + ':' + i)) })).filter(sp => sp.nodes.length >= (sp.closed === false ? 2 : 3));
@@ -2765,9 +2864,9 @@ DZ.edit = async (id) => {
     toast(`${dropped} node${dropped === 1 ? '' : 's'} gone (${before} to ${before - dropped}), within ${Math.max(0.01, dzToU(doc, worst))} ${dzUnit(doc)}. Press again to go further.`, 5000);
   };
   const nodePanel = (l) => {
-    const n = nodes.sel.length, one = n === 1 ? l.subs[nodes.sel[0][0]]?.nodes[nodes.sel[0][1]] : null;
-    return `<div class="dz-lh"><b>Edit nodes</b><button class="btn small primary" data-nop="done">Done</button></div>
-      <p class="muted" style="font-size:12px;margin:0 0 8px">${n ? `${n} node${n === 1 ? '' : 's'} picked${one ? ` (${({ corner: 'corner', smooth: 'smooth', sym: 'symmetric' })[one.t] || 'corner'})` : ''}.` : 'Tap a node to pick it.'}</p>
+    const n = nodePicks(), one = n === 1 && nodes.sel.length === 1 ? l.subs[nodes.sel[0][0]]?.nodes[nodes.sel[0][1]] : null, shapes = nodeIds().length;
+    return `<div class="dz-lh"><b>Edit nodes${shapes > 1 ? ` <small>${shapes} shapes</small>` : ''}</b><button class="btn small primary" data-nop="done">Done</button></div>
+      <p class="muted" style="font-size:12px;margin:0 0 8px">${n ? `${n} node${n === 1 ? '' : 's'} picked${one ? ` (${({ corner: 'corner', smooth: 'smooth', sym: 'symmetric' })[one.t] || 'corner'})` : ''}.` : 'Tap a node to pick it.'}${shapes > 1 ? ' Nodes on all the shapes can be picked and moved together.' : ''}</p>
       <div class="dz-acts">
         <button data-nop="corner" ${n ? '' : 'disabled'} title="Corner: the handles move on their own">◇<span>Corner</span></button>
         <button data-nop="smooth" ${n ? '' : 'disabled'} title="Smooth: the handles stay in line">◠<span>Smooth</span></button>
@@ -2775,10 +2874,15 @@ DZ.edit = async (id) => {
         <button data-nop="line" ${n ? '' : 'disabled'} title="Straight: remove the handles">／<span>Straight</span></button>
         <button data-nop="all" title="Pick every node">▣<span>All</span></button>
         <button data-nop="simp" title="Simplify: fewer nodes, the same shape. Press again to go further. Works on the picked nodes, or the whole shape if none are picked.">${DZ_BOOL_ICON.simp}<span>Simplify</span></button>
+        <button data-nop="break" ${n ? '' : 'disabled'} title="Break (B): split the path at the picked nodes; a closed shape opens there">✂<span>Break</span></button>
+        <button data-nop="close" ${n ? '' : 'disabled'} title="Close (K): close the open path of the picked node">◯<span>Close</span></button>
+        <button data-nop="reverse" title="Reverse (R): run the paths of the picked nodes (or all) the other way round">⇄<span>Reverse</span></button>
+        <button data-nop="join" ${n === 2 ? '' : 'disabled'} title="Join: pick two open ends (orange rings), of one path or two, and they become one path. Ends that touch become one node; otherwise a line joins them. Both ends of one path close it.">⟗<span>Join</span></button>
         <button data-nop="del" class="danger" ${n ? '' : 'disabled'} title="Delete the picked nodes">✕<span>Delete</span></button></div>
-      <p class="muted" style="font-size:12px;margin:4px 0 0">Drag a node or a handle to reshape. Tap the outline to add a node; drag the outline to bend it.
+      <p class="muted" style="font-size:12px;margin:4px 0 0">Drag on an empty spot to box nodes (Shift or Ctrl adds). Keys: arrows nudge (Shift 20, Alt 1), Ctrl A all, C corner, S smooth, E even, L straight, B break, K close, R reverse, J join, Delete, Esc unpicks then leaves.
+        Drag a node or a handle to reshape. Tap the outline to add a node; drag the outline to bend it.
         Double-tap a node to switch corner / smooth. Ctrl or Shift + tap picks several. Shift keeps to straight lines and 45°; Alt drags one handle on its own.</p>
-      ${touchHelp()}`;
+      ${symUI()}${touchHelp()}`;
   };
   /* ---------- Shape builder ----------
      Combines shapes the way vector drawing programs do: Add (weld), Subtract (the bottom one minus the rest),
@@ -2956,8 +3060,196 @@ DZ.edit = async (id) => {
   // A node shape's subpath in page pixels (to carry on from its end).
   const subToPage = (L, sp) => ({ closed: sp.closed, nodes: sp.nodes.map(n => { const c = n2p(L, n.x, n.y), hi = n2p(L, n.x + n.ix, n.y + n.iy), ho = n2p(L, n.x + n.ox, n.y + n.oy);
     return { x: c.x, y: c.y, ix: hi.x - c.x, iy: hi.y - c.y, ox: ho.x - c.x, oy: ho.y - c.y, t: n.t }; }) });
+  /* ---------- Mirror (symmetry) ----------
+     As on FORMAthing's drawing board. The page is split by an axis (doc.sym: upright, level or both, with where it
+     sits), and whatever the pen or the pencil draws on one side is drawn again on the other. A path that starts and
+     finishes ON the axis is welded to its mirror into one closed outline (in four-way mode: from one axis to the
+     other); anything else gets mirrored copies of its own. Points within SYM_SNAP screen px of the axis snap exactly
+     onto it, and a ring shows where. With the node tool, a node's mirror partner (found by position, never stored,
+     so it can't go stale) moves and bends as its mirror image; a node on the axis slides along it, and its two
+     handles stay mirror images. The mirror is drawn live from the real path while drawing. */
+  const SYM_SNAP = 10, SYM_TOL = 0.35;   // screen px that counts as on the axis; page px that counts as a partner
+  const symOn = () => !!doc.sym?.mode;
+  const symAx = () => { const m = doc.sym?.mode; return { v: m === 'v' || m === 'both', h: m === 'h' || m === 'both' }; };
+  const symMirrors = () => { const a = symAx(), m = []; if (a.v) m.push({ mx: -1, my: 1 }); if (a.h) m.push({ mx: 1, my: -1 }); if (a.v && a.h) m.push({ mx: -1, my: -1 }); return m; };
+  const symPt = (q, m) => ({ x: m.mx < 0 ? 2 * doc.sym.x - q.x : q.x, y: m.my < 0 ? 2 * doc.sym.y - q.y : q.y });
+  const symShown = () => symOn() && (penOn || pclOn || !!nodes);
+  const symSet = (mode) => { if (mode === 'off') { if (doc.sym) doc.sym.mode = null; } else doc.sym = { x: doc.w / 2, y: doc.h / 2, ...doc.sym, mode, last: mode }; changed(); drawPen(); drawNodes(); drawSide();
+    toast(mode === 'off' ? 'Mirror off.' : 'Mirror on: draw one side, get both.', 1800); };
+  const symAct = (a) => {
+    if (a === 'page' || a === 'shape') { if (!doc.sym) return; const L = a === 'shape' ? nodeLayer() || layer() : null;
+      if (L) { const c = n2p(L, 0.5, 0.5); doc.sym.x = c.x; doc.sym.y = c.y; } else { doc.sym.x = doc.w / 2; doc.sym.y = doc.h / 2; }
+      changed(); drawPen(); drawNodes(); return toast(L ? 'Axis through the middle of the shape.' : 'Axis through the middle of the page.', 1800); }
+    symSet(a); };
+  const symUI = () => { const m = doc.sym?.mode || 'off';
+    return `<div class="lbl" style="margin-top:10px">Mirror <span class="muted" style="text-transform:none;letter-spacing:0">(M)</span></div>
+      <div class="seg" style="margin-bottom:6px">${[['off', 'Off', 'No mirror'], ['v', '↔', 'Left and right, about an upright axis'], ['h', '↕', 'Top and bottom, about a level axis'], ['both', '✚', 'Both ways, into four quarters']].map(([v, n, t]) =>
+        `<button data-sym="${v}" class="${m === v ? 'on' : ''}" title="${t}" style="flex:1">${n}</button>`).join('')}</div>
+      ${m !== 'off' ? `<div class="row" style="gap:6px;margin-bottom:6px"><button class="btn small" data-sym="page" style="flex:1">Axis to page middle</button>${nodes || layer() ? '<button class="btn small" data-sym="shape" style="flex:1">Axis to shape middle</button>' : ''}</div>
+        <p class="muted" style="font-size:11px;margin:0 0 6px">Start and finish on the axis (a ring shows when you're on it) and the half joins its mirror into one outline. Anything else gets a mirrored copy. Edit nodes moves each node's mirror with it. Alt: no snapping to the axis.</p>` : ''}`; };
+  const symSnap = (p, e) => { const a = symAx(); if ((!a.v && !a.h) || e?.altKey) return p; const t = SYM_SNAP / k, q = { x: p.x, y: p.y };
+    if (a.v && Math.abs(q.x - doc.sym.x) <= t) q.x = doc.sym.x; if (a.h && Math.abs(q.y - doc.sym.y) <= t) q.y = doc.sym.y; return q; };
+  const symMx = (n) => ({ ...n, x: 2 * doc.sym.x - n.x, ix: -n.ix, ox: -n.ox }), symMy = (n) => ({ ...n, y: 2 * doc.sym.y - n.y, iy: -n.iy, oy: -n.oy });
+  const symTurn = (list) => list.map(n => ({ ...n, ix: n.ox, iy: n.oy, ox: n.ix, oy: n.iy })).reverse();   // the other way round: in and out swap too
+  // Where a half meets its mirror on the axis the join is smooth only if the curve crossed square-on.
+  const symJoinType = (n) => { const a = Math.hypot(n.ix, n.iy), b = Math.hypot(n.ox, n.oy); if (a < 1e-9 || b < 1e-9) return 'corner';
+    const cr = (n.ix * n.oy - n.iy * n.ox) / (a * b), dot = (n.ix * n.ox + n.iy * n.oy) / (a * b); if (Math.abs(cr) > 0.02 || dot >= 0) return 'corner'; return Math.abs(a - b) < 1e-6 ? 'sym' : 'smooth'; };
+  // Pieces laid end to end, shared points welded into one node; closed if the far ends meet.
+  const symChain = (pieces) => { let out = pieces[0].map(n => ({ ...n }));
+    for (let q = 1; q < pieces.length; q++) { const next = pieces[q], tail = out.at(-1), head = next[0];
+      if (Math.hypot(tail.x - head.x, tail.y - head.y) < 1e-6) { tail.ox = head.ox; tail.oy = head.oy; tail.t = symJoinType(tail); out = out.concat(next.slice(1).map(n => ({ ...n }))); }
+      else out = out.concat(next.map(n => ({ ...n }))); }
+    const f = out[0], l = out.at(-1); let closed = false;
+    if (out.length > 2 && Math.hypot(f.x - l.x, f.y - l.y) < 1e-6) { f.ix = l.ix; f.iy = l.iy; f.t = symJoinType(f); out.pop(); closed = true; }
+    return { nodes: out, closed }; };
+  /* A finished path (page px) mirrored: { sub, copies, joined }, sub possibly welded into one outline. A curve that
+     meets the axis within 15 degrees of square-on is straightened so the half and its mirror join smoothly. */
+  const symApply = (sp) => {
+    const a = symAx(), S0 = doc.sym; if ((!a.v && !a.h) || sp.nodes.length < 2) return null;
+    const N = sp.nodes.map(n => ({ ...n })), S = N[0], E = N.at(-1), tol = SYM_SNAP / k;
+    const onV = (n) => a.v && Math.abs(n.x - S0.x) <= tol, onH = (n) => a.h && Math.abs(n.y - S0.y) <= tol;
+    const Mx = (L) => L.map(symMx), My = (L) => L.map(symMy), SQ = Math.sin(15 * Math.PI / 180);
+    const square = (n, sd, ax) => { const hx = n[sd + 'x'], hy = n[sd + 'y'], len = Math.hypot(hx, hy); if (len < 1e-9) return;
+      if (ax === 'v' && Math.abs(hy) / len <= SQ) { n[sd + 'x'] = Math.sign(hx) * len; n[sd + 'y'] = 0; }
+      if (ax === 'h' && Math.abs(hx) / len <= SQ) { n[sd + 'y'] = Math.sign(hy) * len; n[sd + 'x'] = 0; } };
+    const copiesFor = (v, h) => { const m = []; if (v) m.push(symMx); if (h) m.push(symMy); if (v && h) m.push(n => symMy(symMx(n))); return m; };
+    let pieces = null, copies = [];
+    if (!sp.closed) { const sV = onV(S), sH = onH(S), eV = onV(E), eH = onH(E);
+      if (a.v && !a.h && sV && eV) { S.x = E.x = S0.x; square(S, 'o', 'v'); square(E, 'i', 'v'); pieces = [N, symTurn(Mx(N))]; }
+      else if (a.h && !a.v && sH && eH) { S.y = E.y = S0.y; square(S, 'o', 'h'); square(E, 'i', 'h'); pieces = [N, symTurn(My(N))]; }
+      else if (a.v && a.h) {
+        if (sV && eH && !(sH && eV)) { S.x = S0.x; E.y = S0.y; square(S, 'o', 'v'); square(E, 'i', 'h'); const m = My(N); pieces = [N, symTurn(m), Mx(m), symTurn(Mx(N))]; }
+        else if (sH && eV) { S.y = S0.y; E.x = S0.x; square(S, 'o', 'h'); square(E, 'i', 'v'); const m = Mx(N); pieces = [N, symTurn(m), My(m), symTurn(My(N))]; }
+        else if (sV && eV) { S.x = E.x = S0.x; square(S, 'o', 'v'); square(E, 'i', 'v'); pieces = [N, symTurn(Mx(N))]; copies = copiesFor(false, true); }
+        else if (sH && eH) { S.y = E.y = S0.y; square(S, 'o', 'h'); square(E, 'i', 'h'); pieces = [N, symTurn(My(N))]; copies = copiesFor(true, false); } } }
+    let sub = { closed: sp.closed, nodes: N }, joined = false;
+    if (pieces) { const ch = symChain(pieces); sub = { closed: ch.closed, nodes: ch.nodes }; joined = true; } else copies = copiesFor(a.v, a.h);
+    return { sub, joined, copies: copies.map(fn => ({ closed: sub.closed, nodes: sub.nodes.map(fn) })) }; };
+  // Lays a finished path down mirrored: the welded outline, or the path and its mirrored copies (each its own shape).
+  const symLay = (sp, styleOf, extra) => {
+    const r = symApply(sp); if (!r) return null;
+    const v = vecFromPage([r.sub], { ...styleOf(r.sub.closed), ...extra }), copies = r.copies.map(c => vecFromPage([c], { ...styleOf(c.closed), ...extra, name: (extra?.name || 'Shape') + ' mirror' }));
+    doc.layers.push(v, ...copies); changed(true);
+    toast(r.joined ? (copies.length ? 'Mirrored into one outline, with a copy across the other axis.' : r.sub.closed ? 'Mirrored into one closed outline.' : 'Mirrored and joined.') : `${copies.length} mirrored cop${copies.length === 1 ? 'y' : 'ies'}.`, 2200);
+    return v; };
+  // The axis, the live mirror of what's being drawn, and a ring where the pen would land on the axis.
+  const symDraw = (x) => {
+    const a = symAx(), S0 = doc.sym, W = doc.w * k, H = doc.h * k;
+    x.save(); x.strokeStyle = 'rgba(214,120,255,.85)'; x.lineWidth = 1; x.setLineDash([6, 4]); x.beginPath();
+    if (a.v) { const X = Math.round(S0.x * k) + 0.5; x.moveTo(X, 0); x.lineTo(X, H); }
+    if (a.h) { const Y = Math.round(S0.y * k) + 0.5; x.moveTo(0, Y); x.lineTo(W, Y); }
+    x.stroke(); x.setLineDash([]);
+    const polys = [];
+    if (stroke?.pts?.length > 1 && !stroke.snap) polys.push(stroke.pts);
+    if (pen?.nodes?.length > 1 && !pen.forCut && !pen.from) { const N = pen.nodes, P = [N[0]];
+      for (let i = 1; i < N.length; i++) for (let t = 1; t <= 12; t++) P.push(bez(N[i - 1], N[i], t / 12)); polys.push(P); }
+    x.strokeStyle = 'rgba(214,120,255,.65)'; x.lineWidth = 1.4;
+    for (const P of polys) for (const m of symMirrors()) { x.beginPath(); P.forEach((q, i) => { const w = symPt(q, m); i ? x.lineTo(w.x * k, w.y * k) : x.moveTo(w.x * k, w.y * k); }); x.stroke(); }
+    if (pen?.nodes?.length && !pen.forCut && !pen.from) for (const m of symMirrors()) for (const n of pen.nodes) { const w = symPt(n, m); x.strokeStyle = '#d678ff'; x.lineWidth = 1.2; x.strokeRect(w.x * k - 3.5, w.y * k - 3.5, 7, 7); }
+    const hv = penOn && pen?.hover && !pen.drag ? pen.hover : null;
+    if (hv) { const q = symSnap(hv); if (q.x !== hv.x || q.y !== hv.y) { const cx = q.x * k, cy = q.y * k;
+      x.strokeStyle = x.fillStyle = '#d678ff'; x.lineWidth = 2; x.beginPath(); x.arc(cx, cy, 7, 0, Math.PI * 2); x.stroke(); x.beginPath(); x.arc(cx, cy, 2.5, 0, Math.PI * 2); x.fill(); } }
+    x.restore(); };
+  // Node tool: the node at the mirror image of node (s, i) of L under mirror m, in the same shape; itself if it sits on the axis.
+  const symFind = (L, s2, i, m) => { const q = n2p(L, L.subs[s2].nodes[i].x, L.subs[s2].nodes[i].y), t = symPt(q, m);
+    if (Math.abs(q.x - t.x) <= SYM_TOL && Math.abs(q.y - t.y) <= SYM_TOL) return { s: s2, i, self: true };
+    for (let a = 0; a < L.subs.length; a++) for (let b = 0; b < L.subs[a].nodes.length; b++) { const n = L.subs[a].nodes[b], w = n2p(L, n.x, n.y);
+      if (Math.abs(w.x - t.x) <= SYM_TOL && Math.abs(w.y - t.y) <= SYM_TOL) return { s: a, i: b, self: false }; }
+    return null; };
+  const symPartners = (L, s2, i) => { if (!symOn()) return []; const out = [], seen = new Set();
+    for (const m of symMirrors()) { const h = symFind(L, s2, i, m); if (!h) continue; const key = h.self ? 'self' + m.mx + m.my : h.s + ':' + h.i; if (seen.has(key)) continue; seen.add(key); out.push({ ...h, mx: m.mx, my: m.my }); }
+    return out; };
+  // Does the partner's path run the other way round from this one's? Read off the neighbours.
+  const symRev = (L, s2, i, q) => { const A = L.subs[s2], B = L.subs[q.s], P = (n) => n2p(L, n.x, n.y);
+    const nb = (sp, j, dir) => { const n = sp.nodes.length; let x = j + dir; if (sp.closed !== false) x = (x + n) % n; return x >= 0 && x < n ? sp.nodes[x] : null; };
+    const eq = (u, w) => !!(u && w) && Math.abs(u.x - w.x) <= SYM_TOL && Math.abs(u.y - w.y) <= SYM_TOL;
+    for (const dir of [1, -1]) { const an = nb(A, i, dir); if (!an) continue; const tg = symPt(P(an), { mx: q.mx, my: q.my }), bs = nb(B, q.i, dir), bo = nb(B, q.i, -dir);
+      if (bs && eq(P(bs), tg)) return false; if (bo && eq(P(bo), tg)) return true; }
+    return q.s === s2; };
+  // The picked nodes plus their partners (for corner, smooth, delete).
+  const symExpand = (L, sel2) => { if (!symOn()) return sel2; const out = sel2.slice(), have = new Set(sel2.map(q => q.join(':')));
+    for (const [s2, i] of sel2) { if (!L.subs[s2]?.nodes[i]) continue; for (const q of symPartners(L, s2, i)) if (!q.self && !have.has(q.s + ':' + q.i)) { have.add(q.s + ':' + q.i); out.push([q.s, q.i]); } }
+    return out; };
+  // A node drag with the mirror on: each picked node leads; its partners follow as mirror images; axis nodes stay on the axis.
+  const symDragPlan = (L) => { if (!symOn()) return null; const lead = [], follow = [], seen = new Set();
+    for (const [s2, i] of nodes.sel) { const key = s2 + ':' + i; if (seen.has(key)) continue; seen.add(key);
+      const parts = symPartners(L, s2, i); let lx = 1, ly = 1; for (const q of parts) if (q.self) { if (q.mx < 0) lx = 0; if (q.my < 0) ly = 0; }
+      lead.push({ s: s2, i, lx, ly });
+      for (const q of parts) if (!q.self && !seen.has(q.s + ':' + q.i)) { seen.add(q.s + ':' + q.i); follow.push({ s: q.s, i: q.i, from: lead.length - 1, mx: q.mx * lx, my: q.my * ly }); } }
+    return { lead, follow }; };
+  const symDragApply = (L, plan, base, du, dv) => {
+    const P0 = (s2, i) => { const n = base[s2].nodes[i]; return n2p(L, n.x, n.y); }, D = [];
+    for (const l of plan.lead) { const n0 = base[l.s].nodes[l.i], a = n2p(L, n0.x, n0.y), b = n2p(L, n0.x + du, n0.y + dv), dx = (b.x - a.x) * l.lx, dy = (b.y - a.y) * l.ly; D.push({ dx, dy });
+      const u = p2n(L, { x: a.x + dx, y: a.y + dy }), n = L.subs[l.s].nodes[l.i]; n.x = u.u; n.y = u.v; }
+    for (const f of plan.follow) { const a = P0(f.s, f.i), d = D[f.from], u = p2n(L, { x: a.x + d.dx * f.mx, y: a.y + d.dy * f.my }), n = L.subs[f.s].nodes[f.i]; n.x = u.u; n.y = u.v; } };
+  // After a handle of node (s, i) moved: an axis node's handles kept mirror images, and each partner given the mirror of both.
+  const symHandles = (L, s2, i, side, alt) => {
+    const parts = symPartners(L, s2, i); if (!parts.length) return; const n = L.subs[s2].nodes[i], c = n2p(L, n.x, n.y);
+    const vec = (hx, hy) => { const q = n2p(L, n.x + hx, n.y + hy); return { x: q.x - c.x, y: q.y - c.y }; };
+    const back = (nd, at, v) => { const u = p2n(L, { x: at.x + v.x, y: at.y + v.y }); return { x: u.u - nd.x, y: u.v - nd.y }; };
+    const selfs = parts.filter(q => q.self);
+    if (selfs.length) { let sx = 1, sy = 1; for (const q of selfs) { if (q.mx < 0) sx = -1; if (q.my < 0) sy = -1; }
+      const src = vec(n[side + 'x'], n[side + 'y']), o = side === 'i' ? 'o' : 'i', h = back(n, c, { x: src.x * sx, y: src.y * sy }); n[o + 'x'] = h.x; n[o + 'y'] = h.y; n.t = alt ? 'corner' : symJoinType(n); }
+    const vi = vec(n.ix, n.iy), vo = vec(n.ox, n.oy);
+    for (const q of parts) { if (q.self) continue; const o = L.subs[q.s].nodes[q.i], oc = n2p(L, o.x, o.y), rev = symRev(L, s2, i, q);
+      const mi = back(o, oc, { x: vi.x * q.mx, y: vi.y * q.my }), mo = back(o, oc, { x: vo.x * q.mx, y: vo.y * q.my });
+      if (rev) { o.ox = mi.x; o.oy = mi.y; o.ix = mo.x; o.iy = mo.y; } else { o.ix = mi.x; o.iy = mi.y; o.ox = mo.x; o.oy = mo.y; } o.t = n.t; } };
+  // A node added on the outline gets its mirror twin on the partner segment, at the same point along it (or 1 - t).
+  const symSplits = (L, s2, i, j, t) => { const out = []; if (!symOn()) return out;
+    for (const m of symMirrors()) { const pa = symFind(L, s2, i, m), pb = symFind(L, s2, j, m); if (!pa || !pb || pa.s !== pb.s || (pa.self && pb.self)) continue;
+      const sp = L.subs[pa.s], n = sp.nodes.length, nx = (x) => sp.closed !== false ? (x + 1) % n : x + 1 < n ? x + 1 : -1;
+      let a, b, t2; if (nx(pa.i) === pb.i) { a = pa.i; b = pb.i; t2 = t; } else if (nx(pb.i) === pa.i) { a = pb.i; b = pa.i; t2 = 1 - t; } else continue;
+      if (pa.s === s2 && a === i) continue;   // the same segment: its own mirror
+      if (!out.some(o => o.s === pa.s && o.i === a)) out.push({ s: pa.s, i: a, j: b, t: t2 }); }
+    return out; };
   const snap45 = (from, p) => { const dx = p.x - from.x, dy = p.y - from.y, a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4, r = Math.hypot(dx, dy) * Math.cos(Math.atan2(dy, dx) - a);
     return { x: from.x + r * Math.cos(a), y: from.y + r * Math.sin(a) }; };
+  /* ---------- Pen: snapping to the other shapes ----------
+     As on FORMAthing: a point being placed looks for a NODE (or corner) of another shape first and a point along an
+     OUTLINE second; a node wins outright when both are in reach. Pictures and text offer their box's corners and
+     edges. Alt: no snapping. The geometry is built once per change (geoRev), in page px. */
+  const OSNAP_PX = 10;
+  let osGeo = null;
+  const osnapGeo = () => { const key = geoRev + ':' + face; if (osGeo?.key === key) return osGeo; const pts = [], segs2 = [];
+    for (const L of F()) { if (L.hide) continue;
+      const subs = L.t === 'shape' ? (L.shape === 'line' ? [{ closed: false, nodes: [dzNd(0, 0.5), dzNd(1, 0.5)] }] : dzSubs(L) || DZ_GEN[L.shape]?.(L)) : null;
+      if (subs) { for (const sp of subs) { const N = sp.nodes; if (!N?.length) continue; N.forEach(n => pts.push(n2p(L, n.x, n.y)));
+          for (const [i, j] of segs(sp)) { let a = n2p(L, N[i].x, N[i].y); const straight = !N[i].ox && !N[i].oy && !N[j].ix && !N[j].iy, st = straight ? 1 : 16;
+            for (let t = 1; t <= st; t++) { const q = bez(N[i], N[j], t / st), b = n2p(L, q.x, q.y); segs2.push([a, b]); a = b; } } } }
+      else if (L.w && (L.h || L.t === 'text')) { const C = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => n2p(L, u, v)); pts.push(...C); for (let i = 0; i < 4; i++) segs2.push([C[i], C[(i + 1) % 4]]); } }
+    return osGeo = { key, pts, segs: segs2 }; };
+  const osnap = (p, e) => { if (e?.altKey || popt.osnap === false) return null; const G = osnapGeo(), tol = OSNAP_PX / k; let best = null;
+    for (const q of G.pts) { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d <= tol && (!best || d < best.d)) best = { d, x: q.x, y: q.y, kind: 'node' }; }
+    if (best) return best;
+    for (const [a, b] of G.segs) { const vx = b.x - a.x, vy = b.y - a.y, L2 = vx * vx + vy * vy, t = L2 < 1e-9 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / L2)), x = a.x + vx * t, y = a.y + vy * t, d = Math.hypot(x - p.x, y - p.y);
+      if (d <= tol && (!best || d < best.d)) best = { d, x, y, kind: 'edge' }; }
+    return best; };
+  /* Where a pen click at p would land, and why: Shift for 45-degree steps from the last point; otherwise a shape's
+     node or outline, else the guides and grid (and the perspective grid); then the mirror axis. Used for the click and
+     for the preview before it, so what is shown is what is placed. */
+  const penPoint = (p, e) => { const N = pen?.nodes || [], ln = N.at(-1); let kind = null;
+    if (e.shiftKey && ln) { p = snap45(ln, p); kind = 'step'; }
+    else { const o = pen?.forCut ? null : osnap(p, e); if (o) { p = { x: o.x, y: o.y }; kind = o.kind; } else { p = snapPt(p, e); if (ln && !e.altKey) p = perspPt(ln, p); } }
+    if (!pen?.forCut && !pen?.from && !e.shiftKey) { const q = symSnap(p, e); if (q.x !== p.x || q.y !== p.y) { p = q; kind = 'axis'; } }
+    return { p, kind }; };
+  let penHv = null;   // the pen's next point before any click: { p, kind }
+  const penHover = (e) => { const r = penPoint(toPage(e), e); penHv = r; drawPen(); };
+  // An end of another open path within reach of p: { L, si, sp (page px), atStart }.
+  const penOpenEnd = (p, skipId) => { for (const L of F()) { if (L.t !== 'shape' || L.shape !== 'vec' || L.lock || L.hide || L.id === skipId) continue;
+      for (let si = 0; si < L.subs.length; si++) { if (L.subs[si].closed !== false) continue; const sp = subToPage(L, L.subs[si]);
+        if (sNear(sp.nodes[0], p) < PEN_CLOSE) return { L, si, sp, atStart: true }; if (sNear(sp.nodes.at(-1), p) < PEN_CLOSE) return { L, si, sp, atStart: false }; } }
+    return null; };
+  // Joins the path being drawn onto that end and finishes: one path, in the joined path's style if the pen's is new.
+  const penJoin = (oe) => { let other = oe.sp.nodes; if (!oe.atStart) other = other.slice().reverse().map(n => ({ ...n, ix: n.ox, iy: n.oy, ox: n.ix, oy: n.iy }));
+    pen.nodes = [...pen.nodes, ...other];
+    if (pen.from) { const L = oe.L; if (L.subs.length > 1) L.subs.splice(oe.si, 1); else doc.layers = doc.layers.filter(x => x !== L); }
+    else { const L = oe.L; pen.from = { id: L.id, si: oe.si, style: { fill: L.fill, stroke: L.stroke, sw: L.sw, fm: L.fm, grad: L.grad, tex: L.tex, op: L.op, name: L.name } }; }
+    penLay(false); penLast = null; drawPen(); drawSide(); toast('Joined onto that path.'); };
+  // Ctrl with the pen: adjust the path being drawn (a point, or a handle of the last point) without leaving the pen.
+  const penAdjHit = (p) => { const N = pen.nodes, ln = N.at(-1);
+    for (const sd of ['o', 'i']) if (ln && (ln[sd + 'x'] || ln[sd + 'y']) && sNear({ x: ln.x + ln[sd + 'x'], y: ln.y + ln[sd + 'y'] }, p) < PEN_CLOSE) return { i: N.length - 1, side: sd };
+    for (let i = N.length - 1; i >= 0; i--) if (sNear(N[i], p) < PEN_CLOSE) return { i, side: null };
+    return null; };
   const penDown = (e, forCut) => {
     if (forCut && Settings.get('dz_pen', 'any') === 'pen' && e.pointerType === 'touch') return;
     e.dzHit = true; e.preventDefault(); page.setPointerCapture(e.pointerId);
@@ -2977,19 +3269,26 @@ DZ.edit = async (id) => {
       }
     } else {
       const N = pen.nodes;
+      if ((e.ctrlKey || e.metaKey) && !pen.forCut) { const h = penAdjHit(p); if (h) { pen.adj = { ...h, at: p }; return; } return; }   // Ctrl: adjust, never add
       if (N.length >= 3 && sNear(N[0], p) < PEN_CLOSE) return penClose();
       const ln = N.at(-1);
       if (ln && sNear(ln, p) < PEN_CLOSE) { ln.ox = ln.oy = 0; ln.t = 'corner'; toast('Handle dropped: the next part starts straight.'); return drawPen(); }
-      if (e.shiftKey && ln) p = snap45(ln, p); else { p = snapPt(p, e); if (ln && !e.altKey) p = perspPt(ln, p); }
+      if (!pen.forCut && N.length) { const oe = penOpenEnd(p, pen.from?.id); if (oe) return penJoin(oe); }   // another open path's end: join it on
     }
+    p = penPoint(p, e).p; penHv = null;
     pen.nodes.push({ x: p.x, y: p.y, ix: 0, iy: 0, ox: 0, oy: 0, t: 'corner' });
     pen.drag = { i: pen.nodes.length - 1, anchor: { ...p }, curve: false, at: null, alt: e.altKey };
     if (e.pointerType !== 'mouse') { const dd = pen.drag; dd.holdT = setTimeout(() => { if (pen?.drag === dd && !dd.curve) { dd.space = true; navigator.vibrate?.(25); toast('Moving the point: slide it, then let go.', 1800); } }, 500); }
     drawPen(); drawSide();
   };
   const penMove = (e) => {
-    const p = toPage(e); pen.hover = p;
-    const d = pen.drag; if (!d) return drawPen();
+    const p = toPage(e);
+    if (pen.adj) { const a = pen.adj, n = pen.nodes[a.i], dx = p.x - a.at.x, dy = p.y - a.at.y; a.at = p;
+      if (!a.side) { n.x += dx; n.y += dy; } else { const o = a.side === 'i' ? 'o' : 'i'; n[a.side + 'x'] += dx; n[a.side + 'y'] += dy;
+        if (n.t === 'sym') { n[o + 'x'] = -n[a.side + 'x']; n[o + 'y'] = -n[a.side + 'y']; } else if (n.t === 'smooth') { const L1 = Math.hypot(n[a.side + 'x'], n[a.side + 'y']), L2 = Math.hypot(n[o + 'x'], n[o + 'y']); if (L1 > 1e-6) { n[o + 'x'] = -n[a.side + 'x'] / L1 * L2; n[o + 'y'] = -n[a.side + 'y'] / L1 * L2; } } }
+      return drawPen(); }
+    const d = pen.drag; if (!d) { const r = penPoint(p, e); pen.hover = r.p; pen.hoverKind = r.kind; return drawPen(); }
+    pen.hover = p;
     if (pinch) { pen.drag = null; return drawPen(); }
     const nd = pen.nodes[d.i];
     if (!d.space && sNear(d.anchor, p) > PEN_DEAD) clearTimeout(d.holdT);
@@ -2998,6 +3297,7 @@ DZ.edit = async (id) => {
       d.at = p; return drawPen();
     }
     d.at = null;
+    if (popt.poly && !e.ctrlKey) return drawPen();   // polygon mode: points only, every part straight
     if (!d.curve) { if (sNear(d.anchor, p) <= PEN_DEAD) { nd.t = 'corner'; nd.ix = nd.iy = nd.ox = nd.oy = 0; return drawPen(); } d.curve = true; }
     let q = e.shiftKey ? snap45(d.anchor, p) : p; const dx = q.x - d.anchor.x, dy = q.y - d.anchor.y;
     if (e.altKey || d.alt) { nd.t = 'corner'; nd.ox = dx; nd.oy = dy; }
@@ -3015,6 +3315,8 @@ DZ.edit = async (id) => {
     const sp = { closed, nodes: pen.nodes.map(n => ({ ...n })) };
     const style = pen.from?.style || (closed ? { fill: '@accent', stroke: 'none', sw: 0 } : { fill: 'none', stroke: '@accent', sw: Math.max(2, Math.round(Math.min(doc.w, doc.h) * 0.006)) });
     if (closed && pen.from && style.fill === 'none') style.fill = '@accent';
+    if (!pen.from && symOn()) { const st2 = (c) => c ? { fill: '@accent', stroke: 'none', sw: 0 } : { fill: 'none', stroke: '@accent', sw: Math.max(2, Math.round(Math.min(doc.w, doc.h) * 0.006)) };
+      const mv = symLay(sp, st2, {}); if (mv) { pen = null; return mv; } }
     const v = vecFromPage([sp], { ...style, name: style.name });
     if (pen.from) {
       const L = doc.layers.find(x => x.id === pen.from.id);
@@ -3027,7 +3329,7 @@ DZ.edit = async (id) => {
     if (!pen) return;
     if (pen.forCut) { pen = null; return drawPen(); }
     if (pen.nodes.length < 2) { if (pen.from) penRestore(); pen = null; drawPen(); return drawSide(); }
-    penLay(false); penLast = null; drawPen(); drawSide(); if (!quiet) toast('Path left open.');
+    const mir = symOn() && !pen.from; penLay(false); penLast = null; drawPen(); drawSide(); if (!quiet && !mir) toast('Path left open.');   /* mirrored: it says what the mirror did */
   };
   const penClose = async () => {
     if (pen.forCut) {   // a selection in the shape the pen drew
@@ -3065,14 +3367,19 @@ DZ.edit = async (id) => {
     if (a === 'back') return penBack();
     if (a === 'cancel') { if (pen?.from) penRestore(); pen = null; drawPen(); return drawSide(); }
     if (a === 'add' || a === 'sub') return penCombine(a);
+    if (a === 'm-pen' || a === 'm-poly') { popt.poly = a === 'm-poly'; Settings.set('dz_pen_tool', JSON.stringify(popt)); return drawSide(); }
     if (['own', 'add2', 'sub2'].includes(a)) { popt.mode = { own: 'own', add2: 'add', sub2: 'sub' }[a]; Settings.set('dz_pen_tool', JSON.stringify(popt)); return drawSide(); }
   };
   function drawPen() {
     const oc = $('#dz-pencv'); if (!oc) return;
     const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
     if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
-    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !pen && !stroke;
+    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !pen && !stroke && !symShown() && !(penOn && penHv?.kind);
+    if (symShown()) symDraw(x);
     if (stroke) return drawStroke(x);
+    { const hp = pen?.nodes.length ? (pen.drag || pen.adj ? null : pen.hover && { p: pen.hover, kind: pen.hoverKind }) : penOn ? penHv : null;
+      if (hp?.kind === 'node' || hp?.kind === 'edge') { const cx = hp.p.x * k, cy = hp.p.y * k; x.save(); x.strokeStyle = '#2ecc71'; x.fillStyle = 'rgba(46,204,113,.25)'; x.lineWidth = 2; x.beginPath();
+        if (hp.kind === 'node') x.rect(cx - 6, cy - 6, 12, 12); else { x.moveTo(cx, cy - 7); x.lineTo(cx + 7, cy); x.lineTo(cx, cy + 7); x.lineTo(cx - 7, cy); x.closePath(); } x.fill(); x.stroke(); x.restore(); } }
     if (!pen?.nodes.length) return;
     const N = pen.nodes, S = (q) => [q.x * k, q.y * k];
     x.lineWidth = 1.6; x.strokeStyle = '#1fb6a6'; x.beginPath(); x.moveTo(...S(N[0]));
@@ -3103,9 +3410,12 @@ DZ.edit = async (id) => {
       <div class="lbl">Each closed shape</div>
       <div class="seg" style="margin-bottom:8px">${[['own', 'Is its own'], ['add2', 'Adds to what it touches'], ['sub2', 'Cuts what\u2019s under it']].map(([v, nm]) =>
         `<button data-pact="${v}" class="${popt.mode === { own: 'own', add2: 'add', sub2: 'sub' }[v] ? 'on' : ''}" style="flex:1;font-size:11px">${nm}</button>`).join('')}</div>
-      <p class="muted" style="font-size:11px;margin:0">Shift: 45° steps. Alt while dragging: a sharp turn (only the outgoing handle follows). Space while dragging: move the point.
-        Click the last point: the next part starts straight. Backspace: undo a point. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>
-      ${touchHelp()}`;
+      <div class="lbl">Mode <span class="muted" style="text-transform:none;letter-spacing:0">(Tab switches)</span></div>
+      <div class="seg" style="margin-bottom:8px">${[['pen', 'Pen: click or drag'], ['poly', 'Polygon: straight lines']].map(([v, nm]) => `<button data-pact="m-${v}" class="${(popt.poly ? 'poly' : 'pen') === v ? 'on' : ''}" style="flex:1;font-size:11px">${nm}</button>`).join('')}</div>
+      <label class="toggle" style="display:inline-flex;margin:0 0 8px"><input type="checkbox" data-posnap ${popt.osnap === false ? '' : 'checked'}><span>Snap to shapes: their nodes, then their outlines</span></label>
+      <p class="muted" style="font-size:11px;margin:0">Shift: 45° steps (the preview follows). Alt: no snapping; while dragging, a sharp turn. Space while dragging: move the point. Hold Ctrl: drag a point or handle of the path to adjust it.
+        Click the last point: the next part starts straight. Click another open path's end: join them. Backspace or Ctrl Z: undo a point. Enter: leave it open. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>
+      ${symUI()}${touchHelp()}`;
   };
   addEventListener('keyup', dzPenKeys = function penKeys(e) { if (!document.body.contains(el)) return removeEventListener('keyup', penKeys); if (e.key === ' ') spaceHeld = false; });
   /* ---------- Hold to snap (pencil and lasso) ----------
@@ -3170,7 +3480,7 @@ DZ.edit = async (id) => {
      show; Smoothing sets how closely the curve follows what was drawn (higher = fewer nodes, smoother). A stroke
      that comes back to its start closes itself. Each stroke can be its own, add to what it touches, or cut
      what's under it (those always close). Hold still to snap to a shape. N switches it on and off. */
-  const startPencil = () => { endCrop(); endCut(); endNodes(); endCont(); endPen(); pclOn = true; sel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
+  const startPencil = () => { endCrop(); endCut(); endNodes(); endCont(); endPen(); pclOn = true; sel = null; picks = new Set(); picking = false; placeSel(); drawSide(); drawPen(); };
   function endPencil() { if (!pclOn) return; if (qs) qsDone(true); pclOn = false; if (stroke) clearTimeout(stroke.ht); stroke = null; drawPen(); }
   const pclDown = (e) => {
     if (Settings.get('dz_pen', 'any') === 'pen' && e.pointerType === 'touch') return;   // stylus only: fingers move the view
@@ -3202,6 +3512,9 @@ DZ.edit = async (id) => {
       sub = dzFitStroke(d.pts, pcl.smooth / k, loop || forceClose); if (!sub) return;
     }
     if (forceClose && sub.nodes.length > 2) sub.closed = true;
+    if (symOn() && !d.snap && sub.closed === false) { for (const n of [sub.nodes[0], sub.nodes.at(-1)]) { const q = symSnap(n); n.x = q.x; n.y = q.y; } }
+    if (symOn() && !d.snap) { const st2 = (c) => c ? { fill: '@accent', stroke: 'none', sw: 0 } : { fill: 'none', stroke: '@accent', sw: Math.max(2, Math.round(Math.min(doc.w, doc.h) * 0.006)) };
+      const mv = symLay(sub, st2, { name: 'Drawing' }); if (mv) { if (forceClose && mv.subs[0]?.closed !== false) { penLast = mv.id; await penCombine(pcl.mode); penLast = null; } return drawSide(); } }
     const style = sub.closed ? { fill: '@accent', stroke: 'none', sw: 0 } : { fill: 'none', stroke: '@accent', sw: Math.max(2, Math.round(Math.min(doc.w, doc.h) * 0.006)) };
     const v = vecFromPage([sub], { ...style, name: d.snap ? d.snap.g.label : 'Drawing' });
     doc.layers.push(v); changed(true);
@@ -3229,7 +3542,7 @@ DZ.edit = async (id) => {
     <div class="lbl" style="margin-top:6px">Each stroke</div>
     <div class="seg" style="margin-bottom:8px">${[['own', 'Is its own'], ['add', 'Adds to what it touches'], ['sub', 'Cuts what\u2019s under it']].map(([v, nm]) =>
       `<button data-pcl="${v}" class="${pcl.mode === v ? 'on' : ''}" style="flex:1;font-size:11px">${nm}</button>`).join('')}</div>
-    <p class="muted" style="font-size:11px;margin:0">Adding and cutting always close the stroke. Strokes are node shapes: reshape them with Edit nodes. N or Esc leaves the pencil.</p>`;
+    <p class="muted" style="font-size:11px;margin:0">Adding and cutting always close the stroke. Strokes are node shapes: reshape them with Edit nodes. N or Esc leaves the pencil.</p>${symUI()}`;
   const saveRef = async (ids) => {
     const list = groupOf(ids).filter(l => !l.hide), f = list.length && await flatten(list); if (!f) return toast('Nothing visible to save.');
     const title = await askText('Name for the reference:', list.length === 1 ? layerName(list[0]) : name); if (title == null) return;
@@ -3561,6 +3874,7 @@ DZ.edit = async (id) => {
     if (rest.has(e.pointerId)) return;
     e = modEv(e);
     if (pen) return penMove(e);
+    if (penOn && e.pointerType !== 'touch') return penHover(e);
     if (stroke) return pclMove(e);
     if (cutDrag) return cutMove(e);
     if (ndrag) return nodeMove(e);
@@ -3627,20 +3941,22 @@ DZ.edit = async (id) => {
     }
     redraw();
   });
-  const end = () => { cancelPress(); guides(false, false); requestAnimationFrame(drawXf); if (pen?.drag) { pen.drag = null; return drawPen(); } if (stroke) return pclUp(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
+  const end = () => { cancelPress(); guides(false, false); requestAnimationFrame(drawXf); if (pen?.adj) { pen.adj = null; return drawPen(); } if (pen?.drag) { pen.drag = null; return drawPen(); } if (stroke) return pclUp(); if (cutDrag) return cutUp(); if (ndrag) return nodeUp(); if (cdrag) { cdrag = null; return; } if (!drag) return; const d = drag; drag = null; guides(false, false);
     if (d.h === 'group') { if (d.moved) changed(true); else if (d.tap) { picks.delete(d.tap); setPicks(picks); } return; }
     changed(true); drawSide(); };
   page.addEventListener('pointerup', end); page.addEventListener('pointercancel', end);
   addEventListener('keydown', dzKeys = function keys(e) {
     if (!document.body.contains(el)) return removeEventListener('keydown', keys);
     if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && pen?.nodes.length && !pen.forCut) { e.preventDefault(); return penBack(); }   // while drawing: the last point
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(e.shiftKey ? 1 : -1); }
     if (pclOn && !stroke && e.key === 'Escape') { e.preventDefault(); endPencil(); return drawSide(); }
     if (pclOn) { if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) { endPencil(); drawSide(); } return; }
     if (penOn || pen) {
       if (e.key === ' ') { e.preventDefault(); spaceHeld = true; return; }
       if (e.key === 'Enter') { e.preventDefault(); return penFinish(); }
-      if (e.key === 'Escape') { e.preventDefault(); if (pen) { pen = null; drawPen(); drawSide(); } else { endPen(); drawSide(); } return; }
+      if (e.key === 'Tab') { e.preventDefault(); popt.poly = !popt.poly; Settings.set('dz_pen_tool', JSON.stringify(popt)); toast(popt.poly ? 'Polygon: straight lines only.' : 'Pen: drag for curves.', 1500); return drawSide(); }
+      if (e.key === 'Escape') { e.preventDefault(); if (pen) { if (pen.from) penRestore(); pen = null; drawPen(); drawSide(); } else { endPen(); drawSide(); } return; }   /* a carried-on path comes back as it was */
       if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); return penBack(); }
       if (penOn) return;
     }
@@ -3653,8 +3969,11 @@ DZ.edit = async (id) => {
       if (k1 === 'o' && targets().length) { e.preventDefault(); return startCont(); }
       if (k1 === 'p') { e.preventDefault(); return startPen(); }
       if (k1 === 'n') { e.preventDefault(); return startPencil(); }
+      if (k1 === 'm' && (penOn || pclOn)) { e.preventDefault(); return symSet(symOn() ? 'off' : (doc.sym?.last || 'v')); }
+      if (k1 === 'a' && many()) { const M = picked().filter(l => canNodes(l) && !l.lock); if (M.length) { e.preventDefault(); return startNodes(M[0], M.slice(1)); } }
       if (k1 === 'a' && layer()?.t === 'shape' && layer().shape !== 'line') { e.preventDefault(); return startNodes(layer()); }
     }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && nodes) { e.preventDefault(); return nodeOp('all'); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); if (targets().length) merge(targets()); return; }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !nodes && !cut) { const k2 = e.key.toLowerCase();
@@ -3672,7 +3991,10 @@ DZ.edit = async (id) => {
     const l = layer(); if (!l) return;
     if (nodes) {
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); nodeOp('del'); }
-      if (e.key === 'Escape') { endNodes(); drawSide(); }
+      if (e.key === 'Escape') { if (nodePicks()) { nodes.sel = []; nodes.other = {}; drawNodes(); drawSide(); } else { endNodes(); drawSide(); } }   // first unpicks, then leaves
+      const st = e.shiftKey ? 20 : e.altKey ? 1 : 4, mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
+      if (mv) { e.preventDefault(); return nodeNudge(mv[0], mv[1]); }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) { const op = { c: 'corner', s: 'smooth', e: 'sym', l: 'line', b: 'break', k: 'close', r: 'reverse', j: 'join' }[e.key.toLowerCase()]; if (op) { e.preventDefault(); return nodeOp(op); } }
       return;
     }
     if (cut) {
@@ -3702,6 +4024,7 @@ DZ.edit = async (id) => {
     if (d('tab')) { tab = d('tab'); return drawSide(); }
     if (d('mact')) return multiAct(d('mact'));
     if (d('bool')) return boolOp(d('bool'));
+    if (d('sym')) return symAct(d('sym'));
     if (d('pact')) return penAct(d('pact'));
     if (d('pcl')) return pclAct(d('pcl'));
     if (d('cont')) return contAct(d('cont'));
@@ -3890,15 +4213,23 @@ DZ.edit = async (id) => {
     if (e.target.closest('[data-chvs]')) { const l0 = layer(); if (l0?.ref) { if (typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const sc = document.createElement('script'); sc.src = 'tattoo.js'; sc.onload = sc.onerror = res; document.head.appendChild(sc); }); return chTrace(l0.ref, l0.id); } return; }
     if (e.target.closest('[data-bend]')) return bendOpen(layer());
     if (e.target.closest('[data-adjc]')) return adjOpen(layer());
+    const mk = e.target.closest('[data-mcpop]')?.dataset.mcpop; if (mk) { mcpop = mcpop === mk ? null : mk; return drawCtx(); }
+    if (mcpop && many()) { const pk = e.target.closest('.dz-cpop [data-c]'); if (pk) { const was = mcpop; mcpop = null; mApply(was, pk.dataset.c); return drawCtx(); } if (e.target.closest('.dz-cpop')) return; }
+    if (e.target.closest('[data-mact="nodes"]')) { const M = picked().filter(l => canNodes(l) && !l.lock); if (!M.length) return toast('No shapes picked that have nodes.'); return startNodes(M[0], M.slice(1)); }
     const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
     const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
     if (pick && l && (cpop === 'c' || cpop === 'fill')) l.fm = 'solid';
     if (pick) { const was = cpop; cpop = null; if (was !== 'c' && was !== 'fill' && pick.dataset.c !== 'none' && was === 'stroke' && !l.sw) l.sw = 4; }
     await sideClick(e); drawCtx(); });
-  ctxB.addEventListener('change', (e) => { if (e.target.hasAttribute('data-dash')) { const l = layer(); if (!l) return; if (e.target.value) l.dash = e.target.value; else delete l.dash; if (l.shape !== 'line' && e.target.value) { if (!l.sw) l.sw = 4; if (!l.stroke || l.stroke === 'none') l.stroke = '@fg'; }   /* a style needs a visible outline to show on */ changed(true); return drawCtx(); }
+  ctxB.addEventListener('change', (e) => {
+    if (many() && e.target.dataset.cpick && mcpop) { const was = mcpop; mcpop = null; mApply(was, e.target.value); return drawCtx(); }
+    if (e.target.hasAttribute('data-mdash')) { for (const l of picked().filter(l => mStyleable(l) && l.t === 'shape')) { const v = e.target.value; if (v === 'solid') delete l.dash; else { l.dash = v; if (l.shape !== 'line') { if (!l.sw) l.sw = 4; if (!l.stroke || l.stroke === 'none') l.stroke = '@fg'; } } } changed(true); return drawCtx(); }
+    if (e.target.dataset.mck) { changed(true); return drawCtx(); }
+    if (e.target.hasAttribute('data-dash')) { const l = layer(); if (!l) return; if (e.target.value) l.dash = e.target.value; else delete l.dash; if (l.shape !== 'line' && e.target.value) { if (!l.sw) l.sw = 4; if (!l.stroke || l.stroke === 'none') l.stroke = '@fg'; }   /* a style needs a visible outline to show on */ changed(true); return drawCtx(); }
     if (e.target.dataset.ck) changed(true); else sideChange(e); });
-  ctxB.addEventListener('input', (e) => { const k = e.target.dataset.ck, l = layer(), v = +e.target.value; if (!k || !l || !(v >= 0) || (k === 'size' && v < 6)) return; l[k] = v; changed(); });
-  stage.addEventListener('pointerdown', () => { if (cpop) { cpop = null; drawCtx(); } }, true);
+  ctxB.addEventListener('input', (e) => { if (e.target.dataset.mck) { const v = +e.target.value; if (v >= 0 && e.target.value !== '') { for (const l of picked().filter(mStyleable)) { if (l.t === 'shape' && l.shape === 'line') l.h = Math.max(1, v); else if (l.t !== 'text') { l.sw = v; if (v > 0 && (!l.stroke || l.stroke === 'none')) l.stroke = '@fg'; } } changed(); } return; }
+    const k = e.target.dataset.ck, l = layer(), v = +e.target.value; if (!k || !l || !(v >= 0) || (k === 'size' && v < 6)) return; l[k] = v; changed(); });
+  stage.addEventListener('pointerdown', () => { if (cpop || mcpop) { cpop = mcpop = null; drawCtx(); } }, true);
   /* The middle mouse button pans the view from anywhere, over a shape or with a menu open, and changes nothing else. */
   stage.addEventListener('pointerdown', (e) => { if (e.button !== 1 || e.pointerType !== 'mouse') return; e.preventDefault(); e.stopImmediatePropagation(); try { stage.setPointerCapture(e.pointerId); } catch {}
     bg = { x: e.clientX, y: e.clientY, vx, vy, moved: true }; }, true);
@@ -4024,6 +4355,7 @@ DZ.edit = async (id) => {
   const sideChange = async (e) => {
     const t = e.target, l = layer();
     if (t.hasAttribute('data-contkeep')) { copt2.keep = t.checked; saveC2(); return; }
+    if (t.hasAttribute('data-posnap')) { popt.osnap = t.checked; Settings.set('dz_pen_tool', JSON.stringify(popt)); return; }
     if (t.hasAttribute('data-holdon')) { pcl.hold = t.checked; savePcl(); return drawSide(); }
     if (t.hasAttribute('data-pclclose')) { pcl.close = t.checked; savePcl(); return; }
     if (t.dataset.cpick) return drawSide();

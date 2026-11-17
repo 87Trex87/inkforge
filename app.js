@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 460;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 461;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8018,6 +8018,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 461, when: '2026-11-17T14:00', added: ['Design studio: Mirror (M) for the pen, pencil and nodes. Draw half on the axis and it joins into one shape; nodes move with their mirror.', 'Pen: snaps to the nodes and outlines of other shapes (green marker), Shift shows its straight line first, Ctrl adjusts, Ctrl Z undoes a point, click an open end to join, Polygon mode (Tab).', 'Pick several shapes to change fill, line colour, width and style together, or edit all their nodes at once (A), with box select.', 'Edit nodes: Join, Break, Close and Reverse, arrow-key nudges and keys for each, as in Affinity.'] },
   { build: 460, when: '2026-11-17T09:00', added: ['New Rule book table (the table icon in Rule book): search, filter by category, pick columns, edit, delete, CSV and print.', 'Design studio: pictures and shapes now have side handles to stretch or squash them, and the chain button beside W and H switches between corners keeping proportions, every handle keeping them, or free. Shift swaps while dragging, Ctrl sizes from the centre.'] },
   { build: 459, when: '2026-11-17T05:30', added: ['New Contacts table (the table icon in Clients): search, filter by category or when they last came in, pick columns, edit, delete, export CSV or print.', 'New Quotes table (the table icon in Saved quotes): open, booked and completed, quoted vs real time, totals, CSV and print.', 'New Stock table (the table icon in Inventory): adjust counts with − and +, filter by category, supplier or running low, stock value, CSV and print.'] },
   { build: 458, when: '2026-11-17T04:00', added: ['Completed bookings now show a green tick on the calendar.', 'New Bookings table (the table icon in Book): search, filter, sort, hide columns, tick to complete, add, edit and delete, then export CSV, print or save as PDF, or share your openings.'] },
