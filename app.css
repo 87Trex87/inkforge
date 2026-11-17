@@ -1869,3 +1869,8 @@ table.bkt { width: 100%; border-collapse: collapse; font-size: 13.5px; font-vari
 .bkt .it-notes { min-width: 180px; max-width: 340px; } .bkt .it-supplier, .bkt .it-category, .bkt .it-updated { white-space: nowrap; }
 .bkt .rt-body { min-width: 260px; max-width: 640px; white-space: pre-line; color: var(--ink2); } .bkt .rt-title { min-width: 160px; } .bkt .rt-category { white-space: nowrap; }
 .dz-chain.half { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 55%, var(--line)); border-style: dashed; }
+/* Layer groups in the design studio */
+.dz-lr.dz-lg { background: color-mix(in srgb, var(--teal) 8%, transparent); font-weight: 600; }
+.dz-lr.dz-lg .nm small { font-weight: 400; margin-left: 4px; }
+.dz-gfold { background: none; border: 0; color: var(--ink2); width: 20px; padding: 0; cursor: pointer; font-size: 12px; }
+.dz-lr.ing { margin-left: 16px; border-left: 2px solid color-mix(in srgb, var(--teal) 45%, transparent); }

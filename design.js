@@ -2024,16 +2024,23 @@ DZ.edit = async (id) => {
     side.innerHTML = `<div class="dz-lh"><b>Layers <small>${F().length}</small></b><span class="dz-hb">${dzIB(`data-mact="${picking ? 'done' : 'pick'}"`, 'pick', picking ? 'Stop selecting several' : 'Select several', picking ? 'on' : '')}
         ${picking || picks.size ? dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${picks.size ? '' : 'disabled'}`, 'none', 'Select none') : ''}${dzIB('data-rail="close"', 'close', 'Close')}</span></div>
       ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? 'Master page: shown under both sides.' : `${dzFaceNames(doc)[face]} only. The master page shows underneath.`}</p>` : ''}
-      <div class="dz-ll" id="dz-ll">${[...F()].reverse().map(l => { const i = F().indexOf(l), cl = i > 0 && l.clip;
-        return `<div class="dz-lr ${l.id === sel || picks.has(l.id) ? 'on' : ''} ${l.hide ? 'off' : ''} ${cl ? 'clip' : ''}" data-lid="${l.id}">
+      <div class="dz-ll" id="dz-ll">${(() => { let lastG = null; return [...F()].reverse().map(l => { const i = F().indexOf(l), cl = i > 0 && l.clip, G = l.g && doc.groups?.[l.g] ? l.g : null, shut = G && doc.groups[G].shut;
+        let head = ''; if (G && G !== lastG) { const M = F().filter(x => x.g === G), on = M.every(x => picks.has(x.id)), hid = M.every(x => x.hide), lk = M.every(x => x.lock), gr = M.filter(x => x.role);
+          head = `<div class="dz-lr dz-lg ${on ? 'on' : ''} ${hid ? 'off' : ''}" data-gid="${G}"><button data-gfold class="dz-gfold" aria-label="${shut ? 'Open' : 'Fold'}">${shut ? '▸' : '▾'}</button><span class="li">▤</span>
+            <span class="nm" data-gname title="Tap to pick the group; tap again to rename">${esc(groupName(G))} <small class="muted">${M.length}${gr.length ? ' · ' + esc(CH_ROLES.find(r => r[0] === gr[0].role)?.[1] || '') : ''}</small></span>
+            <button data-gun title="Ungroup (Ctrl Shift G)" aria-label="Ungroup"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg></button>
+            <button data-ghide title="${hid ? 'Show' : 'Hide'} the group" aria-label="Hide group">${hid ? EYE_OFF : EYE}</button>
+            <button data-glock class="${lk ? 'on' : ''}" title="${lk ? 'Unlock' : 'Lock'} the group" aria-label="Lock group">${LOCK(lk)}</button></div>`; }
+        lastG = G; if (shut) return head;
+        return head + `<div class="dz-lr ${l.id === sel || picks.has(l.id) ? 'on' : ''} ${l.hide ? 'off' : ''} ${cl ? 'clip' : ''} ${G ? 'ing' : ''}" data-lid="${l.id}">
         <span class="grip" data-grip aria-label="Drag to reorder">⠿</span><span class="li">${layerIco(l)}</span>
         <span class="nm" data-lname title="${l.id === sel ? 'Tap to rename' : 'Tap to select'}">${cl ? '<b class="clipmark">↳</b>' : ''}${esc(layerName(l))}</span>
         <button data-lclip class="${cl ? 'on' : ''}" ${i ? '' : 'disabled'} title="${cl ? 'Unclip' : 'Clip to the layer below: only shows inside it'}" aria-label="Clip to layer below"><svg viewBox="0 0 24 24"><path d="M7 4v10a3 3 0 0 0 3 3h10"/><path d="M16 13l4 4-4 4"/></svg></button>
         <button data-lhide title="${l.hide ? 'Show' : 'Hide'}" aria-label="${l.hide ? 'Show' : 'Hide'}">${l.hide ? EYE_OFF : EYE}</button>
         <button data-llock class="${l.lock ? 'on' : ''}" title="${l.lock ? 'Unlock' : 'Lock'}" aria-label="Lock">${LOCK(l.lock)}</button>
         <button data-ldel ${l.lock ? 'disabled' : ''} title="${l.lock ? 'Unlock it to delete' : 'Delete'}" aria-label="Delete">✕</button>
-        ${l.id === sel ? `<input type="range" class="dz-lop" min="0" max="1" step="0.05" value="${l.op ?? 1}" data-lop aria-label="Opacity" title="How much it shows">` : ''}</div>`; }).join('') || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
-      <p class="muted dz-hint">Top of the list is in front. The slider on the selected layer sets how much it shows. Drag ⠿ to reorder; tap a name again to rename; hold a layer to select several.</p>`;
+        ${l.id === sel ? `<input type="range" class="dz-lop" min="0" max="1" step="0.05" value="${l.op ?? 1}" data-lop aria-label="Opacity" title="How much it shows">` : ''}</div>`; }).join(''); })() || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
+      <p class="muted dz-hint">Top of the list is in front. The slider on the selected layer sets how much it shows. Drag ⠿ to reorder; tap a name again to rename; hold a layer to select several. Ctrl G groups the picked layers; tap a group's name to pick it all.</p>`;
   };
   let mini = Settings.get('dz_panel_min', '') === '1';
   const toolOn = () => !!(penOn || pclOn || cont || cut || nodes || cropping);
@@ -2093,6 +2100,9 @@ DZ.edit = async (id) => {
         + AL.map(([a, tp, ic]) => `<button class="dz-ib" data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} data-tip="Align: ${tp}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${tp}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('') + sep
         + [['add', 'Add: weld them into one outline'], ['subtract', 'Subtract: the bottom one, with the rest cut out of it'], ['intersect', 'Intersect: only where they all overlap'], ['xor', 'Exclude: everything except where they overlap'], ['divide', 'Divide: cut into every separate piece the overlaps make'], ['separate', 'Separate: split each into its separate pieces'], ['contour', 'Contour: grow or shrink the outline (O)']].map(([v, tp]) => `<button class="dz-ib" data-bool="${v}" ${!n || (n < 2 && !['separate', 'contour'].includes(v)) ? 'disabled' : ''} data-tip="${tp}" aria-label="${tp.split(':')[0]}">${DZ_BOOL_ICON[v]}</button>`).join('') + sep
         + dzIB(`data-mact="merge" ${dis}`, 'merge', 'Merge into one picture (Undo brings the layers back)') + dzIB(`data-mact="del" ${dis}`, 'del', 'Delete', 'danger')
+        + sep + dzIB(`data-mact="group" ${n > 1 ? '' : 'disabled'}`, '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2"/><rect x="7" y="7" width="5" height="5"/><rect x="12" y="12" width="5" height="5"/>', 'Group (Ctrl G)')
+        + (L.some(x => x.g) ? dzIB('data-mact="ungroup"', '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>', 'Ungroup (Ctrl Shift G)') : '')
+        + (doc.chal && L.some(x => x.t === 'shape' && !x.lock) ? sep + `<button class="btn small dz-chrole ${L.filter(x => x.t === 'shape').every(x => x.role) ? 'on' : ''}" data-chrole data-tip="Grade all the picked shapes together: outline, detail lines, packing or shading, and the needle">Grade as…</button>` : '')
         + (n && L.some(mStyleable) ? sep + mStyleUI(L) + dzIB('data-mact="nodes"', 'nodes', 'Edit nodes of all the picked shapes together (A)') : '');
       if (mcpop) { const q = b.querySelector(`[data-mcpop="${mcpop}"]`)?.getBoundingClientRect(), pp = b.querySelector('.dz-cpop'); if (q && pp) { pp.style.left = Math.max(8, Math.min(innerWidth - 300, q.left)) + 'px'; pp.style.top = q.bottom + 6 + 'px'; } }
       b.scrollLeft = sl; return; }
@@ -2346,6 +2356,20 @@ DZ.edit = async (id) => {
   };
   const togglePick = (id) => { const s = new Set(picks); if (sel && !s.size) s.add(sel); s.has(id) ? s.delete(id) : s.add(id); anchor = id; setPicks(s); };
   const startPicking = (id) => { const s = new Set(picks); if (sel) s.add(sel); if (id) s.add(id); picking = true; anchor = id || anchor; setPicks(s); navigator.vibrate?.(30); };
+  /* Groups, as in Affinity: layers sharing l.g, kept together in the stack, with a name (and folded or not in the
+     Layers panel) in doc.groups. A tap on any of them picks the whole group, so it moves, sizes and grades as one;
+     a double-tap or Alt-tap reaches one layer inside. Ctrl G groups the picked layers, Ctrl Shift G ungroups. */
+  const groupIds = (g) => F().filter(x => x.g === g).map(x => x.id);
+  let grpTap = null;
+  const groupMake = (ids) => { const L = doc.layers.filter(x => ids.includes(x.id)); if (L.length < 2) return toast('Pick two or more layers to group.', 2000);
+    const g = dzId(), top = Math.max(...L.map(x => doc.layers.indexOf(x))); doc.groups ||= {};
+    const n = Object.keys(doc.groups).length + 1; doc.groups[g] = { name: 'Group ' + n };
+    const rest = doc.layers.filter(x => !L.includes(x)), at = rest.indexOf(doc.layers.slice(top + 1).find(x => !L.includes(x))), pos = at < 0 ? rest.length : at;
+    for (const x of L) { x.g = g; delete x.clip; } doc.layers = [...rest.slice(0, pos), ...L, ...rest.slice(pos)];   // together, where the top one was
+    changed(true); setPicks(L.map(x => x.id)); toast(`Grouped ${L.length} layers. Tap any of them to pick the group; double-tap for one inside.`, 2600); };
+  const groupBreak = (ids) => { const gs = new Set(doc.layers.filter(x => ids.includes(x.id) && x.g).map(x => x.g)); if (!gs.size) return toast('Nothing grouped is picked.', 1800);
+    for (const x of doc.layers) if (gs.has(x.g)) delete x.g; for (const g of gs) delete doc.groups?.[g]; changed(true); drawSide(); toast('Ungrouped.', 1500); };
+  const groupName = (g) => doc.groups?.[g]?.name || 'Group';
   const clipped = (l) => F().indexOf(l) > 0 && !!l.clip;
   // Whole clip groups: a base with the layers clipped to it travel together, in layer order.
   const groupOf = (ids) => {
@@ -3256,7 +3280,7 @@ DZ.edit = async (id) => {
     let p = toPage(e);
     if (!pen) {
       pen = { nodes: [], forCut: !!forCut, from: null };
-      if (!forCut) {   // the end of an open path on this page: carry it on
+      if (!forCut && popt.join) {   // the end of an open path on this page: carry it on (only with 'Join open ends' on)
         for (const L of F()) { if (L.t !== 'shape' || L.shape !== 'vec' || L.lock || L.hide) continue;
           const si = L.subs.findIndex(sp => sp.closed === false); if (si < 0) continue;
           const sp = subToPage(L, L.subs[si]), a = sp.nodes[0], b = sp.nodes.at(-1);
@@ -3273,7 +3297,7 @@ DZ.edit = async (id) => {
       if (N.length >= 3 && sNear(N[0], p) < PEN_CLOSE) return penClose();
       const ln = N.at(-1);
       if (ln && sNear(ln, p) < PEN_CLOSE) { ln.ox = ln.oy = 0; ln.t = 'corner'; toast('Handle dropped: the next part starts straight.'); return drawPen(); }
-      if (!pen.forCut && N.length) { const oe = penOpenEnd(p, pen.from?.id); if (oe) return penJoin(oe); }   // another open path's end: join it on
+      if (!pen.forCut && N.length && popt.join) { const oe = penOpenEnd(p, pen.from?.id); if (oe) return penJoin(oe); }   // another open path's end: join it on
     }
     p = penPoint(p, e).p; penHv = null;
     pen.nodes.push({ x: p.x, y: p.y, ix: 0, iy: 0, ox: 0, oy: 0, t: 'corner' });
@@ -3412,9 +3436,10 @@ DZ.edit = async (id) => {
         `<button data-pact="${v}" class="${popt.mode === { own: 'own', add2: 'add', sub2: 'sub' }[v] ? 'on' : ''}" style="flex:1;font-size:11px">${nm}</button>`).join('')}</div>
       <div class="lbl">Mode <span class="muted" style="text-transform:none;letter-spacing:0">(Tab switches)</span></div>
       <div class="seg" style="margin-bottom:8px">${[['pen', 'Pen: click or drag'], ['poly', 'Polygon: straight lines']].map(([v, nm]) => `<button data-pact="m-${v}" class="${(popt.poly ? 'poly' : 'pen') === v ? 'on' : ''}" style="flex:1;font-size:11px">${nm}</button>`).join('')}</div>
+      <label class="toggle" style="display:inline-flex;margin:0 0 6px"><input type="checkbox" data-pjoin ${popt.join ? 'checked' : ''}><span>Join open ends: start on a path's end to carry it on, click one to join it. Off: a new stroke on top</span></label>
       <label class="toggle" style="display:inline-flex;margin:0 0 8px"><input type="checkbox" data-posnap ${popt.osnap === false ? '' : 'checked'}><span>Snap to shapes: their nodes, then their outlines</span></label>
       <p class="muted" style="font-size:11px;margin:0">Shift: 45° steps (the preview follows). Alt: no snapping; while dragging, a sharp turn. Space while dragging: move the point. Hold Ctrl: drag a point or handle of the path to adjust it.
-        Click the last point: the next part starts straight. Click another open path's end: join them. Backspace or Ctrl Z: undo a point. Enter: leave it open. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>
+        Click the last point: the next part starts straight. With Join open ends on, click another open path's end to join them. Backspace or Ctrl Z: undo a point. Enter: leave it open. Esc: throw the path away. Finished paths can be reshaped with Edit nodes.</p>
       ${symUI()}${touchHelp()}`;
   };
   addEventListener('keyup', dzPenKeys = function penKeys(e) { if (!document.body.contains(el)) return removeEventListener('keyup', penKeys); if (e.key === ' ') spaceHeld = false; });
@@ -3848,7 +3873,10 @@ DZ.edit = async (id) => {
       if (canNodes(hl0) && !hl0.lock && (twice || nodeArm)) { nodeArm = false; itemTap = null; cancelPress(); e.dzHit = true; e.preventDefault(); select(hl0.id); return startNodes(hl0); }
       if (nodeArm && !hl0) { nodeArm = false; drawRail(); } }
     if (!h || many()) {
-      const hl = hit(p);
+      let hl = hit(p);
+      if (hl?.g && !hl.lock && !e.ctrlKey && !e.metaKey && !e.shiftKey) { const ids = groupIds(hl.g), now = Date.now();
+        if (ids.length > 1) { if (e.altKey || (grpTap?.g === hl.g && now - grpTap.t < 350)) { grpTap = null; select(hl.id); e.dzHit = true; drawSide(); hl = null; }   // into the group: just this one
+          else { grpTap = { g: hl.g, t: now }; if (!(many() && picks.has(hl.id)) || sel) setPicks(ids); } } }
       if (hl && e.ctrlKey && e.altKey && !many() && !hl.lock) { const c = JSON.parse(JSON.stringify(hl)); c.id = dzId(); if (c.on) { const S = doc.layers.find(s => s.id === c.on); if (S) { const c2 = { ...JSON.parse(JSON.stringify(S)), id: dzId() }; doc.layers.splice(doc.layers.indexOf(S) + 1, 0, c2); c.on = c2.id; } } doc.layers.splice(doc.layers.indexOf(hl) + 1, 0, c); select(c.id); dupDrag = true; }
       else if (hl && (e.ctrlKey || e.metaKey || e.shiftKey)) { e.dzHit = true; return togglePick(hl.id); }
       if (many() && hl) {
@@ -3975,6 +4003,7 @@ DZ.edit = async (id) => {
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && nodes) { e.preventDefault(); return nodeOp('all'); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g' && !nodes && !penOn && !pclOn) { e.preventDefault(); return e.shiftKey ? groupBreak(targets()) : groupMake(targets()); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') { e.preventDefault(); if (targets().length) merge(targets()); return; }
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !nodes && !cut) { const k2 = e.key.toLowerCase();
       if (k2 === 'c' && targets().length) { e.preventDefault(); return void clipCopy(false); }
@@ -4029,6 +4058,14 @@ DZ.edit = async (id) => {
     if (d('pcl')) return pclAct(d('pcl'));
     if (d('cont')) return contAct(d('cont'));
     if (d('align')) return align(d('align'));
+    const grow = t.closest('[data-gid]');
+    if (grow) { const g = grow.dataset.gid, M = doc.layers.filter(x => x.g === g); if (!M.length) return;
+      if (t.closest('[data-gfold]')) { doc.groups[g].shut = !doc.groups[g].shut; changed(); return drawSide(); }
+      if (t.closest('[data-gun]')) return groupBreak(M.map(x => x.id));
+      if (t.closest('[data-ghide]')) { const v = !M.every(x => x.hide); for (const x of M) x.hide = v || undefined; picks = new Set(); sel = null; placeSel(); changed(true); return drawSide(); }
+      if (t.closest('[data-glock]')) { const v = !M.every(x => x.lock); for (const x of M) x.lock = v || undefined; changed(true); return drawSide(); }
+      if (t.closest('[data-gname]') && M.every(x => picks.has(x.id))) { const n = await askText('Group name:', groupName(g)); if (n == null) return; doc.groups[g].name = n.trim() || 'Group'; changed(true); return drawSide(); }
+      return setPicks(M.map(x => x.id)); }
     const row = t.closest('[data-lid]');
     if (row && !t.closest('[data-grip]')) {
       const ly = doc.layers.find(x => x.id === row.dataset.lid); if (!ly) return;
@@ -4215,6 +4252,8 @@ DZ.edit = async (id) => {
     if (e.target.closest('[data-adjc]')) return adjOpen(layer());
     const mk = e.target.closest('[data-mcpop]')?.dataset.mcpop; if (mk) { mcpop = mcpop === mk ? null : mk; return drawCtx(); }
     if (mcpop && many()) { const pk = e.target.closest('.dz-cpop [data-c]'); if (pk) { const was = mcpop; mcpop = null; mApply(was, pk.dataset.c); return drawCtx(); } if (e.target.closest('.dz-cpop')) return; }
+    if (e.target.closest('[data-mact="group"]')) return groupMake(targets());
+    if (e.target.closest('[data-mact="ungroup"]')) return groupBreak(targets());
     if (e.target.closest('[data-mact="nodes"]')) { const M = picked().filter(l => canNodes(l) && !l.lock); if (!M.length) return toast('No shapes picked that have nodes.'); return startNodes(M[0], M.slice(1)); }
     const k = e.target.closest('[data-cpop]')?.dataset.cpop; if (k) { cpop = cpop === k ? null : k; return drawCtx(); }
     const pick = e.target.closest('.dz-cpop [data-c]'), l = layer();
@@ -4355,6 +4394,7 @@ DZ.edit = async (id) => {
   const sideChange = async (e) => {
     const t = e.target, l = layer();
     if (t.hasAttribute('data-contkeep')) { copt2.keep = t.checked; saveC2(); return; }
+    if (t.hasAttribute('data-pjoin')) { popt.join = t.checked; Settings.set('dz_pen_tool', JSON.stringify(popt)); return; }
     if (t.hasAttribute('data-posnap')) { popt.osnap = t.checked; Settings.set('dz_pen_tool', JSON.stringify(popt)); return; }
     if (t.hasAttribute('data-holdon')) { pcl.hold = t.checked; savePcl(); return drawSide(); }
     if (t.hasAttribute('data-pclclose')) { pcl.close = t.checked; savePcl(); return; }
@@ -4429,8 +4469,12 @@ DZ.edit = async (id) => {
           + chNote('How much each part counts. Put Linework at 0 to judge only the shading or packing, however rough the line.'));
     return chFrame('Challenge', '', tabs, body, `<button class="btn small" data-chmine data-tip="${doc.chal?.mine ? 'Take it out of My challenges' : 'Put it in the Challenges hub, under My challenges'}">${doc.chal?.mine ? 'In My challenges' : 'Add to My challenges'}</button><button class="btn primary small" data-chplay>Play in the simulator</button>`); };
   const chNds = (l, list) => { const many = l.role === 'pack' || l.role === 'shade', on = many ? dzChNds(l) : [l.nd]; return `<div class="dz-gk" style="grid-template-columns:repeat(4,1fr)">${list.map(n => `<button data-chn="${n}" class="${on.includes(n) ? 'on' : ''}">${n}</button>`).join('')}</div>`; };
-  const chRoleMenu = () => { const l = layer(); if (!l || l.t !== 'shape') return chFrame('Grade this shape', '', '', chNote('Select a shape first.')); const r = l.role || '', S = l.sh || {};
-    const tabs = chTabs('role', [['role', 'Role'], ...(r ? [['needle', 'Needle']] : []), ...(r === 'pack' || (r === 'shade' && S.tech === 'blend') ? [['colour', 'Colour']] : []), ...(r === 'shade' ? [['grad', 'Gradient']] : []), ...(r === 'shade' && S.grad === 'paint' ? [['brush', 'Brush']] : []), ...(r === 'shade' ? [['sten', 'Stencil']] : [])]);
+  /* What "Grade as" works on: the picked shapes when several are picked (a group, say), else the selected one. With
+     several, the role and the needle go to every one of them; the first stands for them in the menu. */
+  const gradeTargets = () => many() ? picked().filter(x => x.t === 'shape' && !x.lock) : (layer()?.t === 'shape' ? [layer()] : []);
+  const chRoleMenu = () => { const GT = many() ? gradeTargets() : null, l = GT ? GT[0] : layer(); if (!l || l.t !== 'shape') return chFrame('Grade this shape', '', '', chNote('Select a shape first.')); const r = l.role || '', S = l.sh || {};
+    if (GT && GT.length > 1 && !['role', 'needle'].includes(chTab.role)) chTab.role = 'role';
+    const tabs = GT && GT.length > 1 ? chTabs('role', [['role', 'Role'], ...(r ? [['needle', 'Needle']] : [])]) : chTabs('role', [['role', 'Role'], ...(r ? [['needle', 'Needle']] : []), ...(r === 'pack' || (r === 'shade' && S.tech === 'blend') ? [['colour', 'Colour']] : []), ...(r === 'shade' ? [['grad', 'Gradient']] : []), ...(r === 'shade' && S.grad === 'paint' ? [['brush', 'Brush']] : []), ...(r === 'shade' ? [['sten', 'Stencil']] : [])]);
     const T = chTab.role, tb = (k, v, n) => `<button data-chs="${k}:${v}" class="${String(S[k] ?? '') === String(v) ? 'on' : ''}">${n}</button>`;
     let body = '';
     if (T === 'role') body = `<div class="dz-gk" style="grid-template-columns:1fr 1fr">${CH_ROLES.map(([v, nm]) => `<button data-chr="${v}" class="${r === v ? 'on' : ''}">${nm}</button>`).join('')}</div>`
@@ -4463,7 +4507,8 @@ DZ.edit = async (id) => {
         ${chNote((S.stencil ? 'Draw on the stencil, or wipe parts off, with a finger or pen (the wipe is wider). ' : 'No stencil yet: drawing starts a blank one over this zone. ') + 'For shading detail: the marker goes on the stencil, faint purple, and wears off while tattooing like the rest of it. Lines to be judged are best as shapes graded Outline or Detail.')}
         ${S.raw ? `<div class="dz-gk" style="grid-template-columns:1fr;margin-top:6px"><button data-chsten>${S.stencil ? 'Remake the stencil from the picture' : 'Make the stencil from the picture'}</button></div>` : ''}${S.stencil ? `<p class="dz-chnote"><a href="#" data-chstenx>Remove the stencil</a></p>` : ''}`;
     const solid = r === 'shade' && S.tech === 'blend' && S.grad === 'flat' && !S.rgb && (S.cols || []).every(c => c === S.cols[0]);   /* a traced flat colour: packing, judged as a one-colour blend */
-    return chFrame(r ? (solid ? 'Packing: solid colour' : CH_ROLES.find(x => x[0] === r)[1] + (r === 'shade' ? ': ' + CH_SHADE[S.tech || 'stipple'][0] : '')) : 'Grade this shape', r ? dzChNds(l).join(' / ') : '', tabs, body); };
+    if (GT && GT.length > 1) { const mixed = GT.some(x => (x.role || '') !== r); body += chNote(`Grading ${GT.length} shapes together${mixed ? ' (they differ now: a choice here sets them all)' : ''}. Their colours and shading stay each their own: pick one shape on its own (double-tap it) to change those.`); }
+    return chFrame((GT && GT.length > 1 ? `${GT.length} shapes: ` : '') + (r ? (solid ? 'Packing: solid colour' : CH_ROLES.find(x => x[0] === r)[1] + (r === 'shade' ? ': ' + CH_SHADE[S.tech || 'stipple'][0] : '')) : 'Grade this shape'), r ? dzChNds(l).join(' / ') : '', tabs, body); };
   /* A blend's colours: 2 to 10 stops, blended in order along the gradient. Each stop is a cap from the palette,
      or two caps mixed (sh.mixs keeps how). */
   const chStopsUI = (l) => { const S = l.sh, cs = S.cols || [], i = Math.min(chStop, cs.length - 1), m = S.mixs?.[i] || [cs[i]];
@@ -4797,10 +4842,12 @@ DZ.edit = async (id) => {
     if (d('chs') && l?.sh) { const [k, v] = d('chs').split(':'); if (k === 'grad' && v === 'paint' && l.sh.grad !== 'paint') { l.sh.map = dzChMapEnc(dzChBake(l.sh, chBox(l))); delete l.sh.preset; delete l.sh.mapN; delete l.sh.raw; } l.sh[k] = k === 'rev' ? v === '1' : v;
       if (k === 'tech') { l.nd = CH_SHADE[v][2]; delete l.nds; chDefN(l); if (v === 'blend' && !l.sh.cols) { l.sh.cols = [chCaps()[2] || chCaps()[0], chCaps()[3] || chCaps()[0]]; chStopFix(l.sh); } }
       changed(true); drawCtx(); return chRe(); }
-    if (d('chr') === 'shade' && l) { l.role = 'shade'; l.sh ||= { tech: 'stipple', grad: 'linear', ang: 90, dark: 0.85, light: 0.05, bias: 1 }; l.nd = CH_SHADE[l.sh.tech][2]; chDefN(l); changed(true); drawCtx(); return chRe(); }
-    if (d('chr') != null && l) { const r = d('chr'); if (r) { l.role = r; if (!(r === 'pack' ? CH_PACKERS : CH_LINERS).includes(l.nd)) l.nd = r === 'pack' ? '7RS' : r === 'outline' ? '5RL' : '3RL'; if (r === 'pack') { l.mixOf ||= [chCaps()[0]]; chInk(l); } chDefN(l); } else { delete l.role; delete l.nd; }
-      changed(true); drawCtx(); return chRe(); }
-    if (d('chn') && l) { const n = d('chn'); if (l.role === 'pack' || l.role === 'shade') { const A = dzChNds(l), on = A.includes(n), B = on ? A.filter(x => x !== n) : [...A, n]; if (!B.length) return toast('Allow at least one needle.', 1600); l.nds = B; l.nd = B[0]; } else { l.nd = n; delete l.nds; } changed(true); drawCtx(); return chRe(); }
+    if (d('chr') != null || d('chn')) { const GT = gradeTargets(); if (!GT.length) return; const first = GT[0];
+      for (const m of GT) {
+        if (d('chr') === 'shade') { m.role = 'shade'; m.sh ||= { tech: 'stipple', grad: 'linear', ang: 90, dark: 0.85, light: 0.05, bias: 1 }; m.nd = CH_SHADE[m.sh.tech][2]; chDefN(m); }
+        else if (d('chr') != null) { const r = d('chr'); if (r) { m.role = r; if (!(r === 'pack' ? CH_PACKERS : CH_LINERS).includes(m.nd)) m.nd = r === 'pack' ? '7RS' : r === 'outline' ? '5RL' : '3RL'; if (r === 'pack') { m.mixOf ||= [chCaps()[0]]; chInk(m); } chDefN(m); } else { delete m.role; delete m.nd; } }
+        else { const n = d('chn'); if (m.role === 'pack' || m.role === 'shade') { const A = dzChNds(first), on = A.includes(n), B = on ? A.filter(x => x !== n) : [...A, n]; if (!B.length) return toast('Allow at least one needle.', 1600); m.nds = B; m.nd = B[0]; } else { m.nd = n; delete m.nds; } } }
+      changed(true); drawCtx(); drawSide(); return chRe(); }
     if (d('chca') && l) { l.mixOf = [d('chca'), l.mixOf?.[1]]; chInk(l); changed(true); return chRe(); }
     if (d('chcb') != null && l) { const b = d('chcb'); l.mixOf = [l.mixOf?.[0] || chCaps()[0], b || undefined]; chInk(l); changed(true); return chRe(); }
     if (t.closest('[data-chsetup]')) { closePop(); return chSetup(); }
