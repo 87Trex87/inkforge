@@ -5572,18 +5572,18 @@ BT.mount = () => {
       try { BT.src = await createImageBitmap(f); BT.name = f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_') || 'band'; BT.mount(); } catch { toast('Could not read that image.'); } };
     return;
   }
-  el.innerHTML = `<div class="bt">
+  el.innerHTML = `<div class="st-strip bt-strip">
+      <label class="btn">Change image<input type="file" accept="image/png,image/*" id="bt-file" hidden></label>
+      <i class="st-sep"></i>
+      <button class="btn" id="bt-png">Save PNG</button>
+      <button class="btn" id="bt-share">Share</button>
+      <button class="btn primary" id="bt-st">Make a stencil</button>
+    </div><div class="bt">
     <div class="bt-stage"><canvas id="bt-cv"></canvas></div>
     <div class="card bt-ctl">
       <label class="dz-sl"><span>Bend <b id="bt-l">${btLabel(BT.deg)}</b></span><input type="range" id="bt-deg" min="-360" max="360" step="1" value="${BT.deg}"></label>
       <div class="bt-fine">${[[-5, '−5'], [-1, '−1'], [0, 'Straight'], [1, '+1'], [5, '+5']].map(([d, l]) => `<button class="btn small" data-d="${d}">${l}</button>`).join('')}</div>
       <p class="muted" style="font-size:12px;margin:8px 0 12px">For bands, a slight bend (around 10° to 40°) lets the ends meet flush on a limb that gets narrower. Up for a forearm band worn wrist-down, down the other way round. The middle keeps its length.</p>
-      <div class="bt-acts">
-        <label class="btn">Change image<input type="file" accept="image/png,image/*" id="bt-file" hidden></label>
-        <button class="btn" id="bt-png">Save PNG</button>
-        <button class="btn" id="bt-share">Share</button>
-        <button class="btn primary" id="bt-st">Make a stencil</button>
-      </div>
       <div class="muted" id="bt-size" style="font-size:11px;margin-top:8px"></div>
     </div></div>`;
   const cv = $('#bt-cv'), stage = el.querySelector('.bt-stage');
@@ -5665,7 +5665,15 @@ SP.mount = () => {
   }
   const draw = () => {
     const H = spHcm(), [mw, mh] = spMax(), ps = spPieces(), pages = ps.length;
-    el.innerHTML = `<div class="sp">
+    el.innerHTML = `<div class="st-strip sp-strip">
+      <label class="btn">Another image<input type="file" accept="image/*" id="sp-file" hidden></label>
+      <i class="st-sep"></i>
+      <span class="sp-sl">Columns</span><div class="sp-step"><button data-nx="-1" aria-label="Fewer columns">−</button><b>${SP.xs.length + 1}</b><button data-nx="1" aria-label="More columns">+</button></div>
+      <span class="sp-sl">Rows</span><div class="sp-step"><button data-ny="-1" aria-label="Fewer rows">−</button><b>${SP.ys.length + 1}</b><button data-ny="1" aria-label="More rows">+</button></div>
+      <button class="btn" id="sp-even" data-tip="Put the cuts back to even spacing">Space evenly</button>
+      <i class="st-sep"></i>
+      <button class="btn" id="sp-save" data-tip="Save every piece as a PNG to this device">Save pieces</button><button class="btn" id="sp-share">Share</button><button class="btn primary" id="sp-print">Print ${pages} page${pages > 1 ? 's' : ''}</button>
+    </div><div class="sp">
       <div class="sp-stage" id="sp-stage"><div class="sp-img" id="sp-img"><canvas id="sp-cv"></canvas><div id="sp-ov"></div></div></div>
       <div class="card sp-ctl">
         <div class="two">
@@ -5674,20 +5682,14 @@ SP.mount = () => {
           <label class="field"><span>Height</span><div class="unit-in"><input class="in" value="${H.toFixed(1)}" disabled><em>cm</em></div></label>
         </div>
         <div class="lbl">Paper</div>
-        <div class="row" style="gap:6px;flex-wrap:nowrap">
+        <div class="row" style="gap:6px;flex-wrap:wrap">
           <div class="seg" style="flex:1">${Object.keys(SP_PAPER).map(k => `<button data-paper="${k}" class="${SP.paper === k ? 'on' : ''}" style="flex:1">${k}</button>`).join('')}</div>
           <div class="seg">${[['0', 'Portrait'], ['1', 'Landscape']].map(([k, l]) => `<button data-land="${k}" class="${+SP.land === +k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <div class="lbl" style="margin-top:10px">Overlap for taping ${help('A strip of the design printed on both pieces, so you can line them up. 0 = pieces just touch.')}</div>
         <div class="seg">${[0, 0.5, 1, 2].map(v => `<button data-ov="${v}" class="${SP.ov === v ? 'on' : ''}" style="flex:1">${v ? v + ' cm' : 'None'}</button>`).join('')}</div>
-        <div class="sp-grid">
-          <div><span class="lbl">Columns</span><div class="sp-step"><button data-nx="-1">−</button><b>${SP.xs.length + 1}</b><button data-nx="1">+</button></div></div>
-          <div><span class="lbl">Rows</span><div class="sp-step"><button data-ny="-1">−</button><b>${SP.ys.length + 1}</b><button data-ny="1">+</button></div></div>
-        </div>
         <p class="muted" style="font-size:12px;margin:8px 0">${pages} page${pages > 1 ? 's' : ''} on ${SP.paper} ${SP.land ? 'landscape' : 'portrait'} (up to ${mw.toFixed(1)} × ${mh.toFixed(1)} cm each).
-          Drag the dashed cut lines to move a cut, for example away from a face or fine detail. <button class="link" id="sp-even">Space evenly</button>
+          Drag the dashed cut lines to move a cut, for example away from a face or fine detail.
           ${SP.src.width / SP.wcm * 2.54 < 120 ? `<br><b style="color:var(--amber, #f0c75e)">At ${SP.wcm} cm this picture prints at about ${Math.round(SP.src.width / SP.wcm * 2.54)} dpi, so lines may look soft or stepped.</b> A larger picture prints sharper.` : ''}</p>
-        <div class="row" style="gap:6px"><button class="btn" id="sp-save" data-tip="Save every piece as a PNG to this device">Save pieces</button><button class="btn" id="sp-share">Share</button><button class="btn primary" id="sp-print" style="flex:1">Print ${pages} page${pages > 1 ? 's' : ''}</button></div>
-        <label class="btn small" style="margin-top:10px">Another image<input type="file" accept="image/*" id="sp-file" hidden></label>
       </div></div>`;
     lay(); bind();
   };
@@ -5710,7 +5712,7 @@ SP.mount = () => {
         return `<em class="sp-lab ${bad ? 'bad' : ''}" style="left:${(p.x0 + p.x1) / 2 * pxcm}px;top:${(p.y0 + p.y1) / 2 * pxcm}px">${p.label}<small>${(p.x1 - p.x0).toFixed(1)} × ${(p.y1 - p.y0).toFixed(1)} cm</small></em>`; }).join('');
   };
   const bind = () => {
-    const ctl = el.querySelector('.sp-ctl');
+    const ctl = el;   /* the strip and the panel */
     ctl.onclick = (e) => {
       const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
       if (d('paper')) { SP.paper = d('paper'); spReset(); return draw(); }

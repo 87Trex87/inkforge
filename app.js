@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 467;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 468;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2041,10 +2041,11 @@ const VIEWS = {
   reel: {
     title: () => 'Reel',
     render: () => `
-      <div class="reel-top"><button class="btn icon-btn" data-go="reels" aria-label="All reels" data-tip="All reels"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <div class="reel-top st-strip"><button class="btn icon-btn" data-go="reels" aria-label="All reels" data-tip="All reels"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
         <input class="in" id="reel-name" aria-label="Reel name" placeholder="Reel name">
         <button class="btn icon-btn" id="reel-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
-        <button class="btn icon-btn" id="reel-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button></div>
+        <button class="btn icon-btn" id="reel-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+        <i class="st-sep"></i><button class="btn primary" id="reel-export">Export reel</button></div>
       <div class="reel-wrap">
         <div class="reel-stage">
           <canvas id="reel-cv" width="${PREVIEW_W}" height="${PREVIEW_H}"></canvas>
@@ -2062,7 +2063,6 @@ const VIEWS = {
             ${[['edit', 'Edit'], ['style', 'Style'], ['music', 'Music'], ['tpl', 'Templates']].map(([k, l]) => `<button data-t="${k}" class="${R.tab === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}
           </div>
           <div id="reel-panel"></div>
-          <button class="btn primary" id="reel-export" style="width:100%;margin:14px 0 24px">Export reel</button>
         </div>
       </div>`,
     async mount(id) {
@@ -2100,39 +2100,38 @@ const VIEWS = {
   stencil: {
     title: () => 'Stencil',
     render: () => ST.src ? `
-      <div class="st-stage">
-        <div class="st-view" id="st-view"><canvas id="st-canvas"></canvas>
-          <button class="btn small st-fit" id="st-fit" hidden data-tip="Back to the whole image (or double-tap)">Fit</button>
-          <div class="st-crop" id="st-crop" hidden><div class="st-crop-box" id="st-crop-box">${['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'].map(h => `<i data-h="${h}"></i>`).join('')}</div>
-            <div class="st-crop-bar"><button class="btn small" data-cr="auto" data-tip="Crop to where the stencil starts">Auto</button><button class="btn small" data-cr="all">Whole</button><button class="btn small" data-cr="no">Cancel</button><button class="btn small primary" data-cr="ok">Done</button></div></div></div>
-        <div class="st-tools">
+      <div class="st-strip">
           <button class="btn icon-btn" id="st-orig" data-tip="Hold to see the original photo" aria-label="Hold for original"><svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
           <button class="btn icon-btn" id="st-rot" data-tip="Rotate 90°" aria-label="Rotate"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
           <button class="btn icon-btn ${ST.crop ? 'on' : ''}" id="st-cropbtn" data-tip="Crop" aria-label="Crop"><svg viewBox="0 0 24 24"><path d="M6 2v16h16M2 6h16v16"/></svg></button>
           <button class="btn icon-btn" id="st-autocrop" data-tip="Auto crop: trim to where the stencil starts" aria-label="Auto crop"><svg viewBox="0 0 24 24"><path d="M6 2v16h16M2 6h16v16"/><path d="M10 10l4 4M14 10l-4 4" stroke-width="1.6"/></svg></button>
           <button class="btn icon-btn ${ST.p.flip ? 'on' : ''}" id="st-flip" data-tip="Mirror (for hand transfers)" aria-label="Mirror"><svg viewBox="0 0 24 24"><path d="M12 3v18M8 7l-5 5 5 5V7zM16 7l5 5-5 5V7z"/></svg></button>
           <span class="ink-dots" id="st-ink">${ST_INKS.map(([c, n]) => `<button class="ink ${ST.p.ink === c ? 'on' : ''}" data-c="${c}" style="background:${c}" data-tip="${n} ink" aria-label="${n}"></button>`).join('')}</span>
-          <button class="btn icon-btn" id="st-undo" data-tip="Undo (Ctrl+Z)" aria-label="Undo" style="margin-left:auto" disabled><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
+          <button class="btn icon-btn" id="st-undo" data-tip="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
           <button class="btn icon-btn" id="st-redo" data-tip="Redo (Ctrl+Y)" aria-label="Redo" disabled><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
           <button class="btn icon-btn" id="st-new" data-tip="Start with a new photo" aria-label="New photo"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
-        </div>
+          <i class="st-sep"></i>
+          <label class="st-cm" data-tip="Print width: real size on paper in centimetres. Height follows the image proportions."><span>Width</span>
+            <input class="in" id="st-cm" type="number" inputmode="decimal" min="1" max="300" step="0.5" value="${ST.cm}"><span>cm</span></label>
+          <button class="btn" id="st-print">Print</button>
+          <button class="btn" id="st-split" data-tip="Too big for one sheet? Split it over several pages to tape together">Split</button>
+          <button class="btn" id="st-keep" data-tip="Keep the stencil and the picture it was made from in Portfolio › Stencils">Keep</button>
+          ${ST.ret ? '<button class="btn primary" id="st-chal" data-tip="Put this stencil on the challenge, lined up with the picture it was made from">Use in the challenge</button>' : ''}
+          <button class="btn" id="st-sim" data-tip="Open a new piece in the tattoo simulator with this stencil on its stencil layer, at its print size">Simulator</button>
+          <button class="btn" id="st-share">Share</button>
+          <button class="btn primary" id="st-save" data-tip="Save the stencil to this device">Save</button>
+      </div>
+      <div class="st-stage">
+        <div class="st-view" id="st-view"><canvas id="st-canvas"></canvas>
+          <button class="btn small st-fit" id="st-fit" hidden data-tip="Back to the whole image (or double-tap)">Fit</button>
+          <div class="st-crop" id="st-crop" hidden><div class="st-crop-box" id="st-crop-box">${['nw', 'ne', 'sw', 'se', 'n', 's', 'w', 'e'].map(h => `<i data-h="${h}"></i>`).join('')}</div>
+            <div class="st-crop-bar"><button class="btn small" data-cr="auto" data-tip="Crop to where the stencil starts">Auto</button><button class="btn small" data-cr="all">Whole</button><button class="btn small" data-cr="no">Cancel</button><button class="btn small primary" data-cr="ok">Done</button></div></div></div>
       </div>
       <div class="card st-controls">
         <div class="seg" id="st-mode" style="margin-bottom:12px">
           ${[['lines', 'Lines'], ['sketch', 'Lines + shade'], ['solid', 'Solid']].map(([k, l]) => `<button data-m="${k}" class="${ST.p.mode === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}
         </div>
         <div id="st-sliders"></div>
-        <div class="row st-export" style="flex-wrap:wrap">
-          <label class="field" style="margin:0;flex:0 0 120px"><span>Print width ${help('Real size on paper in centimetres. Height follows the image proportions.')}</span>
-            <input class="in" id="st-cm" type="number" inputmode="decimal" min="1" max="300" step="0.5" value="${ST.cm}"></label>
-          <button class="btn" id="st-print" style="align-self:flex-end">Print</button>
-          <button class="btn" id="st-split" style="align-self:flex-end" data-tip="Too big for one sheet? Split it over several pages to tape together">Split</button>
-          <button class="btn" id="st-keep" style="align-self:flex-end" data-tip="Keep the stencil and the picture it was made from in Portfolio › Stencils">Keep</button>
-          ${ST.ret ? '<button class="btn primary" id="st-chal" style="align-self:flex-end" data-tip="Put this stencil on the challenge, lined up with the picture it was made from">Use in the challenge</button>' : ''}
-          <button class="btn" id="st-sim" style="align-self:flex-end" data-tip="Open a new piece in the tattoo simulator with this stencil on its stencil layer, at its print size">Simulator</button>
-          <button class="btn" id="st-share" style="align-self:flex-end">Share</button>
-          <button class="btn primary" id="st-save" style="align-self:flex-end;flex:1">Save to device</button>
-        </div>
       </div>` : `
       <label class="card st-pick">
         <div class="empty-ico">${ICON.stencil}</div>
@@ -8019,6 +8018,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 468, when: '2026-11-17T22:00', added: ['Stencil maker, bend tool, split for printing and reel maker: every button now sits in one strip along the top, and each screen fits a landscape tablet or phone without scrolling.', 'Stencil maker: Save to device is now just Save.'], test: ['Turn your device sideways and open each of the four tools: everything should fit on one screen.'] },
   { build: 467, when: '2026-11-17T20:00', added: ['Your own challenges: zones of the same type now share one set of score meters and one line in the brief, instead of one per zone.', 'A challenge with colour in it now starts on the Inks tray, even with grey wash zones. Grey wash is still in the Inks menu.'], test: ['Play a challenge with several shading zones and check the score shows one set of meters.'] },
   { build: 466, when: '2026-11-17T19:10', added: ['Challenge maker: Stencil from the design (in the brief) makes the stencil from every outline and detail line you drew, not just the outline. Fine-tune it in the stencil maker, then press Use in the challenge.'], test: ['Make a challenge with an outline and detail lines, press Stencil from the design, then Use in the challenge, and play it.'] },
   { build: 464, when: '2026-11-17T18:00', added: ['Design studio: share any design, challenges too, as an InkForge design file (Save as, then InkForge design file). Its pictures and fonts go with it.', 'Import, next to New design, opens one of those files in another workspace so you can keep editing it.'], test: ['Save a design with a picture as an InkForge design file, then Import it and check it opens and edits as before.'] },
