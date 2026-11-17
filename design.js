@@ -1612,7 +1612,7 @@ DZ.list = async () => {
   const all = rows.map((r, i) => { const sub = r.kind === 'page' ? (JSON.parse(r.doc || '{}').paper || 'Blank page').split(',')[0] + ' page' : DZ_KINDS[r.kind]?.label || '';
     return { ...r, url: urls[i], sub, kind: r.kind === 'page' ? 'Page' : DZ_KINDS[r.kind]?.label || r.kind, t: r.updated_at }; }), shown = Lib.apply('designs', all);
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Vouchers, business cards, flyers and posts with your studio's details.</p>
-      <button class="btn primary" id="dz-new">+ New design</button></div>
+      <button class="btn" id="dz-imp" data-tip="Open an InkForge design file from another workspace">Import</button><button class="btn primary" id="dz-new">+ New design</button></div>
     ${rows.length ? Lib.bar('designs', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('designs', r.id)}
         <div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
         <div class="dz-meta"><b>${esc(r.name)}</b><span class="muted">${esc(r.sub)}</span></div>
@@ -1626,6 +1626,7 @@ DZ.list = async () => {
     if (await Lib.click(e, 'designs', DZ.list)) return;
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('#dz-new')) return dzPicker();
+    if (t.closest('#dz-imp')) { const nid = await dzUnpackDesign(); if (nid) location.hash = 'design/' + nid; return; }
     if (d('del')) {
       const r = await DB.one('SELECT name, thumb_ref FROM designs WHERE id = ?', [+d('del')]);
       if (!r || !await ask(`Delete "${r.name}"?`)) return;
@@ -5397,6 +5398,51 @@ function dzExport(doc, name) {
   });
   document.body.appendChild(o); draw();
 }
+/* Design files (.inkdesign): a design with every media file it names (pictures, stencils, its reference pictures and
+   any font of your own it uses), as JSON, so it opens in another workspace and keeps editing as it was. */
+const DZ_MEDIA_RE = /[0-9a-f]{32}\.[a-z0-9]{2,5}/g;
+async function dzPackDesign(id, name) {
+  const r = await DB.one('SELECT * FROM designs WHERE id = ?', [id]); if (!r) return;
+  toast('Preparing…');
+  const doc = JSON.parse(r.doc), refPics = Settings.get('dz_refs_' + id, '');
+  const used = new Set(doc.layers.flatMap(l => [l.font]).filter(Boolean)), fonts = DZF.custom().filter(f => used.has(f.name));
+  const names = new Set([...(r.doc.match(DZ_MEDIA_RE) || []), ...(refPics.match(DZ_MEDIA_RE) || []), ...fonts.map(f => f.ref),
+    ...(await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id])).map(x => x.ref)]);
+  if (r.thumb_ref) names.add(r.thumb_ref);
+  const files = {}, dir = await Media.dir();
+  for (const n of names) { try { const f = await (await dir.getFileHandle(n)).getFile();
+    files[n] = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(f); }); } catch {} }
+  const out = { inkforge: 'design', v: 1, name: name || r.name, kind: r.kind, doc: r.doc, thumb: r.thumb_ref || '', refPics, fonts, files };
+  const f = new File([JSON.stringify(out)], (name || r.name || 'design').replace(/[^\w-]+/g, '_') + '.inkdesign', { type: 'application/json' });
+  try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title: out.name }); return; } } catch (err) { if (err.name === 'AbortError') return; }
+  const l = document.createElement('a'); l.href = URL.createObjectURL(f); l.download = f.name; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000);
+  toast('Saved ' + f.name + ' to your downloads.', 3000);
+}
+// Opens a design file as a new design in this workspace. Resolves the new id.
+function dzUnpackDesign() {
+  return new Promise((res) => {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = '.inkdesign,application/json';
+    i.onchange = async () => { const f = i.files[0]; if (!f) return res(null);
+      let P; try { P = JSON.parse(await f.text()); } catch { P = null; }
+      if (!P || P.inkforge !== 'design' || !P.doc) { toast('That is not an InkForge design file.', 3500); return res(null); }
+      toast('Opening…');
+      let docS = P.doc, refPics = P.refPics || '', thumb = P.thumb || '';
+      const swap = (a, b) => { if (a === b) return; docS = docS.split(a).join(b); refPics = refPics.split(a).join(b); if (thumb === a) thumb = b; };
+      const fontRef = {};
+      for (const [n, b64] of Object.entries(P.files || {})) {
+        const bin = atob(b64), u = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+        const nn = await Media.save(new Blob([u]), n.split('.').pop()); swap(n, nn); fontRef[n] = nn; }
+      if ((P.fonts || []).length) { const list = DZF.custom();
+        for (const ft of P.fonts) if (!list.some(x => x.name === ft.name)) list.push({ name: ft.name, ref: fontRef[ft.ref] || ft.ref });
+        await Settings.set('dz_fonts', JSON.stringify(list)); }
+      await DB.run('INSERT INTO designs (name, kind, doc, thumb_ref) VALUES (?, ?, ?, ?)', [P.name || 'Imported design', P.kind, docS, thumb || null]);
+      const nid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+      for (const n of new Set([...(docS.match(DZ_MEDIA_RE) || [])])) if (n !== thumb) await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [nid, n]);
+      if (refPics) await Settings.set('dz_refs_' + nid, refPics);
+      toast(`Opened "${P.name || 'Imported design'}".`, 2500); res(nid); };
+    i.click();
+  });
+}
 /* Print any design, background and all: both sides of a two-sided one, forms blank to fill by hand, cards one to a
    page. The print screen's Save as PDF makes a PDF of it. */
 async function dzPrintDoc(doc) { const kind = DZ_KINDS[doc.kind]; if (kind.form) return ffPrintBlank(doc); toast('Preparing…');
@@ -5411,13 +5457,15 @@ function dzSaveAs(doc, name, did) { return new Promise((res) => { const o = docu
     <div class="dz-ex"><button data-sa="png"><b>Picture (PNG)</b><small>Full quality${kind.social ? '' : `, ${doc.dpi || 300} dpi`}: for printing elsewhere or posting</small></button>
       <button data-sa="jpg"><b>Picture (JPG)</b><small>A smaller file, for sending</small></button>
       <button data-sa="pdf"><b>PDF</b><small>Opens the print screen: choose Save as PDF as the printer</small></button>
-      <button data-sa="copy"><b>A copy in the studio</b><small>Keep this one as it is and carry on with a copy under the name above</small></button></div>
+      <button data-sa="copy"><b>A copy in the studio</b><small>Keep this one as it is and carry on with a copy under the name above</small></button>
+      <button data-sa="ink"><b>InkForge design file</b><small>Everything in it, pictures and fonts too, to open in another workspace and keep editing</small></button></div>
     <button class="btn" data-sa="" style="width:100%;margin-top:12px">Cancel</button></div>`;
   o.onclick = async (e) => { const b = e.target.closest('[data-sa]'); if (!b && e.target !== o) return; const a = b?.dataset.sa, nm = o.querySelector('#sa-n').value.trim() || name; o.remove(); if (!a) return res(null);
     if (a === 'copy') { const r = await DB.one('SELECT * FROM designs WHERE id = ?', [did]); if (!r) return res(null);
       await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [nm === name ? name + ' (copy)' : nm, r.kind, r.doc]); const nid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
       await DB.run('INSERT INTO design_assets (design_id, ref) SELECT ?, ref FROM design_assets WHERE design_id = ?', [nid, did]); toast('Copy saved. You are now working on the copy.', 3000); return res(nid); }
     if (a === 'pdf') { res(null); return dzPrintDoc(doc); }
+    if (a === 'ink') { res(null); return dzPackDesign(did, nm); }
     toast('Preparing…'); const faces = [await dzCanvas(doc)]; if (doc.sides) faces.push(await dzCanvas(doc, 1, 'b')); const nmF = dzFaceNames(doc);
     for (let i = 0; i < faces.length; i++) { let c = faces[i]; if (a === 'jpg') { const w = document.createElement('canvas'); w.width = c.width; w.height = c.height; const g = w.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w.width, w.height); g.drawImage(c, 0, 0); c = w; }
       const blob = await new Promise(r => c.toBlob(r, a === 'jpg' ? 'image/jpeg' : 'image/png', 0.92)), l = document.createElement('a'); l.href = URL.createObjectURL(blob);
