@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 466;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 467;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8019,6 +8019,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 467, when: '2026-11-17T20:00', added: ['Your own challenges: zones of the same type now share one set of score meters and one line in the brief, instead of one per zone.', 'A challenge with colour in it now starts on the Inks tray, even with grey wash zones. Grey wash is still in the Inks menu.'], test: ['Play a challenge with several shading zones and check the score shows one set of meters.'] },
   { build: 466, when: '2026-11-17T19:10', added: ['Challenge maker: Stencil from the design (in the brief) makes the stencil from every outline and detail line you drew, not just the outline. Fine-tune it in the stencil maker, then press Use in the challenge.'], test: ['Make a challenge with an outline and detail lines, press Stencil from the design, then Use in the challenge, and play it.'] },
   { build: 464, when: '2026-11-17T18:00', added: ['Design studio: share any design, challenges too, as an InkForge design file (Save as, then InkForge design file). Its pictures and fonts go with it.', 'Import, next to New design, opens one of those files in another workspace so you can keep editing it.'], test: ['Save a design with a picture as an InkForge design file, then Import it and check it opens and edits as before.'] },
   { build: 462, when: '2026-11-17T16:00', added: ['Design studio: group layers (Ctrl G, Ctrl Shift G). Tap a member to pick the group, double-tap for one inside. In the challenge maker, Grade as… sets the role and needle for the whole group.', 'Pen: no longer joins onto strokes underneath. Tick Join open ends in the pen panel when you want to carry a path on or join one.'] },

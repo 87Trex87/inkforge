@@ -334,7 +334,11 @@ function dzChSpec(doc, title, did) {
   const shs = S.filter(l => l.role === 'shade');
   if (shs.length) { T.shades = shs.map(l => { const pts = dzChPts(l), bx = dzChBoxOf(pts) || [0, 0, 0, 0];
       const { raw, src, ...sh } = l.sh || {}; if (sh.stencil) (T.stencils ||= []).push(sh.stencil); return { pts, box: bx, nd: l.nd || CH_SHADE[sh.tech || 'stipple'][2], nds: dzChNds(l), ...sh }; });
-    T.needles = [...new Set([...T.needles, ...T.shades.flatMap(z => z.nds?.length ? z.nds : [z.nd])])]; T.cat = 'shade'; if (T.shades.some(z => z.tech === 'wash')) { T.wash = true; T.ink = 'wash'; } }
+    T.needles = [...new Set([...T.needles, ...T.shades.flatMap(z => z.nds?.length ? z.nds : [z.nd])])]; T.cat = 'shade';
+    /* Grey wash tray only when the piece is black and grey: colour in any zone or packing starts on the inks (Grey wash
+       stays in the Inks menu), and the piece counts as colour. */
+    const colour = !!pk || T.shades.some(z => z.tech === 'blend' || z.cols?.length);
+    if (T.shades.some(z => z.tech === 'wash') && !colour) { T.wash = true; T.ink = 'wash'; } }
   if (pk) { const bp = dzChBoxOf(dzChPts(pk)) || [0, 0, 0, 0], x0 = bp[0], y0 = bp[1], x1 = bp[0] + bp[2], y1 = bp[1] + bp[3];
     T.pack = [x0, y0, x1 - x0, y1 - y0].map(v => Math.round(v * 10) / 10); T.packNeedle = pk.nd || '7RS'; T.packNeedles = dzChNds(pk).length ? dzChNds(pk) : [T.packNeedle]; T.packPts = dzChPts(pk);
     const ink = pk.ink || '#141414'; T.packInk = ink;
@@ -343,7 +347,8 @@ function dzChSpec(doc, title, did) {
   const own = C.text?.trim() && !(C.base && C.text === C.baseText && C.sig !== dzChSig(doc));   /* a lesson's own words go once its shapes or needles change; the artist's own words stay */
   const lead = C.style ? `A ${C.style.toLowerCase()} piece in ${{ black: 'black', bg: 'black and grey', colour: 'colour' }[C.inkT] || 'ink'}. ` : '';
   T.text = (own ? C.text.trim() : '') || lead + (outs.length ? `Line the ${what} with the ${nd}${dets.length ? `, and the detail lines with the ${[...new Set(dets.map(l => l.nd || nd))].join(' and ')}` : ''}.` : 'No linework in this one.')
-    + (shs.length ? ' ' + shs.map(l => { const z = l.sh || {}; return `${z.tech === 'blend' ? 'Blend' : 'Shade'} the ${CH_SHADE[z.tech || 'stipple'][0].toLowerCase()} zone with ${dzChOr(dzChNds(l))}${z.tech === 'blend' ? `, through its ${(z.cols || []).length} colours in order` : z.grad === 'flat' ? ', one even tone' : ', dark to light like the example'}.`; }).join(' ') : '')
+    + (shs.length ? ' ' + (() => { const M = new Map(); for (const l of shs) { const z = l.sh || {}, k = `${z.tech === 'blend' ? 'Blend' : 'Shade'}${CH_SHADE[z.tech || 'stipple'][0].toLowerCase()} with ${dzChOr(dzChNds(l))}${z.tech === 'blend' ? `, through its ${(z.cols || []).length} colours in order` : z.grad === 'flat' ? ', one even tone' : ', dark to light like the example'}.`; M.set(k, (M.get(k) || 0) + 1); }   /* zones asked the same way: one sentence */
+      return [...M].map(([k, n]) => { const [v, t, r] = k.split(''); return `${v} the ${n > 1 ? n + ' ' + t + ' zones' : t + ' zone'}${n > 1 ? r.replace(', dark to light like the example', ', each dark to light like the example').replace(', one even tone', ', each one even tone').replace(', through its', ', each through its') : r}`; }).join(' '); })() : '')
     + (pk ? ` Then change to ${dzChOr(T.packNeedles)} and pack it solid${pk.mixOf?.[1] ? ', in a colour mixed from two caps like the example' : (pk.ink || '#141414') === '#141414' ? ' black' : ' in the colour of the example'}.` : '') + ' Let it settle, then press Done.';
   return T; }
 async function dzSavePattern(cv, title, toDevice) {

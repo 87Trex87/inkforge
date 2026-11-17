@@ -4018,7 +4018,13 @@ TT.open = async (el, id) => {
       const pq = cov * (0.25 * sat + 0.75 * cons) * (1 - 0.6 * sp);
       parts.push([F.pack, pq], [F.colour, col], [F.heal, heal], [F.tech, tech * (0.5 + 0.5 * ctrl)]);
       Object.assign(out, { packing: Math.round(pq * 100), saturation: Math.round(sat * 100), coverage: Math.round(cov * 100), consistency: Math.round(cons * 100), colour: Math.round(col * 100), healing: Math.round(heal * 100), technique: Math.round(tech * 100), control: Math.round(ctrl * 100), spill: Math.round(sp * 100), yourColour: ttToHex(avg.map(v => v / 255)) }); }
-    (T.shades || []).forEach((Z, zi) => { const z = shadeZone(Z, T), nm = T.shades.length > 1 ? ' ' + (zi + 1) : ''; parts.push([F.shade ?? 1, z.score / 100]); for (const [k, v] of Object.entries(z)) out[(k === 'score' ? 'shading' : k) + nm] = v; });
+    /* Zones of the same type are judged one by one but shown as one set of meters (their average); a challenge mixing
+       types gets one set per type, named by it. */
+    const byT = {}; (T.shades || []).forEach((Z) => { const z = shadeZone(Z, T); parts.push([F.shade ?? 1, z.score / 100]); (byT[Z.tech || 'stipple'] ||= []).push(z); });
+    const tks = Object.keys(byT), TN = { stipple: 'stipple', whip: 'whip', wash: 'wash', blend: 'blend' };
+    for (const tk of tks) { const zs = byT[tk], nm = tks.length > 1 ? ' (' + (TN[tk] || tk) + ')' : '';
+      for (const k of [...new Set(zs.flatMap(z => Object.keys(z)))]) { const vs = zs.map(z => z[k]).filter(v => v != null), num = vs.every(v => typeof v === 'number');
+        out[(k === 'score' ? 'shading' : k) + nm] = num ? Math.round(vs.reduce((a, b) => a + b, 0) / vs.length) : vs[0]; } }
     const zs = [...(T.packPts ? [T.packPts] : []), ...(T.shades || []).map(z => z.pts)], zFill = zs.length ? maskOf(zonePath(zs.flat()), true) : null, zGrow = zs.length ? maskOf(zonePath(zs.flat()), false, 2.4) : null, lBand = hasL ? maskOf(T.path, false, 3.2) : null;
     let inkN = 0, outN = 0; for (let i = 3; i < (zFill || lBand || []).length; i += 8) { if (densAt(i - 3) <= 0.2) continue; inkN++; if (!(zFill && (zFill[i] > 128 || zGrow[i] > 128)) && !(lBand && lBand[i] > 128)) outN++; }
     const spl = outN / Math.max(1, inkN); out.mess = Math.round(spl * 100);
