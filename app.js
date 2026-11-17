@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 464;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 465;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7430,9 +7430,10 @@ async function stToChallenge() {
   const c = new OffscreenCanvas(ST.w, ST.h); c.getContext('2d').putImageData(img, 0, 0);
   const ref = await Media.save(await c.convertToBlob({ type: 'image/png' }), 'png');
   const row = await DB.one('SELECT doc FROM designs WHERE id = ?', [R.id]); if (!row) return toast('That challenge is gone.');
-  const doc = JSON.parse(row.doc), z = doc.layers.find(l => l.id === R.layer); if (!z?.sh) return toast('That value study is gone.');
-  const b = R.box, k = ST.crop || { x: 0, y: 0, w: 1, h: 1 }, old = z.sh.stencil?.ref;
-  z.sh.stencil = { ref, box: [b[0] + k.x * b[2], b[1] + k.y * b[3], k.w * b[2], k.h * b[3]].map(v => Math.round(v * 100) / 100) };
+  const doc = JSON.parse(row.doc), z = R.layer == null ? (doc.chal ||= {}) : doc.layers.find(l => l.id === R.layer)?.sh; if (!z) return toast('That value study is gone.');   /* no layer: the whole challenge's stencil */
+  if (R.layer == null) z.showSten = true;
+  const b = R.box, k = ST.crop || { x: 0, y: 0, w: 1, h: 1 }, old = z.stencil?.ref;
+  z.stencil = { ref, box: [b[0] + k.x * b[2], b[1] + k.y * b[3], k.w * b[2], k.h * b[3]].map(v => Math.round(v * 100) / 100) };
   await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(doc), R.id]);
   await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [R.id, ref]);
   if (old && old !== ref) { await DB.run('DELETE FROM design_assets WHERE design_id = ? AND ref = ?', [R.id, old]); await Media.release(old); }   /* the same stencil again has the same file name */
@@ -8017,6 +8018,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
 /* What's new: a stack on the home screen of the latest builds, newest first, with things to test. Add an entry to the top
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
+  { build: 465, when: '2026-11-17T19:00', added: ['Challenge maker: Stencil from the design (in the brief) makes the stencil from every outline and detail line you drew, not just the outline. Fine-tune it in the stencil maker, then press Use in the challenge.'], test: ['Make a challenge with an outline and detail lines, press Stencil from the design, then Use in the challenge, and play it.'] },
 const NEWS = [
   { build: 464, when: '2026-11-17T18:00', added: ['Design studio: share any design, challenges too, as an InkForge design file (Save as, then InkForge design file). Its pictures and fonts go with it.', 'Import, next to New design, opens one of those files in another workspace so you can keep editing it.'], test: ['Save a design with a picture as an InkForge design file, then Import it and check it opens and edits as before.'] },
   { build: 462, when: '2026-11-17T16:00', added: ['Design studio: group layers (Ctrl G, Ctrl Shift G). Tap a member to pick the group, double-tap for one inside. In the challenge maker, Grade as… sets the role and needle for the whole group.', 'Pen: no longer joins onto strokes underneath. Tick Join open ends in the pen panel when you want to carry a path on or join one.'] },

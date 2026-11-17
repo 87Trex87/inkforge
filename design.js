@@ -4460,7 +4460,7 @@ DZ.edit = async (id) => {
   const chFrame = (title, sub, tabs, body, foot = '') => `<div class="dz-chhead"><b>${title}</b>${sub ? `<span>${sub}</span>` : ''}</div>${tabs}<div class="dz-chbody">${body}</div>${foot ? `<div class="dz-chfoot">${foot}</div>` : ''}`;
   const chSetMenu = () => { const C = doc.chal, S = doc.layers.filter(l => l.t === 'shape' && l.role), n = (r) => S.filter(l => l.role === r).length, lj = C.base && C.lessonJudge !== false && C.sig === dzChSig(doc);
     const tabs = chTabs('set', [['brief', 'Brief'], ['pal', 'Palette'], ['judge', 'Judging']]);
-    const body = chTab.set === 'brief' ? `<div class="dz-gk" style="grid-template-columns:1fr 1fr;margin-bottom:6px"><button data-chsetup>Setup…</button><button data-chtrace>Trace a picture…</button><button data-charea class="${C.area && C.showArea !== false ? 'on' : ''}" ${C.area ? '' : 'disabled'}>Tattoo area</button>${(doc.chal?.stencil || doc.layers.some(o => o.sh?.stencil)) ? `<button data-chstshow class="${C.showSten !== false ? 'on' : ''}" style="grid-column:span 2">Stencil</button>` : ''}</div>${(doc.chal?.stencil || doc.layers.some(o => o.sh?.stencil)) ? chNote('<b>Black</b>: lines that are judged (Outline or Detail), at the width their needle makes. <b>Faint purple</b>: the stencil, a guide for the shading only.') : ''}<textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
+    const body = chTab.set === 'brief' ? `<div class="dz-gk" style="grid-template-columns:1fr 1fr;margin-bottom:6px"><button data-chsetup>Setup…</button><button data-chtrace>Trace a picture…</button><button data-chstall style="grid-column:span 2" data-tip="Every line of the design, outline and detail, as the stencil">Stencil from the design…</button><button data-charea class="${C.area && C.showArea !== false ? 'on' : ''}" ${C.area ? '' : 'disabled'}>Tattoo area</button>${(doc.chal?.stencil || doc.layers.some(o => o.sh?.stencil)) ? `<button data-chstshow class="${C.showSten !== false ? 'on' : ''}" style="grid-column:span 2">Stencil</button>` : ''}</div>${(doc.chal?.stencil || doc.layers.some(o => o.sh?.stencil)) ? chNote('<b>Black</b>: lines that are judged (Outline or Detail), at the width their needle makes. <b>Faint purple</b>: the stencil, a guide for the shading only.') : ''}<textarea class="in" data-chtext rows="6" style="width:100%;font-size:12.5px" placeholder="Instructions for the artist. Leave empty to have them written from the shapes.">${esc(C.text || '')}</textarea>`
         + chNote(doc.layers.some(l => l.t === 'text' && l.role === 'letter') ? 'Lettering: type your word on the Lettering layer. It plays in the same script as lesson 3-1, at the size and place shown here, and is judged the same way.' : `${n('outline')} outline, ${n('detail')} detail line${n('detail') === 1 ? '' : 's'}, ${n('pack')} packing, ${n('shade')} shading. Select a shape and press Grade as in the strip to give it a role.`)
       : chTab.set === 'pal' ? `<div class="dz-chpals">${chPals().map(p => `<button data-chpal="${esc(p.id)}" class="${C.pal === p.id ? 'on' : ''}"><span>${p.caps.map(c => `<i style="background:${c.c}"></i>`).join('')}</span>${esc(p.name)}</button>`).join('')}</div>
         <div class="dz-gk" style="grid-template-columns:1fr 1fr 1fr;margin-top:6px"><button data-chpe="new">New</button><button data-chpe="edit">${ttPalMine().some(x => x.id === C.pal) ? 'Edit' : 'Copy to edit'}</button><button data-chpe="imp">Import</button></div>
@@ -4659,6 +4659,23 @@ DZ.edit = async (id) => {
     const blob = await new Promise(r => c.toBlob(r, 'image/png')); await flush(); closePop();
     await stLoad(new File([blob], 'value-study.png', { type: 'image/png' })); ST.from = name; ST.cm = Math.round(b[2] / 10 * 10) / 10; ST.ret = { id, layer: l.id, box: b };
     location.hash = 'stencil'; }
+  /* The whole challenge's stencil from the design itself: every visible shape (outline, detail lines and the edges of
+     packing) as plain dark lines with no fill, plus lettering, into the stencil maker in Solid mode so each drawn line
+     comes through as a line. Use in the challenge brings it back lined up as the challenge's stencil. */
+  async function chStencilAll() {
+    const list = doc.layers.filter(l => !l.hide && ((l.t === 'shape' && l.role !== 'shade') || l.t === 'text'))
+      .map(l => l.t === 'text' ? { ...l, fill: '#000' } : { ...l, fill: 'none', fm: null, tex: null, stroke: '#000', sw: Math.max(l.sw || 0, 3), dash: null, op: 1, shc: 'none' });
+    if (!list.length) return toast('Draw some shapes first: their lines make the stencil.', 3000);
+    const sv = doc.chal.showSten; doc.chal.showSten = false; let f; try { f = await flatten(list, 3000); } finally { doc.chal.showSten = sv; }   /* the old stencil stays out of it */
+    if (!f) return toast('Nothing visible to make a stencil from.');
+    const c = document.createElement('canvas'); c.width = f.cv.width; c.height = f.cv.height; const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(f.cv, 0, 0);
+    const blob = await pngOf(c); await flush(); closePop();
+    await stLoad(new File([blob], 'challenge.png', { type: 'image/png' })); if (!ST.src) return;
+    Object.assign(ST.p, { mode: 'solid', threshold: 200, clean: 0, contrast: 0, bright: 0 });
+    const b = [f.bx / CH_PX, f.by / CH_PX, f.bw / CH_PX, f.bh / CH_PX];
+    ST.from = name; ST.cm = Math.round(b[2] / 10 * 10) / 10; ST.ret = { id, layer: null, box: b };
+    location.hash = 'stencil'; }
   /* Challenge setup: a blank challenge opens it, and Setup in the Challenge menu brings it back. Tabs with Back and
      Next: skin, the tattoo's size (a margin box on the canvas, which can be hidden), style, ink, needles, linework,
      where the judging focuses, and pictures (references for the simulator, and one to work from, fitted to the
@@ -4836,6 +4853,7 @@ DZ.edit = async (id) => {
     if (d('chsc') && l?.sh) { const S = l.sh; chStopFix(S); const i = Math.min(chStop, S.cols.length - 1); S.mixs[i] = [d('chsc'), S.mixs[i][1], S.mixs[i][2]]; chStopSet(S, i); changed(true); return chRe(); }
     if (d('chsm') != null && l?.sh) { const S = l.sh; chStopFix(S); const i = Math.min(chStop, S.cols.length - 1); S.mixs[i] = [S.mixs[i][0], d('chsm') || undefined, S.mixs[i][2] ?? 0.5]; chStopSet(S, i); changed(true); return chRe(); }
     if (t.closest('[data-chsten]') && l?.sh?.src) { e.preventDefault(); return chStencil(l); }
+    if (t.closest('[data-chstall]')) return chStencilAll();
     if (t.closest('[data-chstenx]') && l?.sh?.stencil) { e.preventDefault(); delete l.sh.stencil; changed(true); return chRe(); }
     if (d('chpre') && l?.sh) { chPreset(l, d('chpre')); changed(true); drawCtx(); return chRe(); }
     if (d('chmk')) { chMkM.wipe = d('chmk') === 'wipe'; return chRe(); }
