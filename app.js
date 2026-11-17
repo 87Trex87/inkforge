@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 462;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 463;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8213,12 +8213,12 @@ let newsAt = 0;
 const newsHtml = () => { if (Settings.get('news_off') === '1') return ''; const s = newsState(), L = newsList(); if (!L.length) return ''; newsAt = Math.max(0, Math.min(L.length - 1, newsAt)); const n = L[newsAt]; if (s.hidden) return `<button class="news-mini" data-news="show">Build ${L[0].build}: what's new</button>`;
   return `<div class="card news-card" id="news-card"><div class="news-top"><h2>What's new in build ${n.build}</h2><button class="btn small" data-news="hide">Hide</button><button class="btn small" data-news="del">Delete</button></div>
     <div class="muted news-when">${esc(newsWhen(n.when))}</div>
-    ${n.added.length ? `<ul class="news-list">${n.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}${n.test.length ? '<div class="lbl">Things to test</div>' : ''}
-    ${n.test.map((x, i) => `<label class="news-todo"><input type="checkbox" data-news-do="${n.build}:${i}" ${s.done[n.build]?.[i] ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}
+    ${(n.added || []).length ? `<ul class="news-list">${n.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}${(n.test || []).length ? '<div class="lbl">Things to test</div>' : ''}
+    ${(n.test || []).map((x, i) => `<label class="news-todo"><input type="checkbox" data-news-do="${n.build}:${i}" ${s.done[n.build]?.[i] ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}
     <div class="row news-nav"><button class="btn small" data-news="older" ${newsAt >= L.length - 1 ? 'disabled' : ''} aria-label="Older update">‹ Older</button><span class="muted">${newsAt + 1} of ${L.length}</span><button class="btn small" data-news="newer" ${newsAt ? '' : 'disabled'} aria-label="Newer update">Newer ›</button><span style="flex:1"></span><button class="btn small" data-news="sticky">Make sticky note</button></div></div>`; };
 const newsRefresh = () => { const c = document.querySelector('#news-card, .news-mini'), t = document.createElement('div'); t.innerHTML = newsHtml(); if (c) c.replaceWith(...t.childNodes); };
 // The test list as an ordinary sticky note: it stays on the menu screens until its owner removes it.
-async function newsSticky(n) { const items = n.test.map((x, i) => ({ s: x, on: !!newsState().done[n.build]?.[i] })), l = { t: 'check', id: dzId(), title: `Test build ${n.build}`, items, src: 'custom', size: 58, x: 40, y: 150, w: 790, h: 300 }, doc = dzNew('note', null, 'paper'); doc.bg = { c: DZ_NOTE_COLS[0] }; doc.note = { pin: true, links: [] }; l.h = Math.max(dzCheckH(l), items.reduce((h, i) => h + Math.ceil(i.s.length / 24) * 58 * 1.5 + 40, 110)); doc.h = Math.max(doc.h, l.y + l.h + 50); doc.layers = [l];
+async function newsSticky(n) { const items = (n.test?.length ? n.test : n.added || []).map((x, i) => ({ s: x, on: !!newsState().done[n.build]?.[i] })), l = { t: 'check', id: dzId(), title: `Test build ${n.build}`, items, src: 'custom', size: 58, x: 40, y: 150, w: 790, h: 300 }, doc = dzNew('note', null, 'paper'); doc.bg = { c: DZ_NOTE_COLS[0] }; doc.note = { pin: true, links: [] }; l.h = Math.max(dzCheckH(l), items.reduce((h, i) => h + Math.ceil(i.s.length / 24) * 58 * 1.5 + 40, 110)); doc.h = Math.max(doc.h, l.y + l.h + 50); doc.layers = [l];
   await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [`Test build ${n.build}`, 'note', JSON.stringify(doc)]); await dzThumb((await DB.one('SELECT last_insert_rowid() AS id')).id, doc); notesShow(); toast('Sticky note added. It stays here until you remove it.'); }
 document.addEventListener('click', async (e) => { const b = e.target.closest?.('[data-news]'); if (!b || b.disabled) return; const s = newsState(), act = b.dataset.news, L = newsList(), n = L[newsAt]; if (act === 'older') { newsAt++; return newsRefresh(); } if (act === 'newer') { newsAt--; return newsRefresh(); } if (act === 'sticky') { b.disabled = true; try { await newsSticky(n); } catch (err) { b.disabled = false; toast('Could not make the note: ' + err.message, 4000); } return; }
   if (act === 'hide') s.hidden = true; if (act === 'show') s.hidden = false; if (act === 'del') { if (!await ask(`Delete the note for build ${n.build}?`)) return; s.del[n.build] = 1; } await Settings.set('news_state', JSON.stringify(s)); newsRefresh(); });
