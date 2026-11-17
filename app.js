@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 465;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 466;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8018,8 +8018,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
 /* What's new: a stack on the home screen of the latest builds, newest first, with things to test. Add an entry to the top
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
-  { build: 465, when: '2026-11-17T19:00', added: ['Challenge maker: Stencil from the design (in the brief) makes the stencil from every outline and detail line you drew, not just the outline. Fine-tune it in the stencil maker, then press Use in the challenge.'], test: ['Make a challenge with an outline and detail lines, press Stencil from the design, then Use in the challenge, and play it.'] },
 const NEWS = [
+  { build: 466, when: '2026-11-17T19:10', added: ['Challenge maker: Stencil from the design (in the brief) makes the stencil from every outline and detail line you drew, not just the outline. Fine-tune it in the stencil maker, then press Use in the challenge.'], test: ['Make a challenge with an outline and detail lines, press Stencil from the design, then Use in the challenge, and play it.'] },
   { build: 464, when: '2026-11-17T18:00', added: ['Design studio: share any design, challenges too, as an InkForge design file (Save as, then InkForge design file). Its pictures and fonts go with it.', 'Import, next to New design, opens one of those files in another workspace so you can keep editing it.'], test: ['Save a design with a picture as an InkForge design file, then Import it and check it opens and edits as before.'] },
   { build: 462, when: '2026-11-17T16:00', added: ['Design studio: group layers (Ctrl G, Ctrl Shift G). Tap a member to pick the group, double-tap for one inside. In the challenge maker, Grade as… sets the role and needle for the whole group.', 'Pen: no longer joins onto strokes underneath. Tick Join open ends in the pen panel when you want to carry a path on or join one.'] },
   { build: 461, when: '2026-11-17T14:00', added: ['Design studio: Mirror (M) for the pen, pencil and nodes. Draw half on the axis and it joins into one shape; nodes move with their mirror.', 'Pen: snaps to the nodes and outlines of other shapes (green marker), Shift shows its straight line first, Ctrl adjusts, Ctrl Z undoes a point, click an open end to join, Polygon mode (Tab).', 'Pick several shapes to change fill, line colour, width and style together, or edit all their nodes at once (A), with box select.', 'Edit nodes: Join, Break, Close and Reverse, arrow-key nudges and keys for each, as in Affinity.'] },
