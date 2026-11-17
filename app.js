@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 468;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 469;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1189,7 +1189,7 @@ const VIEWS = {
   },
   'booking-edit': {
     title: (id) => id === 'new' ? 'New booking' : 'Booking',
-    render: () => '<form id="b-form" class="card" autocomplete="off"></form>',
+    render: () => '<form id="b-form" class="card pro" autocomplete="off"></form>',
     async mount(id) {
       const b = id === 'new'
         ? { start_at: Cal.prefill || ymd(new Date()) + 'T10:00', duration_min: 120, client_id: Cal.prefillClient || null }
@@ -1215,9 +1215,9 @@ const VIEWS = {
       const f = $('#b-form');
       let kind = kindOf(b);
       f.innerHTML = `
-        <div class="field"><span class="lbl">Type</span>
-          <div class="seg kinds" id="b-kind">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button type="button" data-k="${k}" class="${k === kind ? 'on' : ''}">${v.label}</button>`).join('')}</div></div>
-        <section class="fsec"><h3>Who and when</h3>
+        <section class="fsec"><h3>Type<small>What kind of appointment</small></h3>
+          <div class="seg kinds" id="b-kind">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button type="button" data-k="${k}" class="${k === kind ? 'on' : ''}">${v.label}</button>`).join('')}</div></section>
+        <section class="fsec"><h3>Who and when<small>Client, day and length</small></h3>
         <label class="field"><span>Client ${help('Search existing clients, or type a new name and pick "Add" to create one. Optional for meetings and leave.')}</span>
           <div class="picker">
             <input class="in" id="b-client" placeholder="Search clients, or type any name" value="${esc(client ? fullName(client) : guest.name)}" autocomplete="off">
@@ -1237,7 +1237,7 @@ const VIEWS = {
         </div>
         <div class="off-warn" id="b-offwarn" hidden></div>
         </section>
-        <section class="fsec"><h3>Details</h3>
+        <section class="fsec"><h3>Details<small>What is being done and where</small></h3>
         <label class="field"><span id="b-desc-l">Tattoo description</span><textarea class="in" name="description" rows="2" placeholder="e.g. Fine-line peony with stem">${esc(b.description)}</textarea></label>
         <div class="b-ink">
         <label class="field"><span>Type of work</span><select class="in" name="job">${JOB_TYPES.map(([k, n]) => `<option value="${k}" ${(b.job || 'new') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
@@ -1247,7 +1247,7 @@ const VIEWS = {
         </div></div>
         <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="2">${esc(b.notes)}</textarea></label>
         </section>
-        <section class="fsec b-ink"><h3>Price and deposit</h3>
+        <section class="fsec b-ink"><h3>Price and deposit<small>The quote and what was paid up front</small></h3>
         <div class="two">
           <label class="field"><span>Quote${cur ? ` (${esc(cur)})` : ''}</span><input class="in" name="quote" type="number" inputmode="decimal" min="0" step="any" value="${b.quote ?? ''}"></label>
           <label class="field"><span>Deposit${cur ? ` (${esc(cur)})` : ''}</span>
@@ -1256,7 +1256,7 @@ const VIEWS = {
         </div></section>
         ${fsec(`Reference photos ${help('Client references or your sketch. Stored on the device, included in backups.')}`, '<div class="thumbs" id="b-thumbs"></div>',
           { fold: true, open: photos.length || added.length, cls: 'b-ink', hint: photos.length || added.length ? String(photos.length + added.length) : '' })}
-        <section class="fsec b-done" id="b-done"><h3>After the session</h3>
+        <section class="fsec b-done" id="b-done"><h3>After the session<small>Final payment, follow-up and receipt</small></h3>
           <label class="toggle b-done-t"><input type="checkbox" name="completed" ${b.completed ? 'checked' : ''}><span>Tattoo completed</span></label>
           <div id="b-done-in">
             <div class="two">
@@ -2210,8 +2210,8 @@ const VIEWS = {
       <div class="card su-again"><div><b>Take a tour</b><span class="muted">A guided look around with examples; all removed afterwards.</span></div>
         <button class="btn small" id="s-tour">Start</button></div>
       <div class="card"><h2>Profile ${help('Shown on your home screen, and later on forms and exports.')}</h2>
-        <label class="field"><span>Artist name</span><input class="in" id="s-name" value="${esc(Settings.get('artist_name'))}" autocomplete="name"></label>
-        <label class="field"><span>Studio</span><input class="in" id="s-studio" value="${esc(Settings.get('studio_name'))}"></label>
+        <div class="two"><label class="field"><span>Artist name</span><input class="in" id="s-name" value="${esc(Settings.get('artist_name'))}" autocomplete="name"></label>
+        <label class="field"><span>Studio</span><input class="in" id="s-studio" value="${esc(Settings.get('studio_name'))}"></label></div>
         <div class="field"><span class="lbl">Studio logo ${help('A PNG with a transparent background works best. Used on reel cards, as a reel watermark and at the top of forms.')}</span>
           <div class="row" style="flex-wrap:nowrap">
             <span class="logo-box" id="s-logo-box"></span>
@@ -2236,10 +2236,10 @@ const VIEWS = {
           <label class="field"><span>Start</span><input class="in" id="s-start" type="time" value="${esc(Settings.get('day_start', '10:00'))}"></label>
           <label class="field"><span>Finish</span><input class="in" id="s-end" type="time" value="${esc(Settings.get('day_end', '17:00'))}"></label>
         </div>
-        <label class="field"><span>Most tattoos per day ${help('Once a day has this many tattoo bookings, it shows as booked on your open appointments.')}</span>
+        <div class="two"><label class="field"><span>Most tattoos per day ${help('Once a day has this many tattoo bookings, it shows as booked on your open appointments.')}</span>
           <input class="in" id="s-maxday" type="number" min="1" max="10" value="${esc(Settings.get('max_per_day', '1'))}"></label>
         <label class="field"><span>Time between bookings ${help('Setup, cleaning and a break. Kept free before and after every booking when working out open times.')}</span>
-          <div class="unit-in"><input class="in" id="s-gap" type="number" min="0" max="240" step="15" value="${esc(Settings.get('booking_gap', '60'))}"><em>min</em></div></label>
+          <div class="unit-in"><input class="in" id="s-gap" type="number" min="0" max="240" step="15" value="${esc(Settings.get('booking_gap', '60'))}"><em>min</em></div></label></div>
         <div class="lbl" style="margin-top:6px">Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</div>
         <div id="off-card"></div>
       </details>
@@ -4187,6 +4187,7 @@ function qzDraw() {
   let body = '';
   if (s === 0) {
     const groups = [...new Set(c.placements.map(p => p[1]))];
+    const reg = groups.includes(QZ.reg) ? QZ.reg : c.placements.find(p => p[0] === QZ.place)?.[1] || groups[0];   /* the body area shown */
     const jb = jobOf(QZ.job);
     body = `<h2>Type of work</h2>
       <div class="qz-jobs">${JOB_TYPES.map(([k, n, d]) => `<button data-job="${k}" class="${QZ.job === k ? 'on' : ''}"><b>${n}</b><span>${d}</span></button>`).join('')}</div>
@@ -4195,14 +4196,15 @@ function qzDraw() {
         <div class="qz-jlk muted"><span>Very easy</span><span>Very hard</span></div>
         <p class="muted qz-jlh">${jb[3]}</p>${jb[4] ? `<p class="qz-jln2">${jb[4]}</p>` : ''}</div>` : ''}
       <h2 style="margin-top:18px">Where is the tattoo?</h2>
+      <div class="qz-sideq"><span class="lbl">Which side?</span><div class="seg" id="qz-side">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right']].map(([k, l]) =>
+        `<button data-side="${k}" class="${QZ.side === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       <div class="qz-place"><div class="qz-pin"><button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button></div>
       <div class="qz-picks">
+      <div class="qz-regs seg" id="qz-regs">${groups.map(g => { const has = c.placements.some(p => p[1] === g && p[0] === QZ.place);
+        return `<button type="button" data-reg="${esc(g)}" class="${g === reg ? 'on' : ''}">${esc(g)}${has ? ' <i class="qz-regdot"></i>' : ''}</button>`; }).join('')}</div>
+      <div class="qz-chips qz-regchips">${c.placements.filter(p => p[1] === reg).map(([n, , pn]) =>
+        `<button data-place="${esc(n)}" class="chip qz-chip ${QZ.place === n ? 'on' : ''}"><b style="background:${PAIN_COLOURS[pn - 1]}" title="${PAIN_NAMES[pn - 1]} pain"></b>${esc(n)}</button>`).join('')}</div>
       <div class="qz-legend">${PAIN_COLOURS.map((col, i) => `<span><b style="background:${col}"></b>${PAIN_NAMES[i]}</span>`).join('')}</div>
-      <div class="lbl" style="margin-top:10px">Which side?</div>
-      <div class="seg" id="qz-side" style="margin:4px 0 10px">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right']].map(([k, l]) =>
-        `<button data-side="${k}" class="${QZ.side === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
-      ${groups.map(g => `<div class="lbl">${esc(g)}</div><div class="qz-chips">${c.placements.filter(p => p[1] === g).map(([n, , pn]) =>
-        `<button data-place="${esc(n)}" class="chip qz-chip ${QZ.place === n ? 'on' : ''}"><b style="background:${PAIN_COLOURS[pn - 1]}" title="${PAIN_NAMES[pn - 1]} pain"></b>${esc(n)}</button>`).join('')}</div>`).join('')}
       </div></div>`;
   } else if (s === 1) {
     const presets = [['Small', 5, 5], ['Palm', 10, 10], ['Forearm', 12, 22], ['Half sleeve', 25, 35], ['Back piece', 40, 55], ['Full sleeve', 30, 65]];
@@ -4264,7 +4266,7 @@ function qzDraw() {
         <div class="qz-who">
           <label class="field" style="margin:0;flex:1"><span>Client name</span>
             <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off" placeholder="Optional"></label>
-          <button class="btn" id="qz-save" data-tip="Keep it to finish, send or book later">${QZ.id ? 'Update' : 'Save'}</button></div>
+</div>
         <div class="lbl" style="margin-top:12px">Add to the quote</div>
         <div class="qz-extras">
           <label class="toggle" data-tip="A sketch, concept or reference with notes. It prints as its own page and goes into the booking.">
@@ -4280,17 +4282,6 @@ function qzDraw() {
               <textarea class="in" rows="3" data-qzt="designNote" placeholder="e.g. Rough concept; linework will be refined">${esc(QZ.designNote || '')}</textarea></label>
           </div></div>` : ''}
         ${QZ.withAvail ? '<div class="qz-avp" id="qz-avp"></div>' : ''}
-        <div class="lbl" style="margin-top:12px">Send to the client</div>
-        <div class="qz-acts">
-          <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print / PDF</button>
-          <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, saved to this device">Save image</button>
-          <button class="btn" id="qz-imgsh" data-tip="The quote sheet as a picture, to send in any app">Share image</button>
-          <button class="btn" id="qz-share" data-tip="A short text version for a chat">Text</button>
-          <button class="btn" id="qz-link" data-tip="A web page the client opens on their phone: they read the quote, pick a day and time and reply to you on WhatsApp. Nothing to install.">Link</button>
-        </div>
-        <button class="btn primary" id="qz-book" style="width:100%;margin-top:12px">${qzMulti() ? 'Book all together' : 'Book with this quote'}</button>
-        <div class="row qz-links"><button class="btn small" id="qz-new">New quote</button>
-          <a class="btn small" href="#quotes">Saved quotes</a><a class="btn small" href="#quote-cal">Calibrate</a></div>
       </div></div>`;
   }
   const r = s >= 1 && s < 6 && QZ.place ? qCalc() : null;
@@ -4302,13 +4293,23 @@ function qzDraw() {
         <div class="row" style="gap:6px;margin-top:8px"><button class="btn small primary" id="qz-cfgnow">Update to current rates</button>
         <button class="btn small" id="qz-cfgkeep">Keep saved prices</button></div></div>`;
   const tag = qzMulti() && s < 6 ? `<div class="qz-pctag">Tattoo ${Math.min(QZ.pos, QZ.items.length) + 1} of ${QZ.items.length + 1}</div>` : '';
-  el.innerHTML = `${steps}${flag}${tag}<div class="card qz-card-main">${body}</div>
-    ${s < 6 ? `<div class="form-foot qz-foot">
-      ${r ? `<div class="qz-live"><span>≈ <b>${money(r.total)}</b> · ${fmtH(r.hours)}</span><span class="muted">so far</span></div>` : ''}
-      <div class="row">
-      <button class="btn" id="qz-back" ${s ? '' : 'disabled'}>Back</button>
-      <button class="btn primary" id="qz-next" style="flex:1" ${done(s) ? '' : 'disabled'}>${s === 5 ? 'See quote' : 'Next'}</button></div></div>`
-      : ''}
+  /* One header bar: the steps on the left; the running price, Back and Next on the right. */
+  el.innerHTML = `<div class="qz-head">${steps}<div class="qz-hr">
+      ${r ? `<div class="qz-live"><span class="muted">So far</span><b>${money(r.total)}</b><span class="muted">${fmtH(r.hours)}</span></div>` : ''}
+      ${s < 6 ? `<button class="btn" id="qz-back" ${s ? '' : 'disabled'}>Back</button>
+      <button class="btn primary" id="qz-next" ${done(s) ? '' : 'disabled'}>${s === 5 ? 'See quote' : 'Next'}</button>` : ''}</div></div>
+    ${s === 6 ? `<div class="st-strip qz-strip">
+      <button class="btn" id="qz-new">New quote</button><a class="btn" href="#quotes">Saved quotes</a><a class="btn" href="#quote-cal">Calibrate</a>
+      <i class="st-sep"></i>
+      <button class="btn" id="qz-save" data-tip="Keep it to finish, send or book later">${QZ.id ? 'Update' : 'Save'}</button>
+      <button class="btn" id="qz-print" data-tip="An invoice-style quote sheet. Choose Save as PDF to keep a copy.">Print / PDF</button>
+      <button class="btn" id="qz-img" data-tip="The same quote sheet as a picture, saved to this device">Save image</button>
+      <button class="btn" id="qz-imgsh" data-tip="The quote sheet as a picture, to send in any app">Share image</button>
+      <button class="btn" id="qz-share" data-tip="A short text version for a chat">Text</button>
+      <button class="btn" id="qz-link" data-tip="A web page the client opens on their phone: they read the quote, pick a day and time and reply to you on WhatsApp. Nothing to install.">Link</button>
+      <i class="st-sep"></i>
+      <button class="btn primary" id="qz-book" data-tip="Make a booking with this quote">${qzMulti() ? 'Book all' : 'Book it'}</button></div>` : ''}
+    ${flag}${tag}<div class="card qz-card-main">${body}</div>
     ${s === 0 ? '<div class="row qz-links"><a class="btn small" href="#quotes">Saved quotes</a><a class="btn small" href="#quote-cal">Calibrate</a></div>' : ''}`;
   qzBind(el);
   if (QZ.withAvail && s === 6) qzAvPanel();
@@ -4379,6 +4380,7 @@ function qzBind(el) {
       Object.assign(QZ, all[j]); QZ.pos = j; QZ.items = all.filter((_, i) => i !== j);
       return qzDraw();
     }
+    if (d('reg') != null) { QZ.reg = d('reg'); return qzDraw(); }
     if (d('place') != null) { QZ.place = d('place'); return qzDraw(); }
     if (d('side')) { QZ.side = d('side'); return qzDraw(); }
     if (d('job')) { QZ.job = d('job'); QZ.hours = null; return qzDraw(); }
@@ -4425,7 +4427,7 @@ function qzBind(el) {
     if (tk) { QZ[tk] = e.target.value; if (tk === 'text') { QZ.hours = null; const nx = $('#qz-next'); if (nx) nx.disabled = !QZ.text.trim(); } return; }
     if (!k) return;
     QZ[k] = +e.target.value; if (k !== 'hours') QZ.hours = null;
-    if (k === 'w' || k === 'h') QZ.sized = true;
+    if (k === 'w' || k === 'h') { QZ.sized = true; const nx = $('#qz-next'); if (nx) nx.disabled = false; }
     if (k === 'detail' && !QZ.detailSet) { QZ.detailSet = true; const nx = $('#qz-next'); if (nx) nx.disabled = false; }
     const b = e.target.closest('.slider')?.querySelector('b');
     if (k === 'jobLvl') $('#qz-jln').textContent = JOB_LEVELS[QZ.jobLvl - 1];
@@ -5027,8 +5029,8 @@ async function qzShare() {
    live sample so changes make sense. Changes save as they're made. The Share tab exports the whole calibration
    to a file and loads one in, so another workspace (or another artist) prices the same way. */
 const QC_OPEN = new Set();   // kept for older code paths; every section shows open on its own tab now
-const QC_TABS = [['rates', 'Rates'], ['speed', 'Speed'], ['colour', 'Colour'], ['pain', 'Pain'], ['styles', 'Styles'], ['job', 'Cover-ups'], ['combo', 'Several'], ['letter', 'Lettering'], ['share', 'Save and share']];
-let QC_TAB = 'rates';
+const QC_TABS = [['rates', 'Rates'], ['speed', 'Speed'], ['colour', 'Colour'], ['pain', 'Pain'], ['styles', 'Styles'], ['job', 'Cover-ups'], ['combo', 'Several'], ['letter', 'Lettering']];
+let QC_TAB = 'rates';   /* a stale 'share' (that tab moved into the strip) falls back to rates in qcDraw */
 // The calibration file: the quote settings plus the currency they were made in.
 async function qcExport() {
   const data = { inkforge_quote_calibration: 1, made: new Date().toISOString(), studio: Settings.get('studio_name') || '', currency: Settings.get('currency') || '', cfg: qCfg() };
@@ -5046,10 +5048,15 @@ async function qcImport(file) {
 function qcDraw() {
   const el = $('#qc'); if (!el) return;
   const c = qCfg(), cur = Settings.get('currency') || '';
+  if (!QC_TABS.some(([k]) => k === QC_TAB)) QC_TAB = 'rates';
   const num = (path, v, step = 'any', w = '') => `<input class="in qc-n" type="number" inputmode="decimal" step="${step}" value="${v}" data-p="${path}" ${w}>`;
   const sample = (h) => money(qRound(c, qCurve(c, h)));
   el.innerHTML = `
-    <div class="tt-ftabs qc-tabs">${QC_TABS.map(([k, n]) => `<button data-qct="${k}" class="${QC_TAB === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+    <div class="st-strip qc-strip"><div class="tt-ftabs qc-tabs">${QC_TABS.map(([k, n]) => `<button data-qct="${k}" class="${QC_TAB === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <i class="st-sep"></i>
+      <button class="btn" id="qc-exp" data-tip="Save the whole calibration to a file: to keep it safe, or load it into another workspace or send it to another artist so their quotes price the same way">Export</button>
+      <label class="btn" data-tip="Replaces this workspace's rates, speeds, colour, pain, placements, styles, cover-ups and lettering. Quotes you already saved keep their prices.">Load<input type="file" accept=".json,application/json" hidden id="qc-imp"></label>
+      <button class="btn danger" id="qc-reset" data-tip="Put every setting back to the defaults">Reset</button></div>
     <div class="card qc-sec" data-sec="rates"><h2>Your rates ${help('Price for tattooing time, breaks not included. Between points the price runs in a straight line; under the first point is your minimum.')}</h2>
       <div class="qc-grid qc-anchors"><span class="lbl">Hours</span><span class="lbl">Price${cur ? ' (' + esc(cur) + ')' : ''}</span><span></span>
         ${c.anchors.map(([h, p], i) => `${num(`anchors.${i}.0`, h, '0.25')}${num(`anchors.${i}.1`, p, '10')}
@@ -5103,13 +5110,7 @@ function qcDraw() {
     <details class="card qc-sec" data-sec="letter" ${QC_OPEN.has('letter') ? 'open' : ''}><summary><h2>Lettering</h2></summary>
       <label class="field"><span>Minutes per letter ${help('At 2 cm letter height. Bigger letters scale up.')}</span><div class="unit-in">${num('textMin', c.textMin, '0.5')}<em>min</em></div></label>
       ${c.fonts.map(([n, f], i) => `<div class="qc-row"><span>${esc(n)}</span><div class="unit-in">${num(`fonts.${i}.1`, f, '0.05')}<em>×</em></div></div>`).join('')}</details>
-    <div class="card qc-sec" data-sec="share"><h2>Save and share</h2>
-      <p class="muted" style="margin-top:0">Every change here is saved as you make it. Export the whole calibration to a file to keep it safe, or load it into another workspace (or send it to another artist) so their quotes price the same way.</p>
-      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn primary" id="qc-exp">Export calibration</button>
-        <label class="btn">Load a calibration<input type="file" accept=".json,application/json" hidden id="qc-imp"></label></div>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Loading replaces this workspace's rates, speeds, colour, pain, placements, styles, cover-ups and lettering. Quotes you already saved keep their prices.</p>
-      <div class="lbl" style="margin-top:16px">Start again</div>
-      <button class="btn danger" id="qc-reset">Reset all to defaults</button></div>`;
+    <p class="muted qc-note">Every change is saved as you make it.</p>`;
   // One section per tab: each shows open on its own page.
   el.querySelectorAll('.qc-sec').forEach(d => { const on = d.dataset.sec === QC_TAB; d.hidden = !on; if (d.tagName === 'DETAILS') d.open = true; d.classList.add('qc-page'); });
   el.oninput = (e) => {
@@ -8013,11 +8014,12 @@ const SET_TABS = [['start', 'Start', 'Quick actions and helpers.'], ['profile', 
 function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = 'backup';   // the tour's stop here points at the backup section
   const cards = [...document.querySelectorAll('#view > .card')]; if (!cards.length) return; const tabOf = (c) => c.dataset.sec || (c.classList.contains('su-again') ? 'start' : 'profile'); const bar = document.createElement('div'); bar.className = 'set-tabs'; bar.innerHTML = SET_TABS.map(([k, n]) => `<button data-stab="${k}">${n}</button>`).join(''); const intro = document.createElement('p'); intro.className = 'set-intro'; cards[0].before(bar, intro);
   cards.forEach(c => { if (c.tagName === 'DETAILS') { c.open = true; c.querySelector(':scope > summary').addEventListener('click', (e) => { if (!e.target.closest('button, a, .help')) e.preventDefault(); }); c.classList.add('set-fixed'); } });
-  const show = () => { cards.forEach(c => { c.hidden = tabOf(c) !== setTab; }); bar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.stab === setTab)); intro.textContent = SET_TABS.find(t => t[0] === setTab)[2]; }; bar.onclick = (e) => { const b = e.target.closest('[data-stab]'); if (b) { setTab = b.dataset.stab; show(); scrollTo(0, 0); } }; show(); }
+  const show = () => { cards.forEach(c => { c.hidden = tabOf(c) !== setTab; }); const vis = cards.filter(c => !c.hidden); cards.forEach(c => c.classList.remove('set-first', 'set-last')); vis[0]?.classList.add('set-first'); vis.at(-1)?.classList.add('set-last');   /* rows of one list */ bar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.stab === setTab)); intro.textContent = SET_TABS.find(t => t[0] === setTab)[2]; }; bar.onclick = (e) => { const b = e.target.closest('[data-stab]'); if (b) { setTab = b.dataset.stab; show(); scrollTo(0, 0); } }; show(); }
 /* What's new: a stack on the home screen of the latest builds, newest first, with things to test. Add an entry to the top
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 469, when: '2026-11-18T00:30', added: ['New look for the booking form, quote calculator, Calibrate quotes and Settings: buttons in a strip at the top, cleaner sections and tidier fields.', 'Quotes: Which side? now sits at the top, and body parts are grouped in tabs (Head and neck, Arms and hands and so on).', 'Quotes: moving the size sliders is enough to go on, no preset needed.', 'The last quote page has every button in one strip: Save, Print, Share, Text, Link and Book it.'], test: ['Make a quote from start to finish and book it. Does every button still do what it should?', 'Save a new booking and check it shows in the calendar.'] },
   { build: 468, when: '2026-11-17T22:00', added: ['Stencil maker, bend tool, split for printing and reel maker: every button now sits in one strip along the top, and each screen fits a landscape tablet or phone without scrolling.', 'Stencil maker: Save to device is now just Save.'], test: ['Turn your device sideways and open each of the four tools: everything should fit on one screen.'] },
   { build: 467, when: '2026-11-17T20:00', added: ['Your own challenges: zones of the same type now share one set of score meters and one line in the brief, instead of one per zone.', 'A challenge with colour in it now starts on the Inks tray, even with grey wash zones. Grey wash is still in the Inks menu.'], test: ['Play a challenge with several shading zones and check the score shows one set of meters.'] },
   { build: 466, when: '2026-11-17T19:10', added: ['Challenge maker: Stencil from the design (in the brief) makes the stencil from every outline and detail line you drew, not just the outline. Fine-tune it in the stencil maker, then press Use in the challenge.'], test: ['Make a challenge with an outline and detail lines, press Stencil from the design, then Use in the challenge, and play it.'] },
@@ -8404,8 +8406,19 @@ function render() {
   const active = NAV_PARENT[key] || key;
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === active));
   $('#main').scrollTop = 0;
-  v.mount?.(arg);
+  Promise.resolve(v.mount?.(arg)).then(formCols, () => {});
   notesShow();
+}
+/* Entry forms on wide screens: the panels after the first go into two columns that each stack on their own, so a
+   short panel never leaves a gap beside a tall one. The first half (by how much each holds) goes left, the rest
+   right, so on a phone, where the columns are not drawn, the order stays as written. */
+function formCols() {
+  const f = $('#view form.card'); if (!f || f.classList.contains('pro') || !f.querySelector(':scope > .form-foot') || f.querySelector(':scope > .fcols')) return;
+  const ps = [...f.querySelectorAll(':scope > .fsec')].slice(1); if (ps.length < 2) return;
+  const w = ps.map(p => 1 + p.querySelectorAll('input:not([type=hidden]), textarea, select, .seg').length + p.querySelectorAll('textarea').length), half = w.reduce((a, b) => a + b, 0) / 2;
+  let acc = 0, cut = ps.length - 1; for (let i = 0; i < ps.length; i++) { acc += w[i]; if (acc >= half) { cut = Math.min(ps.length - 1, Math.max(1, acc - w[i] / 2 > half ? i : i + 1)); break; } }
+  const box = document.createElement('div'), L = document.createElement('div'), R = document.createElement('div'); box.className = 'fcols'; L.className = R.className = 'fcol';
+  ps[0].before(box); box.append(L, R); ps.forEach((p, i) => (i < cut ? L : R).append(p));
 }
 $('#nav').addEventListener('click', e => {
   const b = e.target.closest('.nav-btn'); if (b) location.hash = b.dataset.view;
