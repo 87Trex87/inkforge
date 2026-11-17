@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 470;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 471;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1060,7 +1060,7 @@ const VIEWS = {
   },
   'client-edit': {
     title: (id) => id === 'new' ? 'New client' : 'Edit client',
-    render: () => '<form id="c-form" class="card" autocomplete="off"></form>',
+    render: () => '<form id="c-form" class="card pro" autocomplete="off"></form>',
     async mount(id) {
       const c = id === 'new' ? {} : await DB.one('SELECT * FROM clients WHERE id = ?', [+id]);
       if (!c) { location.hash = 'clients'; return; }
@@ -1070,7 +1070,7 @@ const VIEWS = {
         `<label class="field"><span>${label}</span><input class="in" name="${name}" type="${type}" value="${esc(c[name])}" ${extra}></label>`;
       const moreOpen = !!(c.pronouns || c.dob || c.tags || (c.category && c.category !== 'Client'));
       f.innerHTML = `
-        <section class="fsec"><h3>Contact</h3>
+        <section class="fsec"><h3>Contact<small>Photo, name and how to reach them</small></h3>
         <div class="photo-pick">
           <label class="avatar-pick" data-tip="Add or change photo">
             <span id="f-ava">${avatar(c, await Media.url(photoRef), 'lg')}</span>
@@ -1089,7 +1089,7 @@ const VIEWS = {
             <datalist id="c-catlist">${[...new Set([...CLIENT_CATS, ...(await DB.all('SELECT DISTINCT category AS c FROM clients')).map(r => r.c)])].map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
           <div class="two">${inp('dob', 'Birthday', 'date')}${inp('pronouns', 'Pronouns', 'text', 'placeholder="optional"')}</div>
           ${inp('tags', 'Tags', 'text', 'placeholder="regular, blackwork"')}`, { fold: true, open: moreOpen, hint: 'category, birthday, tags' })}
-        ${fsec('Health and notes', `
+        ${fsec('Health and notes<small>Allergies, conditions and anything to remember</small>', `
           <label class="field"><span>Medical / allergies ${help('Latex, blood thinners, skin conditions, etc. Shown highlighted on the client page.')}</span>
             <textarea class="in" name="medical" rows="2">${esc(c.medical)}</textarea></label>
           <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="3">${esc(c.notes)}</textarea></label>`)}
@@ -8686,6 +8686,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 471, when: '2026-11-18T14:00', added: ['The client form has the same clean look as the booking form: buttons on top, each section a row with a short note.', 'Smaller, cleaner buttons, fields, tabs and cards across the app, like the reel maker. The tattoo simulator is unchanged.'], test: ['Add a new client and check it saves.', 'Look around the app and tell us if anything looks cramped.'] },
   { build: 470, when: '2026-11-18T12:00', added: ['Reel maker, rebuilt: it fills the screen, with a top strip of buttons, zoom and pan on the preview, snap on or off, and ▶ Watch to play it full screen with pause and a scrub bar.', 'Pick a size for each reel: vertical 9:16, portrait 4:5, square or landscape 16:9.', 'Text, stickers and sound sit on their own timeline rows: drag them to move and their ends to set the timing. Two sound rows for cross-fades or a voiceover, with speed and fades. Clips change length by dragging their ends, and drag to reorder.', 'Many more looks: 24 filters with adjustments, 12 effects, 14 transitions, 18 fonts plus your own, text shapes (arc, circle, wave), headings and paragraphs, sticker entrances with directions, freeze frame and save frame.', 'Sharper logos and stickers in exported videos.'], test: ['Make a reel with music and text, export it at 1080p and check the sound and text line up.', 'Try the reel maker on your phone held upright.'] },
   { build: 469, when: '2026-11-18T00:30', added: ['New look for the booking form, quote calculator, Calibrate quotes and Settings: buttons in a strip at the top, cleaner sections and tidier fields.', 'Quotes: Which side? now sits at the top, and body parts are grouped in tabs (Head and neck, Arms and hands and so on).', 'Quotes: moving the size sliders is enough to go on, no preset needed.', 'The last quote page has every button in one strip: Save, Print, Share, Text, Link and Book it.'], test: ['Make a quote from start to finish and book it. Does every button still do what it should?', 'Save a new booking and check it shows in the calendar.'] },
   { build: 468, when: '2026-11-17T22:00', added: ['Stencil maker, bend tool, split for printing and reel maker: every button now sits in one strip along the top, and each screen fits a landscape tablet or phone without scrolling.', 'Stencil maker: Save to device is now just Save.'], test: ['Turn your device sideways and open each of the four tools: everything should fit on one screen.'] },
@@ -9070,6 +9071,7 @@ function render() {
   $('#view-title').textContent = v.title(arg);
   const view = $('#view');
   document.body.classList.toggle('reel-full', key === 'reel');   /* the reel editor fills the screen */
+  document.body.dataset.route = key;   /* lets the compact look leave the tattoo simulator as it is */
   view.innerHTML = v.render(arg);
   view.style.animation = 'none'; view.offsetHeight; view.style.animation = '';
   const active = NAV_PARENT[key] || key;

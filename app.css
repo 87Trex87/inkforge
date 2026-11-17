@@ -2350,3 +2350,44 @@ body.reel-full #view { gap: 6px; padding-left: 6px; padding-right: 6px; }
   .reel-side .reel-clip-head { flex-wrap: nowrap; } .reel-side .reel-clip-head b { white-space: nowrap; }
   .reel-top .in { flex: 0 1 96px !important; min-width: 70px; }
 }
+/* Client form in the record look */
+form.pro .photo-pick { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; justify-content: flex-start; }
+form.pro .photo-pick .avatar-pick { flex: none; }
+form.pro .photo-pick { justify-content: flex-start !important; justify-items: start !important; text-align: left; margin-left: 0 !important; } form.pro .photo-pick .avatar-pick { margin: 0 !important; }
+form.pro .photo-pick { align-items: flex-start !important; flex-direction: row !important; }
+
+/* ---------- Compact look across the app (as in the reel maker); the tattoo simulator keeps its own sizes ---------- */
+body:not([data-route="tattoo"]) .btn { min-height: 36px; padding: 0 14px; border-radius: 9px; font-size: 13px; gap: 6px; }
+body:not([data-route="tattoo"]) .btn.small { min-height: 30px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+body:not([data-route="tattoo"]) .icon-btn { width: 36px; min-height: 36px; padding: 0; }
+body:not([data-route="tattoo"]) .icon-btn svg { width: 18px; height: 18px; }
+body:not([data-route="tattoo"]) .in { min-height: 38px; border-radius: 9px; padding-left: 12px; padding-right: 12px; }
+body:not([data-route="tattoo"]) textarea.in { padding-top: 9px; padding-bottom: 9px; }
+@media (pointer: fine) { body:not([data-route="tattoo"]) .in { font-size: 14px; } }   /* touch keeps 16 px, so iPhones do not zoom into fields */
+body:not([data-route="tattoo"]) label.field span, body:not([data-route="tattoo"]) .lbl { font-size: 11px; letter-spacing: .05em; margin-bottom: 4px; }
+body:not([data-route="tattoo"]) .field, body:not([data-route="tattoo"]) label.field { margin-bottom: 10px; }
+body:not([data-route="tattoo"]) .toggle { min-height: 38px; border-radius: 9px; padding: 0 10px; }
+body:not([data-route="tattoo"]) .toggle span { font-size: 13px !important; }
+body:not([data-route="tattoo"]) .seg { border-radius: 10px; padding: 2px; }
+body:not([data-route="tattoo"]) .seg button { min-height: 32px; border-radius: 8px; font-size: 13px; padding: 0 10px; }
+body:not([data-route="tattoo"]) .card { padding: 14px; margin-bottom: 12px; border-radius: 12px; }
+body:not([data-route="tattoo"]) .card h2 { font-size: 20px; margin-bottom: 8px; }
+body:not([data-route="tattoo"]) .chip { font-size: 11px; padding: 2px 8px; }
+body:not([data-route="tattoo"]) .mini { width: 28px; height: 28px; font-size: 14px; border-radius: 7px; }
+body:not([data-route="tattoo"]) .tile { min-height: 60px; gap: 12px; }
+body:not([data-route="tattoo"]) .tile .ico { width: 38px; height: 38px; border-radius: 10px; }
+body:not([data-route="tattoo"]) .tile .ico svg { width: 20px; height: 20px; }
+body:not([data-route="tattoo"]) .ava { width: 36px; height: 36px; }
+body:not([data-route="tattoo"]) #topbar { padding-top: calc(env(safe-area-inset-top, 0px) + 10px); padding-bottom: 8px; }
+body:not([data-route="tattoo"]) #topbar h1 { font-size: 28px; }
+body:not([data-route="tattoo"]) .hero .big { font-size: 34px; }
+body:not([data-route="tattoo"]) .grid { gap: 10px; }
+body:not([data-route="tattoo"]) .stat { padding: 6px 0; font-size: 13px; }
+body:not([data-route="tattoo"]) .bkt-btn { height: 36px; padding: 0 12px; border-radius: 9px; font-size: 12.5px; }
+body:not([data-route="tattoo"]) .bkt-search { height: 36px; border-radius: 9px; }
+body:not([data-route="tattoo"]) .bkt-sel, body:not([data-route="tattoo"]) .bkt-date { height: 30px; font-size: 12.5px; }
+body:not([data-route="tattoo"]) .bkt td { padding: 8px 10px; font-size: 13px; } body:not([data-route="tattoo"]) .bkt th { padding: 8px 10px; }
+body:not([data-route="tattoo"]) .set-tabs button, body:not([data-route="tattoo"]) .tt-ftabs button { padding: 6px 10px; font-size: 12px; }
+body:not([data-route="tattoo"]) .ink { width: 26px; height: 26px; }
+body:not([data-route="tattoo"]) #merge-dlg .card { padding: 18px; }
+body:not([data-route="tattoo"]) .dz-ex button { padding: 10px 12px; border-radius: 10px; }
