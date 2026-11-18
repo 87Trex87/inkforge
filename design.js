@@ -1896,8 +1896,11 @@ DZ.edit = async (id) => {
     const left = (r.width - doc.w * k) / 2 + vx, top = (r.height - doc.h * k + tb()) / 2 + vy, dx = (sx - left) / k, dy = (sy - top) / k;
     z = Math.max(0.5, Math.min(8, nz)); const nk = fitK * z;
     vx = sx - dx * nk - (r.width - doc.w * nk) / 2; vy = sy - dy * nk - (r.height - doc.h * nk + tb()) / 2;
-    fit(false); clearTimeout(crispT); crispT = setTimeout(() => { fit(true); redraw(); }, 160);
+    fit(false); crispLater();
   };
+  /* The sharp redraw is the slow part (a big canvas, every layer). Wait until the fingers lift, or the wheel
+     settles, so zooming only stretches the last drawing and never stalls mid-gesture. */
+  const crispLater = () => { clearTimeout(crispT); if (typeof pinch !== 'undefined' && pinch) return; crispT = setTimeout(() => { fit(true); redraw(); }, 220); };
   const frame = () => { z = 1; vx = vy = 0; fit(); redraw(); };
   let drawing = null;
   let cropping = false;
@@ -1972,7 +1975,7 @@ DZ.edit = async (id) => {
   const noteBar = () => { const b = $('#dz-notebar'); if (!b) return; doc.note ||= { pin: false, links: [] };
     b.innerHTML = DZ_NOTE_COLS.map(c => `<button class="nc ${doc.bg?.c === c ? 'on' : ''}" data-nc="${c}" style="background:${c}" aria-label="Note colour"></button>`).join('')
       + `<button data-na="short" class="add">+ Shortcut</button><button data-na="check" class="add">+ Checklist</button><button data-na="more">+ Room</button><button data-na="less">− Room</button><button data-na="links">Links${doc.note.links.length ? ' ' + doc.note.links.length : ''}</button><button data-na="pin" class="${doc.note.pin ? 'on' : ''}">${doc.note.pin ? 'Pinned' : 'Hidden'}</button>`
-      + (doc.note.links.length ? `<div class="nb-links"><span>Links:</span>${doc.note.links.map(l => `<button data-na="links" data-tip="${esc(l.url || 'Change links')}">${esc(l.label || NOTE_SECTIONS.find(s => s[0] === l.go)?.[1] || l.go)}${l.url ? ' ↗' : ''}</button>`).join('')}</div>` : ''); fit(false); };
+      + (doc.note.links.length ? `<div class="nb-links"><span>Links:</span>${doc.note.links.map(l => `<button data-na="links" data-tip="${esc(l.url || 'Change links')}">${esc(l.label || NOTE_SECTIONS.find(s => s[0] === l.go)?.[1] || l.go)}${l.url ? ' ↗' : ''}</button>`).join('')}</div>` : ''); requestAnimationFrame(() => fit(false)); };   /* next frame: on opening, the editor is still being set up */
   $('#dz-notebar')?.addEventListener('click', async (e) => { const c = e.target.closest('[data-nc]')?.dataset.nc, a = e.target.closest('[data-na]')?.dataset.na;
     if (c) { doc.bg = { ...doc.bg, c }; changed(true); return noteBar(); }
     if (a === 'pin') { doc.note.pin = !doc.note.pin; changed(true); return noteBar(); }
@@ -3901,19 +3904,21 @@ DZ.edit = async (id) => {
   stage.addEventListener('pointermove', (e) => {
     if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && pts.size >= 2) {
-      const [a, b] = [...pts.values()], r = stage.getBoundingClientRect(), mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
-      vx = pinch.vx + mx - pinch.mx; vy = pinch.vy + my - pinch.my; z = pinch.z;   // two-finger pan from where it started
-      fit(false); zoomTo(pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, mx, my);
+      // At most one view update per screen frame: touch screens send moves faster than the page can lay out.
+      if (!pinch.raf) pinch.raf = requestAnimationFrame(() => { const p = pinch; if (!p) return; p.raf = 0; if (pts.size < 2) return;
+        const [a, b] = [...pts.values()], r = stage.getBoundingClientRect(), mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
+        vx = p.vx + mx - p.mx; vy = p.vy + my - p.my; z = p.z;   // two-finger pan from where it started
+        fit(false); zoomTo(p.z * Math.hypot(a.x - b.x, a.y - b.y) / p.d, mx, my); });
       return;
     }
     if (marq) { marq.x1 = e.clientX; marq.y1 = e.clientY; return marqDraw(); }
     if (bg) { const dx = e.clientX - bg.x, dy = e.clientY - bg.y; if (Math.abs(dx) + Math.abs(dy) > 5) bg.moved = true;
-      if (bg.moved) { vx = bg.vx + dx; vy = bg.vy + dy; fit(false); } }
+      if (bg.moved) { vx = bg.vx + dx; vy = bg.vy + dy; if (!bg.raf) bg.raf = requestAnimationFrame(() => { if (bg) bg.raf = 0; fit(false); }); } }
   });
   const ptUp = (e) => {
     pts.delete(e.pointerId); if (rest.delete(e.pointerId)) return;
     if (marq) return marqEnd();
-    if (pinch && pts.size < 2) { pinch = null; bg = null; return; }
+    if (pinch && pts.size < 2) { cancelAnimationFrame(pinch.raf); pinch = null; bg = null; crispLater(); return; }
     if (bg) { clearTimeout(bg.ht); if (!bg.moved && (sel || (picks.size && !picking))) select(null); bg = null; }
   };
   stage.addEventListener('pointerup', ptUp); stage.addEventListener('pointercancel', ptUp);
