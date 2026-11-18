@@ -420,7 +420,8 @@ const DZF = {
     this.loaded.add(name);
   },
   async all(doc) { const t = DZ_THEMES[doc.theme] || DZ_THEMES.ink;
-    await Promise.all([t.f1, t.f2, ...doc.layers.filter(l => l.t === 'text' || (l.t === 'field' && l.font)).map(l => l.font[0] === '@' ? t['f' + l.font[1]] : l.font)].map(f => this.load(f)));
+    await Promise.all([t.f1, t.f2, ...doc.layers.filter(l => l.t === 'text' || (l.t === 'field' && l.font)).map(l => l.font[0] === '@' ? t['f' + l.font[1]] : l.font),
+      ...doc.layers.filter(l => l.t === 'table').flatMap(l => [l.font, ...Object.values(l.cells || {}).map(o => o.font)]).filter(f => f && f[0] !== '@')].map(f => this.load(f)));
     // italics are separate font files: fetched here so the first draw isn't in the fallback font
     await Promise.all(doc.layers.filter(l => l.it && l.font).flatMap(l => [400, 700].map(w => document.fonts.load(`italic ${w} 48px "${dzFont(doc, l.font)}"`).catch(() => {})))); }
 };
@@ -670,6 +671,7 @@ function dzClipper() {
 }
 /* Editor icons (24 px grid, drawn as strokes). Every icon button has its name in a tooltip. */
 const DZ_UI = {
+  table: '<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M3 14.5h18M9 4v16M15 4v16"/>',
   selbox: '<rect x="4" y="5" width="16" height="14" rx="1" stroke-dasharray="3 2"/>', selell: '<ellipse cx="12" cy="12" rx="8.5" ry="6.5" stroke-dasharray="3 2"/>',
   sellasso: '<path d="M5 9c0-3 3.1-5 7-5s7 2 7 5-3.1 5-7 5c-1.2 0-2.3-.2-3.3-.5" stroke-dasharray="3 2"/><path d="M6 13c-1.3.8-1.7 2.4-.8 3.6.9 1.2 2.6 1.4 3.6.5"/>',
   selpen: '<path d="M12 19l7-7-3-3-7 7-1 4z"/><path d="M15 6l3 3M4 20l4-1"/>', selcol: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/>',
@@ -995,6 +997,81 @@ function dzEdge(x, L, trace, sw, rule) {
   x.save(); x.beginPath(); if (at === 'out') x.rect(-1e5, -1e5, 2e5, 2e5); trace(); x.clip(at === 'out' ? 'evenodd' : rule);
   x.beginPath(); trace(); x.lineWidth = sw * 2; x.stroke(); x.restore();
 }
+/* ---------- Tables ----------
+   A table layer: rows and cols are sizes (scaled to the layer's box, so resizing the table scales them), cells
+   holds what each cell has of its own ('row:col' -> text s and any style of its own). Everything else is the
+   table's style: font, size, text colour c, alignment, padding, a header row (hdr, hbg, hc), banded rows (band),
+   lines (bc, bw, lines: all / rows / cols / head / none, outer) and corner rounding (rad). */
+/* The pictures in a table's cells (kept with the design like any other picture). */
+const dzTblRefs = (l) => l.t === 'table' ? Object.values(l.cells || {}).map(o => o.img).filter(Boolean) : [];
+/* A form's table cells that open a link: each with its box on the page (around the cell, turned with the table). */
+function dzTblLinks(l) {
+  if (l.t !== 'table' || !l.cells) return [];
+  const { xs, ys } = dzTblGeo(l), a = (l.rot || 0) * Math.PI / 180, co = Math.cos(a), si = Math.sin(a), cx = l.x + l.w / 2, cy = l.y + l.h / 2, out = [];
+  for (const [id, o] of Object.entries(l.cells)) { if (!o.link) continue; const [r, c] = id.split(':').map(Number); if (r >= l.rows.length || c >= l.cols.length) continue;
+    let x0 = xs[c], x1 = xs[c + 1], y0 = ys[r], y1 = ys[r + 1]; if (l.fx) [x0, x1] = [l.w - x1, l.w - x0]; if (l.fy) [y0, y1] = [l.h - y1, l.h - y0];
+    const P = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([px, py]) => { const u = px - l.w / 2, v = py - l.h / 2; return [cx + u * co - v * si, cy + u * si + v * co]; });
+    const X = P.map(p => p[0]), Y = P.map(p => p[1]); out.push({ link: o.link, label: o.s || o.link, x: Math.min(...X), y: Math.min(...Y), w: Math.max(...X) - Math.min(...X), h: Math.max(...Y) - Math.min(...Y) }); }
+  return out;
+}
+const dzTblNew = (w) => ({ t: 'table', name: 'Table', w, h: 4 * 64, rows: [64, 64, 64, 64], cols: [w / 3, w / 3, w / 3], cells: { '0:0': { s: 'Heading' }, '0:1': { s: 'Heading' }, '0:2': { s: 'Heading' } },
+  font: '@2', size: 26, c: '@fg', al: 'left', va: 'middle', pad: 14, hdr: 1, hbg: '@accent', hc: '@bg', band: '@soft', bc: '@fg', bw: 2, lines: 'all', outer: 1, rad: 0 });
+function dzTblGeo(l) {
+  const sc = l.cols.reduce((a, b) => a + b, 0) || 1, sr = l.rows.reduce((a, b) => a + b, 0) || 1, xs = [0], ys = [0];
+  for (const c of l.cols) xs.push(xs.at(-1) + c * l.w / sc); for (const r of l.rows) ys.push(ys.at(-1) + r * (l.h || 1) / sr);
+  return { xs, ys };
+}
+/* What a cell shows: its own settings over the table's (and the header row's or a band's). */
+const dzTblCell = (l, r, c) => { const o = l.cells?.[r + ':' + c] || {}, h = r < (l.hdr || 0), band = l.band && l.band !== 'none' && !h && (r - (l.hdr || 0)) % 2 === 1;
+  return { s: o.s || '', bg: o.bg ?? (h ? l.hbg : band ? l.band : null), c: o.c ?? (h ? l.hc : l.c), font: o.font || l.font, size: o.size ?? l.size, b: o.b ?? (h ? 1 : l.b), it: o.it ?? l.it, al: o.al ?? l.al, va: o.va ?? l.va, img: o.img, ifit: o.ifit || 'contain', isz: o.isz ?? 0.8, ipos: o.ipos || 'c' }; };
+function dzTblDraw(x, doc, l, pics = {}) {
+  const { xs, ys } = dzTblGeo(l), ox = -l.w / 2, oy = -l.h / 2, R = l.rows.length, C = l.cols.length, rr = Math.min(l.rad || 0, l.w / 2, l.h / 2), pad = l.pad ?? 14;
+  x.save(); x.beginPath(); x.roundRect(ox, oy, l.w, l.h, rr); x.clip();
+  if (l.bg && l.bg !== 'none') { x.fillStyle = dzCol(doc, l.bg); x.fillRect(ox, oy, l.w, l.h); }
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    const k = dzTblCell(l, r, c), cx = ox + xs[c], cy = oy + ys[r], cw = xs[c + 1] - xs[c], ch = ys[r + 1] - ys[r];
+    if (k.bg && k.bg !== 'none') { x.fillStyle = dzCol(doc, k.bg); x.fillRect(cx, cy, cw + 0.5, ch + 0.5); }
+    /* A picture in the cell: centred (text over it), on the left (text beside it) or on top (text under it).
+       Its box is isz of the space inside the padding; contain shows all of it, cover fills the box. */
+    let tx = cx, ty = cy, tw = cw, th0 = ch; const im = k.img && pics[k.img];
+    if (im) { const iw0 = Math.max(1, cw - pad * 2), ih0 = Math.max(1, ch - pad * 2), side = k.s && k.ipos === 'l', top = k.s && k.ipos === 't';
+      const bw0 = (side ? Math.min(iw0 * 0.5, ih0) : iw0) * k.isz, bh0 = (top ? ih0 * 0.55 : ih0) * k.isz;
+      const bx = side ? cx + pad : cx + pad + (iw0 - bw0) / 2, by = top ? cy + pad : cy + pad + (ih0 - bh0) / 2;
+      const r0 = im.naturalWidth / im.naturalHeight || 1, cover = k.ifit === 'cover';
+      let w = bw0, h = bw0 / r0; if (cover ? h < bh0 : h > bh0) { h = bh0; w = bh0 * r0; }
+      x.save(); x.beginPath(); x.rect(bx, by, bw0, bh0); x.clip(); x.drawImage(im, bx + (bw0 - w) / 2, by + (bh0 - h) / 2, w, h); x.restore();
+      if (side) { tx = bx + bw0; tw = cx + cw - tx; } if (top) { ty = by + bh0; th0 = cy + ch - ty; } }
+    if (!k.s) continue;
+    x.save(); x.beginPath(); x.rect(cx, cy, cw, ch); x.clip();
+    x.font = dzFontStr(doc, k, k.size); x.fillStyle = dzCol(doc, k.c) || '#000'; x.textBaseline = 'alphabetic'; x.textAlign = k.al === 'center' ? 'center' : k.al === 'right' ? 'right' : 'left';
+    const lines = dzWrap(x, k.s, Math.max(4, tw - pad * 2)), lh = k.size * 1.25, th = lines.length * lh;
+    const y0 = k.va === 'top' ? ty + pad : k.va === 'bottom' ? ty + th0 - pad - th : ty + (th0 - th) / 2, ax = k.al === 'center' ? tx + tw / 2 : k.al === 'right' ? tx + tw - pad : tx + pad;
+    lines.forEach((t, i) => x.fillText(t, ax, y0 + i * lh + k.size * 0.95));
+    x.restore();
+  }
+  const bw = l.bw || 0, ln = l.lines || 'all';
+  if (bw && l.bc && l.bc !== 'none') {
+    x.strokeStyle = dzCol(doc, l.bc); x.lineWidth = bw; x.beginPath();
+    for (let r = 1; r < R; r++) if (ln === 'all' || ln === 'rows' || (ln === 'head' && r === (l.hdr || 0))) { x.moveTo(ox, oy + ys[r]); x.lineTo(ox + l.w, oy + ys[r]); }
+    for (let c = 1; c < C; c++) if (ln === 'all' || ln === 'cols') { x.moveTo(ox + xs[c], oy); x.lineTo(ox + xs[c], oy + l.h); }
+    x.stroke();
+  }
+  x.restore();
+  if (bw && l.outer && l.bc && l.bc !== 'none') { x.strokeStyle = dzCol(doc, l.bc); x.lineWidth = bw; x.beginPath(); x.roundRect(ox + bw / 2, oy + bw / 2, l.w - bw, l.h - bw, Math.max(0, rr - bw / 2)); x.stroke(); }
+}
+/* CSV text to rows of cells: quoted cells may hold commas, quotes ("") and line breaks. Tabs work too (pasted from a spreadsheet). */
+function dzCsv(text) {
+  const t = String(text).replace(/^\uFEFF/, ''), sep = (t.split('\n')[0].match(/\t/g) || []).length > (t.split('\n')[0].match(/,/g) || []).length ? '\t' : ',';
+  const rows = [[]]; let cell = '', q = false;
+  for (let i = 0; i < t.length; i++) { const ch = t[i];
+    if (q) { if (ch === '"' && t[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; continue; }
+    if (ch === '"' && !cell) q = true; else if (ch === sep) { rows.at(-1).push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && t[i + 1] === '\n') i++; rows.at(-1).push(cell); cell = ''; rows.push([]); }
+    else cell += ch; }
+  rows.at(-1).push(cell);
+  while (rows.length && rows.at(-1).every(c => !c.trim())) rows.pop();
+  return rows;
+}
 const dzStroked = (l) => !!(l.sw && l.stroke && l.stroke !== 'none' && ((l.t === 'shape' && l.shape !== 'line') || (l.t === 'image' && !l.logo)));
 async function dzDraw(cv, doc, scale = 1, opts = {}) {
   await DZF.all(doc); dzCurveSync(doc);
@@ -1007,6 +1084,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   const one = async (x, l) => {
     const im = l.t === 'image' ? await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref) : null;
     const tex = l.fm === 'tex' && l.tex?.ref ? await dzImg(l.tex.ref) : null;
+    const tPics = {}; for (const r of dzTblRefs(l)) tPics[r] ??= await dzImg(r);
     const nIco = l.t === 'shortcut' ? await dzIcoImg(l.svg || '', dzInkOn(doc)) : null; if (l.t === 'check') l.h = dzCheckH(l); if (l.t === 'field') l.h = dzFieldGeom(l, x, doc).h;
     let lines = null;
     if ('fontVariantCaps' in x) x.fontVariantCaps = l.t === 'text' && l.caps === 'small' ? 'small-caps' : 'normal';
@@ -1054,6 +1132,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     const flip = () => { if (l.fx || l.fy) x.scale(l.fx ? -1 : 1, l.fy ? -1 : 1); };   // mirrored
     if (l.t === 'shortcut' || l.t === 'check') { dzNoteDraw(x, l, doc, nIco); x.restore(); return; }
     if (l.t === 'field') { dzFieldDraw(x, doc, l, opts); x.restore(); return; }
+    if (l.t === 'table') { flip(); dzTblDraw(x, doc, l, tPics); x.restore(); return; }
     if (l.qr && l.qrbg && l.qrbg !== 'none') { x.fillStyle = dzCol(doc, l.qrbg); x.fillRect(-l.w / 2, -(l.h || 0) / 2, l.w, l.h || 0); }
     if (l.t === 'text') {
       flip();
@@ -1942,7 +2021,16 @@ DZ.edit = async (id) => {
   // Leaving crop mode: an uncropped item drops its crop entirely.
   const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
+  /* The picked cells of the table being edited, outlined on the design. */
+  const tblMark = () => { let m = $('#dz-tmark'); const l = sel && doc.layers.find(x => x.id === sel);
+    if (!l || l.t !== 'table' || many() || tab !== 'edit') { if (m) m.hidden = true; return; }
+    if (!m) { m = document.createElement('div'); m.id = 'dz-tmark'; page.append(m); }
+    const S = tS(l), { xs, ys } = dzTblGeo(l);
+    Object.assign(m.style, { left: (l.x + xs[S.c0]) * k + 'px', top: (l.y + ys[S.r0]) * k + 'px', width: (xs[S.c1 + 1] - xs[S.c0]) * k + 'px', height: (ys[S.r1 + 1] - ys[S.r0]) * k + 'px',
+      transformOrigin: `${(l.w / 2 - xs[S.c0]) * k}px ${(l.h / 2 - ys[S.r0]) * k}px`, transform: `rotate(${l.rot || 0}deg) scale(${l.fx ? -1 : 1}, ${l.fy ? -1 : 1})` });
+    m.hidden = false; };
   const placeSel = () => {
+    try { tblMark(); } catch {}
     if (!selBox) return;
     const mo = $('#dz-multi');
     if (mo) mo.innerHTML = picked().map(m => `<i class="dz-mo ${m.lock ? 'locked' : ''}" style="left:${m.x * k}px;top:${m.y * k}px;width:${m.w * k}px;height:${(m.h || 1) * k}px;transform:rotate(${m.rot || 0}deg)"></i>`).join('');
@@ -1965,7 +2053,7 @@ DZ.edit = async (id) => {
     const th = await dzCanvas(doc, 360 / Math.max(doc.w, doc.h));
     const ref = await Media.save(await new Promise(r => th.toBlob(r, 'image/jpeg', 0.8)), 'jpg');
     const old = (await DB.one('SELECT thumb_ref FROM designs WHERE id = ?', [id]))?.thumb_ref;
-    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => adjS && l.ref === adjS.tmp ? adjS.ref : l.ref), ...doc.layers.map(l => l.tex?.ref), ...doc.layers.map(l => l.sh?.stencil?.ref), doc.chal?.stencil?.ref, ...(doc.chal?.refs || []).map(r => r.ref)].filter(Boolean))];   /* a value study's stencil is the design's too */
+    const refs = [...new Set([doc.bg?.img, ...doc.layers.filter(l => l.t === 'image' && l.ref).map(l => adjS && l.ref === adjS.tmp ? adjS.ref : l.ref), ...doc.layers.map(l => l.tex?.ref), ...doc.layers.flatMap(dzTblRefs), ...doc.layers.map(l => l.sh?.stencil?.ref), doc.chal?.stencil?.ref, ...(doc.chal?.refs || []).map(r => r.ref)].filter(Boolean))];   /* a value study's stencil is the design's too */
     const before = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id])).map(x => x.ref);
     await DB.tx([{ sql: `UPDATE designs SET name = ?, doc = ?, thumb_ref = ?, updated_at = datetime('now') WHERE id = ?`, params: [name, docJSON(), ref, id] },
       { sql: 'DELETE FROM design_assets WHERE design_id = ?', params: [id] },
@@ -1977,7 +2065,7 @@ DZ.edit = async (id) => {
   const onHide = () => { if (document.hidden) flush(); };
   document.addEventListener('visibilitychange', onHide);
   const dropped = new Set(), made = new Set();   // pictures taken out (or made) while editing; tidied when leaving
-  const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref), ...doc.layers.map(l => l.tex?.ref)].filter(Boolean);
+  const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref), ...doc.layers.map(l => l.tex?.ref), ...doc.layers.flatMap(dzTblRefs)].filter(Boolean);
   let dzKeys = null, dzPenKeys = null, dzRO = null;   // let go of when leaving, so the editor can be freed
   addEventListener('hashchange', function away() { removeEventListener('hashchange', away); document.removeEventListener('visibilitychange', onHide); focus(false);
     removeEventListener('keydown', dzKeys); removeEventListener('keyup', dzPenKeys); dzRO?.disconnect();
@@ -2021,6 +2109,83 @@ DZ.edit = async (id) => {
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
+  /* Tables: tsel is the picked block of cells (row and column at each corner, the first one is where it started).
+     Tap a cell; tap a row number or column letter for the whole row or column; Range (or Shift) picks a block. */
+  let tsel = null, tRange = false;
+  const tS = (l) => { const R = l.rows.length - 1, C = l.cols.length - 1;
+    if (!tsel || tsel.id !== l.id) tsel = { id: l.id, r0: 0, c0: 0, r1: 0, c1: 0 };
+    for (const [a, m] of [['r0', R], ['r1', R], ['c0', C], ['c1', C]]) tsel[a] = Math.max(0, Math.min(m, tsel[a]));
+    return { r0: Math.min(tsel.r0, tsel.r1), r1: Math.max(tsel.r0, tsel.r1), c0: Math.min(tsel.c0, tsel.c1), c1: Math.max(tsel.c0, tsel.c1) }; };
+  const tCells = (l) => { const s = tS(l), out = []; for (let r = s.r0; r <= s.r1; r++) for (let c = s.c0; c <= s.c1; c++) out.push([r, c]); return out; };
+  const tSet = (l, k, v) => { l.cells ||= {}; for (const [r, c] of tCells(l)) { const id = r + ':' + c, o = l.cells[id] ||= {}; if (v == null || v === '') delete o[k]; else o[k] = v; if (!Object.keys(o).length) delete l.cells[id]; } };
+  const tPick = (l, r, c, ext) => { tS(l); if (ext) { tsel.r1 = r; tsel.c1 = c; } else Object.assign(tsel, { r0: r, c0: c, r1: r, c1: c }); };
+  /* Rows and columns in, out and resized: the cells' keys move with them. */
+  const tMove = (l, axis, at, d) => { const out = {}; for (const [id, o] of Object.entries(l.cells || {})) { let [r, c] = id.split(':').map(Number); const v = axis === 'r' ? r : c;
+      if (d < 0 && v >= at && v < at - d) continue; const nv = v >= at ? v + d : v; if (axis === 'r') r = nv; else c = nv; out[r + ':' + c] = o; } l.cells = out; };
+  const tPx = (l, axis) => { const a = axis === 'r' ? l.rows : l.cols, tot = axis === 'r' ? l.h : l.w, s = a.reduce((p, q) => p + q, 0) || 1; return a.map(v => v * tot / s); };
+  const tSetPx = (l, axis, px) => { if (axis === 'r') { l.rows = px; l.h = px.reduce((a, b) => a + b, 0); } else { l.cols = px; l.w = px.reduce((a, b) => a + b, 0); } };
+  const tblAct = async (l, a) => { const s = tS(l), R = tPx(l, 'r'), C = tPx(l, 'c');
+    if (a === 'rowa' || a === 'rowb') { const at = a === 'rowa' ? s.r0 : s.r1 + 1; tMove(l, 'r', at, 1); R.splice(at, 0, R[Math.min(at, R.length - 1)] || 60); tSetPx(l, 'r', R); tPick(l, at, s.c0); }
+    if (a === 'cola' || a === 'colb') { const at = a === 'cola' ? s.c0 : s.c1 + 1; tMove(l, 'c', at, 1); C.splice(at, 0, C[Math.min(at, C.length - 1)] || 120); tSetPx(l, 'c', C); tPick(l, s.r0, at); }
+    if (a === 'rowx') { const n = s.r1 - s.r0 + 1; if (n >= R.length) return toast('A table needs at least one row.');
+      if (!await ask(`Delete ${n === 1 ? 'this row' : n + ' rows'}?\n\nWhat's in ${n === 1 ? 'it' : 'them'} goes too. Undo brings it back.`)) return;
+      tMove(l, 'r', s.r0, -n); R.splice(s.r0, n); tSetPx(l, 'r', R); tPick(l, Math.min(s.r0, R.length - 1), s.c0); }
+    if (a === 'colx') { const n = s.c1 - s.c0 + 1; if (n >= C.length) return toast('A table needs at least one column.');
+      if (!await ask(`Delete ${n === 1 ? 'this column' : n + ' columns'}?\n\nWhat's in ${n === 1 ? 'it' : 'them'} goes too. Undo brings it back.`)) return;
+      tMove(l, 'c', s.c0, -n); C.splice(s.c0, n); tSetPx(l, 'c', C); tPick(l, s.r0, Math.min(s.c0, C.length - 1)); }
+    if (a === 'nopic') { for (const [r, c] of tCells(l)) { const o = l.cells?.[r + ':' + c]; if (o?.img) { dropped.add(o.img); delete o.img; delete o.ifit; delete o.isz; delete o.ipos; if (!Object.keys(o).length) delete l.cells[r + ':' + c]; } } }
+    if (a === 'reven') { const v = l.h / R.length; tSetPx(l, 'r', R.map(() => v)); }
+    if (a === 'ceven') { const v = l.w / C.length; tSetPx(l, 'c', C.map(() => v)); }
+    if (a === 'clear') { for (const [r, c] of tCells(l)) { const o = l.cells?.[r + ':' + c]; if (o) l.cells[r + ':' + c] = o.s ? { s: o.s } : undefined; if (!l.cells[r + ':' + c]) delete l.cells[r + ':' + c]; } }
+    if (a === 'empty') { if (!await ask('Clear the text in the picked cells?\n\nTheir colours and fonts stay. Undo brings the text back.')) return; tSet(l, 's', null); }
+    changed(true); drawSide(); };
+  const tblPanel = (l) => {
+    const s = tS(l), R = l.rows.length, C = l.cols.length, one = s.r0 === s.r1 && s.c0 === s.c1, n = (s.r1 - s.r0 + 1) * (s.c1 - s.c0 + 1);
+    const inS = (r, c) => r >= s.r0 && r <= s.r1 && c >= s.c0 && c <= s.c1, L = (c) => c < 26 ? String.fromCharCode(65 + c) : 'C' + (c + 1);
+    const own = l.cells?.[s.r0 + ':' + s.c0] || {}, k = dzTblCell(l, s.r0, s.c0), rp = tPx(l, 'r'), cp = tPx(l, 'c');
+    const grid = `<div class="dz-tg" style="grid-template-columns:26px repeat(${C}, minmax(34px, 1fr))"><button data-tg="all" title="Whole table">◢</button>${l.cols.map((_, c) => `<button data-tg="c:${c}" class="h ${s.c0 <= c && c <= s.c1 && s.r0 === 0 && s.r1 === R - 1 ? 'on' : ''}">${L(c)}</button>`).join('')}
+      ${l.rows.map((_, r) => `<button data-tg="r:${r}" class="h ${s.r0 <= r && r <= s.r1 && s.c0 === 0 && s.c1 === C - 1 ? 'on' : ''}">${r + 1}</button>${l.cols.map((_, c) => `<button data-tg="${r}:${c}" class="${inS(r, c) ? 'on' : ''} ${r < (l.hdr || 0) ? 'hd' : ''}">${esc((l.cells?.[r + ':' + c]?.s || '').slice(0, 12))}</button>`).join('')}`).join('')}</div>`;
+    const seg = (attr, cur, opts) => `<div class="seg" style="margin-bottom:8px">${opts.map(([v, n2]) => `<button ${attr}="${v}" class="${cur === v ? 'on' : ''}" style="flex:1">${n2}</button>`).join('')}</div>`;
+    const where = one ? `Cell ${L(s.c0)}${s.r0 + 1}` : `${n} cells`;
+    return `<div class="dz-lh"><b>Table</b><button class="btn small" data-act="done">Done</button></div>
+      ${fsec('Cells', `${grid}<div class="row" style="gap:6px;align-items:center;margin:6px 0 2px"><label class="toggle" style="display:flex;flex:1" data-tip="On: the next tap picks everything from the first cell to that one. Shift does the same."><input type="checkbox" data-trange ${tRange ? 'checked' : ''}><span>Range</span></label><span class="muted" style="font-size:12px">${where}</span></div>
+        <p class="muted" style="font-size:11px;margin:2px 0 6px">Tap a cell here or on the design. A row number or column letter picks the whole row or column.</p>
+        ${one ? `<textarea class="in" data-tt rows="2" placeholder="Text in ${where}">${esc(own.s || '')}</textarea>` : ''}`, { hint: where })}
+      ${fsec('Picked cells', `<div class="lbl">Fill</div>${swatches('tc:bg', own.bg || '', true)}<div class="lbl">Text colour</div>${swatches('tc:c', own.c || '', false)}
+        <label class="field"><span>Font</span><select class="in" data-tcf><option value="">Table font</option>${fontOpts(own.font || '').replace(/ selected/g, own.font ? ' selected' : '')}</select></label>
+        ${slider('tc:size', 'Text size', 8, 120, 1, Math.round(k.size))}
+        <div class="row" style="gap:6px;margin-bottom:8px"><button class="btn small ${k.b ? 'primary' : ''}" data-tcb="b" style="flex:1;font-weight:800">Bold</button><button class="btn small ${k.it ? 'primary' : ''}" data-tcb="it" style="flex:1;font-style:italic">Italic</button></div>
+        ${seg('data-tca', k.al, [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']])}${seg('data-tcv', k.va, [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}
+        <div class="row" style="gap:6px"><button class="btn small" data-tact="clear" style="flex:1" data-tip="Back to the table's own look">Clear their style</button><button class="btn small" data-tact="empty" style="flex:1">Clear their text</button></div>`, { fold: true, open: true, hint: where })}
+      ${fsec('Picture in cell', `<div class="dz-tgb"><button class="btn small" data-tpic="assets">From assets</button><label class="btn small" style="text-align:center">From this device<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" hidden id="dz-tcimg"></label>
+          <button class="btn small" data-tpic="pf">From portfolio</button><button class="btn small" data-tpic="refs">From references</button></div>
+        ${F().some(m => m.t === 'image' && !m.logo && m.ref) ? `<label class="field"><span>Move a picture from the design</span><select class="in" data-tpmove><option value="">Pick a picture…</option>${F().filter(m => m.t === 'image' && !m.logo && m.ref).map(m => `<option value="${m.id}">${esc(layerName(m))}</option>`).join('')}</select></label>` : ''}
+        <p class="muted" style="font-size:11px;margin:0 0 8px">PNG, JPG and SVG pictures only. To put a group or clipped layers in a cell, flatten them into a picture first, then move it in here.</p>
+        ${own.img ? `${seg('data-tipos', k.ipos, [['c', 'Centre'], ['l', 'Left of text'], ['t', 'Above text']])}${seg('data-tifit', k.ifit, [['contain', 'Whole picture'], ['cover', 'Fill the box']])}
+          ${slider('tc:isz', 'Picture size', 10, 100, 1, Math.round(k.isz * 100), v => v + '%')}<button class="btn small" data-tact="nopic" style="width:100%">Take the picture out</button>` : ''}`,
+        { fold: true, open: !!own.img, hint: own.img ? 'picture' : 'none' })}
+      ${doc.form ? (() => { const lt = own.ltype ?? (own.link ? 'web' : ''), def = FF_LINKS.find(q => q[0] === lt);
+        return fsec('Cell link', `<label class="field"><span>When the cell is clicked</span><select class="in" data-tltype>${FF_LINKS.map(([v, n2]) => `<option value="${v}" ${lt === v ? 'selected' : ''}>${n2}</option>`).join('')}</select></label>
+          ${lt === 'page' ? `<label class="field"><span>Page</span><select class="in" data-tlinkv>${ffFaces(doc).map((_, i) => `<option value="${i + 1}" ${String(own.lval ?? '1') === String(i + 1) ? 'selected' : ''}>Page ${i + 1}</option>`).join('')}</select></label>`
+            : def?.[2] ? `<label class="field"><span>${def[1]}</span><input class="in" data-tlinkv value="${esc(own.lval ?? own.link ?? '')}" placeholder="${esc(def[2])}" autocomplete="off"></label>` : ''}
+          <p class="muted" style="font-size:11px;margin:0">Works in the interactive PDF and when the form is filled in here. Applies to every picked cell.</p>`, { fold: true, open: !!own.link, hint: own.link ? (FF_LINKS.find(q => q[0] === lt)?.[1] || 'link') : 'none' }); })() : ''}
+      ${fsec('Rows and columns', `<div class="dz-tgb"><button class="btn small" data-tact="rowa">+ Row above</button><button class="btn small" data-tact="rowb">+ Row below</button><button class="btn small" data-tact="cola">+ Column left</button><button class="btn small" data-tact="colb">+ Column right</button>
+        <button class="btn small" data-tact="rowx">Delete row${s.r1 > s.r0 ? 's' : ''}</button><button class="btn small" data-tact="colx">Delete column${s.c1 > s.c0 ? 's' : ''}</button><button class="btn small" data-tact="reven">Even rows</button><button class="btn small" data-tact="ceven">Even columns</button></div>
+        ${slider('tr:h', s.r1 > s.r0 ? 'Row height (picked rows)' : `Row ${s.r0 + 1} height`, 20, Math.max(400, Math.round(rp[s.r0] * 2)), 1, Math.round(rp[s.r0]))}
+        ${slider('tr:w', s.c1 > s.c0 ? 'Column width (picked columns)' : `Column ${L(s.c0)} width`, 30, Math.max(800, Math.round(cp[s.c0] * 2)), 1, Math.round(cp[s.c0]))}`, { fold: true, hint: `${R} × ${C}` })}
+      ${fsec('Table style', `<label class="field"><span>Font</span><select class="in" data-tlf>${fontOpts(l.font)}</select></label>
+        ${slider('size', 'Text size', 8, 120, 1, l.size)}${slider('pad', 'Space inside cells', 0, 60, 1, l.pad ?? 14)}
+        <div class="lbl">Text colour</div>${swatches('c', l.c, false)}<div class="lbl">Background</div>${swatches('bg', l.bg, true)}
+        <label class="toggle" style="display:flex;margin:8px 0 6px"><input type="checkbox" data-thdr ${l.hdr ? 'checked' : ''}><span>Header row</span></label>
+        ${l.hdr ? `<div class="lbl">Header fill</div>${swatches('hbg', l.hbg, true)}<div class="lbl">Header text</div>${swatches('hc', l.hc, false)}` : ''}
+        <div class="lbl">Banded rows</div>${swatches('band', l.band, true)}`, { fold: true, hint: 'font, colours' })}
+      ${fsec('Borders', `<div class="lbl">Lines</div>${seg('data-tlines', l.lines || 'all', [['all', 'All'], ['rows', 'Rows'], ['cols', 'Columns'], ['head', 'Header'], ['none', 'None']])}
+        <label class="toggle" style="display:flex;margin-bottom:6px"><input type="checkbox" data-touter ${l.outer ? 'checked' : ''}><span>Outer border</span></label>
+        <div class="lbl">Colour</div>${swatches('bc', l.bc, true)}${slider('bw', 'Width', 0, 20, 0.5, l.bw ?? 2)}${slider('rad', 'Corner rounding', 0, 80, 1, l.rad || 0)}`, { fold: true, hint: { all: 'all lines', rows: 'rows', cols: 'columns', head: 'header', none: 'none' }[l.lines || 'all'] })}
+      ${fsec('Data', `<label class="btn small" style="display:block;text-align:center">Import CSV…<input type="file" accept=".csv,.tsv,.txt,text/csv" hidden id="dz-tcsv"></label>
+        <p class="muted" style="font-size:11px;margin:6px 0 0">Fills the table from a spreadsheet saved as CSV. Rows and columns are added or removed to fit.</p>`, { fold: true, hint: 'CSV' })}
+      ${fsec('Rotation and opacity', `${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}`, { fold: true })}`;
+  };
   /* Outline: colour, width, where it sits on the edge, and whether it grows and shrinks with the shape. */
   const outlineUI = (l) => { const on = l.stroke && l.stroke !== 'none' && l.sw > 0, at = l.sal === 'in' || l.sal === 'out' ? l.sal : 'mid';
     return fsec('Outline', `${swatches('stroke', on ? l.stroke : 'none', true)}${slider('sw', 'Width', 0, 60, 1, Math.round(l.sw || 0))}
@@ -2101,7 +2266,7 @@ DZ.edit = async (id) => {
   const EYE_OFF = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
   const LOCK = (on) => on ? '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
     : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>';
-  const layerName = (l) => l.name || (l.t === 'field' ? 'Field: ' + (l.label || l.ft).slice(0, 30) : l.t === 'shortcut' ? 'Shortcut: ' + (l.label || '') : l.t === 'check' ? 'Checklist' : l.t === 'text' ? ((dzFill(doc, l.text).trim() || l.text).split('\n')[0].trim().slice(0, 30) || 'Text')
+  const layerName = (l) => l.name || (l.t === 'table' ? 'Table' : '') || (l.t === 'field' ? 'Field: ' + (l.label || l.ft).slice(0, 30) : l.t === 'shortcut' ? 'Shortcut: ' + (l.label || '') : l.t === 'check' ? 'Checklist' : l.t === 'text' ? ((dzFill(doc, l.text).trim() || l.text).split('\n')[0].trim().slice(0, 30) || 'Text')
     : l.t === 'image' ? (l.logo ? 'Logo' : l.slot != null ? `Photo ${l.slot + 1}` : 'Picture')
     : ({ ellipse: 'Circle', line: 'Line', star: 'Star', path: 'Traced shape' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
   const layerIco = (l) => l.t === 'text' ? 'T' : l.t === 'image' ? (l.logo ? '◎' : '▣') : '◆';
@@ -2292,7 +2457,7 @@ DZ.edit = async (id) => {
     p.innerHTML = a === 'fields' ? FF_TYPES.map(([v, n]) => mi(`data-ffadd="${v}"`, 'frametext', n)).join('') : a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="frame"', 'frametext', 'Frame text') + mi('data-add="heading"', 'heading', 'Heading')
         + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
       : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-rail="assets"', 'asset', 'From assets') + mi('data-add="logo"', 'logo', 'Studio logo')
-      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => `<button class="dz-ib tt-icb" data-shape="${v}" data-tip="${n}" aria-label="${n}"><svg viewBox="0 0 24 24">${DZ_UI['s_' + v]}</svg><span>${n.replace('Rounded square', 'Rounded').replace('Speech bubble', 'Bubble')}</span></button>`).join('')}</div>` + mi('data-qradd', 'qr', 'QR code') + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
+      : `<div class="sg">${DZ_SHAPES.map(([v, n]) => `<button class="dz-ib tt-icb" data-shape="${v}" data-tip="${n}" aria-label="${n}"><svg viewBox="0 0 24 24">${DZ_UI['s_' + v]}</svg><span>${n.replace('Rounded square', 'Rounded').replace('Speech bubble', 'Bubble')}</span></button>`).join('')}</div>` + mi('data-qradd', 'qr', 'QR code') + mi('data-tbladd', 'table', 'Table') + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
     p.hidden = false; btn?.classList.add('open');
     const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p.offsetHeight - 8)) + 'px';
   };
@@ -2321,6 +2486,65 @@ DZ.edit = async (id) => {
     gxApply(k, v); const b = e.target.closest('.dz-sl')?.querySelector('b'); if (b) b.textContent = k === 'op' ? Math.round(v * 100) + '%' : k === 'rot' ? v + '°' : v + '%';
     changed(); placeSel(); });
   side.addEventListener('change', (e) => { const k = e.target.dataset?.gx; if (!k) return; gxSnap = null; changed(true); if (k !== 'op') drawSide(); });
+  /* Table panel: picking cells, their look, rows and columns, borders, CSV. */
+  side.addEventListener('click', (e) => { const l = layer(); if (l?.t !== 'table') return; const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    const g = d('tg');
+    if (g) { const R = l.rows.length - 1, C = l.cols.length - 1; tS(l);
+      if (g === 'all') Object.assign(tsel, { r0: 0, c0: 0, r1: R, c1: C });
+      else if (g[0] === 'r') { const r = +g.slice(2); Object.assign(tsel, (tRange || e.shiftKey) ? { r1: r, c0: 0, c1: C } : { r0: r, r1: r, c0: 0, c1: C }); }
+      else if (g[0] === 'c') { const c = +g.slice(2); Object.assign(tsel, (tRange || e.shiftKey) ? { c1: c, r0: 0, r1: R } : { c0: c, c1: c, r0: 0, r1: R }); }
+      else { const [r, c] = g.split(':').map(Number); tPick(l, r, c, tRange || e.shiftKey); }
+      return drawSide(); }
+    if (d('tcb')) { const k = d('tcb'), now = dzTblCell(l, tS(l).r0, tS(l).c0)[k]; tSet(l, k, now ? 0 : 1); changed(true); return drawSide(); }
+    if (d('tca')) { tSet(l, 'al', d('tca')); changed(true); return drawSide(); }
+    if (d('tcv')) { tSet(l, 'va', d('tcv')); changed(true); return drawSide(); }
+    if (d('tlines')) { l.lines = d('tlines'); changed(true); return drawSide(); }
+    if (d('tipos')) { tSet(l, 'ipos', d('tipos') === 'c' ? null : d('tipos')); changed(true); return drawSide(); }
+    if (d('tifit')) { tSet(l, 'ifit', d('tifit') === 'contain' ? null : d('tifit')); changed(true); return drawSide(); }
+    if (d('tpic')) return (async () => { const src = d('tpic'); let ref;
+      if (src === 'assets') { const r = await assetPick(); ref = r?.svg_ref; } else ref = await dzPortfolioPick(src === 'refs' ? 'refs' : true);
+      if (!ref) return; tSet(l, 'img', ref); await dzImg(ref); changed(true); await redraw(); drawSide(); })();
+    if (d('tact')) return tblAct(l, d('tact'));
+  });
+  side.addEventListener('input', (e) => { const l = layer(); if (l?.t !== 'table' || !e.target.hasAttribute('data-tt')) return; const S = tS(l), id = S.r0 + ':' + S.c0;
+    l.cells ||= {}; const o = l.cells[id] ||= {}; if (e.target.value) o.s = e.target.value; else { delete o.s; if (!Object.keys(o).length) delete l.cells[id]; }
+    changed(); const b = side.querySelector(`[data-tg="${id}"]`); if (b) b.textContent = (o.s || '').slice(0, 12); });
+  side.addEventListener('change', async (e) => { const l = layer(); if (l?.t !== 'table') return; const t = e.target;
+    if (t.hasAttribute('data-tt')) return changed(true);
+    if (t.hasAttribute('data-trange')) { tRange = t.checked; return; }
+    if (t.hasAttribute('data-tltype')) { const v = t.value; tSet(l, 'ltype', v || null); tSet(l, 'lval', v === 'page' ? '1' : null); tSet(l, 'link', v.startsWith('act:') ? v : v === 'page' ? 'page:1' : null); changed(true); return drawSide(); }
+    if (t.hasAttribute('data-tlinkv')) { const S = tS(l), o = l.cells?.[S.r0 + ':' + S.c0] || {}, ty = o.ltype ?? 'web', v = ffLinkMake(ty, t.value);
+      if (t.value.trim() && !v) toast("That link can't be used."); tSet(l, 'ltype', ty); tSet(l, 'lval', t.value); tSet(l, 'link', v || null); changed(true); return drawSide(); }
+    if (t.id === 'dz-tcimg') { const f = t.files[0]; t.value = ''; if (!f) return;
+      if (!/png|jpe?g|webp|svg/i.test(f.type + ' ' + f.name)) return toast('Pick a PNG, JPG or SVG picture.');
+      try { const { ref } = await importPic(f, 1200); made.add(ref); tSet(l, 'img', ref); changed(true); await redraw(); return drawSide(); } catch { return toast('Could not read that picture.'); } }
+    if (t.hasAttribute('data-tpmove') && t.value) { const m = doc.layers.find(x => x.id === t.value); if (!m) return;
+      const flat = m.crop || m.rot || m.fx || m.fy || (m.op ?? 1) < 1 || (m.sw && m.stroke && m.stroke !== 'none') || m.r || m.cover;
+      if (flat) toast('Its crop, turn, outline or fade stay behind: flatten it first to keep them.', 3200);
+      tSet(l, 'img', m.ref); doc.layers = doc.layers.filter(x => x !== m); sel = l.id; changed(true); await redraw(); return drawSide(); }
+    if (t.hasAttribute('data-thdr')) { l.hdr = t.checked ? 1 : 0; changed(true); return drawSide(); }
+    if (t.hasAttribute('data-touter')) { l.outer = t.checked ? 1 : 0; changed(true); return drawSide(); }
+    if (t.hasAttribute('data-tcf')) { tSet(l, 'font', t.value || null); await DZF.load(dzFont(doc, t.value || l.font)); changed(true); await redraw(); return drawSide(); }
+    if (t.hasAttribute('data-tlf')) { l.font = t.value; await DZF.load(dzFont(doc, t.value)); changed(true); await redraw(); return drawSide(); }
+    if (t.id === 'dz-tcsv') { const f = t.files[0]; t.value = ''; if (!f) return;
+      const rows = dzCsv(await f.text()); if (!rows.length) return toast('That file has no rows.');
+      if (rows.length * Math.max(...rows.map(r => r.length)) > 2000) return toast('That file is too big for a table (2000 cells at most).');
+      if (Object.values(l.cells || {}).some(o => o.s) && !await ask('Replace the table\'s text with this file?\n\nCell colours and fonts stay where they are. Undo brings the old text back.')) return;
+      const nr = rows.length, nc = Math.max(...rows.map(r => r.length)), rp = tPx(l, 'r'), cp = tPx(l, 'c'), rh = rp.reduce((a, b) => a + b, 0) / rp.length, cw = l.w / nc;
+      tSetPx(l, 'r', Array.from({ length: nr }, (_, i) => rp[i] ?? rh)); tSetPx(l, 'c', Array.from({ length: nc }, () => cw));
+      const keep = {}; for (const [id, o] of Object.entries(l.cells || {})) { const [r, c] = id.split(':').map(Number); if (r < nr && c < nc) { const { s: _s, ...st } = o; if (Object.keys(st).length) keep[id] = st; } }
+      rows.forEach((row, r) => row.forEach((v, c) => { if (v.trim()) (keep[r + ':' + c] ||= {}).s = v.trim(); })); l.cells = keep;
+      tsel = null; changed(true); placeSel(); toast(`${nr} rows and ${nc} columns filled.`); return drawSide(); }
+  });
+  /* On the design: tapping a table that's already picked picks the cell under the finger (Shift or Range: a block). */
+  let tblWas = null;
+  page.addEventListener('pointerdown', () => { tblWas = sel; }, true);
+  page.addEventListener('pointerup', (e) => { const l = layer(); if (l?.t !== 'table' || tblWas !== l.id || many() || cropping || nodes) return;
+    const p = toPage(e), cx = l.x + l.w / 2, cy = l.y + l.h / 2, a = -(l.rot || 0) * Math.PI / 180, dx = p.x - cx, dy = p.y - cy;
+    let lx = dx * Math.cos(a) - dy * Math.sin(a) + l.w / 2, ly = dx * Math.sin(a) + dy * Math.cos(a) + l.h / 2; if (l.fx) lx = l.w - lx; if (l.fy) ly = l.h - ly;
+    if (lx < 0 || ly < 0 || lx > l.w || ly > l.h) return;
+    const { xs, ys } = dzTblGeo(l), c = Math.max(0, xs.findIndex(v => v > lx) - 1), r = Math.max(0, ys.findIndex(v => v > ly) - 1);
+    const S0 = tsel && { ...tsel }; tPick(l, r, c, tRange || e.shiftKey); if (!S0 || JSON.stringify(S0) !== JSON.stringify(tsel)) setTimeout(drawSide); });
   const drawMulti = () => {
     const L = picked(), n = L.length, all = (f) => n && L.every(f);
     const dis = n ? '' : 'disabled';
@@ -2399,6 +2623,7 @@ DZ.edit = async (id) => {
     const kindName = l.t === 'text' ? 'Text' : l.t === 'image' ? (l.logo ? 'Logo' : 'Picture') : 'Shape';
     if (cut) { side.innerHTML = cutPanel(l); return; }
     if (nodes) { side.innerHTML = nodePanel(l); return; }
+    if (l.t === 'table') { side.innerHTML = tblPanel(l); tblMark(); return; }
     if (cropping) {
       side.innerHTML = `<div class="dz-lh"><b>Crop ${kindName.toLowerCase()}</b><button class="btn small primary" data-act="cropdone">Done</button></div>
         <p class="muted" style="font-size:13px;margin:0 0 10px">Drag the edges or corners to cut away what you don't want. Drag inside the box to choose which part shows. The faint part is what gets cut.</p>
@@ -4169,6 +4394,7 @@ DZ.edit = async (id) => {
     if (t.closest('[data-collapse]')) { mini = !mini; Settings.set('dz_panel_min', mini ? '1' : ''); return drawSide(); }
     if (d('rail')) return railAct(d('rail'), t.closest('[data-rail]'));
     if (t.closest('[data-ffupd]')) { const n = await ffUpdateLists(doc); toast(n ? `Updated ${n} field${n > 1 ? 's' : ''}.` : 'Already up to date.'); if (n) changed(true); return drawSide(); }
+    if (t.closest('[data-tbladd]')) { closePop(); const w = Math.round(doc.w * 0.7), n = dzTblNew(w); return add({ ...n, ...center(w, n.h) }); }
     if (t.closest('[data-qradd], [data-qrfrom]')) { closePop(); const from = t.closest('[data-qrfrom]') ? l : null, txt = from?.link || 'https://', m = dzQr(txt, 'M'), s = from ? Math.min(from.w, from.h || from.w) * 0.8 : Math.min(doc.w, doc.h) * 0.3;
       secOpen.set('QR code', true); return add({ t: 'shape', shape: 'vec', name: 'QR code', keep: true, qr: { text: txt, ec: 'M', link: true }, ...(from ? {} : {}), subs: dzQrSubs(m), fill: '#000000', stroke: 'none', sw: 0, qrbg: '#ffffff', w: s, h: s, x: from ? from.x + (from.w - s) / 2 : (doc.w - s) / 2, y: from ? from.y + ((from.h || 0) - s) / 2 : (doc.h - s) / 2, link: dzLinkOK(txt) }); }
     if (t.closest('[data-curvetext]') && l) { secOpen.set('Follow a curve', true); return add({ t: 'text', text: 'Your text here', size: Math.round(Math.max(24, Math.min(doc.h * 0.05, Math.min(l.w, l.h || l.w) * 0.14))), font: '@2', c: '@fg', al: 'center', lh: 1.2, on: l.id, x: l.x, y: l.y, w: l.w, h: l.h || 1 }); }
@@ -4257,7 +4483,7 @@ DZ.edit = async (id) => {
     if ((t.closest('#dz-pfphoto') || t.closest('#dz-refphoto')) && l) { const ref = await dzPortfolioPick(t.closest('#dz-refphoto') ? 'refs' : true); if (!ref) return; l.ref = ref; if (!l.cover && l.slot == null) { const im = await dzImg(ref); if (im) l.h = l.w * im.naturalHeight / im.naturalWidth; } changed(true); return drawSide(); }
     if (d('c')) {
       const key = t.closest('[data-swk]').dataset.swk, c = d('c');
-      if (key === 'bg') doc.bg.c = c === 'none' ? '@bg' : c; else if (key === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = c; } else if (l) { l[key] = c; if (key === 'stroke' && c !== 'none' && !l.sw) l.sw = 4; }
+      if (key === 'bg') doc.bg.c = c === 'none' ? '@bg' : c; else if (key === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = c; } else if (l && key.startsWith('tc:')) tSet(l, key.slice(3), c === 'none' && key === 'tc:bg' ? 'none' : c); else if (l) { l[key] = c; if (key === 'stroke' && c !== 'none' && !l.sw) l.sw = 4; }
       changed(); return drawSide();
     }
     if (!l) return;
@@ -4492,7 +4718,7 @@ DZ.edit = async (id) => {
       return changed();
     }
     if (t.dataset.v) { doc.vals[t.dataset.v] = t.value; return changed(); }
-    if (t.dataset.cpick) { const kk = t.dataset.cpick; if (kk === 'bg') doc.bg.c = t.value; else if (kk === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = t.value; } else if (l) l[kk] = t.value; return changed(); }
+    if (t.dataset.cpick) { const kk = t.dataset.cpick; if (kk === 'bg') doc.bg.c = t.value; else if (kk === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = t.value; } else if (l && kk.startsWith('tc:')) tSet(l, kk.slice(3), t.value); else if (l) l[kk] = t.value; return changed(); }
     if (t.hasAttribute('data-contd') && cont) { const v = dzFromU(doc, +t.value); if (Number.isFinite(v)) { copt2.d = v; saveC2(); contCalc(); } return; }
     if (/^[ph]:/.test(key || '')) {   // pencil and hold-to-snap settings
       const kk = key.slice(2); pcl[kk] = +t.value; savePcl();
@@ -4514,6 +4740,12 @@ DZ.edit = async (id) => {
     }
     if (key === 'bgop') { doc.bg.op = +t.value; t.closest('.dz-sl').querySelector('b').textContent = Math.round(t.value * 100) + '%'; return changed(); }
     if (!l || !key || key === 'font') return;
+    if (l.t === 'table' && /^t[cr]:/.test(key)) {   /* the picked cells' text size, or the picked rows' and columns' size */
+      const v = +t.value, b0 = t.closest('.dz-sl')?.querySelector('b'); if (b0) b0.textContent = t.value;
+      if (key === 'tc:size') tSet(l, 'size', v);
+      else if (key === 'tc:isz') { tSet(l, 'isz', v / 100); if (b0) b0.textContent = v + '%'; }
+      else { const ax = key === 'tr:h' ? 'r' : 'c', S = tS(l), px = tPx(l, ax); for (let i = ax === 'r' ? S.r0 : S.c0; i <= (ax === 'r' ? S.r1 : S.c1); i++) px[i] = v; tSetPx(l, ax, px); placeSel(); }
+      return changed(); }
     l[key] = key === 'text' ? t.value : +t.value;
     const b = t.closest('.dz-sl')?.querySelector('b');
     if (b) b.textContent = key === 'op' ? Math.round(t.value * 100) + '%' : key === 'rot' ? t.value + '°'
@@ -5552,7 +5784,7 @@ async function dzPackDesign(id, name) {
   const r = await DB.one('SELECT * FROM designs WHERE id = ?', [id]); if (!r) return;
   toast('Preparing…');
   const doc = JSON.parse(r.doc), refPics = Settings.get('dz_refs_' + id, '');
-  const used = new Set(doc.layers.flatMap(l => [l.font]).filter(Boolean)), fonts = DZF.custom().filter(f => used.has(f.name));
+  const used = new Set(doc.layers.flatMap(l => [l.font, ...Object.values(l.cells || {}).map(o => o.font)]).filter(Boolean)), fonts = DZF.custom().filter(f => used.has(f.name));
   const names = new Set([...(r.doc.match(DZ_MEDIA_RE) || []), ...(refPics.match(DZ_MEDIA_RE) || []), ...fonts.map(f => f.ref),
     ...(await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id])).map(x => x.ref)]);
   if (r.thumb_ref) names.add(r.thumb_ref);

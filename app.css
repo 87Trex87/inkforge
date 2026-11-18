@@ -2440,3 +2440,13 @@ body.dz-focus .dz-body > .dz-side { max-height: calc(100% - 20px); overflow-y: a
 .dz-fpick { flex: none; width: 150px; height: 34px; border: 1px solid var(--line); background: var(--bg2); font-size: 15px; }
 .dz-fmenu { width: 240px; }
 .dz-fmenu .fh { padding: 6px 10px 2px; font: 600 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+
+/* Design studio tables: the cell picker in the side panel. */
+.dz-tg { display: grid; gap: 2px; max-height: 240px; overflow: auto; margin-bottom: 4px; }
+.dz-tg button { min-width: 0; height: 28px; padding: 0 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg2); color: var(--ink2); font-size: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.dz-tg button.h { background: transparent; border-color: transparent; font-weight: 700; font-size: 11px; }
+.dz-tg button.hd { font-weight: 700; color: var(--ink); }
+.dz-tg button.on { background: color-mix(in srgb, var(--teal) 30%, transparent); border-color: var(--teal); color: var(--ink); }
+.dz-tg button.h.on { color: var(--teal); }
+.dz-tgb { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+#dz-tmark { position: absolute; pointer-events: none; border: 2px solid var(--teal); box-shadow: 0 0 0 1px rgba(0,0,0,.4); background: color-mix(in srgb, var(--teal) 14%, transparent); z-index: 3; box-sizing: border-box; }
