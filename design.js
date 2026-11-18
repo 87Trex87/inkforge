@@ -2240,7 +2240,7 @@ DZ.edit = async (id) => {
       m.addEventListener('pointermove', (e) => { const l2 = layer(); if (!tgDrag || !l2?.tg) return; e.stopPropagation(); const r = page.getBoundingClientRect();
         let f = tgFrac(l2, { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }); if (e.shiftKey && tgDrag === 'b') { const o = l2.tg.a; if (Math.abs(f.x - o.x) * l2.w > Math.abs(f.y - o.y) * (l2.h || 1)) f.y = o.y; else f.x = o.x; }
         l2.tg[tgDrag] = { x: Math.round(f.x * 1000) / 1000, y: Math.round(f.y * 1000) / 1000 }; tgMark(); redraw(); });
-      const up = (e) => { if (!tgDrag) return; e.stopPropagation(); tgDrag = null; changed(true); };
+      const up = () => { if (!tgDrag) return; tgDrag = null; changed(true); };   /* lets the lift through, so the stage knows the finger is gone */
       m.addEventListener('pointerup', up); m.addEventListener('pointercancel', up); }
     const A = tgPt(l, l.tg.a || { x: 0, y: -0.5 }), B = tgPt(l, l.tg.b || { x: 0, y: 0.5 }), [ha, hb] = m.querySelectorAll('i'), ln = m.querySelector('line');
     ha.style.left = A.x * k + 'px'; ha.style.top = A.y * k + 'px'; hb.style.left = B.x * k + 'px'; hb.style.top = B.y * k + 'px';
@@ -4236,6 +4236,11 @@ DZ.edit = async (id) => {
     if (bg) { clearTimeout(bg.ht); if (!bg.moved && (sel || (picks.size && !picking))) select(null); bg = null; }
   };
   stage.addEventListener('pointerup', ptUp); stage.addEventListener('pointercancel', ptUp);
+  /* Backstop: a finger lifted anywhere is never still counted as down (a stale one makes the next single finger
+     pinch-zoom). Runs after the stage's own handling. */
+  const ptGone = (e) => { if (!document.body.contains(stage)) { removeEventListener('pointerup', ptGone, true); removeEventListener('pointercancel', ptGone, true); return; }
+    setTimeout(() => { pts.delete(e.pointerId); rest.delete(e.pointerId); if (pinch && pts.size < 2) pinch = null; }); };
+  addEventListener('pointerup', ptGone, true); addEventListener('pointercancel', ptGone, true);
   stage.addEventListener('wheel', (e) => { if (e.target.closest('.dz-pop')) return; e.preventDefault(); const r = stage.getBoundingClientRect();
     zoomTo(z * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
   /* Full screen design: the editor covers the app (no menus), the browser's bars hide where allowed, and the
