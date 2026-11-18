@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 492;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 493;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6568,11 +6568,22 @@ function reelQuickBind(el) {
 const REEL_CLIP_TOOLS = [['look', 'Look'], ['frame', 'Frame'], ['text', 'Text'], ['stickers', 'Stickers']];
 /* The reel's text defaults, shown folded in the Text tool: the font for cards and any text left on "Same as style",
    the text colour, and where and how big new text starts. Saved in the style like before. */
+/* A reel colour choice's palette block: the eyedropper, recent colours, and the palette in use with its menu and
+   Palettes… (the same palettes as the design studio). `attr(c)` is how one of that choice's own swatches says its
+   colour, so a tap here (or the eyedropper) works just like tapping one of them. eya / eyx: the same, for the eyedropper. */
+function reelPalExtra(attr, eya, eyx = '') {
+  if (typeof DZP === 'undefined') return '';
+  const P = DZP.cur(), rec = DZP.recent(), b = (c) => `<button class="ink" ${attr(c)} style="background:${c}" title="${c.toUpperCase()}" aria-label="${c}"></button>`;
+  return `<span class="dz-sw dz-rsw"><span class="dz-swh"><button class="tool dz-swm" data-eye data-eya="${eya}" ${eyx ? `data-eyx="${eyx}"` : ''} title="Eyedropper: take a colour from the preview" aria-label="Eyedropper"><svg viewBox="0 0 24 24"><path d="M14 4l6 6M17 7l-9.5 9.5L4 20l3.5-3.5L17 7z"/><path d="M13 5l6 6"/></svg></button>
+      <select class="in" data-palsel aria-label="Palette">${DZP.all().map(p => `<option value="${p.id}" ${p.id === P.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select><button class="dz-swm" data-palman>Palettes…</button></span>
+    ${rec.length ? `<span class="dz-swh"><span>Recent</span></span><span class="dz-swg">${rec.map(b).join('')}</span>` : ''}<span class="dz-swg">${P.cols.map(b).join('')}</span></span>`;
+}
+addEventListener('DOMContentLoaded', () => document.addEventListener('dz-palettes', () => { if (location.hash.startsWith('#reel/')) reelPanel(); }));
 function reelTextDefaults() {
   const s = reelStyle(), seg = (k, opts) => `<div class="seg" data-st="${k}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   return `<details class="reel-def" ${R.defOpen ? 'open' : ''}><summary><b>Text defaults</b><span class="muted">${esc(reelFontDef(s.font)[1])} · new text at the ${s.captionPos || 'bottom'}</span></summary>
     <div class="field"><span class="lbl">Font ${help('For the intro and outro cards, and every text set to Same as style.')}</span>${reelFontBtn(s.font, 'style', false)}</div>
-    <div class="reel-row"><span class="lbl">Colour</span><span class="ink-dots" data-sw="color">${REEL_COLORS.map(c => `<button class="ink ${s.color === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span></div>
+    <div class="reel-row"><span class="lbl">Colour</span><span class="ink-dots" data-sw="color">${REEL_COLORS.map(c => `<button class="ink ${s.color === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}${reelPalExtra(c => `data-v="${c}"`, 'data-v')}</span></div>
     <div class="two tight"><div class="field"><span class="lbl">New text starts</span>${seg('captionPos', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
       <div class="field"><span class="lbl">New text size</span>${seg('capSize', [['s', 'S'], ['m', 'M'], ['l', 'L']])}</div></div></details>`;
 }
@@ -7267,7 +7278,7 @@ function reelClipTool(c) {
   if (R.tool === 'fx') return `<p class="muted" style="font-size:12px;margin:0 0 10px">Tap to turn on; mix as many as you like.</p>
       <div class="fx-list">${REEL_FX.map(([k, l, d]) => `<button class="tr tr-s ${c.fx?.includes(k) ? 'on' : ''}" data-fxk="${k}" data-tip="${d}"><b>${l}</b></button>`).join('')}</div>
       ${c.fx?.length ? '<div class="row" style="margin-top:10px"><button class="btn small" data-act="fxclear">Turn all off</button></div>' : ''}`;
-  if (R.tool === 'frame' && c.type === 'blank') { const sw = (k) => `<span class="ink-dots">${['#111416', '#000000', '#ffffff', '#e9e3d6', '#1fb5a8', '#f0c75e', '#d2453b', '#3b5bdb', ...(k === 'bg2' ? [''] : [])].map(col => `<button class="ink ${(c[k] || '') === col ? 'on' : ''}" data-blk="${k}" data-v="${col}" style="background:${col || 'repeating-linear-gradient(45deg,#333 0 4px,#555 4px 8px)'}" aria-label="${col || 'None'}"></button>`).join('')}<input type="color" data-blkc="${k}" value="${c[k] || '#000000'}" aria-label="Any colour"></span>`;
+  if (R.tool === 'frame' && c.type === 'blank') { const sw = (k) => `<span class="ink-dots">${['#111416', '#000000', '#ffffff', '#e9e3d6', '#1fb5a8', '#f0c75e', '#d2453b', '#3b5bdb', ...(k === 'bg2' ? [''] : [])].map(col => `<button class="ink ${(c[k] || '') === col ? 'on' : ''}" data-blk="${k}" data-v="${col}" style="background:${col || 'repeating-linear-gradient(45deg,#333 0 4px,#555 4px 8px)'}" aria-label="${col || 'None'}"></button>`).join('')}<input type="color" data-blkc="${k}" value="${c[k] || '#000000'}" aria-label="Any colour">${reelPalExtra(col => `data-blk="${k}" data-v="${col}"`, 'data-v', 'data-blk=' + k)}</span>`;
     return `<div class="lbl">Background</div><div style="margin-bottom:12px">${sw('bg')}</div><div class="lbl">Fade to ${help('A second colour makes a gradient from top to bottom.')}</div><div style="margin-bottom:12px">${sw('bg2')}</div>`; }
   if (R.tool === 'frame') return `
       <div class="lbl">Motion ${help('Slow zoom or pan keeps photos alive.')}</div>
@@ -7300,9 +7311,9 @@ function reelClipTool(c) {
           <div class="rt-bar">${reelFontBtn(st.font, 'st', true)}
             <button class="rt-b ${st.bold === false ? '' : 'on'}" data-sttog="bold" data-tip="Bold" aria-label="Bold"><b>B</b></button><button class="rt-b ${st.ital ? 'on' : ''}" data-sttog="ital" data-tip="Italic" aria-label="Italic"><i>I</i></button>
             <i class="rt-sep"></i>${['left', 'center', 'right'].map(a => `<button class="rt-b ${(st.align || 'center') === a ? 'on' : ''}" data-stalign="${a}" data-tip="Align ${a}" aria-label="Align ${a}"><svg viewBox="0 0 24 24">${{ left: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>', center: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>', right: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>' }[a]}</svg></button>`).join('')}</div>
-          <div class="reel-row"><span class="lbl">Fill</span><span class="ink-dots">${['', ...REEL_COLORS, '#000000'].map(col => `<button class="ink ${(st.color || '') === col ? 'on' : ''}" data-stcol="${col}" style="background:${col || 'linear-gradient(135deg,#e9e3d6 50%,#1fb5a8 50%)'}" aria-label="${col || 'Style colour'}"></button>`).join('')}<input type="color" data-stcolc value="${st.color || '#ffffff'}" aria-label="Any colour"></span></div>
+          <div class="reel-row"><span class="lbl">Fill</span><span class="ink-dots">${['', ...REEL_COLORS, '#000000'].map(col => `<button class="ink ${(st.color || '') === col ? 'on' : ''}" data-stcol="${col}" style="background:${col || 'linear-gradient(135deg,#e9e3d6 50%,#1fb5a8 50%)'}" aria-label="${col || 'Style colour'}"></button>`).join('')}<input type="color" data-stcolc value="${st.color || '#ffffff'}" aria-label="Any colour">${reelPalExtra(col => `data-stcol="${col}"`, 'data-stcol')}</span></div>
           <div class="lbl">Look</div>${sseg('look', st.look || 'outline', REEL_CAP_LOOKS)}
-          ${(st.look || 'outline') === 'outline' ? `<div class="reel-row"><span class="lbl">Outline</span><span class="ink-dots">${['', '#000000', '#ffffff', ...REEL_COLORS.slice(2)].map(col => `<button class="ink ${(st.oc || '') === col ? 'on' : ''}" data-stoc="${col}" style="background:${col || 'rgba(0,0,0,.6)'}" aria-label="${col || 'Soft black'}"></button>`).join('')}<input type="color" data-stocc value="${st.oc || '#000000'}" aria-label="Any outline colour"></span></div>
+          ${(st.look || 'outline') === 'outline' ? `<div class="reel-row"><span class="lbl">Outline</span><span class="ink-dots">${['', '#000000', '#ffffff', ...REEL_COLORS.slice(2)].map(col => `<button class="ink ${(st.oc || '') === col ? 'on' : ''}" data-stoc="${col}" style="background:${col || 'rgba(0,0,0,.6)'}" aria-label="${col || 'Soft black'}"></button>`).join('')}<input type="color" data-stocc value="${st.oc || '#000000'}" aria-label="Any outline colour">${reelPalExtra(col => `data-stoc="${col}"`, 'data-stoc')}</span></div>
             ${reelSlider('data-stk-n', 'ow', 'Outline width', 0, 0.4, 0.01, st.ow ?? 0.14, Math.round((st.ow ?? 0.14) * 100) + '%')}` : ''}
           ${reelFold('space', 'Spacing', `${(st.lh || 1.12).toFixed(2)} lines`, `
             ${reelSlider('data-stk-n', 'lh', 'Line spacing', 0.7, 2.5, 0.02, st.lh || 1.12, (st.lh || 1.12).toFixed(2))}
@@ -7588,7 +7599,7 @@ function reelTransPanel(s, seg) {
 }
 
 async function reelStyleSection(s) {
-  const swatches = (k) => `<span class="ink-dots" data-sw="${k}">${REEL_COLORS.map(c => `<button class="ink ${s[k] === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span>`;
+  const swatches = (k) => `<span class="ink-dots" data-sw="${k}">${REEL_COLORS.map(c => `<button class="ink ${s[k] === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}${reelPalExtra(c => `data-v="${c}"`, 'data-v')}</span>`;
   const seg = (k, opts) => `<div class="seg" data-st="${k}" style="margin-bottom:12px">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`;
   const hasLogo = !!reelLogoRef(s);
   const noLogo = '<p class="muted" style="font-size:12px;margin:-4px 0 12px">Add your studio logo in More › Settings to use it here.</p>';
@@ -8894,6 +8905,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 493, when: '2026-11-19T15:00', added: ['Design studio: every colour choice has an eyedropper (tap it, then tap the design) and a row of the colours you used last.', 'Palettes: tap Palettes… under any colour to make palettes of up to 32 colours with a colour wheel or sliders. Export one as an SVG that shows each colour and its code, and import any SVG to make a palette from its colours.', 'Reel maker: the same eyedropper, recent colours and palettes under every colour, so palettes you make work in both.'], test: ['Pick a shape, tap the eyedropper, then tap another colour on the design.', 'Open Palettes…, make a few colours, export the palette, then import the SVG back.', 'In the reel maker, pick a text and use a palette colour for its fill.'] },
   { build: 491, when: '2026-11-19T14:00', added: ['Design studio and reel maker: a small wobble when you touch something no longer moves it. Items, handles, nodes and stickers only move once you really drag.', 'Reel maker: a hand button next to Snap turns on Fingers only move and zoom, the same switch as in the design studio. Your fingers move and zoom the preview while the stylus moves text and stickers.'], test: ['Tap a shape or sticker with a finger and lift without dragging. It should stay put.', 'In the reel maker, tap the hand button, zoom in, and drag over a sticker with a finger.'] },
   { build: 490, when: '2026-11-19T13:00', added: ['Design studio: Animate now shows a progress bar while it gets your reel ready, with a Cancel button.'], test: ['Tap Animate on a post and watch the bar fill, or tap Cancel to stop.'] },
   { build: 489, when: '2026-11-19T12:00', added: ['Design studio: a new switch in the snapping menu (the magnet), Fingers only move and zoom. Turn it on and your fingers pan and pinch the page while the stylus picks, moves and draws. Off by default.'], test: ['Turn on Fingers only move and zoom, then drag over a shape with a finger (the page moves) and with the stylus (the shape moves).'] },

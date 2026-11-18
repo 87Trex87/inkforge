@@ -1292,6 +1292,144 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
   for (const l of chLines) await one(x, { ...l, fill: null, fm: undefined, stroke: '#141414', sw: (CH_NW[l.nd] || 0.7) * CH_PX, dash: '' });
 }
+/* ---------- Palettes, recent colours, the eyedropper ----------
+   Palettes (up to 32 colours each) and the last 12 colours used live in the workspace's settings, so they go with
+   backups. One palette is the one shown under every colour choice. Exported as an SVG that shows each colour with its
+   hex code; any SVG imported gives a palette of the colours found in it. Shared with the reel maker. */
+const DZP = {
+  MAX: 32,
+  all() { let L = null; try { L = JSON.parse(Settings.get('dz_palettes', '') || 'null'); } catch {} return Array.isArray(L) && L.length ? L : [{ id: 'p0', name: 'Studio', cols: [...DZ_PALETTE] }]; },
+  save(L) { return Settings.set('dz_palettes', JSON.stringify(L)); },
+  cur() { const L = this.all(), id = Settings.get('dz_pal', ''); return L.find(p => p.id === id) || L[0]; },
+  use(id) { return Settings.set('dz_pal', id); },
+  recent() { try { return JSON.parse(Settings.get('dz_recent', '') || '[]'); } catch { return []; } },
+  push(c) { c = String(c || '').toLowerCase(); if (!/^#[0-9a-f]{6}$/.test(c)) return; const R = [c, ...this.recent().filter(x => x !== c)].slice(0, 12); Settings.set('dz_recent', JSON.stringify(R)); },
+  svg(p) { const n = p.cols.length, C = Math.min(8, Math.max(1, n)), rows = Math.ceil(n / C), cw = 120, ch = 150, W = C * cw + 40, H = rows * ch + 90;
+    const e = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-palette="${e(p.name)}"><title>${e(p.name)}</title>`
+      + `<rect width="${W}" height="${H}" fill="#ffffff"/><text x="20" y="44" font-family="sans-serif" font-size="26" font-weight="700" fill="#111111">${e(p.name)}</text>`
+      + p.cols.map((c, i) => { const x = 20 + (i % C) * cw, y = 70 + Math.floor(i / C) * ch;
+        return `<rect x="${x}" y="${y}" width="${cw - 12}" height="${cw - 12}" rx="10" fill="${c}" stroke="#dddddd"/><text x="${x + (cw - 12) / 2}" y="${y + cw + 12}" text-anchor="middle" font-family="monospace" font-size="16" fill="#333333">${c.toUpperCase()}</text>`; }).join('') + '</svg>'; },
+  /* Every colour in an SVG (fills, strokes, gradient stops, styles): #rgb, #rrggbb and rgb(); the label colours of an
+     exported palette (#111111, #333333, #dddddd, the white page) are left out when it is one of ours. */
+  parse(text) { const t = String(text), ours = /data-palette=/.test(t), out = [];
+    const hex = (r, g, b) => '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(+v))).toString(16).padStart(2, '0')).join('');
+    for (const m of t.matchAll(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b|rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/g)) {
+      let c = m[1] ? (m[1].length === 3 ? '#' + [...m[1]].map(x => x + x).join('') : '#' + m[1]) : hex(m[2], m[3], m[4]); c = c.toLowerCase();
+      if (ours && ['#ffffff', '#111111', '#333333', '#dddddd'].includes(c) && !t.includes(`fill="${c}" stroke`)) continue;
+      if (!out.includes(c)) out.push(c); }
+    const name = (t.match(/data-palette="([^"]*)"/) || t.match(/<title>([^<]*)<\/title>/) || [])[1];
+    return { cols: out.slice(0, this.MAX), more: Math.max(0, out.length - this.MAX), name: name?.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&quot;/g, '"') };
+  }
+};
+const dzHsv2Hex = (h, s, v) => { const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); }; return '#' + [f(5), f(3), f(1)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join(''); };
+const dzHex2Hsv = (hex) => { const n = parseInt(hex.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0; if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return { h: (h * 60 + 360) % 360, s: mx ? d / mx : 0, v: mx }; };
+/* The swatch creator: palettes (new, rename, delete), the colours of the open one (tap one to take it out or edit it),
+   a colour maker (a wheel with a brightness slider, or hue / saturation / brightness sliders and a hex box), recent
+   colours, and SVG export and import. Calls done() when closed. */
+function dzPalMan(done) {
+  const o = document.createElement('div'); o.className = 'ask-dlg'; o.id = 'dz-paldlg'; document.body.appendChild(o);
+  let L = DZP.all(), P = DZP.cur(), hsv = { h: 200, s: 0.7, v: 0.8 }, mode = 'wheel', pick = -1;
+  const keep = () => { DZP.save(L); DZP.use(P.id); };
+  const hex = () => dzHsv2Hex(hsv.h, hsv.s, hsv.v);
+  const wheel = (c) => { const x = c.getContext('2d'), R = c.width / 2, img = x.createImageData(c.width, c.height);
+    for (let y = 0; y < c.height; y++) for (let X = 0; X < c.width; X++) { const dx = X - R, dy = y - R, d = Math.hypot(dx, dy) / R, i = (y * c.width + X) * 4; if (d > 1) continue;
+      const hh = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, n = parseInt(dzHsv2Hex(hh, d, hsv.v).slice(1), 16); img.data[i] = n >> 16; img.data[i + 1] = n >> 8 & 255; img.data[i + 2] = n & 255; img.data[i + 3] = 255; }
+    x.putImageData(img, 0, 0); const a = hsv.h * Math.PI / 180; x.beginPath(); x.arc(R + Math.cos(a) * hsv.s * R, R + Math.sin(a) * hsv.s * R, 7, 0, Math.PI * 2); x.lineWidth = 3; x.strokeStyle = '#fff'; x.stroke(); x.lineWidth = 1; x.strokeStyle = '#000'; x.stroke(); };
+  const sl = (k, label, max, val, fmt) => `<label class="dz-sl"><span>${label}<b>${fmt(Math.round(val))}</b></span><input type="range" min="0" max="${max}" step="1" value="${Math.round(val)}" data-pk="${k}"></label>`;
+  const IC = { up: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 20h14"/>', down: '<path d="M12 4v12M7 11l5 5 5-5"/><path d="M5 20h14"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>', pen: '<path d="M4 20h4L19 9l-4-4L4 16z"/>', bin: '<path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13"/>' };
+  const ib = (attr, ic, tip, extra = '') => `<button class="pm-ib" ${attr} title="${tip}" aria-label="${tip}" ${extra}><svg viewBox="0 0 24 24">${IC[ic]}</svg></button>`;
+  const draw = () => { const full = P.cols.length >= DZP.MAX, rec = DZP.recent().filter(c => !P.cols.includes(c));
+    o.innerHTML = `<div class="card dz-pal pm" role="dialog" aria-modal="true">
+      <div class="pm-head"><b>Palettes</b><span class="pm-acts">
+        <label class="pm-btn" title="Make a palette from the colours in an SVG">${'<svg viewBox="0 0 24 24">' + IC.down + '</svg>'}Import<input type="file" accept=".svg,image/svg+xml" hidden data-pimp></label>
+        <button class="pm-btn" data-pa="export" ${P.cols.length ? '' : 'disabled'} title="Save this palette as an SVG that shows each colour and its code"><svg viewBox="0 0 24 24">${IC.up}</svg>Export</button>
+        ${ib('data-pa="done"', 'x', 'Close')}</span></div>
+      <div class="pm-bar"><select class="in" data-psel aria-label="Palette">${L.map(p => `<option value="${p.id}" ${p.id === P.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+        ${ib('data-pa="new"', 'plus', 'New palette')}${ib('data-pa="ren"', 'pen', 'Rename')}${ib('data-pa="del"', 'bin', 'Delete this palette', L.length < 2 ? 'disabled' : '')}</div>
+      <div class="pm-grid">${P.cols.map((c, i) => `<button data-pi="${i}" class="${i === pick ? 'on' : ''}" style="background:${c}" title="${c.toUpperCase()}"></button>`).join('')}</div>
+      <div class="pm-line"><span>${P.cols.length ? `${P.cols.length} of ${DZP.MAX}` : 'Empty. Make a colour below and add it.'}${pick >= 0 ? ` · <b>${P.cols[pick].toUpperCase()}</b>` : ''}</span>
+        ${pick >= 0 ? `<span class="pm-acts"><button class="pm-btn sm" data-pa="left" title="Move left">◀</button><button class="pm-btn sm" data-pa="right" title="Move right">▶</button><button class="pm-btn sm" data-pa="set" title="Change it to the colour below">Replace</button><button class="pm-btn sm danger" data-pa="rm">Remove</button></span>` : ''}</div>
+      <div class="pm-sec"><div class="pm-sech"><span>Make a colour</span><span class="seg pm-seg"><button data-pm="wheel" class="${mode === 'wheel' ? 'on' : ''}">Wheel</button><button data-pm="sliders" class="${mode === 'sliders' ? 'on' : ''}">Sliders</button></span></div>
+        <div class="pm-mk">${mode === 'wheel' ? '<canvas width="150" height="150" class="dz-wheel" data-wheel></canvas>' : ''}
+          <div class="pm-ctl">${mode === 'wheel' ? sl('v', 'Brightness', 100, hsv.v * 100, v => v + '%') : sl('h', 'Hue', 359, hsv.h, v => v + '°') + sl('s', 'Saturation', 100, hsv.s * 100, v => v + '%') + sl('v', 'Brightness', 100, hsv.v * 100, v => v + '%')}
+            <div class="pm-hex"><i class="dz-chip" style="background:${hex()}"></i><input class="in" data-phex value="${hex().toUpperCase()}" maxlength="7" aria-label="Hex code">
+              <button class="btn primary small" data-pa="add" ${full ? 'disabled' : ''}>${full ? 'Full (32)' : '+ Add'}</button></div></div></div></div>
+      ${rec.length ? `<div class="pm-sec"><div class="pm-sech"><span>Recently used</span><button class="pm-btn sm" data-pa="recent" ${full ? 'disabled' : ''}>Add all</button></div>
+        <div class="pm-grid sm">${rec.map(c => `<button data-prc="${c}" style="background:${c}" title="Add ${c.toUpperCase()}"></button>`).join('')}</div></div>` : ''}
+      <p class="pm-note">Export makes an SVG showing each colour and its code. Import any SVG, here or in another workspace, to make a palette of its colours.</p></div>`;
+    const c = o.querySelector('[data-wheel]'); if (c) wheel(c); };
+  const live = () => { const h = hex(); o.querySelector('.dz-chip').style.background = h; const i = o.querySelector('[data-phex]'); if (document.activeElement !== i) i.value = h.toUpperCase(); const c = o.querySelector('[data-wheel]'); if (c) wheel(c); };
+  const close = () => { o.remove(); done?.(); };
+  o.addEventListener('click', async (e) => { const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    if (t === o) return close();
+    if (d('pm')) { mode = d('pm'); return draw(); }
+    if (d('pi') != null) { const i = +d('pi'); pick = pick === i ? -1 : i; if (pick >= 0) hsv = dzHex2Hsv(P.cols[pick]); return draw(); }
+    if (d('prc')) { if (P.cols.length < DZP.MAX && !P.cols.includes(d('prc'))) { P.cols.push(d('prc')); keep(); } return draw(); }
+    const a = d('pa'); if (!a) return;
+    if (a === 'done') return close();
+    if (a === 'add') { const h = hex(); if (P.cols.includes(h)) return toast('That colour is already in the palette.'); P.cols.push(h); DZP.push(h); keep(); return draw(); }
+    if (a === 'recent') { for (const c of DZP.recent()) if (P.cols.length < DZP.MAX && !P.cols.includes(c)) P.cols.push(c); keep(); return draw(); }
+    if (a === 'rm' && pick >= 0) { P.cols.splice(pick, 1); pick = -1; keep(); return draw(); }
+    if (a === 'set' && pick >= 0) { P.cols[pick] = hex(); keep(); return draw(); }
+    if ((a === 'left' || a === 'right') && pick >= 0) { const j = pick + (a === 'left' ? -1 : 1); if (j < 0 || j >= P.cols.length) return; [P.cols[pick], P.cols[j]] = [P.cols[j], P.cols[pick]]; pick = j; keep(); return draw(); }
+    if (a === 'new') { const n = await ask('Name the new palette', 'Palette ' + (L.length + 1)); if (!n?.trim()) return; P = { id: 'p' + Date.now().toString(36), name: n.trim(), cols: [] }; L.push(P); pick = -1; keep(); return draw(); }
+    if (a === 'ren') { const n = await ask('Rename the palette', P.name); if (!n?.trim()) return; P.name = n.trim(); keep(); return draw(); }
+    if (a === 'del') { if (L.length < 2 || !await ask(`Delete the palette "${P.name}"?\n\nIts ${P.cols.length} colours go with it. Colours already used in designs stay as they are.`)) return; L = L.filter(p => p !== P); P = L[0]; pick = -1; keep(); return draw(); }
+    if (a === 'export') { const f = new File([DZP.svg(P)], (P.name.replace(/[^\w-]+/g, '_') || 'palette') + '.svg', { type: 'image/svg+xml' });
+      const a2 = document.createElement('a'); a2.href = URL.createObjectURL(f); a2.download = f.name; a2.click(); setTimeout(() => URL.revokeObjectURL(a2.href), 5000); return toast('Palette saved as ' + f.name); }
+  });
+  o.addEventListener('input', (e) => { const t = e.target;
+    if (t.dataset.pk) { const v = +t.value; if (t.dataset.pk === 'h') hsv.h = v; else hsv[t.dataset.pk] = v / 100; t.closest('.dz-sl').querySelector('b').textContent = t.dataset.pk === 'h' ? v + '°' : v + '%'; return live(); }
+    if (t.hasAttribute('data-phex')) { const v = t.value.trim(); if (/^#?[0-9a-fA-F]{6}$/.test(v)) { hsv = dzHex2Hsv('#' + v.replace('#', '')); live(); } } });
+  o.addEventListener('change', async (e) => { const t = e.target;
+    if (t.hasAttribute('data-psel')) { P = L.find(p => p.id === t.value) || P; pick = -1; keep(); return draw(); }
+    if (t.hasAttribute('data-pimp')) { const f = t.files[0]; t.value = ''; if (!f) return;
+      const r = DZP.parse(await f.text()); if (!r.cols.length) return toast('No colours found in that file.');
+      P = { id: 'p' + Date.now().toString(36), name: r.name || f.name.replace(/\.svg$/i, ''), cols: r.cols }; L.push(P); pick = -1; keep(); draw();
+      toast(`${r.cols.length} colours imported${r.more ? ` (${r.more} more left out: 32 at most)` : ''}.`, 3000); } });
+  /* Dragging on the wheel picks hue (around) and saturation (out from the middle). */
+  let wd = false; const wpick = (e) => { const c = o.querySelector('[data-wheel]'); if (!c) return; const r = c.getBoundingClientRect(), dx = e.clientX - r.left - r.width / 2, dy = e.clientY - r.top - r.height / 2;
+    hsv.h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360; hsv.s = Math.min(1, Math.hypot(dx, dy) / (r.width / 2)); live(); };
+  o.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-wheel]')) return; wd = true; e.preventDefault(); try { e.target.setPointerCapture(e.pointerId); } catch {} wpick(e); });
+  o.addEventListener('pointermove', (e) => { if (wd) wpick(e); });
+  o.addEventListener('pointerup', () => { wd = false; }); o.addEventListener('pointercancel', () => { wd = false; });
+  draw();
+}
+/* Tools inside every colour choice (bound once for the whole page): the eyedropper, the palette menu, Palettes…,
+   and remembering colours as they're used. They work on the swatch box itself, so they suit any colour choice: a
+   picked colour goes in as if its swatch had been tapped. */
+const DZE = { arm: null };
+function dzSwatchTools() {
+  if (DZE.bound) return; DZE.bound = true;
+  /* A picked colour goes in as a swatch of that choice: the design studio's say it with data-c (found again by key, as
+     the panel may have redrawn); the reel maker's say it their own way (data-eya, plus a fixed data-eyx pair). */
+  const into = (A, hexv) => { const box = A.key ? document.querySelector(`.dz-sw[data-swk="${A.key}"]`) : A.box?.isConnected ? A.box : null; if (!box) return;
+    const b = document.createElement('button'); b.className = 'ink'; b.setAttribute(A.attr || 'data-c', hexv); if (A.fix) { const [k, v] = A.fix.split('='); b.setAttribute(k, v); }
+    b.hidden = true; box.appendChild(b); b.click(); b.remove(); DZP.push(hexv); };
+  document.addEventListener('click', async (e) => {
+    const sw = e.target.closest('.dz-sw [data-c], .ink-dots button'), sc = sw && (sw.dataset.c || sw.dataset.v || sw.dataset.stcol || sw.dataset.stoc); if (sc && /^#[0-9a-f]{6}$/i.test(sc)) DZP.push(sc);
+    const eb = e.target.closest('.dz-sw [data-eye]'), pm = e.target.closest('.dz-sw [data-palman]'); if (!eb && !pm) return;
+    e.preventDefault(); e.stopPropagation();
+    if (pm) return dzPalMan(() => document.dispatchEvent(new CustomEvent('dz-palettes')));
+    const A = { key: eb.closest('[data-swk]')?.dataset.swk, box: eb.closest('.ink-dots'), attr: eb.dataset.eya, fix: eb.dataset.eyx };
+    if (window.EyeDropper && matchMedia('(pointer: fine)').matches) { try { const r = await new EyeDropper().open(); return into(A, r.sRGBHex.length === 7 ? r.sRGBHex : '#' + r.sRGBHex.match(/\d+/g).slice(0, 3).map(v => (+v).toString(16).padStart(2, '0')).join('')); } catch { return; } }
+    DZE.arm = { ...A, cv: document.querySelector('#dz-cv') || document.querySelector('#reel-cv') }; document.body.classList.add('dz-eyeon'); toast('Tap the picture to take its colour.', 2500);
+  }, true);
+  document.addEventListener('change', (e) => { const t = e.target;
+    if (t.matches?.('.dz-sw [data-cpick], .ink-dots input[type=color]')) DZP.push(t.value);
+    if (t.matches?.('.dz-sw [data-palsel]')) { e.stopPropagation(); DZP.use(t.value); document.dispatchEvent(new CustomEvent('dz-palettes')); } }, true);
+  /* Armed: the next press on the picture is the sample (a press anywhere else just puts the eyedropper away). */
+  addEventListener('pointerdown', (e) => { const A = DZE.arm; if (!A) return; DZE.arm = null; document.body.classList.remove('dz-eyeon');
+    const cv = A.cv, r = cv?.getBoundingClientRect(); if (!cv || !r || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return toast('Eyedropper put away.', 1200);
+    e.preventDefault(); e.stopImmediatePropagation();
+    const x = Math.floor((e.clientX - r.left) * cv.width / r.width), y = Math.floor((e.clientY - r.top) * cv.height / r.height), p = cv.getContext('2d').getImageData(x, y, 1, 1).data;
+    into(A, '#' + [p[0], p[1], p[2]].map(v => v.toString(16).padStart(2, '0')).join(''));
+    const eat = (k) => { k.stopImmediatePropagation(); k.preventDefault(); }; addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => removeEventListener('click', eat, true), 700); }, true);   /* the tap's own click (only that one), after the colour went in */
+}
+dzSwatchTools();
 /* ---------- Animate: a design into a new reel ----------
    The background (its colour and background picture, and anything clipped to that picture) becomes the reel's one
    photo clip. Everything else becomes picture stickers in the same places and sizes: a group, or a layer with what's
@@ -2029,6 +2167,7 @@ DZ.edit = async (id) => {
       <div class="dz-side" id="dz-side" hidden></div>
     </div></div>`;
   const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
+  dzSwatchTools();
   let k = 1;   // screen px per page px
   const layer = () => doc.layers.find(l => l.id === sel);
   // Two-sided: the page being edited (f, b or m) and its own layers.
@@ -2322,12 +2461,18 @@ DZ.edit = async (id) => {
       <div class="lbl">Position</div><div class="seg" style="margin-bottom:8px">${[['in', 'Inside'], ['mid', 'Middle'], ['out', 'Outside']].map(([v, n]) => `<button data-sal="${v}" class="${at === v ? 'on' : ''}" style="flex:1" data-tip="${{ in: 'The line sits inside the edge', mid: 'The line sits across the edge', out: 'The line sits outside the edge' }[v]}">${n}</button>`).join('')}</div>
       <label class="toggle" style="display:flex;margin-bottom:6px" data-tip="On: resizing makes the line thicker or thinner with the shape. Off: the line keeps its width."><input type="checkbox" data-sfix ${l.sfix ? '' : 'checked'}><span>Scale with the object</span></label>`,
       { fold: true, open: !!on, hint: on ? `${Math.round(l.sw)} px · ${{ in: 'inside', mid: 'middle', out: 'outside' }[at]}` : 'none' }); };
+  /* Every colour choice: None (where allowed), the theme's four, the eyedropper and any colour; then the recently
+     used colours; then the palette in use (its menu and Palettes… open the swatch creator). Up to 32 colours. */
   const swatches = (key, cur, allowNone) => {
-    const roles = [['@fg', 'Text'], ['@accent', 'Accent'], ['@bg', 'Background'], ['@soft', 'Soft']];
-    return `<div class="dz-sw" data-swk="${key}">${allowNone ? `<button data-c="none" class="none ${cur === 'none' || !cur ? 'on' : ''}" title="None">∅</button>` : ''}
+    const roles = [['@fg', 'Text'], ['@accent', 'Accent'], ['@bg', 'Background'], ['@soft', 'Soft']], P = DZP.cur(), rec = DZP.recent(), lc = String(cur || '').toLowerCase();
+    const sw = (c) => `<button data-c="${c}" class="${lc === c ? 'on' : ''}" style="background:${c}" title="${c.toUpperCase()}"></button>`;
+    return `<div class="dz-sw dz-sw2" data-swk="${key}"><div class="dz-swr">${allowNone ? `<button data-c="none" class="none ${cur === 'none' || !cur ? 'on' : ''}" title="None">∅</button>` : ''}
       ${roles.map(([c, n]) => `<button data-c="${c}" class="role ${cur === c ? 'on' : ''}" title="Theme ${n}" style="background:${dzCol(doc, c)}"></button>`).join('')}
-      <span class="sep"></span>${DZ_PALETTE.map(c => `<button data-c="${c}" class="${cur === c ? 'on' : ''}" style="background:${c}"></button>`).join('')}
-      <label class="pick" title="Any colour"><input type="color" data-cpick="${key}" value="${/^#/.test(cur || '') ? cur : '#888888'}">+</label></div>`;
+      <span class="sep"></span><button class="tool" data-eye title="Eyedropper: take a colour from the design" aria-label="Eyedropper"><svg viewBox="0 0 24 24"><path d="M14 4l6 6M17 7l-9.5 9.5L4 20l3.5-3.5L17 7z"/><path d="M13 5l6 6"/></svg></button>
+      <label class="pick" title="Any colour"><input type="color" data-cpick="${key}" value="${/^#/.test(cur || '') ? cur : '#888888'}">+</label></div>
+      ${rec.length ? `<div class="dz-swh"><span>Recent</span></div><div class="dz-swg">${rec.map(sw).join('')}</div>` : ''}
+      <div class="dz-swh"><select class="in" data-palsel aria-label="Palette">${DZP.all().map(p => `<option value="${p.id}" ${p.id === P.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select><button class="dz-swm" data-palman title="Make and edit palettes, export or import them">Palettes…</button></div>
+      <div class="dz-swg">${P.cols.map(sw).join('') || '<span class="muted" style="grid-column:1/-1;font-size:11px">Empty palette: add colours with Palettes…</span>'}</div></div>`;
   };
   /* Fill: plain colour, gradient or texture. `key` is the plain colour's property (fill for shapes, c for text). */
   let gsel = 0;   // the gradient colour being edited
@@ -4712,6 +4857,9 @@ DZ.edit = async (id) => {
   side.addEventListener('click', sideClick);
   for (const x of [$('#dz-rail'), $('#dz-pop')]) { x.addEventListener('click', sideClick); x.addEventListener('change', (e) => sideChange(e)); }
   /* The magnet: snapping on or off and what snaps to what. Stays at the end of the strip whatever is selected. */
+  /* A palette chosen or changed (in any colour choice or the swatch creator): every colour choice shows it. */
+  const onPal = () => { if (!document.body.contains(stage)) return document.removeEventListener('dz-palettes', onPal); drawSide(); drawCtx(); };
+  document.addEventListener('dz-palettes', onPal);
   let snapPop = false;
   /* Fingers only move and zoom (dz_finger_view): a finger never picks, moves or draws; it pans, and two pinch. The
      stylus (and the mouse) does the editing. Off: fingers edit as before. */

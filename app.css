@@ -2457,3 +2457,66 @@ body.dz-focus .dz-body > .dz-side { max-height: calc(100% - 20px); overflow-y: a
 #dz-tgh i[data-tgh="a"] { background: #fff; } #dz-tgh i[data-tgh="b"] { background: repeating-conic-gradient(#888 0 25%, #333 0 50%) 0 0 / 8px 8px; }
 .reel-tl .tl-clip { touch-action: none; }   /* the clip handles its own touches: hold to drag, swipe to scroll */
 .dz-prog { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 12px; } .dz-prog i { display: block; height: 100%; width: 0; background: var(--teal); transition: width .25s; }
+
+/* Colour choices: a top row, recent colours and the palette (up to 32) in a tight grid; the swatch creator. */
+.dz-sw.dz-sw2 { display: block; }
+.dz-sw2 .dz-swr { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dz-sw2 .tool { background: var(--bg2); color: var(--ink); display: grid; place-items: center; }
+.dz-sw2 .tool svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dz-swh { display: flex; gap: 6px; align-items: center; margin: 8px 0 4px; font-size: 11px; color: var(--ink2); text-transform: uppercase; letter-spacing: .04em; }
+.dz-swh select, .dz-side .dz-swh select.in { flex: 1; min-width: 0; width: auto; padding: 4px 6px; font-size: 12px; height: 28px; margin: 0; }
+.dz-swm { flex: none; background: var(--bg2); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; height: 28px; font-size: 12px; cursor: pointer; }
+.dz-swg { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.dz-swg button { width: 100%; aspect-ratio: 1; height: auto; border-radius: 6px; border: 1px solid rgba(255,255,255,.18); padding: 0; cursor: pointer; }
+.dz-sw .dz-swg button { width: 100%; height: auto; border-radius: 6px; }
+.dz-swg button.on { outline: 2px solid var(--teal); outline-offset: 1px; }
+.dz-cpop .dz-sw2 { width: 272px; }
+.dz-pal { width: min(560px, 100%) !important; max-height: 92vh; overflow-y: auto; }
+.dz-palg { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+.dz-palmk { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.dz-wheel { width: 200px; height: 200px; border-radius: 50%; touch-action: none; cursor: crosshair; flex: none; }
+.dz-chip { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); display: inline-block; }
+body.dz-eyeon #dz-cv, body.dz-eyeon #reel-cv { cursor: crosshair; }
+
+/* The palette block under a reel colour choice. */
+.ink-dots { flex-wrap: wrap; }
+.ink-dots .dz-rsw { display: block; flex-basis: 100%; width: 100%; margin-top: 6px; }
+.dz-rsw .dz-swh { margin: 4px 0; }
+.reel-side .dz-rsw .dz-swg .ink, .dz-rsw .dz-swg .ink { width: 100% !important; height: auto !important; aspect-ratio: 1; border-radius: 6px; border-width: 1px; margin: 0; }
+.dz-rsw .dz-swh button.dz-swm { width: auto; height: 28px; border-radius: 6px; flex: none; padding: 0 8px; font-size: 12px; }
+.dz-rsw .dz-swh .tool { width: 28px; padding: 0; display: grid; place-items: center; }
+.dz-rsw .dz-swh .tool svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dz-rsw .dz-swh select.in { flex: 1; min-width: 0; width: auto; height: 28px; padding: 2px 6px; font-size: 12px; margin: 0; }
+.dz-rsw .dz-swg + .dz-swg, .dz-sw2 .dz-swg + .dz-swh { margin-top: 6px; }
+
+/* Colour choices, tighter: small swatches, and the Palettes button sized to its words. */
+.dz-sw button.dz-swm, .dz-side .dz-sw button.dz-swm, .dz-rsw .dz-swh button.dz-swm { width: auto; height: 26px; border-radius: 6px; padding: 0 9px; font-size: 11px; white-space: nowrap; border: 1px solid var(--line); background: var(--bg2); color: var(--ink); flex: none; }
+.dz-sw2 .dz-swr { gap: 5px; }
+.dz-sw2 .dz-swr > button, .dz-sw2 .dz-swr .pick { width: 22px; height: 22px; }
+.dz-sw2 .dz-swr > .tool { border-radius: 6px; }
+.dz-swh { margin: 6px 0 3px; font-size: 10px; }
+.dz-swh select, .dz-side .dz-swh select.in, .dz-rsw .dz-swh select.in { height: 26px; font-size: 11px; }
+.dz-swg { grid-template-columns: repeat(auto-fill, 20px); gap: 4px; }
+.dz-sw .dz-swg button, .dz-swg button { width: 20px; height: 20px; aspect-ratio: auto; border-radius: 5px; }
+.reel-side .dz-rsw .dz-swg .ink, .dz-rsw .dz-swg .ink { width: 20px !important; height: 20px !important; border-radius: 5px; }
+.dz-cpop .dz-sw2 { width: 248px; }
+/* The palettes window. */
+.pm.card { width: min(460px, 100%) !important; padding: 16px 18px 14px; }
+.pm-head { display: flex; align-items: center; gap: 8px; margin: -2px 0 12px; } .pm-head > b { font-size: 16px; flex: 1; }
+.pm-acts { display: flex; gap: 6px; align-items: center; }
+.pm-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--ink); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.pm-btn svg, .pm-ib svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pm-btn.sm { height: 24px; padding: 0 8px; font-size: 11px; } .pm-btn.danger { color: #e57373; } .pm-btn:disabled, .pm-ib:disabled { opacity: .4; cursor: default; }
+.pm-ib { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg2); color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0; flex: none; }
+.pm-bar { display: flex; gap: 6px; align-items: center; } .pm-bar select.in { flex: 1; min-width: 0; height: 30px; margin: 0; font-size: 13px; }
+.pm-grid { display: grid; grid-template-columns: repeat(auto-fill, 26px); gap: 5px; margin: 10px 0 4px; min-height: 26px; }
+.pm-grid button { width: 26px; height: 26px; border-radius: 6px; border: 1px solid rgba(255,255,255,.18); padding: 0; cursor: pointer; }
+.pm-grid button.on { outline: 2px solid var(--teal); outline-offset: 2px; } .pm-grid.sm { grid-template-columns: repeat(auto-fill, 22px); gap: 4px; margin: 6px 0 0; } .pm-grid.sm button { width: 22px; height: 22px; }
+.pm-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 26px; font-size: 11px; color: var(--ink2); }
+.pm-sec { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.pm-sech { display: flex; justify-content: space-between; align-items: center; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink2); margin-bottom: 8px; }
+.pm-seg { margin: 0; } .pm-seg button { padding: 3px 12px; font-size: 11px; text-transform: none; letter-spacing: 0; }
+.pm-mk { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; } .pm .dz-wheel { width: 150px; height: 150px; }
+.pm-ctl { flex: 1; min-width: 170px; } .pm-ctl .dz-sl { margin: 4px 0; }
+.pm-hex { display: flex; gap: 6px; align-items: center; margin-top: 8px; } .pm-hex .dz-chip { width: 30px; height: 30px; flex: none; } .pm-hex .in { width: 92px; height: 30px; margin: 0; font-family: monospace; font-size: 13px; } .pm-hex .btn { margin-left: auto; }
+.pm-note { font-size: 11px; color: var(--ink2); margin: 12px 0 0; line-height: 1.4; }
