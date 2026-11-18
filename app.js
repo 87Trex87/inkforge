@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 485;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 486;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6694,31 +6694,44 @@ function reelTimeline() {
   };
   reelTlHead();
 }
-/* Reordering on the timeline: drag a clip sideways (with a mouse), or hold it a moment first (touch, so the
-   timeline still scrolls). A line shows where it will land. */
+/* Reordering on the timeline: drag a clip sideways (with a mouse), or hold it a moment first (touch). A line shows
+   where it will land, and the timeline scrolls by itself near its ends so a clip can go past ones out of view.
+   Clips take touches themselves (touch-action: none), so the browser never grabs a hold-and-drag as a scroll and
+   snaps the clip back: a quick swipe on them scrolls the timeline here instead. */
 function reelTlDrag(el) {
   let d = null;
   const blocks = () => [...el.querySelectorAll('.tl-clip')];
-  el.onpointerdown = (e) => {
-    const b = e.target.closest('.tl-clip'); if (!b || e.target.closest('.tl-ob, .tl-ab')) return;
-    d = { b, id: +b.dataset.key, x0: e.clientX, on: false, pid: e.pointerId, touch: e.pointerType !== 'mouse' };
-    if (d.touch) d.t = setTimeout(() => { if (d) { d.on = true; b.classList.add('tl-drag'); navigator.vibrate?.(15); } }, 280);
-  };
-  el.onpointermove = (e) => {
-    if (!d) return;
-    if (!d.on) { if (d.touch) { if (Math.abs(e.clientX - d.x0) > 8) { clearTimeout(d.t); d = null; } return; } if (Math.abs(e.clientX - d.x0) < 6) return; d.on = true; d.b.classList.add('tl-drag'); }
-    try { el.setPointerCapture(d.pid); } catch {}
-    e.preventDefault();
-    d.b.style.transform = `translateX(${e.clientX - d.x0}px)`;
-    const bs = blocks().filter(x => x !== d.b); let to = bs.length;
-    for (let i = 0; i < bs.length; i++) { const r = bs[i].getBoundingClientRect(); if (e.clientX < r.left + r.width / 2) { to = i; break; } }
+  const place = () => {   /* the dragged clip under the finger, the drop line, and edge scrolling */
+    if (!d?.on) return; const x = d.lx;
+    d.b.style.transform = `translateX(${x - d.x0 + el.scrollLeft - d.s0}px)`;
+    const bs = blocks().filter(q => q !== d.b); let to = bs.length;
+    for (let i = 0; i < bs.length; i++) { const r = bs[i].getBoundingClientRect(); if (x < r.left + r.width / 2) { to = i; break; } }
     d.to = to; let mk = el.querySelector('.tl-drop'); if (!mk) { mk = document.createElement('i'); mk.className = 'tl-drop'; el.querySelector('#tl-row')?.appendChild(mk); }
     const row = el.querySelector('#tl-row').getBoundingClientRect(), ref = bs[to]?.getBoundingClientRect() || (bs.at(-1) || d.b).getBoundingClientRect();
     mk.style.left = ((bs[to] ? ref.left : ref.right) - row.left) + 'px';
   };
-  const up = () => {
-    if (!d) return; clearTimeout(d.t);
-    if (d.on && d.to != null) {
+  const edge = () => { if (!d?.on) return; const r = el.getBoundingClientRect(), m = Math.min(60, r.width * 0.15);
+    const v = d.lx < r.left + m ? -Math.ceil((r.left + m - d.lx) / 4) : d.lx > r.right - m ? Math.ceil((d.lx - r.right + m) / 4) : 0;
+    if (v) { const was = el.scrollLeft; el.scrollLeft += v; if (el.scrollLeft !== was) place(); }
+    d.raf = requestAnimationFrame(edge); };
+  const lift = () => { d.on = true; d.b.classList.add('tl-drag'); try { el.setPointerCapture(d.pid); } catch {} d.raf = requestAnimationFrame(edge); };
+  el.onpointerdown = (e) => {
+    const b = e.target.closest('.tl-clip'); if (!b || e.target.closest('.tl-ob, .tl-ab')) return;
+    d = { b, id: +b.dataset.key, x0: e.clientX, lx: e.clientX, s0: el.scrollLeft, on: false, pid: e.pointerId, touch: e.pointerType !== 'mouse' };
+    if (d.touch) d.t = setTimeout(() => { if (d && !d.scroll) { lift(); navigator.vibrate?.(15); place(); } }, 280);
+  };
+  el.onpointermove = (e) => {
+    if (!d || e.pointerId !== d.pid) return; d.lx = e.clientX;
+    if (!d.on) {
+      if (d.touch) { if (d.scroll || Math.abs(e.clientX - d.x0) > 8) { clearTimeout(d.t); d.scroll = true; el.scrollLeft = d.s0 - (e.clientX - d.x0); } return; }
+      if (Math.abs(e.clientX - d.x0) < 6) return; lift();
+    }
+    e.preventDefault(); place();
+  };
+  const up = (e) => {
+    if (!d || (e && e.pointerId !== d.pid)) return; clearTimeout(d.t); cancelAnimationFrame(d.raf);
+    if (d.scroll) { R.tlMoved = true; setTimeout(() => R.tlMoved = false, 50); }   /* a swipe, not a tap on the clip */
+    if (d.on && d.to != null && e?.type !== 'pointercancel') {
       const from = R.clips.findIndex(c => c.id === d.id), [c] = R.clips.splice(from, 1); R.clips.splice(d.to, 0, c);
       R.tlMoved = true; setTimeout(() => R.tlMoved = false, 50); R.sel = R.clips.indexOf(c); reelPick('clip', c.id);
     } else if (d.on) { d.b.style.transform = ''; d.b.classList.remove('tl-drag'); }
@@ -6836,9 +6849,16 @@ function reelTlLanes(el) {
     if (!d.moved) { d.moved = true; try { el.setPointerCapture(d.pid); } catch {} }
     e.preventDefault(); const { total } = reelSegments(), o = d.o, s0 = d.s, T = (t) => reelXT(reelTX(t) + dx);
     if (d.ov) {
-      if (d.edge === 'l') o.t0 = Math.max(0, Math.min(s0.t1 - 0.2, T(s0.t0)));
-      else if (d.edge === 'r') o.t1 = Math.min(total, Math.max(s0.t0 + 0.2, T(s0.t1)));
-      else { const len = s0.t1 - s0.t0; o.t0 = Math.max(0, Math.min(total - len, T(s0.t0))); o.t1 = o.t0 + len; }
+      /* Ends catch on where clips and cards change over (and the start, the end and the playhead), within 10 px.
+         Snap off (or Ctrl) drags freely. */
+      const on = R.snap !== false && !reelMod(e, 'ctrl'), tol = 10 / (R.pps || REEL_PPS);
+      const pts = on ? [0, total, R.t, ...reelSegments().segs.flatMap(g => [g.start, g.start + g.dur])] : [];
+      const sn = (t) => { let best = t, bd = tol; for (const q of pts) { const dd = Math.abs(q - t); if (dd < bd) { bd = dd; best = q; } } return best; };
+      if (d.edge === 'l') o.t0 = Math.max(0, Math.min(s0.t1 - 0.2, sn(T(s0.t0))));
+      else if (d.edge === 'r') o.t1 = Math.min(total, Math.max(s0.t0 + 0.2, sn(T(s0.t1))));
+      else { const len = s0.t1 - s0.t0, a0 = T(s0.t0), b0 = sn(a0), b1 = sn(a0 + len) - len;   /* whichever end is nearer a line */
+        const t0 = Math.abs(b0 - a0) <= Math.abs(b1 - a0) && b0 !== a0 ? b0 : b1 !== a0 ? b1 : a0;
+        o.t0 = Math.max(0, Math.min(total - len, t0)); o.t1 = o.t0 + len; }
     } else {
       const dt = T(s0.t0) - s0.t0;
       const rt = o.rate || 1;
@@ -8861,6 +8881,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 486, when: '2026-11-19T09:00', added: ['Reel maker: hold a clip on the timeline and drag it sideways to move it, past as many clips as you like. The timeline scrolls by itself near its ends.', 'Text and sticker bars on the timeline snap to where clips change over, and to the start, end and playhead. Turn Snap off to drag freely.'], test: ['On the tablet, hold a clip and drag it past two others.', 'Drag the end of a text bar near where two clips meet and check it catches there.'] },
   { build: 485, when: '2026-11-19T08:00', added: ['Reel maker: dragging the progress bar onto another clip or card now picks it, so the panel changes what you see on screen.'], test: ['Open a reel with a few clips, pick the first, and drag the progress bar into the next one. Its settings should show in the panel.'] },
   { build: 482, when: '2026-11-19T07:00', added: ['Design studio: fade any picture, shape, text or table with a transparency gradient, straight (Linear) or from a centre (Radial). Anything clipped to it fades too.', 'Drag the two round handles on the design to set where the fade runs, and use the stops in the Transparency section to set how see-through each point is.'], test: ['Pick a photo, open Transparency, choose Linear and drag the handles.', 'Try Radial and add a stop in the middle.'] },
   { build: 481, when: '2026-11-19T06:00', added: ['Design studio: the page background picture can now be zoomed, moved, turned, flipped, cropped and faded, and the page trims it to size.', 'It locks in place when you are done, so taps go through to what is on top. Page, then Edit picture, opens it again.'], test: ['Add a background picture, drag a corner past the page to zoom in, and turn it.', 'Tap Done, then tap an empty spot and check nothing gets picked.'] },
