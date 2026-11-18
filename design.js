@@ -2391,7 +2391,7 @@ DZ.edit = async (id) => {
       ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? 'Master page: shown under both sides.' : `${dzFaceNames(doc)[face]} only. The master page shows underneath.`}</p>` : ''}
       <div class="dz-ll" id="dz-ll">${(() => { let lastG = null; return [...F()].reverse().map(l => { const i = F().indexOf(l), cl = i > 0 && l.clip, G = l.g && doc.groups?.[l.g] ? l.g : null, shut = G && doc.groups[G].shut;
         let head = ''; if (G && G !== lastG) { const M = F().filter(x => x.g === G), on = M.every(x => picks.has(x.id)), hid = M.every(x => x.hide), lk = M.every(x => x.lock), gr = M.filter(x => x.role);
-          head = `<div class="dz-lr dz-lg ${on ? 'on' : ''} ${hid ? 'off' : ''}" data-gid="${G}"><button data-gfold class="dz-gfold" aria-label="${shut ? 'Open' : 'Fold'}">${shut ? '▸' : '▾'}</button><span class="li">▤</span>
+          head = `<div class="dz-lr dz-lg ${on ? 'on' : ''} ${hid ? 'off' : ''}" data-gid="${G}"><span class="grip" data-grip aria-label="Drag the group to reorder">⠿</span><button data-gfold class="dz-gfold" aria-label="${shut ? 'Open' : 'Fold'}">${shut ? '▸' : '▾'}</button><span class="li">▤</span>
             <span class="nm" data-gname title="Tap to pick the group; tap again to rename">${esc(groupName(G))} <small class="muted">${M.length}${gr.length ? ' · ' + esc(CH_ROLES.find(r => r[0] === gr[0].role)?.[1] || '') : ''}</small></span>
             <button data-gun title="Ungroup (Ctrl Shift G)" aria-label="Ungroup"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg></button>
             <button data-ghide title="${hid ? 'Show' : 'Hide'} the group" aria-label="Hide group">${hid ? EYE_OFF : EYE}</button>
@@ -4806,26 +4806,45 @@ DZ.edit = async (id) => {
     }
     const g = e.target.closest('[data-grip]'); if (!g) return;
     e.preventDefault();
-    const row = g.closest('.dz-lr'), rows = [...$('#dz-ll').children];
-    ldrag = { row, rows, from: rows.indexOf(row), to: rows.indexOf(row), y0: e.clientY, h: row.offsetHeight + 4 };
-    row.classList.add('drag'); g.setPointerCapture(e.pointerId);
+    /* What's dragged: one layer row, or a group's heading with its layers (just the heading while folded). The other
+       rows are measured once, so the drop slot follows the finger without the rows jumping under it. */
+    const row = g.closest('.dz-lr'), rows = [...$('#dz-ll').children].filter(r => r.classList.contains('dz-lr'));
+    let block = [row];
+    if (row.dataset.gid) { const gid = row.dataset.gid; for (let i = rows.indexOf(row) + 1; i < rows.length && rows[i].dataset.lid && doc.layers.find(x => x.id === rows[i].dataset.lid)?.g === gid; i++) block.push(rows[i]); }
+    const rest = rows.filter(r => !block.includes(r)), mids = rest.map(r => { const b = r.getBoundingClientRect(); return b.top + b.height / 2; });
+    const bt = block[0].getBoundingClientRect().top, bh = block.at(-1).getBoundingClientRect().bottom - bt + 4;
+    ldrag = { block, rest, mids, from: rows.indexOf(block[0]), rows, slot: rows.slice(0, rows.indexOf(block[0])).filter(r => !block.includes(r)).length, slot0: null, y0: e.clientY, bh, gid: row.dataset.gid || null, lid: row.dataset.lid || null };
+    ldrag.slot0 = ldrag.slot; block.forEach(r => r.classList.add('drag')); g.setPointerCapture(e.pointerId);
   });
   side.addEventListener('pointermove', (e) => {
     if (rowPress && Math.hypot(e.clientX - rowPress.x, e.clientY - rowPress.y) > 8) { clearTimeout(rowPress.t); rowPress = null; }
     if (!ldrag) return;
-    const { row, rows, from, h } = ldrag, dy = e.clientY - ldrag.y0;
-    const to = Math.max(0, Math.min(rows.length - 1, from + Math.round(dy / h))); ldrag.to = to;
-    row.style.transform = `translateY(${dy}px)`;
-    rows.forEach((r, i) => { if (r === row) return;
-      const sh = from < to && i > from && i <= to ? -h : from > to && i < from && i >= to ? h : 0;
-      r.style.transform = sh ? `translateY(${sh}px)` : ''; });
+    const { block, rest, mids, bh } = ldrag, dy = e.clientY - ldrag.y0;
+    let slot = 0; while (slot < mids.length && mids[slot] < e.clientY) slot++; ldrag.slot = slot;
+    block.forEach(r => r.style.transform = `translateY(${dy}px)`);
+    rest.forEach((r, i) => { const above = i < ldrag.slot0; r.style.transform = above && i >= slot ? `translateY(${bh}px)` : !above && i < slot ? `translateY(${-bh}px)` : ''; });
   });
+  /* The drop, in the list's top-to-bottom order: dragged above a group's heading, it goes above the group; among a
+     group's layers, a single layer joins that group (a group dropped there goes above it instead, as groups don't
+     nest); a layer dragged out of its group leaves it. Then this page's layers are written back into the places
+     they already take in the whole list. */
   const ldrop = () => {
     if (!ldrag) return;
-    const { from, to } = ldrag; ldrag = null;
-    if (from !== to) {   // reorder this page's layers, in the places they already take in the whole list
-      const FL = F(), list = [...FL].reverse(), [m] = list.splice(from, 1); list.splice(to, 0, m); list.reverse();
-      const at = FL.map(l => doc.layers.indexOf(l)), all = [...doc.layers]; at.forEach((p, j) => all[p] = list[j]); doc.layers = all; changed(true);
+    const { slot, slot0, rest, gid, lid } = ldrag; ldrag = null;
+    if (slot !== slot0) {
+      const FL = F(), D = [...FL].reverse(), moving = gid ? D.filter(l => l.g === gid) : D.filter(l => l.id === lid);
+      if (moving.length) {
+        const Dr = D.filter(l => !moving.includes(l)), R = rest[slot];
+        let anchor = null, join;
+        if (R?.dataset.gid) anchor = Dr.find(l => l.g === R.dataset.gid);
+        else if (R?.dataset.lid) { anchor = Dr.find(l => l.id === R.dataset.lid);
+          if (anchor?.g && doc.groups?.[anchor.g]) { if (gid) anchor = Dr.find(l => l.g === anchor.g); else join = anchor.g; } }
+        const at = anchor ? Dr.indexOf(anchor) : Dr.length; Dr.splice(at < 0 ? Dr.length : at, 0, ...moving);
+        if (!gid) { const m = moving[0], was = m.g;
+          if (join) m.g = join; else delete m.g;
+          if (was && was !== m.g) { const left = doc.layers.filter(x => x.g === was); if (left.length < 2) { left.forEach(x => delete x.g); delete doc.groups?.[was]; } } }
+        const list = [...Dr].reverse(), pos = FL.map(l => doc.layers.indexOf(l)), all = [...doc.layers]; pos.forEach((p, j) => all[p] = list[j]); doc.layers = all; changed(true);
+      }
     }
     drawSide();
   };
