@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 494;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 495;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8905,6 +8905,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 495, when: '2026-11-19T16:00', added: ['Design studio: pick a group or several items and Save to Assets and Save as SVG are right in the top strip. If some of them are text or pictures, it offers to save them as a picture inside the SVG.', 'On a tablet, windows where you type a name now move up so the on-screen keyboard no longer covers them.'], test: ['Pick a group of shapes and tap Save to Assets in the top strip.', 'Save something to references on the tablet and check the name box shows above the keyboard.'] },
   { build: 493, when: '2026-11-19T15:00', added: ['Design studio: every colour choice has an eyedropper (tap it, then tap the design) and a row of the colours you used last.', 'Palettes: tap Palettes… under any colour to make palettes of up to 32 colours with a colour wheel or sliders. Export one as an SVG that shows each colour and its code, and import any SVG to make a palette from its colours.', 'Reel maker: the same eyedropper, recent colours and palettes under every colour, so palettes you make work in both.'], test: ['Pick a shape, tap the eyedropper, then tap another colour on the design.', 'Open Palettes…, make a few colours, export the palette, then import the SVG back.', 'In the reel maker, pick a text and use a palette colour for its fill.'] },
   { build: 491, when: '2026-11-19T14:00', added: ['Design studio and reel maker: a small wobble when you touch something no longer moves it. Items, handles, nodes and stickers only move once you really drag.', 'Reel maker: a hand button next to Snap turns on Fingers only move and zoom, the same switch as in the design studio. Your fingers move and zoom the preview while the stylus moves text and stickers.'], test: ['Tap a shape or sticker with a finger and lift without dragging. It should stay put.', 'In the reel maker, tap the hand button, zoom in, and drag over a sticker with a finger.'] },
   { build: 490, when: '2026-11-19T13:00', added: ['Design studio: Animate now shows a progress bar while it gets your reel ready, with a Cancel button.'], test: ['Tap Animate on a post and watch the bar fill, or tap Cancel to stop.'] },
@@ -9614,3 +9615,30 @@ async function startWorkspace(w, fileBytes) {
   else if (fileBytes) { toast(`Opened "${w.name}".`); Snapshot.soon(); }
   else Snapshot.soon();
 }
+
+/* The on-screen keyboard over a window: when a text box in any pop-up window (anything fixed on screen) is
+   focused and the keyboard would cover it, the window's card slides up just enough to show it (never off the top),
+   and slides back when the keyboard closes or the focus leaves. One guard for every window in the app. */
+(function kbGuard() {
+  const vv = window.visualViewport; if (!vv) return;
+  let cur = null;   /* { el, shift } */
+  const reset = () => { if (cur) { cur.el.style.transform = cur.t; cur.el.style.transition = cur.tr; cur = null; } };
+  const fit = () => {
+    const a = document.activeElement;
+    if (!a || !/^(INPUT|TEXTAREA)$/.test(a.tagName) || /^(range|checkbox|radio|color|file|button)$/.test(a.type)) return reset();
+    let f = a; while (f && f !== document.body && getComputedStyle(f).position !== 'fixed') f = f.parentElement;
+    if (!f || f === document.body) return reset();   /* not in a window: the page scrolls itself */
+    const card = a.closest('.card, [role="dialog"]') || f, kb = innerHeight - (vv.height + vv.offsetTop);
+    if (cur && cur.el !== card) reset();
+    if (kb < 80) return reset();   /* no keyboard up */
+    if (!cur) cur = { el: card, shift: 0, t: card.style.transform, tr: card.style.transition };
+    const r = a.getBoundingClientRect(), cr = card.getBoundingClientRect(), bottom = vv.offsetTop + vv.height - 14;
+    let shift = cur.shift + Math.max(0, r.bottom - bottom);
+    shift = Math.min(shift, cur.shift + Math.max(0, cr.top - 8));   /* keep its top on screen */
+    if (Math.abs(shift - cur.shift) < 1) return;
+    cur.shift = shift; card.style.transition = 'transform .15s'; card.style.transform = shift ? `translateY(${-shift}px)` : cur.t;
+  };
+  vv.addEventListener('resize', () => requestAnimationFrame(fit));
+  document.addEventListener('focusin', () => setTimeout(fit, 350));   /* after the keyboard has come up */
+  document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement || !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) reset(); }, 100));
+})();

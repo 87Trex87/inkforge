@@ -2628,7 +2628,8 @@ DZ.edit = async (id) => {
         + sep + dzIB(`data-mact="group" ${n > 1 ? '' : 'disabled'}`, '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2"/><rect x="7" y="7" width="5" height="5"/><rect x="12" y="12" width="5" height="5"/>', 'Group (Ctrl G)')
         + (L.some(x => x.g) ? dzIB('data-mact="ungroup"', '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>', 'Ungroup (Ctrl Shift G)') : '')
         + (doc.chal && L.some(x => x.t === 'shape' && !x.lock) ? sep + `<button class="btn small dz-chrole ${L.filter(x => x.t === 'shape').every(x => x.role) ? 'on' : ''}" data-chrole data-tip="Grade all the picked shapes together: outline, detail lines, packing or shading, and the needle">Grade as…</button>` : '')
-        + (n && L.some(mStyleable) ? sep + mStyleUI(L) + dzIB('data-mact="nodes"', 'nodes', 'Edit nodes of all the picked shapes together (A)') : '');
+        + (n && L.some(mStyleable) ? sep + mStyleUI(L) + dzIB('data-mact="nodes"', 'nodes', 'Edit nodes of all the picked shapes together (A)') : '')
+        + (n ? sep + dzIB('data-mact="asset"', 'asset', 'Save to Assets') + dzIB('data-mact="svg"', 'svg', 'Save as SVG') : '');
       if (mcpop) { const q = b.querySelector(`[data-mcpop="${mcpop}"]`)?.getBoundingClientRect(), pp = b.querySelector('.dz-cpop'); if (q && pp) { pp.style.left = Math.max(8, Math.min(innerWidth - 300, q.left)) + 'px'; pp.style.top = q.bottom + 6 + 'px'; } }
       b.scrollLeft = sl; return; }
     if (!l || many() || toolOn() || cut || nodes || cropping || l.t === 'shortcut' || l.t === 'check') { cpop = null; b.innerHTML = '<span class="muted dz-chint">Select something to see its tools here.</span>'; return; }
@@ -2831,7 +2832,7 @@ DZ.edit = async (id) => {
         <p class="muted" style="font-size:11px;margin:-2px 0 6px">Size and Rotate work on all of them together, around their middle. Let go and they start again from 100% and 0°.</p>`,
         { fold: true, open: true, hint: `${n} items` }) : ''}
       ${fsec('Saving', `<div class="dz-tb">${dzIB(`data-mact="refs" ${dis}`, 'refs', 'Save to references')}${dzIB(`data-mact="png" ${dis}`, 'png', 'Save as PNG')}
-        ${n && vecOnly(L.map(l => l.id)) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}${dzIB(`data-mact="stencil" ${dis}`, 'stencil', 'Make a stencil')}</div>`)}`;
+        ${n ? dzIB('data-mact="svg"', 'svg', vecOnly(L.map(l => l.id)) ? 'Save as SVG' : 'Save as SVG (as a picture: not all vector shapes)') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}${dzIB(`data-mact="stencil" ${dis}`, 'stencil', 'Make a stencil')}</div>`)}`;
   };
   const drawEdit = () => {
     if (cont) { side.innerHTML = contPanel(); return; }
@@ -2964,7 +2965,7 @@ DZ.edit = async (id) => {
       ${fsec('Rotation and opacity', `${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
         ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}`, { fold: true, hint: `${Math.round(l.rot || 0)}° · ${Math.round((l.op ?? 1) * 100)}%` })}
       ${fsec('Saving', `<div class="dz-tb">${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
-        ${vecOnly([l.id]) ? dzIB('data-mact="svg"', 'svg', 'Save as SVG') + dzIB('data-mact="asset"', 'asset', 'Save to Assets') : ''}${dzIB('data-mact="stencil"', 'stencil', 'Make a stencil')}</div>
+        ${dzIB('data-mact="svg"', 'svg', vecOnly([l.id]) ? 'Save as SVG' : 'Save as SVG (as a picture: not a vector shape)') + dzIB('data-mact="asset"', 'asset', 'Save to Assets')}${dzIB('data-mact="stencil"', 'stencil', 'Make a stencil')}</div>
         ${l.t !== 'image' || l.crop || l.r ? `<button class="btn small" data-mact="merge" style="margin-top:4px">Turn into a picture</button>` : ''}`, { fold: true })}`;
   };
   const select = (idv) => { if (idv !== sel) { endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); } sel = idv; panel = null; picks = new Set(); picking = false; placeSel(); drawSide(); };
@@ -4210,8 +4211,21 @@ DZ.edit = async (id) => {
   const vecOnly = (ids) => { const list = groupOf(ids).filter(l => !l.hide); return list.length > 0 && list.every(dzVecOK); };
   const saveSvg = async (ids, asset) => {
     const list = groupOf(ids).filter(l => !l.hide); if (!list.length) return toast('Nothing visible to save.');
-    if (!list.every(dzVecOK)) return toast('Only shapes with colour or gradient fills can be saved as SVG. Turn text into a shape first; pictures and textures are pixels.', 5000);
-    const r = dzSvg(doc, list), nm = (list.length === 1 ? layerName(list[0]) : name) || 'shape';
+    const nm = (list.length === 1 ? layerName(list[0]) : name) || 'shape';
+    /* Not all vector shapes (text, pictures, textures, fades): say which, and offer them as one picture inside the SVG. */
+    const raster = list.filter(l => !dzVecOK(l));
+    if (raster.length) {
+      const which = [...new Set(raster.map(l => l.t === 'text' ? 'text' : l.t === 'image' ? 'pictures' : l.tg ? 'transparency fades' : l.fm === 'tex' ? 'texture fills' : l.t === 'table' ? 'tables' : 'other layers'))].join(', ');
+      if (!await ask(`Save ${list.length === 1 ? 'it' : 'these'} as a picture inside the SVG?\n\nSome of ${list.length === 1 ? 'it isn\u2019t' : 'them aren\u2019t'} vector shapes (${which}), so it can\u2019t be edited as shapes later. Turn text into shapes first to keep it vector.`)) return;
+      const f = await flatten(list); if (!f) return toast('Nothing visible to save.');
+      const w = f.cv.width, h = f.cv.height, url = await new Promise(res => { const fr = new FileReader(); pngOf(f.cv).then(b => { fr.onload = () => res(fr.result); fr.readAsDataURL(b); }); });
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><image width="${w}" height="${h}" href="${url}" xlink:href="${url}"/></svg>`;
+      if (asset) { const a = await assetAsk(nm); if (!a) return; await assetAdd(svg, a.name, a.cat, null); return toast(`Saved to Assets › ${a.cat}.`); }
+      const fn = nm.replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 60) + '.svg';
+      const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })); l.download = fn; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000);
+      return toast('Saved ' + fn);
+    }
+    const r = dzSvg(doc, list);
     if (asset) {
       const a = await assetAsk(nm); if (!a) return;
       await assetAdd(r.svg, a.name, a.cat, dzAssetLayers(doc, list, r.x0, r.y0));
