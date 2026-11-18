@@ -3195,8 +3195,9 @@ DZ.edit = async (id) => {
     const L = nodeLayer(), d = ndrag; if (!L || !d) return;
     if (d.kind === 'box') { d.p1 = toPage(e); if (Math.hypot(d.p1.x - d.p0.x, d.p1.y - d.p0.y) * k > 3) d.moved = true; return drawNodes(); }
     if (pinch) { L.subs = d.base; ndrag = null; redraw(); return drawNodes(); }   // zooming instead
+    if (!d.moved) { if (Math.hypot(e.clientX - (downAt?.x ?? e.clientX), e.clientY - (downAt?.y ?? e.clientY)) < DEAD(e)) return; }   /* the dead zone; past it, the node catches up to the finger */
     const p = d.kind === 'n' && !e.shiftKey ? snapPt(toPage(e), e, new Set([L.id])) : toPage(e), q0 = p2n(L, d.p0), q1 = p2n(L, p); let du = q1.u - q0.u, dv = q1.v - q0.v;
-    if (!d.moved && Math.hypot(p.x - d.p0.x, p.y - d.p0.y) * k < 3) return; d.moved = true; clearTimeout(d.holdT);
+    d.moved = true; clearTimeout(d.holdT);
     L.subs = JSON.parse(JSON.stringify(d.base));
     if (d.kind === 'n') {
       if (e.shiftKey) { const px = du * L.w, py = du * 0 + dv * L.h; if (Math.abs(px) > Math.abs(py)) dv = 0; else du = 0; }
@@ -4383,6 +4384,12 @@ DZ.edit = async (id) => {
     e.preventDefault(); page.setPointerCapture(e.pointerId);
     drag = { h: h || (cropping ? 'pan' : 'move'), p0: p, dup: dupDrag, l0: { ...l, crop: l.crop ? { ...l.crop } : null } }; dupDrag = false;
   });
+  /* A dead zone: a press only starts moving an item, a handle or a node once it has gone this far (screen px), so a
+     finger settling on a tap doesn't nudge things. Wider for fingers than a stylus or mouse. Past it, the item
+     catches up and stays under the finger from where it was grabbed. */
+  const DEAD = (e) => e.pointerType === 'touch' ? 10 : e.pointerType === 'pen' ? 6 : 3;
+  let downAt = null;
+  page.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; }, true);
   page.addEventListener('pointermove', (e) => {
     if (rest.has(e.pointerId)) return;
     e = modEv(e);
@@ -4394,9 +4401,10 @@ DZ.edit = async (id) => {
     if (cdrag) return contMove(e);
     if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) cancelPress();
     if (!drag || pinch) return;
+    if (!drag.live) { if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < DEAD(e)) return; drag.live = true; }
     if (drag.h === 'group') {
       const p = toPage(e), fine = e.altKey ? 0.25 : 1; let dx = (p.x - drag.p0.x) * fine, dy = (p.y - drag.p0.y) * fine;
-      if (!drag.moved && Math.hypot(dx, dy) * k < 6) return; drag.moved = true;
+      drag.moved = true;
       const lock = e.shiftKey ? (Math.abs(dx) > Math.abs(dy) ? 'y' : 'x') : null; if (lock === 'y') dy = 0; if (lock === 'x') dx = 0;
       for (const [id, o] of drag.l0) { const m = doc.layers.find(x => x.id === id); if (m && !(m.on && drag.l0.has(m.on))) { m.x = o.x + dx; m.y = o.y + dy; } }
       snapTo(doc.layers.filter(m => drag.l0.has(m.id) && !(m.on && drag.l0.has(m.on))), e, lock);

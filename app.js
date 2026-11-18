@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 490;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 491;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2073,6 +2073,7 @@ const VIEWS = {
         <button class="btn icon-btn" data-top="del" data-tip="Delete the selected text, sticker or clip (Delete)" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
         <i class="st-sep"></i>
         ${rib('data-top="snap" id="reel-snap"', 'snap', 'Snap to the centre and other layers (hold Ctrl to skip once)')}
+        ${rib('data-top="fview" id="reel-fview"', 'finger', 'Fingers only move and zoom: the stylus picks and moves text and stickers')}
         <span class="reel-mods" data-tip="For tablets: tap to hold a key down">${[['shift', '⇧', 'Shift'], ['ctrl', 'Ctrl', 'Ctrl'], ['alt', 'Alt', 'Alt']].map(([m, l, n]) => `<button class="btn" data-mod="${m}" aria-label="Hold ${n}">${l}</button>`).join('')}</span>
         <button class="btn rib-t" data-top="size" id="reel-size" data-tip="The reel's shape: vertical, portrait, square or landscape">9:16</button>
         ${rib('data-top="watch"', 'watch', 'Watch full screen (Esc or tap to stop)')}
@@ -2150,6 +2151,8 @@ const VIEWS = {
         if (a === 'watch') return reelWatch();
         if (a === 'fs') return FS.can() ? FS.set(!FS.on()) : toast('On iPhone: tap Share, then "Add to Home Screen". InkForge then opens full screen.', 6000);
         if (a === 'snap') { R.snap = !R.snap; Settings.set('reel_snap', R.snap ? '1' : '0'); return reelSnapBtn(); }
+        if (a === 'fview') { const on = Settings.get('dz_finger_view', '') !== '1'; Settings.set('dz_finger_view', on ? '1' : ''); reelSnapBtn();
+          return toast(on ? 'Fingers now move and zoom the preview. Use the stylus to move text and stickers.' : 'Fingers move text and stickers again.', 2400); }
       };
       $('#reel-file2').onchange = (e) => { const f = $('#reel-file'); if (!f) return; const dt = new DataTransfer(); [...e.target.files].forEach(x => dt.items.add(x)); f.files = dt.files; f.dispatchEvent(new Event('change')); e.target.value = ''; };
       if (!['edit', 'style', 'music', 'tpl'].includes(R.tab)) R.tab = 'edit';
@@ -6577,7 +6580,7 @@ function reelTextDefaults() {
 const RI = {
   media: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>',
   text: '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>', page: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M12 9v6M9 12h6"/>',
-  snap: '<path d="M6 3v8a6 6 0 0 0 12 0V3"/><path d="M6 7h4M14 7h4"/>', watch: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/>',
+  snap: '<path d="M6 3v8a6 6 0 0 0 12 0V3"/><path d="M6 7h4M14 7h4"/>', finger: '<path d="M9 11V5a1.5 1.5 0 0 1 3 0v5"/><path d="M12 10V8.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L4.6 16a1.6 1.6 0 0 1 2.4-2.1L9 15.5"/>', watch: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/>',
   export: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/>', keys: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
   edit: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
   style: '<path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-.9 2-2 0-1.2-1-1.5-1-2.5 0-1 .8-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
@@ -6775,7 +6778,7 @@ function reelWatch() {
   R.onEnd = () => wake();   /* stays open at the end, ready to play again */
   setTimeout(() => { R.vpFit?.(); reelShow(0); reelPlay(); tick(); wake(); }, 250);
 }
-function reelSnapBtn() { const b = $('#reel-snap'); if (b) b.classList.toggle('on', R.snap !== false); }
+function reelSnapBtn() { const b = $('#reel-snap'); if (b) b.classList.toggle('on', R.snap !== false); const f = $('#reel-fview'); if (f) f.classList.toggle('on', Settings.get('dz_finger_view', '') === '1'); }
 /* Zoom and pan of the preview (only on screen; never recorded): the canvas is scaled and moved inside its frame.
    Wheel or the buttons zoom around the pointer; drag the empty frame (or an empty part of the picture), the
    middle button, or hold Space to pan; two fingers pinch. Fit puts it back. */
@@ -6995,8 +6998,12 @@ function reelCanvasBind(cv) {
     else reelPanel();
     reelTimeline();
   };
+  let downC = null;   /* where the press began, for the dead zone */
   cv.addEventListener('pointerdown', (e) => {
     if (R.recording || R.watching) return;
+    /* Fingers only move and zoom (shared with the design studio): a finger pans the preview, two pinch it. */
+    if (e.pointerType === 'touch' && Settings.get('dz_finger_view', '') === '1') { if (R.playing) reelPause(); R.panStart?.(e); return; }
+    if (!pts.size) downC = { x: e.clientX, y: e.clientY };
     try { cv.setPointerCapture(e.pointerId); } catch {}
     const p = toCv(e); pts.set(e.pointerId, p);
     if (R.playing) reelPause();
@@ -7041,6 +7048,10 @@ function reelCanvasBind(cv) {
     if (!drag || !pts.has(e.pointerId)) return;
     const p = toCv(e); pts.set(e.pointerId, p);
     const W = cv.width, H = cv.height, o = drag.o;
+    /* A dead zone (wider for a finger): nothing moves until the press has gone this far. */
+    if (!drag.live && drag.mode !== 'pinch' && drag.mode !== 'mpinch') {
+      const dz = e.pointerType === 'touch' ? 10 : e.pointerType === 'pen' ? 6 : 3; if (downC && Math.hypot(e.clientX - downC.x, e.clientY - downC.y) < dz) return;
+      drag.live = true; }   /* past it, the layer catches up and stays under the finger */
     if (drag.mode === 'media' || drag.mode === 'mpinch') {   /* the picture under the frame: offsets live in its own turned, flipped box */
       const c = drag.c, rot = c.rot || 0, BW = rot % 180 ? H : W, BH = rot % 180 ? W : H;
       if (drag.mode === 'mpinch' && pts.size > 1) { const [a, b] = [...pts.values()];
@@ -8882,6 +8893,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 491, when: '2026-11-19T14:00', added: ['Design studio and reel maker: a small wobble when you touch something no longer moves it. Items, handles, nodes and stickers only move once you really drag.', 'Reel maker: a hand button next to Snap turns on Fingers only move and zoom, the same switch as in the design studio. Your fingers move and zoom the preview while the stylus moves text and stickers.'], test: ['Tap a shape or sticker with a finger and lift without dragging. It should stay put.', 'In the reel maker, tap the hand button, zoom in, and drag over a sticker with a finger.'] },
   { build: 490, when: '2026-11-19T13:00', added: ['Design studio: Animate now shows a progress bar while it gets your reel ready, with a Cancel button.'], test: ['Tap Animate on a post and watch the bar fill, or tap Cancel to stop.'] },
   { build: 489, when: '2026-11-19T12:00', added: ['Design studio: a new switch in the snapping menu (the magnet), Fingers only move and zoom. Turn it on and your fingers pan and pinch the page while the stylus picks, moves and draws. Off by default.'], test: ['Turn on Fingers only move and zoom, then drag over a shape with a finger (the page moves) and with the stylus (the shape moves).'] },
   { build: 488, when: '2026-11-19T11:00', added: ['Design studio Layers: groups have a handle (⠿) on their heading, so you can drag a whole group up or down, even when it is folded.'], test: ['In Layers, drag a group by the handle on its heading above another layer.'] },
