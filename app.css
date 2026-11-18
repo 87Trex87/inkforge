@@ -2415,3 +2415,22 @@ form.pro .stt-list .c-main { flex: 1; min-width: 0; }
 form.pro .stt-list .count-in { width: 96px; flex: none; text-align: right; }
 
 form.pro > .fsec[hidden] { display: none !important; }
+
+/* Design studio, full screen: the floating side panel stays inside the screen and scrolls (the older full screen
+   rule took its height limit away, so a long panel ran off the bottom with no way to reach the rest). */
+body.dz-focus .dz-body > .dz-side { max-height: calc(100% - 20px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+@media (max-width: 700px) { body.dz-focus .dz-body > .dz-side { max-height: 48%; } }
+
+/* Design studio panels in the reel maker's style: each section a framed fold, its name on the left, what it's set
+   to on the right, + and - to open and close. */
+.dz-side details.fsec.fold { margin: 6px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.dz-side details.fsec.fold > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 8px; padding: 7px 9px; font: 600 12px var(--ui); letter-spacing: 0; text-transform: none; color: var(--ink); margin: 0; }
+.dz-side details.fsec.fold > summary::-webkit-details-marker { display: none; }
+.dz-side details.fsec.fold > summary::before { display: none !important; }
+.dz-side details.fsec.fold > summary::after { content: '+'; margin-left: 6px; color: var(--ink2); font-weight: 400; transform: none !important; border: 0 !important; }
+.dz-side details.fsec.fold[open] > summary::after { content: '\2212'; }
+.dz-side details.fsec.fold > summary .fsec-h { margin-left: auto; font-size: 11px; font-weight: 400; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.dz-side details.fsec.fold[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.dz-side details.fsec.fold > .fsec-b { padding: 0 9px 6px; }
+.dz-side > .dz-text { margin-top: 2px; }
+.dz-side .seg.dz-tshape { flex-wrap: wrap; margin-bottom: 8px; } .dz-side .seg.dz-tshape button { flex: 1 0 30%; }

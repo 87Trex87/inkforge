@@ -667,7 +667,7 @@ function reelTxtWrap(ctx, text, maxW) {
 }
 function reelTextLayout(st, W, H) {
   const k = Math.min(W, H) / 1080, px = 72 * k * (st.s || 1), lh = px * (st.lh || 1.12), ls = (st.ls || 0) * px;
-  _mctx.font = reelTxtFont(st, px); if ('letterSpacing' in _mctx) _mctx.letterSpacing = ls + 'px';
+  _mctx.font = reelTxtFont(st, px); if ('letterSpacing' in _mctx) _mctx.letterSpacing = ls + 'px'; if ('wordSpacing' in _mctx) _mctx.wordSpacing = (st.wsp || 0) * px + 'px';   /* st.wsp: extra space between words, in em */
   const boxed = st.look === 'box' || st.look === 'abox', pad = boxed ? (st.pad ?? 0.28) * px : 0;
   const lines = st.box ? reelTxtWrap(_mctx, st.text, Math.max(40 * k, (st.bw || 0.7) * W - pad * 2)) : String(st.text || ' ').split('\n');
   const widths = lines.map(l => _mctx.measureText(l).width);
@@ -677,7 +677,7 @@ function reelTextLayout(st, W, H) {
   else if (sh === 'arc') h += Math.abs(amt) / 100 * w * 0.35;
   else if (sh === 'wave') h += Math.abs(amt) / 100 * px * 1.2;
   else if (sh === 'rise' || sh === 'bulge') h += Math.abs(amt) / 100 * px * 0.8;
-  if ('letterSpacing' in _mctx) _mctx.letterSpacing = '0px';
+  if ('letterSpacing' in _mctx) _mctx.letterSpacing = '0px'; if ('wordSpacing' in _mctx) _mctx.wordSpacing = '0px';
   return { cx: st.x * W, cy: st.y * H, w, h, px, lh, ls, pad, lines, widths, k };
 }
 // One letter of shaped text, with the layer's look.
@@ -697,7 +697,7 @@ function reelTextDraw(ctx, s, st, L, upto, local = 0) {
   const y0 = -(lines.length - 1) * lh / 2;
   // straight text: whole lines (fast, kerning kept)
   if (sh === 'none') {
-    if ('letterSpacing' in ctx) ctx.letterSpacing = ls + 'px';
+    if ('letterSpacing' in ctx) ctx.letterSpacing = ls + 'px'; if ('wordSpacing' in ctx) ctx.wordSpacing = (st.wsp || 0) * px + 'px';
     const innerW = L.w - pad * 2 - (st.box ? 0 : px * 0.3), xa = al === 'left' ? -innerW / 2 : al === 'right' ? innerW / 2 : 0;
     ctx.textAlign = al;
     lines.forEach((ln0, i) => {
@@ -712,14 +712,14 @@ function reelTextDraw(ctx, s, st, L, upto, local = 0) {
       else if (look === 'neon') { ctx.shadowColor = s.accent; ctx.shadowBlur = px * 0.5; ctx.fillStyle = color; ctx.fillText(ln, xa, y); ctx.shadowBlur = px * 0.2; }
       ctx.fillStyle = look === 'abox' ? '#0b0d0e' : color; ctx.fillText(ln, xa, y); ctx.restore();
     });
-    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px'; if ('wordSpacing' in ctx) ctx.wordSpacing = '0px';
     return;
   }
   // shaped text: letter by letter
   ctx.textAlign = 'center';
   const fill = look === 'abox' ? s.accent : color;
   lines.forEach((ln0, li) => {
-    const chars = [...ln0], ws = chars.map(c => ctx.measureText(c).width + ls), tw = ws.reduce((a, b) => a + b, 0) - ls, yL = y0 + li * lh;
+    const chars = [...ln0], ws = chars.map(c => ctx.measureText(c).width + ls + (c === ' ' ? (st.wsp || 0) * px : 0)), tw = ws.reduce((a, b) => a + b, 0) - ls, yL = y0 + li * lh;
     let x = -tw / 2;
     if (sh === 'arc' || sh === 'circle') {
       const A = sh === 'circle' ? Math.PI * 2 * 0.999 : Math.max(0.01, Math.abs(amt) / 100 * Math.PI * 1.6), up = sh === 'circle' || amt >= 0;

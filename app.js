@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 475;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 476;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7248,6 +7248,7 @@ function reelClipTool(c) {
           ${reelFold('space', 'Spacing', `${(st.lh || 1.12).toFixed(2)} lines`, `
             ${reelSlider('data-stk-n', 'lh', 'Line spacing', 0.7, 2.5, 0.02, st.lh || 1.12, (st.lh || 1.12).toFixed(2))}
             ${reelSlider('data-stk-n', 'ls', 'Letter spacing', -0.1, 0.6, 0.01, st.ls || 0, Math.round((st.ls || 0) * 100) + '%')}
+            ${reelSlider('data-stk-n', 'wsp', 'Word spacing', -0.2, 1.5, 0.01, st.wsp || 0, Math.round((st.wsp || 0) * 100) + '%')}
             ${st.look === 'box' || st.look === 'abox' ? reelSlider('data-stk-n', 'pad', 'Padding', 0, 1, 0.02, st.pad ?? 0.28, Math.round((st.pad ?? 0.28) * 100) + '%') : ''}
             ${st.box ? reelSlider('data-stk-n', 'bw', 'Frame width', 0.15, 1, 0.01, st.bw || 0.7, Math.round((st.bw || 0.7) * 100) + '%') : ''}`)}
           ${reelFold('shape', 'Shape', REEL_TXT_SHAPES.find(x => x[0] === (st.shape || 'none'))[1], `
@@ -8832,6 +8833,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 476, when: '2026-11-19T01:00', added: ['Design studio text: new Shape choices (arc, circle, wave, rise, bulge), a background box behind the text, and panels laid out like the reel maker.', 'Word spacing for text in the design studio and the reel maker.', 'Design studio: pick a group or several items to size, rotate and fade them together from the side panel.', 'Design studio: the side panel scrolls in full screen, so long panels are never cut off.'], test: ['Make a wavy heading with a background box in a design.', 'Pick a group and turn it with the Rotate slider.', 'On a tablet in full screen, scroll the text panel to the bottom.'] },
   { build: 475, when: '2026-11-18T23:00', added: ['The portfolio form has the clean look: Save at the top, each section a row with a short note.', 'Design studio: grouping keeps clipped layers clipped, like a photo inside a shape.'], test: ['Add a portfolio piece, switch it to Flash and check the price shows.', 'Clip a photo to a shape, group them, and check the photo stays inside the shape.'] },
   { build: 474, when: '2026-11-18T21:00', added: ['The stock take has the clean look: Save at the top, each category its own section, one tidy list.', 'Design studio: Add picture can now take a picture From assets.'], test: ['Do a stock take, change a count and save it.', 'In a design, press Add picture, then From assets, and pick one.'] },
   { build: 473, when: '2026-11-18T19:00', added: ['The inventory item form has the same clean look as the booking and client forms, with Save at the top.'], test: ['Add a new inventory item and check it saves.'] },
