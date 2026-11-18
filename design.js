@@ -986,6 +986,16 @@ const dzCurveAt = (C, s) => { const n = C.P.length - 1; let f = s / C.len; if (C
 function dzCurveSync(doc) { for (const l of doc.layers) { if (l.t !== 'text' || !l.on) continue; const S = doc.layers.find(o => o.id === l.on && o.t === 'shape'), C = S && dzCurve(S); if (!C) { dzCurves.delete(l); continue; }
     if (l._bx && (l.x !== l._bx.x || l.y !== l._bx.y)) { S.x += l.x - l._bx.x; S.y += l.y - l._bx.y; const C2 = dzCurve(S); if (C2) Object.assign(C, C2); }
     dzCurves.set(l, C); const pad = l.size * 1.2 + Math.abs(l.pb || 0), X = C.P.map(q => q.x), Y = C.P.map(q => q.y); l.x = Math.min(...X) - pad; l.y = Math.min(...Y) - pad; l.w = Math.max(...X) + pad - l.x; l.h = Math.max(...Y) + pad - l.y; l.rot = 0; l._bx = { x: l.x, y: l.y }; } }
+/* Outlines: where the line sits on the edge (l.sal: 'in', 'out', or the middle when unset). Inside and outside draw
+   the line twice as wide and clip away the half on the wrong side, so the width is what you set. The shape's path
+   is the current path; `trace` adds it again; `rule` is its fill rule. */
+function dzEdge(x, L, trace, sw, rule) {
+  const at = L.sal;
+  if (at !== 'in' && at !== 'out') { x.lineWidth = sw; x.stroke(); return; }
+  x.save(); x.beginPath(); if (at === 'out') x.rect(-1e5, -1e5, 2e5, 2e5); trace(); x.clip(at === 'out' ? 'evenodd' : rule);
+  x.beginPath(); trace(); x.lineWidth = sw * 2; x.stroke(); x.restore();
+}
+const dzStroked = (l) => !!(l.sw && l.stroke && l.stroke !== 'none' && ((l.t === 'shape' && l.shape !== 'line') || (l.t === 'image' && !l.logo)));
 async function dzDraw(cv, doc, scale = 1, opts = {}) {
   await DZF.all(doc); dzCurveSync(doc);
   const x = cv.getContext('2d'), W = doc.w * scale, H = doc.h * scale;
@@ -1122,7 +1132,8 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
         if (clip) { x.save(); x.beginPath(); x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, r); x.clip(); }
         // cover = fill the box and crop the overflow (photos); stretch = squashed or stretched to the box (resized without
         // keeping its proportions); otherwise the whole picture fits inside (logos, stickers).
-        if (im && L.stretch && !L.cover && !L.logo) x.drawImage(im, -L.w / 2, -L.h / 2, L.w, L.h);
+        if (L._so) {}   /* outline only (drawn over what's clipped to it) */
+        else if (im && L.stretch && !L.cover && !L.logo) x.drawImage(im, -L.w / 2, -L.h / 2, L.w, L.h);
         else if (im) { const s = (L.cover ? Math.max : Math.min)(L.w / im.naturalWidth, L.h / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
           x.drawImage(im, -w / 2 + (L.cover ? (L.px || 0) * (w - L.w) / 2 : 0), -h / 2 + (L.cover ? (L.py || 0) * (h - L.h) / 2 : 0), w, h); }
         else if (L.slot != null) { x.fillStyle = 'rgba(128,128,128,.18)'; x.fillRect(-L.w / 2, -L.h / 2, L.w, L.h);
@@ -1130,19 +1141,21 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
         else if (L.logo) { x.strokeStyle = 'rgba(128,128,128,.6)'; x.setLineDash([10, 8]); x.lineWidth = 3; x.strokeRect(-L.w / 2, -L.h / 2, L.w, L.h); }
         if (clip) x.restore();
         const st = dzCol(doc, L.stroke);
-        if (st && L.sw) { x.beginPath(); x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, r); x.strokeStyle = st; x.lineWidth = L.sw; x.stroke(); }
+        if (st && L.sw) { x.strokeStyle = st; x.beginPath(); x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, r); dzEdge(x, L, () => x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, r), L.sw, 'nonzero'); }
       } else if (L.t === 'shape') {
         const f = dzCol(doc, L.fill), st = dzCol(doc, L.stroke), sw = L.sw || 0;
-        x.beginPath();
-        if (L.shape === 'ellipse') x.ellipse(0, 0, L.w / 2, L.h / 2, 0, 0, Math.PI * 2);
-        else if (L.shape === 'line') { x.moveTo(-L.w / 2, 0); x.lineTo(L.w / 2, 0); }
-        else if (L.shape === 'path') dzPathTo(x, L);
-        else if (dzSubs(L)) dzSubsTo(x, L, dzSubs(L));
-        else x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, Math.min(L.r || 0, L.w / 2, L.h / 2));
+        const trace = () => { if (L.shape === 'ellipse') x.ellipse(0, 0, L.w / 2, L.h / 2, 0, 0, Math.PI * 2);
+          else if (L.shape === 'line') { x.moveTo(-L.w / 2, 0); x.lineTo(L.w / 2, 0); }
+          else if (L.shape === 'path') dzPathTo(x, L);
+          else if (dzSubs(L)) dzSubsTo(x, L, dzSubs(L));
+          else x.roundRect(-L.w / 2, -L.h / 2, L.w, L.h, Math.min(L.r || 0, L.w / 2, L.h / 2)); };
+        x.beginPath(); trace();
         const pf = dzPaint(x, doc, L, tex);
         const dash = (w) => { if (L.dash === 'dash') x.setLineDash([w * 3, w * 2]); else if (L.dash === 'dot') { x.setLineDash([0, w * 2]); x.lineCap = 'round'; x.lineJoin = 'round'; } };   /* matches the SVG export */
         if (L.shape === 'line') { x.strokeStyle = pf || st || f || '#000'; x.lineWidth = Math.max(1, sw || L.h); x.lineCap = 'round'; dash(x.lineWidth); x.stroke(); x.setLineDash([]); }
-        else { if ((pf || f) && !(L.shape === 'vec' && L.subs?.every(sp => sp.closed === false))) { x.fillStyle = pf || f; x.fill(L.shape === 'path' || dzSubs(L) ? 'evenodd' : 'nonzero'); } if (st && sw) { x.strokeStyle = st; x.lineWidth = sw; dash(sw); x.stroke(); x.setLineDash([]); } }
+        else { const rule = L.shape === 'path' || dzSubs(L) ? 'evenodd' : 'nonzero', open = L.shape === 'vec' && L.subs?.every(sp => sp.closed === false);
+          if ((pf || f) && !open && !L._so) { x.fillStyle = pf || f; x.fill(rule); }
+          if (st && sw) { x.strokeStyle = st; dash(sw); if (open) { x.lineWidth = sw; x.stroke(); } else dzEdge(x, L, trace, sw, rule); x.setLineDash([]); } }
         }
         x.restore();
       };
@@ -1171,9 +1184,12 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     if (!clips.length) { await oneW(x, base); continue; }
     const off = document.createElement('canvas'); off.width = cv.width; off.height = cv.height;
     const ox = off.getContext('2d');
-    await oneW(ox, base); ox.globalCompositeOperation = 'source-atop';
+    /* The base's outline goes on top of what's clipped to it, like a frame around the picture. */
+    const edged = dzStroked(base);
+    await oneW(ox, edged ? { ...base, sw: 0 } : base); ox.globalCompositeOperation = 'source-atop';
     for (const c of clips) await oneW(ox, c);
     x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(off, 0, 0);
+    if (edged) await oneW(x, { ...base, _so: true });
   }
   /* A value study's stencil, where it goes on the skin: under the judged lines (black, at their needle's width), faint
      purple, so the two never look alike. Hidden with Stencil in the Challenge menu. */
@@ -1246,8 +1262,11 @@ function dzSvg(doc, layers) {
     const dash = (w) => L.dash === 'dash' ? ` stroke-dasharray="${_sf(w * 3)} ${_sf(w * 2)}"` : L.dash === 'dot' ? ` stroke-dasharray="0 ${_sf(w * 2)}" stroke-linecap="round" stroke-linejoin="round"` : '';
     const one = (S) => { const pf = paint(S), d = dzSvgPath(S);
       if (S.shape === 'line') { const lw = Math.max(1, sw || S.h); return `<path d="${d}" fill="none" stroke="${esc2(pf || st || f || '#000')}" stroke-width="${_sf(lw)}"${L.dash === 'dot' ? '' : ' stroke-linecap="round"'}${dash(lw)}${flip}/>`; }
-      const open = S.shape === 'vec' && S.subs?.every(sp => sp.closed === false), fill = !open && (pf || f);
-      return `<path d="${d}" fill="${fill ? esc2(fill) : 'none'}"${S.shape === 'path' || dzSubs(S) ? ' fill-rule="evenodd"' : ''}${st && sw ? ` stroke="${esc2(st)}" stroke-width="${_sf(sw)}"${dash(sw)}` : ''}${flip}/>`; };
+      const open = S.shape === 'vec' && S.subs?.every(sp => sp.closed === false), fill = !open && !S._so && (pf || f), eo = S.shape === 'path' || dzSubs(S);
+      if (!open && st && sw && (L.sal === 'in' || L.sal === 'out')) { const id = 'e' + (++uid), big = 1e5;   /* inside or outside: a double-width line with the other half clipped away */
+        defs.push(`<clipPath id="${id}"><path d="${L.sal === 'out' ? `M${-big} ${-big}H${big}V${big}H${-big}Z` : ''}${d}" clip-rule="${L.sal === 'out' || eo ? 'evenodd' : 'nonzero'}"${flip}/></clipPath>`);
+        return `${fill ? `<path d="${d}" fill="${esc2(fill)}"${eo ? ' fill-rule="evenodd"' : ''}${flip}/>` : ''}<path d="${d}" fill="none" stroke="${esc2(st)}" stroke-width="${_sf(sw * 2)}"${dash(sw)} clip-path="url(#${id})"${flip}/>`; }
+      return `<path d="${d}" fill="${fill ? esc2(fill) : 'none'}"${eo ? ' fill-rule="evenodd"' : ''}${st && sw ? ` stroke="${esc2(st)}" stroke-width="${_sf(sw)}"${dash(sw)}` : ''}${flip}/>`; };
     const c = L.crop;
     if (c && (c.w < 1 || c.h < 1)) {
       const FW = L.w / c.w, FH = L.h / c.h, ox = (0.5 - (c.x + c.w / 2)) * FW, oy = (0.5 - (c.y + c.h / 2)) * FH, id = 'c' + (++uid);
@@ -1260,10 +1279,11 @@ function dzSvg(doc, layers) {
   for (let i = 0; i < layers.length; i++) {
     const L = layers[i]; let j = i + 1; while (j < layers.length && layers[j].clip) j++;
     const clips = layers.slice(i + 1, j); i = j - 1;
-    out.push(item(L));
+    const edged = clips.length && dzStroked(L);   /* the base's outline goes on top of what's clipped to it */
+    out.push(item(edged ? { ...L, sw: 0 } : L));
     if (clips.length) { const id = 'k' + (++uid);
       defs.push(`<clipPath id="${id}"><path transform="${xf(L)}${L.fx || L.fy ? ` scale(${L.fx ? -1 : 1} ${L.fy ? -1 : 1})` : ''}" d="${dzSvgPath(L)}"${L.shape === 'path' || dzSubs(L) ? ' clip-rule="evenodd"' : ''}/></clipPath>`);
-      out.push(`<g clip-path="url(#${id})">${clips.map(item).join('')}</g>`); }
+      out.push(`<g clip-path="url(#${id})">${clips.map(item).join('')}</g>${edged ? item({ ...L, _so: true }) : ''}`); }
   }
   return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${_sf(W)} ${_sf(H)}" width="${_sf(W)}" height="${_sf(H)}">${defs.length ? `<defs>${defs.join('')}</defs>` : ''}${out.join('')}</svg>`, x0, y0, W, H };
 }
@@ -2001,6 +2021,12 @@ DZ.edit = async (id) => {
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
 
   /* Side panel: nothing selected = add things, background, details; a layer selected = its settings. */
+  /* Outline: colour, width, where it sits on the edge, and whether it grows and shrinks with the shape. */
+  const outlineUI = (l) => { const on = l.stroke && l.stroke !== 'none' && l.sw > 0, at = l.sal === 'in' || l.sal === 'out' ? l.sal : 'mid';
+    return fsec('Outline', `${swatches('stroke', on ? l.stroke : 'none', true)}${slider('sw', 'Width', 0, 60, 1, Math.round(l.sw || 0))}
+      <div class="lbl">Position</div><div class="seg" style="margin-bottom:8px">${[['in', 'Inside'], ['mid', 'Middle'], ['out', 'Outside']].map(([v, n]) => `<button data-sal="${v}" class="${at === v ? 'on' : ''}" style="flex:1" data-tip="${{ in: 'The line sits inside the edge', mid: 'The line sits across the edge', out: 'The line sits outside the edge' }[v]}">${n}</button>`).join('')}</div>
+      <label class="toggle" style="display:flex;margin-bottom:6px" data-tip="On: resizing makes the line thicker or thinner with the shape. Off: the line keeps its width."><input type="checkbox" data-sfix ${l.sfix ? '' : 'checked'}><span>Scale with the object</span></label>`,
+      { fold: true, open: !!on, hint: on ? `${Math.round(l.sw)} px · ${{ in: 'inside', mid: 'middle', out: 'outside' }[at]}` : 'none' }); };
   const swatches = (key, cur, allowNone) => {
     const roles = [['@fg', 'Text'], ['@accent', 'Accent'], ['@bg', 'Background'], ['@soft', 'Soft']];
     return `<div class="dz-sw" data-swk="${key}">${allowNone ? `<button data-c="none" class="none ${cur === 'none' || !cur ? 'on' : ''}" title="None">∅</button>` : ''}
@@ -2131,7 +2157,7 @@ DZ.edit = async (id) => {
     if (v.mode === 'n') { if (k !== 'x' && k !== 'y') return; const L = nodeLayer(); for (const [s2, i] of nodes.sel) { const n = L.subs[s2]?.nodes[i]; if (!n) continue; const q = n2p(L, n.x, n.y), u = p2n(L, { x: q.x + dx, y: q.y + dy }); n.x = u.u; n.y = u.v; } refit(L); drawNodes(); return redraw(); }
     if (v.mode === 'm') { for (const m of picked()) if (!m.lock && !(m.on && picks.has(m.on))) { m.x += dx; m.y += dy; } return; }
     const l = v.l; if (k === 'x') l.x = val; if (k === 'y') l.y = val;
-    if (k === 'w' || k === 'h') { if (!(val > 0)) return; const keep = dzKeep(l) && (l.t !== 'text' || l.frame), r = l.w / (l.h || 1); if (k === 'w') { l.w = val; if (keep) l.h = val / r; } else { l.h = val; if (keep) l.w = val * r; } if (!keep && l.t === 'image' && !l.logo && !l.cover) l.stretch = true; } };
+    if (k === 'w' || k === 'h') { if (!(val > 0)) return; const keep = dzKeep(l) && (l.t !== 'text' || l.frame), r = l.w / (l.h || 1), w0 = l.w, h0 = l.h || 1; if (k === 'w') { l.w = val; if (keep) l.h = val / r; } else { l.h = val; if (keep) l.w = val * r; } if (l.sw && !l.sfix && l.t !== 'text' && l.shape !== 'line') l.sw *= Math.sqrt((l.w / w0) * ((l.h || 1) / h0)); if (!keep && l.t === 'image' && !l.logo && !l.cover) l.stretch = true; } };
   /* The strip under the top bar: quick tools and properties for what's selected, a different set per kind of layer. */
   let cpop = null, mcpop = null;   // mcpop: the colour menu open in the strip for several picked items
   /* Several picked items styled together: fill, line colour, line width and line style for shapes (a line's colour
@@ -2286,7 +2312,7 @@ DZ.edit = async (id) => {
     const { cx, cy } = gxSnap;
     for (const [l, s] of gxSnap.L) {
       const h = s.h || 0; let mx = s.x + s.w / 2 - cx, my = s.y + h / 2 - cy, w = s.w, hh = h;
-      if (k === 'size') { const f = v / 100; mx *= f; my *= f; w = s.w * f; hh = h * f; for (const q of GX_LEN) if (typeof s[q] === 'number') l[q] = s[q] * f; }
+      if (k === 'size') { const f = v / 100; mx *= f; my *= f; w = s.w * f; hh = h * f; for (const q of GX_LEN) if (typeof s[q] === 'number' && !(q === 'sw' && s.sfix)) l[q] = s[q] * f; }
       else { const a = v * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a); [mx, my] = [mx * c - my * sn, mx * sn + my * c]; l.rot = (((s.rot || 0) + v + 540) % 360) - 180; }
       l.w = w; if (s.h != null) l.h = hh; l.x = cx + mx - w / 2; l.y = cy + my - hh / 2;
     }
@@ -2419,13 +2445,14 @@ DZ.edit = async (id) => {
         ${l.shape === 'star' ? slider('n', 'Points', 3, 24, 1, l.n || 5) + slider('inner', 'Inner depth', 0.1, 0.95, 0.01, l.inner ?? 0.45, v => Math.round(v * 100) + '%') : ''}
         ${l.shape === 'ring' ? slider('inner', 'Hole', 0.05, 0.95, 0.01, l.inner ?? 0.6, v => Math.round(v * 100) + '%') : ''}
         ${l.shape === 'cross' || l.shape === 'arrow' ? slider('th', 'Thickness', 0.05, 0.95, 0.01, l.th ?? (l.shape === 'cross' ? 0.34 : 0.4), v => Math.round(v * 100) + '%') : ''}`, { fold: true, open: true })
+        + (l.shape === 'line' ? '' : outlineUI(l))
       : fsec(l.logo ? 'Logo' : 'Picture', `${l.logo ? '<p class="muted" style="font-size:12px;margin:0 0 8px">Your studio logo from Settings.</p>'
           : `<div class="dz-tb">${dzIB('id="dz-pfphoto"', 'portfolio', 'Replace from portfolio')}${dzIB('id="dz-refphoto"', 'refs', 'Replace from references')}
               <label class="dz-ib" data-tip="Replace from this device" aria-label="Replace from this device"><svg viewBox="0 0 24 24">${DZ_UI.device}</svg><input type="file" accept="image/*" hidden id="dz-repl"></label></div>`}
         ${l.logo ? '' : `<label class="toggle" style="display:inline-flex;margin-bottom:6px" data-tip="Fill the whole box and crop what doesn't fit, like a photo frame. Off: the whole picture fits inside."><input type="checkbox" data-cover ${l.cover ? 'checked' : ''}><span>Fill the box (crop)</span></label>
           ${l.cover ? slider('px', 'Move photo left / right', -1, 1, 0.02, l.px || 0, v => Math.round(v * 100)) + slider('py', 'Move photo up / down', -1, 1, 0.02, l.py || 0, v => Math.round(v * 100)) : ''}
           ${slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0)}
-`}`, { fold: true, open: true })}
+`}`, { fold: true, open: true }) + (l.logo ? '' : outlineUI(l))}
       ${l.qr ? fsec('QR code', `<label class="field"><span>Link or text</span><textarea class="in" rows="2" data-qrt>${esc(l.qr.text)}</textarea></label>
         <label class="field"><span>Survives damage</span><select class="in" data-qrec>${[['L', 'Low: smallest code'], ['M', 'Medium'], ['Q', 'High'], ['H', 'Highest: can take a logo on top']].map(([v, n]) => `<option value="${v}" ${l.qr.ec === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <div class="lbl">Background</div>${swatches('qrbg', l.qrbg, true)}
@@ -4059,6 +4086,7 @@ DZ.edit = async (id) => {
       const ax = -sx * o.w / 2, ay = -sy * oh / 2, wx = ocx + ax * cos - ay * sin, wy = ocy + ax * sin + ay * cos;
       const nax = -sx * w / 2, nay = -sy * hgt / 2, ncx = mid > 1 ? ocx : wx - (nax * cos - nay * sin), ncy = mid > 1 ? ocy : wy - (nax * sin + nay * cos);
       l.w = w; if (!normal) l.h = hgt;
+      if (o.sw && !o.sfix && o.t !== 'text' && o.shape !== 'line') l.sw = o.sw * Math.sqrt((w / o.w) * (hgt / oh));   /* the outline grows with it unless that's turned off */
       if (!keep && o.t === 'image' && !o.logo && !o.cover) l.stretch = true;   /* squashed or stretched: the picture fills its box */
       l.x = ncx - w / 2; l.y = ncy - (normal ? oh * (w / o.w) : hgt) / 2;
     }
@@ -4229,7 +4257,7 @@ DZ.edit = async (id) => {
     if ((t.closest('#dz-pfphoto') || t.closest('#dz-refphoto')) && l) { const ref = await dzPortfolioPick(t.closest('#dz-refphoto') ? 'refs' : true); if (!ref) return; l.ref = ref; if (!l.cover && l.slot == null) { const im = await dzImg(ref); if (im) l.h = l.w * im.naturalHeight / im.naturalWidth; } changed(true); return drawSide(); }
     if (d('c')) {
       const key = t.closest('[data-swk]').dataset.swk, c = d('c');
-      if (key === 'bg') doc.bg.c = c === 'none' ? '@bg' : c; else if (key === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = c; } else if (l) l[key] = c;
+      if (key === 'bg') doc.bg.c = c === 'none' ? '@bg' : c; else if (key === 'gstop') { if (l?.grad) l.grad.stops[gsel].c = c; } else if (l) { l[key] = c; if (key === 'stroke' && c !== 'none' && !l.sw) l.sw = 4; }
       changed(); return drawSide();
     }
     if (!l) return;
@@ -4267,6 +4295,7 @@ DZ.edit = async (id) => {
       changed(true); return drawSide();
     }
     if (d('al')) { l.al = d('al'); changed(true); return drawSide(); }
+    if (d('sal') && l) { const v = d('sal'); if (v === 'mid') delete l.sal; else l.sal = v; if (!l.sw) l.sw = 4; if (!l.stroke || l.stroke === 'none') l.stroke = '@fg'; changed(true); return drawSide(); }
     if (d('tshape') && l?.t === 'text') { const v = d('tshape'); l.arc = v === 'arc' ? (l.arc && Math.abs(l.arc) < 360 ? l.arc : 120) : v === 'circle' ? 360 : 0;
       l.warp = DZ_WARPS.includes(v) ? v : undefined; if (l.warp) l.wamt ??= 50; changed(true); return drawSide(); }
     if (d('tvert') && l?.t === 'text') { const on = d('tvert') === '1'; if (on === !!l.vert) return; if (on) { l.vw = l.w; l.arc = 0; l.vert = true; } else { l.vert = false; if (!l.frame && l.vw) l.w = l.vw; } await redraw(); changed(true); return drawSide(); }
@@ -4454,7 +4483,9 @@ DZ.edit = async (id) => {
     if (t.dataset.dim && l) {
       const v = dzFromU(doc, +t.value); if (!(v > 0)) return;
       const cx = l.x + l.w / 2, cy = l.y + (l.h || 0) / 2, r = l.w / (l.h || 1), keep = dzKeep(l) && (l.t !== 'text' || l.frame);
+      const w0 = l.w, h0 = l.h || 1;
       if (t.dataset.dim === 'w') { l.w = v; if (keep) l.h = v / r; } else { l.h = v; if (keep) l.w = v * r; }
+      if (l.sw && !l.sfix && l.t !== 'text' && l.shape !== 'line') l.sw *= Math.sqrt((l.w / w0) * ((l.h || 1) / h0));
       l.x = cx - l.w / 2; if (l.t !== 'text' || l.frame) l.y = cy - l.h / 2;
       const other = side.querySelector(`[data-dim="${t.dataset.dim === 'w' ? 'h' : 'w'}"]`);
       if (other && keep) other.value = dzToU(doc, t.dataset.dim === 'w' ? l.h : l.w);
@@ -4522,6 +4553,7 @@ DZ.edit = async (id) => {
     if (t.dataset.k === 'arc') return drawSide();
     if (t.hasAttribute('data-unit')) { await Settings.set(DZ_KINDS[doc.kind].social ? 'dz_unit_post' : 'dz_unit', t.value); return drawSide(); }
     if (t.dataset.dim) { changed(true); return; }
+    if (t.hasAttribute('data-sfix') && l) { if (t.checked) delete l.sfix; else l.sfix = true; return changed(true); }
     if (t.hasAttribute('data-cover') && l) { l.cover = t.checked ? 1 : 0; changed(true); return drawSide(); }
     if (t.dataset.k === 'text' || t.dataset.v) changed(true);
   };

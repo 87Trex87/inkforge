@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 478;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 479;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8833,6 +8833,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 479, when: '2026-11-19T04:00', added: ['Design studio: a shape’s outline now shows on top of a picture or texture clipped into it, like a frame.', 'Outlines can sit inside, across or outside the edge of a shape or picture (the new Outline section in the side panel).', 'Scale with the object: outlines grow and shrink when you resize, or turn it off to keep their width.'], test: ['Clip a photo to a shape with an outline and check the line sits on top.', 'Try Inside, Middle and Outside on a thick outline.', 'Resize a shape with the toggle on, then off.'] },
   { build: 478, when: '2026-11-19T03:00', added: ['Design studio: zooming and moving around no longer stall on a tablet. The design looks a little soft while your fingers are down and sharpens when you let go.', 'Sticky notes open properly in the design studio again, and you can zoom in on them.'], test: ['Open a design on the tablet and pinch in and out a few times.', 'Open a sticky note and zoom in.'] },
   { build: 477, when: '2026-11-19T02:00', added: ['Design studio: font names are shown in their own font, so you can see each one before you pick it.'], test: ['Pick a text layer, open the font list and choose a new font.'] },
   { build: 476, when: '2026-11-19T01:00', added: ['Design studio text: new Shape choices (arc, circle, wave, rise, bulge), a background box behind the text, and panels laid out like the reel maker.', 'Word spacing for text in the design studio and the reel maker.', 'Design studio: pick a group or several items to size, rotate and fade them together from the side panel.', 'Design studio: the side panel scrolls in full screen, so long panels are never cut off.'], test: ['Make a wavy heading with a background box in a design.', 'Pick a group and turn it with the Rotate slider.', 'On a tablet in full screen, scroll the text panel to the bottom.'] },
