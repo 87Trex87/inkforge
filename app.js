@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 481;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 482;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8833,6 +8833,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 482, when: '2026-11-19T07:00', added: ['Design studio: fade any picture, shape, text or table with a transparency gradient, straight (Linear) or from a centre (Radial). Anything clipped to it fades too.', 'Drag the two round handles on the design to set where the fade runs, and use the stops in the Transparency section to set how see-through each point is.'], test: ['Pick a photo, open Transparency, choose Linear and drag the handles.', 'Try Radial and add a stop in the middle.'] },
   { build: 481, when: '2026-11-19T06:00', added: ['Design studio: the page background picture can now be zoomed, moved, turned, flipped, cropped and faded, and the page trims it to size.', 'It locks in place when you are done, so taps go through to what is on top. Page, then Edit picture, opens it again.'], test: ['Add a background picture, drag a corner past the page to zoom in, and turn it.', 'Tap Done, then tap an empty spot and check nothing gets picked.'] },
   { build: 480, when: '2026-11-19T05:00', added: ['Design studio: a new Table (under Shape). Add rows and columns, size them, and give cells their own colours, fonts, alignment and borders, with an optional header row and banded rows.', 'Fill a table from a spreadsheet saved as CSV.', 'Put a picture or icon (PNG, JPG or SVG) in a table cell. In forms, a cell can open a link in the PDF.'], test: ['Add a table, pick a row or column by its number or letter and change its colour.', 'Import a CSV into a table.', 'Put an icon from your assets in a cell.', 'In a form, give a cell a link and save the PDF.'] },
   { build: 479, when: '2026-11-19T04:00', added: ['Design studio: a shape’s outline now shows on top of a picture or texture clipped into it, like a frame.', 'Outlines can sit inside, across or outside the edge of a shape or picture (the new Outline section in the side panel).', 'Scale with the object: outlines grow and shrink when you resize, or turn it off to keep their width.'], test: ['Clip a photo to a shape with an outline and check the line sits on top.', 'Try Inside, Middle and Outside on a thick outline.', 'Resize a shape with the toggle on, then off.'] },

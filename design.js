@@ -1081,7 +1081,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   if (doc.bg?.img && !opts.noBg) { const im = await dzImg(doc.bg.img);
     if (im) { const s = Math.max(W / im.naturalWidth, H / im.naturalHeight); x.globalAlpha = doc.bg.op ?? 1;
       x.drawImage(im, (W - im.naturalWidth * s) / 2, (H - im.naturalHeight * s) / 2, im.naturalWidth * s, im.naturalHeight * s); x.globalAlpha = 1; } }
-  const one = async (x, l) => {
+  const one1 = async (x, l) => {
     const im = l.t === 'image' ? await dzImg(l.logo ? Settings.get('studio_logo_ref') : l.ref) : null;
     const tex = l.fm === 'tex' && l.tex?.ref ? await dzImg(l.tex.ref) : null;
     const tPics = {}; for (const r of dzTblRefs(l)) tPics[r] ??= await dzImg(r);
@@ -1250,6 +1250,21 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   // Clipping: a layer marked `clip` only shows inside the nearest unclipped layer under it (its base),
   // so a texture laid over a shape takes the shape's form. The bottom layer of each page can't be clipped.
   // Two-sided designs: the master page (shared backgrounds, frames) sits under the front or the back.
+  /* A transparency gradient (l.tg): the layer is drawn on its own, then faded by a gradient of opacities laid
+     over it in the layer's own space (a, b: where it runs, as fractions of the box from its centre; radial: a is
+     the centre and b the edge). Anything clipped to it fades with it. */
+  const one = async (x, l) => {
+    const g = l.tg; if (!g?.stops?.length) return one1(x, l);
+    const off = document.createElement('canvas'); off.width = x.canvas.width; off.height = x.canvas.height; const o = off.getContext('2d');
+    await one1(o, l);
+    const w = l.w, h = l.h || 1, A = g.a || { x: 0, y: -0.5 }, B = g.b || { x: 0, y: 0.5 };
+    o.save(); o.setTransform(scale, 0, 0, scale, 0, 0); o.translate(l.x + w / 2, l.y + h / 2); o.rotate((l.rot || 0) * Math.PI / 180); if (l.fx || l.fy) o.scale(l.fx ? -1 : 1, l.fy ? -1 : 1);
+    const ax = A.x * w, ay = A.y * h, bx = B.x * w, by = B.y * h;
+    const gr = g.type === 'radial' ? o.createRadialGradient(ax, ay, 0, ax, ay, Math.max(1, Math.hypot(bx - ax, by - ay))) : o.createLinearGradient(ax, ay, bx, by);
+    for (const st of [...g.stops].sort((p, q) => p.p - q.p)) gr.addColorStop(Math.max(0, Math.min(1, st.p)), `rgba(0,0,0,${Math.max(0, Math.min(1, st.o))})`);
+    o.globalCompositeOperation = 'destination-in'; o.fillStyle = gr; const big = (Math.max(doc.w, doc.h) + Math.abs(l.x) + Math.abs(l.y) + w + h) * 2; o.fillRect(-big, -big, big * 2, big * 2); o.restore();
+    x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.drawImage(off, 0, 0); x.restore();
+  };
   const show = (l) => !l.hide && (!opts.only || opts.only.has(l.id));
   const one0 = one, oneW = doc.pat ? async (cx, l) => { await one0(cx, l); for (const dy of [-doc.h, 0, doc.h]) for (const dx of [-doc.w, 0, doc.w]) if (dx || dy) await one0(cx, { ...l, x: l.x + dx, y: l.y + dy }); } : one0;   /* copies, so the layer itself never moves */
   const chLines = [];   /* a challenge's outline and detail lines, drawn last so nothing covers them */
@@ -1282,7 +1297,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
    way they draw. Text (it needs its font), pictures and texture fills are pixels: a choice with any of those
    can't be saved as SVG (turn text into a shape first, e.g. with the shape builder). Clipped layers stay clipped
    to their base; a crop stays a crop. */
-const dzVecOK = (l) => l.t === 'shape' && l.fm !== 'tex';
+const dzVecOK = (l) => l.t === 'shape' && l.fm !== 'tex' && !l.tg;
 const _sf = (v) => +(+v).toFixed(2);
 function dzSvgPath(L) {
   const w = L.w, h = L.h || 0;
@@ -2030,7 +2045,7 @@ DZ.edit = async (id) => {
       transformOrigin: `${(l.w / 2 - xs[S.c0]) * k}px ${(l.h / 2 - ys[S.r0]) * k}px`, transform: `rotate(${l.rot || 0}deg) scale(${l.fx ? -1 : 1}, ${l.fy ? -1 : 1})` });
     m.hidden = false; };
   const placeSel = () => {
-    try { tblMark(); } catch {}
+    try { tblMark(); tgMark(); } catch {}
     if (!selBox) return;
     const mo = $('#dz-multi');
     if (mo) mo.innerHTML = picked().map(m => `<i class="dz-mo ${m.lock ? 'locked' : ''}" style="left:${m.x * k}px;top:${m.y * k}px;width:${m.w * k}px;height:${(m.h || 1) * k}px;transform:rotate(${m.rot || 0}deg)"></i>`).join('');
@@ -2194,8 +2209,42 @@ DZ.edit = async (id) => {
         <div class="lbl">Colour</div>${swatches('bc', l.bc, true)}${slider('bw', 'Width', 0, 20, 0.5, l.bw ?? 2)}${slider('rad', 'Corner rounding', 0, 80, 1, l.rad || 0)}`, { fold: true, hint: { all: 'all lines', rows: 'rows', cols: 'columns', head: 'header', none: 'none' }[l.lines || 'all'] })}
       ${fsec('Data', `<label class="btn small" style="display:block;text-align:center">Import CSV…<input type="file" accept=".csv,.tsv,.txt,text/csv" hidden id="dz-tcsv"></label>
         <p class="muted" style="font-size:11px;margin:6px 0 0">Fills the table from a spreadsheet saved as CSV. Rows and columns are added or removed to fit.</p>`, { fold: true, hint: 'CSV' })}
+      ${tgUI(l)}
       ${fsec('Rotation and opacity', `${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}`, { fold: true })}`;
   };
+  /* Transparency gradient: None, Linear or Radial; a bar of its stops (drag to move, tap to add), each stop's
+     opacity, and handles on the design for where it runs. */
+  let tgsel = 0;
+  const TG_NEW = (type) => type === 'radial' ? { type, a: { x: 0, y: 0 }, b: { x: 0.5, y: 0 }, stops: [{ p: 0, o: 1 }, { p: 1, o: 0 }] } : { type, a: { x: 0, y: -0.5 }, b: { x: 0, y: 0.5 }, stops: [{ p: 0, o: 1 }, { p: 1, o: 0 }] };
+  const tgCss = (g) => `linear-gradient(90deg, ${[...g.stops].sort((p, q) => p.p - q.p).map(st => `rgba(255,255,255,${st.o}) ${Math.round(st.p * 100)}%`).join(', ')}), repeating-conic-gradient(#777 0 25%, #444 0 50%) 0 0 / 12px 12px`;
+  const tgUI = (l) => { const g = l.tg, ty = g?.type || 'none';
+    if (g) tgsel = Math.min(tgsel, g.stops.length - 1);
+    return fsec('Transparency', `<div class="seg" style="margin-bottom:8px">${[['none', 'None'], ['linear', 'Linear'], ['radial', 'Radial']].map(([v, n]) => `<button data-tgt="${v}" class="${ty === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+      ${g ? `<div class="dz-gbar dz-tgbar" data-tgbar style="background:${tgCss(g)}" title="Drag the markers to move them; tap the bar to add one">${g.stops.map((st, i) => `<i data-tgs="${i}" class="${i === tgsel ? 'on' : ''}" style="left:${st.p * 100}%;background:rgba(255,255,255,${st.o})"></i>`).join('')}</div>
+        <div class="row dz-gacts"><span class="muted" style="font-size:12px">Stop ${tgsel + 1} of ${g.stops.length}, at ${Math.round(g.stops[tgsel].p * 100)}%</span>
+          <button class="btn small" data-tga="add" ${g.stops.length >= 6 ? 'disabled' : ''}>+ Stop</button><button class="btn small" data-tga="del" ${g.stops.length <= 2 ? 'disabled' : ''}>Remove</button></div>
+        ${slider('tg:o', 'Opacity here', 0, 1, 0.01, g.stops[tgsel].o, v => Math.round(v * 100) + '%')}
+        <div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn small" data-tga="rev">⇋ Reverse</button>${ty === 'linear' ? '<button class="btn small" data-tga="turn">↻ 90°</button>' : ''}<button class="btn small" data-tga="reset">Reset where it runs</button></div>
+        <p class="muted" style="font-size:11px;margin:6px 0 0">Drag the two round handles on the design to set where it fades${ty === 'radial' ? ' (the centre and the edge)' : ''}.</p>` : ''}`,
+      { fold: true, open: !!g, hint: g ? (ty === 'radial' ? 'radial' : 'linear') : 'none' }); };
+  /* The handles on the design, in the layer's own (turned, flipped) space. */
+  const tgPt = (l, f) => { const w = l.w, h = l.h || 1, a = (l.rot || 0) * Math.PI / 180; let u = f.x * w, v = f.y * h; if (l.fx) u = -u; if (l.fy) v = -v;
+    return { x: l.x + w / 2 + u * Math.cos(a) - v * Math.sin(a), y: l.y + h / 2 + u * Math.sin(a) + v * Math.cos(a) }; };
+  const tgFrac = (l, p) => { const w = l.w, h = l.h || 1, a = -(l.rot || 0) * Math.PI / 180, dx = p.x - (l.x + w / 2), dy = p.y - (l.y + h / 2);
+    let u = dx * Math.cos(a) - dy * Math.sin(a), v = dx * Math.sin(a) + dy * Math.cos(a); if (l.fx) u = -u; if (l.fy) v = -v; return { x: u / w, y: v / h }; };
+  let tgDrag = null;
+  const tgMark = () => { let m = $('#dz-tgh'); const l = sel && doc.layers.find(x => x.id === sel);
+    if (!l || !l.tg || many() || tab !== 'edit' || cropping || nodes || cut) { if (m) m.hidden = true; return; }
+    if (!m) { m = document.createElement('div'); m.id = 'dz-tgh'; m.innerHTML = '<svg><line/></svg><i data-tgh="a"></i><i data-tgh="b"></i>'; page.append(m);
+      m.addEventListener('pointerdown', (e) => { const hd = e.target.closest('[data-tgh]'); if (!hd) return; e.stopPropagation(); e.preventDefault(); hd.setPointerCapture(e.pointerId); tgDrag = hd.dataset.tgh; });
+      m.addEventListener('pointermove', (e) => { const l2 = layer(); if (!tgDrag || !l2?.tg) return; e.stopPropagation(); const r = page.getBoundingClientRect();
+        let f = tgFrac(l2, { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }); if (e.shiftKey && tgDrag === 'b') { const o = l2.tg.a; if (Math.abs(f.x - o.x) * l2.w > Math.abs(f.y - o.y) * (l2.h || 1)) f.y = o.y; else f.x = o.x; }
+        l2.tg[tgDrag] = { x: Math.round(f.x * 1000) / 1000, y: Math.round(f.y * 1000) / 1000 }; tgMark(); redraw(); });
+      const up = (e) => { if (!tgDrag) return; e.stopPropagation(); tgDrag = null; changed(true); };
+      m.addEventListener('pointerup', up); m.addEventListener('pointercancel', up); }
+    const A = tgPt(l, l.tg.a || { x: 0, y: -0.5 }), B = tgPt(l, l.tg.b || { x: 0, y: 0.5 }), [ha, hb] = m.querySelectorAll('i'), ln = m.querySelector('line');
+    ha.style.left = A.x * k + 'px'; ha.style.top = A.y * k + 'px'; hb.style.left = B.x * k + 'px'; hb.style.top = B.y * k + 'px';
+    ln.setAttribute('x1', A.x * k); ln.setAttribute('y1', A.y * k); ln.setAttribute('x2', B.x * k); ln.setAttribute('y2', B.y * k); m.hidden = false; };
   /* Outline: colour, width, where it sits on the edge, and whether it grows and shrinks with the shape. */
   const outlineUI = (l) => { const on = l.stroke && l.stroke !== 'none' && l.sw > 0, at = l.sal === 'in' || l.sal === 'out' ? l.sal : 'mid';
     return fsec('Outline', `${swatches('stroke', on ? l.stroke : 'none', true)}${slider('sw', 'Width', 0, 60, 1, Math.round(l.sw || 0))}
@@ -2695,6 +2744,7 @@ DZ.edit = async (id) => {
         <div class="lbl">Background</div>${swatches('qrbg', l.qrbg, true)}
         <p class="dz-hint muted" style="margin:6px 0 0">Keep it dark on light so phones can read it. Test it with your phone before printing.</p>`, { fold: true, open: true }) : ''}
       ${doc.form && l.t !== 'field' ? linkSec(l) : ''}
+      ${l.t === 'field' ? '' : tgUI(l)}
       ${fsec('Rotation and opacity', `${slider('rot', 'Rotation', -180, 180, 1, Math.round(l.rot || 0), v => v + '°')}
         ${slider('op', 'Opacity', 0, 1, 0.05, l.op ?? 1, v => Math.round(v * 100) + '%')}`, { fold: true, hint: `${Math.round(l.rot || 0)}° · ${Math.round((l.op ?? 1) * 100)}%` })}
       ${fsec('Saving', `<div class="dz-tb">${dzIB('data-mact="refs"', 'refs', 'Save to references')}${dzIB('data-mact="png"', 'png', 'Save as PNG')}
@@ -4640,6 +4690,29 @@ DZ.edit = async (id) => {
     bg = { x: e.clientX, y: e.clientY, vx, vy, moved: true }; }, true);
   stage.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
   stage.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dz-pop, .dz-rail, #dz-chov') && !(doc.chal && chHit(e))) closePop(); }, true);   /* not for the airbrush or a gradient dot: their menu stays open */
+  side.addEventListener('click', (e) => { const l = layer(); if (!l) return; const t = e.target, d = (k2) => t.closest(`[data-${k2}]`)?.dataset[k2];
+    if (d('tgt')) { const v = d('tgt'); if (v === 'none') delete l.tg; else if (!l.tg) l.tg = TG_NEW(v); else if (l.tg.type !== v) { const n = TG_NEW(v); l.tg.type = v; l.tg.a = n.a; l.tg.b = n.b; } tgsel = 0; changed(true); placeSel(); return drawSide(); }
+    if (d('tga') && l.tg) { const g = l.tg, a = d('tga');
+      if (a === 'add' && g.stops.length < 6) { const o = [...g.stops].sort((p, q) => p.p - q.p); let best = 0; for (let i = 1; i < o.length - 1; i++) if (o[i + 1].p - o[i].p > o[best + 1].p - o[best].p) best = i;
+        g.stops.push({ p: (o[best].p + o[best + 1].p) / 2, o: (o[best].o + o[best + 1].o) / 2 }); tgsel = g.stops.length - 1; }
+      if (a === 'del' && g.stops.length > 2) { g.stops.splice(tgsel, 1); tgsel = 0; }
+      if (a === 'rev') g.stops.forEach(st => st.p = 1 - st.p);
+      if (a === 'turn') { const c = { x: (g.a.x + g.b.x) / 2, y: (g.a.y + g.b.y) / 2 }, w = l.w, h = l.h || 1, rot = (p) => ({ x: c.x - (p.y - c.y) * h / w, y: c.y + (p.x - c.x) * w / h }); g.a = rot(g.a); g.b = rot(g.b); }
+      if (a === 'reset') { const n = TG_NEW(g.type); g.a = n.a; g.b = n.b; }
+      changed(true); placeSel(); return drawSide(); }
+  });
+  let tgbDrag = null;
+  side.addEventListener('pointerdown', (e) => { const bar = e.target.closest('[data-tgbar]'), l = layer(); if (!bar || !l?.tg) return; e.preventDefault();
+    const r = bar.getBoundingClientRect(), at = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), mk = e.target.closest('[data-tgs]');
+    if (mk) tgsel = +mk.dataset.tgs;
+    else if (l.tg.stops.length < 6) { const o = [...l.tg.stops].sort((p, q) => p.p - q.p), nx = o.findIndex(st => st.p > at), A = o[Math.max(0, nx - 1)] || o[0], B = nx < 0 ? o.at(-1) : o[nx];
+      const tt = B.p > A.p ? (at - A.p) / (B.p - A.p) : 0; l.tg.stops.push({ p: at, o: Math.round((A.o + (B.o - A.o) * Math.max(0, Math.min(1, tt))) * 100) / 100 }); tgsel = l.tg.stops.length - 1; changed(true); return drawSide(); }
+    else return;
+    tgbDrag = { r, mk }; mk.classList.add('drag'); bar.setPointerCapture(e.pointerId); side.querySelectorAll('[data-tgs]').forEach(m => m.classList.toggle('on', +m.dataset.tgs === tgsel)); });
+  side.addEventListener('pointermove', (e) => { const l = layer(); if (!tgbDrag || !l?.tg) return; const p = Math.max(0, Math.min(1, (e.clientX - tgbDrag.r.left) / tgbDrag.r.width));
+    l.tg.stops[tgsel].p = Math.round(p * 1000) / 1000; tgbDrag.mk.style.left = p * 100 + '%'; tgbDrag.mk.closest('[data-tgbar]').style.background = tgCss(l.tg); redraw(); });
+  const tgbUp = () => { if (!tgbDrag) return; tgbDrag = null; changed(true); drawSide(); };
+  side.addEventListener('pointerup', tgbUp); side.addEventListener('pointercancel', tgbUp);
   let gdrag = null;
   side.addEventListener('pointerdown', (e) => {
     const bar = e.target.closest('[data-gbar]'), l = layer(); if (!bar || !l?.grad) return;
@@ -4753,6 +4826,8 @@ DZ.edit = async (id) => {
     }
     if (key === 'bgop') { doc.bg.op = +t.value; t.closest('.dz-sl').querySelector('b').textContent = Math.round(t.value * 100) + '%'; return changed(); }
     if (!l || !key || key === 'font') return;
+    if (key === 'tg:o' && l.tg) { l.tg.stops[tgsel].o = +t.value; const b1 = t.closest('.dz-sl')?.querySelector('b'); if (b1) b1.textContent = Math.round(t.value * 100) + '%';
+      const bar = side.querySelector('[data-tgbar]'); if (bar) { bar.style.background = tgCss(l.tg); const mk = bar.querySelector(`[data-tgs="${tgsel}"]`); if (mk) mk.style.background = `rgba(255,255,255,${t.value})`; } return changed(); }
     if (l.t === 'table' && /^t[cr]:/.test(key)) {   /* the picked cells' text size, or the picked rows' and columns' size */
       const v = +t.value, b0 = t.closest('.dz-sl')?.querySelector('b'); if (b0) b0.textContent = t.value;
       if (key === 'tc:size') tSet(l, 'size', v);
