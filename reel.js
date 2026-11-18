@@ -283,8 +283,9 @@ function drawMedia(ctx, c, W, H, p) {
   const rot = c.rot || 0, BW = rot % 180 ? H : W, BH = rot % 180 ? W : H;
   ctx.save();
   ctx.translate(W / 2, H / 2);
-  if (rot) ctx.rotate(rot * Math.PI / 180);
-  if (c.flip) ctx.scale(-1, 1);
+  if (rot || c.ang) ctx.rotate((rot + (c.ang || 0)) * Math.PI / 180);   /* quarter turns, then a free turn (ang) */
+  if (c.flip || c.flipv) ctx.scale(c.flip ? -1 : 1, c.flipv ? -1 : 1);
+  if ((c.op ?? 1) < 1) ctx.globalAlpha = c.op;
   ctx.translate(-BW / 2, -BH / 2);
   ctx.filter = reelClipFilter(c, W);
   if (c.fx?.includes('blurin') && p < 0.3) ctx.filter = (ctx.filter === 'none' ? '' : ctx.filter + ' ') + `blur(${(1 - p / 0.3) * 14 * Math.min(W, H) / 1080}px)`;

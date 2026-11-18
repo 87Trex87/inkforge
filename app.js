@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 483;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 484;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6980,6 +6980,10 @@ function reelCanvasBind(cv) {
     const p = toCv(e); pts.set(e.pointerId, p);
     if (R.playing) reelPause();
     const { seg, list } = reelLayers(ctx, cv.width, cv.height);
+    if (pts.size === 2 && drag?.mode === 'media') {   /* second finger on the picture: pinch zooms it, twisting turns it */
+      const [a, b] = [...pts.values()], c = drag.c;
+      drag = { ...drag, mode: 'mpinch', d0: Math.hypot(a.x - b.x, a.y - b.y), a0: Math.atan2(b.y - a.y, b.x - a.x), z0: c.zoom || 1, g0: c.ang || 0 }; return;
+    }
     if (pts.size === 2 && drag) {   // second finger: pinch the current layer
       const [a, b] = [...pts.values()];
       drag = { ...drag, mode: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y), pos: { ...getPos(drag.o) } };
@@ -6999,6 +7003,10 @@ function reelCanvasBind(cv) {
     const inBox = (o) => { const a = -(o.kind === 'stk' ? o.clip.stickers[o.i].rot || 0 : 0) * Math.PI / 180, dx = p.x - o.box.cx, dy = p.y - o.box.cy;
       return Math.abs(dx * Math.cos(a) - dy * Math.sin(a)) <= o.box.w / 2 + 8 * p.k && Math.abs(dx * Math.sin(a) + dy * Math.cos(a)) <= o.box.h / 2 + 8 * p.k; };
     const hit = [...list].reverse().find(inBox);
+    /* Framing a picture or video: dragging an empty part of it moves the picture itself (not the view). */
+    const mc = R.tool === 'frame' && seg?.kind === 'clip' && R.pick?.kind === 'clip' && R.pick.key === seg.key ? R.clips.find(q => q.id === seg.key) : null;
+    if (!hit && mc && mc.type !== 'blank' && pts.size === 1) { if (R.layer) R.layer = null; R.dragging = true;
+      drag = { mode: 'media', c: mc, sx: p.x, sy: p.y, ox0: mc.ox || 0, oy0: mc.oy || 0 }; return; }
     if (!hit) { drag = null; if (R.layer) { R.layer = null; reelRender(); } pts.delete(e.pointerId); R.panStart?.(e); return; }
     R.layer = hit.id; R.dragging = true; R.pxk = p.k;
     if (hit.kind === 'stk' && reelMod(e, 'alt')) {   /* Alt-drag leaves a copy behind and moves the new one */
@@ -7012,6 +7020,16 @@ function reelCanvasBind(cv) {
     if (!drag || !pts.has(e.pointerId)) return;
     const p = toCv(e); pts.set(e.pointerId, p);
     const W = cv.width, H = cv.height, o = drag.o;
+    if (drag.mode === 'media' || drag.mode === 'mpinch') {   /* the picture under the frame: offsets live in its own turned, flipped box */
+      const c = drag.c, rot = c.rot || 0, BW = rot % 180 ? H : W, BH = rot % 180 ? W : H;
+      if (drag.mode === 'mpinch' && pts.size > 1) { const [a, b] = [...pts.values()];
+        c.zoom = Math.round(Math.max(0.3, Math.min(4, drag.z0 * Math.hypot(a.x - b.x, a.y - b.y) / drag.d0)) * 100) / 100;
+        let g = drag.g0 + (Math.atan2(b.y - a.y, b.x - a.x) - drag.a0) * 180 / Math.PI; g = ((g + 540) % 360) - 180; if (R.snap !== false && Math.abs(g) < 3) g = 0; c.ang = Math.round(g); }
+      else if (drag.mode === 'media') { const th = -(rot + (c.ang || 0)) * Math.PI / 180, dx = p.x - drag.sx, dy = p.y - drag.sy;
+        let lx = dx * Math.cos(th) - dy * Math.sin(th), ly = dx * Math.sin(th) + dy * Math.cos(th); if (c.flip) lx = -lx; if (c.flipv) ly = -ly;
+        c.ox = Math.max(-1, Math.min(1, Math.round((drag.ox0 + lx / BW) * 1000) / 1000)); c.oy = Math.max(-1, Math.min(1, Math.round((drag.oy0 + ly / BH) * 1000) / 1000)); }
+      return reelRender();
+    }
     if (drag.mode === 'pinch' && pts.size > 1) {
       const [a, b] = [...pts.values()];
       setPos(o, { ...drag.pos, s: Math.max(0.3, Math.min(4, drag.pos.s * Math.hypot(a.x - b.x, a.y - b.y) / drag.d0)) });
@@ -7051,7 +7069,8 @@ function reelCanvasBind(cv) {
   });
   const end = (e) => {
     pts.delete(e.pointerId);
-    if (pts.size) { if (drag?.mode === 'pinch') drag = null; return; }
+    if (pts.size) { if (drag?.mode === 'pinch') drag = null; if (drag?.mode === 'mpinch') { const q = [...pts.values()][0], c = drag.c; drag = { mode: 'media', c, sx: q.x, sy: q.y, ox0: c.ox || 0, oy0: c.oy || 0 }; } return; }
+    if (drag?.mode === 'media' || drag?.mode === 'mpinch') { drag = null; R.dragging = false; reelChanged(); return reelPanel(); }
     if (drag?.o.kind === 'card' || drag?.o.kind === 'wm') Settings.set('reel_style', Settings.cache.reel_style);
     if (drag?.o.kind === 'card' || drag?.o.kind === 'cap' || ['corner', 'side', 'rot'].includes(drag?.mode)) reelPanel();   // enables the reset buttons, updates the sliders
     drag = null; R.dragging = false; R.guides = []; reelRender();
@@ -7217,12 +7236,14 @@ function reelClipTool(c) {
       ${reelSeg('motion', c.motion, [['none', 'Still'], ['in', 'Zoom in'], ['out', 'Zoom out'], ['pan', 'Pan']])}
       <div class="lbl">Framing ${help('Fill crops to the full screen. Fit shows the whole image, over a soft blurred copy of itself or a plain black background.')}</div>
       ${reelSeg('fit', c.fit, [['cover', 'Fill'], ['blur', 'Fit + blur'], ['plain', 'Fit + black']])}
-      <div class="row" style="margin-bottom:10px"><button class="btn small" data-act="rot">↻ Rotate</button><button class="btn small ${c.flip ? 'on' : ''}" data-act="flip">⇋ Mirror</button></div>
-      <div class="lbl">Crop ${help('Zoom in and move the picture to frame the tattoo.')}</div>
-      ${reelSlider('data-c', 'zoom', 'Zoom', 1, 3, 0.05, c.zoom || 1, (c.zoom || 1).toFixed(2) + '×')}
-      ${reelSlider('data-c', 'ox', 'Left / right', -0.5, 0.5, 0.01, c.ox || 0, Math.round((c.ox || 0) * 100) + '%')}
-      ${reelSlider('data-c', 'oy', 'Up / down', -0.5, 0.5, 0.01, c.oy || 0, Math.round((c.oy || 0) * 100) + '%')}
-      ${c.zoom > 1 || c.ox || c.oy ? '<div class="row"><button class="btn small" data-act="cropreset">Reset crop</button></div>' : ''}`;
+      <div class="row" style="margin-bottom:10px;gap:6px;flex-wrap:wrap"><button class="btn small" data-act="rot">↻ 90°</button><button class="btn small ${c.flip ? 'on' : ''}" data-act="flip">⇋ Mirror</button><button class="btn small ${c.flipv ? 'on' : ''}" data-act="flipv">⇵ Flip</button></div>
+      <div class="lbl">Position and size ${help('Drag the picture on the preview to move it. Two fingers pinch to zoom and twist to turn it. Zoom below 100% to fit it smaller in the frame.')}</div>
+      ${reelSlider('data-c', 'zoom', 'Zoom', 0.3, 4, 0.01, c.zoom || 1, Math.round((c.zoom || 1) * 100) + '%')}
+      ${reelSlider('data-c', 'ang', 'Turn', -180, 180, 1, c.ang || 0, (c.ang || 0) + '°')}
+      ${reelSlider('data-c', 'ox', 'Left / right', -1, 1, 0.01, c.ox || 0, Math.round((c.ox || 0) * 100) + '%')}
+      ${reelSlider('data-c', 'oy', 'Up / down', -1, 1, 0.01, c.oy || 0, Math.round((c.oy || 0) * 100) + '%')}
+      ${reelSlider('data-c', 'op', 'Opacity', 0.1, 1, 0.01, c.op ?? 1, Math.round((c.op ?? 1) * 100) + '%')}
+      ${(c.zoom || 1) !== 1 || c.ox || c.oy || c.ang || (c.op ?? 1) < 1 || c.flipv ? '<div class="row"><button class="btn small" data-act="cropreset">Reset position and size</button></div>' : ''}`;
   if (R.tool === 'text' || R.tool === 'stickers') {
     const txt = R.tool === 'text', list = R.ovl || [], si = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1, st = list[si];
     const mine = (o) => (o.text != null) === txt, shown = list.map((o, i) => [o, i]).filter(([o]) => mine(o));
@@ -7312,9 +7333,9 @@ function reelClipBind(ed, c) {
     if (stO && t.hasAttribute('data-stout')) { stO.out = t.checked; return reelRender(); }
     if (stO && t.hasAttribute('data-stexit')) { stO.exit = t.checked; if (t.checked) { const back = R.t; clearTimeout(R.peekT); reelShow(Math.max(stO.t0, stO.t1 - (stO.animDur || 0.5) - 0.6)); reelPlay(); R.peekT = setTimeout(() => { reelPause(); reelShow(back); }, ((stO.animDur || 0.5) + 0.7) * 1000); } return reelRender(); }
     if (t.dataset.c === 'capOut') { c.capOut = t.checked; return reelChanged(); }
-    if (['zoom', 'ox', 'oy', 'vol'].includes(t.dataset.c)) {
+    if (['zoom', 'ox', 'oy', 'vol', 'ang', 'op'].includes(t.dataset.c)) {
       const k = t.dataset.c; c[k] = +t.value;
-      t.closest('.slider').querySelector('b').textContent = k === 'zoom' ? c.zoom.toFixed(2) + '×' : Math.round(c[k] * 100) + '%';
+      t.closest('.slider').querySelector('b').textContent = k === 'ang' ? c.ang + '°' : Math.round(c[k] * 100) + '%';
       if (k === 'vol' && c.gain) c.gain.gain.value = c.vol;
       return reelChanged();
     }
@@ -7407,6 +7428,7 @@ function reelClipBind(ed, c) {
     const i = R.sel, act = a.dataset.act;
     if (act === 'rot') { c.rot = ((c.rot || 0) + 90) % 360; reelChanged(); return; }
     if (act === 'flip') { c.flip = !c.flip; a.classList.toggle('on', c.flip); reelChanged(); return; }
+    if (act === 'flipv') { c.flipv = !c.flipv; reelChanged(); return reelPanel(); }
     if (act === 'capreset') { delete c.cap; R.layer = 'cap'; reelRender(); return reelPanel(); }
     if (act === 'adjreset') { delete c.adj; reelChanged(); return reelPanel(); }
     if (act === 'stktext') { reelAddText(c); return; }
@@ -7417,7 +7439,7 @@ function reelClipBind(ed, c) {
     if (act === 'stkall' && stO) { stO.t0 = 0; stO.t1 = reelSegments().total; toast('It now shows for the whole reel.'); reelChanged(); return reelPanel(); }
     if (act === 'adjall') { for (const o of R.clips) { o.adj = c.adj ? { ...c.adj } : undefined; o.filter = c.filter; } toast('Every clip has this look now.'); reelChanged(); return; }
     if (act === 'fxclear') { c.fx = []; reelChanged(); return reelPanel(); }
-    if (act === 'cropreset') { delete c.zoom; delete c.ox; delete c.oy; reelChanged(); return reelPanel(); }
+    if (act === 'cropreset') { delete c.zoom; delete c.ox; delete c.oy; delete c.ang; delete c.op; delete c.flipv; reelChanged(); return reelPanel(); }
     if (act === 'del') return reelRemoveClip(i);
     let pick = c;
     // Copies get their own caption position and sticker list, so moving one never moves the other.
@@ -7451,7 +7473,7 @@ async function reelFreeze(c) {
   const at = c.inP + Math.max(0, Math.min(seg.dur, R.t - seg.start)) * (c.speed || 1), cv = document.createElement('canvas'); cv.width = c.w; cv.height = c.h;
   c.el.currentTime = at; await new Promise(r => { c.el.onseeked = r; setTimeout(r, 800); }); c.el.onseeked = null; cv.getContext('2d').drawImage(c.el, 0, 0);
   const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92)); const ph = await reelAddFile(new File([blob], 'freeze.jpg', { type: 'image/jpeg' }));
-  R.clips.splice(R.clips.indexOf(ph), 1); Object.assign(ph, { dur: 2, motion: 'none', fit: c.fit, filter: c.filter, adj: c.adj && { ...c.adj }, fx: c.fx && [...c.fx], rot: c.rot, flip: c.flip, zoom: c.zoom, ox: c.ox, oy: c.oy });
+  R.clips.splice(R.clips.indexOf(ph), 1); Object.assign(ph, { dur: 2, motion: 'none', fit: c.fit, filter: c.filter, adj: c.adj && { ...c.adj }, fx: c.fx && [...c.fx], rot: c.rot, flip: c.flip, flipv: c.flipv, ang: c.ang, op: c.op, zoom: c.zoom, ox: c.ox, oy: c.oy });
   const cut = at > c.inP + 0.2 && at < c.outP - 0.2, i = R.clips.indexOf(c);
   if (cut) { const n = reelClipCopy(c, { inP: at }); c.outP = at; R.clips.splice(i + 1, 0, ph, n); } else R.clips.splice(at <= c.inP + 0.2 ? i : i + 1, 0, ph);
   toast('Freeze frame added.', 1500); reelPick('clip', ph.id);
@@ -7696,7 +7718,7 @@ async function reelStyleChange(e) {
    New photos/videos added after applying one take the recipe for their position; beyond the
    recipe's length the last entry repeats. Stored as JSON in settings (key reel_templates);
    images stay in the media folder and are kept alive because their names appear in that JSON. */
-const REEL_SLOT_KEYS = ['dur', 'motion', 'fit', 'filter', 'speed', 'rot', 'flip', 'mute', 'adj', 'fx', 'capFont', 'capLook', 'capAnim', 'capColor', 'capOut', 'vol'];
+const REEL_SLOT_KEYS = ['dur', 'motion', 'fit', 'filter', 'speed', 'rot', 'flip', 'flipv', 'ang', 'op', 'mute', 'adj', 'fx', 'capFont', 'capLook', 'capAnim', 'capColor', 'capOut', 'vol'];
 function reelTemplates() { try { return JSON.parse(Settings.get('reel_templates', '[]')); } catch { return []; } }
 const reelSaveTemplates = (list) => Settings.set('reel_templates', JSON.stringify(list));
 
