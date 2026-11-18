@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 491;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 492;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7417,7 +7417,8 @@ function reelClipBind(ed, c) {
   ed.addEventListener('click', (e) => {
     const sd = e.target.closest('[data-stkdel]');
     if (sd) { const [gone] = R.ovl.splice(+sd.dataset.stkdel, 1);
-      if (!R.clips.some(x => x.stickers?.some(o => o.url === gone.url))) URL.revokeObjectURL(gone.url);
+      /* Only a picture link nothing else uses: a saved sticker's link is shared through Media (other stickers, other reels). */
+      if (gone.url && !gone.ref && ![...Media.urls.values()].includes(gone.url) && !R.ovl.some(o => o.url === gone.url)) URL.revokeObjectURL(gone.url);
       R.layer = null; reelRender(); return reelPanel(); }
     const sk = e.target.closest('[data-stk]');
     if (sk) { R.layer = 'stk' + sk.dataset.stk; reelRender(); return reelPanel(); }

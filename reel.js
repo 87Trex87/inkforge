@@ -442,7 +442,11 @@ function capLayout(ctx, s, c, W, H) {
 function reelStkImg(st) {
   if (st.img instanceof Image) return st.img;
   const img = new Image(); st.img = img;
-  const go = (u) => { if (!u) return; img.onload = () => { if (!R.playing) reelRender(); }; img.src = u; st.url = u; };
+  let again = false;
+  const go = (u) => { if (!u) return; img.onload = () => { if (!R.playing) reelRender(); };
+    /* A link that no longer works (let go elsewhere): forget it and read the file again, once. */
+    img.onerror = () => { if (again || !st.ref) return; again = true; const old = Media.urls.get(st.ref); if (old) Media.urls.delete(st.ref); Media.url(st.ref).then(go); };
+    img.src = u; st.url = u; };
   if (st.ref) Media.url(st.ref).then(go); else go(st.url);
   return img;
 }
