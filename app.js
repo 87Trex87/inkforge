@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 493;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 494;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6571,9 +6571,9 @@ const REEL_CLIP_TOOLS = [['look', 'Look'], ['frame', 'Frame'], ['text', 'Text'],
 /* A reel colour choice's palette block: the eyedropper, recent colours, and the palette in use with its menu and
    Palettes… (the same palettes as the design studio). `attr(c)` is how one of that choice's own swatches says its
    colour, so a tap here (or the eyedropper) works just like tapping one of them. eya / eyx: the same, for the eyedropper. */
-function reelPalExtra(attr, eya, eyx = '') {
+function reelPalExtra(attr, eya, eyx = '', cur = '') {
   if (typeof DZP === 'undefined') return '';
-  const P = DZP.cur(), rec = DZP.recent(), b = (c) => `<button class="ink" ${attr(c)} style="background:${c}" title="${c.toUpperCase()}" aria-label="${c}"></button>`;
+  const P = DZP.cur(), lc = String(cur || '').toLowerCase(), rec0 = DZP.recent(), rec = /^#[0-9a-f]{6}$/.test(lc) && !P.cols.includes(lc) && !rec0.includes(lc) ? [lc, ...rec0] : rec0, b = (c) => `<button class="ink ${lc === c ? 'on' : ''}" ${attr(c)} style="background:${c}" title="${c.toUpperCase()}" aria-label="${c}"></button>`;
   return `<span class="dz-sw dz-rsw"><span class="dz-swh"><button class="tool dz-swm" data-eye data-eya="${eya}" ${eyx ? `data-eyx="${eyx}"` : ''} title="Eyedropper: take a colour from the preview" aria-label="Eyedropper"><svg viewBox="0 0 24 24"><path d="M14 4l6 6M17 7l-9.5 9.5L4 20l3.5-3.5L17 7z"/><path d="M13 5l6 6"/></svg></button>
       <select class="in" data-palsel aria-label="Palette">${DZP.all().map(p => `<option value="${p.id}" ${p.id === P.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select><button class="dz-swm" data-palman>Palettes…</button></span>
     ${rec.length ? `<span class="dz-swh"><span>Recent</span></span><span class="dz-swg">${rec.map(b).join('')}</span>` : ''}<span class="dz-swg">${P.cols.map(b).join('')}</span></span>`;
@@ -6583,7 +6583,7 @@ function reelTextDefaults() {
   const s = reelStyle(), seg = (k, opts) => `<div class="seg" data-st="${k}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   return `<details class="reel-def" ${R.defOpen ? 'open' : ''}><summary><b>Text defaults</b><span class="muted">${esc(reelFontDef(s.font)[1])} · new text at the ${s.captionPos || 'bottom'}</span></summary>
     <div class="field"><span class="lbl">Font ${help('For the intro and outro cards, and every text set to Same as style.')}</span>${reelFontBtn(s.font, 'style', false)}</div>
-    <div class="reel-row"><span class="lbl">Colour</span><span class="ink-dots" data-sw="color">${REEL_COLORS.map(c => `<button class="ink ${s.color === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}${reelPalExtra(c => `data-v="${c}"`, 'data-v')}</span></div>
+    <div class="reel-row"><span class="lbl">Colour</span><span class="ink-dots" data-sw="color">${reelPalExtra(c => `data-v="${c}"`, 'data-v', '', s.color)}</span></div>
     <div class="two tight"><div class="field"><span class="lbl">New text starts</span>${seg('captionPos', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
       <div class="field"><span class="lbl">New text size</span>${seg('capSize', [['s', 'S'], ['m', 'M'], ['l', 'L']])}</div></div></details>`;
 }
@@ -7278,7 +7278,7 @@ function reelClipTool(c) {
   if (R.tool === 'fx') return `<p class="muted" style="font-size:12px;margin:0 0 10px">Tap to turn on; mix as many as you like.</p>
       <div class="fx-list">${REEL_FX.map(([k, l, d]) => `<button class="tr tr-s ${c.fx?.includes(k) ? 'on' : ''}" data-fxk="${k}" data-tip="${d}"><b>${l}</b></button>`).join('')}</div>
       ${c.fx?.length ? '<div class="row" style="margin-top:10px"><button class="btn small" data-act="fxclear">Turn all off</button></div>' : ''}`;
-  if (R.tool === 'frame' && c.type === 'blank') { const sw = (k) => `<span class="ink-dots">${['#111416', '#000000', '#ffffff', '#e9e3d6', '#1fb5a8', '#f0c75e', '#d2453b', '#3b5bdb', ...(k === 'bg2' ? [''] : [])].map(col => `<button class="ink ${(c[k] || '') === col ? 'on' : ''}" data-blk="${k}" data-v="${col}" style="background:${col || 'repeating-linear-gradient(45deg,#333 0 4px,#555 4px 8px)'}" aria-label="${col || 'None'}"></button>`).join('')}<input type="color" data-blkc="${k}" value="${c[k] || '#000000'}" aria-label="Any colour">${reelPalExtra(col => `data-blk="${k}" data-v="${col}"`, 'data-v', 'data-blk=' + k)}</span>`;
+  if (R.tool === 'frame' && c.type === 'blank') { const sw = (k) => `<span class="ink-dots">${(k === 'bg2' ? [''] : []).map(col => `<button class="ink ${(c[k] || '') === col ? 'on' : ''}" data-blk="${k}" data-v="${col}" style="background:${col || 'repeating-linear-gradient(45deg,#333 0 4px,#555 4px 8px)'}" aria-label="${col || 'None'}"></button>`).join('')}<input type="color" data-blkc="${k}" value="${c[k] || '#000000'}" aria-label="Any colour">${reelPalExtra(col => `data-blk="${k}" data-v="${col}"`, 'data-v', 'data-blk=' + k, c[k])}</span>`;
     return `<div class="lbl">Background</div><div style="margin-bottom:12px">${sw('bg')}</div><div class="lbl">Fade to ${help('A second colour makes a gradient from top to bottom.')}</div><div style="margin-bottom:12px">${sw('bg2')}</div>`; }
   if (R.tool === 'frame') return `
       <div class="lbl">Motion ${help('Slow zoom or pan keeps photos alive.')}</div>
@@ -7311,9 +7311,9 @@ function reelClipTool(c) {
           <div class="rt-bar">${reelFontBtn(st.font, 'st', true)}
             <button class="rt-b ${st.bold === false ? '' : 'on'}" data-sttog="bold" data-tip="Bold" aria-label="Bold"><b>B</b></button><button class="rt-b ${st.ital ? 'on' : ''}" data-sttog="ital" data-tip="Italic" aria-label="Italic"><i>I</i></button>
             <i class="rt-sep"></i>${['left', 'center', 'right'].map(a => `<button class="rt-b ${(st.align || 'center') === a ? 'on' : ''}" data-stalign="${a}" data-tip="Align ${a}" aria-label="Align ${a}"><svg viewBox="0 0 24 24">${{ left: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>', center: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>', right: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>' }[a]}</svg></button>`).join('')}</div>
-          <div class="reel-row"><span class="lbl">Fill</span><span class="ink-dots">${['', ...REEL_COLORS, '#000000'].map(col => `<button class="ink ${(st.color || '') === col ? 'on' : ''}" data-stcol="${col}" style="background:${col || 'linear-gradient(135deg,#e9e3d6 50%,#1fb5a8 50%)'}" aria-label="${col || 'Style colour'}"></button>`).join('')}<input type="color" data-stcolc value="${st.color || '#ffffff'}" aria-label="Any colour">${reelPalExtra(col => `data-stcol="${col}"`, 'data-stcol')}</span></div>
+          <div class="reel-row"><span class="lbl">Fill</span><span class="ink-dots">${[''].map(col => `<button class="ink ${(st.color || '') === col ? 'on' : ''}" data-stcol="${col}" style="background:${col || 'linear-gradient(135deg,#e9e3d6 50%,#1fb5a8 50%)'}" aria-label="${col || 'Style colour'}"></button>`).join('')}<input type="color" data-stcolc value="${st.color || '#ffffff'}" aria-label="Any colour">${reelPalExtra(col => `data-stcol="${col}"`, 'data-stcol', '', st.color)}</span></div>
           <div class="lbl">Look</div>${sseg('look', st.look || 'outline', REEL_CAP_LOOKS)}
-          ${(st.look || 'outline') === 'outline' ? `<div class="reel-row"><span class="lbl">Outline</span><span class="ink-dots">${['', '#000000', '#ffffff', ...REEL_COLORS.slice(2)].map(col => `<button class="ink ${(st.oc || '') === col ? 'on' : ''}" data-stoc="${col}" style="background:${col || 'rgba(0,0,0,.6)'}" aria-label="${col || 'Soft black'}"></button>`).join('')}<input type="color" data-stocc value="${st.oc || '#000000'}" aria-label="Any outline colour">${reelPalExtra(col => `data-stoc="${col}"`, 'data-stoc')}</span></div>
+          ${(st.look || 'outline') === 'outline' ? `<div class="reel-row"><span class="lbl">Outline</span><span class="ink-dots">${[''].map(col => `<button class="ink ${(st.oc || '') === col ? 'on' : ''}" data-stoc="${col}" style="background:${col || 'rgba(0,0,0,.6)'}" aria-label="${col || 'Soft black'}"></button>`).join('')}<input type="color" data-stocc value="${st.oc || '#000000'}" aria-label="Any outline colour">${reelPalExtra(col => `data-stoc="${col}"`, 'data-stoc', '', st.oc)}</span></div>
             ${reelSlider('data-stk-n', 'ow', 'Outline width', 0, 0.4, 0.01, st.ow ?? 0.14, Math.round((st.ow ?? 0.14) * 100) + '%')}` : ''}
           ${reelFold('space', 'Spacing', `${(st.lh || 1.12).toFixed(2)} lines`, `
             ${reelSlider('data-stk-n', 'lh', 'Line spacing', 0.7, 2.5, 0.02, st.lh || 1.12, (st.lh || 1.12).toFixed(2))}
@@ -7599,7 +7599,7 @@ function reelTransPanel(s, seg) {
 }
 
 async function reelStyleSection(s) {
-  const swatches = (k) => `<span class="ink-dots" data-sw="${k}">${REEL_COLORS.map(c => `<button class="ink ${s[k] === c ? 'on' : ''}" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}${reelPalExtra(c => `data-v="${c}"`, 'data-v')}</span>`;
+  const swatches = (k) => `<span class="ink-dots" data-sw="${k}">${reelPalExtra(c => `data-v="${c}"`, 'data-v', '', s[k])}</span>`;
   const seg = (k, opts) => `<div class="seg" data-st="${k}" style="margin-bottom:12px">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`;
   const hasLogo = !!reelLogoRef(s);
   const noLogo = '<p class="muted" style="font-size:12px;margin:-4px 0 12px">Add your studio logo in More › Settings to use it here.</p>';
