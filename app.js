@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 471;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 472;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -338,7 +338,15 @@ const MIGRATIONS = [
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      form_id INTEGER NOT NULL REFERENCES signed_forms(id) ON DELETE CASCADE,
      ref TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);
-   CREATE INDEX idx_signed_pages ON signed_form_pages (form_id);`
+   CREATE INDEX idx_signed_pages ON signed_form_pages (form_id);`,
+  // imported bookings: src_uid = the booking's id where it came from, src_ws = that workspace; an optional tag and colour;
+  // ghost = shown for reference only (not counted, not editable, not shared to Google)
+  `ALTER TABLE bookings ADD COLUMN src_uid TEXT;
+   ALTER TABLE bookings ADD COLUMN src_ws TEXT;
+   ALTER TABLE bookings ADD COLUMN tag TEXT;
+   ALTER TABLE bookings ADD COLUMN tag_color TEXT;
+   ALTER TABLE bookings ADD COLUMN ghost INTEGER NOT NULL DEFAULT 0;
+   CREATE INDEX idx_bookings_src ON bookings (src_uid);`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -1183,6 +1191,8 @@ const VIEWS = {
           <button class="bkt-btn" id="bkt-share" data-tip="Share your open appointments"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4"/></svg><span>Share openings</span></button>
           <button class="bkt-btn" id="bkt-csv" data-tip="Spreadsheet of the bookings shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
           <button class="bkt-btn" id="bkt-print" data-tip="Print the bookings shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn" id="bkt-exp" data-tip="Save bookings to a file, to load into another workspace (e.g. the shop owner's)"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg><span>Export</span></button>
+          <button class="bkt-btn" id="bkt-imp" data-tip="Load bookings from another workspace's file: preview first, then add them for real or as ghosts"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v7h14v-7"/></svg><span>Import</span></button>
           <button class="bkt-btn pri" id="bkt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New booking</span></button></div></div>
       <div class="bkt-panel"><div id="bkt-f"></div><div id="bkt"></div></div></div>`,
     async mount() { Cal.back = null; await bkTable(); }
@@ -1194,6 +1204,7 @@ const VIEWS = {
       const b = id === 'new'
         ? { start_at: Cal.prefill || ymd(new Date()) + 'T10:00', duration_min: 120, client_id: Cal.prefillClient || null }
         : await DB.one('SELECT * FROM bookings WHERE id = ?', [+id]);
+      if (b?.ghost) return bkGhostView(b);
       if (id === 'new' && Cal.prefillQuote) {
         const q = Cal.prefillQuote;
         Object.assign(b, { quote: q.quote, deposit: q.deposit, size: q.size || null, duration_min: Math.min(600, Math.max(30, q.duration || 120)),
@@ -1771,6 +1782,7 @@ const VIEWS = {
       <div class="seg st-period" id="st-period">${[['month', 'Month'], ['3m', '3 months'], ['year', 'Year'], ['all', 'All'], ['custom', 'Custom']].map(([k, l]) =>
         `<button data-p="${k}" class="${STATS.period === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="row st-head">
+        <label class="bkt-sel st-who" data-tip="Whose tattoos: everyone together, only yours, or one imported artist's (by tag). Ghost bookings never count."><select id="st-who"></select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
         ${STATS.period === 'custom' ? `<input class="in" type="date" id="st-from" value="${STATS.from}"><span class="muted">to</span><input class="in" type="date" id="st-to" value="${STATS.to}">`
           : '<span class="muted" id="st-range"></span>'}
         <span class="row no-print" style="margin-left:auto;gap:6px"><button class="btn small" id="st-csv" data-tip="Spreadsheet of the tattoos in this period; opens in Excel">Export Excel</button>
@@ -1782,6 +1794,10 @@ const VIEWS = {
       const f = $('#st-from'), t = $('#st-to');
       if (f) { f.onchange = () => { STATS.from = f.value; renderStats(); }; t.onchange = () => { STATS.to = t.value; renderStats(); }; }
       $('#st-csv').onclick = statsCsv;
+      (async () => { const tags = (await DB.all("SELECT DISTINCT tag FROM bookings WHERE tag IS NOT NULL AND ghost = 0 ORDER BY tag")).map(r => r.tag), sel = $('#st-who'); if (!sel) return;
+        if (STATS.who !== 'all' && STATS.who !== 'mine' && !tags.includes(STATS.who)) STATS.who = 'all';
+        sel.innerHTML = [['all', tags.length ? 'Everyone (whole shop)' : 'All tattoos'], ...(tags.length ? [['mine', 'Only mine']] : []), ...tags.map(t => [t, t])].map(([v, l]) => `<option value="${esc(v)}" ${STATS.who === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
+        sel.closest('label').hidden = !tags.length; sel.onchange = () => { STATS.who = sel.value; renderStats(); }; })();
       $('#st-print').onclick = () => window.print();
       renderStats();
     }
@@ -3208,6 +3224,8 @@ async function bookingsBetween(from, to) {
 }
 const bName = (b) => b.first_name != null ? fullName(b) : b.guest_name ? b.guest_name : kindOf(b) !== 'tattoo' ? kindLabel(b) : 'No client';
 const bFirst = (b) => b.first_name || (b.guest_name || '').split(' ')[0] || '';
+// An imported booking's tag, in its colour, wherever the booking shows; ghosts are marked too.
+const bTag = (b) => (b.tag ? `<span class="btag" style="--tc:${esc(b.tag_color || '#1fb5a8')}" data-tip="Imported${b.ghost ? ' as a ghost: shown for reference only' : ''}">${esc(b.tag)}</span>` : '') + (b.ghost && !b.tag ? '<span class="btag ghost" data-tip="Ghost: shown for reference only">ghost</span>' : '');
 const guestChip = (b) => b.first_name == null && b.guest_name ? ' <span class="chip guest" data-tip="Not saved in your clients">not saved</span>' : '';
 
 async function renderCal() {
@@ -3231,7 +3249,7 @@ async function renderCal() {
       const day = addDays(start, i), k = ymd(day), list = byDay[k] || [];
       html += `<div role="button" tabindex="0" class="mday ${day.getMonth() !== d.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k === sel ? 'sel' : ''} ${isDayOff(k, off) ? 'off' : ''} ${list.length ? 'has' : ''}" data-d="${k}">
         <span class="n">${day.getDate()}</span>
-        <span class="mevs">${list.slice(0, 2).map(b => `<span class="mev k-${kindOf(b)}" data-bk="${b.id}" title="${esc(fmtTime(b.start_at) + ' ' + bName(b) + (b.completed ? ' · completed' : ''))}">${b.completed ? '<i class="ev-tick">✓</i>' : ''}${esc(who(b))}</span>`).join('')}
+        <span class="mevs">${list.slice(0, 2).map(b => `<span class="mev k-${kindOf(b)} ${b.ghost ? 'ghost' : ''} ${b.tag ? 'tagged' : ''}" style="${b.tag_color ? '--tc:' + esc(b.tag_color) : ''}" data-bk="${b.id}" title="${esc(fmtTime(b.start_at) + ' ' + bName(b) + (b.completed ? ' · completed' : ''))}">${b.completed ? '<i class="ev-tick">✓</i>' : ''}${esc(who(b))}</span>`).join('')}
           ${list.length > 2 ? `<span class="mmore">+${list.length - 2}</span>` : ''}</span>
         ${list.length ? `<span class="mdot">${list.length}</span>` : ''}</div>`;
     }
@@ -3297,9 +3315,9 @@ async function renderCal() {
       const w = 100 / lanes.length;
       // Too short for stacked lines (e.g. a 30-minute follow-up): put everything on one line instead.
       const short = h < 48;
-      html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''} ${short ? 'short' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)"
+      html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''} ${short ? 'short' : ''} ${b.ghost ? 'ghost' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)${b.tag_color ? ';--tc:' + esc(b.tag_color) : ''}"
         title="${esc([bName(b), kindLabel(b), fmtTime(b.start_at) + ' · ' + fmtDur(b.duration_min), b.placement, b.description].filter(Boolean).join(' · '))}">
-        <b>${b.completed ? '<i class="ev-tick" data-tip="Completed">✓</i>' : ''}${esc(mode === 'week' ? (b.first_name || b.guest_name || (kindOf(b) !== 'tattoo' ? kindLabel(b) : '—')) : bName(b))}</b>
+        <b>${b.completed ? '<i class="ev-tick" data-tip="Completed">✓</i>' : ''}${esc(mode === 'week' ? (b.first_name || b.guest_name || (kindOf(b) !== 'tattoo' ? kindLabel(b) : '—')) : bName(b))}${bTag(b)}</b>
         ${mode === 'week' && !short ? `<span class="muted">${fmtTime(b.start_at)}</span>` : ''}
         ${mode === 'day' ? `<span>${kindOf(b) !== 'tattoo' && b.first_name != null ? kindLabel(b) + ' · ' : ''}${fmtTime(b.start_at)} · ${fmtDur(b.duration_min)}${b.placement ? ' · ' + esc(b.placement) : ''}</span>
         ${b.description ? `<span class="muted">${esc(b.description)}</span>` : ''}` : ''}</a>`;
@@ -3628,7 +3646,7 @@ const Gcal = {
         await DB.run('DELETE FROM gcal_deletes WHERE gcal_id = ?', [gcal_id]);
       }
       await this.pull(C);
-      const dirty = await DB.all('SELECT * FROM bookings WHERE gcal_id IS NULL OR gcal_synced_at IS NULL OR updated_at <> gcal_synced_at');
+      const dirty = await DB.all('SELECT * FROM bookings WHERE ghost = 0 AND (gcal_id IS NULL OR gcal_synced_at IS NULL OR updated_at <> gcal_synced_at)');
       for (const b of dirty) await this.push(C, b);
       await this.pullBusy();
       await Settings.set('gcal_last', new Date().toISOString());
@@ -5518,7 +5536,7 @@ const bookingGap = () => Math.max(0, +Settings.get('booking_gap', '60') || 0);
 async function availDays(start, end, opts = {}) {
   const need = Math.max(30, opts.need || 120), hidden = new Set(opts.hidden || []), gap = bookingGap();
   const [ws, we] = workHours().map(toMin);
-  const rows = await DB.all(`SELECT start_at, duration_min, kind FROM bookings WHERE start_at >= ? AND start_at < ?`, [ymd(start), ymd(end)]);
+  const rows = await DB.all(`SELECT start_at, duration_min, kind FROM bookings WHERE start_at >= ? AND start_at < ? AND ghost = 0`, [ymd(start), ymd(end)]);
   const busy = Settings.get('gcal_busy', '1') === '1' ? await DB.all('SELECT start_at, end_at FROM gcal_busy WHERE start_at < ? AND end_at > ?', [ymd(end), ymd(start)]) : [];
   const off = daysOff(), today = ymd(new Date()), out = {};
   for (let d = new Date(start); d < end; d = addDays(d, 1)) {
@@ -5843,7 +5861,7 @@ async function portfolioPages() {
 
 /* ---------- Stats ----------
    Built from completed tattoo bookings (tattoo and touch-up) in the chosen period. */
-const STATS = { period: 'year', from: '', to: '' };
+const STATS = { period: 'year', from: '', to: '', who: 'all' };   /* who: all, mine, or an import tag */
 function statsRange() {
   const t = new Date(), y = t.getFullYear(), m = t.getMonth();
   if (STATS.period === 'month') return [ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0))];
@@ -5854,8 +5872,9 @@ function statsRange() {
 }
 async function statsRows() {
   const [a, z] = statsRange();
+  const w = STATS.who || 'all', extra = w === 'mine' ? ' AND b.src_uid IS NULL' : w !== 'all' ? ' AND b.tag = ?' : '';
   return DB.all(`SELECT b.*, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
-    WHERE b.completed = 1 AND substr(b.start_at, 1, 10) BETWEEN ? AND ? ORDER BY b.start_at`, [a, z]);
+    WHERE b.completed = 1 AND b.ghost = 0 AND substr(b.start_at, 1, 10) BETWEEN ? AND ?${extra} ORDER BY b.start_at`, [a, z, ...(w !== 'all' && w !== 'mine' ? [w] : [])]);
 }
 async function renderStats() {
   const el = $('#st-body'); if (!el) return;
@@ -5893,7 +5912,7 @@ async function renderStats() {
     </div>
     <div class="card"><h2>Tattoos (${n})</h2><div class="st-table"><table>
       <thead><tr><th>Date</th><th>Client</th><th>Tattoo</th><th>Time</th><th>Paid</th></tr></thead>
-      <tbody>${rows.slice().reverse().map(r => `<tr data-bk="${r.id}"><td>${esc(r.start_at.slice(0, 10))}</td><td>${esc(bName(r))}</td>
+      <tbody>${rows.slice().reverse().map(r => `<tr data-bk="${r.id}"><td>${esc(r.start_at.slice(0, 10))}</td><td>${esc(bName(r))}${bTag(r)}</td>
         <td>${esc([r.description, r.placement].filter(Boolean).join(' · ') || '—')}</td><td>${r.time_min != null ? fmtH(r.time_min / 60) : '—'}</td><td>${r.paid != null ? money(r.paid) : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
   $('#st-side').innerHTML = `
     <div class="card"><h2>Follow-ups coming up</h2>${fus.map(f => `<a class="stat" href="#booking-edit/${f.id}"><span>${esc(bName(f))}</span><span>${esc(fmtDay(f.start_at))}</span></a>`).join('') || '<p class="muted" style="margin:0">None booked.</p>'}</div>
@@ -8528,7 +8547,8 @@ async function bkRows() {
   const rows = await DB.all(`SELECT b.*, c.first_name, c.last_name, c.phone FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
     WHERE substr(b.start_at, 1, 10) BETWEEN ? AND ? AND b.kind IN (${kinds.map(() => '?').join(',')}) ORDER BY b.start_at`, [a, z, ...kinds]);
   const q = (BK.q || '').trim().toLowerCase(), hit = (r) => !q || [r.first_name, r.last_name, r.guest_name, r.phone, r.guest_phone, r.description, r.placement, r.size, r.notes, kindLabel(r)].some(v => v && String(v).toLowerCase().includes(q));
-  return rows.filter(hit).filter(r => BK.status === 'all' || (BK.status === 'upcoming' ? r.start_at.slice(0, 10) >= today && !r.completed
+  const src = BK.src || 'all', bySrc = (r) => src === 'all' || (src === 'mine' ? !r.src_uid : src === 'ghost' ? r.ghost : src === 'imported' ? !!r.src_uid : r.tag === src);
+  return rows.filter(hit).filter(bySrc).filter(r => BK.status === 'all' || (BK.status === 'upcoming' ? r.start_at.slice(0, 10) >= today && !r.completed
     : BK.status === 'done' ? r.completed : r.start_at.slice(0, 10) < today && !r.completed));
 }
 const bkRangeLabel = () => { const [a, z] = bkRange(); return BK.range === 'all' ? 'All dates' : `${fmtDay(a)} – ${fmtDay(z)}`; };
@@ -8546,39 +8566,47 @@ async function bkTable() {
       ${BK.range === 'custom' ? `<input class="bkt-date" type="date" id="bk-from" value="${a}" aria-label="From"><span class="muted">to</span><input class="bkt-date" type="date" id="bk-to" value="${z}" aria-label="To">` : ''}
       ${menu('kinds', `Types <b>${BK.kinds.size === nK ? 'All' : BK.kinds.size}</b>`, Object.entries(BOOKING_KINDS).map(([k, v]) => `<label><input type="checkbox" data-bkk="${k}" ${BK.kinds.has(k) ? 'checked' : ''}>${v.label}</label>`).join(''))}
       <div class="bkt-seg">${[['all', 'All'], ['upcoming', 'Upcoming'], ['done', 'Completed'], ['past', 'Not completed']].map(([k, l]) => `<button data-bs="${k}" class="${BK.status === k ? 'on' : ''}" ${k === 'past' ? 'data-tip="Past bookings not marked completed"' : ''}>${l}</button>`).join('')}</div>
+      ${BK.tags?.length || BK.anyImp ? `<label class="bkt-sel" data-tip="Your own bookings, or ones imported from another workspace"><select id="bkt-src"><option value="all">All sources</option><option value="mine" ${BK.src === 'mine' ? 'selected' : ''}>Mine</option><option value="imported" ${BK.src === 'imported' ? 'selected' : ''}>Imported</option><option value="ghost" ${BK.src === 'ghost' ? 'selected' : ''}>Ghosts</option>${(BK.tags || []).map(t => `<option value="${esc(t)}" ${BK.src === t ? 'selected' : ''}>Tag: ${esc(t)}</option>`).join('')}</select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>` : ''}
+      ${BK.src && !['all', 'mine'].includes(BK.src) ? '<button class="bkt-btn" id="bkt-unimp" data-tip="Delete every booking shown here (only imported ones)"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><span>Remove these</span></button>' : ''}
       <span style="flex:1"></span>
       ${menu('cols', `Columns${hid ? ` <b>${BK_COLS.length - hid}/${BK_COLS.length}</b>` : ''}`, BK_COLS.map(([k, l]) => `<label><input type="checkbox" data-bc="${k}" ${cols.has(k) ? 'checked' : ''}>${l}</label>`).join('') + '<p>Hidden columns are left out of the print and the CSV too.</p>')}</div>`; };
   const MONEY = ['quote', 'deposit', 'paid'];
   const table = async () => { rows = await bkRows(); const C = BK_COLS.filter(c => cols.has(c[0])), today = ymd(new Date()), key = (r) => bkSort.k === 'date' ? r.start_at : bkSort.k === 'done' ? (r.completed ? 1 : 0) : MONEY.includes(bkSort.k) ? (r[bkSort.k] ?? -1) : String(bkCell(r, bkSort.k)).toLowerCase();
     rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * bkSort.dir; });
     const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${bkSort.k === k ? 'on' : ''}">${l}<i>${bkSort.k === k ? (bkSort.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
-    const cell = (r, k) => k === 'kind' ? `<span class="bkt-type k-${kindOf(r)}">${esc(kindLabel(r))}</span>` : k === 'client' ? `<b>${esc(bkCell(r, k)) || '<span class="muted">—</span>'}</b>` : esc(bkCell(r, k));
+    const cell = (r, k) => k === 'kind' ? `<span class="bkt-type k-${kindOf(r)}">${esc(kindLabel(r))}</span>` : k === 'client' ? `<b>${esc(bkCell(r, k)) || '<span class="muted">—</span>'}</b>${bTag(r)}` : esc(bkCell(r, k));
     const sum = (k) => rows.reduce((t, r) => t + (r[k] || 0), 0);
     $('#bkt').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('done', '', 'c-done')}${th('date', 'Date')}<th>Time</th>${C.map(c => th(c[0], c[1], MONEY.includes(c[0]) ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r => {
       const end = new Date(new Date(r.start_at).getTime() + r.duration_min * 60000), can = DONE_KINDS.includes(kindOf(r)), late = can && !r.completed && r.start_at.slice(0, 10) < today;
-      return `<tr data-bid="${r.id}" class="${r.completed ? 'done' : ''} ${late ? 'late' : ''}"><td class="c-done"><input type="checkbox" data-bdone="${r.id}" ${r.completed ? 'checked' : ''} ${can ? '' : 'disabled'} aria-label="Completed" data-tip="${can ? (r.completed ? 'Completed' : late ? 'Past and not marked completed' : 'Mark completed') : 'Only tattoos and touch-ups are marked completed'}"></td>
+      return `<tr data-bid="${r.id}" class="${r.completed ? 'done' : ''} ${late && !r.ghost ? 'late' : ''} ${r.ghost ? 'ghost' : ''}"><td class="c-done"><input type="checkbox" data-bdone="${r.id}" ${r.completed ? 'checked' : ''} ${can && !r.ghost ? '' : 'disabled'} aria-label="Completed" data-tip="${can ? (r.completed ? 'Completed' : late ? 'Past and not marked completed' : 'Mark completed') : 'Only tattoos and touch-ups are marked completed'}"></td>
         <td class="nw">${esc(fmtDay(r.start_at.slice(0, 10)))}</td><td class="nw muted">${esc(fmtTime(r.start_at))} – ${esc(fmtTime(end))}</td>${C.map(c => `<td class="bkt-${c[0]} ${MONEY.includes(c[0]) ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
         <td class="c-act"><button class="bkt-ib" data-bedit="${r.id}" data-tip="Edit" aria-label="Edit booking"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-bdel="${r.id}" data-tip="Delete" aria-label="Delete booking"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`; }).join('')}</tbody>
       ${C.some(c => MONEY.includes(c[0])) ? `<tfoot><tr><td></td><td colspan="2">Total</td>${C.map(c => `<td class="num">${MONEY.includes(c[0]) ? esc(money(sum(c[0]))) : ''}</td>`).join('')}<td></td></tr></tfoot>` : ''}</table></div>
       <div class="bkt-foot">${rows.length} booking${rows.length === 1 ? '' : 's'} · ${esc(bkRangeLabel())} · ${rows.filter(r => r.completed).length} completed</div>`
       : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><b>No bookings match</b><span class="muted">Try another date range, type or status, or clear the search.</span></div>`;
     $('#bkt-csv').disabled = $('#bkt-print').disabled = !rows.length; };
-  const both = async () => { filters(); await table(); };
+  const both = async () => { BK.tags = (await DB.all('SELECT DISTINCT tag FROM bookings WHERE tag IS NOT NULL ORDER BY tag')).map(r => r.tag); BK.anyImp = !!(await DB.one('SELECT 1 AS x FROM bookings WHERE src_uid IS NOT NULL LIMIT 1')); filters(); await table(); };
   await both();
   let qt; $('#bkt-q').oninput = (e) => { BK.q = e.target.value; clearTimeout(qt); qt = setTimeout(table, 200); };
   $('#bkt-add').onclick = () => { Cal.back = 'bookings'; newBookingNext(null, new Date()); };
   $('#bkt-csv').onclick = () => bookingsCsv(BK_COLS.filter(c => cols.has(c[0])));
   $('#bkt-print').onclick = () => printBookings(BK_COLS.filter(c => cols.has(c[0])));
   $('#bkt-share').onclick = openAvailability;
+  $('#bkt-exp').onclick = () => bkExport(rows);
+  $('#bkt-imp').onclick = () => bkImport().then(n => { if (n) both(); });
   const F = $('#bkt-f');
   F.onchange = async (e) => { const t = e.target;
     if (t.id === 'bkt-range') { if (t.value === 'custom' && BK.range !== 'custom') { const [a, z] = bkRange(); BK.from = a; BK.to = z; } BK.range = t.value; return both(); }
     if (t.id === 'bk-from') BK.from = t.value; if (t.id === 'bk-to') BK.to = t.value;
+    if (t.id === 'bkt-src') { BK.src = t.value; return both(); }
     if (t.dataset.bkk) { t.checked ? BK.kinds.add(t.dataset.bkk) : BK.kinds.delete(t.dataset.bkk); await remember(); }
     if (t.dataset.bc) { t.checked ? cols.add(t.dataset.bc) : cols.delete(t.dataset.bc); await remember(); }
     both(); };
-  F.onclick = (e) => { const dd = e.target.closest('[data-dd]')?.dataset.dd; if (dd) { open = open === dd ? null : dd; return filters(); }
-    const bs = e.target.closest('[data-bs]')?.dataset.bs; if (bs) { BK.status = bs; return both(); } };
+  F.onclick = async (e) => { const dd = e.target.closest('[data-dd]')?.dataset.dd; if (dd) { open = open === dd ? null : dd; return filters(); }
+    const bs = e.target.closest('[data-bs]')?.dataset.bs; if (bs) { BK.status = bs; return both(); }
+    if (e.target.closest('#bkt-unimp')) { const gone = rows.filter(r => r.src_uid); if (!gone.length) return toast('Nothing imported is shown.');
+      if (!await ask(`Delete ${gone.length} imported booking${gone.length > 1 ? 's' : ''} shown here? Your own bookings are not touched.`)) return;
+      await DB.tx(gone.map(r => ({ sql: 'DELETE FROM bookings WHERE id = ?', params: [r.id] }))); toast(`Removed ${gone.length}.`); BK.src = 'all'; return both(); } };
   const shut = (e) => { if (!document.contains(F)) return removeEventListener('pointerdown', shut, true); if (open && !e.target.closest('.bkt-dd')) { open = null; filters(); } };
   addEventListener('pointerdown', shut, true);
   $('#bkt').onclick = async (e) => { const t = e.target;
@@ -8593,6 +8621,122 @@ async function bkTable() {
       await DB.tx([...(r.gcal_id ? [{ sql: 'INSERT OR IGNORE INTO gcal_deletes VALUES (?)', params: [r.gcal_id] }] : []), { sql: 'DELETE FROM booking_photos WHERE booking_id = ?', params: [r.id] }, { sql: 'DELETE FROM bookings WHERE id = ?', params: [r.id] }]);
       for (const p of ph) await Media.release(p.photo_ref); toast('Booking deleted.'); Gcal.soon(); return table(); }
     const tr = t.closest('[data-bedit]') || t.closest('[data-bid]'); if (tr) { Cal.back = 'bookings'; location.hash = 'booking-edit/' + (tr.dataset.bedit || tr.dataset.bid); } };
+}
+/* ---------- Moving bookings between workspaces ----------
+   Export: a file of bookings (the ones shown, or all of yours) with this workspace's own id, plus the ids of every booking
+   it still has, so an import can tell which ones were deleted. Import: matched by that id, so importing again updates
+   instead of doubling up. A preview lists what is new, changed, gone and the same; you pick, tag, and add them for real
+   or as ghosts. */
+const wsUid = async () => { let u = Settings.get('ws_uid'); if (!u) { u = (crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2)); await Settings.set('ws_uid', u); } return u; };
+const BKX_FIELDS = ['start_at', 'duration_min', 'kind', 'description', 'placement', 'size', 'quote', 'deposit', 'deposit_paid', 'notes', 'completed', 'paid', 'time_min', 'pay_method', 'job'];
+const BKX_LABEL = { start_at: 'Date and time', duration_min: 'Length', kind: 'Type', description: 'Description', placement: 'Placement', size: 'Size', quote: 'Quote', deposit: 'Deposit', deposit_paid: 'Deposit paid',
+  notes: 'Notes', completed: 'Completed', paid: 'Paid', time_min: 'Time tattooed', pay_method: 'Paid by', job: 'Type of work', name: 'Name', phone: 'Phone' };
+async function bkExport(shown) {
+  const own = await DB.all(`SELECT b.*, c.first_name, c.last_name, c.phone FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.src_uid IS NULL ORDER BY b.start_at`);
+  const vis = (shown || []).filter(r => !r.src_uid);
+  const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
+    o.innerHTML = `<div class="card" style="max-width:440px"><h2>Export bookings</h2><p class="muted" style="margin-top:0">A file to load into another workspace, for example the shop owner's. Imported bookings are never exported again.</p>
+      <div class="dz-ex"><button data-x="shown" ${vis.length ? '' : 'disabled'}><b>The ${vis.length} shown</b><small>Your filters and search decide which</small></button><button data-x="all"><b>All ${own.length} of yours</b><small>Every booking you made, past and future</small></button></div>
+      <button class="btn" data-x="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+    o.onclick = (e) => { const b = e.target.closest('[data-x]'); if ((!b && e.target !== o) || b?.disabled) return; o.remove(); res(b?.dataset.x || null); }; document.body.appendChild(o); });
+  if (!pick) return;
+  const uid = await wsUid(), list = pick === 'all' ? own : own.filter(r => vis.some(v => v.id === r.id));
+  const out = { inkforge: 'bookings', v: 1, ws: { uid, name: Settings.get('artist_name') || Settings.get('studio_name') || WS.cur?.name || 'Workspace' }, at: new Date().toISOString(),
+    all: own.map(r => uid + ':' + r.id),
+    bookings: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(BKX_FIELDS.map(k => [k, r[k] ?? null])), name: bName(r), phone: r.phone || r.guest_phone || null })) };
+  const f = new File([JSON.stringify(out)], `bookings-${(out.ws.name).replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkbookings`, { type: 'application/json' });
+  try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title: 'Bookings' }); return; } } catch (err) { if (err.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`Saved ${list.length} booking${list.length === 1 ? '' : 's'} to ${f.name}.`, 3000);
+}
+// One value as it would be stored, so a field the file leaves out (or 0 against empty) is not seen as a change.
+const bkxNorm = (k, v) => ['deposit_paid', 'completed'].includes(k) ? String(+!!v) : k === 'duration_min' ? String(+(v ?? 120)) : k === 'kind' ? String(v || 'tattoo')
+  : v == null || v === '' ? '' : typeof v === 'number' || (/^-?\d+(\.\d+)?$/.test(String(v))) ? String(+v) : String(v).trim();
+const BK_TAG_COLS = ['#1fb5a8', '#f0c75e', '#d2453b', '#3b5bdb', '#7b4fa0', '#e0605a', '#2e7d32', '#e8a33d'];
+async function bkImport() {
+  const f = await new Promise((res) => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.inkbookings,application/json'; i.onchange = () => res(i.files[0] || null); i.click(); });
+  if (!f) return 0;
+  let P; try { P = JSON.parse(await f.text()); } catch { P = null; }
+  if (!P || P.inkforge !== 'bookings' || !Array.isArray(P.bookings)) { toast('That is not an InkForge bookings file.', 3500); return 0; }
+  if (P.ws?.uid === await wsUid()) { toast('These bookings came from this workspace, so there is nothing to import.', 4000); return 0; }
+  const today = ymd(new Date()), mine = await DB.all('SELECT * FROM bookings WHERE src_ws = ?', [P.ws.uid]), byUid = new Map(mine.map(r => [r.src_uid, r]));
+  const lastTag = mine.find(r => r.tag);
+  // What each row is: new, changed (with what changed), the same, or gone from the other workspace.
+  const items = P.bookings.map(x => { const h = byUid.get(x.uid);
+    if (!h) return { x, st: 'new', past: x.start_at.slice(0, 10) < today };
+    const diff = [...BKX_FIELDS, 'name', 'phone'].filter(k => bkxNorm(k, k === 'name' ? h.guest_name : k === 'phone' ? h.guest_phone : h[k]) !== bkxNorm(k, x[k]));
+    return { x, h, st: diff.length ? 'changed' : 'same', diff, past: x.start_at.slice(0, 10) < today }; });
+  const allSet = new Set(P.all || []), gone = mine.filter(r => !allSet.has(r.src_uid)).map(h => ({ h, st: 'gone' }));
+  const st = { past: false, ghost: !!lastTag?.ghost, tagOn: true, tag: lastTag?.tag || P.ws.name || 'Imported', col: lastTag?.tag_color || BK_TAG_COLS[0], skip: new Set(), q: '' };
+  const ok = await new Promise((res) => {
+    const o = document.createElement('div'); o.id = 'merge-dlg';
+    const rowsHtml = () => { const L = [...items, ...gone].filter(it => it.st !== 'same' && !(it.st === 'new' && it.past && !st.past));
+      if (!L.length) return '<p class="muted" style="padding:14px;text-align:center">Nothing to add or change: everything here matches.</p>';
+      return `<div class="bkt-scroll" style="max-height:44vh"><table class="bkt"><thead><tr><th class="c-done"></th><th>What</th><th>Date</th><th>Client</th><th>Booking</th></tr></thead><tbody>${L.map((it, i) => {
+        const r = it.x || it.h, key = (it.x?.uid || it.h.src_uid), on = !st.skip.has(key), nm = it.x ? it.x.name : bName(it.h);
+        const what = it.st === 'new' ? `<span class="bix new">New</span>${it.past ? ' <span class="muted">past</span>' : ''}` : it.st === 'changed' ? `<span class="bix chg">Changed</span>` : `<span class="bix gone">Deleted there</span>`;
+        const det = it.st === 'changed' ? it.diff.map(k => `<div class="bix-d"><b>${BKX_LABEL[k] || k}:</b> <s>${esc(String(k === 'name' ? it.h.guest_name ?? '' : k === 'phone' ? it.h.guest_phone ?? '' : k === 'start_at' ? fmtDay(it.h.start_at.slice(0, 10)) + ' ' + fmtTime(it.h.start_at) : it.h[k] ?? '—'))}</s> → ${esc(String(k === 'start_at' ? fmtDay(it.x.start_at.slice(0, 10)) + ' ' + fmtTime(it.x.start_at) : it.x[k] ?? '—'))}</div>`).join('')
+          : it.st === 'gone' ? '<span class="muted">Remove it here too?</span>' : `${esc(kindLabel(r))}${r.description ? ' · ' + esc(r.description) : ''}`;
+        return `<tr><td class="c-done"><input type="checkbox" data-bik="${esc(key)}" ${on ? 'checked' : ''}></td><td class="nw">${what}</td><td class="nw">${esc(fmtDay(r.start_at.slice(0, 10)))} <span class="muted">${esc(fmtTime(r.start_at))}</span></td><td>${esc(nm || '—')}</td><td>${det}</td></tr>`; }).join('')}</tbody></table></div>`; };
+    const counts = () => { const n = items.filter(i => i.st === 'new' && (!i.past || st.past) && !st.skip.has(i.x.uid)).length, c = items.filter(i => i.st === 'changed' && !st.skip.has(i.x.uid)).length, g = gone.filter(i => !st.skip.has(i.h.src_uid)).length, same = items.filter(i => i.st === 'same').length, pastN = items.filter(i => i.st === 'new' && i.past).length;
+      return { n, c, g, same, pastN }; };
+    const draw = () => { const k = counts();
+      o.innerHTML = `<div class="card bix-card"><h2>Import bookings</h2>
+        <p class="muted" style="margin-top:0">From <b>${esc(P.ws.name)}</b>, saved ${esc(fmtDay(P.at.slice(0, 10)))}. ${P.bookings.length} booking${P.bookings.length === 1 ? '' : 's'} in the file${k.same ? `, ${k.same} already here and the same` : ''}.</p>
+        <div class="bix-opts">
+          <div class="field"><span class="lbl">Add them</span><div class="seg" data-bim><button data-v="full" class="${st.ghost ? '' : 'on'}" data-tip="Like your own: in the calendar, stats and openings">For real</button><button data-v="ghost" class="${st.ghost ? 'on' : ''}" data-tip="Shown in the calendar for reference only: not in stats or openings, and read-only">As ghosts</button></div></div>
+          ${k.pastN ? `<label class="toggle"><input type="checkbox" data-bipast ${st.past ? 'checked' : ''}><span>Add ${k.pastN} past booking${k.pastN === 1 ? '' : 's'} too</span></label>` : ''}
+          <label class="toggle"><input type="checkbox" data-bitag ${st.tagOn ? 'checked' : ''}><span>Tag them</span></label>
+          ${st.tagOn ? `<input class="in" data-bitagn value="${esc(st.tag)}" placeholder="Artist or source name" style="max-width:180px"><span class="ink-dots">${BK_TAG_COLS.map(c => `<button class="ink ${st.col === c ? 'on' : ''}" data-bicol="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span>` : ''}
+        </div>
+        ${rowsHtml()}
+        <div class="row" style="gap:8px;margin-top:12px;justify-content:flex-end"><span class="muted" style="margin-right:auto;font-size:12px">${k.n} new · ${k.c} changed · ${k.g} to remove</span>
+          <button class="btn" data-bi="">Cancel</button><button class="btn primary" data-bi="go" ${k.n + k.c + k.g ? '' : 'disabled'}>Import</button></div></div>`; };
+    o.addEventListener('click', (e) => { const t = e.target;
+      const m = t.closest('[data-bim] button'); if (m) { st.ghost = m.dataset.v === 'ghost'; return draw(); }
+      const c = t.closest('[data-bicol]'); if (c) { st.col = c.dataset.bicol; return draw(); }
+      const b = t.closest('[data-bi]'); if (b || t === o) { o.remove(); res(b?.dataset.bi === 'go'); } });
+    o.addEventListener('change', (e) => { const t = e.target;
+      if (t.dataset.bik) { t.checked ? st.skip.delete(t.dataset.bik) : st.skip.add(t.dataset.bik); return draw(); }
+      if (t.hasAttribute('data-bipast')) { st.past = t.checked; return draw(); }
+      if (t.hasAttribute('data-bitag')) { st.tagOn = t.checked; return draw(); } });
+    o.addEventListener('input', (e) => { if (e.target.hasAttribute('data-bitagn')) st.tag = e.target.value; });
+    document.body.appendChild(o); draw();
+  });
+  if (!ok) return 0;
+  const tag = st.tagOn && st.tag.trim() ? st.tag.trim() : null, col = tag ? st.col : null, ops = [];
+  for (const it of items) {
+    if (st.skip.has(it.x.uid)) continue;
+    const x = it.x, vals = BKX_FIELDS.map(k => x[k] ?? (k === 'duration_min' ? 120 : k === 'kind' ? 'tattoo' : ['deposit_paid', 'completed'].includes(k) ? 0 : null));
+    if (it.st === 'new' && (!it.past || st.past))
+      ops.push({ sql: `INSERT INTO bookings (${BKX_FIELDS.join(', ')}, guest_name, guest_phone, src_uid, src_ws, tag, tag_color, ghost) VALUES (${BKX_FIELDS.map(() => '?').join(', ')}, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [...vals, x.name || null, x.phone || null, x.uid, P.ws.uid, tag, col, st.ghost ? 1 : 0] });
+    else if (it.st === 'changed')
+      ops.push({ sql: `UPDATE bookings SET ${BKX_FIELDS.map(k => k + ' = ?').join(', ')}, guest_name = ?, guest_phone = ?, updated_at = datetime('now') WHERE id = ?`, params: [...vals, x.name || null, x.phone || null, it.h.id] });
+  }
+  for (const g of gone) if (!st.skip.has(g.h.src_uid)) ops.push({ sql: 'DELETE FROM bookings WHERE id = ?', params: [g.h.id] });
+  if (ops.length) await DB.tx(ops);
+  if (!st.ghost) Gcal.soon();
+  toast(`Imported: ${ops.length} change${ops.length === 1 ? '' : 's'} made.`, 3000);
+  return ops.length;
+}
+/* A ghost booking: what and when, read-only, with the way to make it a real booking or remove it. */
+function bkGhostView(b) {
+  const f = $('#b-form'); if (!f) return; $('#view-title').textContent = 'Ghost booking';
+  const end = new Date(new Date(b.start_at).getTime() + b.duration_min * 60000);
+  f.innerHTML = `<div class="form-foot row"><button type="button" class="btn danger icon-btn" id="g-del" data-tip="Remove this ghost" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+      <button type="button" class="btn" id="g-real" data-tip="Turn it into a normal booking: it then counts in stats and openings, and can be edited">Make it real</button><button type="button" class="btn primary" id="g-back">Close</button></div>
+    <section class="fsec"><h3>Ghost booking<small>Imported for reference: not in your stats or openings</small></h3>
+      <div class="stat"><span class="muted">From</span><span>${bTag(b) || '—'}</span></div>
+      <div class="stat"><span class="muted">When</span><span>${esc(fmtDay(b.start_at.slice(0, 10)))}, ${esc(fmtTime(b.start_at))} – ${esc(fmtTime(end))}</span></div>
+      <div class="stat"><span class="muted">Client</span><span>${esc(b.guest_name || '—')}${b.guest_phone ? ' · ' + esc(b.guest_phone) : ''}</span></div>
+      <div class="stat"><span class="muted">Type</span><span>${esc(kindLabel(b))}</span></div>
+      ${b.description ? `<div class="stat"><span class="muted">Booking</span><span>${esc(b.description)}${b.placement ? ' · ' + esc(b.placement) : ''}</span></div>` : ''}
+      ${b.notes ? `<div class="stat"><span class="muted">Notes</span><span>${esc(b.notes)}</span></div>` : ''}</section>`;
+  const back = () => { location.hash = Cal.back || 'book'; };
+  $('#g-back').onclick = back;
+  $('#g-real').onclick = async () => { if (!await ask('Make this a normal booking? It then counts in your stats and openings and can be edited.')) return; await DB.run(`UPDATE bookings SET ghost = 0, updated_at = datetime('now') WHERE id = ?`, [b.id]); Gcal.soon(); location.hash = 'booking-edit/' + b.id; render(); };
+  $('#g-del').onclick = async () => { if (!await ask('Remove this ghost booking from your calendar?')) return; await DB.run('DELETE FROM bookings WHERE id = ?', [b.id]); toast('Removed.'); back(); };
 }
 async function openBookingsPrint() {
   let saved = {}; try { saved = JSON.parse(Settings.get('bk_print', '{}')); } catch {}
@@ -8686,6 +8830,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 472, when: '2026-11-18T17:00', added: ['Bookings table: Export saves your bookings (the ones shown, or all) to a file; Import loads another workspace’s, e.g. a staff member’s into the owner’s.', 'Import shows a preview first: new, changed (with what changed) and deleted bookings, and skips ones already here. Tag them with a name and colour, and add them for real or as ghosts (shown for reference, not counted).', 'Tags show on the calendar, the bookings table and stats. Stats can show the whole shop, only you, or one tag. Filter the table by source to find or remove imports.'], test: ['Export bookings from one workspace and import them into another, then change one and import again.', 'Import as ghosts and check they are not in your stats.'] },
   { build: 471, when: '2026-11-18T14:00', added: ['The client form has the same clean look as the booking form: buttons on top, each section a row with a short note.', 'Smaller, cleaner buttons, fields, tabs and cards across the app, like the reel maker. The tattoo simulator is unchanged.'], test: ['Add a new client and check it saves.', 'Look around the app and tell us if anything looks cramped.'] },
   { build: 470, when: '2026-11-18T12:00', added: ['Reel maker, rebuilt: it fills the screen, with a top strip of buttons, zoom and pan on the preview, snap on or off, and ▶ Watch to play it full screen with pause and a scrub bar.', 'Pick a size for each reel: vertical 9:16, portrait 4:5, square or landscape 16:9.', 'Text, stickers and sound sit on their own timeline rows: drag them to move and their ends to set the timing. Two sound rows for cross-fades or a voiceover, with speed and fades. Clips change length by dragging their ends, and drag to reorder.', 'Many more looks: 24 filters with adjustments, 12 effects, 14 transitions, 18 fonts plus your own, text shapes (arc, circle, wave), headings and paragraphs, sticker entrances with directions, freeze frame and save frame.', 'Sharper logos and stickers in exported videos.'], test: ['Make a reel with music and text, export it at 1080p and check the sound and text line up.', 'Try the reel maker on your phone held upright.'] },
   { build: 469, when: '2026-11-18T00:30', added: ['New look for the booking form, quote calculator, Calibrate quotes and Settings: buttons in a strip at the top, cleaner sections and tidier fields.', 'Quotes: Which side? now sits at the top, and body parts are grouped in tabs (Head and neck, Arms and hands and so on).', 'Quotes: moving the size sliders is enough to go on, no preset needed.', 'The last quote page has every button in one strip: Save, Print, Share, Text, Link and Book it.'], test: ['Make a quote from start to finish and book it. Does every button still do what it should?', 'Save a new booking and check it shows in the calendar.'] },

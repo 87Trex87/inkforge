@@ -2391,3 +2391,18 @@ body:not([data-route="tattoo"]) .set-tabs button, body:not([data-route="tattoo"]
 body:not([data-route="tattoo"]) .ink { width: 26px; height: 26px; }
 body:not([data-route="tattoo"]) #merge-dlg .card { padding: 18px; }
 body:not([data-route="tattoo"]) .dz-ex button { padding: 10px 12px; border-radius: 10px; }
+
+/* Imported bookings: tag pills, ghosts, the import preview */
+.btag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 99px; font: 600 10px/16px var(--ui); color: #071413; background: var(--tc, var(--teal)); vertical-align: middle; white-space: nowrap; letter-spacing: 0; }
+.btag.ghost { background: none; color: var(--ink2); border: 1px dashed var(--ink2); line-height: 14px; }
+.ev[style*="--tc"] { box-shadow: inset 3px 0 0 var(--tc); }
+.ev.ghost, .mev.ghost { opacity: .55; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 6px, transparent 6px 12px); border-style: dashed; }
+.mev.tagged { box-shadow: inset 3px 0 0 var(--tc); }
+.bkt tbody tr.ghost td { color: var(--ink2); font-style: italic; }
+.bix-card { width: min(860px, 96vw); max-width: none !important; }
+.bix-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; } .bix-opts .field { margin: 0; } .bix-opts .seg { margin: 0; }
+.bix { display: inline-block; padding: 1px 7px; border-radius: 99px; font: 600 10.5px var(--ui); } .bix.new { background: rgba(31,181,168,.2); color: var(--teal); }
+.bix.chg { background: rgba(240,199,94,.2); color: #f0c75e; } .bix.gone { background: rgba(210,69,59,.2); color: #ef6b5f; }
+.bix-d { font-size: 12px; } .bix-d s { color: var(--ink2); }
+.st-who { margin-right: 8px; }
+#merge-dlg .card.bix-card { width: min(860px, 96vw) !important; max-width: none !important; }
