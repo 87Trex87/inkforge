@@ -2434,3 +2434,9 @@ body.dz-focus .dz-body > .dz-side { max-height: calc(100% - 20px); overflow-y: a
 .dz-side details.fsec.fold > .fsec-b { padding: 0 9px 6px; }
 .dz-side > .dz-text { margin-top: 2px; }
 .dz-side .seg.dz-tshape { flex-wrap: wrap; margin-bottom: 8px; } .dz-side .seg.dz-tshape button { flex: 1 0 30%; }
+
+/* Design studio font button and list: each name in its own font */
+.dz-fwrap { display: inline-flex; flex: none; }
+.dz-fpick { flex: none; width: 150px; height: 34px; border: 1px solid var(--line); background: var(--bg2); font-size: 15px; }
+.dz-fmenu { width: 240px; }
+.dz-fmenu .fh { padding: 6px 10px 2px; font: 600 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }

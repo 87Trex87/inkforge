@@ -2043,6 +2043,29 @@ DZ.edit = async (id) => {
       ${cur && cur[0] !== '@' && !DZ_FONTS.some(f => f[0] === cur) && !custom.some(f => f.name === cur) ? `<option value="${esc(cur)}" selected>${esc(cur)} (device)</option>` : ''}
       <optgroup label="More"><option value="+device">Use a font on this device…</option><option value="+import">Import a font file…</option></optgroup>`;
   };
+  /* The font button: the name written in its own font, opening a list where every name is in its font too. It drives
+     the hidden select next to it, so picking runs the select's usual change handling (device and imported fonts too). */
+  const famOf = (f) => { const t = DZ_THEMES[doc.theme] || DZ_THEMES.ink; return f === '@1' ? t.f1 : f === '@2' ? t.f2 : f; };
+  const fontBtn = (cur) => { const t = DZ_THEMES[doc.theme] || DZ_THEMES.ink, fam = famOf(cur); DZF.load(fam);
+    const name = cur === '@1' ? `Heading (${t.f1})` : cur === '@2' ? `Body (${t.f2})` : cur;
+    return `<span class="dz-fwrap"><button type="button" class="fpick dz-fpick" data-tip="Font" aria-label="Font" style="font-family:'${esc(fam)}'"><span>${esc(name)}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      <select class="in dz-cfont" data-k="font" aria-label="Font" hidden>${fontOpts(cur)}</select></span>`; };
+  const fontMenu = (btn) => {
+    document.getElementById('reel-fmenu')?.remove();
+    const sel = btn.parentElement.querySelector('select'), cur = sel.value, t = DZ_THEMES[doc.theme] || DZ_THEMES.ink, custom = DZF.custom();
+    const it = (v, label, fam) => { if (fam) DZF.load(fam); return `<button data-f="${esc(v)}" class="${cur === v ? 'on' : ''}" ${fam ? `style="font-family:'${esc(fam)}'"` : ''}>${esc(label)}</button>`; };
+    const m = document.createElement('div'); m.id = 'reel-fmenu'; m.className = 'reel-fmenu dz-fmenu';
+    m.innerHTML = `<div class="fh">Theme</div>${it('@1', `Heading (${t.f1})`, t.f1)}${it('@2', `Body (${t.f2})`, t.f2)}<div class="fh">Fonts</div>${DZ_FONTS.map(([f]) => it(f, f, f)).join('')}
+      ${custom.length ? `<div class="fh">Your fonts</div>${custom.map(f => it(f.name, f.name, f.name)).join('')}` : ''}
+      <button data-f="+device" class="imp">＋ Use a font on this device…</button><button data-f="+import" class="imp">＋ Import a font file…</button>`;
+    document.body.appendChild(m); const r = btn.getBoundingClientRect(), h = Math.min(m.scrollHeight, innerHeight * 0.6);
+    m.style.left = Math.max(6, Math.min(innerWidth - m.offsetWidth - 6, r.left)) + 'px'; m.style.top = (r.bottom + h + 8 < innerHeight ? r.bottom + 4 : Math.max(6, r.top - h - 4)) + 'px'; m.style.maxHeight = h + 'px';
+    m.querySelector('.on')?.scrollIntoView({ block: 'center' });
+    const close = (e) => { if (!m.contains(e.target)) { m.remove(); removeEventListener('pointerdown', close, true); } };
+    setTimeout(() => addEventListener('pointerdown', close, true));
+    m.onclick = (e) => { const b = e.target.closest('[data-f]'); if (!b) return; m.remove(); removeEventListener('pointerdown', close, true);
+      const v = b.dataset.f, sel = $('#dz-ctx .dz-cfont') || btn.parentElement.querySelector('select'); if (!sel) return; if (![...sel.options].some(o => o.value === v)) sel.add(new Option(v, v)); sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); };
+  };
   /* Layers: top of the list is in front. Drag the grip to reorder; hide, lock, rename, delete. */
   let tab = 'edit';
   const EYE = '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -2146,7 +2169,7 @@ DZ.edit = async (id) => {
     const num = (k, v, tip, max) => `<label class="dz-cnum" data-tip="${tip}"><input class="in" type="text" inputmode="text" data-calc min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}"></label>`;
     if (l.lock) { cpop = null; b.innerHTML = `<span class="muted dz-chint" style="padding-right:8px">Locked</span>` + dzIB('data-act="lock"', 'lock', 'Unlock', 'on') + dzIB('data-act="dup"', 'copy', 'Duplicate'); return; }
     let own = '';
-    if (l.t === 'text') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font)}</select>${num('size', l.size, 'Text size')}${sep}`
+    if (l.t === 'text') own = `${fontBtn(l.font)}${num('size', l.size, 'Text size')}${sep}`
       + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + tog('u', 'text-decoration:underline', 'Underline') + tog('st', 'text-decoration:line-through', 'Strikethrough') + sep
       + [['left', 'aleft'], ['center', 'acenter'], ['right', 'aright'], ...(l.frame ? [['justify', 'ajust']] : [])].map(([a, ic]) => dzIB(`data-al="${a}"`, ic, 'Align ' + a, (l.al || 'left') === a ? 'on' : '')).join('')
       + (l.frame ? sep + [['top', 'vtop', 'Top of the frame'], ['middle', 'vmid', 'Middle of the frame'], ['bottom', 'vbot', 'Bottom of the frame']].map(([a, ic, n]) => dzIB(`data-va="${a}"`, ic, n, (l.va || 'top') === a ? 'on' : '')).join('') : '')
@@ -2154,7 +2177,7 @@ DZ.edit = async (id) => {
     else if (l.t === 'shape') own = (l.shape === 'ring' || l.qr ? '' : dzIB('data-curvetext', '<path d="M3 17C8 7 16 7 21 17"/><path d="M9 6V3h6v3M12 3v7"/>', 'Text on this curve') + sep) + (l.shape === 'line' ? col('fill', 'Line', 'Line colour', true) : col('fill', 'Fill', 'Fill colour', true) + col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40))
       + `<select class="in dz-cdash" data-dash aria-label="Line style" data-tip="Line style">${[['', 'Solid'], ['dash', 'Dashed'], ['dot', 'Dotted']].map(([v, n]) => `<option value="${v}" ${(l.dash || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
     else if (l.t === 'image' && !l.logo) own = col('stroke', 'Line', 'Outline colour', true) + num('sw', l.sw || 0, 'Outline width', 40);
-    else if (l.t === 'field') own = `<select class="in dz-cfont" data-k="font" aria-label="Font">${fontOpts(l.font || '@2')}</select>${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
+    else if (l.t === 'field') own = `${fontBtn(l.font || '@2')}${num('size', l.size || 46, 'Text size')}${sep}` + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + sep + col('c', 'Text', 'Text colour') + (l.ft === 'button' ? col('bg', 'Fill', 'Button colour') : '');
     if (doc.chal && l.t === 'shape') own = `<button class="btn small" data-chcopy data-tip="An exact copy on top of this shape, to grade as something else: shading over the outline, say">Copy as…</button>` + sep + `<button class="btn small dz-chrole ${l.role ? 'on' : ''}" data-chrole data-tip="What this shape is in the challenge, and how it is graded">${l.role ? CH_ROLES.find(r => r[0] === l.role)[1] + (l.nd ? ' · ' + dzChNds(l).join('/') : '') : 'Grade as…'}</button>` + sep + own;
     const field = l.t === 'field';
     if (doc.chal && l.t === 'image' && !l.lock) own = `<button class="btn small dz-chrole" data-chvs data-tip="Trace this picture into shapes to tattoo: outline, detail lines, colours or shading zones">Trace</button>` + sep + own;
@@ -4310,6 +4333,7 @@ DZ.edit = async (id) => {
   xfB.addEventListener('input', (e) => { const k = e.target.dataset.xf; if (!k) return; xfSet(k, dzFromU(doc, +e.target.value)); placeSel(); changed(); });
   xfB.addEventListener('change', (e) => { if (e.target.hasAttribute('data-unit')) return sideChange(e); if (e.target.dataset.xf) { changed(true); drawXf(); } });
   const ctxB = $('#dz-ctx');
+  ctxB.addEventListener('click', (e) => { const fb = e.target.closest('.dz-fpick'); if (fb) fontMenu(fb); });
   ctxB.addEventListener('click', async (e) => { if (e.target.closest('input, select, textarea, .dz-cnum')) return;   /* a box or dropdown: redrawing the strip would throw the click away */
     const iso = e.target.closest('[data-iso]'); if (iso) return isoAct(layer(), iso.dataset.iso);
     if (e.target.closest('[data-chrole]')) return chOpen('role');
@@ -4487,7 +4511,7 @@ DZ.edit = async (id) => {
     if (t.dataset.k === 'font' && l) {
       if (t.value === '+import') return dzImportFont().then(n => { if (n) { l.font = n; changed(true); } drawSide(); });
       if (t.value === '+device') return dzDeviceFont().then(n => { if (n) { l.font = n; DZF.loaded.add(n); changed(true); } drawSide(); });
-      l.font = t.value; await DZF.load(dzFont(doc, l.font)); changed(true);
+      l.font = t.value; await DZF.load(dzFont(doc, l.font)); changed(true); drawCtx();   /* the font button shows the new name */
     }
     if (t.hasAttribute('data-fit') && l) { l.fit = t.checked ? 1 : 0; return changed(true); }
     if (t.dataset.k === 'arc') return drawSide();
