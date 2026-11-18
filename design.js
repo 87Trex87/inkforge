@@ -2292,7 +2292,7 @@ DZ.edit = async (id) => {
   const tgMark = () => { let m = $('#dz-tgh'); const l = sel && doc.layers.find(x => x.id === sel);
     if (!l || !l.tg || many() || tab !== 'edit' || cropping || nodes || cut) { if (m) m.hidden = true; return; }
     if (!m) { m = document.createElement('div'); m.id = 'dz-tgh'; m.innerHTML = '<svg><line/></svg><i data-tgh="a"></i><i data-tgh="b"></i>'; page.append(m);
-      m.addEventListener('pointerdown', (e) => { const hd = e.target.closest('[data-tgh]'); if (!hd) return; e.stopPropagation(); e.preventDefault(); hd.setPointerCapture(e.pointerId); tgDrag = hd.dataset.tgh; });
+      m.addEventListener('pointerdown', (e) => { const hd = e.target.closest('[data-tgh]'); if (!hd || fingerOnly(e)) return; e.stopPropagation(); e.preventDefault(); hd.setPointerCapture(e.pointerId); tgDrag = hd.dataset.tgh; });
       m.addEventListener('pointermove', (e) => { const l2 = layer(); if (!tgDrag || !l2?.tg) return; e.stopPropagation(); const r = page.getBoundingClientRect();
         let f = tgFrac(l2, { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }); if (e.shiftKey && tgDrag === 'b') { const o = l2.tg.a; if (Math.abs(f.x - o.x) * l2.w > Math.abs(f.y - o.y) * (l2.h || 1)) f.y = o.y; else f.x = o.x; }
         l2.tg[tgDrag] = { x: Math.round(f.x * 1000) / 1000, y: Math.round(f.y * 1000) / 1000 }; tgMark(); redraw(); });
@@ -2655,7 +2655,7 @@ DZ.edit = async (id) => {
   /* On the design: tapping a table that's already picked picks the cell under the finger (Shift or Range: a block). */
   let tblWas = null;
   page.addEventListener('pointerdown', () => { tblWas = sel; }, true);
-  page.addEventListener('pointerup', (e) => { const l = layer(); if (l?.t !== 'table' || tblWas !== l.id || many() || cropping || nodes) return;
+  page.addEventListener('pointerup', (e) => { const l = layer(); if (l?.t !== 'table' || fingerOnly(e) || tblWas !== l.id || many() || cropping || nodes) return;
     const p = toPage(e), cx = l.x + l.w / 2, cy = l.y + l.h / 2, a = -(l.rot || 0) * Math.PI / 180, dx = p.x - cx, dy = p.y - cy;
     let lx = dx * Math.cos(a) - dy * Math.sin(a) + l.w / 2, ly = dx * Math.sin(a) + dy * Math.cos(a) + l.h / 2; if (l.fx) lx = l.w - lx; if (l.fy) ly = l.h - ly;
     if (lx < 0 || ly < 0 || lx > l.w || ly > l.h) return;
@@ -4242,8 +4242,8 @@ DZ.edit = async (id) => {
     stage.setPointerCapture(e.pointerId);
     const free = !(penOn || pclOn || cut || nodes || cont || cropping);
     if (free && modEv(e).shiftKey) return marqStart(e, true);
-    bg = { x: e.clientX, y: e.clientY, vx, vy, moved: false };
-    if (free && e.pointerType !== 'mouse') { const b0 = bg; bg.ht = setTimeout(() => { if (bg === b0 && !b0.moved && !pinch) { bg = null; navigator.vibrate?.(25); marqStart(e, false); } }, 500); }
+    bg = { x: e.clientX, y: e.clientY, vx, vy, moved: false, fv: fingerOnly(e) };
+    if (free && e.pointerType !== 'mouse' && !fingerOnly(e)) { const b0 = bg; bg.ht = setTimeout(() => { if (bg === b0 && !b0.moved && !pinch) { bg = null; navigator.vibrate?.(25); marqStart(e, false); } }, 500); }
   });
   /* Selection box: dragged left to right it picks what lies wholly inside; right to left, anything it touches. */
   let marq = null;
@@ -4289,7 +4289,7 @@ DZ.edit = async (id) => {
     pts.delete(e.pointerId); if (rest.delete(e.pointerId)) return;
     if (marq) return marqEnd();
     if (pinch && pts.size < 2) { cancelAnimationFrame(pinch.raf); pinch = null; bg = null; crispLater(); return; }
-    if (bg) { clearTimeout(bg.ht); if (!bg.moved && (sel || (picks.size && !picking))) select(null); bg = null; }
+    if (bg) { clearTimeout(bg.ht); if (!bg.moved && !bg.fv && (sel || (picks.size && !picking))) select(null); bg = null; }
   };
   stage.addEventListener('pointerup', ptUp); stage.addEventListener('pointercancel', ptUp);
   /* Backstop: a finger lifted anywhere is never still counted as down (a stale one makes the next single finger
@@ -4327,7 +4327,7 @@ DZ.edit = async (id) => {
   let press = null;   // long press: hold still on an item to start selecting several
   const cancelPress = () => { if (press) clearTimeout(press.t); press = null; };
   page.addEventListener('pointerdown', (e) => {
-    if (rest.has(e.pointerId)) return;
+    if (rest.has(e.pointerId) || fingerOnly(e)) return;   /* a finger with fingers set to move and zoom: left to the stage, which pans */
     e = modEv(e); closeNodeMenu();
     cancelPress();
     if (pinch || pts.size > 1) return;
@@ -4690,9 +4690,14 @@ DZ.edit = async (id) => {
   for (const x of [$('#dz-rail'), $('#dz-pop')]) { x.addEventListener('click', sideClick); x.addEventListener('change', (e) => sideChange(e)); }
   /* The magnet: snapping on or off and what snaps to what. Stays at the end of the strip whatever is selected. */
   let snapPop = false;
+  /* Fingers only move and zoom (dz_finger_view): a finger never picks, moves or draws; it pans, and two pinch. The
+     stylus (and the mouse) does the editing. Off: fingers edit as before. */
+  let fView = Settings.get('dz_finger_view', '') === '1';
+  const fingerOnly = (e) => fView && e.pointerType === 'touch';
   const drawSnap = () => { const b = $('#dz-csnap'); if (!b) return; const ck = (key, n, tip) => `<label class="toggle" style="display:flex;margin-bottom:6px" data-tip="${tip}"><input type="checkbox" data-sn="${key}" ${snapO[key] ? 'checked' : ''}><span>${n}</span></label>`;
     b.innerHTML = `<button class="dz-ib ${snapO.on ? 'on' : ''}" data-snapb data-tip="Snapping" aria-label="Snapping"><svg viewBox="0 0 24 24"><path d="M5 4v8a7 7 0 0 0 14 0V4h-4v8a3 3 0 0 1-6 0V4zM5 8h4M15 8h4"/></svg></button>`
       + (snapPop ? `<div class="dz-cpop dz-snappop" style="right:8px;left:auto;top:${b.getBoundingClientRect().bottom + 6}px">
+        <label class="toggle" style="display:flex;margin-bottom:8px" data-tip="On: only the stylus (or mouse) picks and moves things. Fingers move the page and pinch to zoom."><input type="checkbox" data-fview ${fView ? 'checked' : ''}><span>Fingers only move and zoom</span></label>
         ${ck('on', 'Snapping on', 'Hold Alt to ignore it for one move')}
         <div class="lbl">Snap to</div>${ck('page', 'Page edges and centre', 'The sides and middle of the page')}${ck('edges', 'Edges of other items', 'Edges line up with edges')}${ck('mids', 'Centres of other items', 'Middles line up with middles')}
         <label class="dz-sl"><span>Snap distance<b>${snapO.dist}</b></span><input type="range" min="3" max="30" step="1" value="${snapO.dist}" data-snv="dist"></label>
@@ -4701,7 +4706,8 @@ DZ.edit = async (id) => {
   drawSnap();
   const snapSave = () => Settings.set('dz_snap', JSON.stringify(snapO));
   $('#dz-csnap').addEventListener('click', (e) => { if (e.target.closest('[data-snapb]')) { snapPop = !snapPop; drawSnap(); } });
-  $('#dz-csnap').addEventListener('input', (e) => { const t2 = e.target; if (t2.dataset.sn) { snapO[t2.dataset.sn] = t2.checked; snapSave(); if (t2.dataset.sn === 'on') $('#dz-csnap [data-snapb]').classList.toggle('on', t2.checked); }
+  $('#dz-csnap').addEventListener('input', (e) => { const t2 = e.target; if (t2.hasAttribute('data-fview')) { fView = t2.checked; Settings.set('dz_finger_view', fView ? '1' : ''); toast(fView ? 'Fingers now move and zoom the page. Use the stylus to edit.' : 'Fingers edit again.', 2200); return; }
+    if (t2.dataset.sn) { snapO[t2.dataset.sn] = t2.checked; snapSave(); if (t2.dataset.sn === 'on') $('#dz-csnap [data-snapb]').classList.toggle('on', t2.checked); }
     if (t2.dataset.snv) { snapO.dist = +t2.value; t2.closest('label').querySelector('b').textContent = t2.value; snapSave(); }
     if (t2.hasAttribute('data-sng')) { const v = dzFromU(doc, +t2.value); snapO.gap = v > 0 ? v : 0; snapSave(); } });
   stage.addEventListener('pointerdown', () => { if (snapPop) { snapPop = false; drawSnap(); } }, true);
