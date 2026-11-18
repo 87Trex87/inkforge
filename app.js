@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 473;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 474;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1924,25 +1924,26 @@ const VIEWS = {
   },
   stocktake: {
     title: () => 'Stock take',
-    render: () => '<div id="stk"></div>',
+    render: () => '<form id="stk" class="card pro" autocomplete="off"></form>',
     async mount() {
       const items = await DB.all('SELECT * FROM inventory_items WHERE active = 1 ORDER BY category COLLATE NOCASE, name COLLATE NOCASE');
       const el = $('#stk');
-      if (!items.length) { el.innerHTML = '<div class="card muted">Add some inventory items first.</div>'; return; }
-      let cat = null;
-      el.innerHTML = `<p class="muted" style="margin:0 4px 12px">Count what's on the shelf. Fields start at the expected amount; change any that differ.</p>`
-        + items.map(i => {
-          const head = i.category !== cat ? `${cat !== null ? '</div>' : ''}<div class="letter">${esc(i.category || 'Uncategorised')}</div><div class="card list">` : '';
-          cat = i.category;
-          return head + `<div class="c-row"><span class="c-main"><span class="c-n">${esc(i.name)}</span>
+      if (!items.length) { el.innerHTML = '<p class="muted" style="padding:16px 20px;margin:0">Add some inventory items first.</p>'; return; }
+      const groups = new Map();
+      for (const i of items) { const k = i.category || 'Uncategorised'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); }
+      el.innerHTML = `<div class="form-foot row">
+          <button type="button" class="btn" id="stk-cancel">Cancel</button>
+          <button type="button" class="btn primary" style="flex:1" id="stk-save">Save stock take</button>
+        </div>
+        <section class="fsec"><h3>How it works<small>Count what’s on the shelf</small></h3>
+          <p class="muted" style="margin:4px 0 12px">Each field starts at the expected amount. Change any that differ; changed counts are highlighted.</p></section>
+        ${[...groups].map(([g, list]) => `<section class="fsec"><h3>${esc(g)}<small>${list.length} item${list.length === 1 ? '' : 's'}</small></h3>
+          <div class="stt-list">${list.map(i => `<div class="c-row"><span class="c-main"><span class="c-n">${esc(i.name)}</span>
             <span class="muted c-sub">Expected ${fmtQty(i.qty)}${i.unit ? ' ' + esc(i.unit) : ''}</span></span>
-            <input class="in count-in" type="number" inputmode="decimal" min="0" step="${+i.step && i.step < 1 ? i.step : 'any'}" data-id="${i.id}" value="${fmtQty(i.qty)}"></div>`;
-        }).join('') + `</div>
-        <label class="field"><span>Notes</span><input class="in" id="stk-notes" placeholder="optional"></label>
-        <div class="form-foot row" style="background:var(--bg)">
-          <button class="btn" id="stk-cancel">Cancel</button>
-          <button class="btn primary" style="flex:1" id="stk-save">Save stock take</button>
-        </div>`;
+            <input class="in count-in" type="number" inputmode="decimal" min="0" step="${+i.step && i.step < 1 ? i.step : 'any'}" data-id="${i.id}" value="${fmtQty(i.qty)}"></div>`).join('')}</div></section>`).join('')}
+        <section class="fsec"><h3>Notes<small>Anything to remember about this count</small></h3>
+          <label class="field"><span>Notes</span><input class="in" id="stk-notes" placeholder="optional"></label></section>`;
+      el.addEventListener('submit', (e) => e.preventDefault());
       Dirty.set(false);
       el.addEventListener('input', (e) => { if (e.target.matches('.count-in')) { Dirty.set(true); e.target.classList.toggle('diff', +e.target.value !== items.find(i => i.id === +e.target.dataset.id).qty); } });
       $('#stk-cancel').onclick = () => history.back();
@@ -8830,6 +8831,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 474, when: '2026-11-18T21:00', added: ['The stock take has the clean look: Save at the top, each category its own section, one tidy list.', 'Design studio: Add picture can now take a picture From assets.'], test: ['Do a stock take, change a count and save it.', 'In a design, press Add picture, then From assets, and pick one.'] },
   { build: 473, when: '2026-11-18T19:00', added: ['The inventory item form has the same clean look as the booking and client forms, with Save at the top.'], test: ['Add a new inventory item and check it saves.'] },
   { build: 472, when: '2026-11-18T17:00', added: ['Bookings table: Export saves your bookings (the ones shown, or all) to a file; Import loads another workspace’s, e.g. a staff member’s into the owner’s.', 'Import shows a preview first: new, changed (with what changed) and deleted bookings, and skips ones already here. Tag them with a name and colour, and add them for real or as ghosts (shown for reference, not counted).', 'Tags show on the calendar, the bookings table and stats. Stats can show the whole shop, only you, or one tag. Filter the table by source to find or remove imports.'], test: ['Export bookings from one workspace and import them into another, then change one and import again.', 'Import as ghosts and check they are not in your stats.'] },
   { build: 471, when: '2026-11-18T14:00', added: ['The client form has the same clean look as the booking form: buttons on top, each section a row with a short note.', 'Smaller, cleaner buttons, fields, tabs and cards across the app, like the reel maker. The tattoo simulator is unchanged.'], test: ['Add a new client and check it saves.', 'Look around the app and tell us if anything looks cramped.'] },

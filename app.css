@@ -2406,3 +2406,10 @@ body:not([data-route="tattoo"]) .dz-ex button { padding: 10px 12px; border-radiu
 .bix-d { font-size: 12px; } .bix-d s { color: var(--ink2); }
 .st-who { margin-right: 8px; }
 #merge-dlg .card.bix-card { width: min(860px, 96vw) !important; max-width: none !important; }
+
+/* Stock take in the professional look: each category a section, items as rows with the count on the right */
+form.pro .stt-list { display: block !important; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 12px; background: var(--bg); }
+form.pro .stt-list .c-row { display: flex !important; width: auto !important; border-left: 0 !important; border-right: 0 !important; border-radius: 0 !important; margin: 0 !important; align-items: center; gap: 10px; padding: 6px 10px; border-top: 1px solid var(--line); min-height: 0; }
+form.pro .stt-list .c-row:first-child { border-top: 0; }
+form.pro .stt-list .c-main { flex: 1; min-width: 0; }
+form.pro .stt-list .count-in { width: 96px; flex: none; text-align: right; }
