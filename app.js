@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 472;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 473;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1864,7 +1864,7 @@ const VIEWS = {
   },
   'inv-edit': {
     title: (id) => id === 'new' ? 'New item' : 'Edit item',
-    render: () => '<form id="inv-form" class="card" autocomplete="off"></form>',
+    render: () => '<form id="inv-form" class="card pro" autocomplete="off"></form>',
     async mount(id) {
       const it = id === 'new' ? { qty: 0, min_qty: 0 } : await DB.one('SELECT * FROM inventory_items WHERE id = ?', [+id]);
       if (!it) { location.hash = 'inventory'; return; }
@@ -1874,7 +1874,7 @@ const VIEWS = {
       const f = $('#inv-form');
       const inp = (n, l, t = 'text', x = '') => `<label class="field"><span>${l}</span><input class="in" name="${n}" type="${t}" value="${esc(it[n] ?? '')}" ${x}></label>`;
       f.innerHTML = `
-        <section class="fsec"><h3>Item</h3>
+        <section class="fsec"><h3>Item<small>What it is and how it’s counted</small></h3>
         ${inp('name', 'Name', 'text', 'required placeholder="Black ink 8oz"')}
         <div class="two">
           <label class="field"><span>Category</span><input class="in" name="category" list="inv-cats" value="${esc(it.category ?? '')}">
@@ -1883,7 +1883,7 @@ const VIEWS = {
         </div>
         <label class="field"><span>Decimal ${help('How far + and − move the stock on the inventory list. Off counts in whole numbers.')}</span>
           <select class="in" name="step">${INV_STEPS.map(([v, l]) => `<option value="${v}" ${(+it.step || 1) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></section>
-        <section class="fsec"><h3>Stock</h3>
+        <section class="fsec"><h3>Stock<small>How many you have and when to reorder</small></h3>
         <div class="two">
           ${inp('qty', 'In stock', 'number', 'inputmode="decimal" min="0" step="any"')}
           <label class="field"><span>Minimum ${help('When stock drops to this, the item is flagged and goes on the shopping list.')}</span>
@@ -8830,6 +8830,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 473, when: '2026-11-18T19:00', added: ['The inventory item form has the same clean look as the booking and client forms, with Save at the top.'], test: ['Add a new inventory item and check it saves.'] },
   { build: 472, when: '2026-11-18T17:00', added: ['Bookings table: Export saves your bookings (the ones shown, or all) to a file; Import loads another workspace’s, e.g. a staff member’s into the owner’s.', 'Import shows a preview first: new, changed (with what changed) and deleted bookings, and skips ones already here. Tag them with a name and colour, and add them for real or as ghosts (shown for reference, not counted).', 'Tags show on the calendar, the bookings table and stats. Stats can show the whole shop, only you, or one tag. Filter the table by source to find or remove imports.'], test: ['Export bookings from one workspace and import them into another, then change one and import again.', 'Import as ghosts and check they are not in your stats.'] },
   { build: 471, when: '2026-11-18T14:00', added: ['The client form has the same clean look as the booking form: buttons on top, each section a row with a short note.', 'Smaller, cleaner buttons, fields, tabs and cards across the app, like the reel maker. The tattoo simulator is unchanged.'], test: ['Add a new client and check it saves.', 'Look around the app and tell us if anything looks cramped.'] },
   { build: 470, when: '2026-11-18T12:00', added: ['Reel maker, rebuilt: it fills the screen, with a top strip of buttons, zoom and pan on the preview, snap on or off, and ▶ Watch to play it full screen with pause and a scrub bar.', 'Pick a size for each reel: vertical 9:16, portrait 4:5, square or landscape 16:9.', 'Text, stickers and sound sit on their own timeline rows: drag them to move and their ends to set the timing. Two sound rows for cross-fades or a voiceover, with speed and fades. Clips change length by dragging their ends, and drag to reorder.', 'Many more looks: 24 filters with adjustments, 12 effects, 14 transitions, 18 fonts plus your own, text shapes (arc, circle, wave), headings and paragraphs, sticker entrances with directions, freeze frame and save frame.', 'Sharper logos and stickers in exported videos.'], test: ['Make a reel with music and text, export it at 1080p and check the sound and text line up.', 'Try the reel maker on your phone held upright.'] },
