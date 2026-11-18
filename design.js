@@ -2065,6 +2065,16 @@ DZ.edit = async (id) => {
   const onHide = () => { if (document.hidden) flush(); };
   document.addEventListener('visibilitychange', onHide);
   const dropped = new Set(), made = new Set();   // pictures taken out (or made) while editing; tidied when leaving
+  /* The page's background picture is a picture layer at the very bottom (bgpic), so it can be zoomed, moved,
+     turned, flipped, cropped and faded like any picture; the page clips it. It stays locked (taps go straight
+     through to what's on top) until Edit picture, and locks again once something else is picked. Two-sided
+     designs keep it on the master, under both sides. Older designs' doc.bg.img becomes one on Edit picture. */
+  const bgLayer = () => doc.layers.find(l => l.bgpic && (!doc.sides || l.side === 'm'));
+  const bgPic = (ref, op = 1) => { let l = bgLayer();
+    if (l) { if (l.ref !== ref) dropped.add(l.ref); Object.assign(l, { ref, x: 0, y: 0, w: doc.w, h: doc.h, rot: 0, cover: 1, px: 0, py: 0 }); delete l.crop; delete l.fx; delete l.fy; return l; }
+    l = { id: dzId(), t: 'image', ref, cover: 1, x: 0, y: 0, w: doc.w, h: doc.h, op, rot: 0, name: 'Background picture', bgpic: 1, lock: 1, ...(doc.sides ? { side: 'm' } : {}) };
+    doc.layers.unshift(l); return l; };
+  const bgEdit = (l) => { delete l.lock; tab = 'edit'; if (doc.sides && face !== 'm') setFace('m'); select(l.id); };
   const docRefs = () => [doc.bg?.img, ...doc.layers.map(l => l.ref), ...doc.layers.map(l => l.tex?.ref), ...doc.layers.flatMap(dzTblRefs)].filter(Boolean);
   let dzKeys = null, dzPenKeys = null, dzRO = null;   // let go of when leaving, so the editor can be freed
   addEventListener('hashchange', function away() { removeEventListener('hashchange', away); document.removeEventListener('visibilitychange', onHide); focus(false);
@@ -2400,6 +2410,7 @@ DZ.edit = async (id) => {
   const secOpen = new Map(); let sideKey = '';
   const secName = (d) => d.querySelector('summary')?.firstChild?.textContent.trim();
   const drawSide = () => {
+    for (const m0 of doc.layers) if (m0.bgpic && !m0.lock && m0.id !== sel) m0.lock = 1;   /* the background locks again once it's not being edited */
     side.querySelectorAll('details.fsec').forEach(d => secOpen.set(secName(d), d.open));
     const was = side.scrollTop, act = document.activeElement, actSel = side.contains(act) ? ['k', 'ffk', 'tk', 'v'].map(n => act.dataset?.[n] != null ? `[data-${n}="${act.dataset[n]}"]` : '').join('') : '', caret = actSel && act.selectionStart != null ? [act.selectionStart, act.selectionEnd] : null;
     const tool = toolOn();
@@ -2591,9 +2602,9 @@ DZ.edit = async (id) => {
         ${fsec('Theme', `<div class="dz-themes">${Object.entries(DZ_THEMES).map(([kk, t]) =>
           `<button data-theme="${kk}" class="${doc.theme === kk ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>`)}
         ${fsec('Background', `${swatches('bg', doc.bg?.c)}
-          <div class="row" style="margin-top:8px"><label class="btn small">${doc.bg?.img ? 'Change picture' : 'Background picture'}<input type="file" accept="image/*" hidden id="dz-bgfile"></label>
-          ${doc.bg?.img ? '<button class="btn small danger" id="dz-bgrm">Remove</button>' : ''}</div>
-          ${doc.bg?.img ? slider('bgop', 'Picture opacity', 0.05, 1, 0.05, doc.bg.op ?? 1, v => Math.round(v * 100) + '%') : ''}`)}
+          <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px">${bgLayer() || doc.bg?.img ? '<button class="btn small primary" data-bgedit>Edit picture</button>' : ''}<label class="btn small">${bgLayer() || doc.bg?.img ? 'Change picture' : 'Background picture'}<input type="file" accept="image/*" hidden id="dz-bgfile"></label>
+          ${bgLayer() || doc.bg?.img ? '<button class="btn small danger" id="dz-bgrm">Remove</button>' : ''}</div>
+          ${bgLayer() || doc.bg?.img ? '<p class="muted" style="font-size:11px;margin:6px 0 0">Edit picture lets you zoom, move, turn, flip, crop and fade it. The page trims it to size.</p>' : ''}`)}
         <p class="muted dz-hint">{Fields} like {studio} fill in from Settings.</p>`;
     }
   };
@@ -2632,6 +2643,7 @@ DZ.edit = async (id) => {
     }
     side.innerHTML = `
       <div class="dz-lh"><b>${kindName}</b><button class="btn small" data-act="done">Done</button></div>
+      ${l.bgpic ? '<div class="dz-note">The page background. The page trims it to size; drag a corner past the edges to zoom in. Done locks it in place again.</div>' : ''}
       ${groupOf([l.id]).length > 1 ? `<div class="dz-note">${clipped(l) ? 'Clipped to the layer below.' : 'Has layers clipped to it.'}
         <button class="btn small" data-act="flatten">Flatten group</button></div>` : ''}
       
@@ -4047,7 +4059,7 @@ DZ.edit = async (id) => {
       return Math.abs(lx) <= l.w / 2 + tol && Math.abs(ly) <= (l.h || 0) / 2 + tol; };
     const L = F();   // only the page being edited (master items are edited on the Master tab)
     for (let i = L.length - 1; i >= 0; i--) {
-      const l = L[i]; if (l.hide || !over(l)) continue;
+      const l = L[i]; if (l.hide || (l.bgpic && l.lock) || !over(l)) continue;
       const cv0 = dzCurves.get(l); if (cv0) { const r = l.size * 1.3 + Math.abs(l.pb || 0) + 10 / k; if (!cv0.P.some(q => Math.hypot(q.x - p.x, q.y - p.y) < r)) continue; }
       if (i > 0 && l.clip) { let b = i; while (b > 0 && L[b].clip) b--; if (L[b].hide || !over(L[b])) continue; }   // only where it shows
       return l;
@@ -4469,7 +4481,8 @@ DZ.edit = async (id) => {
       face = 'f'; sel = null; changed(true); fit(); return drawSide();
     }
     if (t.closest('#dz-code')) { doc.vals.code = Math.random().toString(36).slice(2, 8).toUpperCase(); changed(true); return drawSide(); }
-    if (t.closest('#dz-bgrm')) { doc.bg.img = null; changed(true); return drawSide(); }
+    if (t.closest('#dz-bgrm')) { const b = bgLayer(); if (b) { dropped.add(b.ref); doc.layers = doc.layers.filter(x => x !== b); } doc.bg.img = null; changed(true); return drawSide(); }
+    if (t.closest('[data-bgedit]')) { let b = bgLayer(); if (!b && doc.bg?.img) { b = bgPic(doc.bg.img, doc.bg.op ?? 1); doc.bg.img = null; changed(true); } if (b) bgEdit(b); return; }
     if (t.closest('#dz-piece')) { const pid = await dzPortfolioPick(false); if (!pid) return;
       const pc = await dzPiece(pid); for (const ly of doc.layers) if (ly.slot != null) ly.ref = null; dzFillSlots(doc, pc); changed(true); return drawSide(); }
     if (d('pic')) {
@@ -4769,7 +4782,7 @@ DZ.edit = async (id) => {
       const f = t.files[0]; t.value = ''; if (!f) return;
       try {
         const { ref, ar } = await importPic(f, t.id === 'dz-bgfile' ? 3000 : 2000);
-        if (t.id === 'dz-bgfile') { doc.bg.img = ref; doc.bg.op ??= 1; changed(true); return drawSide(); }
+        if (t.id === 'dz-bgfile') { if (doc.bg.img) { dropped.add(doc.bg.img); doc.bg.img = null; } const b = bgPic(ref); changed(true); return bgEdit(b); }
         if (t.id === 'dz-repl' && l) { l.ref = ref; l.h = l.w / ar; changed(true); return drawSide(); }
         const where = await picWhere(); if (!where) return; if (where === 'ref') return refNew({ ref, ar: 1 / ar });
         const w = Math.min(doc.w, doc.h) * 0.5, h = w / ar; add({ t: 'image', ref, ...center(w, h) });
