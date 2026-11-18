@@ -1292,6 +1292,61 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
   for (const l of chLines) await one(x, { ...l, fill: null, fm: undefined, stroke: '#141414', sw: (CH_NW[l.nd] || 0.7) * CH_PX, dash: '' });
 }
+/* ---------- Animate: a design into a new reel ----------
+   The background (its colour and background picture, and anything clipped to that picture) becomes the reel's one
+   photo clip. Everything else becomes picture stickers in the same places and sizes: a group, or a layer with what's
+   clipped to it, is one sticker; text blocks sitting close together are one; more than 10 and the nearest ones are
+   combined. Each gets an entrance (text slides up, pictures pop, shapes zoom in, one big picture fades), one after
+   the other. 3 to 6 seconds, by how many there are; no intro or outro card. Opens it in the reel maker. */
+async function dzAnimate(doc, name) {
+  if (typeof REEL_SIZES === 'undefined' || typeof reelStyle !== 'function') return toast('The reel maker is not loaded yet.');
+  toast('Getting it ready for the reel maker…', 2500);
+  const L = doc.layers.filter(l => !l.hide && (!doc.sides || dzSide(l) === 'f' || l.side === 'm'));
+  const bgIds = new Set(), units = []; let cur = null;
+  for (const l of L) {
+    if (l.bgpic) { bgIds.add(l.id); cur = { bg: true }; continue; }
+    if (l.clip && cur) { if (cur.bg) bgIds.add(l.id); else { cur.ids.push(l.id); cur.ls.push(l); } continue; }   /* clipped: goes with the layer under it */
+    if (l.g && cur && !cur.bg && cur.g === l.g) { cur.ids.push(l.id); cur.ls.push(l); continue; }
+    cur = { ids: [l.id], ls: [l], g: l.g }; units.push(cur);
+  }
+  const box = (u) => { const B = u.ls.map(dzBounds); return { x0: Math.min(...B.map(b => b.x0)), y0: Math.min(...B.map(b => b.y0)), x1: Math.max(...B.map(b => b.x1)), y1: Math.max(...B.map(b => b.y1)) }; };
+  const join = (a, b) => ({ ids: [...a.ids, ...b.ids], ls: [...a.ls, ...b.ls], g: a.g });
+  /* Text close together (a heading over its lines, a paragraph in pieces) comes in as one. */
+  for (let i = 0; i < units.length - 1; i++) { const a = units[i], b = units[i + 1];
+    if (!a.ls.every(l => l.t === 'text') || !b.ls.every(l => l.t === 'text')) continue;
+    const A = box(a), B = box(b), gap = Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1), over = Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0);
+    if (gap < Math.max(40, doc.h * 0.03) && over > 0) { units.splice(i, 2, join(a, b)); i--; } }
+  while (units.length > 10) { let best = 0, bs = Infinity;   /* too many: the neighbours that together take the least room */
+    for (let i = 0; i < units.length - 1; i++) { const b = box(join(units[i], units[i + 1])), a = (b.x1 - b.x0) * (b.y1 - b.y0); if (a < bs) { bs = a; best = i; } }
+    units.splice(best, 2, join(units[best], units[best + 1])); }
+  const sc = Math.min(1, 1440 / Math.max(doc.w, doc.h)), W = Math.round(doc.w * sc), H = Math.round(doc.h * sc);
+  const canvas = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const blob = (c, t, q) => new Promise(r => c.toBlob(r, t, q));
+  const bgc = canvas(); await dzDraw(bgc, doc, sc, { only: bgIds, noStencil: true });
+  const bgRef = await Media.save(await blob(bgc, 'image/jpeg', 0.92), 'jpg');
+  const r0 = doc.w / doc.h, size = [...REEL_SIZES].sort((a, b) => Math.abs(Math.log(a[3] / a[4] / r0)) - Math.abs(Math.log(b[3] / b[4] / r0)))[0];
+  const [ar, , , FW, FH] = size, fit = Math.abs(Math.log(FW / FH / r0)) < 0.03, f = Math.min(FW / doc.w, FH / doc.h), ox = (FW - doc.w * f) / 2, oy = (FH - doc.h * f) / 2;
+  const n = units.length, dur = Math.max(3, Math.min(6, 3 + (n - 1) * 0.5)), gap = n > 1 ? Math.min(0.45, dur * 0.45 / (n - 1)) : 0;
+  const big = units.map(u => { const b = box(u); return (b.x1 - b.x0) * (b.y1 - b.y0); }), main = big.indexOf(Math.max(0, ...big)), mainBig = big[main] > doc.w * doc.h * 0.35;
+  const ovl = [];
+  for (let i = 0; i < n; i++) { const u = units[i], c = canvas(); await dzDraw(c, doc, sc, { only: new Set(u.ids), noBg: true, noStencil: true });
+    const px = c.getContext('2d').getImageData(0, 0, W, H).data; let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (px[(y * W + x) * 4 + 3] > 3) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) continue;   /* nothing shows */
+    x0 = Math.max(0, x0 - 2); y0 = Math.max(0, y0 - 2); x1 = Math.min(W - 1, x1 + 2); y1 = Math.min(H - 1, y1 + 2);
+    const cw = x1 - x0 + 1, ch = y1 - y0 + 1, cut = document.createElement('canvas'); cut.width = cw; cut.height = ch; cut.getContext('2d').drawImage(c, x0, y0, cw, ch, 0, 0, cw, ch);
+    const ref = await Media.save(await blob(cut, 'image/png'), 'png');
+    const bw = cw / sc, cx = (x0 + cw / 2) / sc, cy = (y0 + ch / 2) / sc, kind = u.ls.every(l => l.t === 'text') ? 'text' : u.ls.some(l => l.t === 'image' || l.t === 'table') ? 'pic' : 'shape';
+    const anim = i === main && mainBig ? { anim: 'fade' } : kind === 'text' ? { anim: 'slide', adir: 'up' } : kind === 'pic' ? { anim: 'pop' } : { anim: 'zoom', adir: 'out' };
+    const t0 = Math.round((0.25 + ovl.length * gap) * 100) / 100;
+    ovl.push({ ref, x: (ox + cx * f) / FW, y: (oy + cy * f) / FH, s: bw * f / (0.35 * Math.min(FW, FH)), t0, t1: dur, ...anim, animDur: 0.6, name: u.ls.length === 1 && u.ls[0].name ? u.ls[0].name : u.ls.length > 1 && kind !== 'text' ? 'Group' : { text: 'Text', pic: 'Picture', shape: 'Shape' }[kind] }); }
+  const clip = { id: 1, ref: bgRef, name: 'Background', type: 'image', dur, motion: 'none', fit: fit ? 'cover' : 'plain', caption: '', mute: true, filter: 'none', speed: 1, rot: 0, flip: false };
+  const st0 = reelStyle(), style = { ...st0, intro: false, outro: false, fromDesign: st0.fromDesign || { intro: st0.intro, outro: st0.outro } };   /* fromDesign: the cards as they were, for the next new reel */
+  await DB.run('INSERT INTO reels (name, doc) VALUES (?, ?)', [`${name || 'Design'} (animated)`, JSON.stringify({ v: 1, ar, clips: [clip], trans: {}, music: null, ovl, aud: [], style })]);
+  const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+  location.hash = 'reel/' + id;
+  setTimeout(() => toast(`${ovl.length} piece${ovl.length === 1 ? '' : 's'} came in, each with an entrance. Pick one to change how it moves.`, 4000), 1200);
+}
 /* ---------- SVG ----------
    Shapes are vector, and so are their plain colours and gradients, so they write straight into an SVG the same
    way they draw. Text (it needs its font), pictures and texture fills are pixels: a choice with any of those
@@ -1922,6 +1977,7 @@ DZ.edit = async (id) => {
       <button class="dz-ib" id="dz-focus" aria-label="Full screen design" data-tip="Full screen: the design fills the screen (Focus hides the panels)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       <button class="dz-ib" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24">${DZ_UI.tpl}</svg></button>
       <button class="dz-ib" id="dz-print" aria-label="Print" data-tip="Print it (or Save as PDF from the print screen)"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></button>
+      ${!doc.sides && !doc.form && !doc.chal && !doc.pat && !doc.fold && doc.kind !== 'note' ? `<button class="dz-ib" id="dz-anim" aria-label="Animate" data-tip="Animate: open it in the reel maker with each piece moving in"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="M16 10l5-3v10l-5-3"/><path d="M7 9l4 3-4 3z"/></svg></button>` : ''}
       <button class="btn small dz-saveas" id="dz-saveas" data-tip="Save it as a picture or a PDF, or keep a copy">Save as…</button>
       <button class="dz-ib dz-go" id="dz-export" aria-label="Share" data-tip="Share, and more ways to print and save"><svg viewBox="0 0 24 24">${DZ_UI.export}</svg></button>
     </div>
@@ -5769,6 +5825,7 @@ DZ.edit = async (id) => {
     setTimeout(() => document.addEventListener('pointerdown', function off(ev) { if (!ev.target.closest('#dz-panm, #dz-panels')) { m.remove(); document.removeEventListener('pointerdown', off, true); } }, true)); };
   dpApply(); dqDraw();
   $('#dz-export').onclick = () => { select(null); dzExport(doc, name); };
+  const ab = $('#dz-anim'); if (ab) ab.onclick = async () => { select(null); ab.disabled = true; try { await dzAnimate(doc, name); } catch (err) { toast('Could not animate it: ' + err.message, 4000); } finally { ab.disabled = false; } };
   railFit($('#dz-rail'));
   $('#dz-print').onclick = async () => { select(null); await flush(); dzPrintDoc(doc); };
   $('#dz-saveas').onclick = async () => { select(null); await flush(); const cp = await dzSaveAs(doc, $('#dz-name').value.trim() || name, id); if (cp) location.hash = 'design/' + cp; };

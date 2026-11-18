@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 486;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 487;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6489,7 +6489,8 @@ async function reelList() {
     if (t.closest('#reel-new')) {
       const ar = await reelSizePick(); if (!ar) return;
       const n = (await DB.one('SELECT COUNT(*) AS n FROM reels')).n;
-      await DB.run('INSERT INTO reels (name, doc) VALUES (?, ?)', [`Reel ${n + 1}`, JSON.stringify({ v: 1, ar, clips: [], trans: {}, music: null, style: reelStyle() })]);
+      const st = reelStyle(); if (st.fromDesign) { Object.assign(st, st.fromDesign); delete st.fromDesign; }   /* an animated design's reel had its cards off; a new reel has them as before */
+      await DB.run('INSERT INTO reels (name, doc) VALUES (?, ?)', [`Reel ${n + 1}`, JSON.stringify({ v: 1, ar, clips: [], trans: {}, music: null, style: st })]);
       location.hash = 'reel/' + (await DB.one('SELECT last_insert_rowid() AS id')).id; return;
     }
     if (d('del')) {
@@ -8881,6 +8882,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 487, when: '2026-11-19T10:00', added: ['Design studio: a new Animate button (top bar) turns your post into a reel, with each picture, shape and block of text moving in one after another.', 'The background becomes the clip and everything else comes in as stickers you can still move and change. It runs 3 to 6 seconds with no intro or outro card, ready for music and effects.'], test: ['Open a post you made, tap Animate, and play the reel.', 'Pick one of the pieces and change how it moves in.'] },
   { build: 486, when: '2026-11-19T09:00', added: ['Reel maker: hold a clip on the timeline and drag it sideways to move it, past as many clips as you like. The timeline scrolls by itself near its ends.', 'Text and sticker bars on the timeline snap to where clips change over, and to the start, end and playhead. Turn Snap off to drag freely.'], test: ['On the tablet, hold a clip and drag it past two others.', 'Drag the end of a text bar near where two clips meet and check it catches there.'] },
   { build: 485, when: '2026-11-19T08:00', added: ['Reel maker: dragging the progress bar onto another clip or card now picks it, so the panel changes what you see on screen.'], test: ['Open a reel with a few clips, pick the first, and drag the progress bar into the next one. Its settings should show in the panel.'] },
   { build: 482, when: '2026-11-19T07:00', added: ['Design studio: fade any picture, shape, text or table with a transparency gradient, straight (Linear) or from a centre (Radial). Anything clipped to it fades too.', 'Drag the two round handles on the design to set where the fade runs, and use the stops in the Transparency section to set how see-through each point is.'], test: ['Pick a photo, open Transparency, choose Linear and drag the handles.', 'Try Radial and add a stop in the middle.'] },
