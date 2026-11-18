@@ -1837,7 +1837,7 @@ const DZ_TATTOO = [
 const dzCustom = () => { try { return JSON.parse(Settings.get('dz_tpls', '[]')); } catch { return []; } };
 function dzLayouts(kind) {
   const built = DZ_KINDS[kind]?.social ? [...DZ_TATTOO, ...DZ_TEMPLATES.post] : kind === 'challenge' ? dzChTemplates() : DZ_TEMPLATES[kind];
-  return [...(built || []).map(t => ({ name: t[0], make: t[1], chal: t[2] })), ...dzCustom().filter(c => c.kind === kind).map(c => ({ name: c.name, custom: c })), { name: 'Blank' }];
+  return [{ name: 'Blank' }, ...(built || []).map(t => ({ name: t[0], make: t[1], chal: t[2] })), ...dzCustom().filter(c => c.kind === kind).map(c => ({ name: c.name, custom: c }))];   /* Blank first, picked by default */
 }
 // A portfolio piece for a post: its photos (in order) and details.
 async function dzPiece(id) {
@@ -2025,17 +2025,16 @@ async function dzPicker(opts = {}) {
   o.addEventListener('change', (e) => { if (!e.target.matches('[data-patwi]')) return; const v = parseFloat(e.target.value); if (v > 0) { st.pat.w = Math.min(1000, Math.max(5, v)); draw(); } });
   const draw = async () => {
     if (!st.kind) {
-      o.innerHTML = `<div class="card dz-pick"><h2>${st.piece ? 'Make a post' : 'New design'}</h2>
-        ${st.piece ? '' : '<div class="lbl">Print</div>'}<div class="dz-kinds">${kinds.filter(([, v]) => !v.social).map(([k, v]) =>
-          `<button data-kind="${k}"><svg viewBox="0 0 24 24" class="dz-kic">${DZ_KIND_IC[k] || DZ_KIND_IC.page}</svg><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
-        <div class="lbl" style="margin-top:10px">Social posts ${st.piece ? '' : '<span class="muted">(show off a tattoo)</span>'}</div><div class="dz-kinds three">${kinds.filter(([, v]) => v.social).map(([k, v]) =>
-          `<button data-kind="${k}"><svg viewBox="0 0 24 24" class="dz-kic">${DZ_KIND_IC[k] || DZ_KIND_IC.page}</svg><b>${v.label}</b><small>${v.sub}</small></button>`).join('')}</div>
-        <button class="btn" data-x style="width:100%;margin-top:12px">Cancel</button></div>`;
+      const kb = ([k, v]) => `<button data-kind="${k}"><svg viewBox="0 0 24 24" class="dz-kic">${DZ_KIND_IC[k] || DZ_KIND_IC.page}</svg><span><b>${v.label}</b><small>${v.sub}</small></span></button>`;
+      o.innerHTML = `<div class="card dz-pick dz-np"><div class="np-head"><b>${st.piece ? 'Make a post' : 'New design'}</b><button class="pm-ib" data-x title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        ${st.piece ? '' : `<div class="np-sec">Print and more</div><div class="np-kinds">${kinds.filter(([, v]) => !v.social).map(kb).join('')}</div>`}
+        <div class="np-sec">Social posts${st.piece ? '' : ' <span>show off a tattoo</span>'}</div><div class="np-kinds">${kinds.filter(([, v]) => v.social).map(kb).join('')}</div></div>`;
       return;
     }
     const lays = dzLayouts(st.kind), social = DZ_KINDS[st.kind].social, pu = st.piece ? await Media.url(st.piece.thumb) : '';
     const sz = size();
-    o.innerHTML = `<div class="card dz-pick dz-pick2"><h2>${DZ_KINDS[st.kind].label}</h2><div class="dz-pk2"><div class="dz-pkL">
+    o.innerHTML = `<div class="card dz-pick dz-pick2 dz-np"><div class="np-head"><button class="pm-btn" data-back aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>Back</button><b>${DZ_KINDS[st.kind].label}</b>
+      <button class="btn primary" data-go>Create</button></div><div class="dz-pk2"><div class="dz-pkL">
       ${sz?.fold ? `<div class="lbl">Fold</div><div class="dz-papers">${Object.entries(DZ_FOLD_TYPES).map(([k, v]) =>
           `<button data-ft="${k}" class="${st.ft === k ? 'on' : ''}"><b>${v.name}</b><small>${v.sub}</small></button>`).join('')}</div>
         <div class="lbl" style="margin-top:10px">Sheet, laid flat</div><div class="dz-papers">${DZ_FOLD_SHEETS.map(n => { const pp = DZ_PAPER.find(x => x[0] === n);
@@ -2043,27 +2042,27 @@ async function dzPicker(opts = {}) {
         <p class="muted" style="font-size:12px;margin:6px 0 12px">You design both sides: the outside on top, the inside below it, with the folds marked.
           Panels: ${sz.fold.lo.join(', ')}. ${sz.dpi} dpi.</p>` : ''}
       ${DZ_KINDS[st.kind].pattern ? patOptsHtml(st.pat) : ''}
-      ${sz && !sz.fold && !sz.pat ? `<div class="lbl">Size</div><div class="dz-papers">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => {
+      ${sz && !sz.fold && !sz.pat ? `<div class="lbl">Size</div><div class="np-row"><select class="in" data-pss aria-label="Paper size">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => {
           const pp = DZ_PAPER.find(x => x[0] === n);
-          return `<button data-ps="${esc(n)}" class="${st.ps === n ? 'on' : ''}"><b>${esc(n)}</b><small>${pp ? `${dzMM(pp[1])} × ${dzMM(pp[2])}` : 'your size'}</small></button>`; }).join('')}</div>
+          return `<option value="${esc(n)}" ${st.ps === n ? 'selected' : ''}>${esc(n)}${pp ? ` · ${dzMM(pp[1])} × ${dzMM(pp[2])} mm` : ' · your own size'}</option>`; }).join('')}</select></div>
         ${st.ps === 'Custom' ? `<div class="dz-csize"><label><span>W</span><input class="in" type="text" inputmode="text" data-calc min="0" step="any" data-cs="cw" value="${st.cw}"></label>
           <span class="muted">×</span><label><span>H</span><input class="in" type="text" inputmode="text" data-calc min="0" step="any" data-cs="ch" value="${st.ch}"></label>
           <select class="in" data-cs="cu">${['mm', 'cm', 'in'].map(u => `<option ${st.cu === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>`
-        : `<div class="seg" style="margin-top:8px">${[[false, 'Portrait'], [true, 'Landscape']].map(([v, n]) => `<button data-land="${v ? 1 : 0}" class="${st.land === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>`}
+        : `<div class="seg" style="margin-top:6px">${[[false, 'Portrait'], [true, 'Landscape']].map(([v, n]) => `<button data-land="${v ? 1 : 0}" class="${st.land === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>`}
         <p class="muted" style="font-size:12px;margin:6px 0 12px">${dzMM(sz.mm[0])} × ${dzMM(sz.mm[1])} mm, ${sz.w} × ${sz.h} px at ${sz.dpi} dpi${sz.dpi < 300 ? ' (large pages use a lower dpi so they open on phones and tablets)' : ''}.</p>` : ''}
       ${social ? `<div class="dz-piece">${pu ? `<img src="${pu}" alt="">` : '<span class="muted">No tattoo chosen</span>'}
         <div><b>${esc(st.piece?.vals.title || (st.piece ? 'Untitled piece' : 'Show off a tattoo'))}</b><small class="muted">${st.piece ? `${st.piece.photos.length} photo${st.piece.photos.length > 1 ? 's' : ''}` : 'Pick a portfolio piece to fill the photos, title and hashtags'}</small></div>
         <button class="btn small" data-piece>${st.piece ? 'Change' : 'Choose'}</button></div>` : ''}
       ${!social && !sz?.fold && !sz?.pat && !DZ_KINDS[st.kind].chal ? `<div class="lbl">Sides</div><div class="seg" style="margin-bottom:12px">${[[false, 'One side'], [true, 'Front and back']].map(([v, n]) =>
           `<button data-two="${v ? 1 : 0}" class="${st.two === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>` : ''}
+      <div class="lbl" >Theme</div><div class="dz-themes">${Object.entries(DZ_THEMES).map(([k, t]) =>
+        `<button data-theme="${k}" class="${st.theme === k ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>
       </div><div class="dz-pkR"><div class="lbl">Layout</div><div class="dz-tpls">${lays.map((l, i) =>
         `<button data-li="${i}" class="${st.li === i ? 'on' : ''}"><canvas data-prev="${i}"></canvas><span>${esc(l.name)}${l.custom ? ' <em>yours</em>' : ''}</span>
           ${l.custom ? `<i class="dz-tdel" data-tdel="${esc(l.custom.id)}" title="Delete this template">&times;</i>` : ''}</button>`).join('')}</div>
-      <div class="lbl" style="margin-top:12px">Theme</div><div class="dz-themes">${Object.entries(DZ_THEMES).map(([k, t]) =>
-        `<button data-theme="${k}" class="${st.theme === k ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>
-      </div></div><div class="row dz-pkfoot"><button class="btn" data-back>Back</button><button class="btn primary" data-go style="flex:1">Create</button></div></div>`;
+      </div></div></div>`;
     for (const cv of o.querySelectorAll('canvas[data-prev]')) {
-      const doc = dzNew(st.kind, lays[+cv.dataset.prev], st.theme, st.piece, sz, st.two), sc = 220 / Math.max(doc.w, doc.h);
+      const doc = dzNew(st.kind, lays[+cv.dataset.prev], st.theme, st.piece, sz, st.two), sc = 150 / Math.max(doc.w, doc.h);
       cv.width = Math.round(doc.w * sc); cv.height = Math.round(doc.h * sc); dzDraw(cv, doc, sc);
     }
   };
@@ -2072,7 +2071,7 @@ async function dzPicker(opts = {}) {
     if (t.closest('[data-x]')) return o.remove();
     if (d('kind') === 'note') { o.remove(); return dzNoteNew(); }
     if (d('kind') === 'challenge' && typeof TATTOO_VERSION === 'undefined') await new Promise((res) => { const s = document.createElement('script'); s.src = 'tattoo.js'; s.onload = s.onerror = res; document.head.appendChild(s); });   /* the lesson templates come from the simulator */
-    if (d('kind')) { st.kind = d('kind'); st.li = 0; st.two = false; return draw(); }
+    if (d('kind')) { st.kind = d('kind'); st.li = st.piece && DZ_KINDS[st.kind]?.social ? 1 : 0; st.two = false; return draw(); }   /* Blank; a post from a tattoo starts on its first layout */
     if (d('two') != null) { st.two = d('two') === '1'; return draw(); }
     if (DZ_KINDS[st.kind]?.pattern && patOptsAct(st.pat, t)) return draw();
     if (t.closest('[data-back]')) { st.kind = null; return draw(); }
@@ -2103,6 +2102,7 @@ async function dzPicker(opts = {}) {
   };
   // Custom size: typing updates the numbers below without redrawing (keeps the keyboard up); leaving the box redraws.
   o.addEventListener('input', (e) => { const k = e.target.dataset.cs; if (k === 'cw' || k === 'ch') st[k] = +e.target.value || 0; });
+  o.addEventListener('change', (e) => { if (e.target.matches('[data-pss]')) { st.ps = e.target.value; return draw(); } });
   o.addEventListener('change', (e) => { const k = e.target.dataset.cs; if (!k) return; if (k === 'cu') st.cu = e.target.value; else st[k] = +e.target.value || 0; draw(); });
   document.body.appendChild(o); draw();
 }

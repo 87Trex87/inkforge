@@ -2520,3 +2520,33 @@ body.dz-eyeon #dz-cv, body.dz-eyeon #reel-cv { cursor: crosshair; }
 .pm-ctl { flex: 1; min-width: 170px; } .pm-ctl .dz-sl { margin: 4px 0; }
 .pm-hex { display: flex; gap: 6px; align-items: center; margin-top: 8px; } .pm-hex .dz-chip { width: 30px; height: 30px; flex: none; } .pm-hex .in { width: 92px; height: 30px; margin: 0; font-family: monospace; font-size: 13px; } .pm-hex .btn { margin-left: auto; }
 .pm-note { font-size: 11px; color: var(--ink2); margin: 12px 0 0; line-height: 1.4; }
+
+/* New design window: a header with its actions, tight cards, smaller previews. */
+.dz-np.card { padding: 14px 16px 16px; }
+.np-head { display: flex; align-items: center; gap: 10px; margin: -2px 0 10px; position: sticky; top: -14px; z-index: 2; background: var(--bg2); padding: 6px 0; }
+.np-head > b { flex: 1; font-size: 16px; font-family: var(--font-head, inherit); }
+.np-head .btn.primary { padding: 7px 22px; }
+.np-head .pm-btn svg { margin-left: -4px; }
+.np-sec, .dz-np .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink2); margin: 12px 0 6px; font-weight: 600; }
+.np-sec span { text-transform: none; letter-spacing: 0; font-weight: 400; opacity: .8; }
+.dz-np .dz-pkL > .lbl:first-child, .dz-np .dz-pkR > .lbl:first-child, .dz-np .np-head + .np-sec { margin-top: 2px; }
+.np-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
+.np-kinds button { display: flex; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; min-width: 0; }
+.np-kinds button:hover { border-color: var(--teal); }
+.np-kinds .dz-kic { width: 22px; height: 22px; flex: none; color: var(--teal); }
+.np-kinds span { display: flex; flex-direction: column; min-width: 0; } .np-kinds b { font-size: 13px; } .np-kinds small { font-size: 10.5px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dz-np.dz-pick2 .dz-pk2 { grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 18px; }
+.dz-np .dz-pkL:empty { display: none; }
+.dz-np .dz-tpls { grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 6px; }
+.dz-np .dz-tpls button { padding: 5px; gap: 3px; border-radius: 10px; border-width: 1px; font-size: 11px; }
+.dz-np .dz-tpls button.on { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.dz-np .dz-tpls canvas { max-height: 72px; box-shadow: 0 1px 6px rgba(0,0,0,.4); }
+.dz-np .dz-themes { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; } .dz-np .dz-themes button { padding: 5px 7px; border-width: 1px; font-size: 12px; border-radius: 8px; }
+.dz-np .dz-themes button.on { box-shadow: 0 0 0 1px var(--teal); }
+.dz-np .dz-papers button { border-radius: 8px; }
+.dz-np .dz-piece { margin-bottom: 8px; }
+@media (max-width: 700px) { .dz-np.dz-pick2 .dz-pk2 { grid-template-columns: 1fr; } .np-kinds { grid-template-columns: 1fr 1fr; } .np-kinds small { white-space: normal; } }
+.dz-np .dz-tpls { grid-template-columns: repeat(auto-fill, 92px); justify-content: start; }
+.dz-np .np-row select.in { width: 100%; height: 36px; margin: 0; }
+.dz-np .dz-pkL p.muted { margin: 6px 0 10px !important; font-size: 11px !important; }
+.dz-np .dz-pkL .dz-themes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
