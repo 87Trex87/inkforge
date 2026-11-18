@@ -1300,7 +1300,17 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
    the other. 3 to 6 seconds, by how many there are; no intro or outro card. Opens it in the reel maker. */
 async function dzAnimate(doc, name) {
   if (typeof REEL_SIZES === 'undefined' || typeof reelStyle !== 'function') return toast('The reel maker is not loaded yet.');
-  toast('Getting it ready for the reel maker…', 2500);
+  /* A progress window while it works (a few seconds on a tablet), with Cancel: stops between steps and lets go of
+     the pictures already made. */
+  const dlg = document.createElement('div'); dlg.className = 'ask-dlg'; dlg.id = 'dz-animdlg';
+  dlg.innerHTML = `<div class="card" role="dialog" aria-modal="true"><p class="ask-q">Getting it ready for the reel maker</p><p class="muted ask-d" id="dz-animst">Looking at the layers…</p>
+    <div class="dz-prog"><i id="dz-animbar"></i></div><button class="btn" id="dz-animx" style="width:100%;margin-top:12px">Cancel</button></div>`;
+  document.body.appendChild(dlg);
+  let stop = false; const saved = [];
+  dlg.querySelector('#dz-animx').onclick = () => { stop = true; dlg.querySelector('#dz-animx').disabled = true; dlg.querySelector('#dz-animst').textContent = 'Stopping…'; };
+  const step = async (done, of, what) => { dlg.querySelector('#dz-animbar').style.width = Math.round(done / of * 100) + '%'; dlg.querySelector('#dz-animst').textContent = what; await new Promise(r => setTimeout(r, 0)); };
+  const quit = async () => { for (const r of saved) await Media.release(r); dlg.remove(); toast('Animate cancelled.'); };
+  try {
   const L = doc.layers.filter(l => !l.hide && (!doc.sides || dzSide(l) === 'f' || l.side === 'm'));
   const bgIds = new Set(), units = []; let cur = null;
   for (const l of L) {
@@ -1322,30 +1332,35 @@ async function dzAnimate(doc, name) {
   const sc = Math.min(1, 1440 / Math.max(doc.w, doc.h)), W = Math.round(doc.w * sc), H = Math.round(doc.h * sc);
   const canvas = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
   const blob = (c, t, q) => new Promise(r => c.toBlob(r, t, q));
+  const steps = units.length + 2; await step(0, steps, 'The background…'); if (stop) return quit();
   const bgc = canvas(); await dzDraw(bgc, doc, sc, { only: bgIds, noStencil: true });
-  const bgRef = await Media.save(await blob(bgc, 'image/jpeg', 0.92), 'jpg');
+  const bgRef = await Media.save(await blob(bgc, 'image/jpeg', 0.92), 'jpg'); saved.push(bgRef);
   const r0 = doc.w / doc.h, size = [...REEL_SIZES].sort((a, b) => Math.abs(Math.log(a[3] / a[4] / r0)) - Math.abs(Math.log(b[3] / b[4] / r0)))[0];
   const [ar, , , FW, FH] = size, fit = Math.abs(Math.log(FW / FH / r0)) < 0.03, f = Math.min(FW / doc.w, FH / doc.h), ox = (FW - doc.w * f) / 2, oy = (FH - doc.h * f) / 2;
   const n = units.length, dur = Math.max(3, Math.min(6, 3 + (n - 1) * 0.5)), gap = n > 1 ? Math.min(0.45, dur * 0.45 / (n - 1)) : 0;
   const big = units.map(u => { const b = box(u); return (b.x1 - b.x0) * (b.y1 - b.y0); }), main = big.indexOf(Math.max(0, ...big)), mainBig = big[main] > doc.w * doc.h * 0.35;
   const ovl = [];
-  for (let i = 0; i < n; i++) { const u = units[i], c = canvas(); await dzDraw(c, doc, sc, { only: new Set(u.ids), noBg: true, noStencil: true });
+  for (let i = 0; i < n; i++) { await step(i + 1, steps, `Piece ${i + 1} of ${n}…`); if (stop) return quit();
+    const u = units[i], c = canvas(); await dzDraw(c, doc, sc, { only: new Set(u.ids), noBg: true, noStencil: true });
     const px = c.getContext('2d').getImageData(0, 0, W, H).data; let x0 = W, y0 = H, x1 = -1, y1 = -1;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (px[(y * W + x) * 4 + 3] > 3) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     if (x1 < 0) continue;   /* nothing shows */
     x0 = Math.max(0, x0 - 2); y0 = Math.max(0, y0 - 2); x1 = Math.min(W - 1, x1 + 2); y1 = Math.min(H - 1, y1 + 2);
     const cw = x1 - x0 + 1, ch = y1 - y0 + 1, cut = document.createElement('canvas'); cut.width = cw; cut.height = ch; cut.getContext('2d').drawImage(c, x0, y0, cw, ch, 0, 0, cw, ch);
-    const ref = await Media.save(await blob(cut, 'image/png'), 'png');
+    const ref = await Media.save(await blob(cut, 'image/png'), 'png'); saved.push(ref);
     const bw = cw / sc, cx = (x0 + cw / 2) / sc, cy = (y0 + ch / 2) / sc, kind = u.ls.every(l => l.t === 'text') ? 'text' : u.ls.some(l => l.t === 'image' || l.t === 'table') ? 'pic' : 'shape';
     const anim = i === main && mainBig ? { anim: 'fade' } : kind === 'text' ? { anim: 'slide', adir: 'up' } : kind === 'pic' ? { anim: 'pop' } : { anim: 'zoom', adir: 'out' };
     const t0 = Math.round((0.25 + ovl.length * gap) * 100) / 100;
     ovl.push({ ref, x: (ox + cx * f) / FW, y: (oy + cy * f) / FH, s: bw * f / (0.35 * Math.min(FW, FH)), t0, t1: dur, ...anim, animDur: 0.6, name: u.ls.length === 1 && u.ls[0].name ? u.ls[0].name : u.ls.length > 1 && kind !== 'text' ? 'Group' : { text: 'Text', pic: 'Picture', shape: 'Shape' }[kind] }); }
+  await step(steps - 1, steps, 'Making the reel…'); if (stop) return quit();
   const clip = { id: 1, ref: bgRef, name: 'Background', type: 'image', dur, motion: 'none', fit: fit ? 'cover' : 'plain', caption: '', mute: true, filter: 'none', speed: 1, rot: 0, flip: false };
   const st0 = reelStyle(), style = { ...st0, intro: false, outro: false, fromDesign: st0.fromDesign || { intro: st0.intro, outro: st0.outro } };   /* fromDesign: the cards as they were, for the next new reel */
   await DB.run('INSERT INTO reels (name, doc) VALUES (?, ?)', [`${name || 'Design'} (animated)`, JSON.stringify({ v: 1, ar, clips: [clip], trans: {}, music: null, ovl, aud: [], style })]);
   const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+  await step(steps, steps, 'Opening the reel maker…'); dlg.remove();
   location.hash = 'reel/' + id;
   setTimeout(() => toast(`${ovl.length} piece${ovl.length === 1 ? '' : 's'} came in, each with an entrance. Pick one to change how it moves.`, 4000), 1200);
+  } catch (err) { for (const r of saved) await Media.release(r); dlg.remove(); throw err; }
 }
 /* ---------- SVG ----------
    Shapes are vector, and so are their plain colours and gradients, so they write straight into an SVG the same

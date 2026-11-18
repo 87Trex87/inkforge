@@ -2456,3 +2456,4 @@ body.dz-focus .dz-body > .dz-side { max-height: calc(100% - 20px); overflow-y: a
 #dz-tgh i { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.6); pointer-events: auto; cursor: grab; touch-action: none; }
 #dz-tgh i[data-tgh="a"] { background: #fff; } #dz-tgh i[data-tgh="b"] { background: repeating-conic-gradient(#888 0 25%, #333 0 50%) 0 0 / 8px 8px; }
 .reel-tl .tl-clip { touch-action: none; }   /* the clip handles its own touches: hold to drag, swipe to scroll */
+.dz-prog { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 12px; } .dz-prog i { display: block; height: 100%; width: 0; background: var(--teal); transition: width .25s; }

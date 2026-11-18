@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 489;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 490;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8882,6 +8882,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 490, when: '2026-11-19T13:00', added: ['Design studio: Animate now shows a progress bar while it gets your reel ready, with a Cancel button.'], test: ['Tap Animate on a post and watch the bar fill, or tap Cancel to stop.'] },
   { build: 489, when: '2026-11-19T12:00', added: ['Design studio: a new switch in the snapping menu (the magnet), Fingers only move and zoom. Turn it on and your fingers pan and pinch the page while the stylus picks, moves and draws. Off by default.'], test: ['Turn on Fingers only move and zoom, then drag over a shape with a finger (the page moves) and with the stylus (the shape moves).'] },
   { build: 488, when: '2026-11-19T11:00', added: ['Design studio Layers: groups have a handle (⠿) on their heading, so you can drag a whole group up or down, even when it is folded.'], test: ['In Layers, drag a group by the handle on its heading above another layer.'] },
   { build: 487, when: '2026-11-19T10:00', added: ['Design studio: a new Animate button (top bar) turns your post into a reel, with each picture, shape and block of text moving in one after another.', 'The background becomes the clip and everything else comes in as stickers you can still move and change. It runs 3 to 6 seconds with no intro or outro card, ready for music and effects.'], test: ['Open a post you made, tap Animate, and play the reel.', 'Pick one of the pieces and change how it moves in.'] },
