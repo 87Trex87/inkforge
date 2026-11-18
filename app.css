@@ -2413,3 +2413,5 @@ form.pro .stt-list .c-row { display: flex !important; width: auto !important; bo
 form.pro .stt-list .c-row:first-child { border-top: 0; }
 form.pro .stt-list .c-main { flex: 1; min-width: 0; }
 form.pro .stt-list .count-in { width: 96px; flex: none; text-align: right; }
+
+form.pro > .fsec[hidden] { display: none !important; }

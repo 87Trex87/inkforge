@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 474;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 475;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1607,7 +1607,7 @@ const VIEWS = {
   },
   'pf-edit': {
     title: (id) => id === 'new' ? 'Add to portfolio' : 'Edit',
-    render: () => '<form id="pf-form" class="card" autocomplete="off"></form>',
+    render: () => '<form id="pf-form" class="card pro" autocomplete="off"></form>',
     async mount(id) {
       const ctx = PF.ctx || {}; PF.ctx = null;
       const it = id === 'new'
@@ -1623,14 +1623,15 @@ const VIEWS = {
       const cur = Settings.get('currency');
       const f = $('#pf-form');
       f.innerHTML = `
-        <div class="seg" id="pf-kind" style="margin-bottom:14px">${Object.entries(PF_KIND).map(([k, l]) => `<button type="button" data-k="${k}" class="${it.kind === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+        <section class="fsec"><h3>Type<small>A tattoo you did, art, or flash for sale</small></h3>
+        <div class="seg" id="pf-kind" style="margin-bottom:12px">${Object.entries(PF_KIND).map(([k, l]) => `<button type="button" data-k="${k}" class="${it.kind === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div></section>
         ${fsec(`Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil or sketch. Tap ◀ to move a photo forward.')}`,
           `<div class="thumbs pf-thumbs ${it.bg ? 'bg-' + it.bg : ''}" id="pf-thumbs"></div>
            <div class="lbl" style="margin-top:10px">Size for new photos ${help('Long side in pixels. Smaller saves space; Original keeps the file exactly as you picked it. Set the usual size in Settings.')}</div>
            <div class="seg" id="pf-size">${PF_SIZES.map(([k, l]) => `<button type="button" data-sz="${k}" class="${pfSizeDefault() === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
            <div class="lbl" style="margin-top:10px">Background ${help('For pictures with see-through parts, like a black flash design saved as PNG. White or black sits the design on that colour, in the portfolio and in print.')}</div>
-           <div class="seg" id="pf-bg">${PF_BG.map(([k, l]) => `<button type="button" data-bg="${k}" class="${(it.bg || '') === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`)}
-        <section class="fsec"><h3>Details</h3>
+           <div class="seg" id="pf-bg" style="margin-bottom:12px">${PF_BG.map(([k, l]) => `<button type="button" data-bg="${k}" class="${(it.bg || '') === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`)}
+        <section class="fsec"><h3>Details<small>Title, description, placement and date</small></h3>
         <label class="field"><span>Title</span><input class="in" name="title" value="${esc(it.title)}" placeholder="Peony sleeve"></label>
         <label class="field"><span>Description</span><textarea class="in" name="description" rows="2">${esc(it.description)}</textarea></label>
         <div class="two">
@@ -1643,10 +1644,10 @@ const VIEWS = {
           <label class="field pf-client"><span>Client (optional)</span>
             <div class="picker"><input class="in" id="pf-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off">
             <div class="pick-list" id="pf-client-list" hidden></div></div></label>`, { fold: true, open: !!(it.tags || client), hint: 'tags, client' })}
-        <div class="two pf-flash">
+        <section class="fsec pf-flash"><h3>Flash<small>Price, and whether it’s been claimed</small></h3><div class="two">
           <label class="field"><span>Price${cur ? ` (${esc(cur)})` : ''}</span><input class="in" name="price" type="number" inputmode="decimal" min="0" step="any" value="${it.price ?? ''}"></label>
           <label class="field"><span>&nbsp;</span><label class="toggle"><input type="checkbox" name="claimed" ${it.claimed ? 'checked' : ''}><span>Claimed</span></label></label>
-        </div>
+        </div></section>
         <div class="form-foot row">
           <button type="button" class="btn" id="pf-cancel">Cancel</button>
           <button type="submit" class="btn primary" style="flex:1">Save</button>
@@ -8831,6 +8832,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 475, when: '2026-11-18T23:00', added: ['The portfolio form has the clean look: Save at the top, each section a row with a short note.', 'Design studio: grouping keeps clipped layers clipped, like a photo inside a shape.'], test: ['Add a portfolio piece, switch it to Flash and check the price shows.', 'Clip a photo to a shape, group them, and check the photo stays inside the shape.'] },
   { build: 474, when: '2026-11-18T21:00', added: ['The stock take has the clean look: Save at the top, each category its own section, one tidy list.', 'Design studio: Add picture can now take a picture From assets.'], test: ['Do a stock take, change a count and save it.', 'In a design, press Add picture, then From assets, and pick one.'] },
   { build: 473, when: '2026-11-18T19:00', added: ['The inventory item form has the same clean look as the booking and client forms, with Save at the top.'], test: ['Add a new inventory item and check it saves.'] },
   { build: 472, when: '2026-11-18T17:00', added: ['Bookings table: Export saves your bookings (the ones shown, or all) to a file; Import loads another workspace’s, e.g. a staff member’s into the owner’s.', 'Import shows a preview first: new, changed (with what changed) and deleted bookings, and skips ones already here. Tag them with a name and colour, and add them for real or as ghosts (shown for reference, not counted).', 'Tags show on the calendar, the bookings table and stats. Stats can show the whole shop, only you, or one tag. Filter the table by source to find or remove imports.'], test: ['Export bookings from one workspace and import them into another, then change one and import again.', 'Import as ghosts and check they are not in your stats.'] },

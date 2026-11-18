@@ -2371,7 +2371,10 @@ DZ.edit = async (id) => {
     const g = dzId(), top = Math.max(...L.map(x => doc.layers.indexOf(x))); doc.groups ||= {};
     const n = Object.keys(doc.groups).length + 1; doc.groups[g] = { name: 'Group ' + n };
     const rest = doc.layers.filter(x => !L.includes(x)), at = rest.indexOf(doc.layers.slice(top + 1).find(x => !L.includes(x))), pos = at < 0 ? rest.length : at;
-    for (const x of L) { x.g = g; delete x.clip; } doc.layers = [...rest.slice(0, pos), ...L, ...rest.slice(pos)];   // together, where the top one was
+    /* A clip stays when its base (the next layer below on the same side) is grouped too; the bottom of the group can't clip to a layer outside it. */
+    const below = (x) => { const i = doc.layers.indexOf(x); for (let j = i - 1; j >= 0; j--) if ((doc.layers[j].side || 'f') === (x.side || 'f')) return doc.layers[j]; return null; };
+    const keep = new Set(L.filter(x => x.clip && L.includes(below(x))).map(x => x.id));
+    for (const x of L) { x.g = g; if (!keep.has(x.id)) delete x.clip; } doc.layers = [...rest.slice(0, pos), ...L, ...rest.slice(pos)];   // together, where the top one was
     changed(true); setPicks(L.map(x => x.id)); toast(`Grouped ${L.length} layers. Tap any of them to pick the group; double-tap for one inside.`, 2600); };
   const groupBreak = (ids) => { const gs = new Set(doc.layers.filter(x => ids.includes(x.id) && x.g).map(x => x.g)); if (!gs.size) return toast('Nothing grouped is picked.', 1800);
     for (const x of doc.layers) if (gs.has(x.g)) delete x.g; for (const g of gs) delete doc.groups?.[g]; changed(true); drawSide(); toast('Ungrouped.', 1500); };
