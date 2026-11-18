@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 484;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 485;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2114,7 +2114,7 @@ const VIEWS = {
       $('#reel-restart').onclick = () => { reelShow(0); reelPlay(); };
       reelQuickBind($('#reel-quick'));
       const sc = $('#reel-scrub');
-      sc.addEventListener('input', () => { R.scrubbing = true; if (R.playing) reelPause(); R.t = +sc.value; reelSyncVideos(R.t, false); reelRender(); });
+      sc.addEventListener('input', () => { R.scrubbing = true; if (R.playing) reelPause(); R.t = +sc.value; reelSyncVideos(R.t, false); reelRender(); reelFollow(); });
       sc.addEventListener('change', () => { R.scrubbing = false; });
       $('#reel-tabs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; R.tab = b.dataset.t;
         $('#reel-tabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); reelPanel(); };
@@ -7099,6 +7099,12 @@ const reelSlider = (attr, key, label, min, max, step, val, shown) =>
   `<label class="slider"><span>${label}<b>${shown}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${val}" ${attr}="${key}"></label>`;
 
 // Jump the paused preview to a moment, e.g. the card being edited, so changes show at once.
+/* Scrubbing onto another clip or card picks it, so the panel edits what's on screen (the tool open stays the same). */
+function reelFollow() {
+  const g = reelSegments().segs.filter(x => R.t >= x.start - 1e-6 && R.t < x.start + x.dur).at(-1); if (!g || (R.pick?.kind === g.kind && R.pick?.key === g.key)) return;
+  R.pick = { kind: g.kind, key: g.key }; if (g.kind === 'clip') R.sel = R.clips.findIndex(c => c.id === g.key);
+  reelTimeline(); reelPanel();
+}
 function reelShow(t) { if (R.playing) reelPause(); R.t = Math.max(0, t); reelSyncVideos(R.t, false); reelRender(); }
 function reelShowCard(kind) {
   const seg = reelSegments().segs.find(x => x.kind === kind);
@@ -8855,6 +8861,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 485, when: '2026-11-19T08:00', added: ['Reel maker: dragging the progress bar onto another clip or card now picks it, so the panel changes what you see on screen.'], test: ['Open a reel with a few clips, pick the first, and drag the progress bar into the next one. Its settings should show in the panel.'] },
   { build: 482, when: '2026-11-19T07:00', added: ['Design studio: fade any picture, shape, text or table with a transparency gradient, straight (Linear) or from a centre (Radial). Anything clipped to it fades too.', 'Drag the two round handles on the design to set where the fade runs, and use the stops in the Transparency section to set how see-through each point is.'], test: ['Pick a photo, open Transparency, choose Linear and drag the handles.', 'Try Radial and add a stop in the middle.'] },
   { build: 481, when: '2026-11-19T06:00', added: ['Design studio: the page background picture can now be zoomed, moved, turned, flipped, cropped and faded, and the page trims it to size.', 'It locks in place when you are done, so taps go through to what is on top. Page, then Edit picture, opens it again.'], test: ['Add a background picture, drag a corner past the page to zoom in, and turn it.', 'Tap Done, then tap an empty spot and check nothing gets picked.'] },
   { build: 480, when: '2026-11-19T05:00', added: ['Design studio: a new Table (under Shape). Add rows and columns, size them, and give cells their own colours, fonts, alignment and borders, with an optional header row and banded rows.', 'Fill a table from a spreadsheet saved as CSV.', 'Put a picture or icon (PNG, JPG or SVG) in a table cell. In forms, a cell can open a link in the PDF.'], test: ['Add a table, pick a row or column by its number or letter and change its colour.', 'Import a CSV into a table.', 'Put an icon from your assets in a cell.', 'In a form, give a cell a link and save the PDF.'] },
