@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 496;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 497;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -8905,6 +8905,7 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 497, when: '2026-11-19T18:00', added: ['Design studio templates: the Price list and Aftercare layouts now use tables you can edit cell by cell, frame outlines sit neatly inside their edges, and Full photo fades smoothly behind the title.', 'New templates: a Price menu post (square, portrait and story) and a Booking request form with your details, a price table, a deposit tick box and a signature.'], test: ['New design, Square post, then pick Price menu.', 'New design, Form, then pick Booking request.'] },
   { build: 496, when: '2026-11-19T17:00', added: ['Design studio: a cleaner New design window. Back and Create sit at the top, paper size is one list, the settings are on the left and the layouts, with smaller previews, on the right.', 'Blank is now the first layout and is picked for you, so Create gives you an empty page straight away.'], test: ['Tap New design, pick a kind, and tap Create right away for a blank one.', 'Pick a Blank page and choose a size from the list.'] },
   { build: 495, when: '2026-11-19T16:00', added: ['Design studio: pick a group or several items and Save to Assets and Save as SVG are right in the top strip. If some of them are text or pictures, it offers to save them as a picture inside the SVG.', 'On a tablet, windows where you type a name now move up so the on-screen keyboard no longer covers them.'], test: ['Pick a group of shapes and tap Save to Assets in the top strip.', 'Save something to references on the tablet and check the name box shows above the keyboard.'] },
   { build: 493, when: '2026-11-19T15:00', added: ['Design studio: every colour choice has an eyedropper (tap it, then tap the design) and a row of the colours you used last.', 'Palettes: tap Palettes… under any colour to make palettes of up to 32 colours with a colour wheel or sliders. Export one as an SVG that shows each colour and its code, and import any SVG to make a palette from its colours.', 'Reel maker: the same eyedropper, recent colours and palettes under every colour, so palettes you make work in both.'], test: ['Pick a shape, tap the eyedropper, then tap another colour on the design.', 'Open Palettes…, make a few colours, export the palette, then import the SVG back.', 'In the reel maker, pick a text and use a palette colour for its fill.'] },

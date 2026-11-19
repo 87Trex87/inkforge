@@ -1026,7 +1026,8 @@ const dzTblCell = (l, r, c) => { const o = l.cells?.[r + ':' + c] || {}, h = r <
   return { s: o.s || '', bg: o.bg ?? (h ? l.hbg : band ? l.band : null), c: o.c ?? (h ? l.hc : l.c), font: o.font || l.font, size: o.size ?? l.size, b: o.b ?? (h ? 1 : l.b), it: o.it ?? l.it, al: o.al ?? l.al, va: o.va ?? l.va, img: o.img, ifit: o.ifit || 'contain', isz: o.isz ?? 0.8, ipos: o.ipos || 'c' }; };
 function dzTblDraw(x, doc, l, pics = {}) {
   const { xs, ys } = dzTblGeo(l), ox = -l.w / 2, oy = -l.h / 2, R = l.rows.length, C = l.cols.length, rr = Math.min(l.rad || 0, l.w / 2, l.h / 2), pad = l.pad ?? 14;
-  x.save(); x.beginPath(); x.roundRect(ox, oy, l.w, l.h, rr); x.clip();
+  x.save(); if ('letterSpacing' in x) x.letterSpacing = '0px'; if ('wordSpacing' in x) x.wordSpacing = '0px';   /* not another layer's spacing */
+  x.beginPath(); x.roundRect(ox, oy, l.w, l.h, rr); x.clip();
   if (l.bg && l.bg !== 'none') { x.fillStyle = dzCol(doc, l.bg); x.fillRect(ox, oy, l.w, l.h); }
   for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
     const k = dzTblCell(l, r, c), cx = ox + xs[c], cy = oy + ys[r], cw = xs[c + 1] - xs[c], ch = ys[r + 1] - ys[r];
@@ -1643,6 +1644,13 @@ const dzWave = (x, y, w, h, n = 3, amp = 0.4, o = {}) => {
   for (let i = 0; i <= k; i++) top.push(dzNd(i * dx, i % 2 ? amp : 0, i ? -dx / 2.2 : 0, 0, i < k ? dx / 2.2 : 0, 0, 'smooth'));
   return dzS('vec', x, y, w, h, { subs: [{ closed: true, nodes: [dzNd(0, 1), ...top, dzNd(1, 1)] }], ...o });
 };
+/* A table for templates: rows of text (the first is the header row unless hdr: 0), columns sized by `cols` (shares),
+   each row rh tall, the last column right-aligned with ral. Anything else in `o` is the table's own style. */
+const dzTb = (x, y, w, rows, o = {}) => { const { rh = 60, cols, ral, ...st } = o, C = Math.max(...rows.map(r => r.length)), cw = cols || Array(C).fill(1), sum = cw.reduce((a, b) => a + b, 0);
+  const t = { ...dzTblNew(w), id: dzId(), x, y, w, h: rh * rows.length, rows: rows.map(() => rh), cols: cw.map(c => c * w / sum), cells: {}, lines: 'rows', outer: 0, ...st };
+  rows.forEach((r, i) => r.forEach((v, j) => { if (v) t.cells[i + ':' + j] = { s: v, ...(ral && j === C - 1 ? { al: 'right' } : {}) }; }));
+  if (ral) for (let i = 0; i < rows.length; i++) (t.cells[i + ':' + (C - 1)] ||= {}).al = 'right';
+  return t; };
 const dzBurst = (x, y, d, o = {}) => dzS('star', x, y, d, d, { n: 18, inner: 0.84, ...o });   // a starburst sticker
 const DZ_TEMPLATES = {
   voucher: [
@@ -1654,7 +1662,7 @@ const DZ_TEMPLATES = {
       dzT('For: {to}', W * 0.42, H * 0.55, W * 0.54, H * 0.055), dzT('From: {from}', W * 0.42, H * 0.64, W * 0.54, H * 0.055),
       dzS('line', W * 0.42, H * 0.77, W * 0.5, 4, { fill: '@soft' }),
       dzT('Code {code}  ·  Valid until {expires}', W * 0.42, H * 0.81, W * 0.54, H * 0.045, { c: '@soft' })]],
-    ['Centred', (W, H) => [dzS('rect', W * 0.025, H * 0.05, W * 0.95, H * 0.9, { fill: 'none', stroke: '@accent', sw: 6, r: 24 }),
+    ['Centred', (W, H) => [dzS('rect', W * 0.025, H * 0.05, W * 0.95, H * 0.9, { fill: 'none', stroke: '@accent', sw: 6, sal: 'in', r: 24 }),
       dzLogo(W * 0.44, H * 0.1, W * 0.12, H * 0.2), dzT('Gift voucher', W * 0.1, H * 0.31, W * 0.8, H * 0.13, { font: '@1', al: 'center' }),
       dzT('{amount}', W * 0.1, H * 0.45, W * 0.8, H * 0.17, { font: '@1', c: '@accent', al: 'center', fit: 1 }),
       dzT('For {to}  ·  From {from}', W * 0.1, H * 0.66, W * 0.8, H * 0.05, { al: 'center' }),
@@ -1717,12 +1725,14 @@ const DZ_TEMPLATES = {
       dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.78, W * 0.84, H * 0.026, { al: 'center', lh: 1.6 })]],
     ['Price list', (W, H) => [dzLogo(W * 0.08, H * 0.05, W * 0.18, H * 0.1), dzT('{studio}', W * 0.3, H * 0.075, W * 0.62, H * 0.05, { font: '@1', fit: 1 }),
       dzT('Prices', W * 0.08, H * 0.2, W * 0.84, H * 0.07, { font: '@1', c: '@accent' }),
-      dzT('Small (up to 5 cm)\nMedium (palm size)\nLarge (half sleeve)\nFull day session\nTouch-ups', W * 0.08, H * 0.3, W * 0.5, H * 0.026, { lh: 1.9 }),
-      dzT('from …\nfrom …\nfrom …\n…\n…', W * 0.6, H * 0.3, W * 0.32, H * 0.026, { lh: 1.9, al: 'right' }),
+      dzTb(W * 0.08, H * 0.29, W * 0.84, [['Size', 'Price'], ['Small (up to 5 cm)', 'from …'], ['Medium (palm size)', 'from …'], ['Large (half sleeve)', 'from …'], ['Full day session', '…'], ['Touch-ups', '…']],
+        { rh: H * 0.048, size: H * 0.021, cols: [2, 1], ral: 1, pad: W * 0.025, band: 'none' }),
       dzT('A deposit secures your booking. Prices depend on size, detail and placement.', W * 0.08, H * 0.62, W * 0.84, H * 0.02, { c: '@soft', lh: 1.5 }),
       dzS('rect', 0, H * 0.86, W, H * 0.14), dzT('{phone}  ·  {instagram}', W * 0.08, H * 0.91, W * 0.84, H * 0.026, { c: '@bg', al: 'center' })]],
     ['Aftercare', (W, H) => [dzT('Aftercare', W * 0.08, H * 0.06, W * 0.84, H * 0.07, { font: '@1', al: 'center' }),
-      dzT('1. Leave the wrap on for the time you were told.\n2. Wash gently with clean hands and mild soap.\n3. Pat dry and apply a thin layer of aftercare.\n4. No swimming, sun or scratching while it heals.\n5. Questions? Get in touch.', W * 0.1, H * 0.2, W * 0.8, H * 0.024, { lh: 1.8 }),
+      dzTb(W * 0.08, H * 0.19, W * 0.84, [['1', 'Leave the wrap on for the time you were told.'], ['2', 'Wash gently with clean hands and mild soap.'], ['3', 'Pat dry and apply a thin layer of aftercare.'],
+        ['4', 'No swimming, sun or scratching while it heals.'], ['5', 'Questions? Get in touch.']], { hdr: 0, rh: H * 0.085, size: H * 0.02, cols: [1, 7], pad: W * 0.025, band: 'none', bc: '@soft', bw: 2, lines: 'rows', outer: 0,
+      }),
       dzLogo(W * 0.4, H * 0.7, W * 0.2, H * 0.1), dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.83, W * 0.84, H * 0.024, { al: 'center', lh: 1.6, c: '@soft' })]],
     ['Flash burst', (W, H) => [dzS('rect', 0, 0, W, H * 0.5, dzG([['@accent', 0], ['@bg', 1]], 90)),
       dzBurst(W * 0.15, H * 0.06, W * 0.7, { fill: '@bg', n: 22, inner: 0.86 }),
@@ -1733,7 +1743,7 @@ const DZ_TEMPLATES = {
       dzWave(0, H * 0.82, W, H * 0.18, 3, 0.35), dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.89, W * 0.84, H * 0.026, { al: 'center', lh: 1.6, c: '@bg' })]],
     ['Guest spot', (W, H) => { const d = W * 0.56, hx = (W - d) / 2;
       return [dzT('GUEST SPOT', W * 0.1, H * 0.05, W * 0.8, H * 0.05, { font: '@1', al: 'center', arc: 50, ls: 6 }),
-        dzS('poly', hx, H * 0.14, d, d, { n: 6, fill: 'none', stroke: '@accent', sw: 10 }),
+        dzS('poly', hx, H * 0.14, d, d, { n: 6, fill: 'none', stroke: '@accent', sw: 10, sal: 'in' }),
         dzS('poly', hx + d * 0.08, H * 0.14 + d * 0.08, d * 0.84, d * 0.84, { n: 6, ...dzG([['@accent', 0], ['@bg', 1]], 90), op: 0.35 }),
         dzLogo(hx + d * 0.25, H * 0.14 + d * 0.25, d * 0.5, d * 0.5),
         dzT('{artist}', W * 0.08, H * 0.56, W * 0.84, H * 0.05, { font: '@1', al: 'center', fit: 1 }),
@@ -1753,19 +1763,19 @@ const DZ_TEMPLATES = {
     ['Price list', (W, H) => [dzS('rect', 0, 0, W, H * 0.16, dzG([['@accent', 0], ['@bg', 1]], 0)), dzLogo(W * 0.07, H * 0.03, W * 0.14, H * 0.1),
       dzT('{studio}', W * 0.25, H * 0.055, W * 0.68, H * 0.045, { font: '@1', fit: 1 }),
       dzT('Prices', W * 0.07, H * 0.21, W * 0.86, H * 0.05, { font: '@1', c: '@accent' }),
-      dzT('Small (up to 5 cm)\nMedium (palm size)\nLarge (half sleeve)\nFull day session\nTouch-ups', W * 0.07, H * 0.29, W * 0.55, H * 0.022, { lh: 2 }),
-      dzT('from …\nfrom …\nfrom …\n…\n…', W * 0.6, H * 0.29, W * 0.33, H * 0.022, { lh: 2, al: 'right' }),
+      dzTb(W * 0.07, H * 0.28, W * 0.86, [['Size', 'Price'], ['Small (up to 5 cm)', 'from …'], ['Medium (palm size)', 'from …'], ['Large (half sleeve)', 'from …'], ['Full day session', '…'], ['Touch-ups', '…']],
+        { rh: H * 0.042, size: H * 0.018, cols: [2, 1], ral: 1, pad: W * 0.02, band: 'none' }),
       dzS('line', W * 0.07, H * 0.55, W * 0.86, 4, dzG([['@accent', 0], [DZ_CLEAR, 1]], 0)),
       dzT('A deposit secures your booking. Prices depend on size, detail and placement.', W * 0.07, H * 0.58, W * 0.86, H * 0.018, { c: '@soft', lh: 1.5 }),
       dzWave(0, H * 0.88, W, H * 0.12, 3, 0.4), dzT('{phone}  ·  {instagram}', W * 0.07, H * 0.94, W * 0.86, H * 0.02, { c: '@bg', al: 'center' })]]
   ],
   post: [
-    ['Announcement', (W, H) => [dzS('rect', W * 0.05, H * 0.05, W * 0.9, H * 0.9, { fill: 'none', stroke: '@accent', sw: 6, r: 20 }),
+    ['Announcement', (W, H) => [dzS('rect', W * 0.05, H * 0.05, W * 0.9, H * 0.9, { fill: 'none', stroke: '@accent', sw: 6, sal: 'in', r: 20 }),
       dzT('BOOKS OPEN', W * 0.1, H * 0.3, W * 0.8, H * 0.13, { font: '@1', al: 'center' }),
       dzT('Message me to book your spot', W * 0.1, H * 0.48, W * 0.8, H * 0.045, { al: 'center', c: '@accent' }),
       dzLogo(W * 0.4, H * 0.64, W * 0.2, H * 0.16), dzT('{instagram}', W * 0.1, H * 0.84, W * 0.8, H * 0.035, { al: 'center', c: '@soft' })]],
     ['Flash', (W, H) => [dzT('Available flash', W * 0.07, H * 0.06, W * 0.86, H * 0.08, { font: '@1', al: 'center' }),
-      dzS('rect', W * 0.12, H * 0.2, W * 0.76, H * 0.6, { fill: 'none', stroke: '@soft', sw: 3, r: 16 }),
+      dzS('rect', W * 0.12, H * 0.2, W * 0.76, H * 0.6, { fill: 'none', stroke: '@soft', sw: 3, sal: 'in', r: 16, dash: 'dash' }),
       dzT('Add your design here', W * 0.12, H * 0.47, W * 0.76, H * 0.035, { al: 'center', c: '@soft' }),
       dzT('{studio}  ·  {instagram}', W * 0.07, H * 0.87, W * 0.86, H * 0.035, { al: 'center', c: '@accent' })]],
     ['Speech bubble', (W, H) => { const bw = W * 0.82, bh = Math.min(H * 0.42, bw * 0.62), bx = (W - bw) / 2, by = H * 0.14;
@@ -1781,7 +1791,14 @@ const DZ_TEMPLATES = {
         dzT('FLASH\nSALE', (W - d) / 2, H * 0.12 + d * 0.3, d, d * 0.17, { font: '@1', al: 'center', c: '@bg', lh: 1, rot: -8 }),
         dzT('This weekend only', W * 0.1, H * 0.12 + d + H * 0.04, W * 0.8, Math.min(W * 0.05, H * 0.04), { al: 'center', font: '@1' }),
         dzT('Pick from the flash sheet, first come first served', W * 0.1, H * 0.12 + d + H * 0.1, W * 0.8, Math.min(W * 0.032, H * 0.025), { al: 'center', c: '@soft' }),
-        dzWave(0, H * 0.88, W, H * 0.12, 3, 0.4), dzT('{studio}  ·  {instagram}', W * 0.06, H * 0.935, W * 0.88, Math.min(W * 0.03, H * 0.024), { al: 'center', c: '@bg' })]; }]
+        dzWave(0, H * 0.88, W, H * 0.12, 3, 0.4), dzT('{studio}  ·  {instagram}', W * 0.06, H * 0.935, W * 0.88, Math.min(W * 0.03, H * 0.024), { al: 'center', c: '@bg' })]; }],
+    ['Price menu', (W, H) => { const m = W * 0.08, f = Math.min(W * 0.034, H * 0.026), rh = Math.min(H * 0.085, W * 0.1), top = H * 0.2;
+      return [dzS('rect', 0, 0, W, H, dzG([['@bg', 0], ['@bg', 0.55], ['@accent', 1.5]], 90)),
+        dzT('PRICES', m, H * 0.06, W - 2 * m, f * 2.6, { font: '@1', al: 'center', ls: 6 }),
+        dzTb(m, top, W - 2 * m, [['Size', 'From'], ['Small (up to 5 cm)', '…'], ['Medium (palm size)', '…'], ['Large (half sleeve)', '…'], ['Full day', '…'], ['Touch-ups', '…']],
+          { rh, size: f, cols: [2, 1], ral: 1, pad: W * 0.03, rad: W * 0.025, bg: '@bg', band: 'none', lines: 'rows', outer: 1, bw: 3, bc: '@accent' }),
+        dzT('A deposit secures your spot · message me to book', m, top + rh * 6 + H * 0.04, W - 2 * m, f * 0.85, { al: 'center', c: '@soft' }),
+        dzLogo(W * 0.43, H * 0.84, W * 0.14, H * 0.1, { op: 0.9 })]; }]
   ]
 };
 // Photo spots: `slot` n takes the piece's n-th photo; cover crops to fill the spot.
@@ -1793,11 +1810,11 @@ const DZ_TATTOO = [
       dzT('{title}', m, H - band + m * 0.1, W * 0.66, Math.min(W * 0.06, H * 0.045), { font: '@1', fit: 1 }),
       dzT('{tags}', m, H - band + H * 0.065, W * 0.66, Math.min(W * 0.03, H * 0.021), { c: '@soft', lh: 1.35 }),
       dzLogo(W - m - W * 0.2, H - band + m * 0.1, W * 0.2, band - m * 1.2, { op: 0.9 })]; }],
-  ['Full photo', (W, H) => [dzPh(0, 0, 0, W, H), dzS('rect', 0, H * 0.8, W, H * 0.2, { fill: '@bg', op: 0.78 }),
+  ['Full photo', (W, H) => [dzPh(0, 0, 0, W, H), dzS('rect', 0, H * 0.62, W, H * 0.38, { fill: '@bg', tg: { type: 'linear', a: { x: 0, y: -0.5 }, b: { x: 0, y: 0.15 }, stops: [{ p: 0, o: 0 }, { p: 1, o: 0.88 }] } }),
     dzT('{title}', W * 0.06, H * 0.82, W * 0.88, Math.min(W * 0.065, H * 0.05), { font: '@1', fit: 1 }),
     dzT('{tags}', W * 0.06, H * 0.9, W * 0.88, Math.min(W * 0.03, H * 0.022), { c: '@soft' }), dzMark(W, H)]],
   ['Framed', (W, H) => [dzT('{title}', W * 0.08, H * 0.045, W * 0.84, Math.min(W * 0.07, H * 0.055), { font: '@1', al: 'center', fit: 1 }),
-    dzPh(0, W * 0.1, H * 0.14, W * 0.8, H * 0.66, { r: W * 0.03, stroke: '@accent', sw: 8 }),
+    dzPh(0, W * 0.1, H * 0.14, W * 0.8, H * 0.66, { r: W * 0.03, stroke: '@accent', sw: 8, sal: 'in' }),
     dzT('{placement}', W * 0.08, H * 0.83, W * 0.84, Math.min(W * 0.04, H * 0.03), { al: 'center', c: '@accent' }),
     dzT('{studio}  ·  {instagram}', W * 0.08, H * 0.9, W * 0.84, Math.min(W * 0.03, H * 0.023), { al: 'center', c: '@soft' })]],
   ['Fresh & healed', (W, H) => { const tall = H > W * 1.4, lab = Math.min(W * 0.045, H * 0.034);

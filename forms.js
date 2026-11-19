@@ -130,7 +130,21 @@ const ffTpl = (get, cat) => { const m = (W, H) => ffFromBlocks(get(), W, H); m.c
 DZ_TEMPLATES.form = [
   ['Tattoo consent', ffTpl(() => DEFAULT_TEMPLATES.find(t => t.kind === 'consent'), 'consent')],
   ['Apprentice consent', ffTpl(() => APPRENTICE_TEMPLATE, 'consent')],
-  ['Aftercare', ffTpl(() => DEFAULT_TEMPLATES.find(t => t.kind === 'aftercare'), 'aftercare')]
+  ['Aftercare', ffTpl(() => DEFAULT_TEMPLATES.find(t => t.kind === 'aftercare'), 'aftercare')],
+  /* A booking request: text boxes, a date, a paragraph box and a tick box laid out around a price table. */
+  ['Booking request', Object.assign((W, H) => { const m = W * 0.08, cw = W - 2 * m, s = W * 0.018, half = cw * 0.48, x2 = m + cw * 0.52, out = []; let y = H * 0.05;
+    out.push(dzLogo(m, y, W * 0.14, W * 0.14), dzT('Booking request', m + W * 0.18, y + W * 0.01, cw - W * 0.18, W * 0.045, { font: '@1' }),
+      dzT('{studio}  ·  {phone}  ·  {instagram}', m + W * 0.18, y + W * 0.075, cw - W * 0.18, s, { c: '@soft' }));
+    y += W * 0.2;
+    const head = (t) => { out.push(dzT(t, m, y, cw, s * 1.7, { font: '@1', c: '@accent' }), dzS('line', m, y + s * 2.3, cw, 3, { fill: '@soft' })); y += s * 3.3; };
+    const fld = (ft, label, w, x = m, h) => out.push(dzFieldNew(ft, { label, x, y, w, size: s * 1.25, ...(h ? { h } : {}) }));
+    head('Your details'); fld('text', 'Name', half); fld('text', 'Phone', half, x2); y += s * 5.2; fld('text', 'Email', half); fld('date', 'A date that suits you', half, x2); y += s * 5.6;
+    head('Your tattoo'); fld('area', 'Your idea (style, size, any references)', cw, m, s * 9); y += s * 12; fld('text', 'Placement', half); fld('text', 'Size (cm)', half, x2); y += s * 5.6;
+    head('Prices'); out.push(dzTb(m, y, cw, [['Size', 'Time', 'From'], ['Small (up to 5 cm)', 'About 1 hour', '…'], ['Medium (palm size)', '2 to 3 hours', '…'], ['Large (half sleeve)', 'A full day', '…']],
+      { rh: s * 2.7, size: s * 1.05, cols: [2, 1.3, 1], ral: 1, pad: s * 0.9, band: 'none', rad: s * 0.6 })); y += s * 2.7 * 4 + s * 2;
+    fld('check', 'I understand my deposit holds the booking and is taken off the final price', cw); y += s * 4;
+    fld('sign', 'Signature', cw * 0.6, m, s * 7);
+    return out; }, { cat: 'other' })]
 ];
 // A new form's page count comes from the template's own layers.
 function ffSetup(doc, make) { doc.sides = 2; doc.form = { cat: make?.cat || doc.form?.cat || 'other' }; doc.pages = Math.max(doc.pages || 1, ...doc.layers.map(l => /^p\d+$/.test(l.side || '') ? +l.side.slice(1) : 1)); }
