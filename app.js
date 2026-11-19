@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 499;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 500;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6550,9 +6550,9 @@ async function reelList() {
     ${rows.length ? Lib.bar('reels', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('reels', r.id)}
         <div class="dz-thumb reel-thumb">${r.url ? `<img src="${r.url}" alt="">` : ICON.reels}</div>
         <div class="dz-meta"><b>${esc(r.name || 'Reel')}</b><span class="muted">${info(r)}</span></div>
-        <button class="mini xone" data-xone="reel:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>
-        <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate">⧉</button>
-        <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>` : Lib.empty)
+        <div class="card-acts"><button class="mini xone" data-xone="reel:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>
+        <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
+        <button class="mini del" data-tip="Delete" data-del="${r.id}" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.reels}</div><div style="font:24px var(--display)">Make a reel</div>
          <div class="muted">Add photos and videos of your work; your intro and outro cards, watermark and style are added for you.</div></div>`}`;
   Lib.wire(el, 'reels', reelList);
@@ -9525,6 +9525,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 500, when: '2026-11-19T22:00', added: ['Tidier cards: on designs, simulator pieces and reels the buttons sit in one neat row under the name, all the same size with their icons centred, and never cover the name or picture. Forms use small icons for Copy and Export.'],
+    test: ['Design studio, simulator and reel maker lists.'] },
   { build: 499, when: '2026-11-19T21:00', added: ['Export just one: every card and row (designs, simulator pieces, reels, clients, bookings, stock, rules, quotes, forms and portfolio pieces) has an export arrow that saves only that item. Import it with the section’s usual Import button.'],
     test: ['Design studio, tap the export arrow on one design.'] },
   { build: 498, when: '2026-11-19T20:00', added: [

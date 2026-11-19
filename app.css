@@ -2555,3 +2555,21 @@ body.dz-eyeon #dz-cv, body.dz-eyeon #reel-cv { cursor: crosshair; }
 .dz-item .mini.xone { right: 72px; } .dz-item:has([data-out]:not(.tt-outb)) .mini.xone { right: 104px; }
 .dz-item .mini.xone svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .dz-item:has(.mini.xone) .dz-meta, .dz-item:has([data-out]:not(.tt-outb)):has(.mini.xone) .dz-meta, .dz-item:has(.tt-outb):has(.mini.xone) .dz-meta { padding-right: 8px; padding-bottom: 36px; }   /* the buttons get their own row under the name */
+
+/* Card footer: the name and type, then one tidy row of same-size icon buttons (never over the picture or the words). */
+.dz-item .dz-meta, .dz-item:has(.mini.xone) .dz-meta, .dz-item:has([data-out]:not(.tt-outb)):has(.mini.xone) .dz-meta, .dz-item:has(.tt-outb):has(.mini.xone) .dz-meta, .dz-item:has([data-out][data-out]) .dz-meta, .dz-item:has(.tt-outb) .dz-meta { padding: 8px 10px 4px; }
+.dz-meta b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dz-meta .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-acts { display: flex; justify-content: flex-end; gap: 4px; padding: 4px 8px 8px; border-top: 1px solid var(--line); margin-top: 4px; padding-top: 6px; }
+.card-acts .mini, .dz-item .card-acts .mini, .dz-item .card-acts .mini.xone, .dz-item .card-acts .tt-outb, .dz-item .card-acts [data-out], .dz-item .card-acts [data-dup], .dz-item .card-acts [data-del] {
+  position: static; right: auto; bottom: auto; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border-radius: 8px; background: var(--bg3); border: 1px solid var(--line); color: var(--ink); line-height: 0; }
+.card-acts .mini svg { width: 15px !important; height: 15px !important; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.card-acts .mini:hover { border-color: var(--teal); }
+.card-acts .mini.del { color: #e57373; margin-left: 6px; }
+.card-acts .mini.del:hover { border-color: #e57373; }
+
+.f-acts .mini.f-ic { display: grid; place-items: center; padding: 0; }
+.f-acts .mini.f-ic svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* List headers (designs, simulator, reels): the intro on its own line, the buttons in a row under it, right-aligned. */
+.row:has(> p.muted:first-child + .btn) { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.row:has(> p.muted:first-child + .btn) > p.muted:first-child { flex: 1 1 100% !important; }
