@@ -2550,3 +2550,8 @@ body.dz-eyeon #dz-cv, body.dz-eyeon #reel-cv { cursor: crosshair; }
 .dz-np .np-row select.in { width: 100%; height: 36px; margin: 0; }
 .dz-np .dz-pkL p.muted { margin: 6px 0 10px !important; font-size: 11px !important; }
 .dz-np .dz-pkL .dz-themes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Export-one buttons on cards: left of the others. */
+.dz-item .mini.xone { right: 72px; } .dz-item:has([data-out]:not(.tt-outb)) .mini.xone { right: 104px; }
+.dz-item .mini.xone svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dz-item:has(.mini.xone) .dz-meta, .dz-item:has([data-out]:not(.tt-outb)):has(.mini.xone) .dz-meta, .dz-item:has(.tt-outb):has(.mini.xone) .dz-meta { padding-right: 8px; padding-bottom: 36px; }   /* the buttons get their own row under the name */

@@ -1987,6 +1987,7 @@ DZ.list = async () => {
         <div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
         <div class="dz-meta"><b>${esc(r.name)}</b><span class="muted">${esc(r.sub)}</span></div>
         <button class="mini" data-out="${r.id}" aria-label="Print or save" data-tip="Print or save as"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></button>
+        <button class="mini xone" data-xone="design:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>
         <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate">⧉</button>
         <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.design}</div><div style="font:24px var(--display)">Make something</div>

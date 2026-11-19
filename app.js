@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 498;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 499;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1577,6 +1577,7 @@ const VIEWS = {
         </div>
         <div class="row" style="margin-bottom:24px">
           <button class="btn danger icon-btn" id="pf-del" data-tip="Delete" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+          <button class="btn" data-xone="portfolio:${it.id}" data-tip="Export this piece, photos and all, to import in another workspace">Export</button>
           <button class="btn" id="pf-share" ${photos.length ? '' : 'disabled'}>Share</button>
           <button class="btn" id="pf-save" ${photos.length ? '' : 'disabled'} data-tip="Save this photo to your device, exactly as it is stored">Save</button>
           <button class="btn" id="pf-post" ${photos.length ? '' : 'disabled'} data-tip="Design a social post with this tattoo: layouts, your logo as a watermark, title and hashtags">Post</button>
@@ -4683,7 +4684,7 @@ async function qtTable() {
     qtTable.shown = { rows, cols: C }; const sum = (f) => rows.reduce((t, r) => t + (f(r) || 0), 0);
     $('#qt').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('done', '', 'c-done')}${th('client', 'Client')}${C.map(c => th(c[0], c[1], MONEY.includes(c[0]) || c[0] === 'hours' || c[0] === 'took' ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
       `<tr data-qid="${r.id}" class="${r.completed ? 'done' : ''}"><td class="c-done"><input type="checkbox" data-qdone="${r.id}" ${r.completed ? 'checked' : ''} aria-label="Completed" data-tip="Completed quotes are kept for comparing, not deleted"></td><td class="nw"><b>${esc(qtCell(r, 'client'))}</b></td>${C.map(c => `<td class="qt-${c[0]} ${MONEY.includes(c[0]) || c[0] === 'hours' || c[0] === 'took' ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
-        <td class="c-act"><button class="bkt-ib" data-qedit="${r.id}" data-tip="Open in the quote calculator" aria-label="Open quote"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-qdel="${r.id}" data-tip="Delete" aria-label="Delete quote"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody>
+        <td class="c-act"><button class="bkt-ib" data-xone="quote:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button><button class="bkt-ib" data-qedit="${r.id}" data-tip="Open in the quote calculator" aria-label="Open quote"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-qdel="${r.id}" data-tip="Delete" aria-label="Delete quote"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody>
       ${C.some(c => MONEY.includes(c[0])) ? `<tfoot><tr><td></td><td>Total</td>${C.map(c => `<td class="num">${c[0] === 'total' ? esc(money(sum(r => r.total))) : c[0] === 'paid' ? esc(money(sum(r => r.b_paid))) : ''}</td>`).join('')}<td></td></tr></tfoot>` : ''}</table></div>
       <div class="bkt-foot">${rows.length} quote${rows.length === 1 ? '' : 's'} · ${rows.filter(r => r.booking_id).length} booked · ${rows.filter(r => r.completed).length} completed</div>`
       : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg><b>No quotes match</b><span class="muted">Try another status or date, or clear the search.</span></div>`;
@@ -6078,7 +6079,7 @@ async function itTable() {
     itTable.shown = { rows, cols: C };
     $('#it').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('name', 'Item')}${C.map(c => th(c[0], c[1], NUM.includes(c[0]) ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
       `<tr data-iid="${r.id}" class="${r.active ? '' : 'done'} ${r.active && r.qty <= r.min_qty ? 'late' : ''}"><td class="nw"><b>${esc(r.name)}</b></td>${C.map(c => `<td class="it-${c[0]} ${NUM.includes(c[0]) ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
-        <td class="c-act"><button class="bkt-ib" data-iedit="${r.id}" data-tip="Edit" aria-label="Edit item"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-idel="${r.id}" data-tip="Delete" aria-label="Delete item"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody>
+        <td class="c-act"><button class="bkt-ib" data-xone="stock:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button><button class="bkt-ib" data-iedit="${r.id}" data-tip="Edit" aria-label="Edit item"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-idel="${r.id}" data-tip="Delete" aria-label="Delete item"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody>
       ${C.some(c => c[0] === 'value') ? `<tfoot><tr><td>Total</td>${C.map(c => `<td class="num">${c[0] === 'value' ? esc(money(rows.reduce((t, r) => t + (r.cost || 0) * r.qty, 0))) : ''}</td>`).join('')}<td></td></tr></tfoot>` : ''}</table></div>
       <div class="bkt-foot">${rows.length} item${rows.length === 1 ? '' : 's'} · ${rows.filter(r => r.active && r.qty <= r.min_qty).length} running low</div>`
       : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg><b>No items match</b><span class="muted">Try other filters, or clear the search.</span></div>`;
@@ -6150,7 +6151,7 @@ async function rtTable() {
     const ord = C.filter(c => c[0] === 'no'), rest = C.filter(c => c[0] !== 'no');
     $('#rt').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${ord.map(c => th('no', c[1], 'num')).join('')}${th('title', 'Title')}${rest.map(c => th(c[0], c[1], c[0] === 'words' ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
       `<tr data-rid="${r.id}">${ord.length ? `<td class="num muted">${r._no}</td>` : ''}<td class="rt-title"><b>${esc(r.title)}</b></td>${rest.map(c => `<td class="rt-${c[0]} ${c[0] === 'words' ? 'num' : ''}">${esc(rtCell(r, c[0]))}</td>`).join('')}
-        <td class="c-act"><button class="bkt-ib" data-redit="${r.id}" data-tip="Edit" aria-label="Edit rule"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-rdel="${r.id}" data-tip="Delete" aria-label="Delete rule"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody></table></div>
+        <td class="c-act"><button class="bkt-ib" data-xone="rule:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button><button class="bkt-ib" data-redit="${r.id}" data-tip="Edit" aria-label="Edit rule"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-rdel="${r.id}" data-tip="Delete" aria-label="Delete rule"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody></table></div>
       <div class="bkt-foot">${rows.length} rule${rows.length === 1 ? '' : 's'} · the order is set with the arrows on the rule book</div>`
       : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><b>No rules match</b><span class="muted">Try other categories, or clear the search.</span></div>`;
     $('#rt-csv').disabled = $('#rt-print').disabled = !rows.length; };
@@ -6549,6 +6550,7 @@ async function reelList() {
     ${rows.length ? Lib.bar('reels', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('reels', r.id)}
         <div class="dz-thumb reel-thumb">${r.url ? `<img src="${r.url}" alt="">` : ICON.reels}</div>
         <div class="dz-meta"><b>${esc(r.name || 'Reel')}</b><span class="muted">${info(r)}</span></div>
+        <button class="mini xone" data-xone="reel:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>
         <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate">⧉</button>
         <button class="mini del" data-del="${r.id}" aria-label="Delete">&times;</button></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.reels}</div><div style="font:24px var(--display)">Make a reel</div>
@@ -8568,7 +8570,7 @@ async function ctTable() {
     ctTable.shown = { rows, cols: C };
     $('#ct').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('name', 'Name')}${C.map(c => th(c[0], c[1], NUMK.includes(c[0]) ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
       `<tr data-cid="${r.id}"><td class="nw"><b>${esc(fullName(r)) || '<span class="muted">No name</span>'}</b></td>${C.map(c => `<td class="ct-${c[0]} ${NUMK.includes(c[0]) ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
-        <td class="c-act"><button class="bkt-ib" data-cedit="${r.id}" data-tip="Edit" aria-label="Edit contact"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-cdel="${r.id}" data-tip="Delete" aria-label="Delete contact"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody></table></div>
+        <td class="c-act"><button class="bkt-ib" data-xone="client:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button><button class="bkt-ib" data-cedit="${r.id}" data-tip="Edit" aria-label="Edit contact"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-cdel="${r.id}" data-tip="Delete" aria-label="Delete contact"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody></table></div>
       <div class="bkt-foot">${rows.length} contact${rows.length === 1 ? '' : 's'}${rows.length ? ` · ${rows.filter(r => r.next).length} booked in` : ''}</div>`
       : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 4-7 8-7s7 2 8 7"/></svg><b>No contacts match</b><span class="muted">Try other categories or clear the search.</span></div>`;
     $('#ct-csv').disabled = $('#ct-print').disabled = !rows.length; };
@@ -8728,7 +8730,7 @@ async function bkTable() {
       const end = new Date(new Date(r.start_at).getTime() + r.duration_min * 60000), can = DONE_KINDS.includes(kindOf(r)), late = can && !r.completed && r.start_at.slice(0, 10) < today;
       return `<tr data-bid="${r.id}" class="${r.completed ? 'done' : ''} ${late && !r.ghost ? 'late' : ''} ${r.ghost ? 'ghost' : ''}"><td class="c-done"><input type="checkbox" data-bdone="${r.id}" ${r.completed ? 'checked' : ''} ${can && !r.ghost ? '' : 'disabled'} aria-label="Completed" data-tip="${can ? (r.completed ? 'Completed' : late ? 'Past and not marked completed' : 'Mark completed') : 'Only tattoos and touch-ups are marked completed'}"></td>
         <td class="nw">${esc(fmtDay(r.start_at.slice(0, 10)))}</td><td class="nw muted">${esc(fmtTime(r.start_at))} – ${esc(fmtTime(end))}</td>${C.map(c => `<td class="bkt-${c[0]} ${MONEY.includes(c[0]) ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
-        <td class="c-act"><button class="bkt-ib" data-bedit="${r.id}" data-tip="Edit" aria-label="Edit booking"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-bdel="${r.id}" data-tip="Delete" aria-label="Delete booking"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`; }).join('')}</tbody>
+        <td class="c-act"><button class="bkt-ib" data-xone="booking:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button><button class="bkt-ib" data-bedit="${r.id}" data-tip="Edit" aria-label="Edit booking"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-bdel="${r.id}" data-tip="Delete" aria-label="Delete booking"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`; }).join('')}</tbody>
       ${C.some(c => MONEY.includes(c[0])) ? `<tfoot><tr><td></td><td colspan="2">Total</td>${C.map(c => `<td class="num">${MONEY.includes(c[0]) ? esc(money(sum(c[0]))) : ''}</td>`).join('')}<td></td></tr></tfoot>` : ''}</table></div>
       <div class="bkt-foot">${rows.length} booking${rows.length === 1 ? '' : 's'} · ${esc(bkRangeLabel())} · ${rows.filter(r => r.completed).length} completed</div>`
       : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><b>No bookings match</b><span class="muted">Try another date range, type or status, or clear the search.</span></div>`;
@@ -8779,6 +8781,30 @@ const wsUid = async () => { let u = Settings.get('ws_uid'); if (!u) { u = (crypt
 const BKX_FIELDS = ['start_at', 'duration_min', 'kind', 'description', 'placement', 'size', 'quote', 'deposit', 'deposit_paid', 'notes', 'completed', 'paid', 'time_min', 'pay_method', 'job'];
 const BKX_LABEL = { start_at: 'Date and time', duration_min: 'Length', kind: 'Type', description: 'Description', placement: 'Placement', size: 'Size', quote: 'Quote', deposit: 'Deposit', deposit_paid: 'Deposit paid',
   notes: 'Notes', completed: 'Completed', paid: 'Paid', time_min: 'Time tattooed', pay_method: 'Paid by', job: 'Type of work', name: 'Name', phone: 'Phone' };
+/* ---------- Export one item ----------
+   Any card or row with data-xone="kind:id" saves just that item, in the same file as its section's Export (so the
+   section's Import takes it). The file still lists all of yours, so importing it never offers to remove the others. */
+async function xExportOne(kind, id) {
+  const S = XS_LOCAL, nm = (n) => String(n || kind).replace(/[^\w-]+/g, '_').slice(0, 40), save = (out, name, ext) => xSave(new File([JSON.stringify(out)], `${kind}-${nm(name)}.${ext}`, { type: 'application/json' }), name || kind, `Saved ${name || kind}.`);
+  const one = (L) => L.find(r => r.id === id);
+  if (kind === 'client') { const own = await cxOwn(S), r = one(await S.rows('clients')); if (!r) return;
+    const med = !!r.medical && await ask(`Include ${fullName(r) || 'this client'}\u2019s medical notes in the file?`);
+    return save(await cxPack(S, [r], own, med), fullName(r), 'inkclients'); }
+  if (kind === 'booking') { const own = await bkOwn(S), cl = new Map((await S.rows('clients')).map(c => [c.id, c])), b = one(await S.rows('bookings')); if (!b) return;
+    const c = cl.get(b.client_id) || {}, r = { ...b, first_name: c.first_name, last_name: c.last_name, phone: c.phone };
+    return save(await bkPack(S, [r], own), bName(r) + ' ' + String(b.start_at).slice(0, 10), 'inkbookings'); }
+  if (kind === 'stock') { const own = await ivOwn(S), r = one(await S.rows('inventory_items')); if (!r) return; return save(await ivPack(S, [r], own), r.name, 'inkstock'); }
+  if (kind === 'rule') { const r = one(await S.rows('rules')); if (!r) return; return save(await rxPack(S, [r]), r.title, 'inkrules'); }
+  if (kind === 'portfolio') { const r = one(await S.rows('portfolio_items')); if (!r) return; toast('Packing photos…', 20000); return save(await pxPack(S, [r]), r.title || 'piece', 'inkportfolio'); }
+  if (kind === 'quote') { const r = one(await S.rows('quotes')); if (!r) return; return save(await qxPack(S, [r]), r.client_name || 'quote', 'inkquotes'); }
+  if (kind === 'form') { const r = one(await fxOwn(S)); if (!r) return; return save(await fxPack(S, [r]), r.name, 'inkforms'); }
+  if (kind === 'design') { const r = one(await S.rows('designs')); if (!r) return; toast('Packing…', 20000); return save(await dzPackMany(S, [r]), r.name, 'inkdesigns'); }
+  if (kind === 'piece') { const r = one(await S.rows('tattoo_pieces')); if (!r) return; toast('Packing…', 20000); return save(await txPack(S, [r]), r.name || 'piece', 'inkpieces'); }
+  if (kind === 'reel') { const r = one(await S.rows('reels')); if (!r) return; toast('Packing…', 60000); return save(await rlPack(S, [r]), r.name || 'reel', 'inkreels'); }
+}
+/* One listener for every export button: it runs before the card or row's own click, so the item doesn't open too. */
+document.addEventListener('click', (e) => { const b = e.target.closest?.('[data-xone]'); if (!b) return; e.preventDefault(); e.stopPropagation();
+  const [k, id] = b.dataset.xone.split(':'); xExportOne(k, +id).catch(err => toast('Could not export: ' + err.message, 5000)); }, true);
 /* ---------- Where an export reads from ----------
    Every section's export is built by a xxPack(S, ...) function from a source S: this workspace (XS_LOCAL), or a backup
    being merged (xsBackup). So the backup merge goes through exactly the same exports and imports as the section buttons,
@@ -9499,6 +9525,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 499, when: '2026-11-19T21:00', added: ['Export just one: every card and row (designs, simulator pieces, reels, clients, bookings, stock, rules, quotes, forms and portfolio pieces) has an export arrow that saves only that item. Import it with the section’s usual Import button.'],
+    test: ['Design studio, tap the export arrow on one design.'] },
   { build: 498, when: '2026-11-19T20:00', added: [
     'Clients and stock: Export and Import in their tables, to move them to another workspace. A preview shows what is new, changed or deleted, the same person or item is never added twice, and imported ones get a coloured tag with the artist’s name.',
     'Rule book and portfolio: Export and Import. Portfolio pieces travel with their photos.',
