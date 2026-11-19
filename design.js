@@ -1982,7 +1982,7 @@ DZ.list = async () => {
   const all = rows.map((r, i) => { const sub = r.kind === 'page' ? (JSON.parse(r.doc || '{}').paper || 'Blank page').split(',')[0] + ' page' : DZ_KINDS[r.kind]?.label || '';
     return { ...r, url: urls[i], sub, kind: r.kind === 'page' ? 'Page' : DZ_KINDS[r.kind]?.label || r.kind, t: r.updated_at }; }), shown = Lib.apply('designs', all);
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Vouchers, business cards, flyers and posts with your studio's details.</p>
-      <button class="btn" id="dz-imp" data-tip="Open an InkForge design file from another workspace">Import</button><button class="btn primary" id="dz-new">+ New design</button></div>
+      <button class="btn" id="dz-exp" data-tip="Save designs to a file another workspace can import" ${rows.length ? '' : 'disabled'}>Export</button><button class="btn" id="dz-imp" data-tip="Load designs from another workspace's file: preview first">Import</button><button class="btn primary" id="dz-new">+ New design</button></div>
     ${rows.length ? Lib.bar('designs', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('designs', r.id)}
         <div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
         <div class="dz-meta"><b>${esc(r.name)}</b><span class="muted">${esc(r.sub)}</span></div>
@@ -1996,7 +1996,8 @@ DZ.list = async () => {
     if (await Lib.click(e, 'designs', DZ.list)) return;
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('#dz-new')) return dzPicker();
-    if (t.closest('#dz-imp')) { const nid = await dzUnpackDesign(); if (nid) location.hash = 'design/' + nid; return; }
+    if (t.closest('#dz-exp')) return dzExportMany(shown);
+    if (t.closest('#dz-imp')) { const r = await dzImportMany(); if (r?.id) location.hash = 'design/' + r.id; else if (r?.n) DZ.list(); return; }
     if (d('del')) {
       const r = await DB.one('SELECT name, thumb_ref FROM designs WHERE id = ?', [+d('del')]);
       if (!r || !await ask(`Delete "${r.name}"?`)) return;
@@ -6157,48 +6158,88 @@ function dzExport(doc, name) {
 /* Design files (.inkdesign): a design with every media file it names (pictures, stencils, its reference pictures and
    any font of your own it uses), as JSON, so it opens in another workspace and keeps editing as it was. */
 const DZ_MEDIA_RE = /[0-9a-f]{32}\.[a-z0-9]{2,5}/g;
-async function dzPackDesign(id, name) {
-  const r = await DB.one('SELECT * FROM designs WHERE id = ?', [id]); if (!r) return;
-  toast('Preparing…');
-  const doc = JSON.parse(r.doc), refPics = Settings.get('dz_refs_' + id, '');
-  const used = new Set(doc.layers.flatMap(l => [l.font, ...Object.values(l.cells || {}).map(o => o.font)]).filter(Boolean)), fonts = DZF.custom().filter(f => used.has(f.name));
+const DX_V = 1;   /* design file version: bump when a design gains something new, and keep the import reading older ones */
+/* One design as a file entry: its doc and every media file it names. */
+/* One design as a file entry from a source S (see XS_LOCAL): its doc and every media file it names. */
+async function dzPackOneS(S, r) {
+  const doc = JSON.parse(r.doc), refPics = S.set('dz_refs_' + r.id) || '';
+  let custom = []; try { custom = JSON.parse(S.set('dz_fonts') || '[]'); } catch {}
+  const used = new Set((doc.layers || []).flatMap(l => [l.font, ...Object.values(l.cells || {}).map(o => o.font)]).filter(Boolean)), fonts = custom.filter(f => used.has(f.name));
   const names = new Set([...(r.doc.match(DZ_MEDIA_RE) || []), ...(refPics.match(DZ_MEDIA_RE) || []), ...fonts.map(f => f.ref),
-    ...(await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id])).map(x => x.ref)]);
+    ...(await S.rows('design_assets')).filter(x => x.design_id === r.id).map(x => x.ref)]);
   if (r.thumb_ref) names.add(r.thumb_ref);
-  const files = {}, dir = await Media.dir();
-  for (const n of names) { try { const f = await (await dir.getFileHandle(n)).getFile();
-    files[n] = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(f); }); } catch {} }
-  const out = { inkforge: 'design', v: 1, name: name || r.name, kind: r.kind, doc: r.doc, thumb: r.thumb_ref || '', refPics, fonts, files };
-  const f = new File([JSON.stringify(out)], (name || r.name || 'design').replace(/[^\w-]+/g, '_') + '.inkdesign', { type: 'application/json' });
-  try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title: out.name }); return; } } catch (err) { if (err.name === 'AbortError') return; }
+  const files = {}; for (const n of names) { const b = await S.b64(n); if (b) files[n] = b; }
+  return { name: r.name, kind: r.kind, doc: r.doc, thumb: r.thumb_ref || '', refPics, fonts, files };
+}
+async function dzPackOne(id, name) { const r = await DB.one('SELECT * FROM designs WHERE id = ?', [id]); return r ? dzPackOneS(XS_LOCAL, { ...r, name: name || r.name }) : null; }
+async function dzPackMany(S, rows) { const out = { inkforge: 'designs', v: DX_V, ws: { uid: await S.uid(), name: xWsName(S, true) }, at: new Date().toISOString(), designs: [] };
+  for (const r of rows) out.designs.push(await dzPackOneS(S, r)); return out; }
+async function dzPackDesign(id, name) {
+  toast('Preparing…');
+  const e = await dzPackOne(id, name); if (!e) return;
+  const f = new File([JSON.stringify({ inkforge: 'design', v: DX_V, ...e })], (e.name || 'design').replace(/[^\w-]+/g, '_') + '.inkdesign', { type: 'application/json' });
+  try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title: e.name }); return; } } catch (err) { if (err.name === 'AbortError') return; }
   const l = document.createElement('a'); l.href = URL.createObjectURL(f); l.download = f.name; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000);
   toast('Saved ' + f.name + ' to your downloads.', 3000);
 }
-// Opens a design file as a new design in this workspace. Resolves the new id.
-function dzUnpackDesign() {
-  return new Promise((res) => {
-    const i = document.createElement('input'); i.type = 'file'; i.accept = '.inkdesign,application/json';
-    i.onchange = async () => { const f = i.files[0]; if (!f) return res(null);
-      let P; try { P = JSON.parse(await f.text()); } catch { P = null; }
-      if (!P || P.inkforge !== 'design' || !P.doc) { toast('That is not an InkForge design file.', 3500); return res(null); }
-      toast('Opening…');
-      let docS = P.doc, refPics = P.refPics || '', thumb = P.thumb || '';
-      const swap = (a, b) => { if (a === b) return; docS = docS.split(a).join(b); refPics = refPics.split(a).join(b); if (thumb === a) thumb = b; };
-      const fontRef = {};
-      for (const [n, b64] of Object.entries(P.files || {})) {
-        const bin = atob(b64), u = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
-        const nn = await Media.save(new Blob([u]), n.split('.').pop()); swap(n, nn); fontRef[n] = nn; }
-      if ((P.fonts || []).length) { const list = DZF.custom();
-        for (const ft of P.fonts) if (!list.some(x => x.name === ft.name)) list.push({ name: ft.name, ref: fontRef[ft.ref] || ft.ref });
-        await Settings.set('dz_fonts', JSON.stringify(list)); }
-      await DB.run('INSERT INTO designs (name, kind, doc, thumb_ref) VALUES (?, ?, ?, ?)', [P.name || 'Imported design', P.kind, docS, thumb || null]);
-      const nid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
-      for (const n of new Set([...(docS.match(DZ_MEDIA_RE) || [])])) if (n !== thumb) await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [nid, n]);
-      if (refPics) await Settings.set('dz_refs_' + nid, refPics);
-      toast(`Opened "${P.name || 'Imported design'}".`, 2500); res(nid); };
-    i.click();
-  });
+/* One file entry into this workspace: media saved (renamed in the doc if needed), its fonts added, and the doc tidied
+   for this version (dzOldDoc drops layers it can no longer draw). Into a new design, or over `into` (an id). */
+async function dzUnpackOne(P, into) {
+  let docS = P.doc, refPics = P.refPics || '', thumb = P.thumb || '';
+  const swap = (a, b) => { if (a === b) return; docS = docS.split(a).join(b); refPics = refPics.split(a).join(b); if (thumb === a) thumb = b; };
+  const fontRef = {};
+  for (const [n, b64] of Object.entries(P.files || {})) {
+    const bin = atob(b64), u = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+    const nn = await Media.save(new Blob([u]), n.split('.').pop()); swap(n, nn); fontRef[n] = nn; }
+  if ((P.fonts || []).length) { const list = DZF.custom();
+    for (const ft of P.fonts) if (!list.some(x => x.name === ft.name)) list.push({ name: ft.name, ref: fontRef[ft.ref] || ft.ref });
+    await Settings.set('dz_fonts', JSON.stringify(list)); }
+  const d = dzOldDoc(JSON.parse(docS)); docS = JSON.stringify(d);
+  let nid = into;
+  if (into) { await DB.run(`UPDATE designs SET doc = ?, thumb_ref = coalesce(?, thumb_ref), updated_at = datetime('now') WHERE id = ?`, [docS, thumb || null, into]); await DB.run('DELETE FROM design_assets WHERE design_id = ?', [into]); }
+  else { await DB.run('INSERT INTO designs (name, kind, doc, thumb_ref) VALUES (?, ?, ?, ?)', [P.name || 'Imported design', P.kind, docS, thumb || null]); nid = (await DB.one('SELECT last_insert_rowid() AS id')).id; }
+  for (const n of new Set([...(docS.match(DZ_MEDIA_RE) || [])])) if (n !== thumb) await DB.run('INSERT INTO design_assets (design_id, ref) VALUES (?, ?)', [nid, n]);
+  if (refPics) await Settings.set('dz_refs_' + nid, refPics);
+  return nid;
 }
+/* Export several designs (the ones shown, or all) into one .inkdesigns file. */
+async function dzExportMany(shown) {
+  const all = await DB.all('SELECT * FROM designs ORDER BY updated_at DESC');
+  const pick = await xChoose('Export designs', 'A file to load into another workspace: each design with its pictures, references and your own fonts, so it keeps editing as it was.', (shown || []).length, all.length, 'Every design');
+  if (!pick) return;
+  toast('Packing designs…', 60000);
+  const out = await dzPackMany(XS_LOCAL, pick === 'all' ? all : all.filter(r => shown.some(v => v.id === r.id)));
+  await xSave(new File([JSON.stringify(out)], `designs-${out.ws.name.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkdesigns`, { type: 'application/json' }), 'Designs', `Saved ${out.designs.length} design${out.designs.length === 1 ? '' : 's'}.`);
+}
+/* Import a .inkdesigns file (or an older single .inkdesign): a preview of what is new or changed (same name and type
+   as a design here, but different), then those picked are added or replace yours. Resolves how many, and the id when
+   only one was added. */
+async function dzImportMany(P0) {
+  let P = P0;
+  if (!P) { const f = await xPickFile('.inkdesigns,.inkdesign,application/json'); if (!f) return null; toast('Reading…', 4000); try { P = JSON.parse(await f.text()); } catch { P = null; } }
+  const list = P?.inkforge === 'designs' && Array.isArray(P.designs) ? P.designs : P?.inkforge === 'design' && P.doc ? [P] : null;
+  if (!list) { toast('That is not an InkForge design file.', 3500); return null; }
+  if (xTooNew(P, DX_V)) return null;
+  const here = await DB.all('SELECT id, name, kind, doc FROM designs'), key = (n, k) => k + '|' + rxKey(n), byK = new Map(here.map(r => [key(r.name, r.kind), r]));
+  const items = list.map((x, i) => { let d; try { d = dzOldDoc(JSON.parse(x.doc)); } catch { d = null; }
+    if (!d || !x.kind || (!DZ_KINDS[x.kind] && x.kind !== 'page' && x.kind !== 'form')) return null;
+    const h = byK.get(key(x.name || 'Imported design', x.kind));
+    let same = false; if (h) { try { same = JSON.stringify(dzOldDoc(JSON.parse(h.doc))) === JSON.stringify(d) || h.doc === x.doc; } catch {} }
+    return { k: 'd' + i, x, h, st: !h ? 'new' : same ? 'same' : 'changed', prev: x.thumb && x.files?.[x.thumb] ? `data:image/${x.thumb.split('.').pop() === 'png' ? 'png' : 'jpeg'};base64,${x.files[x.thumb]}` : '' }; }).filter(Boolean);
+  const same = items.filter(i => i.st === 'same').length, skipped = list.length - items.length;
+  const pic = (i) => i.prev ? `<img src="${i.prev}" alt="" style="width:42px;height:42px;object-fit:contain;border-radius:6px;vertical-align:middle;margin-right:8px;background:#0002">` : '';
+  const skip = await xPreview('Import designs', `${list.length} design${list.length === 1 ? '' : 's'} in the file${P.ws?.name ? ` from <b>${esc(P.ws.name)}</b>` : ''}${same ? `, ${same} already here and the same` : ''}${skipped ? `, ${skipped} this version can\u2019t open` : ''}.`,
+    () => items.filter(i => i.st !== 'same').map(i => [i.k, i.st === 'new' ? '<span class="bix new">New</span>' : '<span class="bix chg">Changed</span>', `${pic(i)}<b>${esc(i.x.name || 'Imported design')}</b>`,
+      `${esc(i.x.kind === 'page' ? 'Page' : DZ_KINDS[i.x.kind]?.label || i.x.kind)}${i.st === 'changed' ? ' · <span class="muted">different from yours: importing replaces it</span>' : ''}`]), ['What', 'Design', 'Details']);
+  if (!skip) return null;
+  let n = 0, last = null;
+  toast('Importing…', 60000);
+  for (const i of items) { if (i.st === 'same' || skip.has(i.k)) continue; last = await dzUnpackOne(i.x, i.h?.id); n++; }
+  toast(`Imported: ${n} design${n === 1 ? '' : 's'} added or changed.`, 3000);
+  return { n, id: n === 1 ? last : null };
+}
+// Opens a design file as a new design in this workspace (the single-design path, kept for older callers). Resolves the new id.
+async function dzUnpackDesign() { const r = await dzImportMany(); return r?.id || null; }
 /* Print any design, background and all: both sides of a two-sided one, forms blank to fill by hand, cards one to a
    page. The print screen's Save as PDF makes a PDF of it. */
 async function dzPrintDoc(doc) { const kind = DZ_KINDS[doc.kind]; if (kind.form) return ffPrintBlank(doc); toast('Preparing…');

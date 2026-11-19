@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 497;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 498;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -346,7 +346,19 @@ const MIGRATIONS = [
    ALTER TABLE bookings ADD COLUMN tag TEXT;
    ALTER TABLE bookings ADD COLUMN tag_color TEXT;
    ALTER TABLE bookings ADD COLUMN ghost INTEGER NOT NULL DEFAULT 0;
-   CREATE INDEX idx_bookings_src ON bookings (src_uid);`
+   CREATE INDEX idx_bookings_src ON bookings (src_uid);`,
+  // imported clients: src_uid = the client's id where it came from, src_ws = that workspace; tag and colour say whose client
+  `ALTER TABLE clients ADD COLUMN src_uid TEXT;
+   ALTER TABLE clients ADD COLUMN src_ws TEXT;
+   ALTER TABLE clients ADD COLUMN tag TEXT;
+   ALTER TABLE clients ADD COLUMN tag_color TEXT;
+   CREATE INDEX idx_clients_src ON clients (src_uid);`,
+  // imported stock items: where they came from, and a tag and colour saying whose stock
+  `ALTER TABLE inventory_items ADD COLUMN src_uid TEXT;
+   ALTER TABLE inventory_items ADD COLUMN src_ws TEXT;
+   ALTER TABLE inventory_items ADD COLUMN tag TEXT;
+   ALTER TABLE inventory_items ADD COLUMN tag_color TEXT;
+   CREATE INDEX idx_inventory_src ON inventory_items (src_uid);`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -961,6 +973,8 @@ const VIEWS = {
         <div class="bkt-acts">
           <button class="bkt-btn" id="ct-csv" data-tip="Spreadsheet of the contacts shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
           <button class="bkt-btn" id="ct-print" data-tip="Print the contacts shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn" id="ct-exp" data-tip="Save clients to a file another workspace can import"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg><span>Export</span></button>
+          <button class="bkt-btn" id="ct-imp" data-tip="Load clients from another workspace's file: preview first, then add them with a tag"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v7h14v-7"/></svg><span>Import</span></button>
           <button class="bkt-btn pri" id="ct-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New contact</span></button></div></div>
       <div class="bkt-panel"><div id="ct-f"></div><div id="ct"></div></div></div>`,
     async mount() { await ctTable(); }
@@ -987,7 +1001,7 @@ const VIEWS = {
           <div class="c-name">${esc(fullName(c))}</div>
           ${c.category && c.category !== 'Client' ? `<span class="chip">${esc(c.category)}</span>` : ''}
           ${c.pronouns ? `<div class="muted">${esc(c.pronouns)}</div>` : ''}
-          ${tagChips(c.tags)}
+          ${c.tag ? `<div>${cTag(c)}</div>` : ''}${tagChips(c.tags)}
           <div class="acts">
             ${act('tel:' + tel, '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>', 'Call', tel)}
             ${act('sms:' + tel, '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-12 7l-5 1 1-4a8 8 0 1 1 16-4z"/></svg>', 'Text', tel)}
@@ -1503,6 +1517,8 @@ const VIEWS = {
       <div class="search-bar">
         <input class="in" id="pf-q" type="search" placeholder="Search title, tag, placement…" value="${esc(PF.q)}" autocomplete="off">
         <button class="btn icon-btn" id="pf-print" data-tip="Print your portfolio as a book" aria-label="Print portfolio"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg></button>
+        <button class="btn icon-btn" id="pf-exp" data-tip="Export portfolio pieces, photos and all, to a file another workspace can import" aria-label="Export portfolio"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>
+        <button class="btn icon-btn" id="pf-imp" data-tip="Import portfolio pieces from another workspace's file" aria-label="Import portfolio"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v7h14v-7"/></svg></button>
         <button class="btn primary icon-btn" id="pf-add" data-tip="Add to portfolio" aria-label="Add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <div class="seg pf-seg" id="pf-filter">
@@ -1515,6 +1531,7 @@ const VIEWS = {
       $('#pf-filter').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; PF.filter = b.dataset.f;
         document.querySelectorAll('#pf-filter button').forEach(x => x.classList.toggle('on', x === b)); renderPfGrid(); };
       $('#pf-print').onclick = openPortfolioPrint;
+      $('#pf-exp').onclick = pxExport; $('#pf-imp').onclick = () => pxImport().then(n => { if (n) renderPfGrid(); });
       $('#pf-add').onclick = () => { if (PF.filter === 'refs') return refImport(); if (PF.filter === 'assets') return assetImport(); if (PF.filter === 'stencils') { ST.src = null; location.hash = 'stencil'; return; } if (PF.filter === 'sim') { location.hash = 'tattoo'; return; }
         PF.ctx = { kind: ['tattoo', 'art', 'flash'].includes(PF.filter) ? PF.filter : 'tattoo' }; location.hash = 'pf-edit/new'; };
       renderPfGrid();
@@ -1773,6 +1790,8 @@ const VIEWS = {
         <div class="bkt-acts">
           <button class="bkt-btn" id="qt-csv" data-tip="Spreadsheet of the quotes shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
           <button class="bkt-btn" id="qt-print" data-tip="Print the quotes shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn" id="qt-exp" data-tip="Save quotes to a file another workspace can import"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg><span>Export</span></button>
+          <button class="bkt-btn" id="qt-imp" data-tip="Load quotes from another workspace's file: preview first"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v7h14v-7"/></svg><span>Import</span></button>
           <button class="bkt-btn pri" id="qt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New quote</span></button></div></div>
       <div class="bkt-panel"><div id="qt-f"></div><div id="qt"></div></div></div>`,
     async mount() { await qtTable(); }
@@ -1859,6 +1878,8 @@ const VIEWS = {
         <div class="bkt-acts">
           <button class="bkt-btn" id="it-csv" data-tip="Spreadsheet of the items shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
           <button class="bkt-btn" id="it-print" data-tip="Print the items shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn" id="it-exp" data-tip="Save stock items to a file another workspace can import"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg><span>Export</span></button>
+          <button class="bkt-btn" id="it-imp" data-tip="Load stock items from another workspace's file: preview first, then add them with a tag"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v7h14v-7"/></svg><span>Import</span></button>
           <button class="bkt-btn pri" id="it-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New item</span></button></div></div>
       <div class="bkt-panel"><div id="it-f"></div><div id="it"></div></div></div>`,
     async mount() { await itTable(); }
@@ -2009,6 +2030,8 @@ const VIEWS = {
         <div class="bkt-acts">
           <button class="bkt-btn" id="rt-csv" data-tip="Spreadsheet of the rules shown; opens in Excel"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
           <button class="bkt-btn" id="rt-print" data-tip="Print the rules shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print / PDF</span></button>
+          <button class="bkt-btn" id="rt-exp" data-tip="Save rules to a file another workspace can import"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg><span>Export</span></button>
+          <button class="bkt-btn" id="rt-imp" data-tip="Load rules from another workspace's file: preview first"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 13v7h14v-7"/></svg><span>Import</span></button>
           <button class="bkt-btn pri" id="rt-add"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New rule</span></button></div></div>
       <div class="bkt-panel"><div id="rt-f"></div><div id="rt"></div></div></div>`,
     async mount() { await rtTable(); }
@@ -2904,6 +2927,7 @@ function cloudSetup() {
 const BACKUP_MAGIC = 'INKFORGE1';
 // The open workspace by default; any other workspace's file can be built without opening it.
 async function buildBackup(w = WS.cur) {
+  if (w === WS.cur) await wsUid();   /* its id goes in, so a merge knows a backup of this same workspace (from another device) */
   const db = await DB.exportBytes(w === WS.cur ? undefined : WS.dbPath(w));
   // Media files go in as File objects: the browser reads them when the backup is written out, so photos and videos
   // are never all held in memory at once (a workspace with reels can hold hundreds of MB).
@@ -3015,7 +3039,10 @@ function mergeFp(table, row, cols) {
 const clientKeys = (c) => [c.phone && 'p:' + String(c.phone).replace(/\D/g, '').slice(-9), c.email && 'e:' + String(c.email).trim().toLowerCase()]
   .filter(k => k && k.length > 4);
 
-async function mergeBackup(src, media, picked) {
+/* Tables the section imports bring in (with their previews); the plain merge below only looks them up, to link what
+   it adds (a signed form to its client, a stock take line to its item). */
+const MERGE_PREVIEWED = new Set(['clients', 'bookings', 'booking_photos', 'portfolio_items', 'portfolio_photos', 'inventory_items', 'rules', 'quotes', 'designs', 'design_assets', 'tattoo_pieces', 'reels']);
+async function mergeBackup(src, media, picked, previewed = new Set()) {
   const stats = {}; MERGE_SECTIONS.forEach(([k]) => stats[k] = { added: 0, skipped: 0 });
   const idMap = {}, local = {}, needRefs = new Set();
   const localCols = {}, fpCols = {};
@@ -3029,10 +3056,17 @@ async function mergeBackup(src, media, picked) {
     if (t === 'clients') for (const r of rows) for (const k of clientKeys(r)) local[t].set(k, r.id);
   }
   const byId = {}; for (const t of MERGE_ORDER) byId[t] = new Map((src[t] || []).map(r => [r.id, r]));
+  const bkAt = new Map((await DB.all('SELECT id, start_at FROM bookings')).map(r => [r.start_at, r.id])), ivAt = new Map((await DB.all('SELECT id, name FROM inventory_items')).map(r => [ivName(r.name), r.id]));
 
   // Returns this device's id for a backup row, adding the row if it isn't here yet.
   async function bring(t, row) {
     if (row.id != null && idMap[t].has(row.id)) return idMap[t].get(row.id);
+    if (previewed.has(t)) { let hit = null;
+      if (t === 'clients') { for (const k of clientKeys(row)) if (local[t].has(k)) { hit = local[t].get(k); break; } }
+      else if (t === 'bookings') hit = bkAt.get(row.start_at) ?? null;
+      else if (t === 'inventory_items') hit = ivAt.get(ivName(row.name)) ?? null;
+      else hit = local[t].get(mergeFp(t, row, fpCols[t])) ?? null;
+      if (row.id != null) idMap[t].set(row.id, hit); return hit; }
     const cfg = MERGE_TABLES[t], out = { ...row };
     for (const [col, parent] of Object.entries(cfg.fk || {})) {
       const pid = row[col];
@@ -3055,7 +3089,7 @@ async function mergeBackup(src, media, picked) {
     stats[sec].added++;
     return nid;
   }
-  for (const t of MERGE_ORDER) if (picked.has(MERGE_TABLES[t].section)) for (const row of src[t] || []) await bring(t, row);
+  for (const t of MERGE_ORDER) if (picked.has(MERGE_TABLES[t].section) && !previewed.has(t)) for (const row of src[t] || []) await bring(t, row);
 
   // Settings live as key/value rows; merge them by key.
   const theirs = Object.fromEntries((src.settings || []).map(r => [r.key, r.value]));
@@ -3120,11 +3154,11 @@ async function openMerge(from) {
   o.id = 'merge-dlg';
   o.innerHTML = `<div class="card">
     <h2>Merge from backup</h2>
-    <p class="muted" style="margin-top:0">Adds what's in <b>${esc(from.name)}</b> to this workspace. Nothing of yours is changed or removed, and anything you already have is skipped.</p>
+    <p class="muted" style="margin-top:0">Brings in what's in <b>${esc(from.name)}</b>, a section at a time, like each section's Import button: you see what's new or changed and pick what comes in (clients, bookings and stock can be tagged). Anything you already have is skipped; nothing is changed unless you tick it.</p>
     <div class="merge-list">${MERGE_SECTIONS.map(([k, l, d]) => `<label class="merge-row ${n[k] ? '' : 'empty'}">
       <input type="checkbox" data-sec="${k}" ${n[k] ? 'checked' : 'disabled'}>
       <span class="c-main"><b>${l}</b><span class="muted">${d}</span></span><span class="chip">${n[k]}</span></label>`).join('')}</div>
-    <p class="muted" style="font-size:12px">Linked items come along when needed: e.g. merging bookings also adds the clients they belong to.</p>
+    <p class="muted" style="font-size:12px">Bookings are linked to clients by phone number; signed forms and stock takes are linked to what's here.</p>
     ${unknown.length ? `<p style="color:var(--red);font-size:13px">This backup also contains data this version can't merge (${esc(unknown.join(', '))}). Update InkForge, then merge again to include it.</p>` : ''}
     <div class="row" style="margin-top:12px"><button class="btn" id="mg-cancel">Cancel</button>
       <button class="btn primary" id="mg-go" style="flex:1">Merge</button></div></div>`;
@@ -3133,18 +3167,43 @@ async function openMerge(from) {
   $('#mg-go').onclick = async () => {
     const picked = new Set([...o.querySelectorAll('[data-sec]:checked')].map(x => x.dataset.sec));
     if (!picked.size) return toast('Tick at least one section.');
-    $('#mg-go').disabled = true; $('#mg-go').textContent = 'Merging…';
-    try {
-      const stats = await mergeBackup(src, parsed.media, picked);
-      Settings.cache = {}; await Settings.load();
-      o.querySelector('.card').innerHTML = `<h2>Merge complete</h2>
-        <div class="merge-list">${MERGE_SECTIONS.filter(([k]) => stats[k].added || stats[k].skipped).map(([k, l]) =>
-          `<div class="stat"><span>${l}</span><span>${stats[k].added} added · ${stats[k].skipped} already here</span></div>`).join('') || '<p class="muted">Nothing new to add.</p>'}</div>
-        <button class="btn primary" id="mg-done" style="width:100%;margin-top:14px">Done</button>`;
-      $('#mg-done').onclick = () => { o.remove(); render(); };
-      Gcal.soon();
-    } catch (err) { toast('Merge failed: ' + err.message, 6000); o.remove(); }
+    o.remove();
+    try { const res = await mergeWithPreviews(src, parsed.media, picked, from.name); Settings.cache = {}; await Settings.load(); mergeDone(res); Gcal.soon(); }
+    catch (err) { toast('Merge failed: ' + err.message, 6000); }
   };
+}
+/* The merge, section by section, through the same previews as each section's Import button (built from the backup
+   with the same xxPack functions as each Export). Cancel on a preview skips that section. Then the plain merge adds
+   what has no Import of its own: signed forms, stock takes, references, assets, stencils, reel templates, settings.
+   Add a section here when a new one gets an export. */
+const MERGE_STEPS = [
+  ['clients', async (S) => cxImport(await cxPack(S, await cxOwn(S), await cxOwn(S), true, true))],
+  ['bookings', async (S) => { const own = await bkOwn(S); return bkImport(await bkPack(S, own, own)); }],
+  ['inventory', async (S) => { const own = await ivOwn(S); return ivImport(await ivPack(S, own, own)); }],
+  ['rules', async (S) => rxImport(await rxPack(S, await rxOwn(S)))],
+  ['portfolio', async (S) => pxImport(await pxPack(S, await pxOwn(S)))],
+  ['quotes', async (S) => qxImport(await qxPack(S, await qxOwn(S)))],
+  ['forms', async (S) => fxImport(await fxPack(S, await fxOwn(S)))],
+  ['designs', async (S) => (await dzImportMany(await dzPackMany(S, (await S.rows('designs')).filter(r => r.kind !== 'form'))))?.n || 0],
+  ['tattoo', async (S) => txImport(await txPack(S, await txOwn(S)))],
+  ['reel', async (S) => rlImport(await rlPack(S, await rlOwn(S)))]
+];
+async function mergeWithPreviews(src, media, picked, name) {
+  const S = xsBackup(src, media, name), res = {}, steps = MERGE_STEPS.filter(([k]) => picked.has(k));
+  for (const [i, [k, run]] of steps.entries()) {
+    toast(`Merge ${i + 1} of ${steps.length}: ${MERGE_SECTIONS.find(x => x[0] === k)?.[1]}…`, 3000);
+    try { res[k] = { n: await run(S) }; } catch (err) { res[k] = { err: err.message }; } }
+  const stats = await mergeBackup(src, media, picked, MERGE_PREVIEWED);
+  for (const [k, v] of Object.entries(stats)) if (v.added || v.skipped) res[k] = { ...(res[k] || {}), ...v };
+  return res;
+}
+function mergeDone(res) {
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const line = (r) => [r.n != null ? `${r.n} added or changed` : '', r.added || r.skipped ? `${r.added} more added · ${r.skipped} already here` : '', r.err ? 'failed: ' + r.err : ''].filter(Boolean).join(' · ');
+  o.innerHTML = `<div class="card"><h2>Merge complete</h2><div class="merge-list">${MERGE_SECTIONS.filter(([k]) => res[k]).map(([k, l]) =>
+    `<div class="stat"><span>${l}</span><span>${esc(line(res[k]) || 'nothing new')}</span></div>`).join('') || '<p class="muted">Nothing new to add.</p>'}</div>
+    <button class="btn primary" id="mg-done" style="width:100%;margin-top:14px">Done</button></div>`;
+  document.body.appendChild(o); $('#mg-done').onclick = () => { o.remove(); render(); };
 }
 
 // Saves the workspace file to the device (Downloads), or `share`s it to another app (falling back to saving).
@@ -4632,6 +4691,8 @@ async function qtTable() {
   const both = async () => { filters(); await table(); };
   await both();
   let qq; $('#qt-q').oninput = (e) => { QT.q = e.target.value; clearTimeout(qq); qq = setTimeout(table, 200); };
+  $('#qt-exp').onclick = () => qxExport(qtTable.shown?.rows);
+  $('#qt-imp').onclick = () => qxImport().then(n => { if (n) both(); });
   $('#qt-add').onclick = () => { if (QZ.design) URL.revokeObjectURL(QZ.design.url); Object.assign(QZ, QZ_RESET); location.hash = 'quote'; };
   $('#qt-csv').onclick = () => { const { rows: R, cols: C } = qtTable.shown;
     return saveCsv(`InkForge-quotes-${ymd(new Date())}.csv`, ['Client', ...C.map(c => c[1])], R.map(r => [r.client_name || '', ...C.map(c => c[0] === 'total' ? r.total : c[0] === 'paid' ? r.b_paid : c[0] === 'hours' ? r.hours : c[0] === 'took' ? (r.b_done && r.b_min ? Math.round(r.b_min / 6) / 10 : '')
@@ -5943,7 +6004,7 @@ const INV_STEPS = [[1, 'Off (1, 2, 3)'], [0.5, 'Halves (0.5)'], [0.25, 'Quarters
 async function renderInventory() {
   const el = $('#inv-list'); if (!el) return;
   const like = '%' + INV.q.trim() + '%';
-  const all = await DB.all(`SELECT * FROM inventory_items WHERE name LIKE ?1 OR category LIKE ?1 OR supplier LIKE ?1
+  const all = await DB.all(`SELECT * FROM inventory_items WHERE name LIKE ?1 OR category LIKE ?1 OR supplier LIKE ?1 OR tag LIKE ?1
     ORDER BY (qty <= min_qty) DESC, category COLLATE NOCASE, name COLLATE NOCASE`, [like]);
   if ($('#inv-list') !== el) return;
   /* Folders as stock sections: one item can be in several (a needles sheet, a cartridges sheet...). */
@@ -5958,7 +6019,7 @@ async function renderInventory() {
       : `<div class="empty"><div class="empty-ico">${ICON.stock}</div><div style="font:24px var(--display)">Nothing stocked yet</div><div class="muted">Tap + to add needles, ink, gloves…</div></div>`;
   } else {
     const row = (i) => `<a class="c-row inv-row ${i.qty <= i.min_qty ? 'low' : ''}" href="#inv-edit/${i.id}">
-      <span class="c-main"><span class="c-n">${esc(i.name)}</span>
+      <span class="c-main"><span class="c-n">${esc(i.name)}${cTag(i)}</span>
         <span class="muted c-sub">${esc([i.category, i.supplier].filter(Boolean).join(' · ') || ' ')}</span></span>
       ${Lib.tools('inventory', i.id).replace('class="lib-tools"', 'class="lib-tools rule-lib"')}<span class="stepper">
         <button class="mini" data-step="-1" data-id="${i.id}" aria-label="Less">−</button>
@@ -5986,14 +6047,15 @@ async function renderInventory() {
 /* The inventory table. Columns: [key, heading, on by default]; name is always shown. Quantities step with - and + as
    on the list. Choices are kept in the setting it_table. */
 const IT_COLS = [['category', 'Category', true], ['qty', 'In stock', true], ['unit', 'Unit', true], ['min', 'Minimum', true], ['status', 'Status', true],
-  ['supplier', 'Supplier', true], ['cost', 'Cost each', false], ['value', 'Stock value', false], ['notes', 'Notes', false], ['updated', 'Updated', false]];
+  ['supplier', 'Supplier', true], ['cost', 'Cost each', false], ['value', 'Stock value', false], ['notes', 'Notes', false], ['updated', 'Updated', false], ['tag', 'Artist tag', true]];
 const IT = { q: '', st: 'active', cats: null, sups: null, sort: { k: 'name', dir: 1 } };
 const itStatus = (r) => !r.active ? 'Not stocked' : r.qty <= 0 ? 'Out' : r.qty <= r.min_qty ? 'Low' : 'OK';
 const itCell = (r, k) => k === 'name' ? r.name : k === 'category' ? r.category || '' : k === 'qty' ? String(fmtQty(r.qty)) : k === 'unit' ? r.unit || '' : k === 'min' ? String(fmtQty(r.min_qty)) : k === 'status' ? itStatus(r)
-  : k === 'supplier' ? r.supplier || '' : k === 'cost' ? (r.cost != null ? money(r.cost) : '') : k === 'value' ? (r.cost != null ? money(r.cost * r.qty) : '') : k === 'notes' ? r.notes || '' : k === 'updated' ? fmtDay(r.updated_at.slice(0, 10)) : '';
+  : k === 'supplier' ? r.supplier || '' : k === 'tag' ? r.tag || '' : k === 'cost' ? (r.cost != null ? money(r.cost) : '') : k === 'value' ? (r.cost != null ? money(r.cost * r.qty) : '') : k === 'notes' ? r.notes || '' : k === 'updated' ? fmtDay(r.updated_at.slice(0, 10)) : '';
 async function itTable() {
   let saved = {}; try { saved = JSON.parse(Settings.get('it_table', '{}')); } catch {}
-  const cols = new Set(saved.cols || IT_COLS.filter(c => c[2]).map(c => c[0])), remember = () => Settings.set('it_table', JSON.stringify({ cols: [...cols] }));
+  /* tag2: the artist tag column came later, so it shows once even for saved choices */
+  const cols = new Set(saved.cols ? [...saved.cols, ...(saved.tag2 ? [] : ['tag'])] : IT_COLS.filter(c => c[2]).map(c => c[0])), remember = () => Settings.set('it_table', JSON.stringify({ cols: [...cols], tag2: 1 }));
   let all = [], rows = [], open = null; const NUM = ['qty', 'min', 'cost', 'value'];
   const opts = (f) => [...new Set(all.map(f).map(v => v || ''))].sort((a, b) => a.localeCompare(b));
   const filters = () => { const hid = IT_COLS.filter(c => !cols.has(c[0])).length, cats = opts(r => r.category), sups = opts(r => r.supplier), nm = (v) => v || 'None';
@@ -6007,11 +6069,11 @@ async function itTable() {
       ${menu('cols', `Columns${hid ? ` <b>${IT_COLS.length - hid}/${IT_COLS.length}</b>` : ''}`, IT_COLS.map(([k, l]) => `<label><input type="checkbox" data-icol="${k}" ${cols.has(k) ? 'checked' : ''}>${l}</label>`).join('') + '<p>Hidden columns are left out of the print and the CSV too. Name is always shown.</p>')}</div>`; };
   const table = async () => { all = await DB.all('SELECT * FROM inventory_items'); const q = IT.q.trim().toLowerCase(), C = IT_COLS.filter(c => cols.has(c[0])), S = IT.sort;
     rows = all.filter(r => (!IT.cats || IT.cats.has(r.category || '')) && (!IT.sups || IT.sups.has(r.supplier || '')) && (IT.st === 'all' || (IT.st === 'active' ? r.active : IT.st === 'off' ? !r.active : r.active && r.qty <= r.min_qty))
-      && (!q || [r.name, r.category, r.supplier, r.notes, r.unit].some(v => v && String(v).toLowerCase().includes(q))));
+      && (!q || [r.name, r.category, r.supplier, r.notes, r.unit, r.tag].some(v => v && String(v).toLowerCase().includes(q))));
     const key = (r) => S.k === 'qty' ? r.qty : S.k === 'min' ? r.min_qty : S.k === 'cost' ? r.cost ?? -1 : S.k === 'value' ? (r.cost ?? 0) * r.qty : S.k === 'updated' ? r.updated_at : S.k === 'status' ? ['Out', 'Low', 'OK', 'Not stocked'].indexOf(itStatus(r)) : String(itCell(r, S.k)).toLowerCase() || '￿';
     rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
     const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${S.k === k ? 'on' : ''}">${l}<i>${S.k === k ? (S.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
-    const cell = (r, k) => k === 'status' ? `<span class="qt-st it-${itStatus(r).split(' ')[0].toLowerCase()}">${itStatus(r)}</span>`
+    const cell = (r, k) => k === 'tag' ? cTag(r).replace('margin-left:6px;', '') : k === 'status' ? `<span class="qt-st it-${itStatus(r).split(' ')[0].toLowerCase()}">${itStatus(r)}</span>`
       : k === 'qty' ? `<span class="it-step"><button data-istep="-1" data-iid="${r.id}" aria-label="One less">−</button><b>${fmtQty(r.qty)}</b><button data-istep="1" data-iid="${r.id}" aria-label="One more">+</button></span>` : esc(itCell(r, k));
     itTable.shown = { rows, cols: C };
     $('#it').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('name', 'Item')}${C.map(c => th(c[0], c[1], NUM.includes(c[0]) ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
@@ -6025,6 +6087,8 @@ async function itTable() {
   await both();
   let qq; $('#it-q').oninput = (e) => { IT.q = e.target.value; clearTimeout(qq); qq = setTimeout(table, 200); };
   $('#it-add').onclick = () => { location.hash = 'inv-edit/new'; };
+  $('#it-exp').onclick = () => ivExport(itTable.shown?.rows);
+  $('#it-imp').onclick = () => ivImport().then(n => { if (n) both(); });
   $('#it-csv').onclick = () => { const { rows: R, cols: C } = itTable.shown;
     return saveCsv(`InkForge-stock-${ymd(new Date())}.csv`, ['Item', ...C.map(c => c[1])], R.map(r => [r.name, ...C.map(c => c[0] === 'qty' ? r.qty : c[0] === 'min' ? r.min_qty : c[0] === 'cost' ? r.cost : c[0] === 'value' ? (r.cost != null ? +(r.cost * r.qty).toFixed(2) : '') : c[0] === 'updated' ? r.updated_at.slice(0, 10) : itCell(r, c[0]))])); };
   $('#it-print').onclick = () => { const { rows: R, cols: C } = itTable.shown, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Stock';
@@ -6094,6 +6158,8 @@ async function rtTable() {
   await both();
   let qq; $('#rt-q').oninput = (e) => { RT.q = e.target.value; clearTimeout(qq); qq = setTimeout(table, 200); };
   $('#rt-add').onclick = () => { location.hash = 'rule-edit/new'; };
+  $('#rt-exp').onclick = () => rxExport(rtTable.shown?.rows);
+  $('#rt-imp').onclick = () => rxImport().then(n => { if (n) both(); });
   $('#rt-csv').onclick = () => { const { rows: R, cols: C } = rtTable.shown; return saveCsv(`InkForge-rules-${ymd(new Date())}.csv`, [...(C.some(c => c[0] === 'no') ? ['No.'] : []), 'Title', ...C.filter(c => c[0] !== 'no').map(c => c[1])],
     R.map(r => [...(C.some(c => c[0] === 'no') ? [r._no] : []), r.title, ...C.filter(c => c[0] !== 'no').map(c => c[0] === 'words' ? rtWords(r) : rtCell(r, c[0]))])); };
   $('#rt-print').onclick = () => { const { rows: R, cols: C } = rtTable.shown, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Rules', O = C.filter(c => c[0] === 'no'), X = C.filter(c => c[0] !== 'no');
@@ -6477,6 +6543,8 @@ async function reelList() {
   const info = (r) => { try { const d = JSON.parse(r.doc || '{}'), n = (d.clips || []).length; return n ? `${n} clip${n > 1 ? 's' : ''}` : 'Empty'; } catch { return ''; } };
   const all = rows.map((r, i) => ({ ...r, url: urls[i], t: r.updated_at })), shown = Lib.apply('reels', all);
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Vertical reels from your photos and videos, in your own style. Saved as you go, so you can come back to edit them.</p>
+      <button class="btn" id="reel-exp" data-tip="Save reels to a file another workspace can import" ${rows.length ? '' : 'disabled'}>Export</button>
+      <button class="btn" id="reel-imp" data-tip="Load reels from another workspace's file: preview first">Import</button>
       <button class="btn primary" id="reel-new">+ New reel</button></div>
     ${rows.length ? Lib.bar('reels', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('reels', r.id)}
         <div class="dz-thumb reel-thumb">${r.url ? `<img src="${r.url}" alt="">` : ICON.reels}</div>
@@ -6489,6 +6557,8 @@ async function reelList() {
   el.onclick = async (e) => {
     if (await Lib.click(e, 'reels', reelList)) return;
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    if (t.closest('#reel-exp')) return rlExport(shown);
+    if (t.closest('#reel-imp')) { if (await rlImport()) reelList(); return; }
     if (t.closest('#reel-new')) {
       const ar = await reelSizePick(); if (!ar) return;
       const n = (await DB.one('SELECT COUNT(*) AS n FROM reels')).n;
@@ -8430,8 +8500,8 @@ async function renderClientList() {
   if (ce) { ce.hidden = cats.length < 2; ce.innerHTML = [['all', 'All', cats.reduce((t, x) => t + x.n, 0)], ...cats.map(x => [x.c, x.c, x.n])]
     .map(([k, l, n]) => `<button class="chip qz-chip ${cat === k ? 'on' : ''}" data-cat="${esc(k)}">${esc(l)} <span class="muted">${n}</span></button>`).join(''); }
   const rows = await DB.all(
-    `SELECT id, first_name, last_name, phone, tags, medical, photo_ref, category FROM clients
-     WHERE (?4 = 'all' OR category = ?4) AND (?1 = '' OR (first_name || ' ' || last_name) LIKE ?2 OR email LIKE ?2 OR instagram LIKE ?2 OR tags LIKE ?2
+    `SELECT id, first_name, last_name, phone, tags, medical, photo_ref, category, tag, tag_color FROM clients
+     WHERE (?4 = 'all' OR category = ?4) AND (?1 = '' OR (first_name || ' ' || last_name) LIKE ?2 OR email LIKE ?2 OR instagram LIKE ?2 OR tags LIKE ?2 OR tag LIKE ?2
        OR (?3 <> '' AND replace(replace(replace(phone,' ',''),'-',''),'+','') LIKE '%' || ?3 || '%'))
      ORDER BY first_name COLLATE NOCASE, last_name COLLATE NOCASE`, [q, like, digits, cat]);
   if ($('#c-list') !== el) return;
@@ -8447,7 +8517,7 @@ async function renderClientList() {
     const L = (c.first_name || '#').charAt(0).toUpperCase();
     if (L !== letter) { if (letter) html += '</div>'; letter = L; html += `<div class="letter">${esc(L)}</div><div class="card list">`; }
     html += `<a class="c-row" href="#client/${c.id}">${avatar(c, urls[i])}
-      <span class="c-main"><span class="c-n">${esc(fullName(c))}${cat === 'all' && c.category !== 'Client' ? ` <span class="chip c-catchip">${esc(c.category)}</span>` : ''}</span><span class="muted c-sub">${esc(c.phone || c.tags || '')}</span></span>
+      <span class="c-main"><span class="c-n">${esc(fullName(c))}${cat === 'all' && c.category !== 'Client' ? ` <span class="chip c-catchip">${esc(c.category)}</span>` : ''}${cTag(c)}</span><span class="muted c-sub">${esc(c.phone || c.tags || '')}</span></span>
       ${c.medical ? '<span class="dot" data-tip="Has medical notes"></span>' : ''}
       <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
   });
@@ -8463,7 +8533,7 @@ const PB_COLS = [['phone', 'Phone', true], ['email', 'Email', true], ['instagram
    from the bookings. Choices are kept in the setting ct_table. */
 const CT_COLS = [['category', 'Category', true], ['phone', 'Phone', true], ['email', 'Email', true], ['instagram', 'Instagram', false], ['dob', 'Birthday', false],
   ['pronouns', 'Pronouns', false], ['tags', 'Tags', false], ['visits', 'Bookings', true], ['last', 'Last visit', true], ['next', 'Next booking', true],
-  ['added', 'Added', false], ['notes', 'Notes', false], ['medical', 'Medical', false]];
+  ['added', 'Added', false], ['notes', 'Notes', false], ['medical', 'Medical', false], ['tag', 'Artist tag', true]];
 const CT = { q: '', cats: null, sort: { k: 'name', dir: 1 }, when: 'all' };
 const ctDate = (v) => v ? fmtDay(v.slice(0, 10)) : '';
 const ctCell = (r, k) => k === 'name' ? fullName(r) : k === 'instagram' ? (r.instagram ? '@' + r.instagram.replace(/^@/, '') : '') : k === 'dob' ? (r.dob ? new Date(r.dob + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '')
@@ -8473,11 +8543,12 @@ async function ctRows() { const today = ymd(new Date()) + 'T00:00';
       (SELECT MAX(start_at) FROM bookings b WHERE b.client_id = c.id AND b.start_at < ?) AS last, (SELECT MIN(start_at) FROM bookings b WHERE b.client_id = c.id AND b.start_at >= ?) AS next
     FROM clients c ORDER BY c.first_name COLLATE NOCASE, c.last_name COLLATE NOCASE`, [today, today]);
   const q = CT.q.trim().toLowerCase(), yr = ymd(new Date(Date.now() - 365 * 864e5));
-  return rows.filter(r => (!CT.cats || CT.cats.has(r.category)) && (!q || [fullName(r), r.phone, r.email, r.instagram, r.tags, r.notes, r.category, r.pronouns].some(v => v && String(v).toLowerCase().includes(q)))
+  return rows.filter(r => (!CT.cats || CT.cats.has(r.category)) && (!q || [fullName(r), r.phone, r.email, r.instagram, r.tags, r.notes, r.category, r.pronouns, r.tag].some(v => v && String(v).toLowerCase().includes(q)))
     && (CT.when === 'all' || (CT.when === 'booked' ? !!r.next : CT.when === 'lapsed' ? !r.next && (!r.last || r.last.slice(0, 10) < yr) : !r.visits))); }
 async function ctTable() {
   let saved = {}; try { saved = JSON.parse(Settings.get('ct_table', '{}')); } catch {}
-  const cols = new Set(saved.cols || CT_COLS.filter(c => c[2]).map(c => c[0])), remember = () => Settings.set('ct_table', JSON.stringify({ cols: [...cols] }));
+  /* tag2: the artist tag column came later, so it shows once even for saved choices */
+  const cols = new Set(saved.cols ? [...saved.cols, ...(saved.tag2 ? [] : ['tag'])] : CT_COLS.filter(c => c[2]).map(c => c[0])), remember = () => Settings.set('ct_table', JSON.stringify({ cols: [...cols], tag2: 1 }));
   const allCats = (await DB.all(`SELECT category AS c, COUNT(*) AS n FROM clients GROUP BY category ORDER BY (category = 'Client') DESC, category COLLATE NOCASE`));
   if (!CT.cats && VIEWS.clients.cat && VIEWS.clients.cat !== 'all') CT.cats = new Set([VIEWS.clients.cat]);
   let rows = [], open = null;
@@ -8493,7 +8564,7 @@ async function ctTable() {
     const key = (r) => S.k === 'name' ? fullName(r).toLowerCase() : S.k === 'visits' ? r.visits || 0 : DATEK[S.k] ? (r[DATEK[S.k]] || (S.dir > 0 ? '9' : '')) : String(ctCell(r, S.k)).toLowerCase() || (S.dir > 0 ? '￿' : '');
     rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
     const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${S.k === k ? 'on' : ''}">${l}<i>${S.k === k ? (S.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
-    const cell = (r, k) => k === 'medical' && r.medical ? `<span class="ct-med">${esc(r.medical)}</span>` : k === 'next' && r.next ? `<span class="ct-next">${esc(ctCell(r, k))}</span>` : esc(ctCell(r, k));
+    const cell = (r, k) => k === 'tag' ? cTag(r).replace('margin-left:6px;', '') : k === 'medical' && r.medical ? `<span class="ct-med">${esc(r.medical)}</span>` : k === 'next' && r.next ? `<span class="ct-next">${esc(ctCell(r, k))}</span>` : esc(ctCell(r, k));
     ctTable.shown = { rows, cols: C };
     $('#ct').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('name', 'Name')}${C.map(c => th(c[0], c[1], NUMK.includes(c[0]) ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r =>
       `<tr data-cid="${r.id}"><td class="nw"><b>${esc(fullName(r)) || '<span class="muted">No name</span>'}</b></td>${C.map(c => `<td class="ct-${c[0]} ${NUMK.includes(c[0]) ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
@@ -8505,6 +8576,8 @@ async function ctTable() {
   await both();
   let qt; $('#ct-q').oninput = (e) => { CT.q = e.target.value; clearTimeout(qt); qt = setTimeout(table, 200); };
   $('#ct-add').onclick = () => { location.hash = 'client-edit/new'; };
+  $('#ct-exp').onclick = () => cxExport(ctTable.shown?.rows);
+  $('#ct-imp').onclick = () => cxImport().then(n => { if (n) both(); });
   $('#ct-csv').onclick = () => { const { rows: R, cols: C } = ctTable.shown; return saveCsv(`InkForge-contacts-${ymd(new Date())}.csv`, ['First name', 'Last name', ...C.map(c => c[1])],
     R.map(r => [r.first_name, r.last_name, ...C.map(c => c[0] === 'visits' ? r.visits || 0 : ['last', 'next'].includes(c[0]) ? (r[c[0]] || '').slice(0, 10) : c[0] === 'added' ? (r.created_at || '').slice(0, 10) : c[0] === 'dob' ? r.dob || '' : ctCell(r, c[0]))])); };
   $('#ct-print').onclick = () => { const { rows: R, cols: C } = ctTable.shown, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Contacts';
@@ -8706,43 +8779,61 @@ const wsUid = async () => { let u = Settings.get('ws_uid'); if (!u) { u = (crypt
 const BKX_FIELDS = ['start_at', 'duration_min', 'kind', 'description', 'placement', 'size', 'quote', 'deposit', 'deposit_paid', 'notes', 'completed', 'paid', 'time_min', 'pay_method', 'job'];
 const BKX_LABEL = { start_at: 'Date and time', duration_min: 'Length', kind: 'Type', description: 'Description', placement: 'Placement', size: 'Size', quote: 'Quote', deposit: 'Deposit', deposit_paid: 'Deposit paid',
   notes: 'Notes', completed: 'Completed', paid: 'Paid', time_min: 'Time tattooed', pay_method: 'Paid by', job: 'Type of work', name: 'Name', phone: 'Phone' };
+/* ---------- Where an export reads from ----------
+   Every section's export is built by a xxPack(S, ...) function from a source S: this workspace (XS_LOCAL), or a backup
+   being merged (xsBackup). So the backup merge goes through exactly the same exports and imports as the section buttons,
+   and a change to one is a change to both. S: uid(), set(key), rows(table), b64(mediaRef) -> base64 or null. */
+const XS_LOCAL = { uid: () => wsUid(), set: (k) => Settings.get(k, '') ?? '', rows: (t) => DB.all(`SELECT * FROM "${t}"`),
+  async b64(ref) { try { return await pxB64(await (await (await Media.dir()).getFileHandle(ref)).getFile()); } catch { return null; } } };
+function xsBackup(src, media, name) { const set = Object.fromEntries((src.settings || []).map(r => [r.key, r.value]));
+  return { wsName: name, uid: async () => set.ws_uid || 'backup:' + (name || ''), set: (k) => set[k] ?? '', rows: async (t) => src[t] || [],
+    async b64(ref) { const b = media.get(ref); return b ? pxB64(new Blob([b])) : null; } }; }
+const xWsName = (S, studioFirst) => (studioFirst ? S.set('studio_name') || S.set('artist_name') : S.set('artist_name') || S.set('studio_name')) || S.wsName || WS.cur?.name || 'Workspace';
+/* An import's file: the one handed in (a backup merge), or one picked. self = it came from this same workspace
+   (only allowed when handed in, e.g. a backup of this workspace from another device). */
+async function xLoad(P0, accept, kind, key, v, what) {
+  let P = P0;
+  if (!P) { const f = await xPickFile(accept); if (!f) return null; toast('Reading…', 4000); try { P = JSON.parse(await f.text()); } catch { P = null; } }
+  if (!P || P.inkforge !== kind || !Array.isArray(P[key])) { toast(`That is not an InkForge ${what} file.`, 3500); return null; }
+  if (xTooNew(P, v)) return null;
+  const self = !!P.ws?.uid && P.ws.uid === await wsUid();
+  if (self && !P0) { toast(`These ${what} came from this workspace, so there is nothing to import.`, 4000); return null; }
+  return { P, self };
+}
+/* File v2 adds the booking's reference photos; v1 files (no photos) still import. */
+const BKX_V = 2;
+async function bkOwn(S) { const cl = new Map((await S.rows('clients')).map(c => [c.id, c]));
+  return (await S.rows('bookings')).filter(b => !b.src_uid).map(b => { const c = cl.get(b.client_id) || {}; return { ...b, first_name: c.first_name, last_name: c.last_name, phone: c.phone }; })
+    .sort((a, b) => a.start_at < b.start_at ? -1 : a.start_at > b.start_at ? 1 : 0); }
+async function bkPack(S, list, own) {
+  const uid = await S.uid(), ph = await S.rows('booking_photos'), bookings = [];
+  for (const r of list) { const photos = [];
+    for (const p of ph.filter(p => p.booking_id === r.id).sort((a, b) => a.sort - b.sort)) { const d = await S.b64(p.photo_ref); if (d) photos.push({ ref: p.photo_ref, data: d }); }
+    bookings.push({ uid: uid + ':' + r.id, ...Object.fromEntries(BKX_FIELDS.map(k => [k, r[k] ?? null])), name: bName(r), phone: r.phone || r.guest_phone || null, photos }); }
+  return { inkforge: 'bookings', v: BKX_V, ws: { uid, name: xWsName(S) }, at: new Date().toISOString(), all: own.map(r => uid + ':' + r.id), bookings };
+}
 async function bkExport(shown) {
-  const own = await DB.all(`SELECT b.*, c.first_name, c.last_name, c.phone FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.src_uid IS NULL ORDER BY b.start_at`);
-  const vis = (shown || []).filter(r => !r.src_uid);
-  const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
-    o.innerHTML = `<div class="card" style="max-width:440px"><h2>Export bookings</h2><p class="muted" style="margin-top:0">A file to load into another workspace, for example the shop owner's. Imported bookings are never exported again.</p>
-      <div class="dz-ex"><button data-x="shown" ${vis.length ? '' : 'disabled'}><b>The ${vis.length} shown</b><small>Your filters and search decide which</small></button><button data-x="all"><b>All ${own.length} of yours</b><small>Every booking you made, past and future</small></button></div>
-      <button class="btn" data-x="" style="width:100%;margin-top:10px">Cancel</button></div>`;
-    o.onclick = (e) => { const b = e.target.closest('[data-x]'); if ((!b && e.target !== o) || b?.disabled) return; o.remove(); res(b?.dataset.x || null); }; document.body.appendChild(o); });
+  const own = await bkOwn(XS_LOCAL), vis = (shown || []).filter(r => !r.src_uid);
+  const pick = await xChoose('Export bookings', 'A file to load into another workspace, for example the shop owner\'s. Reference photos go inside it. Imported bookings are never exported again.', vis.length, own.length, 'Every booking you made, past and future');
   if (!pick) return;
-  const uid = await wsUid(), list = pick === 'all' ? own : own.filter(r => vis.some(v => v.id === r.id));
-  const out = { inkforge: 'bookings', v: 1, ws: { uid, name: Settings.get('artist_name') || Settings.get('studio_name') || WS.cur?.name || 'Workspace' }, at: new Date().toISOString(),
-    all: own.map(r => uid + ':' + r.id),
-    bookings: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(BKX_FIELDS.map(k => [k, r[k] ?? null])), name: bName(r), phone: r.phone || r.guest_phone || null })) };
-  const f = new File([JSON.stringify(out)], `bookings-${(out.ws.name).replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkbookings`, { type: 'application/json' });
-  try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title: 'Bookings' }); return; } } catch (err) { if (err.name === 'AbortError') return; }
-  const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  toast(`Saved ${list.length} booking${list.length === 1 ? '' : 's'} to ${f.name}.`, 3000);
+  const list = pick === 'all' ? own : own.filter(r => vis.some(v => v.id === r.id)), out = await bkPack(XS_LOCAL, list, own);
+  await xSave(new File([JSON.stringify(out)], `bookings-${(out.ws.name).replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkbookings`, { type: 'application/json' }), 'Bookings', `Saved ${list.length} booking${list.length === 1 ? '' : 's'}.`);
 }
 // One value as it would be stored, so a field the file leaves out (or 0 against empty) is not seen as a change.
 const bkxNorm = (k, v) => ['deposit_paid', 'completed'].includes(k) ? String(+!!v) : k === 'duration_min' ? String(+(v ?? 120)) : k === 'kind' ? String(v || 'tattoo')
   : v == null || v === '' ? '' : typeof v === 'number' || (/^-?\d+(\.\d+)?$/.test(String(v))) ? String(+v) : String(v).trim();
 const BK_TAG_COLS = ['#1fb5a8', '#f0c75e', '#d2453b', '#3b5bdb', '#7b4fa0', '#e0605a', '#2e7d32', '#e8a33d'];
-async function bkImport() {
-  const f = await new Promise((res) => { const i = document.createElement('input'); i.type = 'file'; i.accept = '.inkbookings,application/json'; i.onchange = () => res(i.files[0] || null); i.click(); });
-  if (!f) return 0;
-  let P; try { P = JSON.parse(await f.text()); } catch { P = null; }
-  if (!P || P.inkforge !== 'bookings' || !Array.isArray(P.bookings)) { toast('That is not an InkForge bookings file.', 3500); return 0; }
-  if (P.ws?.uid === await wsUid()) { toast('These bookings came from this workspace, so there is nothing to import.', 4000); return 0; }
-  const today = ymd(new Date()), mine = await DB.all('SELECT * FROM bookings WHERE src_ws = ?', [P.ws.uid]), byUid = new Map(mine.map(r => [r.src_uid, r]));
+async function bkImport(P0) {
+  const L = await xLoad(P0, '.inkbookings,application/json', 'bookings', 'bookings', BKX_V, 'bookings'); if (!L) return 0; const { P, self } = L;
+  const today = ymd(new Date()), mine = self ? (await DB.all('SELECT * FROM bookings WHERE src_uid IS NULL')).map(r => ({ ...r, src_uid: P.ws.uid + ':' + r.id, own: 1 })) : await DB.all('SELECT * FROM bookings WHERE src_ws = ?', [P.ws.uid]), byUid = new Map(mine.map(r => [r.src_uid, r]));
   const lastTag = mine.find(r => r.tag);
   // What each row is: new, changed (with what changed), the same, or gone from the other workspace.
   const items = P.bookings.map(x => { const h = byUid.get(x.uid);
     if (!h) return { x, st: 'new', past: x.start_at.slice(0, 10) < today };
-    const diff = [...BKX_FIELDS, 'name', 'phone'].filter(k => bkxNorm(k, k === 'name' ? h.guest_name : k === 'phone' ? h.guest_phone : h[k]) !== bkxNorm(k, x[k]));
+    const diff = [...BKX_FIELDS, ...(h.own ? [] : ['name', 'phone'])].filter(k => bkxNorm(k, k === 'name' ? h.guest_name : k === 'phone' ? h.guest_phone : h[k]) !== bkxNorm(k, x[k]));
     return { x, h, st: diff.length ? 'changed' : 'same', diff, past: x.start_at.slice(0, 10) < today }; });
-  const allSet = new Set(P.all || []), gone = mine.filter(r => !allSet.has(r.src_uid)).map(h => ({ h, st: 'gone' }));
-  const st = { past: false, ghost: !!lastTag?.ghost, tagOn: true, tag: lastTag?.tag || P.ws.name || 'Imported', col: lastTag?.tag_color || BK_TAG_COLS[0], skip: new Set(), q: '' };
+  const allSet = new Set(P.all || []), gone = self ? [] : mine.filter(r => !allSet.has(r.src_uid)).map(h => ({ h, st: 'gone' }));
+  const st = { past: false, ghost: !!lastTag?.ghost, tagOn: !self, tag: lastTag?.tag || P.ws.name || 'Imported', col: lastTag?.tag_color || BK_TAG_COLS[0], skip: new Set(), q: '' };
   const ok = await new Promise((res) => {
     const o = document.createElement('div'); o.id = 'merge-dlg';
     const rowsHtml = () => { const L = [...items, ...gone].filter(it => it.st !== 'same' && !(it.st === 'new' && it.past && !st.past));
@@ -8780,12 +8871,16 @@ async function bkImport() {
   });
   if (!ok) return 0;
   const tag = st.tagOn && st.tag.trim() ? st.tag.trim() : null, col = tag ? st.col : null, ops = [];
+  /* a new booking is linked to the client here with the same phone; its photos are saved first */
+  const cBy = new Map(); for (const c of await DB.all('SELECT id, phone, email FROM clients')) for (const k of clientKeys(c)) if (!cBy.has(k)) cBy.set(k, c.id);
+  const photosOf = async (x) => { const out = []; for (const p of x.photos || []) out.push(await xUnpackMedia({ [p.ref]: p.data }, p.ref)); return out; };
   for (const it of items) {
     if (st.skip.has(it.x.uid)) continue;
     const x = it.x, vals = BKX_FIELDS.map(k => x[k] ?? (k === 'duration_min' ? 120 : k === 'kind' ? 'tattoo' : ['deposit_paid', 'completed'].includes(k) ? 0 : null));
     if (it.st === 'new' && (!it.past || st.past))
-      ops.push({ sql: `INSERT INTO bookings (${BKX_FIELDS.join(', ')}, guest_name, guest_phone, src_uid, src_ws, tag, tag_color, ghost) VALUES (${BKX_FIELDS.map(() => '?').join(', ')}, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [...vals, x.name || null, x.phone || null, x.uid, P.ws.uid, tag, col, st.ghost ? 1 : 0] });
+    { ops.push({ sql: `INSERT INTO bookings (${BKX_FIELDS.join(', ')}, guest_name, guest_phone, src_uid, src_ws, tag, tag_color, ghost, client_id) VALUES (${BKX_FIELDS.map(() => '?').join(', ')}, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [...vals, x.name || null, x.phone || null, self ? null : x.uid, self ? null : P.ws.uid, tag, col, st.ghost ? 1 : 0, clientKeys({ phone: x.phone }).map(k => cBy.get(k)).find(Boolean) ?? null] });
+      (await photosOf(x)).forEach((ref, j) => ops.push({ sql: 'INSERT INTO booking_photos (booking_id, photo_ref, sort) VALUES ((SELECT max(id) FROM bookings), ?, ?)', params: [ref, j] })); }
     else if (it.st === 'changed')
       ops.push({ sql: `UPDATE bookings SET ${BKX_FIELDS.map(k => k + ' = ?').join(', ')}, guest_name = ?, guest_phone = ?, updated_at = datetime('now') WHERE id = ?`, params: [...vals, x.name || null, x.phone || null, it.h.id] });
   }
@@ -8794,6 +8889,505 @@ async function bkImport() {
   if (!st.ghost) Gcal.soon();
   toast(`Imported: ${ops.length} change${ops.length === 1 ? '' : 's'} made.`, 3000);
   return ops.length;
+}
+/* ---------- Moving clients between workspaces ----------
+   Like bookings: the file carries this workspace's id and every client id it still has. Import matches by that id, so
+   importing again updates instead of doubling up; a new one with the same phone or email as a client already here is
+   not added twice: that client gets the tag and only its empty fields filled. Imported clients get a tag (whose client) and a colour.
+   Medical notes go in the file only when asked for; photos never do. */
+const CX_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags', 'category'];
+const CX_LABEL = { first_name: 'First name', last_name: 'Last name', phone: 'Phone', email: 'Email', instagram: 'Instagram', dob: 'Birthday', pronouns: 'Pronouns', medical: 'Medical', notes: 'Notes', tags: 'Tags', category: 'Category' };
+const cTag = (c) => c.tag ? `<span class="btag" style="margin-left:6px;--tc:${esc(c.tag_color || '#1fb5a8')}" data-tip="Imported client">${esc(c.tag)}</span>` : '';
+const cxNorm = (v) => v == null ? '' : String(v).trim();
+const CX_V = 1;
+const cxOwn = async (S) => (await S.rows('clients')).filter(r => !r.src_uid).sort((a, b) => fullName(a).localeCompare(fullName(b)));
+async function cxPack(S, list, own, med, photos = false) { const uid = await S.uid(), pic = {};   /* photos: only a backup merge brings them */
+  if (photos) for (const r of list) if (r.photo_ref) { const d = await S.b64(r.photo_ref); if (d) pic[r.id] = { ref: r.photo_ref, data: d }; }
+  return { inkforge: 'clients', v: CX_V, med, ws: { uid, name: xWsName(S) }, at: new Date().toISOString(), all: own.map(r => uid + ':' + r.id),
+    clients: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(CX_FIELDS.filter(k => k !== 'medical' || med).map(k => [k, r[k] ?? null])), ...(pic[r.id] ? { photo: pic[r.id] } : {}) })) }; }
+async function cxExport(shown) {
+  const own = await cxOwn(XS_LOCAL), vis = (shown || []).filter(r => !r.src_uid), st = { med: false };
+  const pick = await xChoose('Export clients', 'A file to load into another workspace, for example the shop owner\'s. Imported clients are never exported again. Photos are left out.', vis.length, own.length, 'Every contact you added',
+    `<label class="toggle" style="margin-top:10px"><input type="checkbox" data-cxmed><span>Include medical notes</span></label><p class="muted" style="font-size:12px;margin:4px 0 0">Medical notes are private: only include them if the other workspace needs them.</p>`,
+    (e) => { if (e.target.hasAttribute('data-cxmed')) st.med = e.target.checked; });
+  if (!pick) return;
+  const list = pick === 'all' ? own : own.filter(r => vis.some(v => v.id === r.id)), out = await cxPack(XS_LOCAL, list, own, st.med);
+  await xSave(new File([JSON.stringify(out)], `clients-${(out.ws.name).replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkclients`, { type: 'application/json' }), 'Clients', `Saved ${list.length} client${list.length === 1 ? '' : 's'}.`);
+}
+async function cxImport(P0) {
+  const L = await xLoad(P0, '.inkclients,application/json', 'clients', 'clients', CX_V, 'clients'); if (!L) return 0; const { P, self } = L;
+  const F = CX_FIELDS.filter(k => k !== 'medical' || P.med);
+  const all = await DB.all('SELECT * FROM clients'), mine = self ? all.filter(r => !r.src_uid).map(r => ({ ...r, src_uid: P.ws.uid + ':' + r.id })) : all.filter(r => r.src_ws === P.ws.uid), byUid = new Map(mine.map(r => [r.src_uid, r]));
+  const byKey = new Map(); for (const r of all) if (!r.src_ws || r.src_ws !== P.ws.uid) for (const k of clientKeys(r)) if (!byKey.has(k)) byKey.set(k, r);
+  const lastTag = mine.find(r => r.tag);
+  /* new, changed (with what changed), the same, already here by phone or email (linked), or deleted there */
+  const items = P.clients.map(x => { const h = byUid.get(x.uid);
+    if (h) { const diff = F.filter(k => cxNorm(h[k]) !== cxNorm(x[k])); return { x, h, st: diff.length ? 'changed' : 'same', diff }; }
+    const m = clientKeys(x).map(k => byKey.get(k)).find(Boolean);
+    if (!m) return { x, st: 'new' };
+    const diff = F.filter(k => !cxNorm(m[k]) && cxNorm(x[k]));   /* your own client stays yours (still exported); it only gets the tag and its blanks filled */
+    return { x, h: m, st: diff.length || !m.tag ? 'match' : 'same', diff }; });
+  const allSet = new Set(P.all || []), gone = self ? [] : mine.filter(r => !allSet.has(r.src_uid)).map(h => ({ h, st: 'gone' }));
+  const st = { tagOn: !self, tag: lastTag?.tag || P.ws.name || 'Imported', col: lastTag?.tag_color || BK_TAG_COLS[0], skip: new Set(gone.map(g => g.h.src_uid)) };   /* removals start unticked */
+  const key = (it) => it.x?.uid || it.h.src_uid;
+  const ok = await new Promise((res) => {
+    const o = document.createElement('div'); o.id = 'merge-dlg';
+    const rowsHtml = () => { const L = [...items, ...gone].filter(it => it.st !== 'same');
+      if (!L.length) return '<p class="muted" style="padding:14px;text-align:center">Nothing to add or change: everything here matches.</p>';
+      return `<div class="bkt-scroll" style="max-height:44vh"><table class="bkt"><thead><tr><th class="c-done"></th><th>What</th><th>Client</th><th>Details</th></tr></thead><tbody>${L.map(it => {
+        const r = it.x || it.h, k = key(it), on = !st.skip.has(k);
+        const what = it.st === 'new' ? '<span class="bix new">New</span>' : it.st === 'changed' ? '<span class="bix chg">Changed</span>' : it.st === 'match' ? '<span class="bix chg">Already here</span>' : '<span class="bix gone">Deleted there</span>';
+        const det = it.st === 'changed' ? it.diff.map(d => `<div class="bix-d"><b>${CX_LABEL[d]}:</b> <s>${esc(cxNorm(it.h[d]) || '—')}</s> → ${esc(cxNorm(it.x[d]) || '—')}</div>`).join('')
+          : it.st === 'match' ? `<span class="muted">Same phone or email as ${esc(fullName(it.h))}: tag them${it.diff.length ? ' and fill in ' + it.diff.map(d => CX_LABEL[d].toLowerCase()).join(', ') : ''}</span>`
+          : it.st === 'gone' ? '<span class="muted">Remove them here too? Their bookings stay.</span>' : esc([r.phone, r.email, r.instagram && '@' + String(r.instagram).replace(/^@/, '')].filter(Boolean).join(' · ') || '');
+        return `<tr><td class="c-done"><input type="checkbox" data-cxk="${esc(k)}" ${on ? 'checked' : ''}></td><td class="nw">${what}</td><td>${esc(fullName(r) || '—')}</td><td>${det}</td></tr>`; }).join('')}</tbody></table></div>`; };
+    const counts = () => { const n = (s) => items.filter(i => i.st === s && !st.skip.has(i.x.uid)).length;
+      return { n: n('new'), c: n('changed'), m: n('match'), g: gone.filter(i => !st.skip.has(i.h.src_uid)).length, same: items.filter(i => i.st === 'same').length }; };
+    const draw = () => { const k = counts();
+      o.innerHTML = `<div class="card bix-card"><h2>Import clients</h2>
+        <p class="muted" style="margin-top:0">From <b>${esc(P.ws.name)}</b>, saved ${esc(fmtDay(P.at.slice(0, 10)))}. ${P.clients.length} client${P.clients.length === 1 ? '' : 's'} in the file${k.same ? `, ${k.same} already here and the same` : ''}${P.med ? ', with medical notes' : ''}.</p>
+        <div class="bix-opts">
+          <label class="toggle"><input type="checkbox" data-cxtag ${st.tagOn ? 'checked' : ''}><span>Tag them</span></label>
+          ${st.tagOn ? `<input class="in" data-cxtagn value="${esc(st.tag)}" placeholder="Artist's name" style="max-width:180px"><span class="ink-dots">${BK_TAG_COLS.map(c => `<button class="ink ${st.col === c ? 'on' : ''}" data-cxcol="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span>` : ''}
+        </div>
+        ${rowsHtml()}
+        <div class="row" style="gap:8px;margin-top:12px;justify-content:flex-end"><span class="muted" style="margin-right:auto;font-size:12px">${k.n} new · ${k.c} changed · ${k.m} tagged · ${k.g} to remove</span>
+          <button class="btn" data-cxi="">Cancel</button><button class="btn primary" data-cxi="go" ${k.n + k.c + k.m + k.g ? '' : 'disabled'}>Import</button></div></div>`; };
+    o.addEventListener('click', (e) => { const t = e.target;
+      const c = t.closest('[data-cxcol]'); if (c) { st.col = c.dataset.cxcol; return draw(); }
+      const b = t.closest('[data-cxi]'); if (b || t === o) { o.remove(); res(b?.dataset.cxi === 'go'); } });
+    o.addEventListener('change', (e) => { const t = e.target;
+      if (t.dataset.cxk) { t.checked ? st.skip.delete(t.dataset.cxk) : st.skip.add(t.dataset.cxk); return draw(); }
+      if (t.hasAttribute('data-cxtag')) { st.tagOn = t.checked; return draw(); } });
+    o.addEventListener('input', (e) => { if (e.target.hasAttribute('data-cxtagn')) st.tag = e.target.value; });
+    document.body.appendChild(o); draw();
+  });
+  if (!ok) return 0;
+  const g = gone.filter(i => !st.skip.has(i.h.src_uid));
+  if (g.length && !await ask(`Remove ${g.length} client${g.length === 1 ? '' : 's'} deleted in ${P.ws.name}?\n\nThis permanently removes ${g.length === 1 ? 'them' : 'these contacts'} here. Their bookings stay on the calendar without a client.`)) return 0;
+  const tag = st.tagOn && st.tag.trim() ? st.tag.trim() : null, col = tag ? st.col : null, ops = [];
+  const val = (x, k) => k === 'first_name' || k === 'last_name' ? cxNorm(x[k]) : k === 'category' ? (cxNorm(x[k]) || 'Client') : (cxNorm(x[k]) || null);
+  for (const it of items) {
+    if (st.skip.has(it.x.uid)) continue;
+    const x = it.x;
+    if (it.st === 'new') ops.push({ sql: `INSERT INTO clients (${F.join(', ')}, src_uid, src_ws, tag, tag_color) VALUES (${F.map(() => '?').join(', ')}, ?, ?, ?, ?)`, params: [...F.map(k => val(x, k)), self ? null : x.uid, self ? null : P.ws.uid, tag, col] });
+    else if (it.st === 'changed') ops.push({ sql: `UPDATE clients SET ${F.map(k => k + ' = ?').join(', ')}, tag = ?, tag_color = ?, updated_at = datetime('now') WHERE id = ?`, params: [...F.map(k => val(x, k)), tag, col, it.h.id] });
+    else if (it.st === 'match') ops.push({ sql: `UPDATE clients SET ${it.diff.map(k => k + ' = ?, ').join('')}tag = COALESCE(tag, ?), tag_color = COALESCE(tag_color, ?), updated_at = datetime('now') WHERE id = ?`,
+      params: [...it.diff.map(k => val(x, k)), tag, col, it.h.id] });
+  }
+  for (const r of g) ops.push({ sql: 'UPDATE bookings SET gcal_synced_at = NULL WHERE client_id = ?', params: [r.h.id] }, { sql: 'DELETE FROM clients WHERE id = ?', params: [r.h.id] });
+  if (ops.length) await DB.tx(ops);
+  /* a client's photo (backup merges only): on a new client, or one here without a photo */
+  for (const it of items) { if (!it.x.photo || st.skip.has(it.x.uid)) continue;
+    const ref = await xUnpackMedia({ [it.x.photo.ref]: it.x.photo.data }, it.x.photo.ref), id = it.h?.id ?? (await DB.one('SELECT id FROM clients WHERE src_uid = ? OR (src_uid IS NULL AND first_name = ? AND last_name = ?) ORDER BY id DESC', [it.x.uid, it.x.first_name || '', it.x.last_name || '']))?.id;
+    if (id) await DB.run(`UPDATE clients SET photo_ref = ? WHERE id = ? AND (photo_ref IS NULL OR photo_ref = '')`, [ref, id]); }
+  for (const r of g) await Media.release(r.h.photo_ref);
+  if (g.length) Gcal.soon();
+  toast(`Imported: ${ops.length - g.length} change${ops.length - g.length === 1 ? '' : 's'} made.`, 3000);
+  return ops.length;
+}
+/* ---------- Moving stock items between workspaces ----------
+   Like clients: matched by the id from the other workspace, so importing again updates. A new item with the same name
+   as one already here is not added twice: that item gets the tag and only its empty fields filled (its count is kept).
+   The file can leave out the counts (a list to stock from) or the costs. */
+const IV_FIELDS = ['name', 'category', 'unit', 'qty', 'min_qty', 'step', 'supplier', 'cost', 'notes', 'active'];
+const IV_LABEL = { name: 'Name', category: 'Category', unit: 'Unit', qty: 'In stock', min_qty: 'Minimum', step: 'Step', supplier: 'Supplier', cost: 'Cost each', notes: 'Notes', active: 'Stocked' };
+const ivNorm = (k, v) => ['qty', 'min_qty', 'cost', 'step'].includes(k) ? (v == null || v === '' ? '' : String(+v)) : k === 'active' ? String(+(v ?? 1)) : v == null ? '' : String(v).trim();
+const ivName = (n) => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const IVX_V = 1;
+const ivOwn = async (S) => (await S.rows('inventory_items')).filter(r => !r.src_uid).sort((a, b) => String(a.category || '').localeCompare(String(b.category || '')) || String(a.name).localeCompare(String(b.name)));
+async function ivPack(S, list, own, o = { qty: true, cost: true }) { const uid = await S.uid(), F = IV_FIELDS.filter(k => (k !== 'qty' || o.qty) && (k !== 'cost' || o.cost));
+  return { inkforge: 'stock', v: IVX_V, qty: o.qty, cost: o.cost, ws: { uid, name: xWsName(S) }, at: new Date().toISOString(),
+    all: own.map(r => uid + ':' + r.id), items: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(F.map(k => [k, r[k] ?? null])) })) }; }
+async function ivExport(shown) {
+  const own = await ivOwn(XS_LOCAL), vis = (shown || []).filter(r => !r.src_uid), st = { qty: true, cost: true };
+  const pick = await xChoose('Export stock', 'A file to load into another workspace, for example the shop owner\'s. Imported items are never exported again.', vis.length, own.length, 'Every item you added',
+    `<label class="toggle" style="margin-top:10px"><input type="checkbox" data-ivx="qty" checked><span>Include how many are in stock</span></label>
+     <label class="toggle"><input type="checkbox" data-ivx="cost" checked><span>Include costs</span></label>
+     <p class="muted" style="font-size:12px;margin:4px 0 0">Without counts it is a list to stock from: new items come in at 0.</p>`,
+    (e) => { const k = e.target.dataset.ivx; if (k) st[k] = e.target.checked; });
+  if (!pick) return;
+  const list = pick === 'all' ? own : own.filter(r => vis.some(v => v.id === r.id)), out = await ivPack(XS_LOCAL, list, own, st);
+  await xSave(new File([JSON.stringify(out)], `stock-${(out.ws.name).replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkstock`, { type: 'application/json' }), 'Stock', `Saved ${list.length} item${list.length === 1 ? '' : 's'}.`);
+}
+async function ivImport(P0) {
+  const L = await xLoad(P0, '.inkstock,application/json', 'stock', 'items', IVX_V, 'stock'); if (!L) return 0; const { P, self } = L;
+  const F = IV_FIELDS.filter(k => (k !== 'qty' || P.qty) && (k !== 'cost' || P.cost));
+  const all = await DB.all('SELECT * FROM inventory_items'), mine = self ? all.filter(r => !r.src_uid).map(r => ({ ...r, src_uid: P.ws.uid + ':' + r.id })) : all.filter(r => r.src_ws === P.ws.uid), byUid = new Map(mine.map(r => [r.src_uid, r]));
+  const byName = new Map(); for (const r of all) if (r.src_ws !== P.ws.uid && !byName.has(ivName(r.name))) byName.set(ivName(r.name), r);
+  const lastTag = mine.find(r => r.tag);
+  const items = P.items.filter(x => ivName(x.name)).map(x => { const h = byUid.get(x.uid);
+    if (h) { const diff = F.filter(k => ivNorm(k, h[k]) !== ivNorm(k, x[k])); return { x, h, st: diff.length ? 'changed' : 'same', diff }; }
+    const m = byName.get(ivName(x.name)); if (!m) return { x, st: 'new' };
+    const diff = F.filter(k => k !== 'qty' && k !== 'active' && !ivNorm(k, m[k]) && ivNorm(k, x[k]));   /* your own item keeps its count; it only gets the tag and its blanks filled */
+    return { x, h: m, st: diff.length || !m.tag ? 'match' : 'same', diff }; });
+  const allSet = new Set(P.all || []), gone = self ? [] : mine.filter(r => !allSet.has(r.src_uid)).map(h => ({ h, st: 'gone' }));
+  const st = { tagOn: !self, tag: lastTag?.tag || P.ws.name || 'Imported', col: lastTag?.tag_color || BK_TAG_COLS[0], skip: new Set(gone.map(g => g.h.src_uid)) };   /* removals start unticked */
+  const key = (it) => it.x?.uid || it.h.src_uid, show = (k, v) => k === 'cost' && v != null && v !== '' ? money(+v) : k === 'active' ? (+(v ?? 1) ? 'Yes' : 'No') : v == null || v === '' ? '—' : String(v);
+  const ok = await new Promise((res) => {
+    const o = document.createElement('div'); o.id = 'merge-dlg';
+    const rowsHtml = () => { const L = [...items, ...gone].filter(it => it.st !== 'same');
+      if (!L.length) return '<p class="muted" style="padding:14px;text-align:center">Nothing to add or change: everything here matches.</p>';
+      return `<div class="bkt-scroll" style="max-height:44vh"><table class="bkt"><thead><tr><th class="c-done"></th><th>What</th><th>Item</th><th>Details</th></tr></thead><tbody>${L.map(it => {
+        const r = it.x || it.h, k = key(it), on = !st.skip.has(k);
+        const what = it.st === 'new' ? '<span class="bix new">New</span>' : it.st === 'changed' ? '<span class="bix chg">Changed</span>' : it.st === 'match' ? '<span class="bix chg">Already here</span>' : '<span class="bix gone">Deleted there</span>';
+        const det = it.st === 'changed' ? it.diff.map(d => `<div class="bix-d"><b>${IV_LABEL[d]}:</b> <s>${esc(show(d, it.h[d]))}</s> → ${esc(show(d, it.x[d]))}</div>`).join('')
+          : it.st === 'match' ? `<span class="muted">Same name as yours: tag it${it.diff.length ? ' and fill in ' + it.diff.map(d => IV_LABEL[d].toLowerCase()).join(', ') : ''}; your count stays</span>`
+          : it.st === 'gone' ? '<span class="muted">Remove it here too?</span>'
+          : esc([r.category, P.qty ? fmtQty(+r.qty || 0) + (r.unit ? ' ' + r.unit : '') + ' in stock' : 'starts at 0', r.supplier].filter(Boolean).join(' · '));
+        return `<tr><td class="c-done"><input type="checkbox" data-ivk="${esc(k)}" ${on ? 'checked' : ''}></td><td class="nw">${what}</td><td>${esc(r.name)}</td><td>${det}</td></tr>`; }).join('')}</tbody></table></div>`; };
+    const counts = () => { const n = (s) => items.filter(i => i.st === s && !st.skip.has(i.x.uid)).length;
+      return { n: n('new'), c: n('changed'), m: n('match'), g: gone.filter(i => !st.skip.has(i.h.src_uid)).length, same: items.filter(i => i.st === 'same').length }; };
+    const draw = () => { const k = counts();
+      o.innerHTML = `<div class="card bix-card"><h2>Import stock</h2>
+        <p class="muted" style="margin-top:0">From <b>${esc(P.ws.name)}</b>, saved ${esc(fmtDay(P.at.slice(0, 10)))}. ${P.items.length} item${P.items.length === 1 ? '' : 's'} in the file${k.same ? `, ${k.same} already here and the same` : ''}${P.qty ? '' : ', without counts'}${P.cost ? '' : ', without costs'}.</p>
+        <div class="bix-opts">
+          <label class="toggle"><input type="checkbox" data-ivtag ${st.tagOn ? 'checked' : ''}><span>Tag them</span></label>
+          ${st.tagOn ? `<input class="in" data-ivtagn value="${esc(st.tag)}" placeholder="Artist's name" style="max-width:180px"><span class="ink-dots">${BK_TAG_COLS.map(c => `<button class="ink ${st.col === c ? 'on' : ''}" data-ivcol="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</span>` : ''}
+        </div>
+        ${rowsHtml()}
+        <div class="row" style="gap:8px;margin-top:12px;justify-content:flex-end"><span class="muted" style="margin-right:auto;font-size:12px">${k.n} new · ${k.c} changed · ${k.m} tagged · ${k.g} to remove</span>
+          <button class="btn" data-ivi="">Cancel</button><button class="btn primary" data-ivi="go" ${k.n + k.c + k.m + k.g ? '' : 'disabled'}>Import</button></div></div>`; };
+    o.addEventListener('click', (e) => { const t = e.target;
+      const c = t.closest('[data-ivcol]'); if (c) { st.col = c.dataset.ivcol; return draw(); }
+      const b = t.closest('[data-ivi]'); if (b || t === o) { o.remove(); res(b?.dataset.ivi === 'go'); } });
+    o.addEventListener('change', (e) => { const t = e.target;
+      if (t.dataset.ivk) { t.checked ? st.skip.delete(t.dataset.ivk) : st.skip.add(t.dataset.ivk); return draw(); }
+      if (t.hasAttribute('data-ivtag')) { st.tagOn = t.checked; return draw(); } });
+    o.addEventListener('input', (e) => { if (e.target.hasAttribute('data-ivtagn')) st.tag = e.target.value; });
+    document.body.appendChild(o); draw();
+  });
+  if (!ok) return 0;
+  const g = gone.filter(i => !st.skip.has(i.h.src_uid));
+  if (g.length && !await ask(`Remove ${g.length} item${g.length === 1 ? '' : 's'} deleted in ${P.ws.name}?\n\nThis permanently removes ${g.length === 1 ? 'it' : 'them'} from your stock here.`)) return 0;
+  const tag = st.tagOn && st.tag.trim() ? st.tag.trim() : null, col = tag ? st.col : null, ops = [];
+  const val = (x, k) => k === 'name' ? String(x.name).trim() : ['qty', 'min_qty'].includes(k) ? +x[k] || 0 : k === 'step' ? +x[k] || 1 : k === 'active' ? +(x[k] ?? 1) : k === 'cost' ? (x[k] == null || x[k] === '' ? null : +x[k]) : (ivNorm(k, x[k]) || null);
+  for (const it of items) {
+    if (st.skip.has(it.x.uid)) continue;
+    const x = it.x;
+    if (it.st === 'new') ops.push({ sql: `INSERT INTO inventory_items (${F.join(', ')}, src_uid, src_ws, tag, tag_color) VALUES (${F.map(() => '?').join(', ')}, ?, ?, ?, ?)`, params: [...F.map(k => val(x, k)), self ? null : x.uid, self ? null : P.ws.uid, tag, col] });
+    else if (it.st === 'changed') ops.push({ sql: `UPDATE inventory_items SET ${F.map(k => k + ' = ?').join(', ')}, tag = ?, tag_color = ?, updated_at = datetime('now') WHERE id = ?`, params: [...F.map(k => val(x, k)), tag, col, it.h.id] });
+    else if (it.st === 'match') ops.push({ sql: `UPDATE inventory_items SET ${it.diff.map(k => k + ' = ?, ').join('')}tag = COALESCE(tag, ?), tag_color = COALESCE(tag_color, ?), updated_at = datetime('now') WHERE id = ?`,
+      params: [...it.diff.map(k => val(x, k)), tag, col, it.h.id] });
+  }
+  for (const r of g) ops.push({ sql: 'DELETE FROM inventory_items WHERE id = ?', params: [r.h.id] });
+  if (ops.length) await DB.tx(ops);
+  toast(`Imported: ${ops.length - g.length} change${ops.length - g.length === 1 ? '' : 's'} made.`, 3000);
+  return ops.length;
+}
+/* Saves an export file: the share sheet on a phone or tablet, a download elsewhere. */
+async function xSave(f, title, msg) {
+  try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) { await navigator.share({ files: [f], title }); return; } } catch (err) { if (err.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(msg, 3000);
+}
+const xPickFile = (accept) => new Promise((res) => { const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.onchange = () => res(i.files[0] || null); i.click(); });
+/* The shown-or-all choice every export starts with; extra is more options below the two buttons. */
+const xChoose = (title, intro, nShown, nAll, allSub, extra = '', onchange = null) => new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card" style="max-width:440px"><h2>${title}</h2><p class="muted" style="margin-top:0">${intro}</p>
+    <div class="dz-ex"><button data-x="shown" ${nShown ? '' : 'disabled'}><b>The ${nShown} shown</b><small>Your filters and search decide which</small></button><button data-x="all" ${nAll ? '' : 'disabled'}><b>All ${nAll}</b><small>${allSub}</small></button></div>
+    ${extra}<button class="btn" data-x="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+  if (onchange) o.onchange = onchange;
+  o.onclick = (e) => { const b = e.target.closest('[data-x]'); if ((!b && e.target !== o) || b?.disabled) return; o.remove(); res(b?.dataset.x || null); }; document.body.appendChild(o); });
+/* The import preview every import uses: rows of [key, what, name, details, on], a count line, and Import. */
+const xPreview = (title, intro, rowsFn, heads) => new Promise((res) => {
+  const o = document.createElement('div'), skip = new Set(); o.id = 'merge-dlg';
+  const draw = () => { const R = rowsFn(), n = R.filter(r => !skip.has(r[0])).length;
+    o.innerHTML = `<div class="card bix-card"><h2>${title}</h2><p class="muted" style="margin-top:0">${intro}</p>
+      ${R.length ? `<div class="bkt-scroll" style="max-height:50vh"><table class="bkt"><thead><tr><th class="c-done"></th>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${R.map(r =>
+        `<tr><td class="c-done"><input type="checkbox" data-xk="${esc(r[0])}" ${skip.has(r[0]) ? '' : 'checked'}></td>${r.slice(1).map((c, i) => `<td class="${i < 1 ? 'nw' : ''}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+        : '<p class="muted" style="padding:14px;text-align:center">Nothing to add or change: everything here matches.</p>'}
+      <div class="row" style="gap:8px;margin-top:12px;justify-content:flex-end"><span class="muted" style="margin-right:auto;font-size:12px">${n} to import</span>
+        <button class="btn" data-xi="">Cancel</button><button class="btn primary" data-xi="go" ${n ? '' : 'disabled'}>Import</button></div></div>`; };
+  o.addEventListener('click', (e) => { const b = e.target.closest('[data-xi]'); if (b || e.target === o) { o.remove(); res(b?.dataset.xi === 'go' ? skip : null); } });
+  o.addEventListener('change', (e) => { const k = e.target.dataset.xk; if (k == null) return; e.target.checked ? skip.delete(k) : skip.add(k); draw(); });
+  document.body.appendChild(o); draw(); });
+
+/* ---------- Moving the rule book between workspaces ----------
+   No tags: a rule with the same title (any case) as one here is the same rule, changed if its words or category differ.
+   New rules go at the end of their category. */
+const rxKey = (t) => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const RLX_V = 1;
+const rxOwn = async (S) => (await S.rows('rules')).sort((a, b) => String(a.category).localeCompare(String(b.category)) || a.sort - b.sort || a.id - b.id);
+async function rxPack(S, list) { return { inkforge: 'rules', v: RLX_V, ws: { uid: await S.uid(), name: xWsName(S, true) }, at: new Date().toISOString(), rules: list.map(r => ({ title: r.title, body: r.body || '', category: r.category })) }; }
+async function rxExport(shown) {
+  const all = await rxOwn(XS_LOCAL);
+  const pick = await xChoose('Export rules', 'A file to load into another workspace, for example a new artist\'s.', (shown || []).length, all.length, 'The whole rule book');
+  if (!pick) return;
+  const list = pick === 'all' ? all : all.filter(r => shown.some(v => v.id === r.id)), out = await rxPack(XS_LOCAL, list);
+  await xSave(new File([JSON.stringify(out)], `rules-${out.ws.name.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkrules`, { type: 'application/json' }), 'Rules', `Saved ${list.length} rule${list.length === 1 ? '' : 's'}.`);
+}
+async function rxImport(P0) {
+  const L = await xLoad(P0, '.inkrules,application/json', 'rules', 'rules', RLX_V, 'rules'); if (!L) return 0; const { P } = L;
+  const here = await DB.all('SELECT * FROM rules'), byT = new Map(here.map(r => [rxKey(r.title), r]));
+  const items = P.rules.filter(x => rxKey(x.title)).map((x, i) => { const h = byT.get(rxKey(x.title)), cat = String(x.category || 'Client rules').trim() || 'Client rules';
+    const st = !h ? 'new' : (String(h.body || '').trim() !== String(x.body || '').trim() || h.category !== cat) ? 'changed' : 'same'; return { k: 'r' + i, x: { ...x, category: cat }, h, st }; });
+  const same = items.filter(i => i.st === 'same').length;
+  const skip = await xPreview('Import rules', `From <b>${esc(P.ws?.name || 'another workspace')}</b>. ${P.rules.length} rule${P.rules.length === 1 ? '' : 's'} in the file${same ? `, ${same} already here and the same` : ''}.`,
+    () => items.filter(i => i.st !== 'same').map(i => [i.k, i.st === 'new' ? '<span class="bix new">New</span>' : '<span class="bix chg">Changed</span>', `<b>${esc(i.x.title)}</b><div class="muted" style="font-size:11px">${esc(i.x.category)}</div>`,
+      i.st === 'new' ? esc(String(i.x.body || '').slice(0, 140)) : (i.h.category !== i.x.category ? `<div class="bix-d"><b>Category:</b> <s>${esc(i.h.category)}</s> → ${esc(i.x.category)}</div>` : '')
+        + (String(i.h.body || '').trim() !== String(i.x.body || '').trim() ? `<div class="bix-d"><b>Words:</b> ${esc(String(i.x.body || '').slice(0, 140))}</div>` : '')]), ['What', 'Rule', 'Details']);
+  if (!skip) return 0;
+  const ops = [], top = {}; for (const r of here) top[r.category] = Math.max(top[r.category] ?? -1, r.sort);
+  for (const i of items) { if (i.st === 'same' || skip.has(i.k)) continue;
+    if (i.st === 'new') { top[i.x.category] = (top[i.x.category] ?? -1) + 1; ops.push({ sql: 'INSERT INTO rules (title, body, category, sort) VALUES (?, ?, ?, ?)', params: [String(i.x.title).trim(), i.x.body || null, i.x.category, top[i.x.category]] }); }
+    else ops.push({ sql: 'UPDATE rules SET body = ?, category = ? WHERE id = ?', params: [i.x.body || null, i.x.category, i.h.id] }); }
+  if (ops.length) await DB.tx(ops);
+  toast(`Imported: ${ops.length} rule${ops.length === 1 ? '' : 's'} added or changed.`, 3000);
+  return ops.length;
+}
+
+/* ---------- Moving portfolio pieces between workspaces ----------
+   The file holds each piece's words and its photos (and their small previews) inside it. No tags: a piece whose first
+   photo is already here (photos are stored by their content) is the same piece, changed if its words differ.
+   Client links are left out: clients are their own export. */
+const PX_FIELDS = ['kind', 'title', 'description', 'placement', 'tags', 'made_on', 'price', 'claimed', 'favourite', 'bg'];
+const PX_LABEL = { kind: 'Type', title: 'Title', description: 'Description', placement: 'Placement', tags: 'Tags', made_on: 'Date', price: 'Price', claimed: 'Claimed', favourite: 'Favourite', bg: 'Background' };
+const pxNorm = (k, v) => ['price'].includes(k) ? (v == null || v === '' ? '' : String(+v)) : ['claimed', 'favourite'].includes(k) ? String(+!!v) : v == null ? '' : String(v).trim();
+const pxB64 = (blob) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.readAsDataURL(blob); });
+const PX_V = 1;
+const pxOwn = async (S) => (await S.rows('portfolio_items')).sort((a, b) => String(b.made_on || b.created_at).localeCompare(String(a.made_on || a.created_at)) || b.id - a.id);
+async function pxPack(S, list) {
+  const ph = await S.rows('portfolio_photos'), items = [];
+  for (const r of list) { const photos = [];
+    for (const p of ph.filter(p => p.item_id === r.id).sort((a, b) => a.sort - b.sort || a.id - b.id)) { const a = await S.b64(p.photo_ref); if (!a) continue; const t = p.thumb_ref ? await S.b64(p.thumb_ref) : null;
+      photos.push({ label: p.label || null, ext: p.photo_ref.split('.').pop(), data: a, text: t ? p.thumb_ref.split('.').pop() : null, thumb: t }); }
+    items.push({ ...Object.fromEntries(PX_FIELDS.map(k => [k, r[k] ?? null])), photos }); }
+  return { inkforge: 'portfolio', v: PX_V, ws: { uid: await S.uid(), name: xWsName(S) }, at: new Date().toISOString(), items };
+}
+async function pxExport() {
+  const all = await pxOwn(XS_LOCAL);
+  if (!all.length) return toast('Your portfolio is empty.');
+  const kinds = { tattoo: 1, art: 1, flash: 1 }, st = { fav: false };
+  const extra = `<div class="lbl" style="margin-top:10px">Include</div><div class="qz-chips">${Object.entries(PF_KIND).map(([k, l]) => `<label class="toggle" style="margin-right:12px"><input type="checkbox" data-pxk="${k}" checked><span>${l}</span></label>`).join('')}</div>
+    <label class="toggle"><input type="checkbox" data-pxfav><span>Favourites only</span></label><p class="muted" style="font-size:12px;margin:4px 0 0">Photos go inside the file, so a big portfolio makes a big file. Client links are left out.</p>`;
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  const pick = await new Promise((res) => {
+    const cnt = () => all.filter(r => kinds[r.kind] && (!st.fav || r.favourite)).length;
+    o.innerHTML = `<div class="card" style="max-width:440px"><h2>Export portfolio</h2><p class="muted" style="margin-top:0">A file to load into another workspace, photos and all.</p>${extra}
+      <div class="row" style="gap:8px;margin-top:12px"><button class="btn" data-x="" style="flex:1">Cancel</button><button class="btn primary" data-x="go" style="flex:1">Export <span data-pxn>${cnt()}</span></button></div></div>`;
+    o.onchange = (e) => { const t = e.target; if (t.dataset.pxk) kinds[t.dataset.pxk] = t.checked ? 1 : 0; if (t.hasAttribute('data-pxfav')) st.fav = t.checked;
+      const n = cnt(); o.querySelector('[data-pxn]').textContent = n; o.querySelector('[data-x="go"]').disabled = !n; };
+    o.onclick = (e) => { const b = e.target.closest('[data-x]'); if ((!b && e.target !== o) || b?.disabled) return; o.remove(); res(b?.dataset.x === 'go'); }; document.body.appendChild(o); });
+  if (!pick) return;
+  toast('Packing photos…', 60000);
+  const list = all.filter(r => kinds[r.kind] && (!st.fav || r.favourite)), out = await pxPack(XS_LOCAL, list);
+  await xSave(new File([JSON.stringify(out)], `portfolio-${out.ws.name.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkportfolio`, { type: 'application/json' }), 'Portfolio', `Saved ${list.length} piece${list.length === 1 ? '' : 's'}.`);
+}
+async function pxImport(P0) {
+  const L = await xLoad(P0, '.inkportfolio,application/json', 'portfolio', 'items', PX_V, 'portfolio'); if (!L) return 0; const { P } = L;
+  const b64 = (d, ext) => new Blob([Uint8Array.from(atob(d), c => c.charCodeAt(0))], { type: ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'svg' ? 'image/svg+xml' : 'image/jpeg' });
+  const hashOf = async (blob, ext) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))].slice(0, 16).map(b => b.toString(16).padStart(2, '0')).join('') + '.' + ext;
+  const refs = new Map((await DB.all('SELECT x.photo_ref, p.* FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id')).map(r => [r.photo_ref, r]));
+  const items = [];
+  for (const [i, x] of P.items.entries()) {
+    if (!PF_KIND[x.kind]) continue;
+    const first = x.photos?.[0], ref = first ? await hashOf(b64(first.data, first.ext), first.ext) : null, h = ref && refs.get(ref);
+    const diff = h ? PX_FIELDS.filter(k => pxNorm(k, h[k]) !== pxNorm(k, x[k])) : [];
+    items.push({ k: 'p' + i, x, h, st: !h ? 'new' : diff.length ? 'changed' : 'same', diff, prev: first ? `data:image/${first.text || first.ext};base64,${first.thumb || first.data}` : '' });
+  }
+  const same = items.filter(i => i.st === 'same').length;
+  const pic = (i) => i.prev ? `<img src="${i.prev}" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:8px">` : '';
+  const skip = await xPreview('Import portfolio', `From <b>${esc(P.ws?.name || 'another workspace')}</b>, saved ${esc(fmtDay(String(P.at || '').slice(0, 10)))}. ${P.items.length} piece${P.items.length === 1 ? '' : 's'} in the file${same ? `, ${same} already here and the same` : ''}.`,
+    () => items.filter(i => i.st !== 'same').map(i => [i.k, i.st === 'new' ? '<span class="bix new">New</span>' : '<span class="bix chg">Changed</span>',
+      `${pic(i)}<b>${esc(i.x.title || 'Untitled')}</b>`, i.st === 'new' ? esc([PF_KIND[i.x.kind], i.x.placement, `${i.x.photos?.length || 0} photo${i.x.photos?.length === 1 ? '' : 's'}`].filter(Boolean).join(' · '))
+        : i.diff.map(d => `<div class="bix-d"><b>${PX_LABEL[d]}:</b> <s>${esc(pxNorm(d, i.h[d]) || '—')}</s> → ${esc(pxNorm(d, i.x[d]) || '—')}</div>`).join('')]), ['What', 'Piece', 'Details']);
+  if (!skip) return 0;
+  let n = 0;
+  for (const i of items) { if (i.st === 'same' || skip.has(i.k)) continue;
+    const vals = PX_FIELDS.map(k => k === 'price' ? (i.x[k] == null || i.x[k] === '' ? null : +i.x[k]) : ['claimed', 'favourite'].includes(k) ? +!!i.x[k] : i.x[k] ?? null);
+    if (i.st === 'changed') { await DB.run(`UPDATE portfolio_items SET ${PX_FIELDS.map(k => k + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, i.h.id]); n++; continue; }
+    const ph = [];
+    for (const p of i.x.photos || []) { const a = await Media.save(b64(p.data, p.ext), p.ext), t = p.thumb ? await Media.save(b64(p.thumb, p.text), p.text) : a; ph.push([a, t, p.label || null]); }
+    await DB.run(`INSERT INTO portfolio_items (${PX_FIELDS.join(', ')}) VALUES (${PX_FIELDS.map(() => '?').join(', ')})`, vals);
+    const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+    if (ph.length) await DB.tx(ph.map((p, j) => ({ sql: 'INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, ?)', params: [id, ...p, j] })));
+    n++;
+  }
+  toast(`Imported: ${n} piece${n === 1 ? '' : 's'} added or changed.`, 3000);
+  return n;
+}
+/* Pictures and other media a record points to travel inside the file as { ref: base64 }. On import each is saved
+   again; if it lands under a different name (big files are named differently) the record's text is changed to match. */
+async function xPackMedia(text, S = XS_LOCAL) { const out = {};
+  for (const ref of new Set(String(text || '').match(MEDIA_REF_RE) || [])) { const d = await S.b64(ref); if (d) out[ref] = d; }
+  return out; }
+async function xUnpackMedia(media, text) { let t = String(text ?? '');
+  for (const [ref, data] of Object.entries(media || {})) { const ext = ref.split('.').pop();
+    const blob = new Blob([Uint8Array.from(atob(data), c => c.charCodeAt(0))], { type: ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml' : ext === 'webp' ? 'image/webp' : /^(mp4|webm|mov)$/.test(ext) ? 'video/' + ext : /^(mp3|m4a|wav|ogg|aac)$/.test(ext) ? 'audio/' + ext : 'image/jpeg' });
+    const nm = await Media.saveBig(blob, ext); if (nm !== ref) t = t.split(ref).join(nm); }
+  return t; }
+/* A file from a newer InkForge than this one: say so rather than import something half understood. */
+const xTooNew = (P, cur) => { if ((+P.v || 1) > cur) { toast('This file was made by a newer InkForge. Update the app (reload it), then import again.', 5000); return true; } return false; };
+
+/* ---------- Moving saved quotes between workspaces ----------
+   File v1. A quote is the same one when its client name and the moment it was made match; changed if its price or
+   details differ. Booking links are left out (bookings are their own export); the design picture goes inside.
+   Older files: any field they lack gets its default. */
+const QX_V = 1, QX_FIELDS = ['client_name', 'summary', 'data', 'cfg', 'total', 'hours', 'completed', 'reply', 'created_at'];
+const qxKey = (r) => String(r.client_name || '').trim().toLowerCase() + '|' + String(r.created_at || '');
+const qxOwn = async (S) => (await S.rows('quotes')).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+async function qxPack(S, list) { const out = { inkforge: 'quotes', v: QX_V, ws: { uid: await S.uid(), name: xWsName(S) }, at: new Date().toISOString(), quotes: [] };
+  for (const r of list) out.quotes.push({ ...Object.fromEntries(QX_FIELDS.map(k => [k, r[k] ?? null])), design_ref: r.design_ref || null, media: r.design_ref ? await xPackMedia(r.design_ref, S) : {} });
+  return out; }
+async function qxExport(shown) {
+  const all = await qxOwn(XS_LOCAL);
+  const pick = await xChoose('Export quotes', 'A file to load into another workspace. Design pictures go inside it; booking links are left out.', (shown || []).length, all.length, 'Every saved quote');
+  if (!pick) return;
+  const list = pick === 'all' ? all : all.filter(r => shown.some(v => v.id === r.id)), out = await qxPack(XS_LOCAL, list);
+  await xSave(new File([JSON.stringify(out)], `quotes-${out.ws.name.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkquotes`, { type: 'application/json' }), 'Quotes', `Saved ${list.length} quote${list.length === 1 ? '' : 's'}.`);
+}
+async function qxImport(P0) {
+  const L = await xLoad(P0, '.inkquotes,application/json', 'quotes', 'quotes', QX_V, 'quotes'); if (!L) return 0; const { P } = L;
+  const here = new Map((await DB.all('SELECT * FROM quotes')).map(r => [qxKey(r), r]));
+  const items = P.quotes.filter(x => x && (x.data || x.summary)).map((x, i) => { const h = here.get(qxKey(x));
+    const st = !h ? 'new' : ['summary', 'data', 'cfg', 'total', 'hours', 'completed', 'reply'].some(k => String(h[k] ?? '') !== String(x[k] ?? '')) ? 'changed' : 'same'; return { k: 'q' + i, x, h, st }; });
+  const same = items.filter(i => i.st === 'same').length;
+  const skip = await xPreview('Import quotes', `From <b>${esc(P.ws?.name || 'another workspace')}</b>. ${P.quotes.length} quote${P.quotes.length === 1 ? '' : 's'} in the file${same ? `, ${same} already here and the same` : ''}.`,
+    () => items.filter(i => i.st !== 'same').map(i => [i.k, i.st === 'new' ? '<span class="bix new">New</span>' : '<span class="bix chg">Changed</span>', `<b>${esc(i.x.client_name || 'No name')}</b><div class="muted" style="font-size:11px">${esc(i.x.created_at ? fmtDay(String(i.x.created_at).slice(0, 10)) : '')}</div>`,
+      esc([i.x.summary, i.x.total != null ? money(+i.x.total) : ''].filter(Boolean).join(' · ')) + (i.st === 'changed' && i.h.total !== i.x.total ? `<div class="bix-d"><b>Total:</b> <s>${esc(i.h.total != null ? money(i.h.total) : '—')}</s> → ${esc(i.x.total != null ? money(+i.x.total) : '—')}</div>` : '')]), ['What', 'Quote', 'Details']);
+  if (!skip) return 0;
+  let n = 0;
+  for (const i of items) { if (i.st === 'same' || skip.has(i.k)) continue; const x = i.x;
+    const ref = x.design_ref ? (await xUnpackMedia(x.media, x.design_ref)) : null, has = ref && (x.media || {})[x.design_ref] ? ref : null;
+    const vals = [x.client_name ?? null, x.summary ?? null, typeof x.data === 'string' ? x.data : JSON.stringify(x.data ?? {}), typeof x.cfg === 'string' ? x.cfg : JSON.stringify(x.cfg ?? {}),
+      x.total == null ? null : +x.total, x.hours == null ? null : +x.hours, +!!x.completed, x.reply ?? null];
+    if (i.st === 'new') await DB.run(`INSERT INTO quotes (client_name, summary, data, cfg, total, hours, completed, reply, design_ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, coalesce(?, datetime('now')))`, [...vals, has, x.created_at || null]);
+    else await DB.run(`UPDATE quotes SET client_name = ?, summary = ?, data = ?, cfg = ?, total = ?, hours = ?, completed = ?, reply = ?, design_ref = coalesce(?, design_ref), updated_at = datetime('now') WHERE id = ?`, [...vals, has, i.h.id]);
+    n++; }
+  toast(`Imported: ${n} quote${n === 1 ? '' : 's'} added or changed.`, 3000);
+  return n;
+}
+
+/* ---------- Moving forms between workspaces ----------
+   File v1. A form is a design (kind form): its whole doc goes in the file with every picture it uses. A form with the
+   same name as one here is the same form, changed if its design differs. Older files: dzOldDoc tidies the doc
+   (layers this version can no longer draw are dropped). */
+const FX_V = 1;
+const fxOwn = async (S) => (await S.rows('designs')).filter(r => r.kind === 'form').map(r => ({ id: r.id, name: r.name, doc: JSON.parse(r.doc) })).sort((a, b) => a.name.localeCompare(b.name));
+async function fxPack(S, list) { const out = { inkforge: 'forms', v: FX_V, ws: { uid: await S.uid(), name: xWsName(S, true) }, at: new Date().toISOString(), forms: [] };
+  for (const r of list) { const doc = JSON.stringify(r.doc); out.forms.push({ name: r.name, doc, media: await xPackMedia(doc, S) }); }
+  return out; }
+async function fxExport(shown) {
+  const all = await FF.all();
+  const pick = await xChoose('Export forms', 'A file to load into another workspace: the forms\' designs and their pictures. Filled-in forms stay here.', (shown || []).length, all.length, 'Every form you have');
+  if (!pick) return;
+  const list = pick === 'all' ? all : all.filter(r => shown.some(v => v.id === r.id)), out = await fxPack(XS_LOCAL, list);
+  await xSave(new File([JSON.stringify(out)], `forms-${out.ws.name.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkforms`, { type: 'application/json' }), 'Forms', `Saved ${list.length} form${list.length === 1 ? '' : 's'}.`);
+}
+/* An old doc made safe to open: only layers of a type this version draws are kept (add new layer types here). */
+const DZ_LAYER_TYPES = new Set(['text', 'shape', 'image', 'field', 'check', 'table', 'shortcut']);
+const dzOldDoc = (d) => { if (!d || typeof d !== 'object') return null; d.layers = (Array.isArray(d.layers) ? d.layers : []).filter(l => l && typeof l === 'object' && DZ_LAYER_TYPES.has(l.t)); d.pages ||= 1; return d; };
+async function fxImport(P0) {
+  const L = await xLoad(P0, '.inkforms,application/json', 'forms', 'forms', FX_V, 'forms'); if (!L) return 0; const { P } = L;
+  const here = new Map((await FF.all()).map(r => [rxKey(r.name), r]));
+  const items = P.forms.map((x, i) => { let doc; try { doc = dzOldDoc(typeof x.doc === 'string' ? JSON.parse(x.doc) : x.doc); } catch { doc = null; }
+    if (!doc || !rxKey(x.name)) return null; const h = here.get(rxKey(x.name));
+    return { k: 'f' + i, x, doc, h, st: !h ? 'new' : JSON.stringify(h.doc) !== JSON.stringify(doc) ? 'changed' : 'same' }; }).filter(Boolean);
+  const same = items.filter(i => i.st === 'same').length;
+  const skip = await xPreview('Import forms', `From <b>${esc(P.ws?.name || 'another workspace')}</b>. ${P.forms.length} form${P.forms.length === 1 ? '' : 's'} in the file${same ? `, ${same} already here and the same` : ''}.`,
+    () => items.filter(i => i.st !== 'same').map(i => [i.k, i.st === 'new' ? '<span class="bix new">New</span>' : '<span class="bix chg">Changed</span>', `<b>${esc(i.x.name)}</b>`,
+      i.st === 'new' ? `${i.doc.pages || 1} page${(i.doc.pages || 1) > 1 ? 's' : ''}` : '<span class="muted">Its design is different: importing replaces yours</span>']), ['What', 'Form', 'Details']);
+  if (!skip) return 0;
+  let n = 0;
+  for (const i of items) { if (i.st === 'same' || skip.has(i.k)) continue;
+    const doc = await xUnpackMedia(i.x.media, JSON.stringify(i.doc));
+    if (i.st === 'new') await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [String(i.x.name).trim(), 'form', doc]);
+    else await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [doc, i.h.id]);
+    n++; }
+  toast(`Imported: ${n} form${n === 1 ? '' : 's'} added or changed.`, 3000);
+  return n;
+}
+/* ---------- Moving simulator pieces between workspaces ----------
+   File v1. Each piece is its row (size, skin, the meta with its settings, time-lapse and so on) and every picture it
+   names: stencil, ink layers, worked skin, blowouts, thumbnail. Lessons, exams and challenge runs stay behind. A piece is
+   the same one when its name and the moment it was started match; changed if anything in it differs.
+   Older files: only columns this version has are written (others are dropped), missing ones get their defaults. */
+const TX_V = 1, TX_SKIP = new Set(['id', 'created_at', 'updated_at']);
+const txKey = (r) => String(r.name || '').trim().toLowerCase() + '|' + String(r.created_at || '');
+const txPlain = (r) => { let m = {}; try { m = JSON.parse(r.meta || '{}'); } catch {} return !m.exam && !m.tuneOnly; };
+const txOwn = async (S) => (await S.rows('tattoo_pieces')).filter(txPlain).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+async function txPack(S, list) { const out = { inkforge: 'pieces', v: TX_V, ws: { uid: await S.uid(), name: xWsName(S) }, at: new Date().toISOString(), pieces: [] };
+  for (const r of list) { const row = Object.fromEntries(Object.entries(r).filter(([k]) => !TX_SKIP.has(k))); row.created_at = r.created_at;
+    out.pieces.push({ row, media: await xPackMedia(JSON.stringify(row), S) }); }
+  return out; }
+async function txExport(shown) {
+  const all = await txOwn(XS_LOCAL), vis = (shown || []).filter(r => !r.exam);
+  const pick = await xChoose('Export pieces', 'A file to load into another workspace: each piece with its stencil, ink layers and skin, ready to keep tattooing. Exams and challenges stay here.', vis.length, all.length, 'Every piece');
+  if (!pick) return;
+  toast('Packing pieces…', 60000);
+  const list = pick === 'all' ? all : all.filter(r => vis.some(v => v.id === r.id)), out = await txPack(XS_LOCAL, list);
+  await xSave(new File([JSON.stringify(out)], `pieces-${out.ws.name.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkpieces`, { type: 'application/json' }), 'Pieces', `Saved ${list.length} piece${list.length === 1 ? '' : 's'}.`);
+}
+async function txImport(P0) {
+  const L = await xLoad(P0, '.inkpieces,application/json', 'pieces', 'pieces', TX_V, 'simulator'); if (!L) return 0; const { P } = L;
+  const cols = new Set((await DB.all('PRAGMA table_info(tattoo_pieces)')).map(c => c.name)), here = new Map((await DB.all('SELECT * FROM tattoo_pieces')).map(r => [txKey(r), r]));
+  const items = P.pieces.map((x, i) => { const r = x?.row; if (!r || !(+r.w_cm > 0) || !(+r.h_cm > 0)) return null; const h = here.get(txKey(r));
+    const diff = h ? Object.keys(r).filter(k => cols.has(k) && !TX_SKIP.has(k) && k !== 'created_at' && String(h[k] ?? '') !== String(r[k] ?? '')) : [];
+    const th = r.thumb_ref && x.media?.[r.thumb_ref];
+    return { k: 'p' + i, x, r, h, st: !h ? 'new' : diff.length ? 'changed' : 'same', prev: th ? `data:image/${r.thumb_ref.endsWith('png') ? 'png' : 'jpeg'};base64,${th}` : '' }; }).filter(Boolean);
+  const same = items.filter(i => i.st === 'same').length;
+  const pic = (i) => i.prev ? `<img src="${i.prev}" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:8px">` : '';
+  const skip = await xPreview('Import pieces', `From <b>${esc(P.ws?.name || 'another workspace')}</b>. ${P.pieces.length} piece${P.pieces.length === 1 ? '' : 's'} in the file${same ? `, ${same} already here and the same` : ''}.`,
+    () => items.filter(i => i.st !== 'same').map(i => [i.k, i.st === 'new' ? '<span class="bix new">New</span>' : '<span class="bix chg">Changed</span>', `${pic(i)}<b>${esc(i.r.name || 'Piece')}</b>`,
+      `${+i.r.w_cm} × ${+i.r.h_cm} cm${i.st === 'changed' ? ' · <span class="muted">tattooed further or changed: importing replaces yours</span>' : ''}`]), ['What', 'Piece', 'Details']);
+  if (!skip) return 0;
+  let n = 0;
+  toast('Importing…', 60000);
+  for (const i of items) { if (i.st === 'same' || skip.has(i.k)) continue;
+    const row = JSON.parse(await xUnpackMedia(i.x.media, JSON.stringify(i.r))), K = Object.keys(row).filter(k => cols.has(k) && !TX_SKIP.has(k) && (k !== 'created_at' || i.st === 'new'));
+    if (i.st === 'new') await DB.run(`INSERT INTO tattoo_pieces (${K.join(', ')}) VALUES (${K.map(() => '?').join(', ')})`, K.map(k => row[k]));
+    else await DB.run(`UPDATE tattoo_pieces SET ${K.map(k => k + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...K.map(k => row[k]), i.h.id]);
+    n++; }
+  toast(`Imported: ${n} piece${n === 1 ? '' : 's'} added or changed.`, 3000);
+  return n;
+}
+/* ---------- Moving reels between workspaces ----------
+   File v1. Each reel is its doc (clips, cards, transitions, text and stickers, sound rows, style) with every photo, video
+   and song it names, its thumbnail and any of your own fonts it uses. A reel with the same name is the same one,
+   changed if its edit differs. Older files: clips of a kind this version can't play are dropped; the reel loader
+   already brings old docs up to date (one song becomes a sound row, older stickers are moved over) and says what's missing. */
+const RX_V = 1, RX_CLIP_TYPES = new Set(['image', 'video', 'blank']);   /* add new clip types here */
+const rlOldDoc = (d) => { if (!d || typeof d !== 'object') return null; d.clips = (Array.isArray(d.clips) ? d.clips : []).filter(c => c && RX_CLIP_TYPES.has(c.type));
+  d.ovl = Array.isArray(d.ovl) ? d.ovl.filter(o => o && typeof o === 'object') : []; if (d.aud && !Array.isArray(d.aud)) delete d.aud; d.trans ||= {}; return d; };
+const rlOwn = async (S) => (await S.rows('reels')).sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+async function rlPack(S, list) { const out = { inkforge: 'reels', v: RX_V, ws: { uid: await S.uid(), name: xWsName(S) }, at: new Date().toISOString(), reels: [] };
+  let custom = []; try { custom = JSON.parse(S.set('dz_fonts') || '[]'); } catch {}
+  for (const r of list) { const doc = r.doc || '{}', fonts = custom.filter(f => doc.includes('u:' + f.name));
+    out.reels.push({ name: r.name, doc, thumb: r.thumb_ref || '', fonts, media: await xPackMedia(doc + ' ' + (r.thumb_ref || '') + ' ' + fonts.map(f => f.ref).join(' '), S) }); }
+  return out; }
+async function rlExport(shown) {
+  const all = await rlOwn(XS_LOCAL);
+  const pick = await xChoose('Export reels', 'A file to load into another workspace: each reel with its photos, videos, music and fonts, ready to keep editing. Videos make it big.', (shown || []).length, all.length, 'Every reel');
+  if (!pick) return;
+  toast('Packing reels…', 120000);
+  const list = pick === 'all' ? all : all.filter(r => shown.some(v => v.id === r.id)), out = await rlPack(XS_LOCAL, list);
+  await xSave(new File([JSON.stringify(out)], `reels-${out.ws.name.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkreels`, { type: 'application/json' }), 'Reels', `Saved ${list.length} reel${list.length === 1 ? '' : 's'}.`);
+}
+async function rlImport(P0) {
+  const L = await xLoad(P0, '.inkreels,application/json', 'reels', 'reels', RX_V, 'reels'); if (!L) return 0; const { P } = L;
+  const here = new Map((await DB.all('SELECT id, name, doc FROM reels')).map(r => [rxKey(r.name || 'Reel'), r]));
+  const items = P.reels.map((x, i) => { let d; try { d = rlOldDoc(JSON.parse(x.doc)); } catch { d = null; } if (!d) return null;
+    const h = here.get(rxKey(x.name || 'Reel')); let same = false; if (h) { try { same = JSON.stringify(rlOldDoc(JSON.parse(h.doc))) === JSON.stringify(d); } catch {} }
+    const th = x.thumb && x.media?.[x.thumb];
+    return { k: 'r' + i, x, d, h, st: !h ? 'new' : same ? 'same' : 'changed', prev: th ? `data:image/${x.thumb.endsWith('png') ? 'png' : 'jpeg'};base64,${th}` : '' }; }).filter(Boolean);
+  const same = items.filter(i => i.st === 'same').length, bad = P.reels.length - items.length;
+  const pic = (i) => i.prev ? `<img src="${i.prev}" alt="" style="width:28px;height:48px;object-fit:cover;border-radius:4px;vertical-align:middle;margin-right:8px">` : '';
+  const skip = await xPreview('Import reels', `From <b>${esc(P.ws?.name || 'another workspace')}</b>. ${P.reels.length} reel${P.reels.length === 1 ? '' : 's'} in the file${same ? `, ${same} already here and the same` : ''}${bad ? `, ${bad} this version can\u2019t open` : ''}.`,
+    () => items.filter(i => i.st !== 'same').map(i => { const n = i.d.clips.length;
+      return [i.k, i.st === 'new' ? '<span class="bix new">New</span>' : '<span class="bix chg">Changed</span>', `${pic(i)}<b>${esc(i.x.name || 'Reel')}</b>`,
+        `${n ? `${n} clip${n > 1 ? 's' : ''}` : 'Empty'}${i.st === 'changed' ? ' · <span class="muted">different from yours: importing replaces it</span>' : ''}`]; }), ['What', 'Reel', 'Details']);
+  if (!skip) return 0;
+  let n = 0;
+  toast('Importing…', 120000);
+  for (const i of items) { if (i.st === 'same' || skip.has(i.k)) continue;
+    const packed = await xUnpackMedia(i.x.media, JSON.stringify({ doc: JSON.stringify(i.d), thumb: i.x.thumb || '', fonts: i.x.fonts || [] })), U = JSON.parse(packed);
+    if (U.fonts.length && typeof DZF !== 'undefined') { const list = DZF.custom(); for (const ft of U.fonts) if (!list.some(x => x.name === ft.name)) list.push({ name: ft.name, ref: ft.ref }); await Settings.set('dz_fonts', JSON.stringify(list)); }
+    if (i.st === 'new') await DB.run('INSERT INTO reels (name, doc, thumb_ref) VALUES (?, ?, ?)', [String(i.x.name || 'Reel').trim(), U.doc, U.thumb || null]);
+    else await DB.run(`UPDATE reels SET doc = ?, thumb_ref = coalesce(?, thumb_ref), updated_at = datetime('now') WHERE id = ?`, [U.doc, U.thumb || null, i.h.id]);
+    n++; }
+  toast(`Imported: ${n} reel${n === 1 ? '' : 's'} added or changed.`, 3000);
+  return n;
 }
 /* A ghost booking: what and when, read-only, with the way to make it a real booking or remove it. */
 function bkGhostView(b) {
@@ -8905,6 +9499,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 498, when: '2026-11-19T20:00', added: [
+    'Clients and stock: Export and Import in their tables, to move them to another workspace. A preview shows what is new, changed or deleted, the same person or item is never added twice, and imported ones get a coloured tag with the artist’s name.',
+    'Rule book and portfolio: Export and Import. Portfolio pieces travel with their photos.',
+    'Saved quotes, forms and the design studio: Export and Import. Designs can go many at once, with their pictures, references and your own fonts.',
+    'Simulator pieces and reels: Export and Import, with ink layers, photos, videos and music inside. Settings, Backup, Merge now goes a section at a time with the same previews, so you choose what comes in from a whole backup.'],
+    test: ['Clients, the table icon, then Export and Import.', 'Settings, Backup, then Merge a backup from another device.'] },
   { build: 497, when: '2026-11-19T18:00', added: ['Design studio templates: the Price list and Aftercare layouts now use tables you can edit cell by cell, frame outlines sit neatly inside their edges, and Full photo fades smoothly behind the title.', 'New templates: a Price menu post (square, portrait and story) and a Booking request form with your details, a price table, a deposit tick box and a signature.'], test: ['New design, Square post, then pick Price menu.', 'New design, Form, then pick Booking request.'] },
   { build: 496, when: '2026-11-19T17:00', added: ['Design studio: a cleaner New design window. Back and Create sit at the top, paper size is one list, the settings are on the left and the layouts, with smaller previews, on the right.', 'Blank is now the first layout and is picked for you, so Create gives you an empty page straight away.'], test: ['Tap New design, pick a kind, and tap Create right away for a blank one.', 'Pick a Blank page and choose a size from the list.'] },
   { build: 495, when: '2026-11-19T16:00', added: ['Design studio: pick a group or several items and Save to Assets and Save as SVG are right in the top strip. If some of them are text or pictures, it offers to save them as a picture inside the SVG.', 'On a tablet, windows where you type a name now move up so the on-screen keyboard no longer covers them.'], test: ['Pick a group of shapes and tap Save to Assets in the top strip.', 'Save something to references on the tablet and check the name box shows above the keyboard.'] },

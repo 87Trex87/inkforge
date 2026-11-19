@@ -1133,6 +1133,8 @@ TT.list = async (el) => {
   el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">Experimental: draw with needle groupings in ink on skin. Works best with a pressure pen (like an S Pen).</p>
       <button class="btn" id="tt-less" data-go="tattoo/lessons" data-tip="Step-by-step lessons with tips and techniques; each one unlocks the next">Lessons</button>
       <button class="btn" id="tt-chal" data-go="tattoo/challenges" data-tip="Each lesson as a challenge of its own: medals, personal bests and trophies">Challenges</button>
+      <button class="btn" id="tt-exp" data-tip="Save pieces to a file another workspace can import" ${rows.length ? '' : 'disabled'}>Export</button>
+      <button class="btn" id="tt-imp" data-tip="Load pieces from another workspace's file: preview first">Import</button>
       <button class="btn primary" id="tt-new">+ New piece</button></div>
     ${rows.length ? Lib.bar('tattoo', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('tattoo', r.id)}<div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
       <div class="dz-meta"><b>${esc(r.name || 'Piece')}</b><span class="muted">${r.exam ? (r.exam === 2 ? 'Exam · finished' : 'Exam · in progress') : `${+r.w_cm} × ${+r.h_cm} cm`}${r.area && !r.exam ? (() => { const A = ttAreaAll().find(a => a[0] === r.area); return A ? ` · ${TT_TIERN[ttTier(A[2])]} · ${esc(A[0])}` : ''; })() : ''}${r.cheat ? ' <span class="tt-cheat" style="display:inline-block;margin-left:4px">Cheat</span>' : ''}</span></div>
@@ -1141,6 +1143,7 @@ TT.list = async (el) => {
       : `<div class="empty"><div class="empty-ico">${ICON.needle}</div><div style="font:24px var(--display)">Tattoo simulator</div>
         <div class="muted">Pick a page size and skin tone, load a stencil to trace, dip into the ink caps and tattoo in layers: linework, shadow, mid and light tones, highlights.</div></div>`}`;
   $('#tt-new').onclick = () => ttNewDlg();
+  $('#tt-exp').onclick = () => txExport(shown); $('#tt-imp').onclick = () => txImport().then(n => { if (n) redraw(); });
   Lib.wire(el, 'tattoo', redraw);
   el.onclick = async (e) => {
     if (await Lib.click(e, 'tattoo', redraw)) return;
