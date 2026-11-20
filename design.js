@@ -7,7 +7,7 @@
    design while anything the artist coloured by hand keeps its own colour. Text can hold {fields}
    that fill in from Settings (studio, phone...) and from the design's own details (voucher amount,
    code...). Pictures are media files (content-hash names) listed in design_assets for backups. */
-const DESIGN_VERSION = 1;   // app.js checks this matches, to catch a stale cached copy
+const DESIGN_VERSION = 2;   // app.js checks this matches, to catch a stale cached copy
 
 const DZ_KINDS = {
   note: { label: 'Sticky note', sub: 'Pin it on your menu screens', w: 900, h: 900, per: 0, note: 1 },
@@ -1689,7 +1689,22 @@ const DZ_TEMPLATES = {
         dzS('line', W * 0.45, H * 0.55, W * 0.48, 5, dzG([['@accent', 0], [DZ_CLEAR, 1]], 0)),
         dzT('For {to}  ·  From {from}', W * 0.45, H * 0.6, W * 0.5, H * 0.05),
         dzT('Code {code}  ·  Valid until {expires}', W * 0.45, H * 0.72, W * 0.5, H * 0.04, { c: '@soft' }),
-        dzT('{phone}  ·  {instagram}', W * 0.45, H * 0.82, W * 0.5, H * 0.04, { c: '@soft' })]; }]
+        dzT('{phone}  ·  {instagram}', W * 0.45, H * 0.82, W * 0.5, H * 0.04, { c: '@soft' })]; }],
+    ['Minimal', (W, H) => [dzT('GIFT VOUCHER', W * 0.06, H * 0.12, W * 0.6, H * 0.065, { font: '@1', ls: 8, c: '@soft' }),
+      dzT('{amount}', W * 0.06, H * 0.24, W * 0.62, H * 0.26, { font: '@1', fit: 1 }), dzLogo(W * 0.76, H * 0.1, W * 0.18, H * 0.38),
+      dzS('line', W * 0.06, H * 0.62, W * 0.88, 3, { fill: '@soft' }),
+      dzT('For {to}\nFrom {from}', W * 0.06, H * 0.67, W * 0.44, H * 0.05, { lh: 1.5 }),
+      dzT('Code {code}\nValid until {expires}', W * 0.5, H * 0.67, W * 0.44, H * 0.045, { al: 'right', lh: 1.5, c: '@soft' }),
+      dzT('{studio}  ·  {instagram}', W * 0.06, H * 0.88, W * 0.88, H * 0.04, { c: '@accent' })]],
+    ['Stub', (W, H) => [dzS('rect', 0, 0, W * 0.25, H, dzG([['@accent', 0], ['@bg', 1.5]], 90)),
+      ...Array.from({ length: 9 }, (_, i) => dzS('ellipse', W * 0.25 - H * 0.025, H * (0.06 + i * 0.11), H * 0.05, H * 0.05, { fill: '@bg' })),
+      dzT('GIFT', W * 0.02, H * 0.3, W * 0.2, H * 0.09, { font: '@1', al: 'center', c: '@bg', ls: 4 }),
+      dzT('{amount}', W * 0.02, H * 0.44, W * 0.2, H * 0.12, { font: '@1', al: 'center', c: '@bg', fit: 1 }),
+      dzT('No. {code}', W * 0.02, H * 0.62, W * 0.2, H * 0.04, { al: 'center', c: '@bg' }),
+      dzLogo(W * 0.31, H * 0.1, H * 0.3, H * 0.3), dzT('{studio}', W * 0.31 + H * 0.36, H * 0.16, W * 0.6 - H * 0.36, H * 0.09, { font: '@1', fit: 1 }),
+      dzT('A tattoo gift for {to}', W * 0.31, H * 0.5, W * 0.64, H * 0.08, { font: '@1', c: '@accent' }),
+      dzT('From {from}  ·  Valid until {expires}', W * 0.31, H * 0.64, W * 0.64, H * 0.045),
+      dzT('Book on {phone} or {instagram}', W * 0.31, H * 0.8, W * 0.64, H * 0.04, { c: '@soft' })]]
   ],
   card: [
     ['Logo left', (W, H) => [dzLogo(W * 0.06, H * 0.2, W * 0.28, H * 0.6), dzS('rect', W * 0.375, H * 0.19, 5, H * 0.62),
@@ -1714,7 +1729,14 @@ const DZ_TEMPLATES = {
       dzT('{studio}', W * 0.08, H * 0.12, W * 0.84, H * 0.12, { font: '@1', fit: 1, side: 'b' }),
       dzT('{artist}', W * 0.08, H * 0.29, W * 0.84, H * 0.065, { c: '@accent', side: 'b' }),
       dzT('{phone}\n{instagram}\n{facebook}', W * 0.08, H * 0.44, W * 0.84, H * 0.06, { lh: 1.5, side: 'b' }),
-      dzWave(0, H * 0.82, W, H * 0.18, 3, 0.45, { side: 'b' })]]
+      dzWave(0, H * 0.82, W, H * 0.18, 3, 0.45, { side: 'b' })]],
+    ['Minimal', (W, H) => [dzLogo(W * 0.07, H * 0.12, W * 0.13, H * 0.2),
+      dzT('{studio}', W * 0.07, H * 0.5, W * 0.6, H * 0.12, { font: '@1', fit: 1 }), dzT('{artist}', W * 0.07, H * 0.65, W * 0.6, H * 0.06, { c: '@soft' }),
+      dzS('line', W * 0.07, H * 0.8, W * 0.86, 2, { fill: '@soft' }),
+      dzT('{phone}', W * 0.07, H * 0.84, W * 0.43, H * 0.055), dzT('{instagram}', W * 0.5, H * 0.84, W * 0.43, H * 0.055, { al: 'right', c: '@accent' })]],
+    ['Split', (W, H) => [dzS('rect', 0, 0, W * 0.42, H, dzG([['@accent', 0], ['@bg', 1.6]], 135)), dzLogo(W * 0.08, H * 0.22, W * 0.26, H * 0.56),
+      dzT('{studio}', W * 0.48, H * 0.2, W * 0.46, H * 0.12, { font: '@1', fit: 1 }), dzT('{artist}', W * 0.48, H * 0.36, W * 0.46, H * 0.065, { c: '@accent' }),
+      dzT('{phone}\n{instagram}\n{facebook}', W * 0.48, H * 0.55, W * 0.46, H * 0.058, { lh: 1.45 })]]
   ],
   flyer: [
     ['Promo', (W, H) => [dzS('rect', 0, 0, W, H * 0.06), dzLogo(W * 0.35, H * 0.1, W * 0.3, H * 0.16),
@@ -1750,7 +1772,25 @@ const DZ_TEMPLATES = {
         dzT('Dates · City', W * 0.08, H * 0.63, W * 0.84, H * 0.03, { al: 'center', c: '@accent' }),
         dzT('A few days only. Message to book a spot or ask about flash.', W * 0.12, H * 0.69, W * 0.76, H * 0.022, { al: 'center', lh: 1.5, c: '@soft' }),
         dzS('rect', 0, H * 0.86, W, H * 0.14, dzG([['@bg', 0], ['@accent', 1]], 0)),
-        dzT('{studio}  ·  {phone}  ·  {instagram}', W * 0.06, H * 0.915, W * 0.88, H * 0.024, { al: 'center' })]; }]
+        dzT('{studio}  ·  {phone}  ·  {instagram}', W * 0.06, H * 0.915, W * 0.88, H * 0.024, { al: 'center' })]; }],
+    ['Opening hours', (W, H) => [dzLogo(W * 0.38, H * 0.05, W * 0.24, H * 0.12),
+      dzT('OPENING HOURS', W * 0.08, H * 0.2, W * 0.84, H * 0.05, { font: '@1', al: 'center', ls: 4 }),
+      dzTb(W * 0.12, H * 0.29, W * 0.76, [['Monday', 'Closed'], ['Tuesday', '10:00 – 18:00'], ['Wednesday', '10:00 – 18:00'], ['Thursday', '10:00 – 20:00'], ['Friday', '10:00 – 18:00'], ['Saturday', '10:00 – 16:00'], ['Sunday', 'Closed']],
+        { hdr: 0, rh: H * 0.05, size: H * 0.021, cols: [1, 1], ral: 1, pad: W * 0.02, band: 'none', bc: '@soft', bw: 2 }),
+      dzT('Walk-ins when there is a gap. Bookings and consultations by message.', W * 0.12, H * 0.67, W * 0.76, H * 0.02, { al: 'center', c: '@soft', lh: 1.5 }),
+      dzS('rect', 0, H * 0.86, W, H * 0.14), dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.885, W * 0.84, H * 0.024, { c: '@bg', al: 'center', lh: 1.6 })]],
+    ['Studio rules', (W, H) => [dzS('rect', 0, 0, W, H * 0.15, dzG([['@accent', 0], ['@bg', 1]], 0)), dzLogo(W * 0.07, H * 0.025, W * 0.16, H * 0.1),
+      dzT('Before your appointment', W * 0.27, H * 0.055, W * 0.66, H * 0.04, { font: '@1', fit: 1 }),
+      dzTb(W * 0.08, H * 0.2, W * 0.84, [['Deposit', 'Holds your booking and comes off the final price.'], ['ID', 'Bring photo ID. You must be 18 or over.'], ['Eat', 'Have a proper meal and drink water beforehand.'],
+        ['Skin', 'No sunburn, cuts or rashes on the area.'], ['Changes', 'Give 48 hours notice to move your booking.'], ['Guests', 'One friend at most, please.']],
+        { hdr: 0, rh: H * 0.105, size: H * 0.021, cols: [1, 3], pad: W * 0.025, band: 'none', bc: '@soft', bw: 2 }),
+      dzT('{studio}  ·  {phone}  ·  {instagram}', W * 0.08, H * 0.9, W * 0.84, H * 0.022, { al: 'center', c: '@soft' })]],
+    ['FAQ', (W, H) => [dzT('Questions?', W * 0.08, H * 0.05, W * 0.84, H * 0.06, { font: '@1', al: 'center' }),
+      dzT('Everything people ask before booking', W * 0.08, H * 0.12, W * 0.84, H * 0.022, { al: 'center', c: '@accent' }),
+      ...[['Does it hurt?', 'A bit. Most people find it easier than they expected, and we take breaks.'], ['How much will it cost?', 'It depends on size, detail and placement. Message for a quote.'],
+        ['Can I bring my own design?', 'Yes. Bring references and we will draw something made for you.'], ['How long does it take to heal?', 'Two to four weeks on the surface. Follow the aftercare sheet.']]
+        .flatMap(([q, a], i) => [dzT(q, W * 0.1, H * (0.2 + i * 0.15), W * 0.8, H * 0.026, { font: '@1', c: '@accent' }), dzT(a, W * 0.1, H * (0.245 + i * 0.15), W * 0.8, H * 0.02, { lh: 1.5 })]),
+      dzWave(0, H * 0.84, W, H * 0.16, 3, 0.35), dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.9, W * 0.84, H * 0.024, { al: 'center', lh: 1.6, c: '@bg' })]]
   ],
   page: [
     ['Poster', (W, H) => [dzS('rect', 0, 0, W, H, dzG([['@bg', 0], ['@bg', 0.45], ['@accent', 1.4]], 90)),
@@ -1767,7 +1807,28 @@ const DZ_TEMPLATES = {
         { rh: H * 0.042, size: H * 0.018, cols: [2, 1], ral: 1, pad: W * 0.02, band: 'none' }),
       dzS('line', W * 0.07, H * 0.55, W * 0.86, 4, dzG([['@accent', 0], [DZ_CLEAR, 1]], 0)),
       dzT('A deposit secures your booking. Prices depend on size, detail and placement.', W * 0.07, H * 0.58, W * 0.86, H * 0.018, { c: '@soft', lh: 1.5 }),
-      dzWave(0, H * 0.88, W, H * 0.12, 3, 0.4), dzT('{phone}  ·  {instagram}', W * 0.07, H * 0.94, W * 0.86, H * 0.02, { c: '@bg', al: 'center' })]]
+      dzWave(0, H * 0.88, W, H * 0.12, 3, 0.4), dzT('{phone}  ·  {instagram}', W * 0.07, H * 0.94, W * 0.86, H * 0.02, { c: '@bg', al: 'center' })]],
+    ['Aftercare sheet', (W, H) => [dzLogo(W * 0.07, H * 0.04, W * 0.14, W * 0.14), dzT('Looking after your new tattoo', W * 0.25, H * 0.055, W * 0.68, H * 0.035, { font: '@1', fit: 1 }),
+      dzT('{studio}  ·  {phone}', W * 0.25, H * 0.1, W * 0.68, H * 0.016, { c: '@soft' }),
+      dzTb(W * 0.07, H * 0.17, W * 0.86, [['When', 'What to do'], ['First hours', 'Keep the wrap on for as long as you were told, then take it off with clean hands.'],
+        ['Days 1 to 3', 'Wash gently with lukewarm water and mild soap two or three times a day. Pat dry with clean paper towel.'],
+        ['Days 3 to 14', 'Apply a very thin layer of aftercare. Flaking and itching are normal: do not pick or scratch.'],
+        ['Weeks 2 to 4', 'Keep it out of the sun, pools, baths and saunas until the skin is smooth again.'], ['After that', 'Use sun cream on it for life to keep the lines sharp and the colours bright.']],
+        { rh: H * 0.075, size: H * 0.015, cols: [1, 3.2], pad: W * 0.02, band: 'none', bc: '@soft', bw: 2 }),
+      dzS('rect', W * 0.07, H * 0.66, W * 0.86, H * 0.13, { fill: 'none', stroke: '@accent', sw: 5, sal: 'in', r: W * 0.02 }),
+      dzT('Call a doctor if redness, heat or swelling gets worse after a few days, or if you feel unwell.', W * 0.1, H * 0.69, W * 0.8, H * 0.017, { lh: 1.5 }),
+      dzWave(0, H * 0.88, W, H * 0.12, 3, 0.4), dzT('Questions? {phone}  ·  {instagram}', W * 0.07, H * 0.94, W * 0.86, H * 0.018, { c: '@bg', al: 'center' })]],
+    ['Flash sheet', (W, H) => { const m = W * 0.06, g = W * 0.03, top = H * 0.13, cols = 3, rows = 4, cw = (W - 2 * m - g * (cols - 1)) / cols, ch = (H * 0.78 - g * (rows - 1)) / rows;
+      return [dzT('FLASH', m, H * 0.035, W * 0.5, H * 0.05, { font: '@1', ls: 6 }), dzT('{studio}  ·  {instagram}', W * 0.45, H * 0.05, W * 0.49, H * 0.018, { al: 'right', c: '@soft' }),
+        ...Array.from({ length: cols * rows }, (_, i) => { const x = m + (i % cols) * (cw + g), y = top + Math.floor(i / cols) * (ch + g);
+          return [dzS('rect', x, y, cw, ch, { fill: 'none', stroke: '@soft', sw: 3, sal: 'in', r: W * 0.012, dash: 'dash' }),
+            dzS('rect', x + cw - W * 0.11, y + ch - H * 0.035, W * 0.1, H * 0.026, { r: H * 0.013 }), dzT('…', x + cw - W * 0.11, y + ch - H * 0.031, W * 0.1, H * 0.016, { al: 'center', c: '@bg' })]; }).flat(),
+        dzT('Pick one, message the number, first come first served.', m, H * 0.94, W - 2 * m, H * 0.017, { al: 'center', c: '@soft' })]; }],
+    ['Opening hours', (W, H) => [dzS('rect', 0, 0, W, H, dzG([['@bg', 0], ['@bg', 0.5], ['@accent', 1.5]], 90)), dzLogo(W * 0.36, H * 0.06, W * 0.28, W * 0.28),
+      dzT('OPEN', W * 0.08, H * 0.3, W * 0.84, H * 0.06, { font: '@1', al: 'center', ls: 10 }),
+      dzTb(W * 0.15, H * 0.4, W * 0.7, [['Monday', 'Closed'], ['Tuesday', '10:00 – 18:00'], ['Wednesday', '10:00 – 18:00'], ['Thursday', '10:00 – 20:00'], ['Friday', '10:00 – 18:00'], ['Saturday', '10:00 – 16:00'], ['Sunday', 'Closed']],
+        { hdr: 0, rh: H * 0.045, size: H * 0.019, cols: [1, 1], ral: 1, pad: W * 0.02, band: 'none', bc: '@soft', bw: 2 }),
+      dzT('{studio}\n{phone}  ·  {instagram}', W * 0.08, H * 0.85, W * 0.84, H * 0.02, { al: 'center', lh: 1.6 })]]
   ],
   post: [
     ['Announcement', (W, H) => [dzS('rect', W * 0.05, H * 0.05, W * 0.9, H * 0.9, { fill: 'none', stroke: '@accent', sw: 6, sal: 'in', r: 20 }),
@@ -1798,7 +1859,40 @@ const DZ_TEMPLATES = {
         dzTb(m, top, W - 2 * m, [['Size', 'From'], ['Small (up to 5 cm)', '…'], ['Medium (palm size)', '…'], ['Large (half sleeve)', '…'], ['Full day', '…'], ['Touch-ups', '…']],
           { rh, size: f, cols: [2, 1], ral: 1, pad: W * 0.03, rad: W * 0.025, bg: '@bg', band: 'none', lines: 'rows', outer: 1, bw: 3, bc: '@accent' }),
         dzT('A deposit secures your spot · message me to book', m, top + rh * 6 + H * 0.04, W - 2 * m, f * 0.85, { al: 'center', c: '@soft' }),
-        dzLogo(W * 0.43, H * 0.84, W * 0.14, H * 0.1, { op: 0.9 })]; }]
+        dzLogo(W * 0.43, H * 0.84, W * 0.14, H * 0.1, { op: 0.9 })]; }],
+    ['Hours', (W, H) => { const m = W * 0.1, f = Math.min(W * 0.036, H * 0.028), rh = Math.min(H * 0.075, W * 0.085), top = H * 0.2;
+      return [dzS('rect', 0, 0, W, H, dzG([['@bg', 0], ['@accent', 1.6]], 135)),
+        dzT('OPENING HOURS', m, H * 0.07, W - 2 * m, f * 2, { font: '@1', al: 'center', ls: 5 }),
+        dzTb(m, top, W - 2 * m, [['Mon', 'Closed'], ['Tue', '10 – 6'], ['Wed', '10 – 6'], ['Thu', '10 – 8'], ['Fri', '10 – 6'], ['Sat', '10 – 4'], ['Sun', 'Closed']],
+          { hdr: 0, rh, size: f, cols: [1, 1], ral: 1, pad: W * 0.03, band: 'none', bc: '@soft', bw: 2 }),
+        dzT('{studio}  ·  {instagram}', m, top + rh * 7 + H * 0.05, W - 2 * m, f * 0.8, { al: 'center', c: '@soft' })]; }],
+    ['Review', (W, H) => { const f = Math.min(W * 0.05, H * 0.038);
+      return [dzS('rect', 0, 0, W, H, dzG([['@accent', 0], ['@bg', 0.75]], 160, 'radial')),
+        dzT('\u201C', W * 0.08, H * 0.08, W * 0.3, f * 5, { font: '@1', c: '@accent', lh: 1 }),
+        dzT('Best tattoo experience I have had. Clean, friendly and the work is perfect.', W * 0.12, H * 0.3, W * 0.76, f, { font: '@1', al: 'center', lh: 1.35 }),
+        dzT('\u2605\u2605\u2605\u2605\u2605', W * 0.2, H * 0.62, W * 0.6, f * 1.1, { al: 'center', c: '@accent', ls: 6 }),
+        dzT('Client name', W * 0.2, H * 0.7, W * 0.6, f * 0.7, { al: 'center', c: '@soft' }),
+        dzLogo(W * 0.42, H * 0.8, W * 0.16, Math.min(W * 0.16, H * 0.12), { op: 0.9 })]; }],
+    ['Spots left', (W, H) => { const d = Math.min(W * 0.56, H * 0.42), cx = (W - d) / 2, cy = H * 0.22;
+      return [dzS('rect', 0, 0, W, H, dzG([['@bg', 0], ['@bg', 0.4], ['@accent', 1.4]], 90)),
+        dzT('LAST CHANCE', W * 0.1, H * 0.08, W * 0.8, Math.min(W * 0.06, H * 0.045), { font: '@1', al: 'center', ls: 6 }),
+        dzS('ellipse', cx, cy, d, d, dzG([['@accent', 0], ['@fg', 1]], 135)),
+        dzT('3', cx, cy + d * 0.12, d, d * 0.62, { font: '@1', al: 'center', c: '@bg', lh: 1 }),
+        dzT('spots left this month', W * 0.1, cy + d + H * 0.04, W * 0.8, Math.min(W * 0.05, H * 0.038), { font: '@1', al: 'center' }),
+        dzT('Message me to grab one', W * 0.1, cy + d + H * 0.11, W * 0.8, Math.min(W * 0.034, H * 0.026), { al: 'center', c: '@soft' }),
+        dzT('{instagram}', W * 0.1, H * 0.9, W * 0.8, Math.min(W * 0.03, H * 0.023), { al: 'center', c: '@accent' })]; }],
+    ['Closed', (W, H) => [dzS('rect', W * 0.06, H * 0.06, W * 0.88, H * 0.88, { fill: 'none', stroke: '@soft', sw: 4, sal: 'in', r: 24 }),
+      dzLogo(W * 0.4, H * 0.14, W * 0.2, Math.min(W * 0.2, H * 0.15)),
+      dzT('WE\u2019RE CLOSED', W * 0.1, H * 0.38, W * 0.8, Math.min(W * 0.085, H * 0.065), { font: '@1', al: 'center', fit: 1 }),
+      dzT('Dates here', W * 0.1, H * 0.5, W * 0.8, Math.min(W * 0.045, H * 0.034), { al: 'center', c: '@accent' }),
+      dzT('Taking a short break. Messages are answered when we\u2019re back.', W * 0.14, H * 0.6, W * 0.72, Math.min(W * 0.032, H * 0.025), { al: 'center', lh: 1.5, c: '@soft' }),
+      dzT('{studio}  ·  {instagram}', W * 0.1, H * 0.84, W * 0.8, Math.min(W * 0.03, H * 0.023), { al: 'center', c: '@soft' })]],
+    ['Flash grid', (W, H) => { const m = W * 0.06, g = W * 0.03, top = H * 0.15, cw = (W - 2 * m - g) / 2, ch = Math.min(cw, (H * 0.7 - g) / 2), f = Math.min(W * 0.03, H * 0.023);
+      return [dzT('AVAILABLE FLASH', m, H * 0.05, W - 2 * m, Math.min(W * 0.06, H * 0.045), { font: '@1', al: 'center', ls: 4 }),
+        ...[0, 1, 2, 3].flatMap(i => { const x = m + (i % 2) * (cw + g), y = top + Math.floor(i / 2) * (ch + g);
+          return [dzS('rect', x, y, cw, ch, { fill: 'none', stroke: '@soft', sw: 3, sal: 'in', r: W * 0.02, dash: 'dash' }),
+            dzS('rect', x + cw - W * 0.15, y + ch - f * 2.2, W * 0.13, f * 1.7, { r: f }), dzT('…', x + cw - W * 0.15, y + ch - f * 1.95, W * 0.13, f, { al: 'center', c: '@bg' })]; }),
+        dzT('{studio}  ·  {instagram}', m, top + 2 * ch + g + H * 0.04, W - 2 * m, f, { al: 'center', c: '@accent' })]; }]
   ]
 };
 // Photo spots: `slot` n takes the piece's n-th photo; cover crops to fill the spot.
@@ -1848,7 +1942,18 @@ const DZ_TATTOO = [
     return [dzT('{title}', W * 0.06, H * 0.04, W * 0.88, Math.min(W * 0.065, H * 0.05), { font: '@1', al: 'center', fit: 1, ...dzG([['@fg', 0], ['@accent', 1]], 0) }),
       dzS('heart', hx, hy, d, d * 0.92, { fill: '@soft' }), dzPh(0, hx, hy, d, d * 0.92, { clip: 1 }),
       dzT('{placement}', W * 0.08, hy + d * 0.92 + H * 0.03, W * 0.84, Math.min(W * 0.04, H * 0.03), { al: 'center', c: '@accent' }),
-      dzT('{tags}', W * 0.08, H * 0.92, W * 0.84, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }), dzMark(W, H, { y: H - W * 0.16 })]; }]
+      dzT('{tags}', W * 0.08, H * 0.92, W * 0.84, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }), dzMark(W, H, { y: H - W * 0.16 })]; }],
+  ['Gallery', (W, H) => { const m = W * 0.1, ph = H - m * 2 - H * 0.14;
+    return [dzS('rect', 0, 0, W, H, { fill: '#f4f1ea' }), dzPh(0, m, m, W - 2 * m, ph, { stroke: '#d8d2c4', sw: 2 }),
+      dzT('{title}', m, m + ph + H * 0.035, W - 2 * m, Math.min(W * 0.04, H * 0.03), { font: '@1', al: 'center', c: '#1d1d1d', ls: 3, fit: 1 }),
+      dzT('{placement}  ·  {studio}', m, m + ph + H * 0.085, W - 2 * m, Math.min(W * 0.026, H * 0.02), { al: 'center', c: '#6b665c' })]; }],
+  ['Side panel', (W, H) => { const pw = W * 0.64;
+    return [dzPh(0, 0, 0, pw, H), dzS('rect', pw, 0, W - pw, H, dzG([['@bg', 0], ['@accent', 1.8]], 90)),
+      dzT('{title}', pw + W * 0.04, H * 0.12, W - pw - W * 0.07, Math.min(W * 0.05, H * 0.04), { font: '@1', lh: 1.1 }),
+      dzS('line', pw + W * 0.04, H * 0.3, W * 0.12, 4),
+      dzT('{placement}', pw + W * 0.04, H * 0.34, W - pw - W * 0.07, Math.min(W * 0.03, H * 0.024), { c: '@accent' }),
+      dzT('{tags}', pw + W * 0.04, H * 0.42, W - pw - W * 0.07, Math.min(W * 0.026, H * 0.02), { c: '@soft', lh: 1.5 }),
+      dzLogo(pw + W * 0.06, H * 0.78, W - pw - W * 0.12, Math.min(W * 0.2, H * 0.14), { op: 0.9 })]; }]
 ];
 // Layout choices for a type: built-in ones, your saved templates, then a blank page.
 const dzCustom = () => { try { return JSON.parse(Settings.get('dz_tpls', '[]')); } catch { return []; } };
@@ -2184,8 +2289,9 @@ DZ.edit = async (id) => {
         ${doc.kind === 'note' ? '<div class="dz-notebar" id="dz-notebar"></div>' : ''}
         <div id="dz-qs" class="dz-qs" hidden><span class="dz-qs-what"></span><div class="dz-qs-row"><span>Yours</span><input type="range" min="0" max="100" step="1" value="50" aria-label="Closer to what you drew, or cleaner"><span>Cleaner</span></div><div class="dz-qs-row"><button class="btn small" data-qs="no" title="Put back the shape it snapped to">Cancel</button><button class="btn small primary" data-qs="ok">Keep</button></div></div><div id="dz-marq" hidden></div><div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="Show the whole design">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div></div>
       <div class="dz-side" id="dz-side" hidden></div>
+      <div class="dz-side dz-strip lm-thumb" id="dz-strip" hidden></div>
     </div></div>`;
-  const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side');
+  const cv = $('#dz-cv'), page = $('#dz-page'), stage = $('#dz-stage'), selBox = $('#dz-sel'), side = $('#dz-side'), strip = $('#dz-strip');
   dzSwatchTools();
   let k = 1;   // screen px per page px
   const layer = () => doc.layers.find(l => l.id === sel);
@@ -2564,9 +2670,15 @@ DZ.edit = async (id) => {
     : l.t === 'image' ? (l.logo ? 'Logo' : l.slot != null ? `Photo ${l.slot + 1}` : 'Picture')
     : ({ ellipse: 'Circle', line: 'Line', star: 'Star', path: 'Traced shape' }[l.shape] || ((!l.fill || l.fill === 'none') && l.sw ? 'Frame' : 'Shape')));
   const layerIco = (l) => l.t === 'text' ? 'T' : l.t === 'image' ? (l.logo ? '◎' : '▣') : '◆';
-  const drawLayers = () => {
-    side.innerHTML = `<div class="dz-lh"><b>Layers <small>${F().length}</small></b><span class="dz-hb">${dzIB(`data-mact="${picking ? 'done' : 'pick'}"`, 'pick', picking ? 'Stop selecting several' : 'Select several', picking ? 'on' : '')}
-        ${picking || picks.size ? dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${picks.size ? '' : 'disabled'}`, 'none', 'Select none') : ''}${dzIB('data-rail="close"', 'close', 'Close')}</span></div>
+  const drawLayers = (host = side) => {
+    host.classList.add('lm-' + lmode);
+    const LM = { thumb: ['Thumbnails only', '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'],
+      list: ['Layers with names', '<rect x="3" y="4" width="6" height="6" rx="1.5"/><rect x="3" y="14" width="6" height="6" rx="1.5"/><path d="M12 7h9M12 17h9"/>'],
+      full: ['All layer options', '<rect x="2" y="4" width="5" height="5" rx="1"/><rect x="2" y="15" width="5" height="5" rx="1"/><path d="M9 6.5h6M9 17.5h6"/><circle cx="18.5" cy="6.5" r="1.4"/><circle cx="18.5" cy="17.5" r="1.4"/>'] };
+    const lmSeg = `<span class="dz-lmseg" role="group" aria-label="Layer panel size">${Object.entries(LM).map(([k, [tip, ic]]) => `<button data-lmode="${k}" class="${lmode === k ? 'on' : ''}" data-tip="${tip}" aria-label="${tip}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('')}</span>`;
+    host.innerHTML = `<div class="dz-lhead"><div class="dz-lh"><b>Layers <small>${F().length}</small></b><span class="dz-hb">${dzIB('data-rail="close"', 'close', 'Close')}</span></div>
+      <div class="dz-lbar">${lmSeg}<span class="dz-lbar-r">${dzIB(`data-mact="${picking ? 'done' : 'pick'}"`, 'pick', picking ? 'Stop selecting several' : 'Select several', picking ? 'on' : '')}
+        ${picking || picks.size ? dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${picks.size ? '' : 'disabled'}`, 'none', 'Select none') : ''}</span></div></div>
       ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? 'Master page: shown under both sides.' : `${dzFaceNames(doc)[face]} only. The master page shows underneath.`}</p>` : ''}
       <div class="dz-ll" id="dz-ll">${(() => { let lastG = null; return [...F()].reverse().map(l => { const i = F().indexOf(l), cl = i > 0 && l.clip, G = l.g && doc.groups?.[l.g] ? l.g : null, shut = G && doc.groups[G].shut;
         let head = ''; if (G && G !== lastG) { const M = F().filter(x => x.g === G), on = M.every(x => picks.has(x.id)), hid = M.every(x => x.hide), lk = M.every(x => x.lock), gr = M.filter(x => x.role);
@@ -2577,15 +2689,30 @@ DZ.edit = async (id) => {
             <button data-glock class="${lk ? 'on' : ''}" title="${lk ? 'Unlock' : 'Lock'} the group" aria-label="Lock group">${LOCK(lk)}</button></div>`; }
         lastG = G; if (shut) return head;
         return head + `<div class="dz-lr ${l.id === sel || picks.has(l.id) ? 'on' : ''} ${l.hide ? 'off' : ''} ${cl ? 'clip' : ''} ${G ? 'ing' : ''}" data-lid="${l.id}">
-        <span class="grip" data-grip aria-label="Drag to reorder">⠿</span><span class="li">${layerIco(l)}</span>
+        <span class="grip" data-grip aria-label="Drag to reorder">⠿</span><span class="lt" title="${esc(layerName(l))}"><canvas data-lt="${l.id}" width="1" height="1"></canvas><i class="lti">${layerIco(l)}</i></span>
         <span class="nm" data-lname title="${l.id === sel ? 'Tap to rename' : 'Tap to select'}">${cl ? '<b class="clipmark">↳</b>' : ''}${esc(layerName(l))}</span>
+        <span class="lopv" title="How much it shows">${Math.round((l.op ?? 1) * 100)}%</span>
         <button data-lclip class="${cl ? 'on' : ''}" ${i ? '' : 'disabled'} title="${cl ? 'Unclip' : 'Clip to the layer below: only shows inside it'}" aria-label="Clip to layer below"><svg viewBox="0 0 24 24"><path d="M7 4v10a3 3 0 0 0 3 3h10"/><path d="M16 13l4 4-4 4"/></svg></button>
         <button data-lhide title="${l.hide ? 'Show' : 'Hide'}" aria-label="${l.hide ? 'Show' : 'Hide'}">${l.hide ? EYE_OFF : EYE}</button>
         <button data-llock class="${l.lock ? 'on' : ''}" title="${l.lock ? 'Unlock' : 'Lock'}" aria-label="Lock">${LOCK(l.lock)}</button>
         <button data-ldel ${l.lock ? 'disabled' : ''} title="${l.lock ? 'Unlock it to delete' : 'Delete'}" aria-label="Delete">✕</button>
-        ${l.id === sel ? `<input type="range" class="dz-lop" min="0" max="1" step="0.05" value="${l.op ?? 1}" data-lop aria-label="Opacity" title="How much it shows">` : ''}</div>`; }).join(''); })() || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
-      <p class="muted dz-hint">Top of the list is in front. The slider on the selected layer sets how much it shows. Drag ⠿ to reorder; tap a name again to rename; hold a layer to select several. Ctrl G groups the picked layers; tap a group's name to pick it all.</p>`;
+        ${l.id === sel && lmode !== 'thumb' ? `<input type="range" class="dz-lop" min="0" max="1" step="0.05" value="${l.op ?? 1}" data-lop aria-label="Opacity" title="How much it shows">` : ''}</div>`; }).join(''); })() || '<p class="muted" style="margin:6px 2px">Nothing on the design yet.</p>'}</div>
+      <p class="muted">Top of the list is in front. The slider on the selected layer sets how much it shows. Drag ⠿ to reorder; tap a name again to rename; hold a layer to select several. Ctrl G groups the picked layers; tap a group's name to pick it all. The three buttons at the top show thumbnails only, layers with names, or every layer option.</p>`;
+    requestAnimationFrame(drawThumbs);
   };
+  /* Layer thumbnails: each layer drawn on its own, fitted to a small square (kept until the layer changes). */
+  let lmode = Settings.get('dz_lmode', 'list'); if (!['thumb', 'list', 'full'].includes(lmode)) lmode = 'list';
+  const thumbCache = new Map(); let thumbRun = 0;
+  const drawThumbs = async () => { const run = ++thumbRun, dpr = Math.min(2, devicePixelRatio || 1);
+    for (const cv of document.querySelectorAll('#dz-side canvas[data-lt], #dz-strip canvas[data-lt]')) { if (run !== thumbRun || !cv.isConnected) return;
+      const l = doc.layers.find(x => x.id === cv.dataset.lt); if (!l) continue;
+      const T = Math.round((cv.clientWidth || 34) * dpr), key = JSON.stringify(l) + '|' + doc.theme + '|' + T; let c = thumbCache.get(l.id);
+      if (!c || c.key !== key) { const b = dzBounds(l), bw = Math.max(1, b.x1 - b.x0), bh = Math.max(1, b.y1 - b.y0), m = Math.max(bw, bh) * 1.08, sc = T / m;
+        const one = { ...l, hide: 0, clip: 0, x: l.x - b.x0 + (m - bw) / 2, y: l.y - b.y0 + (m - bh) / 2 }, cvs = document.createElement('canvas'); cvs.width = cvs.height = T;
+        try { await dzDraw(cvs, { ...doc, w: m, h: m, layers: [one], bg: { ...(doc.bg || {}), img: null }, sides: 0, master: null, pat: null }, sc); } catch {}   /* on the design's own background colour, so light text still shows */
+        c = { key, cv: cvs }; thumbCache.set(l.id, c); }
+      if (run !== thumbRun || !cv.isConnected) return;
+      cv.width = cv.height = T; cv.getContext('2d').drawImage(c.cv, 0, 0); cv.parentElement.classList.add('has'); } };
   let mini = Settings.get('dz_panel_min', '') === '1';
   const toolOn = () => !!(penOn || pclOn || cont || cut || nodes || cropping);
   /* The box above Shift / Alt / Ctrl: where the selection is and how big, always on show and typed into directly.
@@ -2695,6 +2822,11 @@ DZ.edit = async (id) => {
   const secOpen = new Map(); let sideKey = '';
   const secName = (d) => d.querySelector('summary')?.firstChild?.textContent.trim();
   const drawSide = () => {
+    /* Thumbnails only: the strip of layers sits on its own at the edge, and the picked layer's properties open
+       beside it, so you can jump between layers and edit without closing anything. */
+    const stripOn = tab === 'layers' && lmode === 'thumb' && !toolOn(), tab0 = tab;
+    side.closest('.dz-ed')?.classList.toggle('dz-hasstrip', stripOn); strip.hidden = !stripOn;
+    if (stripOn) { drawLayers(strip); tab = 'edit'; } else if (strip.innerHTML) strip.innerHTML = '';
     for (const m0 of doc.layers) if (m0.bgpic && !m0.lock && m0.id !== sel) m0.lock = 1;   /* the background locks again once it's not being edited */
     side.querySelectorAll('details.fsec').forEach(d => secOpen.set(secName(d), d.open));
     const was = side.scrollTop, act = document.activeElement, actSel = side.contains(act) ? ['k', 'ffk', 'tk', 'v'].map(n => act.dataset?.[n] != null ? `[data-${n}="${act.dataset[n]}"]` : '').join('') : '', caret = actSel && act.selectionStart != null ? [act.selectionStart, act.selectionEnd] : null;
@@ -2704,6 +2836,7 @@ DZ.edit = async (id) => {
     side.hidden = !show; side.classList.toggle('min', mini);
     if (!show) side.innerHTML = '';
     else {
+      side.classList.remove('lm-thumb', 'lm-list', 'lm-full');
       if (tab === 'layers') drawLayers(); else if (tab === 'doc') drawDoc(); else if (tab === 'refs') drawRefsSide(); else drawEdit();
       // every panel's header: Done becomes a tick, and a chevron folds the panel down to its header
       const h = side.querySelector('.dz-lh');
@@ -2716,8 +2849,9 @@ DZ.edit = async (id) => {
       }
     }
     side.querySelectorAll('details.fsec').forEach(d => { const o = secOpen.get(secName(d)); if (o != null) d.open = o; });
-    const key = tab + ':' + (sel || '');
+    const key = tab === 'layers' ? 'layers' : tab + ':' + (sel || '');   /* the layers list keeps its place when another layer is picked */
     if (key === sideKey) { side.scrollTop = was; if (actSel) { const n = side.querySelector(actSel); if (n) { n.focus({ preventScroll: true }); if (caret) n.setSelectionRange?.(...caret); } } } else { side.scrollTop = 0; sideKey = key; }
+    if (stripOn) tab = tab0;
     drawCtx(); drawXf(); drawMods(); drawFaces(); drawRail();
     const nh = sheetH(stage.clientHeight); if (nh !== sheetWas) { sheetWas = nh; fit(); redraw(); }
   };
@@ -4716,6 +4850,7 @@ DZ.edit = async (id) => {
     const t = e.target, d = (kk) => t.closest(`[data-${kk}]`)?.dataset[kk], l = layer();
     if (t.matches('[data-lop]')) return;   // the layer's opacity slider: handled as it moves
     if (t.closest('[data-collapse]')) { mini = !mini; Settings.set('dz_panel_min', mini ? '1' : ''); return drawSide(); }
+    if (d('lmode')) { lmode = d('lmode'); Settings.set('dz_lmode', lmode); if (mini) { mini = false; Settings.set('dz_panel_min', ''); } return drawSide(); }
     if (d('rail')) return railAct(d('rail'), t.closest('[data-rail]'));
     if (t.closest('[data-ffupd]')) { const n = await ffUpdateLists(doc); toast(n ? `Updated ${n} field${n > 1 ? 's' : ''}.` : 'Already up to date.'); if (n) changed(true); return drawSide(); }
     if (t.closest('[data-tbladd]')) { closePop(); const w = Math.round(doc.w * 0.7), n = dzTblNew(w); return add({ ...n, ...center(w, n.h) }); }
@@ -4887,7 +5022,7 @@ DZ.edit = async (id) => {
       const nt = side.querySelector('.dz-text'); nt.focus(); nt.setSelectionRange(at + ins.length, at + ins.length);
     }
   };
-  side.addEventListener('click', sideClick);
+  side.addEventListener('click', sideClick); strip.addEventListener('click', sideClick);
   for (const x of [$('#dz-rail'), $('#dz-pop')]) { x.addEventListener('click', sideClick); x.addEventListener('change', (e) => sideChange(e)); }
   /* The magnet: snapping on or off and what snaps to what. Stays at the end of the strip whatever is selected. */
   /* A palette chosen or changed (in any colour choice or the swatch creator): every colour choice shows it. */

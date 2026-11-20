@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 500;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 501;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2293,6 +2293,8 @@ const VIEWS = {
       ${Settings.get('tt_devseen') === '1' ? `<div class="card su-again"><div><b>Dev controls</b><span class="muted">A panel in the simulator with every number behind the skin and the needles, to test changes while tattooing. Changes show on report cards and stats.</span></div><label class="toggle" style="flex:none"><input type="checkbox" data-devmode ${Settings.get('tt_devmode') === '1' ? 'checked' : ''}><span></span></label></div>` : ''}
       <div class="card su-again"><div><b>Workspace type</b><span class="muted">${wsDesign() ? 'Design only: the design tools, forms, notes and portfolio, without clients, bookings, quotes, stats and stock.' : 'Full studio: everything, from clients and bookings to design.'}</span></div>
         <span class="seg" style="flex:none">${[['full', 'Full studio'], ['design', 'Design only']].map(([v, n]) => `<button data-wsmode="${v}" class="${(wsDesign() ? 'design' : 'full') === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
+      <div class="card su-again"><div><b>This device</b><span class="muted">Fits the app to the device: on an iPad, the Apple Pencil can\u2019t select the screen or swipe out of full screen while you draw. Kept on this device only.</span></div>
+        <span class="seg" style="flex:none">${OS_LIST.map(([v, n]) => `<button data-osset="${v}" class="${DevOS.get() === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
       <div class="card su-again" data-biz><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
         <button class="btn small" id="s-setup">Run setup</button></div>
       <div class="card su-again" data-biz><div><b>Practice workspace</b><span class="muted">${WS.cur?.test ? 'You\'re in it: made-up data to try things on. Only one is kept.' : 'A separate workspace full of made-up data to try things on. Only one is kept.'}</span></div>
@@ -2434,6 +2436,7 @@ const VIEWS = {
       $('#s-fb').addEventListener('change', save('artist_facebook'));
       $('#s-tt').addEventListener('change', save('artist_tiktok'));
       $('#s-gid').addEventListener('change', save('gcal_client_id'));
+      document.querySelectorAll('[data-osset]').forEach(b => b.onclick = () => { DevOS.set(b.dataset.osset); document.querySelectorAll('[data-osset]').forEach(x => x.classList.toggle('on', x === b)); toast(`Set up for ${OS_LIST.find(x => x[0] === b.dataset.osset)[1]}.`); });
       $('#s-news').addEventListener('change', (e) => Settings.set('news_off', e.target.checked ? '' : '1'));
       $('#s-gbusy').addEventListener('change', async (e) => { await Settings.set('gcal_busy', e.target.checked ? '1' : '0'); Gcal.soon(); });
       const gsync = async () => {
@@ -9525,6 +9528,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 501, when: '2026-11-20T12:00', added: [
+    'Design studio: 19 new templates. Vouchers, business cards, opening hours, studio rules, FAQ, a detailed aftercare sheet, a flash sheet, and posts for hours, reviews, spots left, closed days and flash, plus two new photo layouts.',
+    'Layers panel: smaller rows with a thumbnail of each layer. Three sizes at the top: thumbnails only (the picked layer’s settings open beside it), names, or every option. The buttons stay put while the list scrolls.',
+    'Lists keep their place: picking something in a long list no longer jumps back to the top.',
+    'iPad: in More, Settings, This device, pick iPad. The Apple Pencil then can’t select the page, open the hold menu or swipe out of full screen while you draw. New workspaces ask which device you are on.'],
+    test: ['Design studio, open the layers and try the three sizes at the top.', 'On an iPad: slow lines and downward whip shading in the simulator.'] },
   { build: 500, when: '2026-11-19T22:00', added: ['Tidier cards: on designs, simulator pieces and reels the buttons sit in one neat row under the name, all the same size with their icons centred, and never cover the name or picture. Forms use small icons for Copy and Export.'],
     test: ['Design studio, simulator and reel maker lists.'] },
   { build: 499, when: '2026-11-19T21:00', added: ['Export just one: every card and row (designs, simulator pieces, reels, clients, bookings, stock, rules, quotes, forms and portfolio pieces) has an export arrow that saves only that item. Import it with the section’s usual Import button.'],
@@ -10010,11 +10019,15 @@ addEventListener('hashchange', () => { if (booted) render(); });
     if (!have()) await new Promise(res => { const sc = document.createElement('script'); sc.src = src + '?v=' + Date.now(); sc.onload = sc.onerror = res; document.head.appendChild(sc); });
   // reel.js and app.js ship together. If a cached older reel.js loaded next to this app.js,
   // refetch both past the browser cache and reload once (the flag stops a reload loop).
-  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 10 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 1 || typeof TOUR_VERSION === 'undefined' || TOUR_VERSION !== 1) {
+  if (typeof REEL_VERSION === 'undefined' || REEL_VERSION !== 10 || typeof DESIGN_VERSION === 'undefined' || DESIGN_VERSION !== 2 || typeof TOUR_VERSION === 'undefined' || TOUR_VERSION !== 1) {
     let tried = false; try { tried = sessionStorage.getItem('if-reload') === '1'; sessionStorage.setItem('if-reload', '1'); } catch {}
     if (!tried) { await Promise.all(['./', 'index.html', 'reel.js', 'design.js', 'tour.js', 'app.js', 'app.css', 'sw.js'].map(u => fetch(u, { cache: 'reload' }).catch(() => {}))); location.reload(); return; }
   }
   try { sessionStorage.removeItem('if-reload'); } catch {}
+  /* The stylesheet carries the build number (--app-build at the end of app.css). A browser can keep an old app.css
+     while the scripts come in new; if the numbers differ, load a fresh copy past the cache. */
+  { const cssB = getComputedStyle(document.documentElement).getPropertyValue('--app-build').trim(), link = document.querySelector('link[rel="stylesheet"][href^="app.css"]');
+    if (link && cssB !== String(APP_BUILD)) link.href = 'app.css?v=' + APP_BUILD + '-' + Date.now(); }
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js');
   await TabLock.claim();
   try { await WS.load(); } catch (err) { console.error(err); }
@@ -10147,6 +10160,7 @@ function showStart() {
           <p class="muted" style="font-size:12px;margin:8px 2px 0">You can change it later in More › Settings.</p><button class="btn" data-wm="" style="width:100%;margin-top:10px">Cancel</button></div>`;
         d.onclick = (e) => { const b = e.target.closest('[data-wm]'); if (!b && e.target !== d) return; d.remove(); res(b?.dataset.wm || null); }; document.body.appendChild(d); });
       if (!mode) return;
+      const os = await DevOS.ask(); if (!os) return; DevOS.set(os);
       const nw = await WS.create(n.trim()); nw.fresh = true; if (mode === 'design') nw.mode = 'design'; await WS.save(); o.remove(); return startWorkspace(nw);
     }
   });
@@ -10274,3 +10288,54 @@ async function startWorkspace(w, fileBytes) {
   document.addEventListener('focusin', () => setTimeout(fit, 350));   /* after the keyboard has come up */
   document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement || !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) reset(); }, 100));
 })();
+
+/* Scrolled lists keep their place when they are redrawn. Many panels rebuild their HTML after a tap (tick a row, pick an
+   item), which swaps a scrolled list for a new one at the top. This remembers where each scrolled box was (by its id, or
+   its classes and a few parents), and when that box is replaced in the same moment by one just like it, scrolls the new
+   one back to the same place. A box that simply closes is forgotten, so a window opened later starts at the top. */
+(function keepScroll() {
+  const last = new Map();
+  const part = (e) => e.id ? '#' + CSS.escape(e.id) : e.tagName.toLowerCase() + [...e.classList].filter(c => !/^(on|open|sel|picked|active|drag|over)$/.test(c)).sort().map(c => '.' + CSS.escape(c)).join('');
+  const sig = (el) => { const p = []; for (let e = el, i = 0; e && e !== document.body && i < 4; e = e.parentElement, i++) p.push(part(e)); return p.join('<'); };
+  document.addEventListener('scroll', (ev) => { const el = ev.target; if (!(el instanceof Element) || el.id === 'main') return;
+    if (el.scrollTop || el.scrollLeft) last.set(sig(el), { el, sel: part(el), top: el.scrollTop, left: el.scrollLeft }); else last.delete(sig(el)); }, true);
+  new MutationObserver(() => { for (const [k, v] of last) { if (v.el.isConnected) continue; last.delete(k);
+    for (const c of document.querySelectorAll(v.sel)) if (c !== v.el && !c.scrollTop && !c.scrollLeft && sig(c) === k) { c.scrollTop = v.top; c.scrollLeft = v.left; if (c.scrollTop || c.scrollLeft) last.set(k, { ...v, el: c }); break; } } })
+    .observe(document.body, { childList: true, subtree: true });
+})();
+
+/* ---------- This device: Windows, Android or iPad ----------
+   Some fixes only suit one kind of device, so they are switched on by the device picked here (kept on this device,
+   not in the workspace, since one workspace can open on several). It starts as a guess from the browser.
+   iPad (iOS): Safari treats a slow Apple Pencil stroke or a held pencil as "select this text" (a gap appears in the
+   line and the page gets highlighted), and a downward pencil swipe drags the page out of full screen. In iPad mode
+   nothing outside text boxes can be selected, there is no hold menu, and a pencil (or finger) stroke on a drawing
+   surface never scrolls or swipes the page. Android and Windows are left as they are. */
+const OS_LIST = [['windows', 'Windows'], ['android', 'Android'], ['ios', 'iPad']];
+const DevOS = {
+  guess() { const ua = navigator.userAgent; return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'ios' : /Android/i.test(ua) ? 'android' : 'windows'; },
+  get() { let v = null; try { v = localStorage.getItem('inkforge_os'); } catch {} return OS_LIST.some(x => x[0] === v) ? v : this.guess(); },
+  set(v) { try { localStorage.setItem('inkforge_os', v); } catch {} this.apply(); },
+  apply() { document.documentElement.dataset.os = this.get(); },
+  /* Asked when a workspace is made: which device this is (the current choice first). */
+  ask() { const cur = this.get(), g = this.guess();
+    return new Promise((res) => { const d = document.createElement('div'); d.id = 'merge-dlg'; d.style.zIndex = 99;
+      d.innerHTML = `<div class="card"><h2>Which device is this?</h2><div class="dz-ex">${[...OS_LIST].sort((a, b) => (b[0] === cur) - (a[0] === cur)).map(([v, n]) =>
+        `<button data-os="${v}"><b>${n}${v === g ? ' <span class="muted" style="font-weight:400">(this looks like it)</span>' : ''}</b><small>${v === 'ios' ? 'iPad with Apple Pencil, in Safari' : v === 'android' ? 'Android tablet or phone, e.g. Samsung with S Pen' : 'Windows computer or tablet'}</small></button>`).join('')}</div>
+        <p class="muted" style="font-size:12px;margin:8px 2px 0">It fits the pen and touch to the device. Change it any time in More › Settings.</p><button class="btn" data-os="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+      d.onclick = (e) => { const b = e.target.closest('[data-os]'); if (!b && e.target !== d) return; d.remove(); res(b?.dataset.os || null); }; document.body.appendChild(d); }); }
+};
+DevOS.apply();
+(function iosPencil() {
+  const ios = () => document.documentElement.dataset.os === 'ios';
+  const editable = (el) => el?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+  const drawing = (el) => el?.closest?.('canvas, .tt-stage, .dz-page, .dz-stage, #reel-cv, .st-view, .gv-stage, #fs-sig, .tt-pad, .tt-tpad');
+  /* nothing but text boxes can be selected */
+  document.addEventListener('selectstart', (e) => { if (ios() && !editable(e.target)) e.preventDefault(); });
+  /* on a drawing surface: no hold menu or magnifier on touch-down, and no scroll or swipe-out while drawing */
+  document.addEventListener('touchstart', (e) => { if (!ios() || !drawing(e.target) || editable(e.target)) return;
+    if ([...e.touches].some(t => t.touchType === 'stylus')) e.preventDefault(); }, { passive: false });
+  document.addEventListener('touchmove', (e) => { if (ios() && drawing(e.target) && !editable(e.target)) e.preventDefault(); }, { passive: false });
+  document.addEventListener('contextmenu', (e) => { if (ios() && drawing(e.target)) e.preventDefault(); });
+})();
+

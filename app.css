@@ -2573,3 +2573,82 @@ body.dz-eyeon #dz-cv, body.dz-eyeon #reel-cv { cursor: crosshair; }
 /* List headers (designs, simulator, reels): the intro on its own line, the buttons in a row under it, right-aligned. */
 .row:has(> p.muted:first-child + .btn) { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .row:has(> p.muted:first-child + .btn) > p.muted:first-child { flex: 1 1 100% !important; }
+
+/* ---------- Layers panel: compact rows with thumbnails, in three widths ---------- */
+.dz-lmseg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: rgba(0,0,0,.25); margin-left: auto; margin-right: 4px; }
+.dz-lmseg button { width: 24px; height: 24px; border: 0; border-radius: 7px; background: none; color: var(--ink2); display: grid; place-items: center; padding: 0; cursor: pointer; }
+.dz-lmseg button.on { background: var(--bg3, #2a2f33); color: var(--teal); box-shadow: 0 0 0 1px var(--line); }
+.dz-lmseg button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.dz-side.lm-thumb .dz-lh, .dz-side.lm-list .dz-lh, .dz-side.lm-full .dz-lh { gap: 4px; }
+.dz-side .dz-ll { gap: 2px; }
+.dz-side .dz-lr { padding: 2px 4px; border-radius: 8px; min-height: 0; column-gap: 4px; row-gap: 0; }
+.dz-side .dz-lr .grip { font-size: 14px; padding: 0; }
+.dz-side .dz-lr .nm { font-size: 12.5px; padding: 0; }
+.dz-side .dz-lr button { width: 26px; height: 26px; border-radius: 7px; }
+.dz-side .dz-lr button svg { width: 15px; height: 15px; }
+.dz-lr .lt { position: relative; width: 30px; height: 30px; border-radius: 6px; overflow: hidden; cursor: pointer; display: grid; place-items: center;
+  background: #fff; background-image: linear-gradient(45deg, #e6e6e6 25%, transparent 25%, transparent 75%, #e6e6e6 75%), linear-gradient(45deg, #e6e6e6 25%, transparent 25%, transparent 75%, #e6e6e6 75%);
+  background-size: 8px 8px; background-position: 0 0, 4px 4px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+.dz-lr .lt canvas { width: 100%; height: 100%; display: block; }
+.dz-lr .lt .lti { position: absolute; right: 1px; bottom: 1px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 4px; background: rgba(10,14,16,.78); color: var(--teal); font: 700 8.5px/13px var(--ui); font-style: normal; text-align: center; }
+.dz-lr .lt .lti svg { width: 9px; height: 9px; }
+.dz-lr .lt:not(.has) canvas { opacity: 0; }
+.dz-lr.on .lt { box-shadow: inset 0 0 0 2px var(--teal); }
+.dz-lr .lopv { font-size: 11px; color: var(--ink2); text-align: right; font-variant-numeric: tabular-nums; }
+.dz-side .dz-lr .dz-lop { height: 14px; margin: 0 0 2px; }
+/* list (default): grip, thumbnail, name, eye, lock */
+.dz-side.lm-list .dz-lr:not(.dz-lg) { grid-template-columns: 14px 30px minmax(0, 1fr) 26px 26px; }
+.dz-side.lm-list .dz-lr:not(.dz-lg) > [data-lclip], .dz-side.lm-list .dz-lr:not(.dz-lg) > [data-ldel], .dz-side.lm-list .dz-lr .lopv { display: none; }
+.dz-side.lm-list .dz-lr.dz-lg { grid-template-columns: 14px 18px 18px minmax(0, 1fr) 26px 26px; }
+.dz-side.lm-list .dz-lr.dz-lg > [data-gun] { display: none; }
+.dz-body > .dz-side.lm-list { width: 292px; }
+/* full: everything, wider */
+.dz-side.lm-full .dz-lr:not(.dz-lg) { grid-template-columns: 14px 40px minmax(0, 1fr) 36px 26px 26px 26px 26px; }
+.dz-side.lm-full .dz-lr .lt { width: 40px; height: 40px; }
+.dz-side.lm-full .dz-lr.dz-lg { grid-template-columns: 14px 18px 18px minmax(0, 1fr) 26px 26px 26px; }
+.dz-body > .dz-side.lm-full { width: 380px; }
+/* thumbnails only: a narrow strip; tap to pick, drag the picture to reorder is off here */
+.dz-body > .dz-side.lm-thumb { width: 92px; padding: 8px 6px; }
+.dz-side.lm-thumb .dz-lh { flex-wrap: wrap; justify-content: center; }
+.dz-side.lm-thumb .dz-lh > b, .dz-side.lm-thumb .dz-lh .dz-hb > :not([data-rail]), .dz-side.lm-thumb .dz-lh .dz-fold, .dz-side.lm-thumb .dz-lh .help { display: none; }
+.dz-side.lm-thumb .dz-lmseg { margin: 0; }
+.dz-side.lm-thumb .dz-lr:not(.dz-lg) { grid-template-columns: 1fr; justify-items: center; padding: 3px; }
+.dz-side.lm-thumb .dz-lr:not(.dz-lg) > :not(.lt) { display: none; }
+.dz-side.lm-thumb .dz-lr .lt { width: 52px; height: 52px; }
+.dz-side.lm-thumb .dz-lr.off .lt { opacity: .35; }
+.dz-side.lm-thumb .dz-lr.ing, .dz-side.lm-thumb .dz-lr.clip { margin-left: 0; border-left: 0; }
+.dz-side.lm-thumb .dz-lr.ing .lt { box-shadow: inset 0 0 0 1px rgba(0,0,0,.25), -3px 0 0 color-mix(in srgb, var(--teal) 55%, transparent); }
+.dz-side.lm-thumb .dz-lr.dz-lg { grid-template-columns: 18px 1fr; padding: 2px; }
+.dz-side.lm-thumb .dz-lr.dz-lg > :not([data-gfold]):not(.li) { display: none; }
+.dz-side.lm-thumb > p, .dz-side.lm-thumb .dz-ll > p { display: none; }
+@media (max-width: 700px) { .dz-body > .dz-side.lm-list, .dz-body > .dz-side.lm-full { width: auto; } .dz-body > .dz-side.lm-thumb { left: auto; width: 92px; } }
+
+.dz-side.lm-list .dz-lh > b, .dz-side.lm-full .dz-lh > b { white-space: nowrap; flex: none; }
+.dz-side.lm-list .dz-lh, .dz-side.lm-full .dz-lh { flex-wrap: nowrap; }
+.dz-side.lm-list .dz-lh .dz-hb, .dz-side.lm-full .dz-lh .dz-hb { flex: none; }
+
+.dz-lbar { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: -2px 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.dz-lbar .dz-lmseg { margin: 0; }
+.dz-lbar-r { display: flex; gap: 2px; } .dz-lbar-r .dz-ib { width: 28px; height: 28px; }
+.dz-side.lm-thumb .dz-lbar { flex-direction: column; gap: 4px; } .dz-side.lm-thumb .dz-lbar-r { display: none; }
+.dz-side.lm-thumb .dz-lmseg { flex-direction: row; }
+.dz-side.lm-thumb .dz-lmseg button { width: 22px; }
+
+.dz-body > .dz-side.lm-thumb { scrollbar-width: thin; }
+.dz-side.lm-thumb .dz-lr:not(.dz-lg) { border-color: transparent; background: none; }
+.dz-side.lm-thumb .dz-lr.on:not(.dz-lg) { background: rgba(31,182,166,.12); }
+/* Layers: the title and the width buttons stay at the top while the list scrolls. */
+.dz-lhead { position: sticky; top: -12px; z-index: 4; margin: -12px -14px 0; padding: 12px 14px 0; background: var(--bg2); }
+.dz-side.lm-thumb .dz-lhead, .dz-strip .dz-lhead { top: -8px; margin: -8px -6px 0; padding: 8px 6px 0; }
+.dz-lhead .dz-lh { margin-bottom: 8px; }
+/* Thumbnails only: the strip at the edge, the properties panel just to its left. */
+.dz-body > .dz-strip { position: absolute; top: 10px; right: 10px; z-index: 7; width: 92px; max-height: calc(100% - 20px); overflow-y: auto; overflow-x: hidden; padding: 8px 6px; scrollbar-width: thin; }
+.dz-ed.dz-hasstrip .dz-body > .dz-side:not(.dz-strip) { right: 110px; }
+@media (max-width: 700px) { .dz-body > .dz-strip { top: 10px; bottom: auto; max-height: calc(52% - 20px); } .dz-ed.dz-hasstrip .dz-body > .dz-side:not(.dz-strip) { right: 0; } }
+/* iPad: the pencil must never select the page, open the hold menu, zoom on a double tap, or drag the page about. */
+html[data-os="ios"], html[data-os="ios"] body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+html[data-os="ios"] body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+html[data-os="ios"] input, html[data-os="ios"] textarea, html[data-os="ios"] [contenteditable="true"], html[data-os="ios"] [contenteditable=""] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; }
+/* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
+:root { --app-build: 501; }
