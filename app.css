@@ -2730,7 +2730,10 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .tl-fxe { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: ew-resize; background: rgba(255,255,255,.35); }
 /* Reel: the opening and closing transition markers, at the very ends of the clip row */
 .tl-tr.tl-edgetr { border-radius: 6px; background: var(--bg2); border: 1px solid var(--teal); color: var(--teal); z-index: 6; margin-left: 0; }
-.tl-tr.tl-edgetr[data-key="@start"] { transform: translateX(3px); } .tl-tr.tl-edgetr[data-key="@end"] { transform: translateX(calc(-100% - 3px)); }
+.tl-tr.tl-edgetr { width: 14px; height: 14px; margin-top: -7px; font-size: 8px; border-radius: 4px; }
+.tl-tr.tl-edgetr svg { width: 9px; height: 9px; }
+/* clear of the clip's trim handles */
+.tl-tr.tl-edgetr[data-key="@start"] { transform: translateX(26px); } .tl-tr.tl-edgetr[data-key="@end"] { transform: translateX(calc(-100% - 26px)); }
 .tl-tr.tl-edgetr.own { background: var(--teal); color: #071413; }
 /* Reel: sticker effects */
 .stfx-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 8px; }
@@ -2741,4 +2744,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .tl-obfx { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 1px; padding: 1px 4px; border-radius: 8px; background: linear-gradient(90deg, #8a50ff, #ff50b4); color: #fff; font: 700 9px var(--ui); font-style: normal; pointer-events: none; }
 .tl-obfx svg { width: 11px; height: 11px; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 508; }
+:root { --app-build: 509; }

@@ -755,7 +755,7 @@ function reelStkDraw(ctx, s, st, W, H, local, dur) {
     reelTfx(o, s, fake, W, H, local, 'post');
     if (m) { o.save(); o.setTransform(1, 0, 0, 1, 0, 0); o.globalCompositeOperation = 'destination-in'; o.drawImage(m, 0, 0); o.restore(); }
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(off, 0, 0); ctx.restore(); return; }
-  const b = stickerLayout(st, W, H), k = Math.min(W, H) / 1080, an = R.dragging || (R.layer && R.layer === 'stk' + (R.ovl || []).indexOf(st)) ? 'none' : st.anim || 'none', fx = st.fx || [];   /* the sticker being edited shows settled, dragged or not, so it never changes size on the way */
+  const b = stickerLayout(st, W, H), k = Math.min(W, H) / 1080, an = R.dragging || (!R.playing && R.layer && R.layer === 'stk' + (R.ovl || []).indexOf(st)) ? 'none' : st.anim || 'none', fx = st.fx || [];   /* the sticker being edited shows settled while paused or dragged, so it never changes size on the way; playing shows its motion */
   const lt = local - (st.at || 0); if (lt < 0 && an !== 'none') return;
   const ad = st.animDur || 0.5, tl = String(st.text || '').length, span = an === 'type' ? Math.max(0.4, tl * 0.05) * ad / 0.5 : ad;   /* animDur: how long it takes to appear */
   let q = an === 'none' ? 1 : Math.min(1, lt / span);

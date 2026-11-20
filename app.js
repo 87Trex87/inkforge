@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 508;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 509;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -9633,6 +9633,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 509, when: '2026-11-21T21:00', added: [
+    'Reel maker: fixed the newest sticker not showing its motion (zoom, pop, slide and the rest) when previewed or played.',
+    'Reel maker: the opening and closing transition markers are smaller and sit clear of the clip’s trim handles.'],
+    test: ['Reel maker: add a sticker, open Motion, pick Zoom: it should play straight away.'] },
   { build: 508, when: '2026-11-21T19:00', added: [
     'Reel maker: stickers and text can carry effects. Select one and open Effects: add as many as you like, tap a chip to set its speed and strength. They run for as long as it shows.',
     'Reel maker: a small wand badge on a sticker’s timeline bar shows it has effects, and the Effects tool has its own wand icon.'],
