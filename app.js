@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 512;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 513;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2146,7 +2146,7 @@ const VIEWS = {
       document.querySelector('.tl-zoom').onclick = (e) => { const b = e.target.closest('[data-tz]'); if (!b) return; const z = b.dataset.tz; z === 'fit' ? reelTlZoom(1, null, true) : reelTlZoom(z === '+' ? 1.5 : 1 / 1.5); };
       $('#reel-export').onclick = () => {
         const o = document.createElement('div'); o.id = 'merge-dlg'; const q = reelStyle().quality;
-        o.innerHTML = `<div class="card" style="max-width:420px"><h2>Export reel</h2><p class="muted" style="margin-top:0">Recorded in real time, so keep this screen open until it finishes.</p>
+        o.innerHTML = `<div class="card" style="max-width:420px"><h2>Export reel</h2><p class="muted" style="margin-top:0">Drawn frame by frame, so it comes out smooth. Keep this screen open until it finishes.</p>
           <div class="dz-ex"><button data-q="720" class="${q !== '1080' ? 'on' : ''}"><b>720p</b><small>Smaller file, quick to send. Fine for most phones.</small></button>
           <button data-q="1080" class="${q === '1080' ? 'on' : ''}"><b>1080p</b><small>Sharper, bigger file. Heavier on older phones.</small></button></div>
           <button class="btn" data-q="" style="width:100%;margin-top:10px">Cancel</button></div>`;
@@ -7081,7 +7081,7 @@ function reelTlZoomBind(el) {
 function reelAddMenu(btn) {
   document.getElementById('reel-addm')?.remove();
   const s = reelStyle(), m = document.createElement('div'); m.id = 'reel-addm'; m.className = 'reel-addm';
-  m.innerHTML = `<button data-am="file"><b>＋</b>Photos or videos</button><button data-am="pf"><b>${ICON.portfolio}</b>From your portfolio</button><button data-am="blank"><b>□</b>Blank page</button>
+  m.innerHTML = `<button data-am="file"><b>＋</b>Photos or videos</button><button data-am="pf"><b>${ICON.portfolio}</b>From your portfolio</button><button data-am="blank"><b>□</b>Blank page</button><button data-am="reel"><b>${ICON.reels}</b>A saved reel</button>
     ${s.intro ? '' : '<button data-am="intro"><b>▸</b>Intro card</button>'}${s.outro ? '' : '<button data-am="outro"><b>◂</b>Outro card</button>'}`;
   document.body.appendChild(m); const r = btn.getBoundingClientRect(), h = m.offsetHeight;
   m.style.left = Math.max(6, r.left) + 'px'; m.style.top = (r.top - h - 6 > 6 ? r.top - h - 6 : r.bottom + 6) + 'px';
@@ -7090,6 +7090,7 @@ function reelAddMenu(btn) {
   m.onclick = (e) => { const b = e.target.closest('[data-am]'); if (!b) return; const a = b.dataset.am; m.remove(); removeEventListener('pointerdown', close, true);
     if (a === 'file') return $('#reel-file')?.click();
     if (a === 'pf') return reelPortfolioPicker();
+    if (a === 'reel') return reelSavedPick().then(id => id && reelAddSaved(id));
     if (a === 'intro' || a === 'outro') { reelSetStyle(a, true); return reelPick(a, a); }
     if (a === 'blank') reelAddBlank(); };
 }
@@ -8096,11 +8097,51 @@ async function reelTplImport(file) {
   await reelSaveTemplates(list); toast(`Imported ${n} template${n === 1 ? '' : 's'}.`); reelPanel();
 }
 
+/* Picks another saved reel (not the one open). Resolves its id, or null. */
+async function reelSavedPick() {
+  const rows = (await DB.all('SELECT id, name, doc, thumb_ref FROM reels ORDER BY updated_at DESC, id DESC')).filter(r => r.id !== RS.id && (() => { try { return (JSON.parse(r.doc || '{}').clips || []).length > 0; } catch { return false; } })());
+  if (!rows.length) { toast('No other reels with clips yet.'); return null; }
+  const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
+  return new Promise(res => {
+    const o = document.createElement('div'); o.id = 'reel-pick';
+    o.innerHTML = `<div class="card"><h2>Add a saved reel</h2><p class="muted" style="margin-top:0">It comes in as one video clip, like a file from your device. The saved reel itself stays as it is, so you can edit it and swap the clip later.</p>
+      <div class="pf-grid reel-savedg" style="max-height:55vh;overflow-y:auto">${rows.map((r, i) => `<button class="pf-tile" data-i="${i}">${urls[i] ? `<img src="${urls[i]}" alt="">` : ICON.reels}<span>${esc(r.name || 'Reel')}</span></button>`).join('')}</div>
+      <button class="btn" id="rp-cancel" style="width:100%;margin-top:12px">Cancel</button></div>`;
+    document.body.appendChild(o);
+    const done = (v) => { o.remove(); res(v); };
+    o.onclick = (e) => { if (e.target === o || e.target.closest('#rp-cancel')) return done(null); const b = e.target.closest('[data-i]'); if (b) done(rows[+b.dataset.i].id); };
+  });
+}
+/* Flattens a saved reel into a video clip of this one: opens it out of sight, draws it frame by frame into an MP4,
+   reopens this reel and adds the video after the selected clip (or swaps it in for clip `swapId`, keeping that clip's
+   settings). The saved reel is not changed. */
+async function reelAddSaved(id, swapId) {
+  const cur = RS.id, at = R.sel, row = await DB.one('SELECT name FROM reels WHERE id = ?', [id]); if (!cur || !row) return;
+  reelPause(); await reelSave();
+  let file = null;
+  try { if (await reelOpen(id)) file = await reelRenderFile(`Adding "${row.name || 'Reel'}"`); }
+  catch (err) { console.warn(err); }
+  await reelOpen(cur);
+  if (file === 'live') toast('This browser cannot turn a reel into a clip. Export it and add the video from your device instead.', 6000);
+  else if (file === 'cancel') toast('Cancelled.');
+  else if (file instanceof File) {
+    const f = new File([file], `${(row.name || 'reel').replace(/[\\/:*?"<>|]+/g, '')}.mp4`, { type: 'video/mp4' });
+    try {
+      let nc;
+      if (swapId != null) { const c = R.clips.find(q => q.id === swapId); nc = c && await reelReplaceClip(c, f); }
+      if (!nc) { nc = await reelAddFile(f); const k = R.clips.indexOf(nc); R.clips.splice(k, 1); R.clips.splice(at >= 0 ? at + 1 : R.clips.length, 0, nc); }
+      if (nc.type === 'video') { nc.inP = 0; nc.outP = nc.srcDur; }   /* the whole reel, whatever the old clip's length */
+      reelChanged(); await reelSave(); render(); await new Promise(r => setTimeout(r, 400)); reelPick('clip', nc.id); toast(swapId != null ? 'Clip replaced with the reel.' : 'Reel added as a clip.');
+      return;
+    } catch (err) { toast(`Could not add it: ${err.message}`); }
+  } else if (file == null) toast('Could not make a clip from that reel.');
+  render();
+}
 /* Replace a clip's media: from the device (photo or video) or the portfolio. */
 function reelSwapMenu(btn, c) {
   document.getElementById('reel-swap')?.remove();
   const m = document.createElement('div'); m.id = 'reel-swap'; m.className = 'reel-swapm';
-  m.innerHTML = `<button data-sw="dev">${ri('device')}<span>From device</span></button><button data-sw="pf">${ri('pf')}<span>From portfolio</span></button><input type="file" accept="image/*,video/*" hidden>`;
+  m.innerHTML = `<button data-sw="dev">${ri('device')}<span>From device</span></button><button data-sw="pf">${ri('pf')}<span>From portfolio</span></button><button data-sw="reel">${ICON.reels}<span>A saved reel</span></button><input type="file" accept="image/*,video/*" hidden>`;
   const r = btn.getBoundingClientRect(); m.style.left = Math.max(8, Math.min(innerWidth - 190, r.left - 80)) + 'px'; m.style.top = (r.bottom + 6) + 'px';
   document.body.appendChild(m);
   const close = () => { m.remove(); document.removeEventListener('pointerdown', out, true); }, out = (e) => { if (!m.contains(e.target)) close(); };
@@ -8109,6 +8150,7 @@ function reelSwapMenu(btn, c) {
   const inp = m.querySelector('input'); inp.onchange = () => { const f = inp.files[0]; if (f) go(f); };
   m.onclick = async (e) => { const b = e.target.closest('[data-sw]'); if (!b) return;
     if (b.dataset.sw === 'dev') return inp.click();
+    if (b.dataset.sw === 'reel') { close(); const id = await reelSavedPick(); return id && reelAddSaved(id, c.id); }
     close(); const ref = await dzPortfolioPick(true); if (!ref) return;
     try { const f = await (await (await Media.dir()).getFileHandle(ref)).getFile(); go(new File([f], f.name || 'portfolio.jpg', { type: f.type || 'image/jpeg' })); }
     catch { toast('Could not open that picture.'); } };
@@ -9656,6 +9698,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 513, when: '2026-11-22T14:00', added: [
+    'Reel maker: add one of your saved reels into another (the + on the timeline, A saved reel). It comes in as one video clip you can add stickers and effects to; the saved reel stays as it is.',
+    'Reel maker: Replace on a clip can also take a saved reel, so you can edit your outro and swap the new version in, keeping the clip’s filters, stickers and transition.'],
+    test: ['Reel maker: make a short outro reel, then in another reel tap + and pick A saved reel.'] },
   { build: 512, when: '2026-11-22T12:00', added: [
     'Reel maker: sticker and text bars on the timeline snap to other stickers’ ends as well as clips.',
     'Reel maker: effect bars snap to the stickers over their clip, the clip’s ends and the playhead. Hold Ctrl (or turn the magnet off) to drag freely.'],

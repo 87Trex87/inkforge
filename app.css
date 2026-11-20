@@ -2748,5 +2748,10 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .reel-swapm button { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 600 13px var(--ui); cursor: pointer; text-align: left; }
 .reel-swapm button:hover { background: rgba(255,255,255,.06); }
 .reel-swapm svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* Reel: picking a saved reel to add */
+.reel-savedg .pf-tile { position: relative; }
+.reel-savedg .pf-tile span { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; font: 600 11px var(--ui); color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.75)); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reel-savedg .pf-tile > svg { width: 40%; height: 40%; margin: auto; opacity: .5; }
+.reel-swapm button > svg, .reel-addm b svg { width: 18px; height: 18px; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 512; }
+:root { --app-build: 513; }

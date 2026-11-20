@@ -1093,8 +1093,14 @@ async function reelReplaceClip(c, file) {
 const REEL_FPS = 30;
 const reelBytes = (d) => (ArrayBuffer.isView(d) ? new Uint8Array(d.buffer, d.byteOffset, d.byteLength) : new Uint8Array(d)).slice();
 async function reelExport() {
-  if (!R.clips.length) return toast('Add at least one photo or video.');
-  if (!window.VideoEncoder || !window.VideoFrame) return reelExportLive();
+  const f = await reelRenderFile();
+  if (f === 'live') return reelExportLive();
+  if (f === 'cancel') return toast('Export cancelled.');
+  if (f) return reelExportReady(f);
+}
+async function reelRenderFile(title = 'Exporting reel') {
+  if (!R.clips.length) { toast('Add at least one photo or video.'); return null; }
+  if (!window.VideoEncoder || !window.VideoFrame) return 'live';
   const s = reelStyle(), [, , , w0, h0] = reelSize(R.ar), q = s.quality === '1080' ? 1 : 2 / 3,
     W = Math.round(w0 * q / 2) * 2, H = Math.round(h0 * q / 2) * 2, fps = REEL_FPS, bitrate = s.quality === '1080' ? 16e6 : 9e6;
   let vcfg = null;
@@ -1102,20 +1108,20 @@ async function reelExport() {
     const c = { codec, width: W, height: H, bitrate, framerate: fps, avc: { format: 'avc' } };
     try { if ((await VideoEncoder.isConfigSupported(c)).supported) { vcfg = c; break; } } catch {}
   }
-  if (!vcfg) return reelExportLive();
+  if (!vcfg) return 'live';
   const { segs, total } = reelSegments(), n = Math.max(1, Math.round(total * fps)), cv = reelCanvas(), ctx = cv.getContext('2d');
   await Promise.all([s.font, ...R.clips.map(c => c.capFont).filter(Boolean)].map(k => reelFontLoad(k).then(() => document.fonts.load(reelFont(s, 40, 700, k))).catch(() => {})));
   reelPause();
   const overlay = document.createElement('div');
   overlay.id = 'reel-rec';
-  overlay.innerHTML = `<div class="card"><h2>Exporting reel</h2><p class="muted" id="reel-rec-msg">Mixing the sound…</p>
+  overlay.innerHTML = `<div class="card"><h2>${esc(title)}</h2><p class="muted" id="reel-rec-msg">Mixing the sound…</p>
     <div class="meter"><i id="reel-prog" style="width:0"></i></div><button class="btn" id="reel-cancel" style="margin-top:14px">Cancel</button></div>`;
   document.body.appendChild(overlay);
   R.cancel = false; document.getElementById('reel-cancel').onclick = () => { R.cancel = true; };
   const msg = (m) => { const e = document.getElementById('reel-rec-msg'); if (e) e.textContent = m; };
   let audio = null, err = null;
   try { audio = await reelExportAudio(segs, total); } catch (e) { console.warn('Export sound', e); audio = 'fail'; }
-  if (audio === 'fail') { overlay.remove(); return reelExportLive(); }
+  if (audio === 'fail') { overlay.remove(); return 'live'; }
   const vs = []; let vdesc = null;
   const enc = new VideoEncoder({ output: (chunk, meta) => { const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d);
       if (meta?.decoderConfig?.description) vdesc = reelBytes(meta.decoderConfig.description);
@@ -1142,10 +1148,10 @@ async function reelExport() {
   for (const c of R.clips) if (c.type === 'video') c.el.pause();
   overlay.remove();
   cv.width = PREVIEW_W; cv.height = PREVIEW_H; R.t = 0; reelRender();
-  if (R.cancel) return toast('Export cancelled.');
-  if (err || !vs.length || !vdesc) { console.warn('Frame export failed', err); toast('Frame-by-frame export failed, recording it live instead.'); return reelExportLive(); }
+  if (R.cancel) return 'cancel';
+  if (err || !vs.length || !vdesc) { console.warn('Frame export failed', err); toast('Frame-by-frame export failed, recording it live instead.'); return 'live'; }
   const mp4 = reelMp4({ W, H, fps, samples: vs, desc: vdesc }, audio);
-  return reelExportReady(new File([mp4], `reel-${ymd(new Date())}.mp4`, { type: 'video/mp4' }));
+  return new File([mp4], `reel-${ymd(new Date())}.mp4`, { type: 'video/mp4' });
 }
 /* Puts each video clip on the exact frame for time t (the showing one, and the next one parked on its first frame for
    transitions that show it early), waiting until it is really there. */
