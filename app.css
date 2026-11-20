@@ -2715,5 +2715,8 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .app-inst.start-inst { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .app-inst.start-inst > div { flex: 1; display: flex; flex-direction: column; gap: 2px; } .app-inst.start-inst .muted { font-size: 12.5px; }
 .inst-steps { margin: 6px 0 0; padding-left: 20px; line-height: 1.55; font-size: 14px; } .inst-steps li { margin: 4px 0; }
+/* The picture picker's areas. */
+.dz-pftabs { margin: 0 0 8px; flex-wrap: wrap; } .dz-pftabs button { flex: 1; font-size: 12.5px; padding: 6px 4px; }
+.dz-pf.dz-pfasset img { object-fit: contain; background: #fff; padding: 6px; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 504; }
+:root { --app-build: 505; }

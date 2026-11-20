@@ -2041,39 +2041,53 @@ async function dzThumb(id, doc) {
 // photos: true = portfolio photos, 'place' = ink-only portfolio photos (with From this device, resolving '@file'), 'refs' = references, 'sten' = kept stencils (resolves the stencil_ref), false = whole portfolio pieces.
 function dzPortfolioPick(photos) {
   return new Promise(async (res) => {
-    const rows = photos === 'sten'
-      ? await DB.all(`SELECT stencil_ref AS v, thumb_ref AS t, name AS title, id AS pid FROM stencils ORDER BY created_at DESC, id DESC`)
-      : photos === 'refs'
-      ? await DB.all(`SELECT photo_ref AS v, thumb_ref AS t, title, category AS f FROM ref_images ORDER BY created_at DESC`)
-      : photos
-      ? await DB.all(`SELECT x.photo_ref AS v, x.thumb_ref AS t, p.title, p.id AS pid FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id
-          ${photos === 'place' ? `WHERE x.label = 'Ink only (clear background)'` : ''} ORDER BY coalesce(p.made_on, p.created_at) DESC, x.sort`)
-      : await DB.all(`SELECT p.id AS v, p.id AS pid, p.title, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS t
+    /* Where pictures come from. A plain photo pick (photos true) gets tabs for every area: the portfolio, simulator
+       pieces, references, assets and stencils; the others keep to their one area. Each resolves a media file name. */
+    const TABS = [['pf', 'Portfolio'], ['sim', 'Simulator'], ['refs', 'References'], ['assets', 'Assets'], ['sten', 'Stencils']];
+    const tabbed = photos === true;
+    const load = async (src) => { let rows;
+      if (src === 'sten') rows = await DB.all(`SELECT stencil_ref AS v, thumb_ref AS t, name AS title, id AS pid FROM stencils ORDER BY created_at DESC, id DESC`);
+      else if (src === 'refs') rows = await DB.all(`SELECT photo_ref AS v, thumb_ref AS t, title, category AS f FROM ref_images ORDER BY created_at DESC`);
+      else if (src === 'assets') rows = await DB.all(`SELECT svg_ref AS v, svg_ref AS t, name AS title, category AS f FROM assets ORDER BY category COLLATE NOCASE, created_at DESC`);
+      else if (src === 'sim') rows = (await DB.all(`SELECT thumb_ref AS v, thumb_ref AS t, name AS title, id AS pid, meta FROM tattoo_pieces WHERE thumb_ref IS NOT NULL ORDER BY updated_at DESC`))
+        .filter(r => { try { const m = JSON.parse(r.meta || '{}'); return !m.exam && !m.tuneOnly; } catch { return true; } });
+      else if (src === 'pieces') rows = await DB.all(`SELECT p.id AS v, p.id AS pid, p.title, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS t
           FROM portfolio_items p WHERE EXISTS (SELECT 1 FROM portfolio_photos x WHERE x.item_id = p.id) ORDER BY coalesce(p.made_on, p.created_at) DESC`);
-    if (!rows.length && photos !== 'place') { toast(photos === 'sten' ? 'No stencils kept yet: make one in the stencil maker and press Keep.' : photos === 'refs' ? 'No references yet: add some in Portfolio › References.' : 'Add tattoos with photos to your portfolio first.'); return res(null); }
-    /* Folders, as in an explorer: reference categories, or the folders made in the portfolio's organiser. */
-    if (photos !== 'refs') { const o = Lib.org(photos === 'sten' ? 'stencils' : 'portfolio'); for (const r of rows) r.f = o.in[r.pid] || ''; }
-    for (const r of rows) r.f = (r.f || '').trim();
-    const folders = [...new Set(rows.map(r => r.f).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
+      else rows = await DB.all(`SELECT x.photo_ref AS v, x.thumb_ref AS t, p.title, p.id AS pid FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id
+          ${photos === 'place' ? `WHERE x.label = 'Ink only (clear background)'` : ''} ORDER BY coalesce(p.made_on, p.created_at) DESC, x.sort`);
+      /* Folders, as in an explorer: categories for references and assets, the organiser's folders for the rest. */
+      const org = { pf: 'portfolio', pieces: 'portfolio', sten: 'stencils', sim: 'tattoo' }[src];
+      if (org) { const o2 = Lib.org(org); for (const r of rows) r.f = o2.in[r.pid] || ''; }
+      for (const r of rows) r.f = (r.f || '').trim();
+      return rows; };
+    let src = photos === 'sten' ? 'sten' : photos === 'refs' ? 'refs' : photos === false ? 'pieces' : 'pf', rows = await load(src);
+    if (tabbed && !rows.length) for (const [k2] of TABS) { const r2 = await load(k2); if (r2.length) { src = k2; rows = r2; break; } }
+    if (!rows.length && photos !== 'place') { toast(photos === 'sten' ? 'No stencils kept yet: make one in the stencil maker and press Keep.' : photos === 'refs' ? 'No references yet: add some in Portfolio › References.' : tabbed ? 'No pictures yet: add some to the portfolio, references or assets first.' : 'Add tattoos with photos to your portfolio first.'); return res(null); }
+    let folders = [];
+    const setFolders = () => { folders = [...new Set(rows.map(r => r.f).filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })); }; setFolders();
     const urls = new Map(), url = async (r) => { if (!urls.has(r.t)) urls.set(r.t, await Media.url(r.t)); return urls.get(r.t); };
     let at = '', q = '';
     const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 99;
-    o.innerHTML = `<div class="card dz-pick"><h2>${photos === 'place' ? 'Place a tattoo' : photos === 'sten' ? 'Your stencils' : photos === 'refs' ? 'Choose a reference' : photos ? 'Choose a photo' : 'Choose a portfolio piece'}</h2>
+    o.innerHTML = `<div class="card dz-pick"><h2>${photos === 'place' ? 'Place a tattoo' : photos === 'sten' ? 'Your stencils' : photos === 'refs' ? 'Choose a reference' : photos ? 'Choose a picture' : 'Choose a portfolio piece'}</h2>
+      ${tabbed ? `<div class="seg dz-pftabs">${TABS.map(([k2, n]) => `<button data-src="${k2}" class="${src === k2 ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
       <input class="in dz-pfq" type="search" placeholder="Search everything" aria-label="Search">
       <div class="dz-pfpath"></div><div class="dz-pf ${photos === 'sten' ? 'dz-pfsten' : photos === 'place' ? 'dz-pfplace' : ''}"></div>
       ${photos === 'place' ? `<div class="row" style="gap:8px;margin-top:10px"><button class="btn" data-v="">Cancel</button><span style="flex:1"></span><button class="btn" data-v="@file">From this device</button></div>`
         : `<button class="btn" data-v="" style="width:100%;margin-top:10px">Cancel</button>`}</div>`;
     const grid = o.querySelector('.dz-pf'), path = o.querySelector('.dz-pfpath');
+    const empty = { pf: 'Nothing yet: tattoos with photos show up here.', sim: 'No simulator pieces yet.', refs: 'No references yet: add some in Portfolio › References.', assets: 'No assets yet: save shapes to Assets in the design studio, or add .svg files in Portfolio › Assets.', sten: 'No stencils kept yet.' };
     const draw = async () => { const ql = q.trim().toLowerCase();
+      grid.classList.toggle('dz-pfsten', src === 'sten'); grid.classList.toggle('dz-pfasset', src === 'assets');
       const list = ql ? rows.filter(r => `${r.title || ''} ${r.f}`.toLowerCase().includes(ql)) : rows.filter(r => r.f === at);
       const dirs = ql || at ? [] : folders;
       path.innerHTML = ql ? `<span class="muted">${list.length} found</span>` : at ? `<button class="lib-chip" data-up>‹ All folders</button><b>${LIB_FOLDER}${esc(at)}</b>` : '';
       const u = await Promise.all(list.map(url));
       grid.innerHTML = dirs.map(f => `<button class="dz-pfdir" data-dir="${esc(f)}">${LIB_FOLDER}<span>${esc(f)}</span><em>${rows.filter(r => r.f === f).length}</em></button>`).join('')
         + list.map((r, i) => `<button data-v="${esc(r.v)}" title="${esc(r.title || '')}"><img src="${u[i]}" alt="" loading="lazy"></button>`).join('')
-        + (!dirs.length && !list.length ? `<p class="muted" style="grid-column:1/-1">${rows.length ? 'Nothing here.' : 'Nothing yet: tattoos saved to the portfolio from the simulator show up here.'}</p>` : ''); };
+        + (!dirs.length && !list.length ? `<p class="muted" style="grid-column:1/-1">${rows.length ? 'Nothing here.' : empty[src] || 'Nothing here yet.'}</p>` : ''); };
     o.oninput = (e) => { if (e.target.matches('.dz-pfq')) { q = e.target.value; draw(); } };
-    o.onclick = (e) => { const t = e.target;
+    o.onclick = async (e) => { const t = e.target;
+      const tb = t.closest('[data-src]'); if (tb) { src = tb.dataset.src; o.querySelectorAll('[data-src]').forEach(x => x.classList.toggle('on', x === tb)); rows = await load(src); setFolders(); at = ''; return draw(); }
       if (t.closest('[data-up]')) { at = ''; return draw(); }
       const d = t.closest('[data-dir]'); if (d) { at = d.dataset.dir; return draw(); }
       const b = t.closest('[data-v]'); if (!b) return; o.remove(); res(b.dataset.v ? (photos ? b.dataset.v : +b.dataset.v) : null); };

@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 504;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 505;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7380,7 +7380,7 @@ function reelClipTool(c) {
         <button class="btn small rib-x" data-act="stkpara" data-tip="A paragraph in a frame: words wrap to the frame's width; drag its sides to make it wider">${ri('page')}<span>Paragraph</span></button></div>${reelTextDefaults()}`
       : `<div class="reel-addrow">
         <label class="btn small rib-x" data-tip="A PNG with a see-through background works best">${ri('device')}<span>Device</span><input type="file" accept="image/png,image/webp,image/*" multiple hidden data-stkfile></label>
-        <button class="btn small rib-x" data-act="stkpf" data-tip="A photo from your portfolio or references">${ri('pf')}<span>Portfolio</span></button></div>
+        <button class="btn small rib-x" data-act="stkpf" data-tip="A picture from your portfolio, simulator pieces, references, assets or stencils">${ri('pf')}<span>Portfolio</span></button></div>
       <div class="emo-row">${REEL_EMOJI.map(m => `<button type="button" data-emoji="${m}">${m}</button>`).join('')}</div>`}
       ${st && mine(st) ? `<div class="reel-sub"><div class="rib-row">${rib('data-act="stkdup"', 'dup', 'Duplicate (Ctrl D)')}${rib('data-act="stkflip"', 'flip', 'Flip (H)')}${rib('data-act="stkup"', 'up', 'Bring forward (Ctrl ])')}${rib('data-act="stkdown"', 'down', 'Send back (Ctrl [)')}${st.sx || st.sy ? rib('data-act="stkunstretch"', 'unstretch', 'Unstretch') : ''}${rib('data-act="stkall"', 'whole', 'Show for the whole reel')}<i class="rib-gap"></i>${rib(`data-stkdel="${si}"`, 'del', 'Delete (Delete)')}</div>
         ${txt ? `<textarea class="in rt-ta" rows="2" data-stt placeholder="Type here">${esc(st.text)}</textarea>
@@ -9529,6 +9529,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 505, when: '2026-11-21T10:00', added: ['Picking a picture now has tabs for every area: Portfolio, Simulator, References, Assets and Stencils. So a reel sticker (or a picture in the design studio) can be an asset, a stencil or a simulator piece, not just a portfolio photo.'],
+    test: ['Reel maker, open a clip, Stickers, then Portfolio and try the Assets tab.'] },
   { build: 504, when: '2026-11-20T22:00', added: [
     'Simulator, cheat mode: with the grid on and Lines follow the grid ticked, shape corners, path points, box and ellipse lassos and new lettering land on the grid. Moving a lifted part or lettering snaps to the grid and the page centre, with a guide. Hold Alt to place freely.',
     'Make a shortcut: a button on the start screen and in Settings puts InkForge on your desktop or home screen, to open it like an app. On an iPad it shows the taps to do it in Safari.'],
