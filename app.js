@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 515;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 516;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -7105,7 +7105,7 @@ function reelTlLen(el) {
   el.addEventListener('pointerdown', (e) => {
     const h = e.target.closest('[data-len]'); if (!h) return; e.stopPropagation(); e.preventDefault();
     const key = h.dataset.key, c = isNaN(+key) ? null : R.clips.find(x => x.id === +key);
-    d = { side: h.dataset.len, key, c, x0: e.clientX, s: c ? { dur: c.dur, inP: c.inP, outP: c.outP } : { dur: +reelStyle()[key + 'Dur'] }, moved: false };
+    d = { side: h.dataset.len, key, c, x0: e.clientX, s: c ? { dur: c.dur, inP: c.inP, outP: c.outP } : { dur: +reelStyle()[key + 'Dur'] }, rate: c?.type === 'video' ? (c.outP - c.inP) / clipDur(c) : 1, moved: false };   /* rate: its average speed (a ramp too) */
     try { el.setPointerCapture(e.pointerId); } catch {}
   }, true);
   el.addEventListener('pointermove', (e) => {
@@ -7113,8 +7113,8 @@ function reelTlLen(el) {
     const dt = dx / (R.pps || REEL_PPS), c = d.c, s0 = d.s;
     if (!c) reelSetStyle(d.key + 'Dur', +Math.max(0.8, Math.min(8, s0.dur + dt)).toFixed(2));
     else if (c.type !== 'video') c.dur = +Math.max(0.5, Math.min(30, s0.dur + dt)).toFixed(2);
-    else if (d.side === 'r') c.outP = Math.max(c.inP + 0.3, Math.min(c.srcDur, s0.outP + dt * (s0.outP - s0.inP) / clipDur(s0)));   /* at its average speed (a ramp too) */
-    else c.inP = Math.max(0, Math.min(c.outP - 0.3, s0.inP + dt * (s0.outP - s0.inP) / clipDur(s0)));
+    else if (d.side === 'r') c.outP = Math.max(c.inP + 0.3, Math.min(c.srcDur, s0.outP + dt * d.rate));
+    else c.inP = Math.max(0, Math.min(c.outP - 0.3, s0.inP + dt * d.rate));
     R.lenMoved = true;
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; reelChanged();
       const g = reelSegments().segs.find(x => (c ? x.clip === c : x.kind === d?.key)); if (g && d) reelShow(d.side === 'l' ? g.start + 0.01 : g.start + g.dur - 0.05); });
@@ -9778,6 +9778,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 516, when: '2026-11-22T21:00', added: [
+    'Reel maker: fixed dragging the end of a video clip to make it longer (it could get stuck, most of all with another clip right after it).',
+    'Reel maker: the transition markers between clips sit on the top edge of the clips now, out of the way of the trim handles, so both are easier to grab.'],
+    test: ['Reel maker: drag the right end of a video clip that has another clip after it, then tap the transition marker on top.'] },
   { build: 515, when: '2026-11-22T19:00', added: [
     'Reel maker: a Bleed slider on transitions between clips (in the transition panel and the strip under the timeline). The incoming video starts playing that far into the transition instead of waiting on its first frame, and carries on from there.',
     'Reel maker: bleed works with Wipe, Slide, Dissolve, Whip pan, Circle, Heart and Doors, where the next clip shows during the animation; the clip’s time on the reel gets that much shorter, like an overlap in other editors.'],

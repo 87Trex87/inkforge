@@ -2768,5 +2768,9 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .spd-pre { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .spd-pre button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: 600 11px var(--ui); cursor: pointer; }
 .spd-pre svg { width: 100%; height: 22px; } .spd-pre svg line { stroke: rgba(255,255,255,.25); stroke-dasharray: 3 3; } .spd-pre svg path { fill: none; stroke: var(--teal); stroke-width: 2; }
+/* Reel: transition markers ride the top edge of the clips, clear of the trim handles in the middle */
+.tl-row .tl-tr { top: 0; margin-top: -2px; }
+.tl-row .tl-tr.on { transform: scale(1.12); }
+.tl-row .tl-tr.tl-edgetr { top: 0; margin-top: 1px; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 515; }
+:root { --app-build: 516; }
