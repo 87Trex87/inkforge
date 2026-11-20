@@ -95,6 +95,8 @@ const REEL_TFX = [
   ['flash', 'Flash', 'Light', 'A white camera flash'], ['strobe', 'Strobe', 'Light', 'Fast flashing light'], ['fadeb', 'Fade to black', 'Light', 'Darkens to black'], ['fadew', 'Fade to white', 'Light', 'Brightens to white'],
   ['burn', 'Film burn', 'Light', 'Hot orange light burning in at the edges'], ['leak', 'Light leak', 'Light', 'Warm light drifting across'], ['vpulse', 'Pulse vignette', 'Light', 'Dark red edges beating'],
   ['hearts', 'Hearts', 'Particles', 'Hearts floating up'], ['confetti', 'Confetti', 'Particles', 'Falling confetti'], ['snow', 'Snow', 'Particles', 'Drifting snow'], ['rain', 'Rain', 'Particles', 'Falling rain'], ['sparkle', 'Sparkle', 'Particles', 'Twinkling stars'], ['ink', 'Ink drops', 'Particles', 'Black ink splats spreading']];
+/* Effects a sticker can carry, for as long as it shows: everything but the whole-frame ones. */
+const REEL_STK_TFX = REEL_TFX.filter(x => x[2] !== 'Particles' && !['mirror', 'kaleido', 'split4', 'tvoff', 'zblur'].includes(x[0]));
 const _tfxBufs = {};
 const tfxBuf = (n, w, h) => { let c = _tfxBufs[n]; if (!c) c = _tfxBufs[n] = document.createElement('canvas'); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } return c; };
 /* The frame as drawn so far, copied, so an effect can redraw it changed. Works in canvas pixels. */
@@ -103,13 +105,13 @@ const tfxTint = (src, col, n) => { const b = tfxBuf(n, src.width, src.height), x
   x.globalCompositeOperation = 'multiply'; x.fillStyle = col; x.fillRect(0, 0, b.width, b.height); x.globalCompositeOperation = 'destination-in'; x.drawImage(src, 0, 0); x.globalCompositeOperation = 'source-over'; return b; };
 const tfxSoft = (src, f, n) => { const w = Math.max(2, Math.round(src.width / f)), h = Math.max(2, Math.round(src.height / f)), b = tfxBuf(n, w, h), x = b.getContext('2d');
   x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'low'; x.clearRect(0, 0, w, h); x.drawImage(src, 0, 0, w, h); return b; };
-function reelTfx(ctx, s, c, W, H, local, phase) {
+function reelTfx(ctx, s, c, W, H, local, phase, ox = W / 2, oy = H / 2) {
   const L = c.tfx; if (!L || !L.length) return;
   for (const e of L) { if (local < e.at || local >= e.at + e.len) continue;
     const k = Math.min(W, H) / 1080, sp = e.sp || 1, lt = (local - e.at) * sp, u = Math.min(1, (local - e.at) / Math.max(0.05, e.len)), amt = e.amt ?? 0.7;
     const env = Math.min(1, (local - e.at) / 0.15, (e.at + e.len - local) / 0.15), a = amt * Math.max(0, env), f = Math.floor(lt * 24), K = e.k;
     if (phase === 'pre') {
-      const zoom = (z) => { ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); }, turn = (r) => { ctx.translate(W / 2, H / 2); ctx.rotate(r); ctx.translate(-W / 2, -H / 2); };
+      const zoom = (z) => { ctx.translate(ox, oy); ctx.scale(z, z); ctx.translate(-ox, -oy); }, turn = (r) => { ctx.translate(ox, oy); ctx.rotate(r); ctx.translate(-ox, -oy); };
       if (K === 'shake' || K === 'quake') { const m = (K === 'quake' ? 46 : 16) * k * a; ctx.translate((reelRnd(f) - 0.5) * m, (reelRnd(f + 7) - 0.5) * m); if (K === 'quake') zoom(1 + 0.05 * a); }
       else if (K === 'heart') { const b = lt % 1, p = Math.exp(-(((b - 0.08) / 0.06) ** 2)) + 0.7 * Math.exp(-(((b - 0.3) / 0.06) ** 2)); zoom(1 + 0.09 * a * p); }
       else if (K === 'punch') zoom(1 + 0.22 * a * Math.exp(-(lt % 0.6) * 9));
@@ -744,6 +746,15 @@ const REEL_STK_FX = [['float', 'Float'], ['pulse', 'Pulse'], ['spin', 'Spin'], [
 function reelStkDraw(ctx, s, st, W, H, local, dur) {
   const img = st.text == null ? reelStkImg(st) : null;
   if (img && (!img.complete || !img.naturalWidth)) return;
+  if (st.tfx?.length && !reelStkDraw.inner) {   /* its effects: moves about its own middle; looks kept inside its own shape */
+    const cv = ctx.canvas, off = tfxBuf('stk', cv.width, cv.height), o = off.getContext('2d'), b0 = stickerLayout(st, W, H), fake = { tfx: st.tfx.map(e => ({ ...e, at: 0, len: Math.max(0.3, dur || 3) })) };   /* over the sticker's own time on screen */
+    o.setTransform(1, 0, 0, 1, 0, 0); o.globalAlpha = 1; o.globalCompositeOperation = 'source-over'; o.clearRect(0, 0, off.width, off.height); o.setTransform(ctx.getTransform());
+    o.save(); reelTfx(o, s, fake, W, H, local, 'pre', b0.cx, b0.cy); reelStkDraw.inner = true; try { reelStkDraw(o, s, st, W, H, local, dur); } finally { reelStkDraw.inner = false; } o.restore();
+    const keep = st.tfx.some(e => !['blur', 'glow', 'ghost', 'pixel'].includes(e.k)), m = keep ? tfxBuf('stkm', cv.width, cv.height) : null;
+    if (m) { const mg = m.getContext('2d'); mg.setTransform(1, 0, 0, 1, 0, 0); mg.clearRect(0, 0, m.width, m.height); mg.drawImage(off, 0, 0); }
+    reelTfx(o, s, fake, W, H, local, 'post');
+    if (m) { o.save(); o.setTransform(1, 0, 0, 1, 0, 0); o.globalCompositeOperation = 'destination-in'; o.drawImage(m, 0, 0); o.restore(); }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(off, 0, 0); ctx.restore(); return; }
   const b = stickerLayout(st, W, H), k = Math.min(W, H) / 1080, an = R.dragging || (R.layer && R.layer === 'stk' + (R.ovl || []).indexOf(st)) ? 'none' : st.anim || 'none', fx = st.fx || [];   /* the sticker being edited shows settled, dragged or not, so it never changes size on the way */
   const lt = local - (st.at || 0); if (lt < 0 && an !== 'none') return;
   const ad = st.animDur || 0.5, tl = String(st.text || '').length, span = an === 'type' ? Math.max(0.4, tl * 0.05) * ad / 0.5 : ad;   /* animDur: how long it takes to appear */

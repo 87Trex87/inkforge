@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 507;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 508;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6675,6 +6675,7 @@ const RI = {
   music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>', tpl: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
   look: '<path d="M4 20L16 8"/><path d="M15 3l1.2 2.8L19 7l-2.8 1.2L15 11l-1.2-2.8L11 7l2.8-1.2z"/>', frame: '<path d="M6 2v16h16M2 6h16v16"/>',
   sticker: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01"/>',
+  fx: '<path d="M4 20l11-11"/><path d="M13.5 7.5l3 3"/><path d="M18 2.5v3M16.5 4h3M20.5 9v2M19.5 10h2M9.5 3v2M8.5 4h2"/>',
   dup: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>', flip: '<path d="M12 3v18M8 7l-5 5 5 5zM16 7l5 5-5 5z"/>',
   up: '<path d="M12 19V7M7 11l5-5 5 5M5 3h14"/>', down: '<path d="M12 5v12M7 13l5 5 5-5M5 21h14"/>', unstretch: '<path d="M14 4h6v6M10 20H4v-6M20 4l-6 6M4 20l6-6"/>',
   whole: '<path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/>', del: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
@@ -6791,6 +6792,14 @@ function reelTlFxBind(el) { let d = null;
     if (!was.moved) R.t = was.g.start + was.fx.at + 0.01;
     reelChanged(); reelTimeline(); reelRender(); reelPanel(); };
   el.addEventListener('pointerup', up, true); el.addEventListener('pointercancel', up, true); }
+
+/* A sticker's (or text's) effects: chips for those it has (tap one to tune it, × to take it off) and the list to add
+   from. They run for as long as it shows. */
+function reelStkFxPanel(st) { const L = st.tfx || [], sel = L[R.stfxSel] ? R.stfxSel : (L.length ? L.length - 1 : -1), e = L[sel];
+  const groups = [...new Set(REEL_STK_TFX.map(x => x[2]))];
+  return `${L.length ? `<div class="stfx-chips">${L.map((x, i) => `<span class="stfx-chip ${i === sel ? 'on' : ''}" data-stfxi="${i}"><svg viewBox="0 0 24 24">${RI.fx}</svg>${esc(REEL_TFX.find(q => q[0] === x.k)?.[1] || x.k)}<button data-stfxx="${i}" aria-label="Remove">×</button></span>`).join('')}</div>
+      ${e ? reelSlider('data-stfxn', 'sp', 'Speed', 0.25, 4, 0.05, e.sp || 1, (e.sp || 1).toFixed(2) + '×') + reelSlider('data-stfxn', 'amt', 'Strength', 0.05, 1, 0.05, e.amt ?? 0.7, Math.round((e.amt ?? 0.7) * 100) + '%') : ''}` : '<p class="muted" style="font-size:12px;margin:0 0 6px">Effects run for as long as it shows. Add as many as you like.</p>'}
+    <details class="tfx-change" ${L.length ? '' : 'open'}><summary>Add an effect</summary>${groups.map(g => `<div class="lbl" style="margin:8px 0 4px">${g}</div><div class="tfx-grid">${REEL_STK_TFX.filter(x => x[2] === g).map(([k, l, , d]) => `<button class="tfx-b" data-stfxk="${k}" data-tip="${d}">${l}</button>`).join('')}</div>`).join('')}</details>`; }
 
 /* ---------- Timeline ---------- */
 function reelTimeline() {
@@ -6980,7 +6989,7 @@ function reelTlOv(segs, W) {
   const n = Math.max(1, rows.length), sel = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1;
   if (!R.ovOpen) return `<div class="tl-ov fold" style="width:${W}px"><button class="tl-ovt" data-ovfold>▸ ${L.length} text and sticker${L.length > 1 ? 's' : ''}</button>${at.map(([o]) => `<i style="left:${reelTX(o.t0)}px;width:${Math.max(4, reelTX(o.t1) - reelTX(o.t0))}px"></i>`).join('')}</div>`;
   return `<div class="tl-ov" style="width:${W}px;height:${n * 24 + 14}px"><button class="tl-ovt" data-ovfold>▾ Layers</button>${at.map(([o, i, r]) => { const x0 = reelTX(o.t0), w = Math.max(18, reelTX(o.t1) - x0);
-    return `<div class="tl-ob ${i === sel ? 'on' : ''}" data-ov="${i}" style="left:${x0}px;width:${w}px;top:${14 + r * 24}px">${o.text != null ? `<b>T</b><span>${esc(String(o.text).split('\n')[0])}</span>` : `<img src="${o.url || ''}" alt="">`}<em data-edge="l"></em><em data-edge="r"></em></div>`; }).join('')}</div>`;
+    return `<div class="tl-ob ${i === sel ? 'on' : ''}" data-ov="${i}" style="left:${x0}px;width:${w}px;top:${14 + r * 24}px">${o.text != null ? `<b>T</b><span>${esc(String(o.text).split('\n')[0])}</span>` : `<img src="${o.url || ''}" alt="">`}${o.tfx?.length ? `<i class="tl-obfx" title="${o.tfx.length} effect${o.tfx.length > 1 ? 's' : ''}"><svg viewBox="0 0 24 24">${RI.fx}</svg>${o.tfx.length > 1 ? o.tfx.length : ''}</i>` : ''}<em data-edge="l"></em><em data-edge="r"></em></div>`; }).join('')}</div>`;
 }
 // Two sound rows under the clips: tracks where they play, with their fades drawn in.
 function reelTlAud(W) {
@@ -7331,7 +7340,7 @@ async function reelPanel() {
     const seg = p?.kind === 'trans' ? reelSegments().segs.find(x => String(x.key) === String(p.key)) : null;
     if (c) {
       R.sel = R.clips.indexOf(c);
-      el.innerHTML = `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}" data-tip="${l}" aria-label="${l}">${ri({ look: 'look', frame: 'frame', text: 'text', stickers: 'sticker' }[k])}<span>${l}</span></button>`).join('')}</div>
+      el.innerHTML = `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}" data-tip="${l}" aria-label="${l}">${ri({ look: 'look', frame: 'frame', tfx: 'fx', text: 'text', stickers: 'sticker' }[k])}<span>${l}</span></button>`).join('')}</div>
         <div class="card reel-clip-ed">
           <div class="reel-clip-head"><b>${c.type === 'video' ? 'Video' : c.type === 'blank' ? 'Blank page' : 'Photo'} ${R.sel + 1} of ${R.clips.length}</b>
             <span class="rib-inl">${rib('data-cact="dup"', 'dup', 'Duplicate clip (Ctrl D)')}${c.type === 'video' ? rib('data-cact="split"', 'split', 'Split at the playhead (S)') + rib('data-cact="freeze"', 'freeze', 'Freeze frame: a still of this moment, held for 2 seconds') : ''}${rib('data-cact="still"', 'camera', 'Save this frame as a picture')}</span>
@@ -7489,6 +7498,7 @@ function reelClipTool(c) {
           ${st.fx?.some(f => ['float', 'pulse', 'spin', 'wiggle'].includes(f)) ? reelSlider('data-stk-n', 'fxSpeed', 'Effect speed', 0.25, 3, 0.05, st.fxSpeed || 1, (st.fxSpeed || 1).toFixed(2) + '×') : ''}
           ${reelSlider('data-stk-n', 'at', 'Appears after', 0, 5, 0.1, st.at || 0, (st.at || 0).toFixed(1) + 's')}
           <label class="toggle" style="display:inline-flex"><input type="checkbox" data-stout ${st.out ? 'checked' : ''}><span>Fade out at the end</span></label>`)}
+        ${reelFold('stfx', 'Effects', st.tfx?.length ? st.tfx.map(e => REEL_TFX.find(x => x[0] === e.k)?.[1] || e.k).join(', ') : 'none', reelStkFxPanel(st))}
         ${reelFold('place', 'Size and turn', `${Math.round((st.s || 1) * 100)}% · ${st.rot || 0}°`, `
           ${reelSlider('data-stk-n', 's', 'Size', 0.2, 4, 0.05, st.s || 1, Math.round((st.s || 1) * 100) + '%')}
           ${reelSlider('data-stk-n', 'rot', 'Turn', -180, 180, 1, st.rot || 0, (st.rot || 0) + '°')}
@@ -7527,6 +7537,8 @@ function reelClipBind(ed, c) {
     const stI = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1, stO = R.ovl?.[stI];
     if (stO && t.hasAttribute('data-stt')) { stO.text = t.value; return reelRender(); }
     if (stO && t.hasAttribute('data-stf')) { if (t.value === '+imp') { reelFontImport().then(k => { if (k) stO.font = k; reelChanged(); reelPanel(); }); return; } stO.font = t.value || undefined; return reelChanged(); }
+    if (stO && t.dataset.stfxn && stO.tfx?.length) { const L = stO.tfx, e2 = L[L[R.stfxSel] ? R.stfxSel : L.length - 1], k = t.dataset.stfxn; e2[k] = +t.value;
+      t.closest('.slider').querySelector('b').textContent = k === 'sp' ? e2.sp.toFixed(2) + '×' : Math.round(e2.amt * 100) + '%'; reelRender(); return reelChanged(); }
     if (stO && t.dataset.stkN) { const k = t.dataset.stkN; stO[k] = +t.value;
       t.closest('.slider').querySelector('b').textContent = ['op', 's', 'ow', 'ls', 'pad', 'bw'].includes(k) ? Math.round(stO[k] * 100) + '%' : k === 'rot' ? stO.rot + '°' : k === 'fxSpeed' ? stO.fxSpeed.toFixed(2) + '×' : k === 'lh' ? stO.lh.toFixed(2) : k === 'amt' ? String(stO.amt) : stO[k].toFixed(k === 'animDur' ? 2 : 1) + 's';
       return reelRender(); }
@@ -7563,6 +7575,7 @@ function reelClipBind(ed, c) {
     reelChanged();
   });
   ed.addEventListener('change', async (e) => {
+    if (e.target.dataset.stfxn) { const i = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1; return reelStkPeek(R.ovl?.[i]); }
     if (['animDur', 'fxSpeed'].includes(e.target.dataset.stkN)) { const i = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1; return reelStkPeek(R.ovl?.[i]); }   /* see the new speed */
     if (e.target.dataset.c === 'inP' || e.target.dataset.c === 'outP') reelPanel();
     if (e.target.dataset.c === 'caption' && R.tool === 'text') reelPanel();   // show size controls once there is text
@@ -7600,6 +7613,12 @@ function reelClipBind(ed, c) {
     const stI = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1, stO = R.ovl?.[stI];
     const ss = e.target.closest('[data-stseg] button');
     if (ss && stO) { const k = ss.parentElement.dataset.stseg; stO[k] = ss.dataset.v; ss.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === ss)); reelChanged(); if (k === 'anim' || k === 'shape' || k === 'look') reelPanel(); if (['anim', 'adir', 'spinDir', 'floatDir'].includes(k)) reelStkPeek(stO); return; }
+    const sfk = e.target.closest('[data-stfxk]');
+    if (sfk && stO) { (stO.tfx ||= []).push({ k: sfk.dataset.stfxk, sp: 1, amt: 0.7 }); R.stfxSel = stO.tfx.length - 1; reelChanged(); reelTimeline(); reelPanel(); return reelStkPeek(stO); }
+    const sx = e.target.closest('[data-stfxx]');
+    if (sx && stO) { stO.tfx.splice(+sx.dataset.stfxx, 1); if (!stO.tfx.length) delete stO.tfx; R.stfxSel = -1; reelChanged(); reelTimeline(); return reelPanel(); }
+    const si = e.target.closest('[data-stfxi]');
+    if (si && stO) { R.stfxSel = +si.dataset.stfxi; reelPanel(); return reelStkPeek(stO); }
     const sf = e.target.closest('[data-stfx] button');
     if (sf && stO) { const v = sf.dataset.v; stO.fx = (stO.fx || []).includes(v) ? stO.fx.filter(x => x !== v) : [...(stO.fx || []), v]; sf.classList.toggle('on', stO.fx.includes(v)); reelChanged(); reelPanel(); if (stO.fx.includes(v)) reelStkPeek(stO); return; }
     const tg = e.target.closest('[data-sttog]');
@@ -9614,6 +9633,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 508, when: '2026-11-21T19:00', added: [
+    'Reel maker: stickers and text can carry effects. Select one and open Effects: add as many as you like, tap a chip to set its speed and strength. They run for as long as it shows.',
+    'Reel maker: a small wand badge on a sticker’s timeline bar shows it has effects, and the Effects tool has its own wand icon.'],
+    test: ['Reel maker: select a sticker, open Effects, add Glow and Shake, and play the reel.'] },
   { build: 507, when: '2026-11-21T17:00', added: [
     'Reel maker: picking an effect plays it once, so you see it straight away.',
     'Reel maker: opening and closing transitions, even with one clip. Tap the small marker at the start or end of the timeline: fade, zoom in or out, spin, slide, drop, blur, pixels, circle, heart, doors, wipe, flash, glitch, old TV and more, with their own length.'],
