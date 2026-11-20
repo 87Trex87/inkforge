@@ -296,7 +296,27 @@ function reelImg(ref) {
 }
 
 /* ---------- Timeline ---------- */
-const clipDur = (c) => c.type === 'video' ? Math.max(0.3, (c.outP - c.inP) / (c.speed || 1)) : c.dur;
+/* Speed ramps: c.curve = [{ s, y }], points at s seconds into the video file (so trimming and splitting keep them in
+   place), y from -1 (a quarter of the clip's speed) through 0 (its speed) to 1 (four times). Between points the speed
+   eases smoothly; before the first and after the last it holds. A table of the reel time at each step through the file
+   turns reel time into file time and back. */
+const _curveT = new WeakMap(), REEL_CURVE_N = 400;
+const reelCurved = (c) => c?.type === 'video' && c.curve?.length > 0;
+function reelCurveY(c, s) { const P = c.curve; if (!P?.length) return 0; if (s <= P[0].s) return P[0].y; const L = P[P.length - 1]; if (s >= L.s) return L.y;
+  for (let i = 1; i < P.length; i++) if (s <= P[i].s) { const a = P[i - 1], b = P[i], u = (s - a.s) / ((b.s - a.s) || 1), e = u * u * (3 - 2 * u); return a.y + (b.y - a.y) * e; }
+  return 0; }
+const reelSpeedAtSrc = (c, s) => (c.speed || 1) * Math.pow(2, 2 * reelCurveY(c, s));
+function reelCurveTable(c) { const key = JSON.stringify([c.curve, c.speed, c.inP, c.outP]); let t = _curveT.get(c); if (t?.key === key) return t;
+  const N = REEL_CURVE_N, ds = (c.outP - c.inP) / N, T = new Float64Array(N + 1);
+  for (let i = 0; i < N; i++) T[i + 1] = T[i] + ds / reelSpeedAtSrc(c, c.inP + (i + 0.5) * ds);
+  t = { key, T, ds, N }; _curveT.set(c, t); return t; }
+/* Where in the file the clip is, `local` seconds into it on the reel; and how fast it plays there. */
+function clipSrcAt(c, local) { if (!reelCurved(c)) return c.inP + local * (c.speed || 1);
+  const { T, ds, N } = reelCurveTable(c); if (local <= 0) return c.inP; if (local >= T[N]) return c.outP;
+  let lo = 0, hi = N; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= local) lo = m; else hi = m; }
+  return c.inP + (lo + (local - T[lo]) / ((T[hi] - T[lo]) || 1)) * ds; }
+const clipRateAt = (c, local) => reelCurved(c) ? reelSpeedAtSrc(c, clipSrcAt(c, local)) : (c.speed || 1);
+const clipDur = (c) => c.type === 'video' ? Math.max(0.3, reelCurved(c) ? reelCurveTable(c).T[REEL_CURVE_N] : (c.outP - c.inP) / (c.speed || 1)) : c.dur;
 function reelSegments() {
   const s = reelStyle(), segs = [];
   let t = 0;
@@ -939,8 +959,8 @@ function reelSyncVideos(t, playing) {
       if (nextSeg?.clip === c && Math.abs(c.el.currentTime - c.inP) > 0.1) c.el.currentTime = c.inP;
       continue;
     }
-    c.el.playbackRate = c.speed || 1;
-    const want = c.inP + (t - seg.start) * (c.speed || 1);
+    c.el.playbackRate = Math.max(0.0625, Math.min(16, clipRateAt(c, t - seg.start)));
+    const want = clipSrcAt(c, t - seg.start);
     if (playing) {
       if (Math.abs(c.el.currentTime - want) > 0.3) c.el.currentTime = want;
       if (c.el.paused) c.el.play().catch(() => {});
@@ -1077,8 +1097,9 @@ async function reelReplaceClip(c, file) {
   const out = {};
   for (const [k, v] of Object.entries(c)) if (!REEL_MEDIA_KEYS.includes(k) && k[0] !== '_' && !(c.type === 'blank' && k === 'bg')) out[k] = v;
   for (const k of REEL_MEDIA_KEYS) if (nc[k] !== undefined) out[k] = nc[k];
-  if (out.type === 'video') { out.inP = 0; out.outP = Math.min(nc.srcDur, len * (out.speed || 1)); }
-  else { out.dur = len; delete out.speed; }
+  if (out.type === 'video' && reelCurved(c)) { out.curve = c.curve.map(p => ({ s: p.s - c.inP, y: p.y })); out.inP = 0; out.outP = Math.min(nc.srcDur, c.outP - c.inP); }   /* the same ramp from the new video's start */
+  else if (out.type === 'video') { out.inP = 0; out.outP = Math.min(nc.srcDur, len * (out.speed || 1)); delete out.curve; }
+  else { out.dur = len; delete out.speed; delete out.curve; }
   if (R.trans[c.id]) { R.trans[out.id] = R.trans[c.id]; delete R.trans[c.id]; }
   if (c.type === 'video' && !c.el.paused) c.el.pause();
   R.clips[i] = out;
@@ -1157,7 +1178,7 @@ async function reelRenderFile(title = 'Exporting reel') {
    transitions that show it early), waiting until it is really there. */
 async function reelSeekVideos(segs, t) {
   const seg = reelSegAt(segs, t), next = segs[segs.indexOf(seg) + 1], waits = [], done = new Set();
-  for (const [sg, want] of [[seg, seg?.kind === 'clip' ? seg.clip.inP + (t - seg.start) * (seg.clip.speed || 1) : 0], [next, next?.clip?.inP || 0]]) {
+  for (const [sg, want] of [[seg, seg?.kind === 'clip' ? clipSrcAt(seg.clip, t - seg.start) : 0], [next, next?.clip?.inP || 0]]) {
     const c = sg?.kind === 'clip' ? sg.clip : null;
     if (!c || c.type !== 'video' || done.has(c.el)) continue; done.add(c.el);
     if (!c.el.paused) c.el.pause();
@@ -1188,8 +1209,10 @@ async function reelExportAudio(segs, total) {
     const c = g0.clip;
     if (c._abuf === undefined) { try { c._abuf = await oc.decodeAudioData(await (await fetch(c.el.currentSrc || c.el.src)).arrayBuffer()); } catch { c._abuf = null; } }
     if (!c._abuf) continue;
-    const nd = oc.createBufferSource(), g = oc.createGain(); nd.buffer = c._abuf; nd.playbackRate.value = c.speed || 1; g.gain.value = c.vol ?? 1;
-    nd.connect(g).connect(oc.destination); nd.start(g0.start, Math.min(c._abuf.duration - 0.01, c.inP || 0), Math.max(0.01, g0.dur * (c.speed || 1)));
+    const nd = oc.createBufferSource(), g = oc.createGain(); nd.buffer = c._abuf; g.gain.value = c.vol ?? 1;
+    if (reelCurved(c)) { const n = Math.max(2, Math.ceil(g0.dur * 100)), rates = new Float32Array(n); for (let k = 0; k < n; k++) rates[k] = clipRateAt(c, k * g0.dur / (n - 1));   /* the ramp, as the sound's speed */
+      nd.playbackRate.setValueCurveAtTime(rates, g0.start, g0.dur); } else nd.playbackRate.value = c.speed || 1;
+    nd.connect(g).connect(oc.destination); nd.start(g0.start, Math.min(c._abuf.duration - 0.01, c.inP || 0), Math.max(0.01, c.outP - c.inP));
   }
   const buf = await oc.startRendering(), out = []; let desc = null, aerr = null;
   const enc = new AudioEncoder({ output: (chunk, meta) => { const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d); out.push({ data: d });

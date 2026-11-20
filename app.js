@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 513;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 514;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6642,7 +6642,7 @@ function reelQuickBind(el) {
 
 // The timeline under the preview is the main way around: tap a clip, card or transition and the
 // Edit tab shows that item's settings. Style holds the shared look; Music the soundtrack.
-const REEL_CLIP_TOOLS = [['look', 'Look'], ['frame', 'Frame'], ['tfx', 'Effects'], ['text', 'Text'], ['stickers', 'Stickers']];
+const REEL_CLIP_TOOLS = [['look', 'Look'], ['frame', 'Frame'], ['tfx', 'Effects'], ['speed', 'Speed'], ['text', 'Text'], ['stickers', 'Stickers']];
 /* The reel's text defaults, shown folded in the Text tool: the font for cards and any text left on "Same as style",
    the text colour, and where and how big new text starts. Saved in the style like before. */
 /* A reel colour choice's palette block: the eyedropper, recent colours, and the palette in use with its menu and
@@ -6681,7 +6681,7 @@ const RI = {
   whole: '<path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/>', del: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   toend: '<path d="M4 12h13M13 7l5 5-5 5M21 5v14"/>', xf: '<path d="M3 6c6 0 12 12 18 12M3 18c6 0 12-12 18-12"/>', row: '<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', split: '<path d="M12 3v18M6 8l-3 4 3 4M18 8l3 4-3 4"/>', freeze: '<path d="M12 2v20M4.9 4.9l14.2 14.2M2 12h20M4.9 19.1L19.1 4.9"/>',
-  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', swap: '<path d="M4 9h13l-3-3M20 15H7l3 3"/>', device: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>', pf: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>'
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', swap: '<path d="M4 9h13l-3-3M20 15H7l3 3"/>', gauge: '<path d="M4 17a8 8 0 1 1 16 0"/><path d="M12 17l4-5"/><path d="M7 17h.01M17 17h.01"/>', device: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>', pf: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>'
 };
 const ri = (k) => `<svg viewBox="0 0 24 24">${RI[k]}</svg>`;
 const rib = (attrs, k, tip) => `<button class="btn icon-btn rib" ${attrs} data-tip="${tip}" aria-label="${tip.replace(/ \(.*\)$/, '')}">${ri(k)}</button>`;
@@ -7112,8 +7112,8 @@ function reelTlLen(el) {
     const dt = dx / (R.pps || REEL_PPS), c = d.c, s0 = d.s;
     if (!c) reelSetStyle(d.key + 'Dur', +Math.max(0.8, Math.min(8, s0.dur + dt)).toFixed(2));
     else if (c.type !== 'video') c.dur = +Math.max(0.5, Math.min(30, s0.dur + dt)).toFixed(2);
-    else if (d.side === 'r') c.outP = Math.max(c.inP + 0.3, Math.min(c.srcDur, s0.outP + dt * (c.speed || 1)));
-    else c.inP = Math.max(0, Math.min(c.outP - 0.3, s0.inP + dt * (c.speed || 1)));
+    else if (d.side === 'r') c.outP = Math.max(c.inP + 0.3, Math.min(c.srcDur, s0.outP + dt * (s0.outP - s0.inP) / clipDur(s0)));   /* at its average speed (a ramp too) */
+    else c.inP = Math.max(0, Math.min(c.outP - 0.3, s0.inP + dt * (s0.outP - s0.inP) / clipDur(s0)));
     R.lenMoved = true;
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; reelChanged();
       const g = reelSegments().segs.find(x => (c ? x.clip === c : x.kind === d?.key)); if (g && d) reelShow(d.side === 'l' ? g.start + 0.01 : g.start + g.dur - 0.05); });
@@ -7347,7 +7347,7 @@ async function reelPanel() {
     const seg = p?.kind === 'trans' ? reelSegments().segs.find(x => String(x.key) === String(p.key)) : null;
     if (c) {
       R.sel = R.clips.indexOf(c);
-      el.innerHTML = `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}" data-tip="${l}" aria-label="${l}">${ri({ look: 'look', frame: 'frame', tfx: 'fx', text: 'text', stickers: 'sticker' }[k])}<span>${l}</span></button>`).join('')}</div>
+      el.innerHTML = `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.filter(([k]) => k !== 'speed' || c.type === 'video').map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}" data-tip="${k === 'speed' ? 'Speed: ramps, slow motion and speed-ups' : l}" aria-label="${l}">${ri({ look: 'look', frame: 'frame', tfx: 'fx', speed: 'gauge', text: 'text', stickers: 'sticker' }[k])}<span>${l}</span></button>`).join('')}</div>
         <div class="card reel-clip-ed">
           <div class="reel-clip-head"><b>${c.type === 'video' ? 'Video' : c.type === 'blank' ? 'Blank page' : 'Photo'} ${R.sel + 1} of ${R.clips.length}</b>
             <span class="rib-inl">${rib('data-cact="dup"', 'dup', 'Duplicate clip (Ctrl D)')}${c.type === 'video' ? rib('data-cact="split"', 'split', 'Split at the playhead (S)') + rib('data-cact="freeze"', 'freeze', 'Freeze frame: a still of this moment, held for 2 seconds') : ''}${rib('data-cact="still"', 'camera', 'Save this frame as a picture')}${c.type !== 'blank' ? rib('data-cact="swap"', 'swap', 'Replace the picture or video, keeping its length, look, stickers and effects') : ''}</span>
@@ -7429,7 +7429,8 @@ function reelClipTool(c) {
     R.tool = sub; reelClipTool.inner = true; let body; try { body = reelClipTool(c); } finally { reelClipTool.inner = false; R.tool = 'look'; }
     return head + body;
   }
-  if (!REEL_CLIP_TOOLS.some(([k]) => k === R.tool) && !reelClipTool.inner) R.tool = 'look';   /* Trim and Arrange moved to the timeline and the top strip */
+  if (!REEL_CLIP_TOOLS.some(([k]) => k === R.tool) && !reelClipTool.inner || (R.tool === 'speed' && c.type !== 'video')) R.tool = 'look';
+  if (R.tool === 'speed') return reelSpeedPanel(c);   /* Trim and Arrange moved to the timeline and the top strip */
   if (R.tool === 'trim') return video ? `
       ${reelSlider('data-c', 'inP', `Start ${help('Where this video clip begins.')}`, 0, c.srcDur.toFixed(2), 0.1, c.inP, c.inP.toFixed(1) + 's')}
       ${reelSlider('data-c', 'outP', 'End', 0, c.srcDur.toFixed(2), 0.1, c.outP, c.outP.toFixed(1) + 's')}
@@ -7533,8 +7534,79 @@ function reelFilterThumbs(c) {
   });
 }
 
+/* Speed: the clip's own speed and a ramp drawn as a curve. Above the middle line is faster (up to 4×), below slower
+   (down to ¼), with the clip's speed on the line. Tap the graph to add a point, drag points, double-tap one to take it
+   off. Presets lay out common ramps. */
+const REEL_SPD_PRE = [['none', 'None', []], ['montage', 'Montage', [[0, 0], [0.25, 0.5], [0.5, -0.6], [0.75, 0.5], [1, 0]]], ['hero', 'Hero', [[0, 0.5], [0.38, 0.5], [0.5, -0.9], [0.62, 0.5], [1, 0.5]]],
+  ['bullet', 'Bullet', [[0, 0.4], [0.42, -1], [0.58, -1], [1, 0.4]]], ['jump', 'Jump cut', [[0, -0.5], [0.5, 0.8], [1, -0.5]]], ['flashin', 'Flash in', [[0, 1], [0.3, 0], [1, 0]]],
+  ['flashout', 'Flash out', [[0, 0], [0.7, 0], [1, 1]]], ['slowend', 'Slow end', [[0, 0], [0.6, 0], [1, -0.8]]]];
+const REEL_SPD_W = 300, REEL_SPD_H = 130, REEL_SPD_PAD = 12;
+const reelSpdFmt = (v) => v >= 1 ? (Math.round(v * 10) / 10) + '×' : (v >= 0.25 ? '' : '') + (Math.round(v * 100) / 100) + '×';
+function reelSpeedSvg(c) {
+  const span = c.outP - c.inP, X = (s) => (s - c.inP) / span * REEL_SPD_W, Y = (y) => REEL_SPD_PAD + (1 - y) / 2 * (REEL_SPD_H - 2 * REEL_SPD_PAD), mid = Y(0);
+  let line = '', area = `M0 ${mid}`;
+  for (let i = 0; i <= 120; i++) { const sx = c.inP + span * i / 120, x = (i / 120 * REEL_SPD_W).toFixed(1), y = Y(reelCurveY(c, sx)).toFixed(1); line += (i ? 'L' : 'M') + x + ' ' + y; area += `L${x} ${y}`; }
+  area += `L${REEL_SPD_W} ${mid}Z`;
+  const seg = reelSegments().segs.find(g => g.clip === c), ph = seg && R.t >= seg.start && R.t <= seg.start + seg.dur ? X(clipSrcAt(c, R.t - seg.start)) : null;
+  const marks = [[1, '4×'], [0.5, '2×'], [0, (c.speed || 1) === 1 ? '1×' : reelSpdFmt(c.speed || 1)], [-0.5, '½×'], [-1, '¼×']];
+  const grid = marks.map(([y]) => `<line x1="0" x2="${REEL_SPD_W}" y1="${Y(y)}" y2="${Y(y)}" class="${y === 0 ? 'mid' : ''}"/>`).join('');
+  const pc = (v, of) => (v / of * 100).toFixed(2) + '%';   /* points and labels sit over the stretched graph as page elements, so they keep their shape */
+  return `<svg viewBox="0 0 ${REEL_SPD_W} ${REEL_SPD_H}" preserveAspectRatio="none"><defs><linearGradient id="spdg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff8a3d" stop-opacity=".55"/><stop offset=".5" stop-color="#ff8a3d" stop-opacity=".05"/><stop offset=".5" stop-color="#4aa8ff" stop-opacity=".05"/><stop offset="1" stop-color="#4aa8ff" stop-opacity=".55"/></linearGradient></defs>
+    <g class="spd-grid">${grid}</g><path d="${area}" class="spd-area" fill="url(#spdg)"/><path d="${line}" class="spd-line"/>
+    ${ph != null ? `<line class="spd-ph" x1="${ph}" x2="${ph}" y1="0" y2="${REEL_SPD_H}"/>` : ''}</svg>
+    ${marks.map(([y, l]) => `<span class="spd-lbl" style="top:${pc(Y(y), REEL_SPD_H)}">${l}</span>`).join('')}
+    ${(c.curve || []).map((p, i) => `<i data-pi="${i}" class="spd-pt ${R.spdSel === i ? 'on' : ''}" style="left:${pc(X(p.s), REEL_SPD_W)};top:${pc(Y(p.y), REEL_SPD_H)}"></i>`).join('')}`;
+}
+function reelSpeedPanel(c) {
+  const len = clipDur(c), base = (c.outP - c.inP) / (c.speed || 1), sel = c.curve?.[R.spdSel];
+  return `<div class="lbl">Speed ${help('The whole clip: slow motion for detail shots, faster for time-lapses.')}</div>
+    ${reelSeg('speed', c.speed || 1, [[0.25, '¼×'], [0.5, '½×'], [1, '1×'], [1.5, '1.5×'], [2, '2×'], [4, '4×']])}
+    <div class="lbl" style="display:flex;align-items:center;gap:6px">Speed ramp ${help('Tap the graph to add a point and drag it: above the line plays faster, below plays slower, and the higher or lower, the more. Double-tap a point to take it off.')}
+      <span class="muted" style="margin-left:auto;font:600 11px var(--ui)" id="spd-len">${len.toFixed(1)}s${reelCurved(c) ? ` (was ${base.toFixed(1)}s)` : ''}</span></div>
+    <div id="spd-graph" class="spd-graph">${reelSpeedSvg(c)}</div>
+    <div class="spd-row"><span class="muted" id="spd-pt">${sel ? `Point: ${reelSpdFmt(reelSpeedAtSrc(c, sel.s))}` : reelCurved(c) ? 'Tap a point to pick it' : 'Tap the graph to add a point'}</span>
+      ${sel ? '<button class="btn" data-spdx>Remove point</button>' : ''}${reelCurved(c) ? '<button class="btn" data-spdr>Reset</button>' : ''}</div>
+    <div class="lbl" style="margin-top:10px">Presets</div>
+    <div class="spd-pre">${REEL_SPD_PRE.map(([k, l, P]) => `<button data-spdp="${k}"><svg viewBox="0 0 60 26" preserveAspectRatio="none"><line x1="0" x2="60" y1="13" y2="13"/>${P.length ? `<path d="${P.map(([x, y], i) => (i ? 'L' : 'M') + (x * 60) + ' ' + (13 - y * 11)).join('')}"/>` : ''}</svg><span>${l}</span></button>`).join('')}</div>`;
+}
+function reelSpeedBind(ed, c) {
+  if (c.type !== 'video') return;
+  const span = () => c.outP - c.inP, toS = (x) => c.inP + Math.max(0, Math.min(1, x)) * span(), Y2y = (py) => 1 - 2 * (py - REEL_SPD_PAD) / (REEL_SPD_H - 2 * REEL_SPD_PAD);
+  let drag = null, raf = 0;
+  const redraw = () => { const g = document.getElementById('spd-graph'); if (g) g.innerHTML = reelSpeedSvg(c);
+    const l = document.getElementById('spd-len'); if (l) l.textContent = `${clipDur(c).toFixed(1)}s${reelCurved(c) ? ` (was ${((c.outP - c.inP) / (c.speed || 1)).toFixed(1)}s)` : ''}`;
+    const p = document.getElementById('spd-pt'), sp = c.curve?.[R.spdSel]; if (p && sp) p.textContent = `Point: ${reelSpdFmt(reelSpeedAtSrc(c, sp.s))}`; };
+  const live = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; redraw(); reelTimeline(); reelRender(); }); };
+  const done = () => { if (c.curve && !c.curve.length) delete c.curve; const sg = reelSegments().segs.find(g => g.clip === c); if (sg) R.t = Math.min(R.t, sg.start + sg.dur);
+    reelChanged(); reelTimeline(); reelPanel(); };
+  ed.addEventListener('pointerdown', (e) => {
+    const g = e.target.closest('#spd-graph'); if (!g) return; e.preventDefault();
+    const r = g.getBoundingClientRect(), pos = (ev) => [(ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height * REEL_SPD_H];
+    const [fx, py] = pos(e), hit = e.target.closest('[data-pi]');
+    let i;
+    if (hit) { i = +hit.dataset.pi; const now = performance.now(), lt = R.spdTap || {};   /* kept on R: the panel redraws between the taps */
+      if (lt.c === c && lt.i === i && now - lt.t < 400) { c.curve.splice(i, 1); R.spdSel = -1; R.spdTap = null; return done(); }   /* double-tap: off */
+      R.spdTap = { c, i, t: now }; }
+    else { c.curve ||= []; const s = toS(fx), y = Math.max(-1, Math.min(1, Y2y(py))); c.curve.push({ s, y: Math.abs(y) < 0.06 ? 0 : y }); c.curve.sort((a, b) => a.s - b.s); i = c.curve.findIndex(p => p.s === s); }
+    R.spdSel = i; drag = { i, pos, pid: e.pointerId }; try { g.setPointerCapture(e.pointerId); } catch {} live();
+  });
+  ed.addEventListener('pointermove', (e) => { if (!drag || e.pointerId !== drag.pid) return; const P = c.curve, p = P[drag.i]; if (!p) return;
+    const [fx, py] = drag.pos(e), lo = drag.i > 0 ? P[drag.i - 1].s + 0.02 : c.inP, hi = drag.i < P.length - 1 ? P[drag.i + 1].s - 0.02 : c.outP;
+    let y = Math.max(-1, Math.min(1, Y2y(py))); if (Math.abs(y) < 0.06) y = 0;   /* catches on the line */
+    p.s = Math.max(lo, Math.min(hi, toS(fx))); p.y = y; live(); });
+  const up = (e) => { if (!drag || e.pointerId !== drag.pid) return; drag = null; done(); };
+  ed.addEventListener('pointerup', up); ed.addEventListener('pointercancel', up);
+  ed.addEventListener('click', (e) => {
+    if (e.target.closest('[data-spdx]')) { c.curve?.splice(R.spdSel, 1); R.spdSel = -1; return done(); }
+    if (e.target.closest('[data-spdr]')) { delete c.curve; R.spdSel = -1; return done(); }
+    const pb = e.target.closest('[data-spdp]'); if (!pb) return;
+    const P = REEL_SPD_PRE.find(x => x[0] === pb.dataset.spdp)[2]; R.spdSel = -1;
+    if (P.length) c.curve = P.map(([x, y]) => ({ s: toS(x), y })); else delete c.curve;
+    done(); const sg = reelSegments().segs.find(g => g.clip === c); if (sg) { R.t = sg.start; reelSyncVideos(R.t, false); reelPlay(); clearTimeout(R.peekT); R.peekT = setTimeout(() => R.playing && reelPause(), sg.dur * 1000 + 50); }   /* plays the clip once */
+  });
+}
 function reelClipBind(ed, c) {
-  const el = $('#reel-panel'); reelTfxBind(ed, c);
+  const el = $('#reel-panel'); reelTfxBind(ed, c); reelSpeedBind(ed, c);
   ed.addEventListener('input', (e) => {
     const t = e.target;
     if (t.dataset.blkc) { c[t.dataset.blkc] = t.value; c.thumb = reelBlankThumb(c); return reelChanged(); }
@@ -7612,7 +7684,7 @@ function reelClipBind(ed, c) {
       const k = sb.parentElement.dataset.seg;
       c[k] = k === 'speed' ? +sb.dataset.v : sb.dataset.v;
       sb.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === sb));
-      if (k === 'speed') { const tile = el.querySelector(`.reel-clip[data-i="${R.sel}"] span`); if (tile) tile.textContent = clipDur(c).toFixed(1) + 's'; }
+      if (k === 'speed') { const tile = el.querySelector(`.reel-clip[data-i="${R.sel}"] span`); if (tile) tile.textContent = clipDur(c).toFixed(1) + 's'; reelChanged(); reelTimeline(); if (R.tool === 'speed') reelPanel(); return; }
       reelChanged(); return;
     }
     const lt = e.target.closest('[data-looktab] button');
@@ -7678,7 +7750,7 @@ function reelClipBind(ed, c) {
       pick = copy(); R.clips.splice(i + 1, 0, pick);
     } else if (act === 'split') {
       const seg = reelSegments().segs.find(x => x.clip === c);
-      const cut = seg && c.inP + (R.t - seg.start) * (c.speed || 1);
+      const cut = seg && clipSrcAt(c, R.t - seg.start);
       if (!seg || !(cut > c.inP + 0.2 && cut < c.outP - 0.2)) return toast('Move the playhead onto this clip, away from its ends, to split it there.');
       pick = copy({ inP: cut }); R.clips.splice(i + 1, 0, pick); c.outP = cut;
       toast('Clip split.');
@@ -7693,14 +7765,14 @@ const reelClipCopy = (c, extra) => reelOwnVideo({ ...c, id: ++R.seq, cap: c.cap 
 function reelClipDup(c = R.clips[R.sel]) { if (!c) return; const i = R.clips.indexOf(c), n = reelClipCopy(c); R.clips.splice(i + 1, 0, n); reelPick('clip', n.id); }
 function reelClipSplit(c = R.clips[R.sel]) {
   if (c?.type !== 'video') return toast('Pick a video clip and put the playhead where to cut.');
-  const seg = reelSegments().segs.find(x => x.clip === c), cut = seg && c.inP + (R.t - seg.start) * (c.speed || 1);
+  const seg = reelSegments().segs.find(x => x.clip === c), cut = seg && clipSrcAt(c, R.t - seg.start);
   if (!seg || !(cut > c.inP + 0.2 && cut < c.outP - 0.2)) return toast('Move the playhead onto this clip, away from its ends, to split it there.');
   const n = reelClipCopy(c, { inP: cut }); R.clips.splice(R.clips.indexOf(c) + 1, 0, n); c.outP = cut; toast('Clip split.'); reelPick('clip', n.id);
 }
 /* Freeze frame: the video's picture at the playhead becomes a 2-second photo clip right after a split there. */
 async function reelFreeze(c) {
   const seg = reelSegments().segs.find(x => x.clip === c); if (!seg) return;
-  const at = c.inP + Math.max(0, Math.min(seg.dur, R.t - seg.start)) * (c.speed || 1), cv = document.createElement('canvas'); cv.width = c.w; cv.height = c.h;
+  const at = clipSrcAt(c, Math.max(0, Math.min(seg.dur, R.t - seg.start))), cv = document.createElement('canvas'); cv.width = c.w; cv.height = c.h;
   c.el.currentTime = at; await new Promise(r => { c.el.onseeked = r; setTimeout(r, 800); }); c.el.onseeked = null; cv.getContext('2d').drawImage(c.el, 0, 0);
   const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92)); const ph = await reelAddFile(new File([blob], 'freeze.jpg', { type: 'image/jpeg' }));
   R.clips.splice(R.clips.indexOf(ph), 1); Object.assign(ph, { dur: 2, motion: 'none', fit: c.fit, filter: c.filter, adj: c.adj && { ...c.adj }, fx: c.fx && [...c.fx], rot: c.rot, flip: c.flip, flipv: c.flipv, ang: c.ang, op: c.op, zoom: c.zoom, ox: c.ox, oy: c.oy });
@@ -9698,6 +9770,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 514, when: '2026-11-22T17:00', added: [
+    'Reel maker: a Speed tool for video clips. Set the whole clip from ¼× to 4×, or draw a speed ramp: tap the graph to add a point, drag it above the line to speed up or below to slow down; the higher or lower, the more.',
+    'Reel maker: speed ramp presets (Montage, Hero, Bullet, Jump cut, Flash in, Flash out, Slow end), double-tap a point to remove it, and the clip’s new length shown as you drag.',
+    'Reel maker: playback, export (picture and sound), split, freeze frame and trimming all follow the ramp.'],
+    test: ['Reel maker: pick a video clip, open Speed, try the Hero preset, then drag a point and export.'] },
   { build: 513, when: '2026-11-22T14:00', added: [
     'Reel maker: add one of your saved reels into another (the + on the timeline, A saved reel). It comes in as one video clip you can add stickers and effects to; the saved reel stays as it is.',
     'Reel maker: Replace on a clip can also take a saved reel, so you can edit your outro and swap the new version in, keeping the clip’s filters, stickers and transition.'],

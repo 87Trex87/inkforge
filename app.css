@@ -2753,5 +2753,20 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .reel-savedg .pf-tile span { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; font: 600 11px var(--ui); color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.75)); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .reel-savedg .pf-tile > svg { width: 40%; height: 40%; margin: auto; opacity: .5; }
 .reel-swapm button > svg, .reel-addm b svg { width: 18px; height: 18px; }
+/* Reel: speed ramp */
+.spd-graph { position: relative; display: block; width: 100%; height: 150px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); touch-action: none; cursor: crosshair; margin: 4px 0 6px; overflow: hidden; user-select: none; }
+.spd-graph > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.spd-graph .spd-area { stroke: none; }
+.spd-lbl { position: absolute; left: 4px; transform: translateY(-115%); font: 600 10px var(--ui); color: var(--muted); pointer-events: none; }
+.spd-pt { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--bg2); border: 2.5px solid var(--teal); box-sizing: border-box; cursor: grab; }
+.spd-pt.on { background: var(--teal); box-shadow: 0 0 0 4px rgba(45,212,191,.25); }
+.spd-graph .spd-grid line { stroke: rgba(255,255,255,.07); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.spd-graph .spd-grid line.mid { stroke: rgba(255,255,255,.3); stroke-dasharray: 4 4; }
+.spd-graph .spd-line { fill: none; stroke: var(--teal); stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.spd-graph .spd-ph { stroke: #ff4d5e; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.spd-row { display: flex; align-items: center; gap: 8px; font-size: 12px; } .spd-row span { flex: 1; }
+.spd-pre { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.spd-pre button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: 600 11px var(--ui); cursor: pointer; }
+.spd-pre svg { width: 100%; height: 22px; } .spd-pre svg line { stroke: rgba(255,255,255,.25); stroke-dasharray: 3 3; } .spd-pre svg path { fill: none; stroke: var(--teal); stroke-width: 2; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 513; }
+:root { --app-build: 514; }
