@@ -2650,5 +2650,49 @@ html[data-os="ios"], html[data-os="ios"] body { overscroll-behavior: none; -webk
 html[data-os="ios"] body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
 html[data-os="ios"] input, html[data-os="ios"] textarea, html[data-os="ios"] [contenteditable="true"], html[data-os="ios"] [contenteditable=""] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; }
+/* ---------- Colour rows: one line per colour; the swatches open under it on a tap ---------- */
+.dz-cw { margin: 4px 0 8px; }
+.dz-cwr { display: flex; gap: 6px; align-items: center; }
+.dz-cwell { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; height: 36px; padding: 0 8px 0 5px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; font-size: 12.5px; }
+.dz-cwell:hover { border-color: color-mix(in srgb, var(--teal) 60%, var(--line)); }
+.dz-cw.open .dz-cwell { border-color: var(--teal); }
+.dz-cwell i { width: 26px; height: 26px; flex: none; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 0 0 1px rgba(0,0,0,.4);
+  background-image: linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%), linear-gradient(45deg, #ccc 25%, #fff 25%, #fff 75%, #ccc 75%); background-size: 8px 8px; background-position: 0 0, 4px 4px; }
+.dz-cwell i:not(.none) { background-image: none; }
+.dz-cwell i.none { position: relative; } .dz-cwell i.none::after { content: ''; position: absolute; left: 50%; top: 2px; bottom: 2px; width: 2px; margin-left: -1px; background: #e0605a; transform: rotate(45deg); }
+.dz-cwell span { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.dz-cwell span small { color: var(--ink2); font-size: 11px; margin-left: 2px; }
+.dz-cwell svg { width: 15px; height: 15px; flex: none; fill: none; stroke: var(--ink2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
+.dz-cw.open .dz-cwell svg { transform: rotate(180deg); }
+.dz-cwi { width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 0; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink2); cursor: pointer; }
+.dz-cwi:hover { color: var(--ink); } .dz-cwi.on { color: var(--ink); background: rgba(255,255,255,.08); }
+.dz-cwi svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dz-cwpop { margin-top: 6px; padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.dz-cwpop .dz-cwgrid { width: auto; }
+.dz-cwpop .dz-swr > .none, .dz-cwpop .dz-swr > .sep, .dz-cwpop .dz-swr > [data-eye] { display: none; }
+.dz-cwpop .dz-swh:first-of-type { margin-top: 8px; }
+/* fill tabs: a slim switch */
+.dz-side .seg.dz-fm2 { padding: 2px; border-radius: 9px; margin-bottom: 8px; }
+.dz-side .seg.dz-fm2 button { padding: 5px 4px !important; font-size: 12px; border-radius: 7px; }
+/* outline: width, then where it sits and scaling side by side */
+.dz-olrow { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; }
+.dz-side .seg.dz-olpos { flex: none; padding: 2px; margin: 0; border-radius: 9px; }
+.dz-side .seg.dz-olpos button { width: 34px; height: 30px; padding: 0 !important; display: grid; place-items: center; border-radius: 7px; }
+.dz-olpos button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.4; }
+.dz-olscale { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); cursor: pointer; margin-left: auto; white-space: nowrap; }
+.dz-olscale input { width: 16px; height: 16px; accent-color: var(--teal); margin: 0; }
+/* a label straight above a colour row sits close to it */
+.dz-side .lbl + .dz-cw { margin-top: 2px; }
+.dz-sw.dz-cw .dz-cwr > button.dz-cwell { width: auto; height: 36px; border-radius: 9px; border: 1px solid var(--line); outline: none; padding: 0 8px 0 5px; }
+.dz-sw.dz-cw.open .dz-cwr > button.dz-cwell { border-color: var(--teal); }
+.dz-sw.dz-cw .dz-cwr > button.dz-cwi { width: 36px; height: 36px; border-radius: 9px; border: 1px solid var(--line); outline: none; }
+.dz-sw.dz-cw .dz-cwr > button.dz-cwi.on { border-color: var(--ink2); }
+.dz-side .dz-gacts { flex-wrap: nowrap; gap: 4px; } .dz-side .dz-gacts span { min-width: 0; font-size: 11.5px; } .dz-side .dz-gacts .btn { padding: 4px 8px; white-space: nowrap; }
+.dz-cwpop .dz-sw2.dz-cwgrid { width: 100% !important; max-width: none; display: block; }
+.dz-cwpop .dz-swh { display: flex; align-items: center; gap: 6px; width: 100%; }
+.dz-cwpop .dz-swh select.in { flex: 1; min-width: 0; }
+.dz-cwpop .dz-swg { grid-template-columns: repeat(auto-fill, 24px); gap: 5px; }
+.dz-cwpop .dz-swg button, .dz-cwpop .dz-swr > button, .dz-cwpop .dz-swr .pick { width: 24px !important; height: 24px !important; }
+.dz-sw.dz-cw { display: block; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 501; }
+:root { --app-build: 502; }

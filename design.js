@@ -1410,6 +1410,10 @@ function dzSwatchTools() {
   const into = (A, hexv) => { const box = A.key ? document.querySelector(`.dz-sw[data-swk="${A.key}"]`) : A.box?.isConnected ? A.box : null; if (!box) return;
     const b = document.createElement('button'); b.className = 'ink'; b.setAttribute(A.attr || 'data-c', hexv); if (A.fix) { const [k, v] = A.fix.split('='); b.setAttribute(k, v); }
     b.hidden = true; box.appendChild(b); b.click(); b.remove(); DZP.push(hexv); };
+  DZE.cwOpen = new Set();
+  document.addEventListener('click', (e) => { const w = e.target.closest('.dz-cw [data-cwopen]'); if (!w) return; e.preventDefault(); e.stopPropagation();
+    const box = w.closest('.dz-cw'), k = box.dataset.swk, open = !box.classList.contains('open');
+    box.classList.toggle('open', open); box.querySelector('.dz-cwpop').hidden = !open; w.setAttribute('aria-expanded', open); open ? DZE.cwOpen.add(k) : DZE.cwOpen.delete(k); }, true);
   document.addEventListener('click', async (e) => {
     const sw = e.target.closest('.dz-sw [data-c], .ink-dots button'), sc = sw && (sw.dataset.c || sw.dataset.v || sw.dataset.stcol || sw.dataset.stoc); if (sc && /^#[0-9a-f]{6}$/i.test(sc)) DZP.push(sc);
     const eb = e.target.closest('.dz-sw [data-eye]'), pm = e.target.closest('.dz-sw [data-palman]'); if (!eb && !pm) return;
@@ -2078,6 +2082,8 @@ function dzPortfolioPick(photos) {
   });
 }
 
+/* A colour's short name for panel hints: None, a theme colour's name, or its code. */
+const dzCwName = (c) => !c || c === 'none' ? 'none' : ({ '@fg': 'text', '@accent': 'accent', '@bg': 'background', '@soft': 'soft' })[c] || String(c).toUpperCase();
 /* ---------- List of designs ---------- */
 const DZ = {};
 DZ.list = async () => {
@@ -2582,14 +2588,23 @@ DZ.edit = async (id) => {
     ln.setAttribute('x1', A.x * k); ln.setAttribute('y1', A.y * k); ln.setAttribute('x2', B.x * k); ln.setAttribute('y2', B.y * k); m.hidden = false; };
   /* Outline: colour, width, where it sits on the edge, and whether it grows and shrinks with the shape. */
   const outlineUI = (l) => { const on = l.stroke && l.stroke !== 'none' && l.sw > 0, at = l.sal === 'in' || l.sal === 'out' ? l.sal : 'mid';
-    return fsec('Outline', `${swatches('stroke', on ? l.stroke : 'none', true)}${slider('sw', 'Width', 0, 60, 1, Math.round(l.sw || 0))}
-      <div class="lbl">Position</div><div class="seg" style="margin-bottom:8px">${[['in', 'Inside'], ['mid', 'Middle'], ['out', 'Outside']].map(([v, n]) => `<button data-sal="${v}" class="${at === v ? 'on' : ''}" style="flex:1" data-tip="${{ in: 'The line sits inside the edge', mid: 'The line sits across the edge', out: 'The line sits outside the edge' }[v]}">${n}</button>`).join('')}</div>
-      <label class="toggle" style="display:flex;margin-bottom:6px" data-tip="On: resizing makes the line thicker or thinner with the shape. Off: the line keeps its width."><input type="checkbox" data-sfix ${l.sfix ? '' : 'checked'}><span>Scale with the object</span></label>`,
+    const IC = { in: '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="2 2"/><rect x="7" y="7" width="10" height="10" rx="1" stroke-width="3"/>', mid: '<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="2 2"/><rect x="4" y="4" width="16" height="16" rx="2" stroke-width="3" opacity=".9"/>', out: '<rect x="7" y="7" width="10" height="10" rx="1" stroke-dasharray="2 2"/><rect x="3" y="3" width="18" height="18" rx="3" stroke-width="3"/>' };
+    return fsec('Outline', `${swatches('stroke', on ? l.stroke : 'none', true)}${on ? `${slider('sw', 'Width', 0, 60, 1, Math.round(l.sw || 0), v => v + ' px')}
+      <div class="dz-olrow"><div class="seg dz-olpos" role="group" aria-label="Where the line sits">${[['in', 'Inside'], ['mid', 'Centre'], ['out', 'Outside']].map(([v, n]) => `<button data-sal="${v}" class="${at === v ? 'on' : ''}" data-tip="${{ in: 'The line sits inside the edge', mid: 'The line sits across the edge', out: 'The line sits outside the edge' }[v]}" aria-label="${n}"><svg viewBox="0 0 24 24">${IC[v]}</svg></button>`).join('')}</div>
+        <label class="dz-olscale" data-tip="On: resizing makes the line thicker or thinner with the shape. Off: the line keeps its width."><input type="checkbox" data-sfix ${l.sfix ? '' : 'checked'}><span>Scale with shape</span></label></div>` : ''}`,
       { fold: true, open: !!on, hint: on ? `${Math.round(l.sw)} px · ${{ in: 'inside', mid: 'middle', out: 'outside' }[at]}` : 'none' }); };
   /* Every colour choice: None (where allowed), the theme's four, the eyedropper and any colour; then the recently
      used colours; then the palette in use (its menu and Palettes… open the swatch creator). Up to 32 colours. */
-  const swatches = (key, cur, allowNone) => {
+  const swatches = (key, cur, allowNone, full) => {
     const roles = [['@fg', 'Text'], ['@accent', 'Accent'], ['@bg', 'Background'], ['@soft', 'Soft']], P = DZP.cur(), rec = DZP.recent(), lc = String(cur || '').toLowerCase();
+    if (!full) { const none = !cur || cur === 'none', role = roles.find(r => r[0] === cur), open = DZE.cwOpen?.has(key), col = none ? '' : dzCol(doc, cur);
+      const inner = swatches(key, cur, false, true).replace('<div class="dz-sw dz-sw2" data-swk="' + key + '">', '<div class="dz-sw2 dz-cwgrid">');
+      return `<div class="dz-sw dz-cw ${open ? 'open' : ''}" data-swk="${key}"><div class="dz-cwr">
+        <button class="dz-cwell" data-cwopen aria-expanded="${open ? 'true' : 'false'}" title="Choose a colour"><i class="${none ? 'none' : ''}" style="${none ? '' : 'background:' + col}"></i>
+          <span>${none ? 'None' : role ? role[1] + ' <small>theme</small>' : esc(String(cur).toUpperCase())}</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+        ${allowNone ? `<button class="dz-cwi ${none ? 'on' : ''}" data-c="none" title="None" aria-label="None"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M6.5 17.5l11-11"/></svg></button>` : ''}
+        <button class="dz-cwi" data-eye title="Eyedropper: take a colour from the design" aria-label="Eyedropper"><svg viewBox="0 0 24 24"><path d="M14 4l6 6M17 7l-9.5 9.5L4 20l3.5-3.5L17 7z"/><path d="M13 5l6 6"/></svg></button></div>
+        <div class="dz-cwpop" ${open ? '' : 'hidden'}>${inner}</div></div>`; }
     const sw = (c) => `<button data-c="${c}" class="${lc === c ? 'on' : ''}" style="background:${c}" title="${c.toUpperCase()}"></button>`;
     return `<div class="dz-sw dz-sw2" data-swk="${key}"><div class="dz-swr">${allowNone ? `<button data-c="none" class="none ${cur === 'none' || !cur ? 'on' : ''}" title="None">∅</button>` : ''}
       ${roles.map(([c, n]) => `<button data-c="${c}" class="role ${cur === c ? 'on' : ''}" title="Theme ${n}" style="background:${dzCol(doc, c)}"></button>`).join('')}
@@ -2603,7 +2618,7 @@ DZ.edit = async (id) => {
   let gsel = 0;   // the gradient colour being edited
   const fillUI = (l, key, allowNone) => {
     const fm = l.fm || 'solid';
-    const seg = `<div class="seg dz-fm">${[['solid', 'Colour'], ['grad', 'Gradient'], ['tex', 'Texture']].map(([m, n]) => `<button data-fm="${m}" class="${fm === m ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>`;
+    const seg = `<div class="seg dz-fm dz-fm2">${[['solid', 'Colour'], ['grad', 'Gradient'], ['tex', 'Texture']].map(([m, n]) => `<button data-fm="${m}" class="${fm === m ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>`;
     if (fm === 'grad') {
       const g = l.grad; gsel = Math.min(gsel, g.stops.length - 1);
       return seg + `<div class="dz-gbar" data-gbar style="background:${dzGradCss(doc, g)}" title="Drag the markers to move the colours; tap the bar to add one">
@@ -2757,7 +2772,7 @@ DZ.edit = async (id) => {
     return cb('fill', 'Fill', 'Fill colour (text colour for text), for all of them') + cb('stroke', 'Line', 'Line colour, for all of them')
       + `<label class="dz-cnum" data-tip="Line width, for all of them"><input class="in" type="text" inputmode="decimal" data-mck="sw" value="${sw == null ? '' : Math.round(sw)}" placeholder="–" aria-label="Line width"></label>`
       + `<select class="in dz-cdash" data-mdash aria-label="Line style" data-tip="Line style, for all of them">${dash == null ? '<option value="" selected disabled>Style</option>' : ''}${[['solid', 'Solid'], ['dash', 'Dashed'], ['dot', 'Dotted']].map(([v, nm]) => `<option value="${v}" ${dash === (v === 'solid' ? '' : v) ? 'selected' : ''}>${nm}</option>`).join('')}</select>`
-      + (mcpop ? `<div class="dz-cpop">${swatches(mcpop, mShared(S, mcpop), true)}</div>` : ''); };
+      + (mcpop ? `<div class="dz-cpop">${swatches(mcpop, mShared(S, mcpop), true, true)}</div>` : ''); };
   const mApply = (key, v) => { for (const l of picked().filter(mStyleable)) { const kk = mKeyOf(l, key); if (!kk) continue;
       if (key === 'sw') { if (l.t === 'shape' && l.shape === 'line') l.h = Math.max(1, v); else { l.sw = v; if (v > 0 && (!l.stroke || l.stroke === 'none')) l.stroke = '@fg'; } continue; }
       if (v === 'none' && kk === 'c') continue;   // text always has a colour
@@ -2815,7 +2830,7 @@ DZ.edit = async (id) => {
         ${l.t !== 'image' || l.ref || l.logo ? dzIB('data-act="flatten1"', 'flatten', l.t === 'image' ? 'Flatten: bake in rotation, flips, crop and opacity' : 'Flatten into a picture') : ''}
         ${dzIB('data-act="pick"', 'pick', 'Select more items')}` + sep)
       + dzIB('data-act="lock"', l.lock ? 'lock' : 'unlock', l.lock ? 'Unlock' : 'Lock', l.lock ? 'on' : '') + dzIB('data-act="del"', 'del', 'Delete', 'danger')
-      + (cpop ? `<div class="dz-cpop">${swatches(cpop, l[cpop], cpop !== 'c')}</div>` : '');
+      + (cpop ? `<div class="dz-cpop">${swatches(cpop, l[cpop], cpop !== 'c', true)}</div>` : '');
     b.scrollLeft = sl;
     if (cpop) { const q = b.querySelector(`[data-cpop="${cpop}"]`).getBoundingClientRect(), p = b.querySelector('.dz-cpop'); p.style.left = Math.max(8, Math.min(innerWidth - 300, q.left)) + 'px'; p.style.top = q.bottom + 6 + 'px'; } };
   // Redrawing the panel keeps it as it was: which sections are open, where it's scrolled to and the control in use.
@@ -3090,17 +3105,17 @@ DZ.edit = async (id) => {
           ${slider('drop', 'Drop cap', 0, 6, 1, l.drop || 0, v => +v < 2 ? 'off' : v + ' lines')}
           ${slider('cols', 'Columns', 1, 5, 1, l.cols || 1) + slider('gut', 'Gap between columns', 0, Math.round(l.w / 5), 1, l.gut ?? Math.round(l.size))}`, { fold: true }) : ''}
         ${fsec('Look', `<div class="lbl">Outline</div>${swatches('tsc', l.tsc, true)}${l.tsc && l.tsc !== 'none' ? slider('tsw', 'Outline width', 0, 30, 1, l.tsw || 0) : ''}
-          <div class="lbl">Shadow or glow ${'<span class="muted" style="font-weight:400">(Across and Down at 0 make a glow)</span>'}</div>${swatches('shc', l.shc, true)}${l.shc && l.shc !== 'none' ? slider('shx', 'Across', -60, 60, 1, l.shx ?? 6) + slider('shy', 'Down', -60, 60, 1, l.shy ?? 6) + slider('shb', 'Blur', 0, 60, 1, l.shb ?? 8) : ''}
+          <div class="lbl" data-tip="Across and Down at 0 make a glow">Shadow or glow</div>${swatches('shc', l.shc, true)}${l.shc && l.shc !== 'none' ? slider('shx', 'Across', -60, 60, 1, l.shx ?? 6) + slider('shy', 'Down', -60, 60, 1, l.shy ?? 6) + slider('shb', 'Blur', 0, 60, 1, l.shb ?? 8) : ''}
           <div class="lbl">Background box</div>${swatches('tbg', l.tbg, true)}${l.tbg && l.tbg !== 'none' ? slider('tbp', 'Padding', 0, Math.round(l.size * 2), 1, l.tbp ?? Math.round((l._px || l.size) * 0.3)) + slider('tbr', 'Corner rounding', 0, Math.round(l.size * 2), 1, l.tbr ?? 0) : ''}`,
           { fold: true, hint: [l.tsc && l.tsc !== 'none' && l.tsw ? 'outline' : '', l.shc && l.shc !== 'none' ? 'shadow' : '', l.tbg && l.tbg !== 'none' ? 'box' : ''].filter(Boolean).join(' · ') || 'Plain' })}
         ${fsec('Studio info', `<div class="dz-fields">${DZ_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true, hint: 'name, phone…' })}`
-      : l.t === 'shape' ? fsec(l.shape === 'line' ? 'Line' : 'Fill and outline', `
-        <div class="lbl">${l.shape === 'line' ? 'Colour' : 'Fill'}</div>${fillUI(l, 'fill', true)}
-        ${l.shape === 'rect' || !l.shape ? slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, l.r || 0) : ''}
+      : l.t === 'shape' ? fsec(l.shape === 'line' ? 'Line colour' : 'Fill', fillUI(l, 'fill', true), { fold: true, open: true, hint: { solid: dzCwName(l.fill), grad: 'gradient', tex: 'texture' }[l.fm || 'solid'] })
+        + (['rect', undefined, 'poly', 'star', 'ring', 'cross', 'arrow'].includes(l.shape) ? fsec('Shape', `
+        ${l.shape === 'rect' || !l.shape ? slider('r', 'Corner rounding', 0, Math.round(Math.min(l.w, l.h) / 2), 1, Math.round(l.r || 0)) : ''}
         ${l.shape === 'poly' ? slider('n', 'Sides', 3, 16, 1, l.n || 6) : ''}
         ${l.shape === 'star' ? slider('n', 'Points', 3, 24, 1, l.n || 5) + slider('inner', 'Inner depth', 0.1, 0.95, 0.01, l.inner ?? 0.45, v => Math.round(v * 100) + '%') : ''}
         ${l.shape === 'ring' ? slider('inner', 'Hole', 0.05, 0.95, 0.01, l.inner ?? 0.6, v => Math.round(v * 100) + '%') : ''}
-        ${l.shape === 'cross' || l.shape === 'arrow' ? slider('th', 'Thickness', 0.05, 0.95, 0.01, l.th ?? (l.shape === 'cross' ? 0.34 : 0.4), v => Math.round(v * 100) + '%') : ''}`, { fold: true, open: true })
+        ${l.shape === 'cross' || l.shape === 'arrow' ? slider('th', 'Thickness', 0.05, 0.95, 0.01, l.th ?? (l.shape === 'cross' ? 0.34 : 0.4), v => Math.round(v * 100) + '%') : ''}`, { fold: true, open: false, hint: l.shape === 'rect' || !l.shape ? (l.r ? Math.round(l.r) + ' px corners' : 'square corners') : '' }) : '')
         + (l.shape === 'line' ? '' : outlineUI(l))
       : fsec(l.logo ? 'Logo' : 'Picture', `${l.logo ? '<p class="muted" style="font-size:12px;margin:0 0 8px">Your studio logo from Settings.</p>'
           : `<div class="dz-tb">${dzIB('id="dz-pfphoto"', 'portfolio', 'Replace from portfolio')}${dzIB('id="dz-refphoto"', 'refs', 'Replace from references')}

@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 501;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 502;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -9528,6 +9528,8 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 502, when: '2026-11-20T15:00', added: ['Design studio: tidier colours. Each colour is one row showing the colour and its name, with None and the eyedropper beside it; tap it to open the swatches. Shapes now have separate Fill, Shape and Outline sections, and the outline settings only appear once it has an outline.'],
+    test: ['Design studio, pick a shape, then try Fill and Outline.'] },
   { build: 501, when: '2026-11-20T12:00', added: [
     'Design studio: 19 new templates. Vouchers, business cards, opening hours, studio rules, FAQ, a detailed aftercare sheet, a flash sheet, and posts for hours, reviews, spots left, closed days and flash, plus two new photo layouts.',
     'Layers panel: smaller rows with a thumbnail of each layer. Three sizes at the top: thumbnails only (the picked layer’s settings open beside it), names, or every option. The buttons stay put while the list scrolls.',
