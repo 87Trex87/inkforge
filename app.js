@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 505;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 506;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6641,7 +6641,7 @@ function reelQuickBind(el) {
 
 // The timeline under the preview is the main way around: tap a clip, card or transition and the
 // Edit tab shows that item's settings. Style holds the shared look; Music the soundtrack.
-const REEL_CLIP_TOOLS = [['look', 'Look'], ['frame', 'Frame'], ['text', 'Text'], ['stickers', 'Stickers']];
+const REEL_CLIP_TOOLS = [['look', 'Look'], ['frame', 'Frame'], ['tfx', 'Effects'], ['text', 'Text'], ['stickers', 'Stickers']];
 /* The reel's text defaults, shown folded in the Text tool: the font for cards and any text left on "Same as style",
    the text colour, and where and how big new text starts. Saved in the style like before. */
 /* A reel colour choice's palette block: the eyedropper, recent colours, and the palette in use with its menu and
@@ -6730,6 +6730,67 @@ const REEL_PPS = 34;   // timeline pixels per second at the normal zoom
 const reelSegW = (g) => Math.max((R.pps || REEL_PPS) >= 20 ? 26 : 4, g.dur * (R.pps || REEL_PPS));
 R.tool ||= 'look'; R.stab ||= 'brand'; R.lookTab ||= 'filters';
 
+/* ---------- Timed effects (VN style) ----------
+   Pick a clip, then an effect: it goes on at the playhead (or the clip's start) for a second and a half, as a bar
+   under that clip on the timeline. Drag the bar to move it, its end to change how long it lasts; tap it to change
+   it: which effect, start, length, speed and strength. */
+const reelClipDur = (c) => reelSegments().segs.find(g => g.clip === c)?.dur || c.dur || 3;
+function reelTfxPanel(c) {
+  const L = c.tfx || [], sel = L.find(e => e.id === R.tfxSel), D = reelClipDur(c), name = (k) => REEL_TFX.find(x => x[0] === k)?.[1] || k;
+  const groups = [...new Set(REEL_TFX.map(x => x[2]))];
+  const grid = (on) => groups.map(g => `<div class="lbl" style="margin:8px 0 4px">${g}</div><div class="tfx-grid">${REEL_TFX.filter(x => x[2] === g).map(([k, l, , d]) => `<button class="tfx-b ${on === k ? 'on' : ''}" data-tfk="${k}" data-tip="${d}">${l}</button>`).join('')}</div>`).join('');
+  if (sel) return `<div class="tfx-head"><b>${esc(name(sel.k))}</b><span class="muted">${sel.at.toFixed(1)}s to ${(sel.at + sel.len).toFixed(1)}s</span>
+      <button class="btn small" data-tfdone>Done</button></div>
+    ${reelSlider('data-tf', 'at', 'Starts at', 0, Math.max(0, D - 0.1).toFixed(2), 0.05, sel.at, sel.at.toFixed(1) + 's')}
+    ${reelSlider('data-tf', 'len', 'Lasts', 0.1, D.toFixed(2), 0.05, sel.len, sel.len.toFixed(1) + 's')}
+    ${reelSlider('data-tf', 'sp', 'Speed', 0.25, 4, 0.05, sel.sp || 1, (sel.sp || 1).toFixed(2) + '×')}
+    ${reelSlider('data-tf', 'amt', 'Strength', 0.05, 1, 0.05, sel.amt ?? 0.7, Math.round((sel.amt ?? 0.7) * 100) + '%')}
+    <div class="row" style="gap:6px;margin:8px 0"><button class="btn small" data-tfall>Whole clip</button><button class="btn small" data-tfdup>Duplicate</button><button class="btn small danger" data-tfdel>Delete</button></div>
+    <details class="tfx-change"><summary>Change the effect</summary>${grid(sel.k)}</details>`;
+  return `<p class="muted" style="font-size:12px;margin:0 0 4px">Tap an effect to put it on this clip at the playhead. It shows as a bar under the clip: drag it to move it, drag its end to make it longer or shorter, tap it to change it.${L.length ? ` This clip has ${L.length}.` : ''}</p>${grid(null)}`;
+}
+function reelTfxBind(ed, c) {
+  ed.addEventListener('click', (e) => { const t = e.target, L = (c.tfx ||= []), sel = L.find(x => x.id === R.tfxSel), D = reelClipDur(c);
+    const tk = t.closest('[data-tfk]');
+    if (tk) { if (sel && t.closest('.tfx-change')) { sel.k = tk.dataset.tfk; reelChanged(); reelTimeline(); return reelPanel(); }
+      const g = reelSegments().segs.find(x => x.clip === c), here = g ? R.t - g.start : 0, at = here > 0 && here < D - 0.2 ? here : 0, len = Math.min(1.5, D - at);
+      const ne = { id: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), k: tk.dataset.tfk, at: Math.round(at * 100) / 100, len: Math.round(len * 100) / 100, sp: 1, amt: 0.7 };
+      L.push(ne); R.tfxSel = ne.id; if (g) R.t = g.start + ne.at + 0.01; reelChanged(); reelTimeline(); reelRender(); return reelPanel(); }
+    if (!sel) return;
+    if (t.closest('[data-tfdone]')) { R.tfxSel = null; reelTimeline(); return reelPanel(); }
+    if (t.closest('[data-tfdel]')) { c.tfx = L.filter(x => x !== sel); R.tfxSel = null; reelChanged(); reelTimeline(); reelRender(); return reelPanel(); }
+    if (t.closest('[data-tfdup]')) { const d = { ...sel, id: 'e' + Date.now().toString(36), at: Math.min(D - 0.1, sel.at + sel.len) }; d.len = Math.min(sel.len, D - d.at); L.push(d); R.tfxSel = d.id; reelChanged(); reelTimeline(); return reelPanel(); }
+    if (t.closest('[data-tfall]')) { sel.at = 0; sel.len = D; reelChanged(); reelTimeline(); reelRender(); return reelPanel(); } });
+  ed.addEventListener('input', (e) => { const t = e.target, f = t.dataset.tf; if (!f) return; const sel = (c.tfx || []).find(x => x.id === R.tfxSel); if (!sel) return; const D = reelClipDur(c);
+    sel[f] = +t.value; if (f === 'at') sel.at = Math.min(sel.at, D - 0.1); if (sel.at + sel.len > D) sel.len = Math.max(0.1, D - sel.at);
+    t.closest('.slider').querySelector('b').textContent = f === 'sp' ? sel.sp.toFixed(2) + '×' : f === 'amt' ? Math.round(sel.amt * 100) + '%' : sel[f].toFixed(1) + 's';
+    const g = reelSegments().segs.find(x => x.clip === c); if (g && (f === 'at' || f === 'len')) R.t = g.start + sel.at + 0.01;
+    reelChanged(); reelTimeline(); reelRender(); });
+}
+/* The effect bars, in a row under the clips, each under its own clip. */
+function reelTlFx(segs) { let x = 0, bars = '';
+  for (const g of segs) { const w = reelSegW(g);
+    if (g.kind === 'clip') for (const e of g.clip.tfx || []) { const pp = w / g.dur, l = x + e.at * pp, bw = Math.max(10, e.len * pp), nm = REEL_TFX.find(q => q[0] === e.k)?.[1] || e.k;
+      bars += `<button class="tl-fx ${R.tfxSel === e.id ? 'on' : ''}" data-tfx="${g.clip.id}:${e.id}" style="left:${l}px;width:${bw}px" title="${esc(nm)}"><span>${esc(nm)}</span><i class="tl-fxe" data-tfxr></i></button>`; }
+    x += w; }
+  return bars ? `<div class="tl-fxrow">${bars}</div>` : ''; }
+function reelTlFxBind(el) { let d = null;
+  el.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-tfx]'); if (!b) return; e.stopPropagation(); e.preventDefault();
+    const [cid, eid] = b.dataset.tfx.split(':'), c = R.clips.find(q => String(q.id) === cid), fx = c?.tfx?.find(q => q.id === eid); if (!fx) return;
+    const g = reelSegments().segs.find(q => q.clip === c), pp = reelSegW(g) / g.dur;
+    d = { b, c, fx, g, pp, x0: e.clientX, at0: fx.at, len0: fx.len, edge: !!e.target.closest('[data-tfxr]'), moved: false }; try { b.setPointerCapture(e.pointerId); } catch {} }, true);
+  el.addEventListener('pointermove', (e) => { if (!d) return; const dx = e.clientX - d.x0; if (!d.moved && Math.abs(dx) < 5) return; d.moved = true;
+    const D = d.g.dur, ds = dx / d.pp, fx = d.fx;
+    if (d.edge) fx.len = Math.max(0.1, Math.min(D - fx.at, Math.round((d.len0 + ds) * 20) / 20)); else fx.at = Math.max(0, Math.min(D - fx.len, Math.round((d.at0 + ds) * 20) / 20));
+    d.b.style.left = (Array.from(reelSegments().segs).slice(0, reelSegments().segs.indexOf(d.g)).reduce((a, q) => a + reelSegW(q), 0) + fx.at * d.pp) + 'px'; d.b.style.width = Math.max(10, fx.len * d.pp) + 'px';
+    R.t = d.g.start + fx.at + (d.edge ? fx.len - 0.02 : 0.01); reelRender(); }, true);
+  const up = (e) => { if (!d) return; const was = d; d = null; if (was.moved) R.tlMoved = true;
+    R.tfxSel = was.fx.id; R.tab = 'edit'; R.tool = 'tfx'; document.querySelectorAll('#reel-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === 'edit'));
+    if (!(R.pick?.kind === 'clip' && R.pick.key === was.c.id)) R.pick = { kind: 'clip', key: was.c.id };
+    if (!was.moved) R.t = was.g.start + was.fx.at + 0.01;
+    reelChanged(); reelTimeline(); reelRender(); reelPanel(); };
+  el.addEventListener('pointerup', up, true); el.addEventListener('pointercancel', up, true); }
+
 /* ---------- Timeline ---------- */
 function reelTimeline() {
   const el = $('#reel-tl'); if (!el) return;
@@ -6754,7 +6815,7 @@ function reelTimeline() {
   el.innerHTML = `<div class="tl-track" id="tl-track">
       <div class="tl-addw"><button class="tl-addb" data-addmenu aria-label="Add" data-tip="Add photos, videos, a page, or the intro and outro">+</button>
         <input type="file" accept="image/*,video/*" multiple hidden id="reel-file"></div>
-      <div class="tl-stack" id="tl-stack">${reelTlOv(segs, x)}<div class="tl-row" id="tl-row">${blocks}${marks}</div>${reelTlAud(x)}<i class="tl-head" id="tl-head"></i></div>
+      <div class="tl-stack" id="tl-stack">${reelTlOv(segs, x)}<div class="tl-row" id="tl-row">${blocks}${marks}</div>${reelTlFx(segs)}${reelTlAud(x)}<i class="tl-head" id="tl-head"></i></div>
     </div>`;
   el.dataset.total = total;
   $('#reel-file').addEventListener('change', async (e) => {
@@ -6764,7 +6825,7 @@ function reelTimeline() {
     const c = R.clips[R.clips.length - 1];
     if (c) reelPick('clip', c.id); else reelChanged();
   });
-  reelTlDrag(el); reelTlLanes(el); reelTlZoomBind(el); reelTlLen(el);
+  reelTlDrag(el); reelTlLanes(el); reelTlZoomBind(el); reelTlLen(el); if (!el._tfxb) { el._tfxb = 1; reelTlFxBind(el); }
   el.onclick = (e) => {
     if (R.lenMoved) { R.lenMoved = false; return; }
     if (e.target.closest('[data-addmenu]')) return reelAddMenu(e.target.closest('[data-addmenu]'));
@@ -7332,7 +7393,7 @@ function reelClipTool(c) {
   if (!reelClipTool.inner && (R.tool === 'adjust' || R.tool === 'fx')) { R.lookTab = R.tool; R.tool = 'look'; }   /* an older tool name */
   if (R.tool === 'look') {   /* one Look tool: filters, adjustments and effects as small tabs */
     const sub = R.lookTab || 'filters', n = c.adj && Object.values(c.adj).some(Boolean), f = c.fx?.length || 0;
-    const head = `<div class="seg reel-subtabs" data-looktab>${[['filters', 'Filters'], ['adjust', 'Adjust' + (n ? ' •' : '')], ['fx', 'Effects' + (f ? ` (${f})` : '')]].map(([k, l]) => `<button type="button" data-v="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    const head = `<div class="seg reel-subtabs" data-looktab>${[['filters', 'Filters'], ['adjust', 'Adjust' + (n ? ' •' : '')], ['fx', 'Overlays' + (f ? ` (${f})` : '')]].map(([k, l]) => `<button type="button" data-v="${k}" class="${sub === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     R.tool = sub; reelClipTool.inner = true; let body; try { body = reelClipTool(c); } finally { reelClipTool.inner = false; R.tool = 'look'; }
     return head + body;
   }
@@ -7351,7 +7412,8 @@ function reelClipTool(c) {
     return `${REEL_ADJ.map(([k, l, mn, mx]) => reelSlider('data-adj', k, l, mn, mx, 1, a[k] || 0, String(a[k] || 0))).join('')}
       <div class="row"><button class="btn small" data-act="adjreset" ${Object.values(a).some(Boolean) ? '' : 'disabled'}>Reset adjustments</button>
         <button class="btn small" data-act="adjall" data-tip="Give every clip these adjustments and this filter">Apply to all clips</button></div>`; }
-  if (R.tool === 'fx') return `<p class="muted" style="font-size:12px;margin:0 0 10px">Tap to turn on; mix as many as you like.</p>
+  if (R.tool === 'tfx') return reelTfxPanel(c);
+  if (R.tool === 'fx') return `<p class="muted" style="font-size:12px;margin:0 0 10px">Looks laid over the whole clip. Tap to turn on; mix as many as you like. For an effect on part of the clip, use Effects.</p>
       <div class="fx-list">${REEL_FX.map(([k, l, d]) => `<button class="tr tr-s ${c.fx?.includes(k) ? 'on' : ''}" data-fxk="${k}" data-tip="${d}"><b>${l}</b></button>`).join('')}</div>
       ${c.fx?.length ? '<div class="row" style="margin-top:10px"><button class="btn small" data-act="fxclear">Turn all off</button></div>' : ''}`;
   if (R.tool === 'frame' && c.type === 'blank') { const sw = (k) => `<span class="ink-dots">${(k === 'bg2' ? [''] : []).map(col => `<button class="ink ${(c[k] || '') === col ? 'on' : ''}" data-blk="${k}" data-v="${col}" style="background:${col || 'repeating-linear-gradient(45deg,#333 0 4px,#555 4px 8px)'}" aria-label="${col || 'None'}"></button>`).join('')}<input type="color" data-blkc="${k}" value="${c[k] || '#000000'}" aria-label="Any colour">${reelPalExtra(col => `data-blk="${k}" data-v="${col}"`, 'data-v', 'data-blk=' + k, c[k])}</span>`;
@@ -7439,7 +7501,7 @@ function reelFilterThumbs(c) {
 }
 
 function reelClipBind(ed, c) {
-  const el = $('#reel-panel');
+  const el = $('#reel-panel'); reelTfxBind(ed, c);
   ed.addEventListener('input', (e) => {
     const t = e.target;
     if (t.dataset.blkc) { c[t.dataset.blkc] = t.value; c.thumb = reelBlankThumb(c); return reelChanged(); }
@@ -9529,6 +9591,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 506, when: '2026-11-21T14:00', added: [
+    'Reel maker: an Effects tool on each clip with 40 effects (glitch, heartbeat, zoom punch, blur, VHS, flash, film burn, hearts, confetti and more). Each sits as a bar under the clip: drag it to move it or its end to lengthen it, and tap it to set its start, length, speed and strength. The Look tool’s always-on effects are now called Overlays.',
+    'Reel maker: a sticker you are moving keeps its size, instead of shrinking until you let go.'],
+    test: ['Reel maker: open a clip, Effects, tap Heartbeat, then drag its bar.'] },
   { build: 505, when: '2026-11-21T10:00', added: ['Picking a picture now has tabs for every area: Portfolio, Simulator, References, Assets and Stencils. So a reel sticker (or a picture in the design studio) can be an asset, a stencil or a simulator piece, not just a portfolio photo.'],
     test: ['Reel maker, open a clip, Stickers, then Portfolio and try the Assets tab.'] },
   { build: 504, when: '2026-11-20T22:00', added: [

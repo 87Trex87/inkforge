@@ -79,6 +79,95 @@ const REEL_FX = [['vignette', 'Vignette', 'Darkens the edges'], ['grain', 'Film 
   ['leak', 'Light leak', 'Warm light drifting across'], ['bars', 'Cinema bars', 'Black bars top and bottom'], ['scan', 'VHS lines', 'Old TV scanlines'],
   ['shake', 'Shake', 'Handheld camera shake'], ['pulse', 'Pulse', 'Beats in and out'], ['flicker', 'Flicker', 'Old film light flicker'],
   ['sparkle', 'Sparkle', 'Twinkling highlights'], ['frame', 'Border', 'An accent coloured frame'], ['blurin', 'Focus in', 'Starts blurred, sharpens']];
+/* Timed effects (as in VN): each sits on part of a clip, from `at` for `len` seconds, played at `sp` speed and `amt`
+   strength: { id, k, at, len, sp, amt } in clip.tfx. [key, label, group, what it does]. Moves change the picture's
+   place before it is drawn ('pre'); the rest work on the drawn frame or lay something over it ('post'). */
+const REEL_TFX = [
+  ['shake', 'Shake', 'Move', 'Handheld camera shake'], ['quake', 'Earthquake', 'Move', 'A hard, fast shake'], ['heart', 'Heartbeat', 'Move', 'Thumps in and out like a heartbeat'],
+  ['punch', 'Zoom punch', 'Move', 'Quick punches in on the beat'], ['zin', 'Zoom in', 'Move', 'Pushes in across the effect'], ['zout', 'Zoom out', 'Move', 'Pulls back across the effect'],
+  ['wobble', 'Wobble', 'Move', 'A quick side to side tilt'], ['swing', 'Swing', 'Move', 'A slow pendulum swing'], ['bounce', 'Bounce', 'Move', 'Hops up and down'],
+  ['spin', 'Spin', 'Move', 'One full turn'], ['drift', 'Drift', 'Move', 'A slow float across'],
+  ['glitch', 'Glitch', 'Digital', 'Torn, shifted bands and colour flashes'], ['rgb', 'RGB split', 'Digital', 'Red and blue pull apart'], ['vhs', 'VHS', 'Digital', 'Tape lines, wobble and colour bleed'],
+  ['pixel', 'Pixelate', 'Digital', 'Big blocky pixels'], ['tvoff', 'TV off', 'Digital', 'Squeezes to a line like an old TV switching off'],
+  ['blur', 'Blur', 'Lens', 'Soft focus'], ['zblur', 'Zoom blur', 'Lens', 'Streaks out from the middle'], ['ghost', 'Double vision', 'Lens', 'A see-through copy drifting'], ['glow', 'Glow', 'Lens', 'A soft dreamy bloom'],
+  ['mirror', 'Mirror', 'Lens', 'The left half mirrored'], ['kaleido', 'Kaleidoscope', 'Lens', 'Mirrored four ways'], ['split4', 'Four up', 'Lens', 'Four copies in a grid'],
+  ['bw', 'Black & white', 'Colour', 'Drains the colour'], ['sepia', 'Sepia', 'Colour', 'Old photo brown'], ['invert', 'Invert', 'Colour', 'Negative colours'], ['hue', 'Colour cycle', 'Colour', 'Runs through the rainbow'],
+  ['flash', 'Flash', 'Light', 'A white camera flash'], ['strobe', 'Strobe', 'Light', 'Fast flashing light'], ['fadeb', 'Fade to black', 'Light', 'Darkens to black'], ['fadew', 'Fade to white', 'Light', 'Brightens to white'],
+  ['burn', 'Film burn', 'Light', 'Hot orange light burning in at the edges'], ['leak', 'Light leak', 'Light', 'Warm light drifting across'], ['vpulse', 'Pulse vignette', 'Light', 'Dark red edges beating'],
+  ['hearts', 'Hearts', 'Particles', 'Hearts floating up'], ['confetti', 'Confetti', 'Particles', 'Falling confetti'], ['snow', 'Snow', 'Particles', 'Drifting snow'], ['rain', 'Rain', 'Particles', 'Falling rain'], ['sparkle', 'Sparkle', 'Particles', 'Twinkling stars'], ['ink', 'Ink drops', 'Particles', 'Black ink splats spreading']];
+const _tfxBufs = {};
+const tfxBuf = (n, w, h) => { let c = _tfxBufs[n]; if (!c) c = _tfxBufs[n] = document.createElement('canvas'); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } return c; };
+/* The frame as drawn so far, copied, so an effect can redraw it changed. Works in canvas pixels. */
+const tfxSnap = (ctx) => { const cv = ctx.canvas, b = tfxBuf('snap', cv.width, cv.height), x = b.getContext('2d'); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, b.width, b.height); x.drawImage(cv, 0, 0); return b; };
+const tfxTint = (src, col, n) => { const b = tfxBuf(n, src.width, src.height), x = b.getContext('2d'); x.globalCompositeOperation = 'source-over'; x.clearRect(0, 0, b.width, b.height); x.drawImage(src, 0, 0);
+  x.globalCompositeOperation = 'multiply'; x.fillStyle = col; x.fillRect(0, 0, b.width, b.height); x.globalCompositeOperation = 'destination-in'; x.drawImage(src, 0, 0); x.globalCompositeOperation = 'source-over'; return b; };
+const tfxSoft = (src, f, n) => { const w = Math.max(2, Math.round(src.width / f)), h = Math.max(2, Math.round(src.height / f)), b = tfxBuf(n, w, h), x = b.getContext('2d');
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'low'; x.clearRect(0, 0, w, h); x.drawImage(src, 0, 0, w, h); return b; };
+function reelTfx(ctx, s, c, W, H, local, phase) {
+  const L = c.tfx; if (!L || !L.length) return;
+  for (const e of L) { if (local < e.at || local >= e.at + e.len) continue;
+    const k = Math.min(W, H) / 1080, sp = e.sp || 1, lt = (local - e.at) * sp, u = Math.min(1, (local - e.at) / Math.max(0.05, e.len)), amt = e.amt ?? 0.7;
+    const env = Math.min(1, (local - e.at) / 0.15, (e.at + e.len - local) / 0.15), a = amt * Math.max(0, env), f = Math.floor(lt * 24), K = e.k;
+    if (phase === 'pre') {
+      const zoom = (z) => { ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); }, turn = (r) => { ctx.translate(W / 2, H / 2); ctx.rotate(r); ctx.translate(-W / 2, -H / 2); };
+      if (K === 'shake' || K === 'quake') { const m = (K === 'quake' ? 46 : 16) * k * a; ctx.translate((reelRnd(f) - 0.5) * m, (reelRnd(f + 7) - 0.5) * m); if (K === 'quake') zoom(1 + 0.05 * a); }
+      else if (K === 'heart') { const b = lt % 1, p = Math.exp(-(((b - 0.08) / 0.06) ** 2)) + 0.7 * Math.exp(-(((b - 0.3) / 0.06) ** 2)); zoom(1 + 0.09 * a * p); }
+      else if (K === 'punch') zoom(1 + 0.22 * a * Math.exp(-(lt % 0.6) * 9));
+      else if (K === 'zin') zoom(1 + 0.45 * amt * Math.min(1, u * sp));
+      else if (K === 'zout') zoom(1 + 0.45 * amt * (1 - Math.min(1, u * sp)));
+      else if (K === 'wobble') turn(Math.sin(lt * 9) * 0.06 * a);
+      else if (K === 'swing') turn(Math.sin(lt * 2.6) * 0.14 * a);
+      else if (K === 'bounce') ctx.translate(0, -Math.abs(Math.sin(lt * 5)) * 60 * k * a);
+      else if (K === 'spin') { zoom(1 + 0.3 * Math.sin(Math.min(1, u * sp) * Math.PI) * amt); turn(Math.min(1, u * sp) * Math.PI * 2 * (amt > 0 ? 1 : 0)); }
+      else if (K === 'drift') { ctx.translate(Math.sin(lt * 0.9) * 40 * k * a, Math.cos(lt * 0.7) * 24 * k * a); zoom(1 + 0.06 * a); }
+      continue; }
+    const cv = ctx.canvas, CW = cv.width, CH = cv.height, sc = CW / W;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);   /* the rest work in canvas pixels */
+    const fill = (col, al, op) => { ctx.globalAlpha = Math.max(0, Math.min(1, al)); if (op) ctx.globalCompositeOperation = op; ctx.fillStyle = col; ctx.fillRect(0, 0, CW, CH); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; };
+    if (K === 'glitch' && reelRnd(f * 3) > 0.4 - a * 0.3) { const A = tfxSnap(ctx);
+      for (let i = 0; i < 4 + Math.round(a * 6); i++) { const y = reelRnd(f + i) * CH, h = (8 + reelRnd(f + i * 9) * 90) * k * sc, dx = (reelRnd(f + i * 5) - 0.5) * 140 * k * sc * a; ctx.drawImage(A, 0, y, CW, h, dx, y, CW, h); }
+      ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.45 * a; ctx.fillStyle = reelRnd(f) > 0.5 ? '#ff0040' : '#00e5ff'; ctx.fillRect(0, reelRnd(f + 2) * CH, CW, 10 * k * sc); }
+    else if (K === 'rgb' || K === 'vhs') { const A = tfxSnap(ctx), d = (K === 'vhs' ? 6 : 14 + Math.sin(lt * 6) * 8) * k * sc * a, R = tfxTint(A, '#ff0000', 'r'), G = tfxTint(A, '#00ff00', 'g'), B = tfxTint(A, '#0000ff', 'b');
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH); ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(R, -d, 0); ctx.drawImage(G, 0, 0); ctx.drawImage(B, d, 0); ctx.globalCompositeOperation = 'source-over';
+      if (K === 'vhs') { ctx.fillStyle = 'rgba(0,0,0,.2)'; const st = 6 * k * sc; for (let y = (lt * 40 * k * sc) % st; y < CH; y += st) ctx.fillRect(0, y, CW, st / 2);
+        const by = ((lt * 0.35) % 1) * CH, bh = 40 * k * sc; ctx.drawImage(A, 0, by, CW, bh, (reelRnd(f) - 0.5) * 30 * k * sc * a, by, CW, bh); fill('#fff', 0.05 * a); } }
+    else if (K === 'pixel') { const A = tfxSnap(ctx), n = 4 + a * 40, b = tfxSoft(A, n * sc, 'px'); ctx.imageSmoothingEnabled = false; ctx.drawImage(b, 0, 0, CW, CH); ctx.imageSmoothingEnabled = true; }
+    else if (K === 'blur' || K === 'glow') { const A = tfxSnap(ctx), b1 = tfxSoft(A, 1 + a * (K === 'glow' ? 10 : 14), 'bl1'), b2 = tfxSoft(b1, 2, 'bl2');
+      if (K === 'blur') ctx.drawImage(b2, 0, 0, CW, CH); else { ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.7 * a; ctx.drawImage(b2, 0, 0, CW, CH); } }
+    else if (K === 'zblur') { const A = tfxSnap(ctx); ctx.globalAlpha = 0.22; for (let i = 1; i <= 6; i++) { const z = 1 + i * 0.025 * a; ctx.drawImage(A, (CW - CW * z) / 2, (CH - CH * z) / 2, CW * z, CH * z); } }
+    else if (K === 'ghost') { const A = tfxSnap(ctx), d = (20 + 30 * Math.sin(lt * 2)) * k * sc * a; ctx.globalAlpha = 0.45 * a; ctx.drawImage(A, d, -d * 0.3); }
+    else if (K === 'mirror') { const A = tfxSnap(ctx); ctx.globalAlpha = a > 0.05 ? 1 : 0; ctx.translate(CW, 0); ctx.scale(-1, 1); ctx.drawImage(A, 0, 0, CW / 2, CH, 0, 0, CW / 2, CH); }
+    else if (K === 'kaleido') { const A = tfxSnap(ctx), hw = CW / 2, hh = CH / 2; if (a > 0.05) for (const [fx2, fy2] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { ctx.save(); ctx.translate(hw, hh); ctx.scale(fx2, fy2); ctx.drawImage(A, 0, 0, hw, hh, -hw, -hh, hw, hh); ctx.restore(); } }
+    else if (K === 'split4') { const A = tfxSnap(ctx); if (a > 0.05) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH); for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1]]) ctx.drawImage(A, x * CW / 2, y * CH / 2, CW / 2, CH / 2); } }
+    else if (K === 'tvoff') { const A = tfxSnap(ctx), q = Math.min(1, u * sp), sy = q < 0.6 ? 1 : Math.max(0.004, 1 - (q - 0.6) / 0.35), sx = q < 0.95 ? 1 : Math.max(0, 1 - (q - 0.95) / 0.05);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH); ctx.drawImage(A, (CW - CW * sx) / 2, (CH - CH * sy) / 2, CW * sx, CH * sy); if (q > 0.6) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (q - 0.6) * 1.5; ctx.fillStyle = '#fff'; ctx.fillRect((CW - CW * sx) / 2, (CH - CH * sy) / 2, CW * sx, CH * sy); } }
+    else if (K === 'bw') fill('#808080', a, 'saturation');
+    else if (K === 'sepia') { fill('#808080', a, 'saturation'); fill('#9c6b30', 0.55 * a, 'color'); }
+    else if (K === 'invert') fill('#ffffff', a, 'difference');
+    else if (K === 'hue') fill(`hsl(${(lt * 120) % 360},100%,50%)`, 0.85 * a, 'hue');
+    else if (K === 'flash') fill('#ffffff', amt * Math.exp(-(lt % Math.max(0.3, 1.6 / sp)) * 7));
+    else if (K === 'strobe') fill('#ffffff', (Math.floor(lt * 10) % 2) * 0.65 * a);
+    else if (K === 'fadeb') fill('#000000', Math.min(1, u * sp) * amt);
+    else if (K === 'fadew') fill('#ffffff', Math.min(1, u * sp) * amt);
+    else if (K === 'burn' || K === 'leak') { const x = CW * (0.5 + 0.5 * Math.sin(lt * 0.8)), y = CH * (K === 'burn' ? (reelRnd(Math.floor(lt * 3)) > 0.5 ? 0.05 : 0.95) : 0.3 + 0.2 * Math.cos(lt)), g = ctx.createRadialGradient(x, y, 0, x, y, CW * (K === 'burn' ? 0.8 : 0.9));
+      g.addColorStop(0, K === 'burn' ? 'rgba(255,190,90,.95)' : 'rgba(255,150,60,.5)'); g.addColorStop(0.4, K === 'burn' ? 'rgba(255,80,20,.55)' : 'rgba(255,60,90,.18)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = a * (K === 'burn' ? 0.75 + 0.25 * reelRnd(f) : 1); ctx.fillStyle = g; ctx.fillRect(0, 0, CW, CH); }
+    else if (K === 'vpulse') { const b = lt % 1, p = Math.exp(-(((b - 0.08) / 0.07) ** 2)) + 0.7 * Math.exp(-(((b - 0.3) / 0.07) ** 2)), g = ctx.createRadialGradient(CW / 2, CH / 2, CW * (0.42 - 0.12 * p), CW / 2, CH / 2, CH * 0.62);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(90,0,10,${0.85 * a})`); ctx.fillStyle = g; ctx.fillRect(0, 0, CW, CH); }
+    else if (['hearts', 'confetti', 'snow', 'rain', 'sparkle', 'ink'].includes(K)) { const n = K === 'rain' ? 70 : K === 'snow' ? 60 : K === 'ink' ? 8 : 24, ks = k * sc; ctx.globalAlpha = Math.min(1, env * 1.2);
+      for (let i = 0; i < n; i++) { const r1 = reelRnd(i + 1), r2 = reelRnd(i + 31), r3 = reelRnd(i + 77);
+        if (K === 'hearts') { const ph = (lt * 0.22 * (0.7 + r2) + r1) % 1, x = (r3 * CW) + Math.sin(lt * 2 + i) * 20 * ks, y = CH * (1.1 - ph * 1.25), z = (18 + r2 * 26) * ks * (0.5 + amt);
+          ctx.save(); ctx.translate(x, y); ctx.globalAlpha = Math.sin(ph * Math.PI) * env; ctx.fillStyle = i % 3 ? '#ff4f7b' : '#ff9eb5'; ctx.beginPath(); ctx.moveTo(0, z * 0.3); ctx.bezierCurveTo(0, -z * 0.2, -z, -z * 0.2, -z, z * 0.25); ctx.bezierCurveTo(-z, z * 0.7, 0, z, 0, z * 1.2); ctx.bezierCurveTo(0, z, z, z * 0.7, z, z * 0.25); ctx.bezierCurveTo(z, -z * 0.2, 0, -z * 0.2, 0, z * 0.3); ctx.fill(); ctx.restore(); }
+        else if (K === 'confetti') { const ph = (lt * 0.3 * (0.6 + r2) + r1) % 1, x = r3 * CW + Math.sin(lt * 3 + i) * 30 * ks, y = CH * (ph * 1.2 - 0.1), z = (18 + r2 * 22) * ks * (0.6 + amt * 0.6);
+          ctx.save(); ctx.translate(x, y); ctx.rotate(lt * 4 * (r1 - 0.5) + i); ctx.fillStyle = ['#ff4f7b', '#ffd23f', '#1fb5a8', '#3b5bdb', '#ffffff'][i % 5]; ctx.fillRect(-z / 2, -z * 0.3, z, z * 0.6 * Math.abs(Math.cos(lt * 5 + i))); ctx.restore(); }
+        else if (K === 'snow') { const ph = (lt * 0.12 * (0.5 + r2) + r1) % 1, x = (r3 * CW + Math.sin(lt + i) * 40 * ks) % CW, y = CH * (ph * 1.1 - 0.05), z = (2 + r2 * 5) * ks; ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.85 * env; ctx.beginPath(); ctx.arc(x, y, z, 0, 7); ctx.fill(); }
+        else if (K === 'rain') { const ph = (lt * 1.6 * (0.7 + r2) + r1) % 1, x = r3 * CW * 1.2 - CW * 0.1 + ph * 60 * ks, y = CH * (ph * 1.2 - 0.1), l = (30 + r2 * 40) * ks; ctx.strokeStyle = 'rgba(210,230,255,.8)'; ctx.lineWidth = 3.5 * ks; ctx.globalAlpha = Math.min(1, env * (0.4 + amt)); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - l * 0.25, y - l); ctx.stroke(); }
+        else if (K === 'sparkle') { const ph = (lt * 1.4 + r1) % 1, al = Math.sin(ph * Math.PI), x = r3 * CW, y = r2 * CH, z = (6 + reelRnd(i + 9) * 12) * ks * al * (0.5 + amt); if (z < 0.5) continue; ctx.globalAlpha = al * env; ctx.fillStyle = '#fff'; ctx.beginPath();
+          ctx.moveTo(x, y - z * 2); ctx.lineTo(x + z * 0.35, y - z * 0.35); ctx.lineTo(x + z * 2, y); ctx.lineTo(x + z * 0.35, y + z * 0.35); ctx.lineTo(x, y + z * 2); ctx.lineTo(x - z * 0.35, y + z * 0.35); ctx.lineTo(x - z * 2, y); ctx.lineTo(x - z * 0.35, y - z * 0.35); ctx.fill(); }
+        else if (K === 'ink') { const t0 = r1 * 0.8, q = Math.max(0, Math.min(1, (lt * 0.8 - t0) * 2)); if (!q) continue; const x = r3 * CW, y = r2 * CH, z = (60 + r1 * 120) * ks * (0.4 + amt) * (1 - Math.pow(1 - q, 3));
+          ctx.globalAlpha = 0.85 * env; ctx.fillStyle = '#0b0b0b'; ctx.beginPath(); for (let j = 0; j <= 18; j++) { const th = j / 18 * Math.PI * 2, rr2 = z * (0.7 + 0.3 * reelRnd(i * 40 + j)); j ? ctx.lineTo(x + Math.cos(th) * rr2, y + Math.sin(th) * rr2) : ctx.moveTo(x + Math.cos(th) * rr2, y + Math.sin(th) * rr2); } ctx.fill(); } } }
+    ctx.restore(); }
+}
 let _grain = null;
 function reelGrain() {   // a small noise tile, made once
   if (_grain) return _grain;
@@ -501,8 +590,8 @@ function drawSeg(ctx, s, W, H, seg, local) {
   const p = Math.min(1, local / seg.dur);
   if (seg.kind !== 'clip') return drawCard(ctx, s, W, H, p, seg.kind);
   const c = seg.clip;
-  ctx.save(); reelFxPre(ctx, c, W, H, local); drawMedia(ctx, c, W, H, p); ctx.restore();
-  reelFxPost(ctx, s, c, W, H, local);
+  ctx.save(); reelFxPre(ctx, c, W, H, local); reelTfx(ctx, s, c, W, H, local, 'pre'); drawMedia(ctx, c, W, H, p); ctx.restore();
+  reelFxPost(ctx, s, c, W, H, local); reelTfx(ctx, s, c, W, H, local, 'post');
   for (const st of c.stickers || []) reelStkDraw(ctx, s, st, W, H, local, seg.dur);
   if (c.caption) {
     const k = Math.min(W, H) / 1080, L = capLayout(ctx, s, c, W, H), an = R.dragging ? 'none' : c.capAnim || 'fade';
@@ -613,7 +702,7 @@ const REEL_STK_FX = [['float', 'Float'], ['pulse', 'Pulse'], ['spin', 'Spin'], [
 function reelStkDraw(ctx, s, st, W, H, local, dur) {
   const img = st.text == null ? reelStkImg(st) : null;
   if (img && (!img.complete || !img.naturalWidth)) return;
-  const b = stickerLayout(st, W, H), k = Math.min(W, H) / 1080, an = R.dragging ? 'none' : st.anim || 'none', fx = st.fx || [];
+  const b = stickerLayout(st, W, H), k = Math.min(W, H) / 1080, an = R.dragging || (R.layer && R.layer === 'stk' + (R.ovl || []).indexOf(st)) ? 'none' : st.anim || 'none', fx = st.fx || [];   /* the sticker being edited shows settled, dragged or not, so it never changes size on the way */
   const lt = local - (st.at || 0); if (lt < 0 && an !== 'none') return;
   const ad = st.animDur || 0.5, tl = String(st.text || '').length, span = an === 'type' ? Math.max(0.4, tl * 0.05) * ad / 0.5 : ad;   /* animDur: how long it takes to appear */
   let q = an === 'none' ? 1 : Math.min(1, lt / span);
