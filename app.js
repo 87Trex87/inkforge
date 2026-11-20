@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 511;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 512;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6783,7 +6783,13 @@ function reelTlFxBind(el) { let d = null;
     d = { b, c, fx, g, pp, x0: e.clientX, at0: fx.at, len0: fx.len, edge: !!e.target.closest('[data-tfxr]'), moved: false }; try { b.setPointerCapture(e.pointerId); } catch {} }, true);
   el.addEventListener('pointermove', (e) => { if (!d) return; const dx = e.clientX - d.x0; if (!d.moved && Math.abs(dx) < 5) return; d.moved = true;
     const D = d.g.dur, ds = dx / d.pp, fx = d.fx;
-    if (d.edge) fx.len = Math.max(0.1, Math.min(D - fx.at, Math.round((d.len0 + ds) * 20) / 20)); else fx.at = Math.max(0, Math.min(D - fx.len, Math.round((d.at0 + ds) * 20) / 20));
+    /* ends catch on the clip's ends, the playhead and the stickers' ends over this clip, within 10 px (Ctrl or snap off: free) */
+    const on = R.snap !== false && !reelMod(e, 'ctrl'), tol = 10 / d.pp, g0 = d.g.start;
+    const pts = on ? [0, D, R.t - g0, ...(R.ovl || []).flatMap(q => [q.t0 - g0, q.t1 - g0])].filter(q => q >= 0 && q <= D) : [];
+    const sn = (t) => { let best = null, bd = tol; for (const q of pts) { const dd = Math.abs(q - t); if (dd < bd) { bd = dd; best = q; } } return best; };
+    if (d.edge) { const raw = d.at0 + d.len0 + ds, hit = sn(raw); fx.len = Math.max(0.1, Math.min(D - fx.at, hit != null ? hit - fx.at : Math.round((d.len0 + ds) * 20) / 20)); }
+    else { const a = d.at0 + ds, h0 = sn(a), h1 = sn(a + d.len0), at = h0 != null && (h1 == null || Math.abs(h0 - a) <= Math.abs(h1 - d.len0 - a)) ? h0 : h1 != null ? h1 - d.len0 : Math.round(a * 20) / 20;
+      fx.at = Math.max(0, Math.min(D - fx.len, at)); }
     d.b.style.left = (Array.from(reelSegments().segs).slice(0, reelSegments().segs.indexOf(d.g)).reduce((a, q) => a + reelSegW(q), 0) + fx.at * d.pp) + 'px'; d.b.style.width = Math.max(10, fx.len * d.pp) + 'px';
     R.t = d.g.start + fx.at + (d.edge ? fx.len - 0.02 : 0.01); reelRender(); }, true);
   const up = (e) => { if (!d) return; const was = d; d = null; if (was.moved) R.tlMoved = true;
@@ -7015,7 +7021,7 @@ function reelTlLanes(el) {
       /* Ends catch on where clips and cards change over (and the start, the end and the playhead), within 10 px.
          Snap off (or Ctrl) drags freely. */
       const on = R.snap !== false && !reelMod(e, 'ctrl'), tol = 10 / (R.pps || REEL_PPS);
-      const pts = on ? [0, total, R.t, ...reelSegments().segs.flatMap(g => [g.start, g.start + g.dur])] : [];
+      const pts = on ? [0, total, R.t, ...reelSegments().segs.flatMap(g => [g.start, g.start + g.dur]), ...(R.ovl || []).filter(q => q !== o).flatMap(q => [q.t0, q.t1])] : [];   /* and other stickers' ends */
       const sn = (t) => { let best = t, bd = tol; for (const q of pts) { const dd = Math.abs(q - t); if (dd < bd) { bd = dd; best = q; } } return best; };
       if (d.edge === 'l') o.t0 = Math.max(0, Math.min(s0.t1 - 0.2, sn(T(s0.t0))));
       else if (d.edge === 'r') o.t1 = Math.min(total, Math.max(s0.t0 + 0.2, sn(T(s0.t1))));
@@ -9650,6 +9656,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 512, when: '2026-11-22T12:00', added: [
+    'Reel maker: sticker and text bars on the timeline snap to other stickers’ ends as well as clips.',
+    'Reel maker: effect bars snap to the stickers over their clip, the clip’s ends and the playhead. Hold Ctrl (or turn the magnet off) to drag freely.'],
+    test: ['Reel maker: drag a sticker’s end near another sticker’s end, then an effect’s end near a sticker’s end.'] },
   { build: 511, when: '2026-11-22T10:00', added: [
     'Reel maker: replace a clip’s photo or video (the swap button on the clip) from your device or portfolio. Its length, look, filters, motion, transition, stickers and effects all stay.',
     'Reel maker: undo brings the old picture back after a replace.'],
