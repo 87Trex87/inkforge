@@ -2743,5 +2743,10 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .stfx-chip button { width: 20px; height: 20px; border: 0; border-radius: 50%; background: rgba(255,255,255,.08); color: var(--ink); cursor: pointer; padding: 0; line-height: 1; }
 .tl-obfx { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 1px; padding: 1px 4px; border-radius: 8px; background: linear-gradient(90deg, #8a50ff, #ff50b4); color: #fff; font: 700 9px var(--ui); font-style: normal; pointer-events: none; }
 .tl-obfx svg { width: 11px; height: 11px; }
+/* Reel: replace a clip's media */
+.reel-swapm { position: fixed; z-index: 400; display: flex; flex-direction: column; min-width: 180px; padding: 5px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg2); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.reel-swapm button { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 600 13px var(--ui); cursor: pointer; text-align: left; }
+.reel-swapm button:hover { background: rgba(255,255,255,.06); }
+.reel-swapm svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 510; }
+:root { --app-build: 511; }

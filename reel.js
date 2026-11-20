@@ -1067,6 +1067,25 @@ async function reelAddFile(file, keep = true) {
   return c;
 }
 
+/* Swaps a clip's picture or video for another file, keeping everything else: its length, look, filters, frame,
+   motion, transition and every sticker over it. It gets a new id (so undo can bring the old media back), and its
+   transition moves with it. A video shorter than the clip's length makes the clip shorter. */
+const REEL_MEDIA_KEYS = ['id', 'name', 'url', 'type', 'el', 'w', 'h', 'thumb', 'srcDur', 'inP', 'outP', 'ref', 'gain', 'dur'];
+async function reelReplaceClip(c, file) {
+  const i = R.clips.indexOf(c); if (i < 0) return null;
+  const len = clipDur(c), nc = await reelAddFile(file, false); R.clips.splice(R.clips.indexOf(nc), 1);
+  const out = {};
+  for (const [k, v] of Object.entries(c)) if (!REEL_MEDIA_KEYS.includes(k) && k[0] !== '_' && !(c.type === 'blank' && k === 'bg')) out[k] = v;
+  for (const k of REEL_MEDIA_KEYS) if (nc[k] !== undefined) out[k] = nc[k];
+  if (out.type === 'video') { out.inP = 0; out.outP = Math.min(nc.srcDur, len * (out.speed || 1)); }
+  else { out.dur = len; delete out.speed; }
+  if (R.trans[c.id]) { R.trans[out.id] = R.trans[c.id]; delete R.trans[c.id]; }
+  if (c.type === 'video' && !c.el.paused) c.el.pause();
+  R.clips[i] = out;
+  if (typeof reelKeep === 'function') reelKeep(out, file);
+  return out;
+}
+
 /* ---------- Export, frame by frame ----------
    Every frame is drawn on its own at an exact 1/fps step and handed to the browser's video encoder with its own
    timestamp, so heavy effects take longer to export but never stutter. Sound is mixed offline the same way, and both

@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 510;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 511;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6681,7 +6681,7 @@ const RI = {
   whole: '<path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/>', del: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   toend: '<path d="M4 12h13M13 7l5 5-5 5M21 5v14"/>', xf: '<path d="M3 6c6 0 12 12 18 12M3 18c6 0 12-12 18-12"/>', row: '<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', split: '<path d="M12 3v18M6 8l-3 4 3 4M18 8l3 4-3 4"/>', freeze: '<path d="M12 2v20M4.9 4.9l14.2 14.2M2 12h20M4.9 19.1L19.1 4.9"/>',
-  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', device: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>', pf: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>'
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', swap: '<path d="M4 9h13l-3-3M20 15H7l3 3"/>', device: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>', pf: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>'
 };
 const ri = (k) => `<svg viewBox="0 0 24 24">${RI[k]}</svg>`;
 const rib = (attrs, k, tip) => `<button class="btn icon-btn rib" ${attrs} data-tip="${tip}" aria-label="${tip.replace(/ \(.*\)$/, '')}">${ri(k)}</button>`;
@@ -7343,12 +7343,12 @@ async function reelPanel() {
       el.innerHTML = `<div class="reel-tools" id="reel-tools">${REEL_CLIP_TOOLS.map(([k, l]) => `<button data-tool="${k}" class="${R.tool === k ? 'on' : ''}" data-tip="${l}" aria-label="${l}">${ri({ look: 'look', frame: 'frame', tfx: 'fx', text: 'text', stickers: 'sticker' }[k])}<span>${l}</span></button>`).join('')}</div>
         <div class="card reel-clip-ed">
           <div class="reel-clip-head"><b>${c.type === 'video' ? 'Video' : c.type === 'blank' ? 'Blank page' : 'Photo'} ${R.sel + 1} of ${R.clips.length}</b>
-            <span class="rib-inl">${rib('data-cact="dup"', 'dup', 'Duplicate clip (Ctrl D)')}${c.type === 'video' ? rib('data-cact="split"', 'split', 'Split at the playhead (S)') + rib('data-cact="freeze"', 'freeze', 'Freeze frame: a still of this moment, held for 2 seconds') : ''}${rib('data-cact="still"', 'camera', 'Save this frame as a picture')}</span>
+            <span class="rib-inl">${rib('data-cact="dup"', 'dup', 'Duplicate clip (Ctrl D)')}${c.type === 'video' ? rib('data-cact="split"', 'split', 'Split at the playhead (S)') + rib('data-cact="freeze"', 'freeze', 'Freeze frame: a still of this moment, held for 2 seconds') : ''}${rib('data-cact="still"', 'camera', 'Save this frame as a picture')}${c.type !== 'blank' ? rib('data-cact="swap"', 'swap', 'Replace the picture or video, keeping its length, look, stickers and effects') : ''}</span>
             <button class="reel-x" data-act="del" data-tip="Remove this clip (Delete)" aria-label="Remove clip"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
           ${reelClipTool(c)}</div>`;
       $('#reel-tools').onclick = (e) => { const b = e.target.closest('[data-tool]'); if (!b) return; R.tool = b.dataset.tool; reelPanel(); };
       el.querySelector('.rib-inl')?.addEventListener('click', (e) => { const b = e.target.closest('[data-cact]'); if (!b) return; const a = b.dataset.cact;
-        if (a === 'dup') reelClipDup(c); else if (a === 'split') reelClipSplit(c); else if (a === 'freeze') reelFreeze(c); else if (a === 'still') reelStill(); });
+        if (a === 'dup') reelClipDup(c); else if (a === 'split') reelClipSplit(c); else if (a === 'freeze') reelFreeze(c); else if (a === 'still') reelStill(); else if (a === 'swap') reelSwapMenu(b, c); });
       const ed = el.querySelector('.reel-clip-ed');
       reelClipBind(ed, c); if (R.tool === 'look' && (R.lookTab || 'filters') === 'filters') reelFilterThumbs(c);
     } else if (p && (p.kind === 'intro' || p.kind === 'outro') && s[p.kind]) {
@@ -8090,6 +8090,23 @@ async function reelTplImport(file) {
   await reelSaveTemplates(list); toast(`Imported ${n} template${n === 1 ? '' : 's'}.`); reelPanel();
 }
 
+/* Replace a clip's media: from the device (photo or video) or the portfolio. */
+function reelSwapMenu(btn, c) {
+  document.getElementById('reel-swap')?.remove();
+  const m = document.createElement('div'); m.id = 'reel-swap'; m.className = 'reel-swapm';
+  m.innerHTML = `<button data-sw="dev">${ri('device')}<span>From device</span></button><button data-sw="pf">${ri('pf')}<span>From portfolio</span></button><input type="file" accept="image/*,video/*" hidden>`;
+  const r = btn.getBoundingClientRect(); m.style.left = Math.max(8, Math.min(innerWidth - 190, r.left - 80)) + 'px'; m.style.top = (r.bottom + 6) + 'px';
+  document.body.appendChild(m);
+  const close = () => { m.remove(); document.removeEventListener('pointerdown', out, true); }, out = (e) => { if (!m.contains(e.target)) close(); };
+  setTimeout(() => document.addEventListener('pointerdown', out, true));
+  const go = async (file) => { close(); try { const nc = await reelReplaceClip(c, file); if (nc) { reelChanged(); reelTimeline(); reelPick('clip', nc.id); toast('Clip replaced.'); } } catch (err) { toast(`Could not use that file: ${err.message}`); } };
+  const inp = m.querySelector('input'); inp.onchange = () => { const f = inp.files[0]; if (f) go(f); };
+  m.onclick = async (e) => { const b = e.target.closest('[data-sw]'); if (!b) return;
+    if (b.dataset.sw === 'dev') return inp.click();
+    close(); const ref = await dzPortfolioPick(true); if (!ref) return;
+    try { const f = await (await (await Media.dir()).getFileHandle(ref)).getFile(); go(new File([f], f.name || 'portfolio.jpg', { type: f.type || 'image/jpeg' })); }
+    catch { toast('Could not open that picture.'); } };
+}
 async function reelPortfolioPicker() {
   const rows = await DB.all(`SELECT x.photo_ref, x.thumb_ref, p.title FROM portfolio_photos x JOIN portfolio_items p ON p.id = x.item_id
     ORDER BY coalesce(p.made_on, p.created_at) DESC, x.sort LIMIT 120`);
@@ -9633,6 +9650,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 511, when: '2026-11-22T10:00', added: [
+    'Reel maker: replace a clip’s photo or video (the swap button on the clip) from your device or portfolio. Its length, look, filters, motion, transition, stickers and effects all stay.',
+    'Reel maker: undo brings the old picture back after a replace.'],
+    test: ['Reel maker: select a clip with a filter and a sticker, tap the swap button and pick another photo.'] },
   { build: 510, when: '2026-11-21T23:00', added: [
     'Reel maker: export now draws every frame on its own at an exact step, so effects and transitions come out smooth with no stutter.',
     'Reel maker: photo reels usually export faster than they play. Heavy effects just take a little longer.'],
