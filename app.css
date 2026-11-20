@@ -2711,5 +2711,9 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .tt-zoom .tt-fing svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .tt-zoom .tt-fing.on { color: var(--teal); }
 .dz-side.lm-thumb .dz-lh .dz-hb > [data-close] { display: grid; }
+/* The shortcut card: on the start screen and in Settings. */
+.app-inst.start-inst { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.app-inst.start-inst > div { flex: 1; display: flex; flex-direction: column; gap: 2px; } .app-inst.start-inst .muted { font-size: 12.5px; }
+.inst-steps { margin: 6px 0 0; padding-left: 20px; line-height: 1.55; font-size: 14px; } .inst-steps li { margin: 4px 0; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 503; }
+:root { --app-build: 504; }

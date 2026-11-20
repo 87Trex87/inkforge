@@ -1996,7 +1996,7 @@ TT.open = async (el, id) => {
         <label class="tt-pp" data-tip="How hard the needle goes in along the path">Pressure <input type="range" min="0.15" max="1" step="0.05" value="${st.pathP}" data-pp></label><button data-sa="papply" class="ok">Apply</button></div>`; }
     if (snapE?.live) sh += snapE.anchors.map((a, i) => { const q = toScreen(a); return `<i data-gh="an${i}" class="anc ${a.c ? 'corner' : ''}" style="left:${q.x}px;top:${q.y}px"></i>`; }).join('')
       + `<div class="tt-selbar"><span class="tt-anhint">Drag an anchor to reshape · tap it for curve or corner</span><button data-sa="snapok" class="ok">Done</button></div>`;
-    guides.innerHTML = sh + hs.map(([k2, p]) => { const s = toScreen(p); return `<i data-gh="${k2}" class="${k2 === 'sc' ? 'sym' : k2[0] === 'g' ? 'vp' : ''}" style="left:${s.x}px;top:${s.y}px"></i>`; }).join('');
+    guides.innerHTML = sh + cgHtml() + hs.map(([k2, p]) => { const s = toScreen(p); return `<i data-gh="${k2}" class="${k2 === 'sc' ? 'sym' : k2[0] === 'g' ? 'vp' : ''}" style="left:${s.x}px;top:${s.y}px"></i>`; }).join('');
     drawCur(); }
   /* Grids: square, isometric, one, two and three point perspective (vanishing points draggable), and radial. In
      perspective the lines fan out from each vanishing point across the page, closer together as the grid size drops. */
@@ -2014,6 +2014,22 @@ TT.open = async (el, id) => {
   const GRID_TYPES = [['square', 'Square'], ['iso', 'Isometric'], ['p1', '1-point'], ['p2', '2-point'], ['p3', '3-point'], ['radial', 'Radial']];
   const gridVps = () => { const G = st.grid; G.vp ||= [{ x: W / 2, y: H * 0.4 }, { x: W * 0.06, y: H * 0.4 }, { x: W * 0.94, y: H * 0.4 }, { x: W / 2, y: H * 0.96 }];
     return G.type === 'p1' || G.type === 'radial' ? [G.vp[0]] : G.type === 'p2' ? [G.vp[1], G.vp[2]] : G.type === 'p3' ? [G.vp[1], G.vp[2], G.vp[3]] : []; };
+  /* Snapping, as in the design studio. With the grid on and "Lines follow the grid" ticked, corners, path points,
+     placed lettering and moved parts land on the grid's crossings (square and isometric). Moved parts and lettering
+     also snap to the page's centre lines, shown with a guide. Hold Alt for no snapping. */
+  let cGuide = { v: false, h: false };
+  const gridSnapPt = (p, ev) => { const G = st.grid; if (!CHEAT || !G.on || !G.snap || ev?.altKey) return p; const g = G.mm * mm, T = G.type || 'square';
+    if (T === 'square') return { x: Math.round(p.x / g) * g, y: Math.round(p.y / g) * g };
+    if (T === 'iso') { const t30 = Math.tan(Math.PI / 6), step = g / Math.cos(Math.PI / 6), dx = g * Math.cos(Math.PI / 6), c0 = -W * t30 - H, X = Math.round(p.x / dx) * dx;
+      return { x: X, y: c0 + Math.round((p.y - c0 - X * t30) / step) * step + X * t30 }; }
+    return p; };
+  /* A moved thing's centre c: how far to shift it to sit on the grid or the page's centre lines (and which guides show). */
+  const cgHtml = () => { if (!cGuide.v && !cGuide.h) return ''; const ln = (a, b) => { const A = toScreen(a), B = toScreen(b); return `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}"/>`; };
+    return `<svg class="tt-cgsvg">${cGuide.v ? ln({ x: W / 2, y: 0 }, { x: W / 2, y: H }) : ''}${cGuide.h ? ln({ x: 0, y: H / 2 }, { x: W, y: H / 2 }) : ''}</svg>`; };
+  const snapShift = (c, ev) => { cGuide = { v: false, h: false }; if (!CHEAT || ev?.altKey) return { x: 0, y: 0 };
+    const q = gridSnapPt(c, ev); let dx = q.x - c.x, dy = q.y - c.y; const thr = 8 / k;
+    if (Math.abs(c.x - W / 2) < thr) { dx = W / 2 - c.x; cGuide.v = true; } if (Math.abs(c.y - H / 2) < thr) { dy = H / 2 - c.y; cGuide.h = true; }
+    return { x: dx, y: dy }; };
   const drawGrid = () => { const G = st.grid, g = G.mm * mm, T = G.type || 'square', line = (a, b) => { const A = toScreen(a), B = toScreen(b); cux.moveTo(A.x, A.y); cux.lineTo(B.x, B.y); };
     cux.save(); { const C = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => toScreen({ x, y })); cux.beginPath(); C.forEach((q, i) => i ? cux.lineTo(q.x, q.y) : cux.moveTo(q.x, q.y)); cux.closePath(); cux.clip(); }   // only on the page
     const gop = G.op ?? 0.2; cux.lineWidth = 1; cux.strokeStyle = `rgba(255,255,255,${gop})`; cux.beginPath();
@@ -2070,22 +2086,22 @@ TT.open = async (el, id) => {
   guides.addEventListener('input', (e) => { if (e.target.matches('[data-pp]')) { st.pathP = +e.target.value; st.dirty = true; } });
   guides.addEventListener('pointermove', (e) => { if (!gDrag) return; const r = stage.getBoundingClientRect(), p = fromScreen(e.clientX - r.left, e.clientY - r.top), cl = { x: Math.max(0, Math.min(W, p.x)), y: Math.max(0, Math.min(H, p.y)) };
     if (gDrag?.k?.[0] === 'l' && gDrag.k !== 'lsel') { const Lc = letCur(); if (!Lc) return; const g = gDrag;
-      if (g.k === 'lbody') { Lc.x = g.x + p.x - g.p0.x; Lc.y = g.y + p.y - g.p0.y; }
+      if (g.k === 'lbody') { Lc.x = g.x + p.x - g.p0.x; Lc.y = g.y + p.y - g.p0.y; const d = snapShift(Lc, e); Lc.x += d.x; Lc.y += d.y; }
       else if (g.k === 'lsize') Lc.mm = Math.max(2, Math.round(g.mm * Math.hypot(p.x - g.x, p.y - g.y) / Math.max(1, Math.hypot(g.p0.x - g.x, g.p0.y - g.y)) * 2) / 2);
       else { let a = g.rot + Math.atan2(p.y - g.y, p.x - g.x) - Math.atan2(g.p0.y - g.y, g.p0.x - g.x); const q = Math.round(a / (Math.PI / 4)) * (Math.PI / 4); if (Math.abs(a - q) < 0.05) a = q; Lc.rot = a; }
       st.dirty = true; letDraw(); return placeGuides(); }
-    if (gDrag?.k === 'pa') { if (!gDrag.moved && Math.hypot(e.clientX - gDrag.x, e.clientY - gDrag.y) < 5) return; gDrag.moved = true; pth.a[gDrag.i] = { ...pth.a[gDrag.i], x: cl.x, y: cl.y }; st.dirty = true; return placeGuides(); }
+    if (gDrag?.k === 'pa') { if (!gDrag.moved && Math.hypot(e.clientX - gDrag.x, e.clientY - gDrag.y) < 5) return; gDrag.moved = true; const q = gridSnapPt(cl, e); pth.a[gDrag.i] = { ...pth.a[gDrag.i], x: q.x, y: q.y }; st.dirty = true; return placeGuides(); }
     if (gDrag?.k === 'an') { if (!snapE) return; if (!gDrag.moved && Math.hypot(e.clientX - gDrag.x, e.clientY - gDrag.y) < 5) return;
       gDrag.moved = true; snapE.moved = true; snapE.anchors[gDrag.i] = { ...snapE.anchors[gDrag.i], x: cl.x, y: cl.y };
       if (!snapRaf) snapRaf = requestAnimationFrame(() => { snapRaf = 0; renderSnap(); }); return placeGuides(); }
     if (typeof gDrag === 'object') { if (!lsel) return; const g = gDrag, c = g.c;
-      if (g.k === 'sbody') { lsel.tx = g.tx + p.x - g.p0.x; lsel.ty = g.ty + p.y - g.p0.y; }
+      if (g.k === 'sbody') { lsel.tx = g.tx + p.x - g.p0.x; lsel.ty = g.ty + p.y - g.p0.y; const d = snapShift(selCentre(), e); lsel.tx += d.x; lsel.ty += d.y; }
       else if (g.k === 'srot') { let a = g.rot + Math.atan2(p.y - c.y, p.x - c.x) - Math.atan2(g.p0.y - c.y, g.p0.x - c.x); const q = Math.round(a / (Math.PI / 4)) * (Math.PI / 4); if (Math.abs(a - q) < 0.05) a = q; lsel.rot = a; }
       else lsel.s = Math.max(0.05, g.s * Math.hypot(p.x - c.x, p.y - c.y) / Math.max(1, Math.hypot(g.p0.x - c.x, g.p0.y - c.y)));
       selApply(); return placeGuides(); }
     if (/^gv\d$/.test(gDrag)) { const v = gridVps()[+gDrag[2]]; if (v) { v.x = p.x; v.y = p.y; if (st.grid.type === 'p2') gridVps().forEach(o => { o.y = p.y; }); } }   // two-point: both stay on the horizon
     else if (gDrag === 'ra') st.ruler.a = cl; else if (gDrag === 'rb') st.ruler.b = cl; else st.sym.c = cl; st.dirty = true; placeGuides(); });
-  for (const n of ['pointerup', 'pointercancel']) guides.addEventListener(n, (e) => { const g = gDrag; gDrag = null;
+  for (const n of ['pointerup', 'pointercancel']) guides.addEventListener(n, (e) => { const g = gDrag; gDrag = null; if (cGuide.v || cGuide.h) { cGuide = { v: false, h: false }; placeGuides(); }
     if (g?.k === 'pa' && !g.moved && e.type === 'pointerup') { const a = pth.a[g.i]; if (g.i === 0 && pth.a.length > 2 && !pth.closed) pth.closed = true; else if (a) a.c = !a.c; return placeGuides(); }
     if (g?.k === 'an' && !g.moved && e.type === 'pointerup' && snapE) { const a = snapE.anchors[g.i]; a.c = !a.c; snapE.moved = true; renderSnap(); placeGuides(); } });
   /* The Tools menu: every cheat tool in one place (the rail stays short), each button named under its icon. */
@@ -2383,7 +2399,7 @@ TT.open = async (el, id) => {
     const u = flushPig(); cropTop(pen.box); pen = null; st.dirty = true; paint(u ? { x0: u.x0 - 4 * mm, y0: u.y0 - 4 * mm, x1: u.x1 + 4 * mm, y1: u.y1 + 4 * mm } : undefined); };
   const toolDown = (e) => { const p = toPage(e);
     if (st.tool === 'text') { const hit = [...st.letters].reverse().find(Lt => letHit(Lt, p));
-      if (hit) { st.letSel = hit.id; } else { const Lt = { id: 'l' + Date.now().toString(36), ...st.letDef, x: p.x, y: p.y, rot: 0, col: ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]) }; st.letters.push(Lt); st.letSel = Lt.id; }
+      if (hit) { st.letSel = hit.id; } else { const Lt = { id: 'l' + Date.now().toString(36), ...st.letDef, ...(() => { const q = gridSnapPt(p, e); return { x: q.x, y: q.y }; })(), rot: 0, col: ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]) }; st.letters.push(Lt); st.letSel = Lt.id; }
       st.dirty = true; letDraw(); placeGuides(); return letPanel(); }
     if (st.tool === 'liquify') { const keys = st.liq.all ? INK.filter(k2 => !st.hide.has(k2)) : [toolLayer()]; if (!keys[0]) return;
       const h = state(keys[0]); h.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(h); if (hist.length > 15) hist.shift(); fut.length = 0;
@@ -2395,17 +2411,17 @@ TT.open = async (el, id) => {
       const c = [r / w / 255, g / w / 255, b / w / 255]; st.ink = { c, v: 1, s: Math.max(0.15, Math.min(1, (1 - keep) * 1.1)), w: Math.min(...c) > 0.85 ? 1 : 0 }; st.dirty = true; drawNeedleInk();
       st.tool = 'needle'; sel(); placeGuides(); return toast('Picked up that colour: the needle is loaded.', 1600); }
     if (st.tool === 'path') { if (pth.a.length > 2 && !pth.closed) { const f = toScreen(pth.a[0]), r = stage.getBoundingClientRect(); if (Math.hypot(f.x - (e.clientX - r.left), f.y - (e.clientY - r.top)) < 16) { pth.closed = true; return placeGuides(); } }
-      if (pth.closed) return; pth.a.push({ x: p.x, y: p.y, c: false }); return placeGuides(); }
+      if (pth.closed) return; const q = gridSnapPt(p, e); pth.a.push({ x: q.x, y: q.y, c: false }); return placeGuides(); }
     if (st.tool === 'lasso' && st.lassoMode === 'colour') { if (lsel) selCommit(); return selColour(p); }
-    if (st.tool === 'lasso') { if (lsel) selCommit(); td = { kind: 'lasso', id: e.pointerId, pts: [p], a: p, mode: st.lassoMode || 'lasso' }; return; }
+    if (st.tool === 'lasso') { if (lsel) selCommit(); const pa = st.lassoMode === 'box' || st.lassoMode === 'ellipse' ? gridSnapPt(p, e) : p; td = { kind: 'lasso', id: e.pointerId, pts: [pa], a: pa, mode: st.lassoMode || 'lasso' }; return; }
     if (st.tool === 'fill') { const key = toolLayer(); if (key) fillAt([p, ...symPts(p)], key); return; }
-    if (st.tool === 'shape') { td = { kind: 'shape', id: e.pointerId, a: p, b: p }; return drawCur(e); }
+    if (st.tool === 'shape') { const q = gridSnapPt(p, e); td = { kind: 'shape', id: e.pointerId, a: q, b: q }; return drawCur(e); }
     const key = toolLayer(); if (!key) return; snap(key); touched.add(key); td = { kind: 'blend', key, id: e.pointerId, last: p, box: { x0: p.x, y0: p.y, x1: p.x, y1: p.y } }; };
-  const toolMove = (e) => { const p = toPage(e);
-    if (td.kind === 'lasso') { if (td.mode === 'box' || td.mode === 'ellipse') { const a = td.a, x0 = Math.min(a.x, p.x), y0 = Math.min(a.y, p.y), w = Math.abs(p.x - a.x), h = Math.abs(p.y - a.y);   // as in the studio's Select area
+  const toolMove = (e) => { let p = toPage(e);
+    if (td.kind === 'lasso') { if (td.mode === 'box' || td.mode === 'ellipse') { const a = td.a; p = gridSnapPt(p, e); const x0 = Math.min(a.x, p.x), y0 = Math.min(a.y, p.y), w = Math.abs(p.x - a.x), h = Math.abs(p.y - a.y);   // as in the studio's Select area
         td.pts = td.mode === 'box' ? [{ x: x0, y: y0 }, { x: x0 + w, y: y0 }, { x: x0 + w, y: y0 + h }, { x: x0, y: y0 + h }] : Array.from({ length: 48 }, (_, i) => { const t = Math.PI * 2 * i / 48; return { x: x0 + w / 2 + Math.cos(t) * w / 2, y: y0 + h / 2 + Math.sin(t) * h / 2 }; }); return drawCur(e); }
       const l = td.pts[td.pts.length - 1]; if (Math.hypot(p.x - l.x, p.y - l.y) > 2) td.pts.push(p); return drawCur(e); }
-    if (td.kind === 'shape') { td.b = p; return; }
+    if (td.kind === 'shape') { td.b = gridSnapPt(p, e); return; }
     if (td.kind === 'liq') { const d = Math.hypot(p.x - td.last.x, p.y - td.last.y), stp = Math.max(1, st.liq.r * mm / 5), n = Math.ceil(d / stp);
       for (let i = 1; i <= n; i++) { const a = { x: td.last.x + (p.x - td.last.x) * (i - 1) / n, y: td.last.y + (p.y - td.last.y) * (i - 1) / n }, b = { x: td.last.x + (p.x - td.last.x) * i / n, y: td.last.y + (p.y - td.last.y) * i / n };
         liqStep(a, b); const sa = symPts(a), sb = symPts(b); sa.forEach((q, j) => liqStep(q, sb[j])); }
@@ -4685,6 +4701,7 @@ function ttStyle() {
 .tt-lcol { display: flex; align-items: center; gap: 8px; margin: 4px 8px; font-size: 12px; } .tt-lcol > span { flex: 1; color: var(--ink2); }
 .tt-lchip { width: 30px; height: 30px; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2), 0 0 0 1px rgba(0,0,0,.4); cursor: pointer; position: relative; overflow: hidden; } .tt-lchip input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .tt-fsty { flex-wrap: wrap; } .tt-fsty button { flex: 1 0 30%; } .tt-fadeb button { flex: 1; font-size: 15px; }
+.tt-cgsvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; } .tt-cgsvg line { stroke: #ff4fa3; stroke-width: 1.5; stroke-dasharray: 6 4; }
 .tt-ltog { display: flex; margin: 4px 8px; border: 0; min-height: 28px; padding: 0; font-size: 12px; }
 .tt-lcase { height: 30px; padding: 2px 6px; font-size: 12px; margin: 0 0 0 auto; width: auto; }
 #tt-keys { position: fixed; inset: 0; z-index: 130; background: rgba(0,0,0,.55); display: grid; place-items: center; padding: 16px; }

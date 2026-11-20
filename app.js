@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 503;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 504;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2295,6 +2295,7 @@ const VIEWS = {
         <span class="seg" style="flex:none">${[['full', 'Full studio'], ['design', 'Design only']].map(([v, n]) => `<button data-wsmode="${v}" class="${(wsDesign() ? 'design' : 'full') === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
       <div class="card su-again"><div><b>This device</b><span class="muted">Fits the app to the device: on an iPad, the Apple Pencil can\u2019t select the screen or swipe out of full screen while you draw. Kept on this device only.</span></div>
         <span class="seg" style="flex:none">${OS_LIST.map(([v, n]) => `<button data-osset="${v}" class="${DevOS.get() === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
+      ${AppInstall.card('su-again')}
       <div class="card su-again" data-biz><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
         <button class="btn small" id="s-setup">Run setup</button></div>
       <div class="card su-again" data-biz><div><b>Practice workspace</b><span class="muted">${WS.cur?.test ? 'You\'re in it: made-up data to try things on. Only one is kept.' : 'A separate workspace full of made-up data to try things on. Only one is kept.'}</span></div>
@@ -9528,6 +9529,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 504, when: '2026-11-20T22:00', added: [
+    'Simulator, cheat mode: with the grid on and Lines follow the grid ticked, shape corners, path points, box and ellipse lassos and new lettering land on the grid. Moving a lifted part or lettering snaps to the grid and the page centre, with a guide. Hold Alt to place freely.',
+    'Make a shortcut: a button on the start screen and in Settings puts InkForge on your desktop or home screen, to open it like an app. On an iPad it shows the taps to do it in Safari.'],
+    test: ['Settings, Start, then Make a shortcut.', 'Simulator, cheat mode: turn the grid on and drag out a shape.'] },
   { build: 503, when: '2026-11-20T19:00', added: [
     'Tattoo simulator: the design studio’s layers panel, with thumbnails and the three sizes (thumbnails only puts other panels beside the strip). The ink mixer has Your colours from your palettes, and a hand button by the zoom switches fingers to move and zoom only.',
     'Simulator shortcuts: B, K and E pick the needle, marker and laser; in cheat mode P, T, S, G, U, L, I and W pick the other tools and M switches symmetry. Ctrl A, C, X, V and D work on the lasso, arrow keys nudge it, and ? shows every shortcut.',
@@ -10086,6 +10091,7 @@ function showStart() {
             <button class="btn small danger" data-wsdel="${w.id}" style="margin-left:auto">Delete</button></div>` : ''}
         </div>`).join('')}</div>
       ${storageWarn()}
+      ${AppInstall.card('start-inst')}
       <label class="toggle" style="display:inline-flex;margin-top:12px" data-tip="Skip this screen and go straight to the last workspace. Switch any time by tapping the workspace name at the top.">
         <input type="checkbox" id="st-auto" ${WS.auto ? 'checked' : ''}><span>Open my last workspace automatically</span></label>
       ${FS.can() ? `<label class="toggle" style="display:inline-flex;margin-top:8px" data-tip="Hide the browser's bars once a workspace opens. The full screen button at the top switches it back.">
@@ -10346,4 +10352,38 @@ DevOS.apply();
   document.addEventListener('touchmove', (e) => { if (ios() && drawing(e.target) && !editable(e.target)) e.preventDefault(); }, { passive: false });
   document.addEventListener('contextmenu', (e) => { if (ios() && drawing(e.target)) e.preventDefault(); });
 })();
+
+/* ---------- A shortcut to InkForge: on the desktop, the home screen or the taskbar ----------
+   Chrome and Edge (Windows, Android, ChromeOS, Mac) and Samsung Internet offer to install the app: the button opens
+   that offer straight away. Safari (iPad, iPhone, Mac) and Firefox have no button a page can press, so the button
+   shows the two or three taps to do it there. Once InkForge runs on its own (from the shortcut), the button says so. */
+const AppInstall = {
+  ev: null, done: false,
+  standalone: () => matchMedia('(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)').matches || navigator.standalone === true,
+  where() { const ua = navigator.userAgent, ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    return ios ? 'ios' : /Android/i.test(ua) ? (/Firefox/i.test(ua) ? 'android-ff' : 'android') : /Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg/.test(ua) ? 'mac-safari' : /Firefox/i.test(ua) ? 'firefox' : 'desktop'; },
+  card(cls) { const on = this.standalone() || this.done;
+    return `<div class="card ${cls} app-inst"><div><b>Shortcut to InkForge</b><span class="muted">${on ? 'InkForge is installed: open it from its icon on your desktop or home screen.' : 'Put InkForge on your desktop, taskbar or home screen, to open it like an app in its own window. It also lets the browser protect its storage.'}</span></div>
+      <button class="btn small ${on ? '' : 'primary'}" data-install ${on ? 'disabled' : ''}>${on ? 'Installed' : 'Make a shortcut'}</button></div>`; },
+  async go() {
+    if (this.standalone()) return toast('InkForge is already running from its shortcut.', 2500);
+    if (this.ev) { const e = this.ev; this.ev = null; e.prompt(); const r = await e.userChoice.catch(() => null); if (r?.outcome === 'accepted') { this.done = true; toast('Done: InkForge is on your device. Open it from its icon.', 4000); this.refresh(); } return; }
+    const w = this.where(), steps = {
+      ios: ['Tap the Share button <b>⬆</b> (at the top on an iPad, the bottom on an iPhone).', 'Scroll down and tap <b>Add to Home Screen</b>.', 'Tap <b>Add</b>. InkForge opens full screen from its new icon.'],
+      'mac-safari': ['In the menu bar, choose <b>File › Add to Dock</b> (or Share ⬆ › Add to Dock).', 'Click <b>Add</b>. InkForge then opens in its own window from the Dock.'],
+      'android-ff': ['Tap the menu <b>⋮</b>.', 'Tap <b>Install</b> or <b>Add to Home screen</b>.'],
+      android: ['Tap the browser menu <b>⋮</b>.', 'Tap <b>Install app</b> or <b>Add to Home screen</b>.', 'Tap <b>Install</b>.'],
+      firefox: ['Firefox on a computer can\u2019t install web apps.', 'Open InkForge in <b>Chrome</b> or <b>Edge</b> and press this button there, or drag the address bar\u2019s lock icon onto the desktop for a plain shortcut.'],
+      desktop: ['In the address bar, click the <b>install</b> icon (a screen with an arrow), or open the menu <b>⋮</b> › <b>Cast, save and share</b> › <b>Install page as app</b> (Edge: <b>Apps › Install this site as an app</b>).', 'Click <b>Install</b>. InkForge gets its own window and a desktop and Start menu shortcut.'] }[w];
+    document.querySelectorAll('#merge-dlg').forEach(x => x.remove()); const o = document.createElement('div'); o.id = 'merge-dlg'; o.style.zIndex = 200;   /* above the start screen */
+    o.innerHTML = `<div class="card" style="max-width:420px"><h2>Make a shortcut</h2>
+      <p class="muted" style="margin-top:0">${w === 'ios' || w === 'mac-safari' ? 'Safari doesn\u2019t let a page add the shortcut itself, so it takes these taps:' : w === 'firefox' ? '' : 'This browser didn\u2019t offer the install straight away (it may need a moment, or InkForge is already installed). Do it from the browser:'}</p>
+      <ol class="inst-steps">${steps.map(x => `<li>${x}</li>`).join('')}</ol>
+      <button class="btn primary" data-ix style="width:100%;margin-top:10px">OK</button></div>`;
+    o.onclick = (e) => { if (e.target === o || e.target.closest('[data-ix]')) o.remove(); }; document.body.appendChild(o); },
+  refresh() { document.querySelectorAll('.app-inst').forEach(c => { const cls = [...c.classList].find(x => x !== 'card' && x !== 'app-inst') || ''; c.outerHTML = this.card(cls); }); }
+};
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); AppInstall.ev = e; });   /* kept for the button, instead of the browser's own pop-up */
+addEventListener('appinstalled', () => { AppInstall.done = true; AppInstall.ev = null; AppInstall.refresh(); });
+document.addEventListener('click', (e) => { if (e.target.closest?.('[data-install]')) { e.preventDefault(); AppInstall.go(); } });
 
