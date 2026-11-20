@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 506;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 507;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6599,6 +6599,7 @@ function reelQuickSpec() {
     const c = R.clips.find(x => x.id === p.key); if (!c) return [];
     return c.type === 'video' ? [['speed', 'Speed', 0.25, 4, 0.25, c.speed || 1], ['vol', 'Sound', 0, 2, 0.05, c.mute ? 0 : c.vol ?? 1]] : [];   /* lengths: drag the clip's ends */
   }
+  if (p.kind === 'trans' && String(p.key)[0] === '@') return [];
   if (p.kind === 'trans') {
     const tr = reelTrans(s, { key: p.key });
     return tr.type === 'cut' ? [] : [['tdur', 'Transition', 0.1, 1.2, 0.05, tr.dur]];
@@ -6752,10 +6753,10 @@ function reelTfxPanel(c) {
 function reelTfxBind(ed, c) {
   ed.addEventListener('click', (e) => { const t = e.target, L = (c.tfx ||= []), sel = L.find(x => x.id === R.tfxSel), D = reelClipDur(c);
     const tk = t.closest('[data-tfk]');
-    if (tk) { if (sel && t.closest('.tfx-change')) { sel.k = tk.dataset.tfk; reelChanged(); reelTimeline(); return reelPanel(); }
+    if (tk) { if (sel && t.closest('.tfx-change')) { sel.k = tk.dataset.tfk; reelChanged(); reelTimeline(); reelPanel(); return reelPeekFx(c, sel); }
       const g = reelSegments().segs.find(x => x.clip === c), here = g ? R.t - g.start : 0, at = here > 0 && here < D - 0.2 ? here : 0, len = Math.min(1.5, D - at);
       const ne = { id: 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), k: tk.dataset.tfk, at: Math.round(at * 100) / 100, len: Math.round(len * 100) / 100, sp: 1, amt: 0.7 };
-      L.push(ne); R.tfxSel = ne.id; if (g) R.t = g.start + ne.at + 0.01; reelChanged(); reelTimeline(); reelRender(); return reelPanel(); }
+      L.push(ne); R.tfxSel = ne.id; if (g) R.t = g.start + ne.at + 0.01; reelChanged(); reelTimeline(); reelRender(); reelPanel(); return reelPeekFx(c, ne); }
     if (!sel) return;
     if (t.closest('[data-tfdone]')) { R.tfxSel = null; reelTimeline(); return reelPanel(); }
     if (t.closest('[data-tfdel]')) { c.tfx = L.filter(x => x !== sel); R.tfxSel = null; reelChanged(); reelTimeline(); reelRender(); return reelPanel(); }
@@ -6815,7 +6816,8 @@ function reelTimeline() {
   el.innerHTML = `<div class="tl-track" id="tl-track">
       <div class="tl-addw"><button class="tl-addb" data-addmenu aria-label="Add" data-tip="Add photos, videos, a page, or the intro and outro">+</button>
         <input type="file" accept="image/*,video/*" multiple hidden id="reel-file"></div>
-      <div class="tl-stack" id="tl-stack">${reelTlOv(segs, x)}<div class="tl-row" id="tl-row">${blocks}${marks}</div>${reelTlFx(segs)}${reelTlAud(x)}<i class="tl-head" id="tl-head"></i></div>
+      <div class="tl-stack" id="tl-stack">${reelTlOv(segs, x)}<div class="tl-row" id="tl-row">${blocks}${marks}${segs.length ? ['@start', '@end'].map(kk => { const ed = reelEdge(kk);
+        return `<button class="tl-tr tl-edgetr ${ed ? 'own' : ''} ${on('trans', kk)}" data-pk="trans" data-key="${kk}" style="left:${kk === '@start' ? 0 : x}px" aria-label="${kk === '@start' ? 'Opening' : 'Closing'} transition" data-tip="${kk === '@start' ? 'How the reel starts' : 'How the reel ends'}">${REEL_EDGE_ICON[ed?.type || 'none']}</button>`; }).join('') : ''}</div>${reelTlFx(segs)}${reelTlAud(x)}<i class="tl-head" id="tl-head"></i></div>
     </div>`;
   el.dataset.total = total;
   $('#reel-file').addEventListener('change', async (e) => {
@@ -7292,6 +7294,18 @@ function reelShowCard(kind) {
 }
 // Play a short stretch around one boundary (default: the first) so a transition can be judged.
 let reelPeekT = 0;
+/* The opening or closing transition's panel: its type and length, with a preview. */
+function reelEdgePanel(key) { const ed = reelEdge(key), cur = ed?.type || 'none', start = key === '@start';
+  return `<div class="reel-clip-head"><b>${start ? 'Opening' : 'Closing'} transition</b><span class="chip">${ed ? 'On' : 'Off'}</span></div>
+    <p class="muted" style="font-size:12px;margin:0 0 8px">${start ? 'How the very first frame arrives, from black.' : 'How the very last frame leaves, to black.'} Works with a single clip too.</p>
+    <div class="tr-grid" style="margin-bottom:12px">${REEL_EDGE.map(([k2, l, d]) => `<button class="tr tr-s ${cur === k2 ? 'on' : ''}" data-et="${k2}" data-tip="${d}"><i>${REEL_EDGE_ICON[k2]}</i><b>${l}</b></button>`).join('')}</div>
+    ${ed ? reelSlider('data-edur', 'dur', 'Length', 0.2, 3, 0.1, ed.dur, ed.dur.toFixed(1) + 's') + `<button class="btn small" data-epv style="margin-top:6px">▶ Preview</button>` : ''}`; }
+/* Plays the opening (from the start) or the closing (to the end) once. */
+function reelPeekEdge(key) { const ed = reelEdge(key); if (!ed) return; const { total } = reelSegments(), from = key === '@start' ? 0 : Math.max(0, total - ed.dur - 0.6);
+  reelShow(from); reelPlay(); clearTimeout(reelPeekT); reelPeekT = setTimeout(() => { if (R.playing) reelPause(); }, (key === '@start' ? ed.dur + 0.7 : total - from + 0.2) * 1000); }
+/* A quick look at a timed effect: plays its stretch of the clip once, then stops back at its start. */
+function reelPeekFx(c, fx) { const g = reelSegments().segs.find(x => x.clip === c); if (!g || !fx) return; const from = g.start + fx.at;
+  reelShow(from + 0.01); reelPlay(); clearTimeout(reelPeekT); reelPeekT = setTimeout(() => { if (R.playing) reelPause(); reelShow(from + 0.01); }, Math.min(6, fx.len + 0.15) * 1000); }
 function reelPeekTransition(key) {
   const s = reelStyle(), { segs } = reelSegments();
   if (segs.length < 2) return toast('Add a clip to see the transition.');
@@ -7330,6 +7344,8 @@ async function reelPanel() {
       reelClipBind(ed, c); if (R.tool === 'look' && (R.lookTab || 'filters') === 'filters') reelFilterThumbs(c);
     } else if (p && (p.kind === 'intro' || p.kind === 'outro') && s[p.kind]) {
       el.innerHTML = `<div class="card">${await reelCardPanel(s, p.kind)}</div>`;
+    } else if (p?.kind === 'trans' && String(p.key)[0] === '@') {
+      el.innerHTML = `<div class="card">${reelEdgePanel(p.key)}</div>`;
     } else if (seg) {
       el.innerHTML = `<div class="card">${reelTransPanel(s, seg)}</div>`;
     } else {
@@ -7804,6 +7820,8 @@ function reelMusicInput(e) {
 // function reference is a no-op, so they never stack up. Each only reacts to its own data- attributes.
 function reelStyleInput(e) {
   const t = e.target;
+  if (t.dataset.edur && R.pick?.kind === 'trans') { const key = R.pick.key, v = +t.value; R.trans[key] = { type: 'fade', ...R.trans[key], dur: v };
+    t.closest('.slider').querySelector('b').textContent = v.toFixed(1) + 's'; reelChanged(); return; }
   if (t.dataset.tdur && R.pick?.kind === 'trans') {
     const key = R.pick.key, v = +t.value;
     R.trans[key] = { ...R.trans[key], type: reelTrans(reelStyle(), { key }).type, dur: v };
@@ -7831,6 +7849,11 @@ async function reelStyleClick(e) {
   const t = e.target;
   const tab = t.closest('[data-stab]');
   if (tab) { R.stab = tab.dataset.stab; return reelPanel(); }
+  // The reel's opening and closing transitions
+  if (R.pick?.kind === 'trans' && String(R.pick.key)[0] === '@') { const key = R.pick.key;
+    const et = t.closest('[data-et]'); if (et) { R.trans[key] = { dur: 0.8, ...R.trans[key], type: et.dataset.et }; reelChanged(); reelTimeline(); await reelPanel(); return reelPeekEdge(key); }
+    if (t.closest('[data-epv]')) return reelPeekEdge(key);
+    return; }
   // Per-boundary transition panel
   if (R.pick?.kind === 'trans') {
     const key = R.pick.key, cur = reelTrans(reelStyle(), { key });
@@ -9591,6 +9614,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 507, when: '2026-11-21T17:00', added: [
+    'Reel maker: picking an effect plays it once, so you see it straight away.',
+    'Reel maker: opening and closing transitions, even with one clip. Tap the small marker at the start or end of the timeline: fade, zoom in or out, spin, slide, drop, blur, pixels, circle, heart, doors, wipe, flash, glitch, old TV and more, with their own length.'],
+    test: ['Reel maker: tap the marker at the very start of the timeline and pick Zoom in.'] },
   { build: 506, when: '2026-11-21T14:00', added: [
     'Reel maker: an Effects tool on each clip with 40 effects (glitch, heartbeat, zoom punch, blur, VHS, flash, film burn, hearts, confetti and more). Each sits as a bar under the clip: drag it to move it or its end to lengthen it, and tap it to set its start, length, speed and strength. The Look tool’s always-on effects are now called Overlays.',
     'Reel maker: a sticker you are moving keeps its size, instead of shrinking until you let go.'],

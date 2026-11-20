@@ -611,7 +611,49 @@ function drawSeg(ctx, s, W, H, seg, local) {
   drawWatermark(ctx, s, W, H);
 }
 
+/* The reel's opening and closing transitions (R.trans['@start'] and R.trans['@end'], { type, dur }): how the very
+   first frame arrives and the last one leaves, even with a single clip. [key, label, what it does]. */
+const REEL_EDGE = [['none', 'None', 'Starts and ends straight on the picture'], ['fade', 'Fade', 'From and to black'], ['fadew', 'Fade white', 'From and to white'],
+  ['zoomin', 'Zoom in', 'Comes in from big, goes out growing'], ['zoomout', 'Zoom out', 'Comes in from small, goes out shrinking away'], ['spin', 'Spin', 'Spins in and out'],
+  ['slidel', 'Slide left', 'Slides in from the right, out to the left'], ['slider', 'Slide right', 'Slides in from the left, out to the right'], ['slideu', 'Slide up', 'Rises in from below, out the top'],
+  ['drop', 'Drop', 'Drops in from the top with a bounce'], ['blur', 'Blur', 'Out of focus to sharp'], ['pixel', 'Pixels', 'Big pixels resolving'], ['iris', 'Circle', 'Opens and closes in a circle'],
+  ['heart', 'Heart', 'Opens and closes in a heart'], ['doors', 'Doors', 'Opens from the middle'], ['wipe', 'Wipe', 'Wipes across'], ['flash', 'Flash', 'A white flash'], ['glitch', 'Glitch', 'Glitches in and out'],
+  ['tv', 'Old TV', 'Opens from a line like an old TV, closes back to it']];
+const REEL_EDGE_ICON = { none: '|', fade: '◐', fadew: '○', zoomin: '⤢', zoomout: '⤡', spin: '↻', slidel: '⇠', slider: '⇢', slideu: '⇡', drop: '⇣', blur: '◌', pixel: '▦', iris: '◯', heart: '♥', doors: '⇔', wipe: '▧', flash: '✦', glitch: '▤', tv: '▭' };
+const reelEdge = (k) => { const e = (R.trans || {})[k]; return e && e.type && e.type !== 'none' ? { type: e.type, dur: e.dur || 0.8 } : null; };
 function reelDraw(ctx, W, H, t) {
+  const { total } = reelSegments(), A = reelEdge('@start'), B = reelEdge('@end');
+  let e = null, v = 1; if (A && t < A.dur) { e = A; v = t / A.dur; } else if (B && total - t < B.dur) { e = B; v = Math.max(0, total - t) / B.dur; }
+  if (!e) return reelDrawCore(ctx, W, H, t);
+  const q = 1 - Math.pow(1 - Math.max(0, Math.min(1, v)), 3), K = e.type, k = Math.min(W, H) / 1080;   /* q: how far in (0 = gone, 1 = fully there) */
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);   /* whatever the moving picture uncovers is black */
+  ctx.save();
+  const zoom = (z) => { ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2); };
+  if (K === 'zoomin') zoom(1 + 0.6 * (1 - q)); else if (K === 'zoomout') zoom(0.35 + 0.65 * q);
+  else if (K === 'spin') { ctx.translate(W / 2, H / 2); ctx.rotate((1 - q) * Math.PI * (e === A ? -1 : 1)); ctx.scale(0.2 + 0.8 * q, 0.2 + 0.8 * q); ctx.translate(-W / 2, -H / 2); }
+  else if (K === 'slidel' || K === 'slider') ctx.translate((K === 'slidel' ? 1 : -1) * (e === A ? 1 : -1) * W * (1 - q), 0);
+  else if (K === 'slideu') ctx.translate(0, (e === A ? 1 : -1) * H * (1 - q));
+  else if (K === 'drop') { const b = v >= 1 ? 1 : 1 - Math.abs(Math.cos(v * Math.PI * 1.5)) * (1 - v); ctx.translate(0, -(1 - b) * H * (e === A ? 1 : -1)); }
+  reelDrawCore(ctx, W, H, t); ctx.restore();
+  const cv = ctx.canvas, CW = cv.width, CH = cv.height;
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const over = (col, al) => { ctx.globalAlpha = Math.max(0, Math.min(1, al)); ctx.fillStyle = col; ctx.fillRect(0, 0, CW, CH); ctx.globalAlpha = 1; };
+  if (K === 'fade' || K === 'zoomin' || K === 'zoomout') over('#000', (1 - q) * (K === 'fade' ? 1 : 0.7));
+  else if (K === 'fadew' || K === 'flash') over('#fff', K === 'flash' ? Math.sin((1 - q) * Math.PI / 2) : 1 - q);
+  else if (K === 'blur') { const A2 = tfxSnap(ctx), b1 = tfxSoft(A2, 1 + (1 - q) * 22, 'eb1'), b2 = tfxSoft(b1, 2, 'eb2'); ctx.drawImage(b2, 0, 0, CW, CH); over('#000', (1 - q) * 0.5); }
+  else if (K === 'pixel') { if (q < 0.98) { const A2 = tfxSnap(ctx), b = tfxSoft(A2, 2 + (1 - q) * 70, 'epx'); ctx.imageSmoothingEnabled = false; ctx.drawImage(b, 0, 0, CW, CH); ctx.imageSmoothingEnabled = true; } over('#000', (1 - q) * 0.6); }
+  else if (K === 'glitch') { const f = Math.floor(t * 30); if (q < 0.97) { const A2 = tfxSnap(ctx); for (let i = 0; i < 8; i++) { const y = reelRnd(f + i) * CH, h = (10 + reelRnd(f + i * 7) * 90) * k * CW / W, dx = (reelRnd(f + i * 3) - 0.5) * 260 * k * (1 - q) * CW / W; ctx.drawImage(A2, 0, y, CW, h, dx, y, CW, h); } } over('#000', (1 - q) * 0.8); }
+  else if (['iris', 'heart', 'doors', 'wipe', 'tv'].includes(K) && q < 1) {   /* black everywhere but the opening */
+    ctx.beginPath(); ctx.rect(0, 0, CW, CH);
+    if (K === 'iris') { ctx.moveTo(CW / 2 + Math.hypot(CW, CH) / 2 * q, CH / 2); ctx.arc(CW / 2, CH / 2, Math.hypot(CW, CH) / 2 * q, 0, Math.PI * 2, true); }
+    else if (K === 'heart') { const R2 = CH * 1.15 * q, cx = CW / 2, cy = CH / 2 - R2 * 0.15; ctx.moveTo(cx, cy + R2 * 0.7); ctx.bezierCurveTo(cx - R2, cy, cx - R2 * 0.55, cy - R2 * 0.6, cx, cy - R2 * 0.2); ctx.bezierCurveTo(cx + R2 * 0.55, cy - R2 * 0.6, cx + R2, cy, cx, cy + R2 * 0.7); }
+    else if (K === 'doors') { const w = CW * q; ctx.moveTo(CW / 2 - w / 2, 0); ctx.lineTo(CW / 2 - w / 2, CH); ctx.lineTo(CW / 2 + w / 2, CH); ctx.lineTo(CW / 2 + w / 2, 0); ctx.closePath(); }
+    else if (K === 'wipe') { const w = CW * q, x0 = e === A ? 0 : CW - w; ctx.moveTo(x0, 0); ctx.lineTo(x0, CH); ctx.lineTo(x0 + w, CH); ctx.lineTo(x0 + w, 0); ctx.closePath(); }
+    else { const hh = Math.max(2, CH * Math.max(0, (q - 0.35) / 0.65)), ww = CW * Math.min(1, q / 0.35); ctx.moveTo((CW - ww) / 2, (CH - hh) / 2); ctx.lineTo((CW - ww) / 2, (CH + hh) / 2); ctx.lineTo((CW + ww) / 2, (CH + hh) / 2); ctx.lineTo((CW + ww) / 2, (CH - hh) / 2); ctx.closePath(); }
+    ctx.fillStyle = '#000'; ctx.fill('evenodd'); }
+  ctx.restore();
+}
+function reelDrawCore(ctx, W, H, t) {
   const s = reelStyle(), { segs, total } = reelSegments();
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';   /* the default is low, which blurs and jags scaled pictures */
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);

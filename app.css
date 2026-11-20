@@ -2728,5 +2728,9 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .tl-fx { position: absolute; top: 0; height: 22px; padding: 0 12px 0 6px; border-radius: 6px; border: 1px solid #b46cff; background: linear-gradient(90deg, rgba(150,80,255,.55), rgba(255,80,180,.45)); color: #fff; font: 600 10.5px/20px var(--ui); text-align: left; overflow: hidden; white-space: nowrap; cursor: grab; touch-action: none; }
 .tl-fx span { pointer-events: none; } .tl-fx.on { outline: 2px solid #fff; outline-offset: 1px; z-index: 2; }
 .tl-fxe { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: ew-resize; background: rgba(255,255,255,.35); }
+/* Reel: the opening and closing transition markers, at the very ends of the clip row */
+.tl-tr.tl-edgetr { border-radius: 6px; background: var(--bg2); border: 1px solid var(--teal); color: var(--teal); z-index: 6; margin-left: 0; }
+.tl-tr.tl-edgetr[data-key="@start"] { transform: translateX(3px); } .tl-tr.tl-edgetr[data-key="@end"] { transform: translateX(calc(-100% - 3px)); }
+.tl-tr.tl-edgetr.own { background: var(--teal); color: #071413; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 506; }
+:root { --app-build: 507; }
