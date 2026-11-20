@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 502;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 503;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -9528,6 +9528,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 503, when: '2026-11-20T19:00', added: [
+    'Tattoo simulator: the design studio’s layers panel, with thumbnails and the three sizes (thumbnails only puts other panels beside the strip). The ink mixer has Your colours from your palettes, and a hand button by the zoom switches fingers to move and zoom only.',
+    'Simulator shortcuts: B, K and E pick the needle, marker and laser; in cheat mode P, T, S, G, U, L, I and W pick the other tools and M switches symmetry. Ctrl A, C, X, V and D work on the lasso, arrow keys nudge it, and ? shows every shortcut.',
+    'Cheat mode lettering: UPPER, lower and Title case, a full circle, arch, wave and flag warps, a text box width, fill and line in two inks, a fade into a second colour and a drop shadow.',
+    'Cheat mode lasso and fills: select by colour, feathered edges and fading the lifted part away. Fill and filled shapes can be solid, a fade into a second colour, dotwork, lines or cross-hatching.'],
+    test: ['Simulator, cheat mode: press ? for the shortcuts.', 'Cheat mode: Tools, Fill, then try Dotwork and Fade.'] },
   { build: 502, when: '2026-11-20T15:00', added: ['Design studio: tidier colours. Each colour is one row showing the colour and its name, with None and the eyedropper beside it; tap it to open the swatches. Shapes now have separate Fill, Shape and Outline sections, and the outline settings only appear once it has an outline.'],
     test: ['Design studio, pick a shape, then try Fill and Outline.'] },
   { build: 501, when: '2026-11-20T12:00', added: [

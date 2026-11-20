@@ -164,6 +164,16 @@ const TT_PALS = [['default', 'Standard', TT_CAPS],
 // Lettering fonts (the first is the app's own blackletter-style display face).
 const TT_FONTS = [["'Pirata One', serif", 'Old English'], ["'Brush Script MT', 'Segoe Script', cursive", 'Script'], ["Georgia, 'Times New Roman', serif", 'Serif'], ["Impact, 'Arial Black', sans-serif", 'Bold'], ["'Courier New', monospace", 'Type'], ["Arial, sans-serif", 'Plain']];
 const TT_SKINS = [['Light', '#f1d3bd'], ['Fair', '#e2b493'], ['Medium', '#c68c63'], ['Tan', '#a86b45'], ['Brown', '#7b4a2c'], ['Deep', '#4e2f1e']];
+/* The layer panel's width, shared with the design studio: thumbnails only, names, or every option. */
+/* Lettering options added later, with their defaults: case, text box width, warp, second colours, fade and shadow. */
+const LET_NEW = { cs: 'none', wrap: 0, warp: 'none', wamt: 0.3, col2: '#141414', grad: false, colg: '#7a1f1f', gdir: 'v', sh: false, shx: 0.6, shy: 0.6, shc: '#141414' };
+const letBendTxt = (v) => +v === 0 ? 'straight' : Math.abs(v) >= 200 ? 'full circle' : (v > 0 ? 'up ' : 'down ') + Math.round(Math.abs(v) * 1.8) + '°';
+const TT_LSEC_OPEN = new Set(['Text', 'Style']);   /* which lettering sections are open, kept while the app is open */
+/* Cheat-mode tool keys, as in the design studio (P for the path, as its pen) and painting apps. */
+const TT_SELCOL_IC = '<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 2.5"/><path d="M14 6l4 4M15.5 8.5l-6 6L7 17l2.5-2.5"/>';
+const TT_TOOL_KEYS = { b: 'needle', k: 'marker', e: 'erase', p: 'path', t: 'text', s: 'blend', g: 'fill', u: 'shape', l: 'lasso', i: 'pick', w: 'liquify' };
+let TT_CLIP = null;   /* the simulator's clipboard: kept while the app is open, so it pastes into another piece too */
+const ttLmode = () => { const m = Settings.get('dz_lmode', 'list'); return ['thumb', 'list', 'full'].includes(m) ? m : 'list'; };
 const TT_LAYERS = [['stencil', 'Stencil'], ['marker', 'Skin marker'], ['line', 'Linework'], ['shadow', 'Shadow'], ['mid', 'Mid tone'], ['light', 'Light tone'], ['high', 'Highlights']];
 const TT_DRAW = ['stencil', 'marker', 'light', 'mid', 'shadow', 'line', 'high'];   // bottom to top
 const TT_SIZES = [['A4', 21, 29.7], ['A5', 14.8, 21], ['A6', 10.5, 14.8], ['Square 15 cm', 15, 15], ['Forearm 10 × 25 cm', 10, 25]];
@@ -696,6 +706,8 @@ function ttPalEdit(P, fresh, onSave, onDelete) { let at = 0; const o = document.
             <div class="lbl" style="margin:0">Mixing bench <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">· hold an ink to pour it in</span></div>
             <div class="tt-bench">${BENCH.map(([n, c, s], i) => c ? capBtn(c, s, `data-mix="b${i}"`, n) : `<button class="tt-cup tt-dil" data-mix="b${i}" aria-label="${n}"></button>`).join('')}<i class="tt-qsep"></i>${P.caps.map((x, i) => i === at ? '' : capBtn(x.c, x.s, `data-mix="p${i}"`, 'Cap ' + (i + 1))).join('')}</div>
             <div class="tt-pline"><span class="muted">Strength <b data-mixs>${Math.round(M.s * 100)}%</b></span><input class="in" data-ph value="${ttToHex(M.c)}" maxlength="7" aria-label="Colour code" data-tip="Type an exact colour code (the shortcut)"></div>
+            ${typeof DZP !== 'undefined' ? (() => { const cols = [...new Set([...DZP.recent(), ...DZP.cur().cols])].slice(0, 24);
+              return cols.length ? `<div class="tt-pquick"><span class="muted">Your colours <span data-tip="Your recent colours and palette from the design studio. A tap puts that colour straight in the cup, like typing its code.">?</span></span><div class="tt-pqg">${cols.map(c => `<button data-pq="${c}" style="background:${c}" title="${c.toUpperCase()}" aria-label="${c}"></button>`).join('')}</div></div>` : ''; })() : ''}
             <div class="tt-tipbox" data-tipbox>${esc(M.tip)}</div>
             <div class="tt-pgrp tt-pact"><button class="btn small" data-pe="from">Start over</button><button class="btn small primary" data-pe="use">Use for cap ${at + 1}</button></div></div></div>
         <div class="tt-pfoot"><button class="tt-egg" data-pe="egg" data-tip="What's this?" aria-label="What's this?"><svg viewBox="0 0 24 24"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg></button>${fresh ? '' : '<button class="btn small danger" data-pe="delpal">Delete palette</button>'}<span style="flex:1"></span><button class="btn small" data-pe="share">Share file</button></div></div>`;
@@ -723,6 +735,7 @@ function ttPalEdit(P, fresh, onSave, onDelete) { let at = 0; const o = document.
     o.addEventListener('contextmenu', (e) => e.preventDefault());
     o.addEventListener('input', (e) => { if (e.target.matches('[data-pn]')) P.name = e.target.value.trim() || 'My palette'; });
     o.addEventListener('change', (e) => { if (e.target.matches('[data-ph]') && /^#[0-9a-f]{6}$/i.test(e.target.value)) { push(); M.c = ttHex(e.target.value.toLowerCase()); M.v = 1; M.tip = 'Typed in directly: the shortcut. Try mixing it yourself next time to see how it is made.'; sync(); } });
+    o.addEventListener('click', (e) => { const q = e.target.closest('[data-pq]'); if (!q) return; push(); M.c = ttHex(q.dataset.pq.toLowerCase()); M.s = 1; M.v = 1; M.tip = 'From your colours: the shortcut. Try mixing it yourself next time to see how it is made.'; sync(); });
     o.addEventListener('click', async (e) => { const s = e.target.closest('[data-ps]'); if (s) { at = +s.dataset.ps; Object.assign(M, { c: ttHex(P.caps[at].c), s: P.caps[at].s ?? 1, v: 1 }); return draw(); }
       const a = e.target.closest('[data-pe]')?.dataset.pe; if (!a) return;
       if (a === 'undo' && H.length) { F.push(snap()); return restore(H.pop()); }
@@ -1527,9 +1540,9 @@ TT.open = async (el, id) => {
       <div class="dz-pop" id="tt-pop" hidden></div><div class="tt-refs" id="tt-refs"></div><div class="tt-guides" id="tt-guides"></div><div class="tt-exam" id="tt-exbar" hidden></div>
       <div class="tt-tray" id="tt-tray"></div>
       <div class="tt-meter" id="tt-meter" data-tip="How the needle is going in: keep each marker in the green. Too deep blows out; too slow while deep blows out; skin past the green is getting overworked."></div>
-      <div class="dz-zoom tt-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="tt-zl">Fit</button><button data-z="in" aria-label="Zoom in">+</button></div>
-    </div><div class="dz-side" id="tt-side" hidden></div></div></div>`;
-  const stage = $('#tt-stage'), cv = $('#tt-cv'), side = $('#tt-side'), pop = $('#tt-pop');
+      <div class="dz-zoom tt-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="tt-zl">Fit</button><button data-z="in" aria-label="Zoom in">+</button><button id="tt-fingers" class="tt-fing" aria-label="Fingers only move and zoom"><svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5v-2a1.5 1.5 0 0 1 3 0V12M14 10.5a1.5 1.5 0 0 1 3 0V12M17 11.5a1.5 1.5 0 0 1 3 0V16a6 6 0 0 1-6 6h-2a6 6 0 0 1-4.7-2.3L4 15.5a1.6 1.6 0 0 1 2.4-2l1.6 1.6"/></svg></button></div>
+    </div><div class="dz-side" id="tt-side" hidden></div><div class="dz-side dz-strip tt-lp lm-thumb" id="tt-strip" hidden></div></div></div>`;
+  const stage = $('#tt-stage'), cv = $('#tt-cv'), side = $('#tt-side'), pop = $('#tt-pop'), strip = $('#tt-strip');
   const x = cv.getContext('2d');
 
   // Skin: the tone with a faint grain of pores, made once.
@@ -2119,17 +2132,27 @@ TT.open = async (el, id) => {
      All work on the current layer with the ink on the needle, and undo like a stroke. */
   st.liq = meta.liq || CP.liq || { r: 8, s: 0.5, all: true };
   st.letters = meta.letters || []; st.letSel = null;
-  st.letDef = meta.letDef || CP.letDef || { s: 'Mum', font: "'Pirata One', serif", mm: 12, sp: 0, lh: 1.15, curve: 0, bold: false, ital: false, align: 'center', mode: 'outline', ow: 0.35 };
-  st.lassoAll = !!(meta.lassoAll ?? CP.lassoAll); st.lassoMode = meta.lassoMode || CP.lassoMode || 'lasso'; st.grid = meta.grid || { on: false, mm: 10, ...(CP.grid || {}) }; st.blend = meta.blend || CP.blend || { r: 3, i: 0.5 }; st.fillo = meta.fillo || CP.fillo || { sten: true }; st.shape = meta.shape || CP.shape || { kind: 'rect', fill: false };
+  st.letDef = { ...LET_NEW, ...(meta.letDef || CP.letDef || { s: 'Mum', font: "'Pirata One', serif", mm: 12, sp: 0, lh: 1.15, curve: 0, bold: false, ital: false, align: 'center', mode: 'outline', ow: 0.35 }) };
+  st.lassoAll = !!(meta.lassoAll ?? CP.lassoAll); st.lassoMode = meta.lassoMode || CP.lassoMode || 'lasso'; st.grid = meta.grid || { on: false, mm: 10, ...(CP.grid || {}) }; st.blend = meta.blend || CP.blend || { r: 3, i: 0.5 }; st.fillo = { kind: 'solid', c2: '#f0c75e', dir: 'down', dens: 0.5, sz: 1.2, ...(meta.fillo || CP.fillo || { sten: true }) }; st.selo = { fe: 0, tol: 0.15, cont: true, ...(meta.selo || CP.selo || {}) }; st.shape = meta.shape || CP.shape || { kind: 'rect', fill: false };
+  /* How a fill is laid: solid, a fade into a second colour, or a tattoo texture. */
+  const fillStyleUI = () => { const F = st.fillo, k2 = F.kind || 'solid', sl2 = (f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:4px 6px"><span>${lab}<b>${fmt(F[f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${F[f]}" data-tl="fillo.${f}" data-fmt="${f === 'sz' ? 'mm' : '%'}"></label>`;
+    return `<div class="tt-lseg tt-fsty">${[['solid', 'Solid'], ['fade', 'Fade'], ['stipple', 'Dotwork'], ['hatch', 'Lines'], ['cross', 'Cross-hatch']].map(([v, n]) => `<button data-fsv="kind:${v}" class="${k2 === v ? 'on' : ''}">${n}</button>`).join('')}</div>
+      ${k2 === 'fade' ? `<div class="tt-lcol"><span>Into</span><label class="tt-lchip" style="background:${F.c2}"><input type="color" data-fcol value="${F.c2}"></label><button class="btn small" data-fink>Needle ink</button></div>
+        <div class="tt-lseg">${[['down', '↓'], ['up', '↑'], ['right', '→'], ['left', '←'], ['centre', '◎']].map(([d, n]) => `<button data-fsv="dir:${d}" class="${F.dir === d ? 'on' : ''}" data-tip="The needle's ink first, then fading ${d === 'centre' ? 'out to the edge' : d}">${n}</button>`).join('')}</div>`
+      : k2 !== 'solid' ? `${sl2('dens', 'Density', 0.05, 1, 0.01, v => Math.round(v * 100) + '%')}${sl2('sz', 'Spacing', 0.4, 4, 0.1, v => v + ' mm')}` : ''}`; };
   function toolPop(b) {
     const T = st.tool, sl = (o, f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:4px 6px"><span>${lab}<b>${fmt(st[o][f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${st[o][f]}" data-tl="${o}.${f}"></label>`;
     const tg = (o, f, lab) => `<label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-tl="${o}.${f}" ${st[o][f] ? 'checked' : ''}><span>${lab}</span></label>`;
     pop.innerHTML = T === 'blend' ? `<div class="gh">Blend</div>${sl('blend', 'r', 'Size', 1, 15, 0.5, v => v + ' mm')}${sl('blend', 'i', 'Intensity', 0.05, 1, 0.05, v => Math.round(v * 100) + '%')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag over ink to smudge and soften it, on the current layer.</p>`
-      : T === 'fill' ? `<div class="gh">Fill</div>${tg('fillo', 'sten', 'Stencil lines count as edges')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap inside an outline: it packs solid with the ink on the needle, on the current layer.</p>`
+      : T === 'fill' ? `<div class="gh">Fill</div>${fillStyleUI()}${tg('fillo', 'sten', 'Stencil lines count as edges')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap inside an outline: it fills with the ink on the needle, on the current layer.</p>`
       : T === 'liquify' ? `<div class="gh">Liquify</div>${sl('liq', 'r', 'Size', 2, 30, 0.5, v => v + ' mm')}${sl('liq', 's', 'Strength', 0.1, 1, 0.05, v => Math.round(v * 100) + '%')}${tg('liq', 'all', 'Every ink layer, not just the current one')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag to push the ink along like wet paint.</p>`
       : T === 'text' ? `<div class="gh">Lettering</div><p class="muted" style="font-size:11px;margin:2px 6px 6px">Tap the page to add text, or tap a text to change it. It stays editable on its own lettering layer until you bake it.</p>`
-      : T === 'lasso' ? `<div class="gh">Lasso</div><div class="tt-symm">${[['lasso', 'Lasso', 'sellasso'], ['box', 'Box', 'selbox'], ['ellipse', 'Ellipse', 'selell']].map(([k2, n, ic]) => `<button data-lmode="${k2}" class="tt-icb ${(st.lassoMode || 'lasso') === k2 ? 'on' : ''}" aria-label="${n}"><svg viewBox="0 0 24 24">${typeof DZ_UI !== 'undefined' ? DZ_UI[ic] : ''}</svg><span>${n}</span></button>`).join('')}</div><label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-lassoall ${st.lassoAll ? 'checked' : ''}><span>Every ink layer, not just the current one</span></label><p class="muted" style="font-size:11px;margin:2px 6px 6px">Draw round the part to move. Drag it, size it from a corner, turn it from the top dot, flip it, then Done.</p>`
-      : `<div class="gh">Shapes</div><div class="tt-symm tt-shps">${TT_SHAPES.map(([k2, n]) => `<button data-shp="${k2}" class="tt-icb ${st.shape.kind === k2 ? 'on' : ''}" aria-label="${n}"><svg viewBox="0 0 24 24">${typeof DZ_UI !== 'undefined' ? DZ_UI['s_' + k2] || TT_IC[k2] || '' : TT_IC[k2] || ''}</svg><span>${n}</span></button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
+      : T === 'lasso' ? `<div class="gh">Lasso</div><div class="tt-symm">${[['lasso', 'Lasso', 'sellasso'], ['box', 'Box', 'selbox'], ['ellipse', 'Ellipse', 'selell'], ['colour', 'Colour', 'selcol']].map(([k2, n, ic]) => `<button data-lmode="${k2}" class="tt-icb ${(st.lassoMode || 'lasso') === k2 ? 'on' : ''}" aria-label="${n}"><svg viewBox="0 0 24 24">${ic === 'selcol' ? TT_SELCOL_IC : typeof DZ_UI !== 'undefined' ? DZ_UI[ic] : ''}</svg><span>${n}</span></button>`).join('')}</div><label class="toggle" style="display:flex;margin:2px 6px 6px;border:0;min-height:30px;padding:0"><input type="checkbox" data-lassoall ${st.lassoAll ? 'checked' : ''}><span>Every ink layer, not just the current one</span></label>
+        ${st.lassoMode === 'colour' ? `${sl('selo', 'tol', 'Colour range', 0.02, 0.6, 0.01, v => Math.round(v * 100) + '%')}${tg('selo', 'cont', 'Only the colour that touches where you tap')}` : ''}
+        ${sl('selo', 'fe', 'Feather the edge', 0, 6, 0.1, v => +v ? v + ' mm' : 'off')}
+        <div class="gh" style="opacity:.7">Fade out the lifted part</div><div class="tt-lseg tt-fadeb">${[['down', '↓'], ['up', '↑'], ['right', '→'], ['left', '←'], ['centre', '◎']].map(([d, n]) => `<button data-selfade="${d}" ${lsel ? '' : 'disabled'} data-tip="${{ down: 'Fades away towards the bottom', up: 'Fades away towards the top', right: 'Fades away to the right', left: 'Fades away to the left', centre: 'Fades away towards the edge' }[d]}">${n}</button>`).join('')}</div>
+        <p class="muted" style="font-size:11px;margin:2px 6px 6px">${st.lassoMode === 'colour' ? 'Tap a colour to pick it up.' : 'Draw round the part to move.'} Drag it, size it from a corner, turn it from the top dot, flip it, then Done.</p>`
+      : `<div class="gh">Shapes</div><div class="tt-symm tt-shps">${TT_SHAPES.map(([k2, n]) => `<button data-shp="${k2}" class="tt-icb ${st.shape.kind === k2 ? 'on' : ''}" aria-label="${n}"><svg viewBox="0 0 24 24">${typeof DZ_UI !== 'undefined' ? DZ_UI['s_' + k2] || TT_IC[k2] || '' : TT_IC[k2] || ''}</svg><span>${n}</span></button>`).join('')}</div>${tg('shape', 'fill', 'Fill it as well')}${st.shape.fill ? fillStyleUI() : ''}<p class="muted" style="font-size:11px;margin:2px 6px 6px">Drag corner to corner. Lined with the current needle.</p>`;
     pop.hidden = false; pop.style.top = Math.max(8, b.getBoundingClientRect().top - stage.getBoundingClientRect().top - 6) + 'px'; }
   const inkCx = (key) => { const col = st.ink.c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255));
     return { pig: true, key, col, str: st.ink.s ?? 1, lum: (col[0] * 0.299 + col[1] * 0.587 + col[2] * 0.114) / 255, ac: col.map(v => ALOG[v]) }; };
@@ -2163,22 +2186,46 @@ TT.open = async (el, id) => {
   const LT = document.createElement('canvas'); LT.width = W; LT.height = H; const ltg = LT.getContext('2d');
   const famCss = (f) => /[,'"]/.test(f) ? f : `"${f}"`;
   const letFont = (Lt) => `${Lt.ital ? 'italic ' : ''}${Lt.bold ? 700 : 400} ${Lt.mm * mm}px ${famCss(Lt.font)}`;
+  /* Older texts get the newer options with their defaults. */
+  const letFix = (Lt) => { for (const [k2, v] of Object.entries(LET_NEW)) if (Lt[k2] === undefined) Lt[k2] = v; return Lt; };
+  const letCase = (t, c) => c === 'upper' ? t.toUpperCase() : c === 'lower' ? t.toLowerCase() : c === 'title' ? t.toLowerCase().replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase()) : t;
+  /* The lines to draw: as typed (in the chosen case), and wrapped to the text box's width when one is set. */
+  const letLines = (g, Lt, fs, sp) => { const raw = letCase(String(Lt.s || ''), Lt.cs).split('\n'); if (!(Lt.wrap > 0)) return raw;
+    const max = Lt.wrap * mm, wOf = (t) => { const ch = [...t]; return ch.reduce((a, c) => a + g.measureText(c).width, 0) + sp * Math.max(0, ch.length - 1); }, out = [];
+    for (const para of raw) { let cur = ''; for (const w of para.split(/\s+/).filter(Boolean)) { const t = cur ? cur + ' ' + w : w; if (cur && wOf(t) > max) { out.push(cur); cur = w; } else cur = t; } out.push(cur); }
+    return out; };
   // Each line's letters with their offsets, and the block's size (page px, before turning).
-  const letLayout = (g, Lt) => { g.font = letFont(Lt); const fs = Lt.mm * mm, sp = Lt.sp * fs, lines = String(Lt.s || '').split('\n'), lh = fs * Lt.lh;
+  const letLayout = (g, Lt) => { letFix(Lt); g.font = letFont(Lt); const fs = Lt.mm * mm, sp = Lt.sp * fs, lines = letLines(g, Lt, fs, sp), lh = fs * Lt.lh;
     const L2 = lines.map(line => { const ch = [...line], ws = ch.map(c => g.measureText(c).width); return { ch, ws, w: ws.reduce((a, b) => a + b, 0) + sp * Math.max(0, ch.length - 1) }; });
-    const mw = Math.max(1, ...L2.map(l => l.w)), th = lh * lines.length, th0 = Lt.curve ? Math.abs(Lt.curve) / 100 * Math.PI : 0, sag = th0 ? mw / th0 * (1 - Math.cos(th0 / 2)) : 0;
-    return { fs, sp, lh, lines: L2, w: mw + fs * 0.2, h: th + sag + fs * 0.2, sag }; };
-  // Draws one text at its place, in its own colour (or ink: the needle's colour it was given).
-  const letPaint = (g, Lt, style) => { const Y = letLayout(g, Lt), purple = 'rgba(78,40,150,.92)', ink = Lt.mode === 'ink' || Lt.mode === 'inkline';
-    const col = style?.col || (ink ? Lt.col : purple), outline = Lt.mode === 'outline' || Lt.mode === 'inkline';
-    g.save(); g.translate(Lt.x, Lt.y); g.rotate(Lt.rot || 0); g.font = letFont(Lt); g.textBaseline = 'middle'; g.fillStyle = col; g.strokeStyle = col; g.lineWidth = Lt.ow * mm; g.lineJoin = 'round';
-    const y0 = -Y.lh * (Y.lines.length - 1) / 2 - (Lt.curve > 0 ? Y.sag / 2 : Lt.curve < 0 ? -Y.sag / 2 : 0);
+    const mw = Math.max(1, Lt.wrap > 0 ? Lt.wrap * mm : 0, ...L2.map(l => l.w)), th = lh * lines.length, th0 = Lt.curve ? Math.abs(Lt.curve) / 100 * Math.PI : 0, sag = th0 ? Math.min(mw / th0 * (1 - Math.cos(Math.min(th0, Math.PI) / 2)) * (th0 > Math.PI ? 2 : 1), mw) : 0;
+    const amp = Lt.warp && Lt.warp !== 'none' && !Lt.curve ? (Lt.wamt || 0) * fs : 0;
+    return { fs, sp, lh, lines: L2, w: mw + fs * 0.2, h: th + sag + amp * 2 + fs * 0.2, sag, amp }; };
+  /* Where each letter sits: along a bend (up to a full circle), or warped (arch, wave or flag) when straight. */
+  const letWarp = (Lt, t, amp) => Lt.warp === 'arch' ? -amp * Math.sin(Math.PI * t) : Lt.warp === 'wave' ? amp * Math.sin(2 * Math.PI * t) : Lt.warp === 'flag' ? amp * t * Math.sin(2 * Math.PI * t + Math.PI / 4) * 1.4 : 0;
+  const letGlyphs = (g, Lt, Y, draw) => { const y0 = -Y.lh * (Y.lines.length - 1) / 2 - (Lt.curve > 0 ? Y.sag / 2 : Lt.curve < 0 ? -Y.sag / 2 : 0);
     Y.lines.forEach((ln, li) => { const by = y0 + li * Y.lh, x0 = Lt.align === 'left' ? -Y.w / 2 + Y.fs * 0.1 : Lt.align === 'right' ? Y.w / 2 - Y.fs * 0.1 - ln.w : -ln.w / 2;
-      const th0 = Lt.curve / 100 * Math.PI, R = Math.abs(th0) > 0.01 ? ln.w / th0 : 0; let s = 0;
-      ln.ch.forEach((c, i) => { const cw = ln.ws[i], mid = x0 + s + cw / 2; g.save();
-        if (R) { const phi = (mid - (x0 + ln.w / 2)) / R; g.translate(x0 + ln.w / 2 + R * Math.sin(phi), by + R - R * Math.cos(phi)); g.rotate(phi); } else g.translate(mid, by);
-        g.textAlign = 'center'; outline ? g.strokeText(c, 0, 0) : g.fillText(c, 0, 0); g.restore(); s += cw + Y.sp; }); });
-    g.restore(); return Y; };
+      const th0 = Lt.curve / 100 * Math.PI, R = Math.abs(th0) > 0.01 ? ln.w / th0 : 0; let s2 = 0;
+      ln.ch.forEach((c, i) => { const cw = ln.ws[i], mid = x0 + s2 + cw / 2; g.save();
+        if (R) { const phi = (mid - (x0 + ln.w / 2)) / R; g.translate(x0 + ln.w / 2 + R * Math.sin(phi), by + R - R * Math.cos(phi)); g.rotate(phi); }
+        else g.translate(mid, by + letWarp(Lt, ln.w ? (mid - x0) / ln.w : 0.5, Y.amp));
+        g.textAlign = 'center'; draw(c); g.restore(); s2 += cw + Y.sp; }); }); };
+  // Draws one text at its place: shadow (part 'shadow'), then fill and line (part 'main'), or all of it.
+  const letPaint = (g, Lt, style) => { const Y = letLayout(g, Lt), purple = 'rgba(78,40,150,.92)', ink = ['ink', 'inkline', 'inkboth'].includes(Lt.mode), part = style?.part || 'all';
+    const col = style?.col || (ink ? Lt.col : purple), line = style?.col || (Lt.mode === 'inkboth' ? Lt.col2 : col);
+    const fills = Lt.mode === 'solid' || Lt.mode === 'ink' || Lt.mode === 'inkboth', strokes = Lt.mode === 'outline' || Lt.mode === 'inkline' || Lt.mode === 'inkboth';
+    const at = (gg) => { gg.translate(Lt.x, Lt.y); gg.rotate(Lt.rot || 0); gg.font = letFont(Lt); gg.textBaseline = 'middle'; gg.lineWidth = Lt.ow * mm; gg.lineJoin = 'round'; };
+    const both = (gg, fc, lc) => letGlyphs(gg, Lt, Y, (c) => { if (fills) { gg.fillStyle = fc; gg.fillText(c, 0, 0); } if (strokes) { gg.strokeStyle = lc; gg.strokeText(c, 0, 0); } });
+    if (Lt.sh && part !== 'main') { g.save(); g.translate(Lt.shx * mm, Lt.shy * mm); at(g); const sc = style?.col || (ink ? Lt.shc : 'rgba(78,40,150,.45)'); both(g, sc, sc); g.restore(); }
+    if (part !== 'shadow') {
+      if (Lt.grad && fills && !style?.col) {   /* a fade from the first colour to the second, across the whole text */
+        const tc = document.createElement('canvas'); tc.width = g.canvas.width; tc.height = g.canvas.height; const t2 = tc.getContext('2d'); t2.setTransform(g.getTransform());
+        t2.save(); at(t2); letGlyphs(t2, Lt, Y, (c) => { t2.fillStyle = '#000'; t2.fillText(c, 0, 0); }); t2.restore();
+        t2.save(); at(t2); t2.globalCompositeOperation = 'source-in'; const gr = Lt.gdir === 'h' ? t2.createLinearGradient(-Y.w / 2, 0, Y.w / 2, 0) : t2.createLinearGradient(0, -Y.h / 2, 0, Y.h / 2);
+        gr.addColorStop(0, col); gr.addColorStop(1, Lt.colg); t2.fillStyle = gr; t2.fillRect(-Y.w, -Y.h, Y.w * 2, Y.h * 2); t2.restore();
+        g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(tc, 0, 0); g.restore();
+        if (strokes) { g.save(); at(g); letGlyphs(g, Lt, Y, (c) => { g.strokeStyle = line; g.strokeText(c, 0, 0); }); g.restore(); } }
+      else { g.save(); at(g); both(g, col, line); g.restore(); } }
+    return Y; };
   const letDraw = () => { ltg.clearRect(0, 0, W, H); for (const Lt of st.letters) letPaint(ltg, Lt); compAll = true; paint(); };
   const letHit = (Lt, p) => { const Y = letLayout(ltg, Lt), c = Math.cos(-(Lt.rot || 0)), s = Math.sin(-(Lt.rot || 0)), dx = p.x - Lt.x, dy = p.y - Lt.y;
     return Math.abs(dx * c - dy * s) < Y.w / 2 && Math.abs(dx * s + dy * c) < Y.h / 2; };
@@ -2187,50 +2234,68 @@ TT.open = async (el, id) => {
     if (typeof DZ_FONTS !== 'undefined') for (const [n2] of DZ_FONTS) if (!out.some(o => o[1] === n2)) out.push([n2, n2]);
     if (typeof DZF !== 'undefined') for (const c of DZF.custom()) out.push([c.name, c.name + ' (yours)']); return out; };
   const letLoadFont = async (f) => { if (typeof DZF !== 'undefined' && !/[,'"]/.test(f)) await DZF.load(f); else await document.fonts.load(`400 40px ${f}`).catch(() => {}); };
-  function letPanel() { const Lt = letCur(); if (!Lt) return; const b = $('#tt-rail [data-r="tools"]');
+  function letPanel() { const Lt = letCur(); if (!Lt) return; letFix(Lt); const b = $('#tt-rail [data-r="tools"]');
     const sl = (f, lab, min, max, step, fmt) => `<label class="dz-sl" style="margin:3px 6px"><span>${lab}<b>${fmt(Lt[f])}</b></span><input type="range" min="${min}" max="${max}" step="${step}" value="${Lt[f]}" data-lt="${f}"></label>`;
     const seg = (f, opts, ic) => `<div class="tt-lseg">${opts.map(([v, n2]) => `<button data-lv="${f}:${v}" class="${ic ? 'tt-icb ' : ''}${String(Lt[f]) === String(v) ? 'on' : ''}" aria-label="${n2}">${ic ? ttIcb(v, n2) : n2}</button>`).join('')}</div>`;
-    const bendTxt = (v) => +v === 0 ? 'straight' : (v > 0 ? 'up ' : 'down ') + Math.round(Math.abs(v) * 1.8) + '°';   // shown in degrees like the studio's Bend
-    pop.innerHTML = `<div class="tt-letp"><div class="gh">Lettering</div><div class="gh" style="opacity:.7">Text</div>
+    /* a colour: its swatch (tap for any colour) and Needle ink, which takes the colour on the needle */
+    const colRow = (f, lab) => `<div class="tt-lcol"><span>${lab}</span><label class="tt-lchip" style="background:${Lt[f]}" data-tip="Any colour"><input type="color" data-lt="${f}" value="${/^#[0-9a-f]{6}$/i.test(Lt[f]) ? Lt[f] : '#141414'}"></label><button class="btn small" data-la="ink:${f}" data-tip="Take the ink on the needle">Needle ink</button></div>`;
+    const sec = (title, body, open) => `<details class="tt-lsec" ${open ? 'open' : ''} data-lsec="${title}"><summary>${title}</summary><div>${body}</div></details>`;
+    const ink = ['ink', 'inkline', 'inkboth'].includes(Lt.mode), fills = ['solid', 'ink', 'inkboth'].includes(Lt.mode), lines = ['outline', 'inkline', 'inkboth'].includes(Lt.mode);
+    const openNow = TT_LSEC_OPEN;
+    pop.innerHTML = `<div class="tt-letp"><div class="gh">Lettering</div>
       <textarea class="in" data-lt="s" rows="2" style="margin:2px 6px 6px;width:calc(100% - 12px);font-family:${Lt.font.replace(/"/g, "'")}">${esc(Lt.s)}</textarea>
-      <div class="row" style="gap:4px;margin:0 6px 6px"><select class="in" data-lt="font" style="flex:1">${letFonts().map(([f, n2]) => `<option value="${esc(f)}" ${f === Lt.font ? 'selected' : ''}>${esc(n2)}</option>`).join('')}</select>
-        ${typeof dzImportFont === 'function' ? '<button class="btn small" data-la="font">Import</button>' : ''}</div>
-      ${sl('mm', 'Text size', 3, 80, 0.5, v => v + ' mm')}
-      <div class="tt-lseg"><button data-lv="bold:${!Lt.bold}" class="tt-tog ${Lt.bold ? 'on' : ''}" style="font-weight:800" data-tip="Bold" aria-label="Bold">B</button><button data-lv="ital:${!Lt.ital}" class="tt-tog ${Lt.ital ? 'on' : ''}" style="font-style:italic;font-family:Georgia,serif" data-tip="Italic" aria-label="Italic">I</button></div>
-      ${seg('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], true)}
-      <div class="gh" style="opacity:.7">Style</div>
-      ${seg('mode', [['outline', 'Stencil line'], ['solid', 'Stencil solid'], ['ink', 'Tattoo solid'], ['inkline', 'Tattoo line']])}
-      ${Lt.mode === 'outline' || Lt.mode === 'inkline' ? sl('ow', 'Outline width', 0.1, 2, 0.05, v => v + ' mm') : ''}
-      <div class="tt-lseg"><button data-la="ink" data-tip="The text takes the ink on the needle">Needle ink</button></div>
-      <div class="gh" style="opacity:.7">Layout</div>
-      ${sl('curve', 'Bend', -100, 100, 1, bendTxt)}
-      <div class="gh" style="opacity:.7">Spacing</div>
-      ${sl('sp', 'Letter spacing', -0.2, 1, 0.01, v => Math.round(v * 100) + '%')}${sl('lh', 'Line height', 0.7, 2.5, 0.05, v => '× ' + v)}
+      ${sec('Text', `<div class="row" style="gap:4px;margin:0 6px 6px"><select class="in" data-lt="font" style="flex:1">${letFonts().map(([f, n2]) => `<option value="${esc(f)}" ${f === Lt.font ? 'selected' : ''}>${esc(n2)}</option>`).join('')}</select>
+          ${typeof dzImportFont === 'function' ? '<button class="btn small" data-la="font">Import</button>' : ''}</div>
+        ${sl('mm', 'Text size', 3, 80, 0.5, v => v + ' mm')}
+        <div class="tt-lseg"><button data-lv="bold:${!Lt.bold}" class="tt-tog ${Lt.bold ? 'on' : ''}" style="font-weight:800" data-tip="Bold" aria-label="Bold">B</button><button data-lv="ital:${!Lt.ital}" class="tt-tog ${Lt.ital ? 'on' : ''}" style="font-style:italic;font-family:Georgia,serif" data-tip="Italic" aria-label="Italic">I</button>
+          <select class="in tt-lcase" data-lt="cs" aria-label="Case">${[['none', 'As typed'], ['upper', 'UPPER'], ['lower', 'lower'], ['title', 'Title']].map(([v, n2]) => `<option value="${v}" ${Lt.cs === v ? 'selected' : ''}>${n2}</option>`).join('')}</select></div>
+        ${seg('align', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], true)}`, openNow.has('Text'))}
+      ${sec('Style', `${seg('mode', [['outline', 'Stencil line'], ['solid', 'Stencil solid'], ['ink', 'Tattoo solid'], ['inkline', 'Tattoo line'], ['inkboth', 'Tattoo fill + line']])}
+        ${ink ? colRow('col', Lt.mode === 'inkline' ? 'Line' : 'Fill') : ''}${Lt.mode === 'inkboth' ? colRow('col2', 'Line') : ''}
+        ${lines ? sl('ow', 'Line width', 0.1, 2, 0.05, v => v + ' mm') : ''}
+        ${ink && fills ? `<label class="toggle tt-ltog"><input type="checkbox" data-lck="grad" ${Lt.grad ? 'checked' : ''}><span>Fade into a second colour</span></label>
+          ${Lt.grad ? colRow('colg', 'Fade to') + seg('gdir', [['v', 'Top to bottom'], ['h', 'Left to right']]) : ''}` : ''}`, openNow.has('Style'))}
+      ${sec('Shape', `${sl('curve', 'Bend', -200, 200, 1, letBendTxt)}
+        ${Lt.curve ? '' : seg('warp', [['none', 'Straight'], ['arch', 'Arch'], ['wave', 'Wave'], ['flag', 'Flag']]) + (Lt.warp && Lt.warp !== 'none' ? sl('wamt', 'Warp', 0.05, 1, 0.01, v => Math.round(v * 100) + '%') : '')}
+        ${sl('wrap', 'Text box width', 0, 200, 1, v => +v ? v + ' mm' : 'off')}`, openNow.has('Shape'))}
+      ${sec('Shadow', `<label class="toggle tt-ltog"><input type="checkbox" data-lck="sh" ${Lt.sh ? 'checked' : ''}><span>Drop shadow</span></label>
+        ${Lt.sh ? `${sl('shx', 'Across', -5, 5, 0.1, v => v + ' mm')}${sl('shy', 'Down', -5, 5, 0.1, v => v + ' mm')}${ink ? colRow('shc', 'Colour') : ''}` : ''}`, openNow.has('Shadow'))}
+      ${sec('Spacing', `${sl('sp', 'Letter spacing', -0.2, 1, 0.01, v => Math.round(v * 100) + '%')}${sl('lh', 'Line height', 0.7, 2.5, 0.05, v => '× ' + v)}`, openNow.has('Spacing'))}
       <div class="row" style="gap:4px;margin:8px 6px 6px"><button class="btn small" data-la="del">Delete</button><button class="btn small" data-la="dup">Copy</button><span style="flex:1"></span>
-        <button class="btn small primary" data-la="bake" data-tip="Lay it into the ${Lt.mode === 'outline' || Lt.mode === 'solid' ? 'stencil' : 'current ink'} layer. After this it can't be edited as text.">Bake</button></div></div>`;
+        <button class="btn small primary" data-la="bake" data-tip="Lay it into the ${fills || lines ? (ink ? 'current ink' : 'stencil') : 'stencil'} layer. After this it can't be edited as text.">Bake</button></div></div>`;
     pop.hidden = false; pop.style.top = Math.max(8, (b?.getBoundingClientRect().top || 0) - stage.getBoundingClientRect().top - 6) + 'px'; }
   // Bake: the text becomes stencil or ink for good.
-  const letBake = (Lt) => { const toSten = Lt.mode === 'outline' || Lt.mode === 'solid', key = toSten ? 'stencil' : st.layer;
+  const letBake = (Lt) => { letFix(Lt); const toSten = Lt.mode === 'outline' || Lt.mode === 'solid', key = toSten ? 'stencil' : st.layer;
     if (!toSten && !INK.includes(key)) return toast('Pick an ink layer in Layers to bake tattooed lettering into.');
-    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); const Y = letPaint(g, Lt, { col: toSten ? undefined : '#000' });
-    snap(key); touched.add(key);
-    if (toSten) { L.stencil.getContext('2d').drawImage(c, 0, 0); st.hide.delete('stencil'); }
-    else { const M = g.getImageData(0, 0, W, H).data, D = imgd[key].data, col = ttHex(Lt.col).map(v => Math.round(v * 255)); let x0 = W, y0 = H, x1 = 0, y1 = 0;
-      for (let i = 3; i < M.length; i += 4) if (M[i] > 10) { layInk(D, i - 3, col, 0.92 * M[i] / 255); const px = (i >> 2) % W, py = (i >> 2) / W | 0; if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py; }
-      if (x1 >= x0) markDirty(key, x0, y0, x1, y1); flushPig(); }
-    const r = Math.hypot(Y.w, Y.h) / 2 + 4; cropTop({ x0: Lt.x - r, y0: Lt.y - r, x1: Lt.x + r, y1: Lt.y + r });
+    const keys = [key];   /* the shadow goes into the same layer, under the letters (the Shadow layer sits on top of Linework) */
+    const mk = (part) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); const Y = letPaint(g, Lt, toSten ? { part } : { part }); return { g, Y }; };
+    const h = state(keys[0]); h.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(h); if (hist.length > 15) hist.shift(); fut.length = 0; keys.forEach(k2 => touched.add(k2));
+    /* lay a picture of the text into an ink layer, each pixel in its own colour */
+    const inkIn = (g, k2) => { const M = g.getImageData(0, 0, W, H).data, D = imgd[k2].data; let x0 = W, y0 = H, x1 = 0, y1 = 0;
+      for (let i = 3; i < M.length; i += 4) if (M[i] > 10) { layInk(D, i - 3, [M[i - 3], M[i - 2], M[i - 1]], 0.92 * M[i] / 255); const px = (i >> 2) % W, py = (i >> 2) / W | 0; if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py; }
+      if (x1 >= x0) markDirty(k2, x0, y0, x1, y1); };
+    let Y;
+    if (toSten) { const r = mk('all'); Y = r.Y; L.stencil.getContext('2d').drawImage(r.g.canvas, 0, 0); st.hide.delete('stencil'); }
+    else { const r = mk('all'); Y = r.Y; inkIn(r.g, key); flushPig(); }   /* shadow, then fill and line on top, laid in as one */
+    const rr = Math.hypot(Y.w, Y.h) / 2 + 4 + (Lt.sh ? Math.hypot(Lt.shx, Lt.shy) * mm : 0); cropTop({ x0: Lt.x - rr, y0: Lt.y - rr, x1: Lt.x + rr, y1: Lt.y + rr });
     st.letters = st.letters.filter(l => l !== Lt); st.letSel = null; st.dirty = true; closePop(); letDraw(); placeGuides();
-    toast(toSten ? 'Baked into the stencil layer: trace it.' : 'Baked into the ink layer.', 1800); };
+    toast(toSten ? 'Baked into the stencil layer: trace it.' : 'Baked into the ink layer.', 2000); };
   pop.addEventListener('input', (e) => { const f = e.target.dataset?.lt, Lt = letCur(); if (!f || !Lt) return;
     Lt[f] = e.target.type === 'range' ? +e.target.value : e.target.value; if (f !== 's') st.letDef = { ...st.letDef, [f]: Lt[f] }; st.dirty = true;
-    const v = e.target.closest('label')?.querySelector('b'); if (v) v.textContent = f === 'mm' || f === 'ow' ? Lt[f] + ' mm' : f === 'sp' ? Math.round(Lt[f] * 100) + '%' : f === 'lh' ? '× ' + Lt[f] : f === 'curve' ? (+Lt.curve === 0 ? 'straight' : (Lt.curve > 0 ? 'up ' : 'down ') + Math.round(Math.abs(Lt.curve) * 1.8) + '°') : '';
+    const v = e.target.closest('label')?.querySelector('b'); if (v) v.textContent = ['mm', 'ow', 'shx', 'shy'].includes(f) ? Lt[f] + ' mm' : f === 'wrap' ? (+Lt.wrap ? Lt.wrap + ' mm' : 'off') : f === 'sp' || f === 'wamt' ? Math.round(Lt[f] * 100) + '%' : f === 'lh' ? '× ' + Lt[f] : f === 'curve' ? letBendTxt(Lt.curve) : '';
+    if (e.target.type === 'color') { const ch = e.target.closest('.tt-lchip'); if (ch) ch.style.background = Lt[f]; }
+    if (f === 'curve' && (!!+Lt.curve) !== (!!e.target.dataset.was)) { e.target.dataset.was = +Lt.curve ? '1' : ''; }
     if (f === 'font') { e.target.closest('.tt-letp').querySelector('textarea').style.fontFamily = Lt.font.replace(/"/g, "'"); letLoadFont(Lt.font).then(() => { letDraw(); placeGuides(); }); return; }
     letDraw(); placeGuides(); });
+  pop.addEventListener('change', (e) => { const Lt = letCur(); if (!Lt) return; const ck = e.target.dataset?.lck;
+    if (ck) { Lt[ck] = e.target.checked; st.letDef = { ...st.letDef, [ck]: Lt[ck] }; st.dirty = true; letDraw(); placeGuides(); return letPanel(); }
+    if (e.target.dataset?.lt === 'curve' || e.target.dataset?.lt === 'cs') { letPanel(); } });
+  pop.addEventListener('toggle', (e) => { const d = e.target.closest?.('[data-lsec]'); if (!d) return; d.open ? TT_LSEC_OPEN.add(d.dataset.lsec) : TT_LSEC_OPEN.delete(d.dataset.lsec); }, true);
   pop.addEventListener('click', async (e) => { const Lt = letCur(); if (!Lt) return; const lv = e.target.closest('[data-lv]')?.dataset.lv, la = e.target.closest('[data-la]')?.dataset.la;
     if (lv) { const [f, v] = lv.split(':'); Lt[f] = v === 'true' ? true : v === 'false' ? false : v; st.letDef = { ...st.letDef, [f]: Lt[f] }; st.dirty = true; letDraw(); placeGuides(); return letPanel(); }
     if (la === 'del') { st.letters = st.letters.filter(l => l !== Lt); st.letSel = null; st.dirty = true; closePop(); letDraw(); return placeGuides(); }
     if (la === 'dup') { const c2 = { ...Lt, id: 'l' + Date.now().toString(36), x: Lt.x + 6 * mm, y: Lt.y + 6 * mm }; st.letters.push(c2); st.letSel = c2.id; st.dirty = true; letDraw(); placeGuides(); return letPanel(); }
-    if (la === 'ink') { Lt.col = ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]); st.dirty = true; letDraw(); return toast('The text takes the ink on the needle.', 1400); }
+    if (la && la.startsWith('ink')) { const f = la.split(':')[1] || 'col'; Lt[f] = ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]); if (f !== 's') st.letDef = { ...st.letDef, [f]: Lt[f] }; st.dirty = true; letDraw(); letPanel(); return toast('That colour takes the ink on the needle.', 1400); }
     if (la === 'bake') return letBake(Lt);
     if (la === 'font') { const n2 = await dzImportFont(); if (n2) { Lt.font = n2; st.letDef = { ...st.letDef, font: n2 }; st.dirty = true; await letLoadFont(n2); letDraw(); placeGuides(); letPanel(); } } });
   Promise.all(st.letters.map(l => letLoadFont(l.font))).then(() => letDraw());
@@ -2251,6 +2316,19 @@ TT.open = async (el, id) => {
     const B = td.box; B.x0 = Math.min(B.x0, x0); B.y0 = Math.min(B.y0, y0); B.x1 = Math.max(B.x1, x1); B.y1 = Math.max(B.y1, y1); };
   // Fill: everything joined to the tapped spot that isn't inside ink (or a stencil line), packed with the needle's ink.
   // ps: the tapped point, plus its symmetry copies.
+  /* Fill styles, as the design studio's fills in tattoo form: solid ink, a fade from the needle's ink into a second
+     colour, or a texture worked in ink: dotwork (stipple), lines (hatching) or cross-hatching. Returns the colour and
+     strength for pixel (x, y) of a fill whose box is B, or null where the texture leaves skin. */
+  const fillStyle = (B, col, a) => { const F = st.fillo, k2 = F.kind || 'solid'; if (k2 === 'solid') return () => [col, a];
+    if (k2 === 'fade') { const c2 = ttHex(F.c2 || '#f0c75e').map(v => Math.round(v * 255)), w = Math.max(1, B.x1 - B.x0), h = Math.max(1, B.y1 - B.y0), cx = (B.x0 + B.x1) / 2, cy = (B.y0 + B.y1) / 2, R = Math.hypot(w, h) / 2;
+      return (x, y) => { const t = F.dir === 'up' ? (B.y1 - y) / h : F.dir === 'right' ? (x - B.x0) / w : F.dir === 'left' ? (B.x1 - x) / w : F.dir === 'centre' ? Math.min(1, Math.hypot(x - cx, y - cy) / R) : (y - B.y0) / h;
+        const u = Math.max(0, Math.min(1, t)); return [[0, 1, 2].map(i => Math.round(col[i] + (c2[i] - col[i]) * u)), a]; }; }
+    const cell = Math.max(2, (F.sz || 1.2) * mm), dens = F.dens ?? 0.5;
+    if (k2 === 'stipple') { const hash = (i, j) => { let h = (i * 374761393 + j * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }, rr = cell * (0.16 + 0.34 * dens);
+      return (x, y) => { const i = Math.floor(x / cell), j = Math.floor(y / cell); for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ci = i + di, cj = j + dj, px = (ci + 0.2 + hash(ci, cj) * 0.6) * cell, py = (cj + 0.2 + hash(cj, ci) * 0.6) * cell;
+          const d = Math.hypot(x - px, y - py); if (d < rr) return [col, a * Math.min(1, (rr - d) / 1.2 + 0.25)]; } return null; }; }
+    const lw = cell * (0.12 + 0.4 * dens), on = (v) => { const m = ((v % cell) + cell) % cell; return m < lw ? Math.min(1, Math.min(m, lw - m) / 0.8 + 0.35) : 0; };
+    return (x, y) => { const q = Math.max(on(x + y), k2 === 'cross' ? on(x - y) : 0); return q ? [col, a * q] : null; }; };
   const fillAt = async (ps, key) => { if (st.ink.v <= 0.02) return toast('Needle dry: dip in ink.', 1500);
     if (st.hide.has(key)) toast('That layer is hidden: show it to see the fill.');
     const SD = st.fillo.sten ? L.stencil.getContext('2d').getImageData(0, 0, W, H).data : null, Ds = INK.map(k2 => imgd[k2].data);
@@ -2261,8 +2339,8 @@ TT.open = async (el, id) => {
     while (stack.length) { const i = stack.pop(), x = i % W, y = (i - x) / W; n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
       for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && !seen[j]) { seen[j] = 1; if (wall(j)) seen[j] = 2; else stack.push(j); } }
     if (n > W * H * 0.85 && !await ask('That fills nearly the whole page (the outline may have a gap). Fill anyway?')) return;
-    snap(key); touched.add(key); const D = imgd[key].data, col = inkCx(key).col, a = 0.92 * (st.ink.s ?? 1);
-    for (let i = 0; i < seen.length; i++) if (seen[i]) layInk(D, i * 4, col, seen[i] === 2 ? a * 0.6 : a);   // the edge pixels too, so no skin shows along the line
+    snap(key); touched.add(key); const D = imgd[key].data, col = inkCx(key).col, a = 0.92 * (st.ink.s ?? 1), fs = fillStyle({ x0, y0, x1, y1 }, col, a);
+    for (let i = 0; i < seen.length; i++) if (seen[i]) { const x = i % W, q = fs(x, (i - x) / W); if (q) layInk(D, i * 4, q[0], seen[i] === 2 && st.fillo.kind === 'solid' ? q[1] * 0.6 : q[1]); }   // the edge pixels too, so no skin shows along the line
     markDirty(key, Math.max(0, x0 - 1), Math.max(0, y0 - 1), Math.min(W - 1, x1 + 1), Math.min(H - 1, y1 + 1)); const u = flushPig(); cropTop({ x0: x0 - 2, y0: y0 - 2, x1: x1 + 2, y1: y1 + 2 });
     st.dirty = true; paint(u ? { x0: u.x0 - 2, y0: u.y0 - 2, x1: u.x1 + 2, y1: u.y1 + 2 } : undefined); };
   // Shapes: the outline's points (page px) for a drag from a to b.
@@ -2294,7 +2372,8 @@ TT.open = async (el, id) => {
       const poly = (Q) => { mg.beginPath(); Q.forEach((q, i) => i ? mg.lineTo(q.x, q.y) : mg.moveTo(q.x, q.y)); mg.closePath(); mg.fill(); };
       poly(P); for (const M of pen.sym || []) { const c = st.sym.c; poly(P.map(q => ({ x: c.x + M[0] * (q.x - c.x) + M[1] * (q.y - c.y), y: c.y + M[2] * (q.x - c.x) + M[3] * (q.y - c.y) }))); }
       const MD = mg.getImageData(0, 0, W, H).data, D = imgd[key].data, aa = 0.92 * (st.ink.s ?? 1); let fx0 = W, fy0 = H, fx1 = 0, fy1 = 0;
-      for (let i = 3; i < MD.length; i += 4) if (MD[i] > 20) { layInk(D, i - 3, cx.col, aa * MD[i] / 255); const px = (i >> 2) % W, py = ((i >> 2) - px) / W; if (px < fx0) fx0 = px; if (px > fx1) fx1 = px; if (py < fy0) fy0 = py; if (py > fy1) fy1 = py; }
+      const fs = fillStyle({ x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) }, cx.col, aa);
+      for (let i = 3; i < MD.length; i += 4) if (MD[i] > 20) { const px = (i >> 2) % W, py = ((i >> 2) - px) / W, q = fs(px, py); if (!q) continue; layInk(D, i - 3, q[0], q[1] * MD[i] / 255); if (px < fx0) fx0 = px; if (px > fx1) fx1 = px; if (py < fy0) fy0 = py; if (py > fy1) fy1 = py; }
       if (fx1 >= fx0) { markDirty(key, fx0, fy0, fx1, fy1); pen.box = { x0: fx0, y0: fy0, x1: fx1, y1: fy1 }; } }
     const depth = depthOf(0.6, 20, 0), ink = Math.sqrt(Math.min(1, st.ink.v * 1.6)) * skinTake(), bp = pen.foot * 2 + 6 * mm, step = 0.08 * mm;
     for (let s = 1; s < P.length; s++) { const A = P[s - 1], B2 = P[s], n = Math.max(1, Math.ceil(Math.hypot(B2.x - A.x, B2.y - A.y) / step)), ang = Math.atan2(B2.y - A.y, B2.x - A.x);
@@ -2317,6 +2396,7 @@ TT.open = async (el, id) => {
       st.tool = 'needle'; sel(); placeGuides(); return toast('Picked up that colour: the needle is loaded.', 1600); }
     if (st.tool === 'path') { if (pth.a.length > 2 && !pth.closed) { const f = toScreen(pth.a[0]), r = stage.getBoundingClientRect(); if (Math.hypot(f.x - (e.clientX - r.left), f.y - (e.clientY - r.top)) < 16) { pth.closed = true; return placeGuides(); } }
       if (pth.closed) return; pth.a.push({ x: p.x, y: p.y, c: false }); return placeGuides(); }
+    if (st.tool === 'lasso' && st.lassoMode === 'colour') { if (lsel) selCommit(); return selColour(p); }
     if (st.tool === 'lasso') { if (lsel) selCommit(); td = { kind: 'lasso', id: e.pointerId, pts: [p], a: p, mode: st.lassoMode || 'lasso' }; return; }
     if (st.tool === 'fill') { const key = toolLayer(); if (key) fillAt([p, ...symPts(p)], key); return; }
     if (st.tool === 'shape') { td = { kind: 'shape', id: e.pointerId, a: p, b: p }; return drawCur(e); }
@@ -2352,14 +2432,23 @@ TT.open = async (el, id) => {
     for (const key of lsel.keys) { const g = L[key].getContext('2d'); g.putImageData(lsel.base[key], 0, 0, R.x0, R.y0, R.x1 - R.x0, R.y1 - R.y0); /* only where it was and is */ g.save(); g.translate(c.x, c.y); g.rotate(lsel.rot); g.scale(lsel.s * lsel.fx, lsel.s * lsel.fy);
       g.imageSmoothingQuality = 'high'; g.drawImage(lsel.fl[key], -lsel.b.w / 2, -lsel.b.h / 2); g.restore(); }
     st.dirty = true; paint(R); }); };
-  const liftSel = (poly) => {
+  /* Feathered edges: the mask's edge softened over r pixels (three box blurs, close to a smooth fall-off). */
+  const featherMask = (M, bw, bh, r) => { if (r < 1) return; const A = new Float32Array(bw * bh), T = new Float32Array(bw * bh); for (let i = 0; i < A.length; i++) A[i] = M[i * 4 + 3];
+    const box = (src, dst, horiz) => { const n = horiz ? bw : bh, m = horiz ? bh : bw, R = Math.max(1, Math.round(r / 2));
+      for (let j = 0; j < m; j++) { let acc = 0; const at = (i) => horiz ? j * bw + Math.max(0, Math.min(n - 1, i)) : Math.max(0, Math.min(n - 1, i)) * bw + j;
+        for (let i = -R; i <= R; i++) acc += src[at(i)]; for (let i = 0; i < n; i++) { dst[horiz ? j * bw + i : i * bw + j] = acc / (2 * R + 1); acc += src[at(i + R + 1)] - src[at(i - R)]; } } };
+    for (let p = 0; p < 3; p++) { box(A, T, true); box(T, A, false); } for (let i = 0; i < A.length; i++) M[i * 4 + 3] = A[i]; };
+  const liftSel = (poly, mask) => {
     let x0 = W, y0 = H, x1 = 0, y1 = 0; for (const q of poly) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+    const fe = mask ? 0 : Math.round((st.selo?.fe || 0) * mm); x0 -= fe; y0 -= fe; x1 += fe; y1 += fe;
     x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1)); const bw = x1 - x0, bh = y1 - y0;
     if (bw < 4 || bh < 4) return;
     const keys = st.lassoAll ? INK.filter(k2 => !st.hide.has(k2)) : [st.layer];   /* the stencil layer works too (e.g. lettering) */
     if (!st.lassoAll && INK.includes(st.layer) && st.layer !== 'high' && !st.hide.has('high')) keys.push('high');   /* white goes with it: a placed picture keeps its white on the highlights layer */
-    const m = document.createElement('canvas'); m.width = bw; m.height = bh; const mg = m.getContext('2d'); mg.beginPath(); poly.forEach((q, i) => i ? mg.lineTo(q.x - x0, q.y - y0) : mg.moveTo(q.x - x0, q.y - y0)); mg.closePath(); mg.fill();
-    const M = mg.getImageData(0, 0, bw, bh).data; let any = false;
+    let M; if (mask) { M = new Uint8ClampedArray(bw * bh * 4); for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) M[(y * bw + x) * 4 + 3] = mask[(y + y0) * W + x + x0]; }
+    else { const m = document.createElement('canvas'); m.width = bw; m.height = bh; const mg = m.getContext('2d'); mg.beginPath(); poly.forEach((q, i) => i ? mg.lineTo(q.x - x0, q.y - y0) : mg.moveTo(q.x - x0, q.y - y0)); mg.closePath(); mg.fill();
+      M = mg.getImageData(0, 0, bw, bh).data; featherMask(M, bw, bh, fe); }
+    let any = false;
     const h = state(keys[0]); h.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(h); if (hist.length > 15) hist.shift(); fut.length = 0;
     const base = {}, fl = {};
     for (const key of keys) { const D = INK.includes(key) ? imgd[key].data : L[key].getContext('2d').getImageData(0, 0, W, H).data, f = new ImageData(bw, bh), F = f.data;
@@ -2369,15 +2458,38 @@ TT.open = async (el, id) => {
       base[key] = new ImageData(new Uint8ClampedArray(D), W, H); touched.add(key); }
     if (!any) { hist.pop(); for (const key of keys) syncIn(key); return toast('Nothing inside that lasso on ' + (st.lassoAll ? 'the ink layers.' : 'this layer.'), 1800); }
     lsel = { keys, base, fl, b: { x: x0, y: y0, w: bw, h: bh }, tx: 0, ty: 0, s: 1, rot: 0, fx: 1, fy: 1, poly };
-    selApply(); placeGuides(); };
+    selApply(); placeGuides(); if (!pop.hidden && st.tool === 'lasso') pop.querySelectorAll('[data-selfade]').forEach(x => x.disabled = false); };
+  /* Select by colour: the ink at the tapped spot and everything like it (within the tolerance), only what touches it
+     or across the whole layer, on the current layer (or every ink layer, as the lasso is set). Feathering softens it. */
+  const selColour = (p) => { const x = Math.round(p.x), y = Math.round(p.y); if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const keys = st.lassoAll ? INK.filter(k2 => !st.hide.has(k2)) : [st.layer], Dd = keys.map(k2 => INK.includes(k2) ? imgd[k2].data : L[k2].getContext('2d').getImageData(0, 0, W, H).data);
+    const px = (i) => { let r = 0, g = 0, b = 0, a = 0; for (const D of Dd) { const al = D[i * 4 + 3] / 255; if (!al) continue; r += D[i * 4] * al; g += D[i * 4 + 1] * al; b += D[i * 4 + 2] * al; a = 1 - (1 - a) * (1 - al); } return a ? [r / Math.max(a, 1e-6), g / Math.max(a, 1e-6), b / Math.max(a, 1e-6), a] : [0, 0, 0, 0]; };
+    const i0 = y * W + x, c0 = px(i0); if (c0[3] < 0.05) return toast('No ink there: tap on the colour to pick up.', 1600);
+    const tol = (st.selo.tol ?? 0.15) * 441, like = (c) => c[3] > 0.05 && Math.hypot(c[0] - c0[0], c[1] - c0[1], c[2] - c0[2]) <= tol;
+    const mask = new Uint8ClampedArray(W * H); let x0 = W, y0 = H, x1 = 0, y1 = 0, n = 0;
+    const take = (i) => { mask[i] = 255; n++; const xx = i % W, yy = (i - xx) / W; if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy; };
+    if (st.selo.cont !== false) { const seen = new Uint8Array(W * H), stack = [i0]; seen[i0] = 1;
+      while (stack.length) { const i = stack.pop(); take(i); const xx = i % W; for (const j of [xx > 0 ? i - 1 : -1, xx < W - 1 ? i + 1 : -1, i - W, i + W]) if (j >= 0 && j < W * H && !seen[j]) { seen[j] = 1; if (like(px(j))) stack.push(j); } } }
+    else for (let i = 0; i < W * H; i++) if (like(px(i))) take(i);
+    if (n < 4) return toast('Too little of that colour to pick up.', 1600);
+    const fe = Math.round((st.selo.fe || 0) * mm); if (fe > 0) { const bw = Math.min(W, x1 + fe + 1) - Math.max(0, x0 - fe), bh = Math.min(H, y1 + fe + 1) - Math.max(0, y0 - fe), ox = Math.max(0, x0 - fe), oy = Math.max(0, y0 - fe), M = new Uint8ClampedArray(bw * bh * 4);
+      for (let yy = 0; yy < bh; yy++) for (let xx = 0; xx < bw; xx++) M[(yy * bw + xx) * 4 + 3] = mask[(yy + oy) * W + xx + ox]; featherMask(M, bw, bh, fe);
+      for (let yy = 0; yy < bh; yy++) for (let xx = 0; xx < bw; xx++) mask[(yy + oy) * W + xx + ox] = M[(yy * bw + xx) * 4 + 3]; x0 = ox; y0 = oy; x1 = ox + bw - 1; y1 = oy + bh - 1; }
+    liftSel([{ x: x0, y: y0 }, { x: x1 + 1, y: y0 }, { x: x1 + 1, y: y1 + 1 }, { x: x0, y: y1 + 1 }], mask); };
+  /* Fade out what the lasso holds, as the design studio's transparency fade: clear at one side (or the edge), full at the other. */
+  const selFade = (dir) => { if (!lsel) return; for (const k2 of lsel.keys) { const c = lsel.fl[k2], g = c.getContext('2d'), w = c.width, h = c.height;
+      const gr = dir === 'centre' ? g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.hypot(w, h) / 2) : g.createLinearGradient(dir === 'right' ? w : 0, dir === 'down' ? h : 0, dir === 'left' ? w : 0, dir === 'up' ? h : 0);
+      if (dir === 'centre') { gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); } else { gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,1)'); }
+      g.save(); g.globalCompositeOperation = 'destination-in'; g.fillStyle = gr; g.fillRect(0, 0, w, h); g.restore(); }
+    selApply(); };
   function keepPrefs() {
     Settings.set('tt_mk', JSON.stringify({ col: st.mk.col, r: st.mk.r }));
     if (CHEAT) Settings.set('tt_cheat_prefs', JSON.stringify({ smooth: st.smooth, fast: st.fast, endless: st.endless, rulerOn: st.ruler.on, sym: { mode: st.sym.mode, n: st.sym.n, mir: st.sym.mir },
-      grid: { on: st.grid.on, mm: st.grid.mm, type: st.grid.type, snap: st.grid.snap, op: st.grid.op, lock: st.grid.lock }, liq: st.liq, letDef: st.letDef, lassoAll: st.lassoAll, lassoMode: st.lassoMode, blend: st.blend, fillo: st.fillo, shape: st.shape, pathP: st.pathP })); }
+      grid: { on: st.grid.on, mm: st.grid.mm, type: st.grid.type, snap: st.grid.snap, op: st.grid.op, lock: st.grid.lock }, liq: st.liq, letDef: st.letDef, lassoAll: st.lassoAll, lassoMode: st.lassoMode, selo: st.selo, blend: st.blend, fillo: st.fillo, shape: st.shape, pathP: st.pathP })); }
   // Back to the defaults: the marker and magnum settings, and (in cheat mode) every cheat tool, here and for new pieces.
   async function resetTools() { if (!await ask('Put the tool settings back to the defaults?\n\nThe marker, the magnum angle' + (CHEAT ? ' and every cheat tool (smoothing, fast lines, endless ink, grid, symmetry, ruler and the rest)' : '') + '. Your work is not changed.')) return;
     await Settings.set('tt_mk', ''); await Settings.set('tt_magflip', '1'); st.mk = { col: MK_COLS[0], r: 0.6, wipe: false }; st.magAng = 75; st.magTilt = true; st.magFlip = true;
-    if (CHEAT) { await Settings.set('tt_cheat_prefs', '{}'); Object.assign(st, { smooth: 45, fast: false, endless: false, lassoAll: false, pathP: 0.6, blend: { r: 3, i: 0.5 }, fillo: { sten: true }, shape: { kind: 'rect', fill: false }, liq: { r: 8, s: 0.5, all: true } });
+    if (CHEAT) { await Settings.set('tt_cheat_prefs', '{}'); Object.assign(st, { smooth: 45, fast: false, endless: false, lassoAll: false, pathP: 0.6, blend: { r: 3, i: 0.5 }, fillo: { sten: true, kind: 'solid', c2: '#f0c75e', dir: 'down', dens: 0.5, sz: 1.2 }, selo: { fe: 0, tol: 0.15, cont: true }, shape: { kind: 'rect', fill: false }, liq: { r: 8, s: 0.5, all: true } });
       st.ruler.on = false; Object.assign(st.sym, { mode: 'off', n: 8, mir: false, c: { x: W / 2, y: H / 2 } }); st.grid = { on: false, mm: 10 }; }
     st.dirty = true; closePop(); drawAng(); meterBuild(); meter(lastM); placeGuides(); drawCur(); toast('Tool settings are back to the defaults.', 1800); }
   /* ---------- Adjust colour ----------
@@ -2762,6 +2874,10 @@ TT.open = async (el, id) => {
   let curNext = null, curRaf = 0;
   cv.addEventListener('pointerleave', () => { curAt = null; cancelAnimationFrame(curRaf); curRaf = 0; drawCur(); });
 
+  /* Fingers only move and zoom: the pen draws, a finger never does (the same switch as Pen only in the settings). */
+  const drawFingers = () => { const b = $('#tt-fingers'); if (!b) return; b.classList.toggle('on', !!cal.penOnly); b.dataset.tip = cal.penOnly ? 'Fingers only move and zoom (on): only the pen draws' : 'Fingers only move and zoom (off): a finger draws too'; };
+  $('#tt-fingers')?.addEventListener('click', (e) => { e.stopPropagation(); cal.penOnly = !cal.penOnly; TT.saveCal(cal); drawFingers(); toast(cal.penOnly ? 'Fingers only move and zoom: only the pen draws.' : 'Fingers draw too.', 1600); if (st.panel) drawSide(); });
+  drawFingers();
   /* ---------- Pointer: pen draws; fingers move the page (or draw too, when allowed) ---------- */
   const pts = new Map(); let pinch = null, pan = null, space = false;
   cv.addEventListener('pointerdown', (e) => {
@@ -2815,10 +2931,55 @@ TT.open = async (el, id) => {
     if (e.type === 'keydown' && (e.key === ',' || e.key === '.') && isMag()) { setRoll2((st.magRoll || 0) + (e.key === '.' ? 0.1 : -0.1)); toast('Stack tilt: ' + rollText(), 900); }
     if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     if (e.type === 'keydown' && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
-    if (e.type === 'keydown' && CHEAT) {   // Enter puts a lasso down or finishes adjusting a snap; Escape cancels; Delete removes the lassoed part
+    if (e.type !== 'keydown') return;
+    if (e.key === '?' || (e.key === '/' && e.shiftKey)) { e.preventDefault(); return ttKeysSheet(); }
+    if (e.key === 'Escape' && $('#tt-keys')) return $('#tt-keys').remove();
+    if (CHEAT) {   // Enter puts a lasso down or finishes adjusting a snap; Escape cancels; Delete removes the lassoed part
       if (e.key === 'Enter') { if (lsel) selCommit(); else if (snapE) snapFinish(); }
-      if (e.key === 'Escape') { if (lsel) selCancel(); else if (snapE) snapFinish(); }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && lsel) { e.preventDefault(); selCommit(true); } } };
+      if (e.key === 'Escape') { if (lsel) selCancel(); else if (snapE) snapFinish(); else if (!pop.hidden) closePop(); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && lsel) { e.preventDefault(); selCommit(true); }
+      const C = e.ctrlKey || e.metaKey, k1 = e.key.toLowerCase();
+      /* the clipboard and the selection, as in the design studio */
+      if (C && !e.altKey) {
+        if (k1 === 'a') { e.preventDefault(); return selAll(); }
+        if (k1 === 'c' && lsel) { e.preventDefault(); clipTake(); return toast('Copied.', 900); }
+        if (k1 === 'x' && lsel) { e.preventDefault(); clipTake(); selCommit(true); return toast('Cut.', 900); }
+        if (k1 === 'v' && TT_CLIP) { e.preventDefault(); return clipPaste(e.shiftKey); }
+        if (k1 === 'd' && lsel) { e.preventDefault(); clipTake(); selCommit(); return clipPaste(true); }
+        return; }
+      const mv = lsel && { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (mv) { e.preventDefault(); const d = (e.shiftKey ? 20 : e.altKey ? 1 : 4) * Math.max(1, W / 1500); lsel.tx += mv[0] * d; lsel.ty += mv[1] * d; selApply(); return placeGuides(); }
+      /* single keys pick the tools */
+      if (!e.altKey && !e.shiftKey) { const r = TT_TOOL_KEYS[k1]; if (r) { e.preventDefault(); return toolKey(r); } }
+      if (k1 === 'm' && !e.altKey) { e.preventDefault(); st.sym.mode = st.sym.mode && st.sym.mode !== 'off' ? 'off' : (st.sym.last || 'v'); if (st.sym.mode !== 'off') st.sym.last = st.sym.mode; st.dirty = true; keepPrefs(); placeGuides(); paint();
+        return toast(st.sym.mode === 'off' ? 'Symmetry off.' : 'Symmetry on.', 1000); }
+    } else if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { const r = { b: 'needle', k: 'marker', e: 'erase' }[e.key.toLowerCase()]; if (r) { e.preventDefault(); return toolKey(r); } } };
+  /* Pick a tool from the keyboard: the same as tapping it on the rail (the tools in the Tools menu included). */
+  const toolKey = (r) => { const rail = $('#tt-rail'), real = rail.querySelector(`[data-r="${r}"]`), anchor = real || rail.querySelector('[data-r="tools"]');
+    const b = real || Object.assign(document.createElement('button'), { className: 'tt-tb' }); b.dataset.r = r; if (!real) b.getBoundingClientRect = () => anchor.getBoundingClientRect();
+    rail.onclick({ target: b, preventDefault() {}, stopPropagation() {} }); placeGuides(); };
+  /* Select all: the whole layer (or every ink layer, as the lasso is set) lifted to move, size, turn or flip. */
+  const selAll = () => { if (lsel) selCommit(); st.tool = 'lasso'; sel(); liftSel([{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }]); };
+  /* The simulator's clipboard: the lifted part of each layer and how it was turned, sized and flipped. */
+  const clipTake = () => { if (!lsel) return; const fl = {}; for (const k of lsel.keys) { const c = document.createElement('canvas'); c.width = lsel.fl[k].width; c.height = lsel.fl[k].height; c.getContext('2d').drawImage(lsel.fl[k], 0, 0); fl[k] = c; }
+    TT_CLIP = { keys: [...lsel.keys], fl, b: { ...lsel.b }, tx: lsel.tx, ty: lsel.ty, s: lsel.s, rot: lsel.rot, fx: lsel.fx, fy: lsel.fy, W, H }; };
+  /* Paste: floats on the same layers, a little down and right (Ctrl Shift V or Ctrl D: in the same spot). One undo step. */
+  const clipPaste = (inPlace) => { const P = TT_CLIP; if (!P) return; if (lsel) selCommit();
+    const keys = P.keys.filter(k => L[k]), h = state(keys[0]); h.more = keys.slice(1).map(k2 => ({ key: k2, data: L[k2].getContext('2d').getImageData(0, 0, W, H) })); hist.push(h); if (hist.length > 15) hist.shift(); fut.length = 0;
+    const base = {}; for (const k of keys) { base[k] = INK.includes(k) ? new ImageData(new Uint8ClampedArray(imgd[k].data), W, H) : L[k].getContext('2d').getImageData(0, 0, W, H); touched.add(k); }
+    const off = inPlace ? 0 : Math.round(Math.max(W, H) * 0.02), b = { ...P.b, x: P.b.x * W / P.W, y: P.b.y * H / P.H };
+    lsel = { keys, base, fl: P.fl, b, tx: P.tx + off, ty: P.ty + off, s: P.s, rot: P.rot, fx: P.fx, fy: P.fy, poly: null };
+    st.tool = 'lasso'; sel(); selApply(); placeGuides(); toast('Pasted: drag it into place, then Done.', 1600); };
+  /* The keys, in a sheet (? opens it). */
+  const ttKeysSheet = () => { if ($('#tt-keys')) return $('#tt-keys').remove(); const o = document.createElement('div'); o.id = 'tt-keys';
+    const row = (k, t) => `<div class="tt-krow"><span>${k.split(' ').map(x => `<kbd>${x}</kbd>`).join(' ')}</span><span>${t}</span></div>`;
+    o.innerHTML = `<div class="card tt-kcard"><div class="dz-lh"><b>Shortcuts</b><button class="dz-ib" data-kx aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="tt-kcols"><div><div class="lbl">Tools</div>${row('B', 'Needle')}${row('K', 'Skin marker')}${row('E', 'Laser')}${CHEAT ? row('P', 'Path') + row('T', 'Lettering') + row('S', 'Blend') + row('G', 'Fill') + row('U', 'Shapes') + row('L', 'Lasso') + row('I', 'Pick up a colour') + row('W', 'Liquify') + row('M', 'Symmetry on or off') : ''}
+        <div class="lbl">Moving about</div>${row('Space', 'Hold and drag to move the skin')}${row('[ ]', 'Turn a magnum')}${row(', .', 'Tilt a magnum stack')}</div>
+        <div><div class="lbl">Editing</div>${row('Ctrl Z', 'Undo')}${row('Ctrl Shift Z', 'Redo')}${row('Ctrl Y', 'Redo')}
+        ${CHEAT ? `<div class="lbl">Lasso</div>${row('Ctrl A', 'Select the whole layer')}${row('Ctrl C', 'Copy')}${row('Ctrl X', 'Cut')}${row('Ctrl V', 'Paste')}${row('Ctrl Shift V', 'Paste in the same spot')}${row('Ctrl D', 'Duplicate in place')}${row('Arrows', 'Nudge (Shift: further, Alt: a touch)')}${row('Enter', 'Put it down')}${row('Delete', 'Remove it')}${row('Esc', 'Put it back where it was')}` : ''}
+        <div class="lbl">Help</div>${row('?', 'This list')}</div></div></div>`;
+    o.onclick = (e) => { if (e.target === o || e.target.closest('[data-kx]')) o.remove(); }; document.body.appendChild(o); };
   addEventListener('keydown', keys); addEventListener('keyup', keys);
   document.addEventListener('input', (e) => { const n = e.target; if (n.matches?.('[data-nthin]')) { nlook.thin = +n.value / 100; Settings.set('tt_thin', n.value); const b = $('#tt-thinv'); if (b) b.textContent = n.value + '%'; drawCur(); } if (n.matches?.('[data-ntex]')) { nlook.tex = +n.value / 100; Settings.set('tt_tex', n.value); const b = $('#tt-texv'); if (b) b.textContent = n.value + '%'; } });
   stage.querySelector('.tt-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
@@ -2957,6 +3118,7 @@ TT.open = async (el, id) => {
     if (r === 'text' && st.letSel) { st.tool = 'text'; sel(); return letPanel(); }
     if (r === 'path') { closePop(); if (lsel) selCommit(); if (snapE) snapFinish(); st.tool = 'path'; sel(); placeGuides(); return toast('Tap to place points. Drag a point to move it, tap it for a corner. Apply tattoos it with the needle.', 3200); }
     if (r === 'blend' || r === 'fill' || r === 'shape' || r === 'lasso' || r === 'liquify' || r === 'text') { if (st.tool === r && !pop.hidden) return closePop(); if (lsel && r !== 'lasso') selCommit(); st.tool = r; sel(); drawCur(); return toolPop(b); }
+    if (r === 'layers' && ttLmode() === 'thumb') { st.strip = !st.strip; if (st.panel === 'layers') st.panel = null; return drawSide(); }
     st.panel = st.panel === r ? null : r; drawSide();
   };
   pop.onclick = async (e) => {
@@ -2969,7 +3131,10 @@ TT.open = async (el, id) => {
       closePop(); return dzSavePattern(c, title.trim() || 'Pattern', toDev); }
     if (e.target.closest('[data-greset]')) { delete st.grid.vp; st.dirty = true; return placeGuides(); }
     const tb = e.target.closest('.tt-tb'); if (tb) { const top = pop.style.top; pop.hidden = true; $('#tt-rail').onclick({ target: tb }); pop.style.top = top; return placeGuides(); }
-    const lmb = e.target.closest('[data-lmode]'); if (lmb) { st.lassoMode = lmb.dataset.lmode; st.dirty = true; pop.querySelectorAll('[data-lmode]').forEach(x => x.classList.toggle('on', x === lmb)); return; }
+    const lmb = e.target.closest('[data-lmode]'); if (lmb) { st.lassoMode = lmb.dataset.lmode; st.dirty = true; keepPrefs(); return toolPop($('#tt-rail [data-r="tools"]')); }
+    const fsv = e.target.closest('[data-fsv]'); if (fsv) { const [f, v] = fsv.dataset.fsv.split(':'); st.fillo[f] = v; st.dirty = true; keepPrefs(); return toolPop($('#tt-rail [data-r="tools"]')); }
+    if (e.target.closest('[data-fink]')) { st.fillo.c2 = ttToHex(st.ink.v > 0.02 ? st.ink.c : [0.08, 0.08, 0.08]); st.dirty = true; keepPrefs(); return toolPop($('#tt-rail [data-r="tools"]')); }
+    const sf = e.target.closest('[data-selfade]'); if (sf) { selFade(sf.dataset.selfade); return; }
     const shb = e.target.closest('[data-shp]'); if (shb) { st.shape.kind = shb.dataset.shp; st.dirty = true; pop.querySelectorAll('[data-shp]').forEach(x => x.classList.toggle('on', x === shb)); return; }
     const sy = e.target.closest('[data-sym]'); if (sy) { st.sym.mode = sy.dataset.sym; st.dirty = true; pop.querySelectorAll('[data-sym]').forEach(x => x.classList.toggle('on', x === sy));
       pop.querySelector('[data-symn]').hidden = pop.querySelector('[data-symm]').hidden = st.sym.mode !== 'mandala'; $('#tt-rail [data-r="sym"]')?.classList.toggle('on', st.sym.mode !== 'off'); return placeGuides(); }
@@ -2985,8 +3150,10 @@ TT.open = async (el, id) => {
     if (e.target.matches('[data-gridmm]')) { st.grid.mm = +e.target.value; $('#tt-gridv').textContent = st.grid.mm + ' mm'; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-endless]')) { st.endless = e.target.checked; st.dirty = true; return toast(st.endless ? 'Endless ink: the needle stays loaded.' : 'Ink runs out again as you work.', 1600); }
     if (e.target.matches('[data-fast]')) { st.fast = e.target.checked; st.dirty = true; return toast(st.fast ? 'Fast lines on: pull lines as quick as you like.' : 'Fast lines off.', 1600); }
-    if (e.target.matches('[data-tl]')) { const [o, f] = e.target.dataset.tl.split('.'); st[o][f] = e.target.type === 'checkbox' ? e.target.checked : +e.target.value; st.dirty = true;
-      const v = e.target.closest('label').querySelector('b'); if (v) v.textContent = f === 'r' || f === 'mm' ? st[o][f] + ' mm' : Math.round(st[o][f] * 100) + '%'; return drawCur(); }
+    if (e.target.matches('[data-fcol]')) { st.fillo.c2 = e.target.value; st.dirty = true; const ch = e.target.closest('.tt-lchip'); if (ch) ch.style.background = st.fillo.c2; return keepPrefs(); }
+    if (e.target.matches('[data-tl]')) { const [o, f] = e.target.dataset.tl.split('.'); st[o][f] = e.target.type === 'checkbox' ? e.target.checked : +e.target.value; st.dirty = true; keepPrefs();
+      if (o === 'shape' && f === 'fill') return toolPop($('#tt-rail [data-r="tools"]'));
+      const v = e.target.closest('label').querySelector('b'); if (v) v.textContent = o === 'selo' && f === 'fe' ? (+st[o][f] ? st[o][f] + ' mm' : 'off') : f === 'r' || f === 'mm' || e.target.dataset.fmt === 'mm' ? st[o][f] + ' mm' : Math.round(st[o][f] * 100) + '%'; return drawCur(); }
     if (e.target.matches('[data-symr]')) { st.sym.n = +e.target.value; $('#tt-symnv').textContent = st.sym.n; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-symmir]')) { st.sym.mir = e.target.checked; st.dirty = true; return placeGuides(); }
     if (e.target.matches('[data-angr]')) { setAng(+e.target.value); pop.querySelectorAll('[data-ang]').forEach(x => x.classList.toggle('on', +x.dataset.ang === st.magAng)); }
@@ -3152,8 +3319,43 @@ TT.open = async (el, id) => {
       piece: { needle: st.needle, stretch: st.stretch, magAng: st.magAng, magTilt: st.magTilt, magRoll: st.magRoll || 0, magFlip: st.magFlip }, device: { ua: navigator.userAgent, screen: [screen.width, screen.height], dpr: devicePixelRatio } });
     try { await navigator.clipboard.writeText(txt); toast('Settings copied. Paste them into a message to send on.'); } catch { await askText('Copy these settings:', txt); }
   };
+  /* ---------- Layers: the same panel as the design studio ----------
+     Compact rows with a thumbnail of each layer, in three widths picked at the top (shared with the design studio):
+     thumbnails only (a strip at the edge, with any other panel open beside it), names, or every option. The title and
+     the width buttons stay put while the list scrolls; the help sits behind the ? by the title. */
+  const LMI = { thumb: ['Thumbnails only', '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'],
+    list: ['Layers with names', '<rect x="3" y="4" width="6" height="6" rx="1.5"/><rect x="3" y="14" width="6" height="6" rx="1.5"/><path d="M12 7h9M12 17h9"/>'],
+    full: ['All layer options', '<rect x="2" y="4" width="5" height="5" rx="1"/><rect x="2" y="15" width="5" height="5" rx="1"/><path d="M9 6.5h6M9 17.5h6"/><circle cx="18.5" cy="6.5" r="1.4"/><circle cx="18.5" cy="17.5" r="1.4"/>'] };
+  const EYE_I = '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>', EYE_O = '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  const LOCK_I = (on) => `<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 ${on ? '8 0v3' : '7.5-2'}"/></svg>`;
+  const LTAG = { stencil: 'S', marker: 'M', line: 'L', shadow: 'Sh', mid: 'Md', light: 'Lt', high: 'Hi' };
+  const drawLayersTT = (host) => { const lm = ttLmode(); host.classList.remove('lm-thumb', 'lm-list', 'lm-full'); host.classList.add('lm-' + lm, 'tt-lp');
+    const hl = 'Tap a layer to work on it; the slider sets how much it shows, the lock stops it changing. The stencil is only a guide: it isn\u2019t saved into PNGs or sent to the stencil maker.' + (CHEAT ? '' : ' Like on skin, packing and shading wipe the stencil off around where you work; the refresh button puts it back.') + ' The three buttons at the top show thumbnails only, layers with names, or every option.';
+    host.innerHTML = `<div class="dz-lhead"><div class="dz-lh"><b>Layers <small>${TT_LAYERS.length}</small> ${help(hl)}</b><span class="dz-hb"><button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span></div>
+      <div class="dz-lbar"><span class="dz-lmseg" role="group" aria-label="Layer panel size">${Object.entries(LMI).map(([k, [tip, ic]]) => `<button data-lmode="${k}" class="${lm === k ? 'on' : ''}" data-tip="${tip}" aria-label="${tip}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('')}</span></div></div>
+      <div class="dz-ll">${[...TT_LAYERS].map(([key, n]) => { const hid = st.hide.has(key), lk = st.lockL.has(key), op = key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1);
+        return `<div class="dz-lr ${st.layer === key ? 'on' : ''} ${hid ? 'off' : ''}" data-ly="${key}">
+        <span class="lt" title="${n}"><canvas data-ltt="${key}" width="1" height="1"></canvas><i class="lti">${LTAG[key]}</i></span>
+        <span class="nm">${n}</span>
+        <span class="lopv" title="How much it shows">${Math.round(op * 100)}%</span>
+        ${key === 'stencil' && !CHEAT ? `<button class="dz-ib tt-xb ${wearAny ? 'tt-wear' : ''}" data-stref data-tip="Refresh the stencil: put back what working the skin has wiped off" aria-label="Refresh stencil"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>` : ''}
+        ${key === 'stencil' ? `<button class="dz-ib tt-xb" data-stl data-tip="Load a picture to trace" aria-label="Load stencil"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>` : ''}
+        <button class="dz-ib" data-hide data-tip="${hid ? 'Show' : 'Hide'}" aria-label="${hid ? 'Show' : 'Hide'}">${hid ? EYE_O : EYE_I}</button>
+        <button class="dz-ib ${lk ? 'on' : ''}" data-llock data-tip="${lk ? 'Unlock' : 'Lock: nothing can change on this layer'}" aria-label="Lock">${LOCK_I(lk)}</button>
+        <button class="dz-ib tt-clr" data-clear ${lk ? 'disabled' : ''} data-tip="${lk ? 'Unlock it to clear' : 'Clear this layer'}" aria-label="Clear"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+        ${st.layer === key && lm !== 'thumb' ? `<input type="range" class="dz-lop" min="0" max="1" step="0.05" value="${op}" data-lop aria-label="Opacity" title="How much it shows">` : ''}</div>`; }).join('')}</div>`;
+    requestAnimationFrame(ttThumbs); };
+  /* Each layer's thumbnail: the layer drawn small on the skin colour (redrawn when it is shown or the layers change). */
+  const ttThumbs = () => { const dpr = Math.min(2, devicePixelRatio || 1);
+    for (const c of document.querySelectorAll('#tt-side canvas[data-ltt], #tt-strip canvas[data-ltt]')) { const src = L[c.dataset.ltt]; if (!src) continue;
+      const T = Math.round((c.clientWidth || 30) * dpr), s2 = T / Math.max(W, H), w = W * s2, h = H * s2; c.width = c.height = T; const g = c.getContext('2d');
+      g.fillStyle = st.skin || '#e2b493'; g.fillRect(0, 0, T, T); g.drawImage(src, (T - w) / 2, (T - h) / 2, w, h); c.parentElement.classList.add('has'); } };
   let sidePrev = null, askedFor = '', feelTab = 'start';
   const drawSide = async () => {
+    /* thumbnails only: the strip at the edge, any other panel beside it */
+    if (st.panel === 'layers' && ttLmode() === 'thumb') { st.panel = null; st.strip = true; }
+    if (st.strip && ttLmode() !== 'thumb') st.strip = false;
+    strip.hidden = !st.strip; stage.closest('.dz-ed')?.classList.toggle('dz-hasstrip', !!st.strip); if (st.strip) drawLayersTT(strip); else if (strip.innerHTML) strip.innerHTML = '';
     const leaving = sidePrev === 'feel' && st.panel !== 'feel'; sidePrev = st.panel;
     if (leaving && TT.changed() && askedFor !== TT.canon(TT.settingsNow())) { askedFor = TT.canon(TT.settingsNow()); if (await ask('You changed your settings. Replace your saved settings with these?\n\nIf not, the changes reset the next time the app loads.')) { await TT.saveSettings(); toast('Saved: these are your settings from now on.'); } }
     sel(st.panel); side.hidden = !st.panel; if (!st.panel) return;
@@ -3170,19 +3372,7 @@ TT.open = async (el, id) => {
         <div class="tt-addr"><button class="btn small" data-radd="file">This device</button><button class="btn small" data-radd="refs">References</button><button class="btn small" data-radd="sten">Stencils</button><button class="btn small" data-radd="pf">Portfolio</button></div>`;
       return;
     }
-    if (st.panel === 'layers') {
-      side.innerHTML = `<div class="dz-lh"><b>Layers <small>${TT_LAYERS.length}</small></b><button class="dz-ib" data-close data-tip="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-        <div class="tt-layers">${[...TT_LAYERS].map(([key, n]) => `<div class="tt-lr ${st.layer === key ? 'on' : ''}" data-ly="${key}">
-          <span class="nm">${n}</span>
-          ${key === 'stencil' && !CHEAT ? `<button class="dz-ib ${wearAny ? 'tt-wear' : ''}" data-stref data-tip="Refresh the stencil: put back what working the skin has wiped off" aria-label="Refresh stencil"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>` : ''}
-          ${key === 'stencil' ? `<button class="dz-ib" data-stl data-tip="Load a picture to trace" aria-label="Load stencil"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>` : ''}
-          <button class="dz-ib" data-hide data-tip="${st.hide.has(key) ? 'Show' : 'Hide'}" aria-label="${st.hide.has(key) ? 'Show' : 'Hide'}">${st.hide.has(key) ? '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 6.1A9 9 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.7M6.6 6.6C3.8 8.3 2 12 2 12s4 7 10 7a9 9 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'}</button>
-          <button class="dz-ib ${st.lockL.has(key) ? 'on' : ''}" data-llock data-tip="${st.lockL.has(key) ? 'Unlock' : 'Lock: nothing can change on this layer'}" aria-label="Lock">${st.lockL.has(key) ? '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>'}</button>
-          <button class="dz-ib" data-clear ${st.lockL.has(key) ? 'disabled' : ''} data-tip="${st.lockL.has(key) ? 'Unlock it to clear' : 'Clear this layer'}" aria-label="Clear"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-          <input type="range" min="0" max="1" step="0.05" value="${key === 'stencil' ? st.op.stencil : (st.op[key] ?? 1)}" data-lop aria-label="Opacity"></div>`).join('')}</div>
-        <p class="muted dz-hint">Tap a layer to work on it; the slider sets how much it shows, the lock stops it changing. The stencil is only a guide: it isn't saved into PNGs or sent to the stencil maker.${CHEAT ? '' : ' Like on skin, packing and shading wipe the stencil off around where you work; the refresh button puts it back.'}</p>`;
-      return;
-    }
+    if (st.panel === 'layers') { drawLayersTT(side); return; }
     const nd = TT_NEEDLES.find(n => n.id === st.needle), f = feel;
     const tab = (k, n) => `<button data-ftab="${k}" class="${feelTab === k ? 'on' : ''}">${n}</button>`, intro = (s) => `<p class="tt-fintro">${s}</p>`;
     const pages = {
@@ -3229,9 +3419,11 @@ TT.open = async (el, id) => {
     padInit();
   };
   side.addEventListener('pointerdown', (e) => { side._lastPd = e; }, true);   /* the pen's lean when a button is tapped (Set steepest lean) */
-  side.addEventListener('click', async (e) => {
+  const sideClickTT = async (e) => {
     const t = e.target;
-    if (t.closest('[data-close]')) { st.panel = null; return drawSide(); }
+    if (t.closest('[data-close]')) { if (strip.contains(t)) st.strip = false; else st.panel = null; return drawSide(); }
+    const lmb = t.closest('[data-lmode]'); if (lmb) { const m = lmb.dataset.lmode; await Settings.set('dz_lmode', m);
+      if (m === 'thumb') { st.strip = true; if (st.panel === 'layers') st.panel = null; } else { st.strip = false; st.panel = 'layers'; } return drawSide(); }
     const rid = t.closest('[data-rid]')?.dataset.rid;
     if (rid) { const r = refs.find(x => x.id === rid); if (!r) return;
       if (t.closest('[data-rhide]')) r.on = !r.on; else if (t.closest('[data-rlock]')) r.lock = !r.lock;
@@ -3247,7 +3439,7 @@ TT.open = async (el, id) => {
       if (t.closest('[data-stl]')) return loadStencil();
       if (t.closest('[data-stref]')) { stenRefresh(); drawSide(); return toast('Stencil refreshed.', 1200); }
       if (t.matches('input')) return;
-      st.layer = ly; st.dirty = true; return drawSide();
+      st.layer = ly; st.dirty = true; return drawSide();   /* redraws the strip as well */
     }
     if (t.closest('[data-nnew]')) { nlook.thin = 0.45; nlook.tex = 1; Settings.set('tt_thin', String(Math.round(nlook.thin * 100))); Settings.set('tt_tex', String(Math.round(nlook.tex * 100))); drawCur(); return drawSide(); }
     if (t.closest('[data-tiltset]')) { const ev = side._lastPd; if (!ev || ev.pointerType !== 'pen') return toast('Tap it with the pen, leaning as far as you like to tilt a magnum.', 3000); const h = Math.round(Math.hypot(ev.tiltX || 0, ev.tiltY || 0));
@@ -3263,8 +3455,9 @@ TT.open = async (el, id) => {
     if (t.closest('[data-prof]')) { setProfile(t.closest('[data-prof]').dataset.prof); TT.saveCal(cal); return drawSide(); }
     if (t.closest('[data-toolreset]')) return resetTools();
     if (t.closest('[data-calreset]')) { if (!await ask('Put the calibration for all needles back to the defaults?')) return; cal = { ...TT.calDefaults, penOnly: cal.penOnly }; TT.saveCal(cal); return drawSide(); }
-    if (t.matches('[data-penonly]')) { cal.penOnly = t.checked; TT.saveCal(cal); }
-  });
+    if (t.matches('[data-penonly]')) { cal.penOnly = t.checked; TT.saveCal(cal); drawFingers(); }
+  };
+  side.addEventListener('click', sideClickTT); strip.addEventListener('click', sideClickTT);
   $('#tt-vs').addEventListener('input', (e) => { feel.volt = +e.target.value; TT.setFeel(st.needle, feel); drawVolt();
     const s2 = side.querySelector('[data-f="volt"]'); if (s2) { s2.value = feel.volt; s2.closest('.dz-sl').querySelector('b').textContent = feel.volt.toFixed(2) + ' V'; } });
   side.addEventListener('input', (e) => {
@@ -4486,6 +4679,21 @@ function ttStyle() {
 .tt-ptools { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
 .tt-pbench { display: grid; grid-template-columns: 168px 1fr; gap: 14px; align-items: start; } .tt-pbench canvas { width: 168px; height: 168px; border-radius: 50%; touch-action: none; cursor: crosshair; }
 @media (max-width: 480px) { .tt-pbench { grid-template-columns: 1fr; justify-items: center; } }
+.tt-lsec { margin: 4px 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); } .tt-lsec > summary { list-style: none; cursor: pointer; padding: 6px 9px; font: 600 12px var(--ui); display: flex; justify-content: space-between; }
+.tt-lsec > summary::-webkit-details-marker { display: none; } .tt-lsec > summary::after { content: '+'; color: var(--ink2); font-weight: 400; } .tt-lsec[open] > summary::after { content: '−'; } .tt-lsec[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.tt-lsec > div { padding: 0 0 4px; } .tt-lsec .dz-sl, .tt-lsec .tt-lseg, .tt-lsec .row { margin-left: 4px !important; margin-right: 4px !important; }
+.tt-lcol { display: flex; align-items: center; gap: 8px; margin: 4px 8px; font-size: 12px; } .tt-lcol > span { flex: 1; color: var(--ink2); }
+.tt-lchip { width: 30px; height: 30px; border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2), 0 0 0 1px rgba(0,0,0,.4); cursor: pointer; position: relative; overflow: hidden; } .tt-lchip input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.tt-fsty { flex-wrap: wrap; } .tt-fsty button { flex: 1 0 30%; } .tt-fadeb button { flex: 1; font-size: 15px; }
+.tt-ltog { display: flex; margin: 4px 8px; border: 0; min-height: 28px; padding: 0; font-size: 12px; }
+.tt-lcase { height: 30px; padding: 2px 6px; font-size: 12px; margin: 0 0 0 auto; width: auto; }
+#tt-keys { position: fixed; inset: 0; z-index: 130; background: rgba(0,0,0,.55); display: grid; place-items: center; padding: 16px; }
+.tt-kcard { width: min(640px, 100%); max-height: 88dvh; overflow-y: auto; } .tt-kcols { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 22px; } @media (max-width: 560px) { .tt-kcols { grid-template-columns: 1fr; } }
+.tt-krow { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px solid var(--line); } .tt-krow span:last-child { color: var(--ink2); text-align: right; }
+.tt-krow kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line); background: var(--bg); font: 600 11px var(--ui); text-align: center; }
+.tt-kcard .lbl { margin: 10px 0 2px; }
+.tt-pquick { margin: 6px 0 2px; font-size: 11px; } .tt-pquick > span [data-tip] { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line); font-size: 9px; margin-left: 4px; cursor: help; }
+.tt-pqg { display: grid; grid-template-columns: repeat(auto-fill, 22px); gap: 4px; margin-top: 4px; } .tt-pqg button { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(255,255,255,.18); padding: 0; cursor: pointer; }
 .tt-pline { display: flex; align-items: center; gap: 8px; font-size: 12px; } .tt-pline input { margin-left: auto; width: 92px; } .tt-pact { justify-content: flex-end; }
 .tt-pfoot { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .tt-devp { position: absolute; right: 10px; top: 56px; z-index: 30; width: min(340px, calc(100% - 20px)); max-height: calc(100% - 70px); display: flex; flex-direction: column; border-radius: 14px; background: rgba(22,27,28,.96); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.5); }
