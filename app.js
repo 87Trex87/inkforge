@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 514;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 515;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -6602,11 +6602,12 @@ function reelQuickSpec() {
   if (p.kind === 'trans' && String(p.key)[0] === '@') return [];
   if (p.kind === 'trans') {
     const tr = reelTrans(s, { key: p.key });
-    return tr.type === 'cut' ? [] : [['tdur', 'Transition', 0.1, 1.2, 0.05, tr.dur]];
+    const sg = reelSegments().segs.find(g => g.key === p.key);
+    return tr.type === 'cut' ? [] : [['tdur', 'Transition', 0.1, 1.2, 0.05, tr.dur], ...(REEL_OVER.includes(tr.type) && sg?.kind === 'clip' ? [['tbleed', 'Bleed', 0, 1, 0.05, tr.bleed]] : [])];
   }
   return [];
 }
-const reelQFmt = (k, v) => k === 'speed' ? v + '×' : k === 'vol' ? (v ? Math.round(v * 100) + '%' : 'Off') : v.toFixed(k === 'tdur' ? 2 : 1) + 's';
+const reelQFmt = (k, v) => k === 'tbleed' ? Math.round(v * 100) + '%' : k === 'speed' ? v + '×' : k === 'vol' ? (v ? Math.round(v * 100) + '%' : 'Off') : v.toFixed(k === 'tdur' ? 2 : 1) + 's';
 function reelQuick() {
   const el = $('#reel-quick'); if (!el) return;
   const spec = reelQuickSpec();
@@ -6626,8 +6627,8 @@ function reelQuickBind(el) {
       if (k === 'outP' && c.outP - c.inP < 0.5) c.inP = Math.max(0, c.outP - 0.5);
       const g = reelSegments().segs.find(x => x.key === c.id);
       if (g) reelShow(k === 'outP' ? g.start + g.dur - 0.05 : k === 'inP' ? g.start + 0.01 : g.start + Math.min(g.dur * 0.45, 0.6));
-    } else if (k === 'tdur') {
-      R.trans[p.key] = { ...reelTrans(reelStyle(), { key: p.key }), ...R.trans[p.key], dur: v };
+    } else if (k === 'tdur' || k === 'tbleed') {
+      R.trans[p.key] = { ...reelTrans(reelStyle(), { key: p.key }), ...R.trans[p.key], [k === 'tdur' ? 'dur' : 'bleed']: v }; reelTimeline();
     } else reelSetStyle(k, v);
     e.target.nextElementSibling.textContent = reelQFmt(k, v);
     reelChanged();
@@ -7547,7 +7548,7 @@ function reelSpeedSvg(c) {
   let line = '', area = `M0 ${mid}`;
   for (let i = 0; i <= 120; i++) { const sx = c.inP + span * i / 120, x = (i / 120 * REEL_SPD_W).toFixed(1), y = Y(reelCurveY(c, sx)).toFixed(1); line += (i ? 'L' : 'M') + x + ' ' + y; area += `L${x} ${y}`; }
   area += `L${REEL_SPD_W} ${mid}Z`;
-  const seg = reelSegments().segs.find(g => g.clip === c), ph = seg && R.t >= seg.start && R.t <= seg.start + seg.dur ? X(clipSrcAt(c, R.t - seg.start)) : null;
+  const seg = reelSegments().segs.find(g => g.clip === c), ph = seg && R.t >= seg.start && R.t <= seg.start + seg.dur ? X(clipSrcAt(c, R.t - seg.start + (seg.pre || 0))) : null;
   const marks = [[1, '4×'], [0.5, '2×'], [0, (c.speed || 1) === 1 ? '1×' : reelSpdFmt(c.speed || 1)], [-0.5, '½×'], [-1, '¼×']];
   const grid = marks.map(([y]) => `<line x1="0" x2="${REEL_SPD_W}" y1="${Y(y)}" y2="${Y(y)}" class="${y === 0 ? 'mid' : ''}"/>`).join('');
   const pc = (v, of) => (v / of * 100).toFixed(2) + '%';   /* points and labels sit over the stretched graph as page elements, so they keep their shape */
@@ -7750,7 +7751,7 @@ function reelClipBind(ed, c) {
       pick = copy(); R.clips.splice(i + 1, 0, pick);
     } else if (act === 'split') {
       const seg = reelSegments().segs.find(x => x.clip === c);
-      const cut = seg && clipSrcAt(c, R.t - seg.start);
+      const cut = seg && clipSrcAt(c, R.t - seg.start + (seg.pre || 0));
       if (!seg || !(cut > c.inP + 0.2 && cut < c.outP - 0.2)) return toast('Move the playhead onto this clip, away from its ends, to split it there.');
       pick = copy({ inP: cut }); R.clips.splice(i + 1, 0, pick); c.outP = cut;
       toast('Clip split.');
@@ -7765,14 +7766,14 @@ const reelClipCopy = (c, extra) => reelOwnVideo({ ...c, id: ++R.seq, cap: c.cap 
 function reelClipDup(c = R.clips[R.sel]) { if (!c) return; const i = R.clips.indexOf(c), n = reelClipCopy(c); R.clips.splice(i + 1, 0, n); reelPick('clip', n.id); }
 function reelClipSplit(c = R.clips[R.sel]) {
   if (c?.type !== 'video') return toast('Pick a video clip and put the playhead where to cut.');
-  const seg = reelSegments().segs.find(x => x.clip === c), cut = seg && clipSrcAt(c, R.t - seg.start);
+  const seg = reelSegments().segs.find(x => x.clip === c), cut = seg && clipSrcAt(c, R.t - seg.start + (seg.pre || 0));
   if (!seg || !(cut > c.inP + 0.2 && cut < c.outP - 0.2)) return toast('Move the playhead onto this clip, away from its ends, to split it there.');
   const n = reelClipCopy(c, { inP: cut }); R.clips.splice(R.clips.indexOf(c) + 1, 0, n); c.outP = cut; toast('Clip split.'); reelPick('clip', n.id);
 }
 /* Freeze frame: the video's picture at the playhead becomes a 2-second photo clip right after a split there. */
 async function reelFreeze(c) {
   const seg = reelSegments().segs.find(x => x.clip === c); if (!seg) return;
-  const at = clipSrcAt(c, Math.max(0, Math.min(seg.dur, R.t - seg.start))), cv = document.createElement('canvas'); cv.width = c.w; cv.height = c.h;
+  const at = clipSrcAt(c, Math.max(0, Math.min(seg.dur, R.t - seg.start)) + (seg.pre || 0)), cv = document.createElement('canvas'); cv.width = c.w; cv.height = c.h;
   c.el.currentTime = at; await new Promise(r => { c.el.onseeked = r; setTimeout(r, 800); }); c.el.onseeked = null; cv.getContext('2d').drawImage(c.el, 0, 0);
   const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.92)); const ph = await reelAddFile(new File([blob], 'freeze.jpg', { type: 'image/jpeg' }));
   R.clips.splice(R.clips.indexOf(ph), 1); Object.assign(ph, { dur: 2, motion: 'none', fit: c.fit, filter: c.filter, adj: c.adj && { ...c.adj }, fx: c.fx && [...c.fx], rot: c.rot, flip: c.flip, flipv: c.flipv, ang: c.ang, op: c.op, zoom: c.zoom, ox: c.ox, oy: c.oy });
@@ -7843,6 +7844,7 @@ function reelTransPanel(s, seg) {
       <div class="seg ${REEL_TR_VARIANTS[tr.type].length > 2 ? 'dir4' : ''}" style="margin-bottom:12px">${REEL_TR_VARIANTS[tr.type].map(([v, l]) =>
         `<button data-td="${v}" class="${trVariant(tr) === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>` : ''}
     ${tr.type !== 'cut' ? reelSlider('data-tdur', '1', 'Duration', 0.1, 1.2, 0.05, tr.dur, tr.dur.toFixed(2) + 's') : ''}
+    ${REEL_OVER.includes(tr.type) && seg.kind === 'clip' ? reelSlider('data-tbleed', '1', `Bleed ${help('How far into the transition this clip starts playing. 0%: it waits on its first frame until the transition ends. 100%: it is already moving as it comes in, and its time on the reel gets that much shorter.')}`, 0, 1, 0.05, tr.bleed, Math.round(tr.bleed * 100) + '%') : ''}
     <div class="row" style="margin-top:4px">
       <button class="btn small" data-tall data-tip="Make this the transition between every clip">Use for all</button>
       ${own ? '<button class="btn small" data-treset data-tip="Go back to the default from Style › Transitions">Reset to default</button>' : ''}
@@ -7920,6 +7922,12 @@ function reelStyleInput(e) {
   const t = e.target;
   if (t.dataset.edur && R.pick?.kind === 'trans') { const key = R.pick.key, v = +t.value; R.trans[key] = { type: 'fade', ...R.trans[key], dur: v };
     t.closest('.slider').querySelector('b').textContent = v.toFixed(1) + 's'; reelChanged(); return; }
+  if (t.dataset.tbleed && R.pick?.kind === 'trans') {
+    const key = R.pick.key, v = +t.value;
+    R.trans[key] = { ...R.trans[key], type: reelTrans(reelStyle(), { key }).type, bleed: v };
+    t.closest('.slider').querySelector('b').textContent = Math.round(v * 100) + '%';
+    reelChanged(); reelRender(); return reelTimeline();
+  }
   if (t.dataset.tdur && R.pick?.kind === 'trans') {
     const key = R.pick.key, v = +t.value;
     R.trans[key] = { ...R.trans[key], type: reelTrans(reelStyle(), { key }).type, dur: v };
@@ -7999,7 +8007,7 @@ async function reelStyleClick(e) {
 async function reelStyleChange(e) {
   if (e.target.hasAttribute('data-tpl-import')) { const f = e.target.files[0]; e.target.value = ''; return f && reelTplImport(f); }
   if (e.target.dataset.s === 'transDur') return reelPeekTransition();   // preview once the finger lifts
-  if (e.target.dataset.tdur && R.pick?.kind === 'trans') return reelPeekTransition(R.pick.key);
+  if ((e.target.dataset.tdur || e.target.dataset.tbleed) && R.pick?.kind === 'trans') return reelPeekTransition(R.pick.key);
   if (e.target.hasAttribute('data-logofile')) {
     const f = e.target.files[0]; if (!f) return;
     try {
@@ -9770,6 +9778,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 515, when: '2026-11-22T19:00', added: [
+    'Reel maker: a Bleed slider on transitions between clips (in the transition panel and the strip under the timeline). The incoming video starts playing that far into the transition instead of waiting on its first frame, and carries on from there.',
+    'Reel maker: bleed works with Wipe, Slide, Dissolve, Whip pan, Circle, Heart and Doors, where the next clip shows during the animation; the clip’s time on the reel gets that much shorter, like an overlap in other editors.'],
+    test: ['Reel maker: put a Wipe between two video clips, set Bleed to 100% and play it through.'] },
   { build: 514, when: '2026-11-22T17:00', added: [
     'Reel maker: a Speed tool for video clips. Set the whole clip from ¼× to 4×, or draw a speed ramp: tap the graph to add a point, drag it above the line to speed up or below to slow down; the higher or lower, the more.',
     'Reel maker: speed ramp presets (Montage, Hero, Bullet, Jump cut, Flash in, Flash out, Slow end), double-tap a point to remove it, and the clip’s new length shown as you drag.',

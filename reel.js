@@ -322,7 +322,13 @@ function reelSegments() {
   let t = 0;
   const push = (seg) => { seg.start = t; t += seg.dur; segs.push(seg); };
   if (s.intro) push({ kind: 'intro', key: 'intro', dur: +s.introDur || 1.6 });
-  for (const c of R.clips) push({ kind: 'clip', key: c.id, clip: c, dur: clipDur(c) });
+  for (const c of R.clips) {
+    /* Bleed: with a transition that shows this clip coming in over the last one, it can start playing that much of the
+       way through the transition (seg.pre seconds early) and carry on from there, so its own time on the reel is shorter. */
+    const g = { kind: 'clip', key: c.id, clip: c, dur: clipDur(c) }, pv = segs[segs.length - 1];
+    if (pv) { const tr = reelTrans(s, g); if (tr.bleed > 0 && REEL_OVER.includes(tr.type)) { const T = Math.max(0.05, Math.min(tr.dur, g.dur / 2, pv.dur / 2)); g.pre = Math.min(T * tr.bleed, g.dur / 3); g.dur -= g.pre; } }
+    push(g);
+  }
   if (s.outro) push({ kind: 'outro', key: 'outro', dur: +s.outroDur || 2.4 });
   return { segs, total: t };
 }
@@ -332,7 +338,7 @@ const REEL_DIPS = ['fade', 'flash', 'zoom', 'spin', 'blur', 'glitch'];
 const REEL_OVER = ['wipe', 'slide', 'dissolve', 'iris', 'doors', 'whip', 'heart'];
 function reelTrans(s, seg) {
   const o = R.trans[seg.key] || {};
-  return { type: o.type ?? s.transition, dir: o.dir ?? s.transDir, dur: +(o.dur ?? s.transDur) || 0.32 };
+  return { type: o.type ?? s.transition, dir: o.dir ?? s.transDir, dur: +(o.dur ?? s.transDur) || 0.32, bleed: Math.max(0, Math.min(1, +(o.bleed ?? 0) || 0)) };
 }
 function reelSegAt(segs, t) {
   for (const s of segs) if (t < s.start + s.dur) return s;
@@ -609,7 +615,8 @@ function drawWatermark(ctx, s, W, H) {
 
 // One segment as it looks `local` seconds in: the clip (with caption and watermark) or a card.
 function drawSeg(ctx, s, W, H, seg, local) {
-  const p = Math.min(1, local / seg.dur);
+  local = Math.max(0, local + (seg.pre || 0));   /* a clip that bled in early is that much further along */
+  const p = Math.min(1, local / (seg.dur + (seg.pre || 0)));
   if (seg.kind !== 'clip') return drawCard(ctx, s, W, H, p, seg.kind);
   const c = seg.clip;
   ctx.save(); reelFxPre(ctx, c, W, H, local); reelTfx(ctx, s, c, W, H, local, 'pre'); drawMedia(ctx, c, W, H, p); ctx.restore();
@@ -694,7 +701,7 @@ function reelDrawCore(ctx, W, H, t) {
     const d = trVariant(tOut), dx = d === 'left' ? 1 : d === 'right' ? -1 : 0, dy = d === 'top' ? 1 : d === 'bottom' ? -1 : 0;
     if (tOut.type === 'dissolve') {
       drawSeg(ctx, s, W, H, seg, local);
-      ctx.save(); ctx.globalAlpha = lin; drawSeg(ctx, s, W, H, next, 0); ctx.restore(); reelProgress(ctx, s, W, H, t); return;
+      ctx.save(); ctx.globalAlpha = lin; drawSeg(ctx, s, W, H, next, -left); ctx.restore(); reelProgress(ctx, s, W, H, t); return;
     }
     if (tOut.type === 'iris' || tOut.type === 'heart' || tOut.type === 'doors') {
       drawSeg(ctx, s, W, H, seg, local);
@@ -703,22 +710,22 @@ function reelDrawCore(ctx, W, H, t) {
       else if (tOut.type === 'doors') { if (d === 'top' || d === 'bottom') ctx.rect(0, H / 2 * (1 - q), W, H * q); else ctx.rect(W / 2 * (1 - q), 0, W * q, H); }
       else { const r = H * 1.1 * q, cx = W / 2, cy = H / 2 - r * 0.15;   /* a heart opening from the middle */
         ctx.moveTo(cx, cy + r * 0.7); ctx.bezierCurveTo(cx + r, cy, cx + r * 0.55, cy - r * 0.6, cx, cy - r * 0.2); ctx.bezierCurveTo(cx - r * 0.55, cy - r * 0.6, cx - r, cy, cx, cy + r * 0.7); }
-      ctx.clip(); drawSeg(ctx, s, W, H, next, 0); ctx.restore(); reelProgress(ctx, s, W, H, t); return;
+      ctx.clip(); drawSeg(ctx, s, W, H, next, -left); ctx.restore(); reelProgress(ctx, s, W, H, t); return;
     }
     if (tOut.type === 'whip') {   /* a fast blurred pan */
       const blur = Math.sin(lin * Math.PI) * 26 * Math.min(W, H) / 1080, ddx = d === 'right' ? -1 : 1;
       ctx.save(); if (canFilter) ctx.filter = `blur(${blur}px)`;
-      ctx.translate(ddx * W * q, 0); drawSeg(ctx, s, W, H, seg, local); ctx.translate(-ddx * W, 0); drawSeg(ctx, s, W, H, next, 0); ctx.restore(); reelProgress(ctx, s, W, H, t); return;
+      ctx.translate(ddx * W * q, 0); drawSeg(ctx, s, W, H, seg, local); ctx.translate(-ddx * W, 0); drawSeg(ctx, s, W, H, next, -left); ctx.restore(); reelProgress(ctx, s, W, H, t); return;
     }
     if (tOut.type === 'slide') {
       ctx.save(); ctx.translate(dx * W * q, dy * H * q); drawSeg(ctx, s, W, H, seg, local); ctx.restore();
-      ctx.save(); ctx.translate(-dx * W * (1 - q), -dy * H * (1 - q)); drawSeg(ctx, s, W, H, next, 0); ctx.restore();
+      ctx.save(); ctx.translate(-dx * W * (1 - q), -dy * H * (1 - q)); drawSeg(ctx, s, W, H, next, -left); ctx.restore();
     } else {
       drawSeg(ctx, s, W, H, seg, local);
       const k = Math.min(W, H) / 1080;
       // Revealed area grows from the chosen edge; a thin accent line rides the edge.
       const r = dx > 0 ? [0, 0, W * q, H] : dx < 0 ? [W * (1 - q), 0, W * q, H] : dy > 0 ? [0, 0, W, H * q] : [0, H * (1 - q), W, H * q];
-      ctx.save(); ctx.beginPath(); ctx.rect(...r); ctx.clip(); drawSeg(ctx, s, W, H, next, 0); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(...r); ctx.clip(); drawSeg(ctx, s, W, H, next, -left); ctx.restore();
       ctx.fillStyle = s.accent;
       if (dx) ctx.fillRect((dx > 0 ? W * q : W * (1 - q)) - 3 * k, 0, 6 * k, H);
       else ctx.fillRect(0, (dy > 0 ? H * q : H * (1 - q)) - 3 * k, W, 6 * k);
@@ -954,13 +961,21 @@ function reelSyncVideos(t, playing) {
     const active = seg && seg.kind === 'clip' && seg.clip === c;
     if (!active) {
       if (c.el === activeEl) continue;   // split/duplicated clips share one video element
+      const pre = nextSeg?.clip === c ? nextSeg.pre || 0 : 0, into = pre ? t - (nextSeg.start - pre) : -1;
+      if (into >= 0) {   /* bleeding in: it plays under the transition */
+        c.el.playbackRate = Math.max(0.0625, Math.min(16, clipRateAt(c, into))); const w = clipSrcAt(c, into);
+        if (playing) { if (Math.abs(c.el.currentTime - w) > 0.3) c.el.currentTime = w; if (c.el.paused) c.el.play().catch(() => {}); }
+        else { if (!c.el.paused) c.el.pause(); if (Math.abs(c.el.currentTime - w) > 0.04) c.el.currentTime = w; }
+        if (c.gain) c.gain.gain.value = c.mute ? 0 : (c.vol ?? 1); continue;
+      }
       if (!c.el.paused) c.el.pause();
       // Park the upcoming clip on its first frame so wipe/slide transitions show it.
       if (nextSeg?.clip === c && Math.abs(c.el.currentTime - c.inP) > 0.1) c.el.currentTime = c.inP;
       continue;
     }
-    c.el.playbackRate = Math.max(0.0625, Math.min(16, clipRateAt(c, t - seg.start)));
-    const want = clipSrcAt(c, t - seg.start);
+    const lt = t - seg.start + (seg.pre || 0);
+    c.el.playbackRate = Math.max(0.0625, Math.min(16, clipRateAt(c, lt)));
+    const want = clipSrcAt(c, lt);
     if (playing) {
       if (Math.abs(c.el.currentTime - want) > 0.3) c.el.currentTime = want;
       if (c.el.paused) c.el.play().catch(() => {});
@@ -1178,7 +1193,7 @@ async function reelRenderFile(title = 'Exporting reel') {
    transitions that show it early), waiting until it is really there. */
 async function reelSeekVideos(segs, t) {
   const seg = reelSegAt(segs, t), next = segs[segs.indexOf(seg) + 1], waits = [], done = new Set();
-  for (const [sg, want] of [[seg, seg?.kind === 'clip' ? clipSrcAt(seg.clip, t - seg.start) : 0], [next, next?.clip?.inP || 0]]) {
+  for (const [sg, want] of [[seg, seg?.kind === 'clip' ? clipSrcAt(seg.clip, t - seg.start + (seg.pre || 0)) : 0], [next, next?.kind === 'clip' ? clipSrcAt(next.clip, Math.max(0, t - next.start + (next.pre || 0))) : 0]]) {
     const c = sg?.kind === 'clip' ? sg.clip : null;
     if (!c || c.type !== 'video' || done.has(c.el)) continue; done.add(c.el);
     if (!c.el.paused) c.el.pause();
@@ -1210,9 +1225,10 @@ async function reelExportAudio(segs, total) {
     if (c._abuf === undefined) { try { c._abuf = await oc.decodeAudioData(await (await fetch(c.el.currentSrc || c.el.src)).arrayBuffer()); } catch { c._abuf = null; } }
     if (!c._abuf) continue;
     const nd = oc.createBufferSource(), g = oc.createGain(); nd.buffer = c._abuf; g.gain.value = c.vol ?? 1;
-    if (reelCurved(c)) { const n = Math.max(2, Math.ceil(g0.dur * 100)), rates = new Float32Array(n); for (let k = 0; k < n; k++) rates[k] = clipRateAt(c, k * g0.dur / (n - 1));   /* the ramp, as the sound's speed */
-      nd.playbackRate.setValueCurveAtTime(rates, g0.start, g0.dur); } else nd.playbackRate.value = c.speed || 1;
-    nd.connect(g).connect(oc.destination); nd.start(g0.start, Math.min(c._abuf.duration - 0.01, c.inP || 0), Math.max(0.01, c.outP - c.inP));
+    const st0 = g0.start - (g0.pre || 0), full = g0.dur + (g0.pre || 0);   /* a clip that bleeds in sounds from when it starts showing */
+    if (reelCurved(c)) { const n = Math.max(2, Math.ceil(full * 100)), rates = new Float32Array(n); for (let k = 0; k < n; k++) rates[k] = clipRateAt(c, k * full / (n - 1));   /* the ramp, as the sound's speed */
+      nd.playbackRate.setValueCurveAtTime(rates, st0, full); } else nd.playbackRate.value = c.speed || 1;
+    nd.connect(g).connect(oc.destination); nd.start(st0, Math.min(c._abuf.duration - 0.01, c.inP || 0), Math.max(0.01, c.outP - c.inP));
   }
   const buf = await oc.startRendering(), out = []; let desc = null, aerr = null;
   const enc = new AudioEncoder({ output: (chunk, meta) => { const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d); out.push({ data: d });
