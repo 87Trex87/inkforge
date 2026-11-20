@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 509;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 510;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -9633,6 +9633,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 510, when: '2026-11-21T23:00', added: [
+    'Reel maker: export now draws every frame on its own at an exact step, so effects and transitions come out smooth with no stutter.',
+    'Reel maker: photo reels usually export faster than they play. Heavy effects just take a little longer.'],
+    test: ['Reel maker: export a reel with heavy effects (glow, blur, a transition) at 1080 and play it back.', 'Reel maker: export a reel with a video clip and check its sound.'] },
   { build: 509, when: '2026-11-21T21:00', added: [
     'Reel maker: fixed the newest sticker not showing its motion (zoom, pop, slide and the rest) when previewed or played.',
     'Reel maker: the opening and closing transition markers are smaller and sit clear of the clip’s trim handles.'],

@@ -1067,13 +1067,175 @@ async function reelAddFile(file, keep = true) {
   return c;
 }
 
+/* ---------- Export, frame by frame ----------
+   Every frame is drawn on its own at an exact 1/fps step and handed to the browser's video encoder with its own
+   timestamp, so heavy effects take longer to export but never stutter. Sound is mixed offline the same way, and both
+   are packed into an MP4 here (reelMp4). Browsers without WebCodecs fall back to the live recording. */
+const REEL_FPS = 30;
+const reelBytes = (d) => (ArrayBuffer.isView(d) ? new Uint8Array(d.buffer, d.byteOffset, d.byteLength) : new Uint8Array(d)).slice();
+async function reelExport() {
+  if (!R.clips.length) return toast('Add at least one photo or video.');
+  if (!window.VideoEncoder || !window.VideoFrame) return reelExportLive();
+  const s = reelStyle(), [, , , w0, h0] = reelSize(R.ar), q = s.quality === '1080' ? 1 : 2 / 3,
+    W = Math.round(w0 * q / 2) * 2, H = Math.round(h0 * q / 2) * 2, fps = REEL_FPS, bitrate = s.quality === '1080' ? 16e6 : 9e6;
+  let vcfg = null;
+  for (const codec of ['avc1.640033', 'avc1.4d0033', 'avc1.42e033', 'avc1.640028']) {
+    const c = { codec, width: W, height: H, bitrate, framerate: fps, avc: { format: 'avc' } };
+    try { if ((await VideoEncoder.isConfigSupported(c)).supported) { vcfg = c; break; } } catch {}
+  }
+  if (!vcfg) return reelExportLive();
+  const { segs, total } = reelSegments(), n = Math.max(1, Math.round(total * fps)), cv = reelCanvas(), ctx = cv.getContext('2d');
+  await Promise.all([s.font, ...R.clips.map(c => c.capFont).filter(Boolean)].map(k => reelFontLoad(k).then(() => document.fonts.load(reelFont(s, 40, 700, k))).catch(() => {})));
+  reelPause();
+  const overlay = document.createElement('div');
+  overlay.id = 'reel-rec';
+  overlay.innerHTML = `<div class="card"><h2>Exporting reel</h2><p class="muted" id="reel-rec-msg">Mixing the sound…</p>
+    <div class="meter"><i id="reel-prog" style="width:0"></i></div><button class="btn" id="reel-cancel" style="margin-top:14px">Cancel</button></div>`;
+  document.body.appendChild(overlay);
+  R.cancel = false; document.getElementById('reel-cancel').onclick = () => { R.cancel = true; };
+  const msg = (m) => { const e = document.getElementById('reel-rec-msg'); if (e) e.textContent = m; };
+  let audio = null, err = null;
+  try { audio = await reelExportAudio(segs, total); } catch (e) { console.warn('Export sound', e); audio = 'fail'; }
+  if (audio === 'fail') { overlay.remove(); return reelExportLive(); }
+  const vs = []; let vdesc = null;
+  const enc = new VideoEncoder({ output: (chunk, meta) => { const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d);
+      if (meta?.decoderConfig?.description) vdesc = reelBytes(meta.decoderConfig.description);
+      vs.push({ data: d, pts: chunk.timestamp, key: chunk.type === 'key' }); }, error: (e) => { err = e; } });
+  enc.configure(vcfg);
+  R.recording = true; R.playing = true;   /* playing: stickers show their motion, and late image loads don't redraw the preview into the frame */
+  cv.width = W; cv.height = H;
+  msg('Drawing frames… heavy effects take longer, but come out smooth.');
+  await new Promise(r => setTimeout(r, 300));   /* let images settle */
+  try {
+    for (let i = 0; i < n && !R.cancel && !err; i++) {
+      const t = Math.min(total - 1e-4, i / fps); R.t = t;
+      await reelSeekVideos(segs, t);
+      reelDraw(ctx, W, H, t);
+      const f = new VideoFrame(cv, { timestamp: Math.round(i * 1e6 / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(f, { keyFrame: i % (fps * 2) === 0 }); f.close();
+      while (enc.encodeQueueSize > 3) await new Promise(r => setTimeout(r, 4));
+      if (i % 3 === 0) { const p = document.getElementById('reel-prog'); if (p) p.style.width = (i / n * 100) + '%'; await new Promise(r => setTimeout(r, 0)); }
+    }
+    if (!R.cancel && !err) { msg('Finishing…'); await enc.flush(); }
+  } catch (e) { err = e; }
+  try { enc.close(); } catch {}
+  R.recording = false; R.playing = false;
+  for (const c of R.clips) if (c.type === 'video') c.el.pause();
+  overlay.remove();
+  cv.width = PREVIEW_W; cv.height = PREVIEW_H; R.t = 0; reelRender();
+  if (R.cancel) return toast('Export cancelled.');
+  if (err || !vs.length || !vdesc) { console.warn('Frame export failed', err); toast('Frame-by-frame export failed, recording it live instead.'); return reelExportLive(); }
+  const mp4 = reelMp4({ W, H, fps, samples: vs, desc: vdesc }, audio);
+  return reelExportReady(new File([mp4], `reel-${ymd(new Date())}.mp4`, { type: 'video/mp4' }));
+}
+/* Puts each video clip on the exact frame for time t (the showing one, and the next one parked on its first frame for
+   transitions that show it early), waiting until it is really there. */
+async function reelSeekVideos(segs, t) {
+  const seg = reelSegAt(segs, t), next = segs[segs.indexOf(seg) + 1], waits = [], done = new Set();
+  for (const [sg, want] of [[seg, seg?.kind === 'clip' ? seg.clip.inP + (t - seg.start) * (seg.clip.speed || 1) : 0], [next, next?.clip?.inP || 0]]) {
+    const c = sg?.kind === 'clip' ? sg.clip : null;
+    if (!c || c.type !== 'video' || done.has(c.el)) continue; done.add(c.el);
+    if (!c.el.paused) c.el.pause();
+    const w = Math.max(0, Math.min((c.el.duration || 1e9) - 0.001, want));
+    if (Math.abs(c.el.currentTime - w) < 1e-4 && c.el.readyState >= 2) continue;
+    waits.push(new Promise(res => { const tm = setTimeout(res, 3000); c.el.addEventListener('seeked', () => { clearTimeout(tm); res(); }, { once: true }); c.el.currentTime = w; }));
+  }
+  await Promise.all(waits);
+}
+/* The reel's sound mixed offline (music rows and the clips' own sound, with their volumes, speeds and fades), then
+   encoded to AAC. null when the reel is silent; throws when it can't be done here (the live recording takes over). */
+async function reelExportAudio(segs, total) {
+  const rate = 48000, clipsWithSound = segs.filter(g => g.kind === 'clip' && g.clip.type === 'video' && !g.clip.mute && (g.clip.vol ?? 1) > 0);
+  if (!(R.aud || []).some(a => a.buffer) && !clipsWithSound.length) return null;
+  if (!window.AudioEncoder || !window.AudioData) throw new Error('no AudioEncoder');
+  const acfg = { codec: 'mp4a.40.2', sampleRate: rate, numberOfChannels: 2, bitrate: 192000 };
+  if (!(await AudioEncoder.isConfigSupported(acfg)).supported) throw new Error('no AAC');
+  const oc = new OfflineAudioContext(2, Math.ceil(total * rate), rate);
+  for (const a of R.aud || []) {
+    if (!a.buffer) continue;
+    const fi = Math.min(a.fadeIn || 0, a.len / 2), fo = Math.min(a.fadeOut ?? 1, a.len / 2), v = a.vol ?? 0.8, sp = a.rate || 1;
+    const nd = oc.createBufferSource(), g = oc.createGain(); nd.buffer = a.buffer; nd.playbackRate.value = sp; nd.connect(g).connect(oc.destination);
+    g.gain.setValueAtTime(fi ? 0 : v, a.t0); if (fi) g.gain.linearRampToValueAtTime(v, a.t0 + fi);
+    if (fo) { g.gain.setValueAtTime(v, a.t0 + a.len - fo); g.gain.linearRampToValueAtTime(0, a.t0 + a.len); }
+    nd.start(a.t0, Math.min(a.buffer.duration - 0.01, a.off || 0), Math.max(0.01, a.len * sp));
+  }
+  for (const g0 of clipsWithSound) {
+    const c = g0.clip;
+    if (c._abuf === undefined) { try { c._abuf = await oc.decodeAudioData(await (await fetch(c.el.currentSrc || c.el.src)).arrayBuffer()); } catch { c._abuf = null; } }
+    if (!c._abuf) continue;
+    const nd = oc.createBufferSource(), g = oc.createGain(); nd.buffer = c._abuf; nd.playbackRate.value = c.speed || 1; g.gain.value = c.vol ?? 1;
+    nd.connect(g).connect(oc.destination); nd.start(g0.start, Math.min(c._abuf.duration - 0.01, c.inP || 0), Math.max(0.01, g0.dur * (c.speed || 1)));
+  }
+  const buf = await oc.startRendering(), out = []; let desc = null, aerr = null;
+  const enc = new AudioEncoder({ output: (chunk, meta) => { const d = new Uint8Array(chunk.byteLength); chunk.copyTo(d); out.push({ data: d });
+    if (meta?.decoderConfig?.description) desc = reelBytes(meta.decoderConfig.description); }, error: (e) => { aerr = e; } });
+  enc.configure(acfg);
+  const L = buf.getChannelData(0), Rc = buf.getChannelData(1), step = 4800;
+  for (let i = 0; i < buf.length; i += step) {
+    const m = Math.min(step, buf.length - i), pl = new Float32Array(m * 2); pl.set(L.subarray(i, i + m), 0); pl.set(Rc.subarray(i, i + m), m);
+    const ad = new AudioData({ format: 'f32-planar', sampleRate: rate, numberOfFrames: m, numberOfChannels: 2, timestamp: Math.round(i * 1e6 / rate), data: pl });
+    enc.encode(ad); ad.close();
+  }
+  await enc.flush(); enc.close();
+  if (aerr || !out.length) throw aerr || new Error('no audio out');
+  if (!desc) desc = new Uint8Array([0x11, 0x90]);   /* AAC-LC, 48 kHz, stereo */
+  return { samples: out, desc, rate, ch: 2 };
+}
+/* A plain MP4 (ftyp, mdat, moov) from encoded H.264 frames (in decode order, with their presentation times) and AAC
+   frames of 1024 samples each. */
+function reelMp4(v, a) {
+  const enc = new TextEncoder();
+  const u32 = (x) => [(x >>> 24) & 255, (x >>> 16) & 255, (x >>> 8) & 255, x & 255], u16 = (x) => [(x >> 8) & 255, x & 255];
+  const cat = (parts) => { let len = 0; for (const p of parts) len += p.length; const o = new Uint8Array(len); let k = 0; for (const p of parts) { o.set(p, k); k += p.length; } return o; };
+  const B = (x) => x instanceof Uint8Array ? x : new Uint8Array(x);
+  const box = (type, ...parts) => { const body = cat(parts.map(B)); return cat([B(u32(body.length + 8)), enc.encode(type), body]); };
+  const full = (type, ver, flags, ...parts) => box(type, [ver, (flags >> 16) & 255, (flags >> 8) & 255, flags & 255], ...parts);
+  const vts = v.fps * 1000, vdur = 1000, vn = v.samples.length, mts = 1000;
+  const aN = a ? a.samples.length : 0, ats = a ? a.rate : 1;
+  const vDurMs = Math.round(vn / v.fps * 1000), aDurMs = a ? Math.round(aN * 1024 / ats * 1000) : 0;
+  const ftyp = box('ftyp', enc.encode('isom'), u32(0x200), enc.encode('isomiso2avc1mp41'));
+  const mdatData = cat([...v.samples.map(s => s.data), ...(a ? a.samples.map(s => s.data) : [])]);
+  const base = ftyp.length + 8; let off = base;
+  const vOff = v.samples.map(s => { const o = off; off += s.data.length; return o; });
+  const aOff = a ? a.samples.map(s => { const o = off; off += s.data.length; return o; }) : [];
+  const matrix = [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000].flatMap(u32);
+  const dinf = box('dinf', full('dref', 0, 0, u32(1), full('url ', 0, 1)));
+  const tbl = (sizes, offs) => [full('stsc', 0, 0, u32(1), u32(1), u32(1), u32(1)), full('stsz', 0, 0, u32(0), u32(sizes.length), sizes.flatMap(u32)), full('stco', 0, 0, u32(offs.length), offs.flatMap(u32))];
+  // presentation offsets, when the encoder reordered frames
+  const pts = v.samples.map(s => Math.round(s.pts * vts / 1e6)), ctsOff = pts.map((p, i) => p - i * vdur), minC = Math.min(0, ...ctsOff), needC = ctsOff.some(x => x !== 0);
+  const ctts = needC ? [full('ctts', 0, 0, u32(vn), ctsOff.flatMap(c => [...u32(1), ...u32(c - minC)]))] : [];
+  const keys = v.samples.map((s, i) => s.key ? i + 1 : 0).filter(Boolean);
+  const avc1 = box('avc1', new Array(6).fill(0), u16(1), new Array(16).fill(0), u16(v.W), u16(v.H), u32(0x480000), u32(0x480000), u32(0), u16(1), new Array(32).fill(0), u16(0x18), u16(0xffff), box('avcC', v.desc));
+  const vtrak = box('trak',
+    full('tkhd', 0, 3, u32(0), u32(0), u32(1), u32(0), u32(vDurMs), new Array(8).fill(0), u16(0), u16(0), u16(0), u16(0), matrix, u32(v.W << 16), u32(v.H << 16)),
+    box('mdia', full('mdhd', 0, 0, u32(0), u32(0), u32(vts), u32(vn * vdur), u16(0x55c4), u16(0)),
+      full('hdlr', 0, 0, u32(0), enc.encode('vide'), new Array(12).fill(0), enc.encode('VideoHandler\0')),
+      box('minf', full('vmhd', 0, 1, new Array(8).fill(0)), dinf,
+        box('stbl', full('stsd', 0, 0, u32(1), avc1), full('stts', 0, 0, u32(1), u32(vn), u32(vdur)), ...ctts,
+          full('stss', 0, 0, u32(keys.length), keys.flatMap(u32)), ...tbl(v.samples.map(s => s.data.length), vOff)))));
+  let atrak = new Uint8Array(0);
+  if (a) {
+    const asc = Array.from(a.desc), dsi = [5, asc.length, ...asc], dcd = [4, 13 + dsi.length, 0x40, 0x15, 0, 0, 0, ...u32(192000), ...u32(192000), ...dsi], esd = [3, 3 + dcd.length + 3, ...u16(1), 0, ...dcd, 6, 1, 2];
+    const mp4a = box('mp4a', new Array(6).fill(0), u16(1), new Array(8).fill(0), u16(a.ch), u16(16), u16(0), u16(0), u32(ats << 16), full('esds', 0, 0, esd));
+    atrak = box('trak',
+      full('tkhd', 0, 3, u32(0), u32(0), u32(2), u32(0), u32(aDurMs), new Array(8).fill(0), u16(0), u16(1), u16(0x100), u16(0), matrix, u32(0), u32(0)),
+      box('mdia', full('mdhd', 0, 0, u32(0), u32(0), u32(ats), u32(aN * 1024), u16(0x55c4), u16(0)),
+        full('hdlr', 0, 0, u32(0), enc.encode('soun'), new Array(12).fill(0), enc.encode('SoundHandler\0')),
+        box('minf', full('smhd', 0, 0, u16(0), u16(0)), dinf,
+          box('stbl', full('stsd', 0, 0, u32(1), mp4a), full('stts', 0, 0, u32(1), u32(aN), u32(1024)), ...tbl(a.samples.map(s => s.data.length), aOff)))));
+  }
+  const mvhd = full('mvhd', 0, 0, u32(0), u32(0), u32(mts), u32(Math.max(vDurMs, aDurMs)), u32(0x10000), u16(0x100), new Array(10).fill(0), matrix, new Array(24).fill(0), u32(a ? 3 : 2));
+  const moov = box('moov', mvhd, vtrak, atrak);
+  return new Blob([ftyp, B(u32(mdatData.length + 8)), enc.encode('mdat'), mdatData, moov], { type: 'video/mp4' });
+}
+
 /* ---------- Export ---------- */
 function reelMime() {
   const opts = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   return opts.find(m => window.MediaRecorder?.isTypeSupported?.(m)) || '';
 }
 
-async function reelExport() {
+async function reelExportLive() {
   const { total } = reelSegments();
   if (!R.clips.length) return toast('Add at least one photo or video.');
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return toast('This browser cannot record video.');
@@ -1113,6 +1275,9 @@ async function reelExport() {
   if (R.cancel) return toast('Export cancelled.');
   const type = (mime || 'video/webm').split(';')[0];
   const file = new File([new Blob(chunks, { type })], `reel-${ymd(new Date())}.${type.includes('mp4') ? 'mp4' : 'webm'}`, { type });
+  return reelExportReady(file);
+}
+function reelExportReady(file) {
   // Sharing needs a fresh tap: the one that started the export expired while recording, so ask for one.
   const download = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); };
   const ready = document.createElement('div');

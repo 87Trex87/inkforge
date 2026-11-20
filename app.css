@@ -2744,4 +2744,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .tl-obfx { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: 1px; padding: 1px 4px; border-radius: 8px; background: linear-gradient(90deg, #8a50ff, #ff50b4); color: #fff; font: 700 9px var(--ui); font-style: normal; pointer-events: none; }
 .tl-obfx svg { width: 11px; height: 11px; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 509; }
+:root { --app-build: 510; }
