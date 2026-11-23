@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Bump VERSION whenever shipped files change. */
-const VERSION = 'inkforge-v530';
+const VERSION = 'inkforge-v531';
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'reel.js', 'design.js', 'qr.js', 'forms.js', 'tour.js', 'tattoo.js', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest',
   'lib/sqlite3.js', 'lib/sqlite3.wasm', 'lib/db-worker.js', 'lib/stencil-worker.js', 'lib/clipper.js', 'lib/nspell.mjs', 'lib/en-gb.aff', 'lib/en-gb.dic', 'img/pain-chart.png', 'quote.html'];
 
@@ -20,4 +20,10 @@ self.addEventListener('fetch', e => {
     caches.open(VERSION).then(c => c.put(e.request, copy));
     return r;
   }).catch(() => caches.match(e.request)));
+});
+
+// Tapping a reminder brings InkForge forward (or opens it).
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => cs.length ? cs[0].focus() : self.clients.openWindow('./#book')));
 });

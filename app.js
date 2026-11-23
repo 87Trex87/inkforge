@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 530;
+const APP_BUILD = 531;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -121,7 +121,7 @@ const WS = {
   // Opening switches the database, media folder and snapshot to this workspace.
   async open(w) {
     this.cur = w;
-    await DB.open(this.dbPath(w));
+    await DB.open(this.dbPath(w)); setTimeout(() => { try { Notif.plan(); } catch {} }, 2000);
     w.opened = new Date().toISOString(); this.last = w.id; await this.save();
   },
   async remove(w) {
@@ -394,7 +394,9 @@ const MIGRATIONS = [
    ALTER TABLE loyalty_rewards ADD COLUMN tier TEXT;`,
   // loyalty: the program's rules a reward was earned under (JSON: v = that version of the program, stack, maxStack, pass),
   // so changing or switching off the program never changes rewards already out
-  `ALTER TABLE loyalty_rewards ADD COLUMN prog TEXT;`
+  `ALTER TABLE loyalty_rewards ADD COLUMN prog TEXT;`,
+  // booking reminders: notify_min = how many minutes before the start to remind (NULL = no reminder)
+  `ALTER TABLE bookings ADD COLUMN notify_min INTEGER;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -1348,6 +1350,13 @@ const VIEWS = {
             <div class="row" style="flex-wrap:nowrap"><input class="in" name="deposit" type="number" inputmode="decimal" min="0" step="any" value="${b.deposit ?? ''}">
             <label class="toggle" data-tip="Deposit received"><input type="checkbox" name="deposit_paid" ${b.deposit_paid ? 'checked' : ''}><span>Paid</span></label></div></label>
         </div></section>
+        ${fsec(`Reminder ${help('A notification before the appointment. For one you can count on, add the booking to your phone\u2019s calendar: the calendar reminds you even when InkForge is closed.')}`, `
+          <div class="row b-rem" style="gap:10px;flex-wrap:wrap;align-items:center">
+            <label class="toggle"><input type="checkbox" name="notify" ${b.notify_min != null ? 'checked' : ''}><span>Notify me</span></label>
+            <label class="bkt-sel"><select name="notify_min" aria-label="How long before">${NOTIFY_LEADS.map(([v, l]) => `<option value="${v}" ${+(b.notify_min ?? Settings.get('notify_lead', '60')) === v ? 'selected' : ''}>${l} before</option>`).join('')}</select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
+            <button type="button" class="btn small" id="b-ics" data-tip="Saves the booking, then adds it to your phone\u2019s calendar with this reminder">Add to phone calendar</button></div>
+          <p class="muted" style="font-size:12px;margin:8px 0 0">InkForge\u2019s own notifications only work while the app is open or running in the background: closing the app turns them off. Add the booking to your phone\u2019s calendar for a reminder that always comes through. If you change or cancel the booking later, change it in your calendar too.</p>`,
+          { fold: true, open: b.notify_min != null, hint: b.notify_min != null ? (NOTIFY_LEADS.find(x => x[0] === +b.notify_min)?.[1] || '') + ' before' : '' })}
         ${fsec(`Reference photos ${help('Client references or your sketch. Stored on the device, included in backups.')}`, '<div class="thumbs" id="b-thumbs"></div>',
           { fold: true, open: photos.length || added.length, cls: 'b-ink', hint: photos.length || added.length ? String(photos.length + added.length) : '' })}
         <section class="fsec b-done" id="b-done"><h3>After the session<small>Final payment, follow-up and receipt</small></h3>
@@ -1531,8 +1540,8 @@ const VIEWS = {
         const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
           d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind,
           done ? 1 : 0, done ? (b.completed_at || new Date().toISOString()) : null,
-          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null, gName, gPhone || null];
-        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job, guest_name, guest_phone';
+          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null, gName, gPhone || null, d.notify ? +d.notify_min || 60 : null];
+        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job, guest_name, guest_phone, notify_min';
         const refs = [...keep];
         for (const a of added) refs.push(await Media.save(a.blob, 'jpg'));
         let bid = b.id;
@@ -1545,6 +1554,7 @@ const VIEWS = {
         Dirty.set(false); Gcal.soon();
         if (!b.id && fromQuote?.quoteId) await DB.run('UPDATE quotes SET booking_id = ? WHERE id = ?', [bid, fromQuote.quoteId]);
         if (done) await DB.run(`UPDATE quotes SET completed = 1, updated_at = datetime('now') WHERE booking_id = ? AND completed = 0`, [bid]);
+        if (d.notify) { await Settings.set('notify_lead', String(+d.notify_min || 60)); Notif.ask(); } Notif.plan();
         if (loySel.size || b.loy_off != null) await Loy.use(bid, done ? [...loySel] : [], loyOff());
         await Loy.done(bid, done);
         if (!b.id) { b.id = bid; }
@@ -1580,6 +1590,8 @@ const VIEWS = {
         Gcal.soon(); toast(`Follow-up booked for ${fmtDay(when)}.`); fuInfo();
       };
       $('#b-receipt').onclick = async () => { const bid = await save(); if (bid) openReceipt(bid); };
+      $('#b-ics').onclick = async () => { const bid = await save(); if (bid) Notif.ics(bid); };
+      f.elements.notify?.addEventListener('change', (e) => { if (e.target.checked) Notif.ask(); });
     }
   },
   studio: {
@@ -6045,6 +6057,49 @@ async function loyMessage(rid) {
       try { if (navigator.canShare?.({ files: [f] })) return await navigator.share({ files: [f], title: loyFill(m.title, r, m), text: loyText(r, m) }); } catch (err) { if (err.name === 'AbortError') return; }
       return shareText(loyText(r, m), 'Message copied.'); } });
 }
+
+/* ---------- Booking reminders ----------
+   Two ways: the booking added to the phone's own calendar with an alarm (a .ics file; the calendar reminds even when
+   InkForge is closed), and InkForge's own notifications, which only fire while the app is open or running in the
+   background, plus a morning note of today's bookings. */
+const NOTIFY_LEADS = [[15, '15 min'], [30, '30 min'], [60, '1 hour'], [120, '2 hours'], [1440, '1 day'], [2880, '2 days']];
+const Notif = {
+  timers: [],
+  can: () => 'Notification' in window,
+  async ask() { if (!Notif.can() || Notification.permission !== 'default') return Notification?.permission;
+    const p = await Notification.requestPermission().catch(() => 'denied'); if (p === 'granted') { toast('Notifications on. They only come while InkForge is open or running in the background.', 5000); Notif.plan(); } return p; },
+  async show(title, body, tag) { const o = { body, tag, icon: 'icon.svg', badge: 'icon.svg' };
+    try { const r = await navigator.serviceWorker?.getRegistration(); if (r) return r.showNotification(title, o); } catch {}
+    try { new Notification(title, o); } catch {} },
+  /* every reminder due in the next few days, while the app stays open */
+  async plan() { for (const t of Notif.timers) clearTimeout(t); Notif.timers = [];
+    if (!Notif.can() || Notification.permission !== 'granted' || !WS.cur || WS.cur.test) return;
+    const now = Date.now(), soon = ymd(addDays(new Date(), 3)), today = ymd(new Date());
+    let rows = []; try { rows = await DB.all(`SELECT b.id, b.start_at, b.notify_min, b.description, b.kind, b.guest_name, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
+      WHERE b.notify_min IS NOT NULL AND coalesce(b.completed, 0) = 0 AND coalesce(b.ghost, 0) = 0 AND substr(b.start_at, 1, 10) BETWEEN ? AND ?`, [today, soon]); } catch { return; }
+    for (const r of rows) { const st = new Date(r.start_at).getTime(), at = st - r.notify_min * 60000; if (st <= now || at - now > 2 ** 31 - 1) continue;
+      const lead = NOTIFY_LEADS.find(x => x[0] === r.notify_min)?.[1] || r.notify_min + ' min';
+      Notif.timers.push(setTimeout(() => Notif.show(`${bName(r)} at ${r.start_at.slice(11, 16)}`, `${r.description || 'Booking'}${at <= now ? '' : ' \u00b7 in ' + lead}`, 'bk' + r.id), Math.max(0, at - now))); }
+    /* the morning note: today's bookings, once a day */
+    if (Settings.get('notify_day') !== today) { let t = []; try { t = await DB.all(`SELECT b.start_at, b.guest_name, b.kind, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
+        WHERE substr(b.start_at, 1, 10) = ? AND coalesce(b.ghost, 0) = 0 AND b.kind != 'block' ORDER BY b.start_at`, [today]); } catch {}
+      if (t.length && rows.length + (await DB.one('SELECT COUNT(*) AS n FROM bookings WHERE notify_min IS NOT NULL')).n) { await Settings.set('notify_day', today);
+        Notif.show(`Today: ${t.length} booking${t.length === 1 ? '' : 's'}`, t.map(x => `${x.start_at.slice(11, 16)} ${bName(x)}`).join(' \u00b7 '), 'today'); } } },
+  /* the booking as a calendar file with its reminder, to add to the phone's calendar */
+  async ics(bid) { const b = await DB.one(`SELECT b.*, c.first_name, c.last_name, c.phone FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.id = ?`, [bid]); if (!b) return;
+    const z = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''), s0 = new Date(b.start_at), e0 = new Date(s0.getTime() + (b.duration_min || 120) * 60000);
+    const esc2 = (t) => String(t || '').replace(/\\/g, '\\\\').replace(/[,;]/g, m => '\\' + m).replace(/\r?\n/g, '\\n');
+    const studio = Settings.get('studio_name') || Settings.get('artist_name') || '';
+    const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//InkForge//Bookings//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+      `UID:inkforge-${WS.cur?.id || 'ws'}-${b.id}@inkforge`, `DTSTAMP:${z(new Date())}`, `DTSTART:${z(s0)}`, `DTEND:${z(e0)}`,
+      `SUMMARY:${esc2(`${bName(b)}${b.description ? ': ' + b.description : ''}`)}`,
+      `DESCRIPTION:${esc2([b.placement && 'Placement: ' + b.placement, b.phone && 'Phone: ' + b.phone, b.notes].filter(Boolean).join('\n'))}`, ...(studio ? [`LOCATION:${esc2(studio)}`] : []),
+      ...(b.notify_min != null ? ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc2(bName(b) + ' at ' + b.start_at.slice(11, 16))}`, `TRIGGER:-PT${b.notify_min}M`, 'END:VALARM'] : []),
+      'END:VEVENT', 'END:VCALENDAR'];
+    const f = new File([L.join('\r\n') + '\r\n'], `Booking-${b.start_at.slice(0, 10)}-${(bName(b) || 'client').replace(/[^\w-]+/g, '_')}.ics`, { type: 'text/calendar' });
+    try { if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f], title: 'Add to calendar' }); return; } } catch (err) { if (err.name === 'AbortError') return; }
+    await saveFiles([f]); toast('Saved. Open the file to add it to your calendar' + (b.notify_min != null ? ', with its reminder.' : '.'), 5000); }
+};
 
 /* ---------- Full screen ----------
    Hides the browser's bars. iPhones don't let web pages do this; there, adding InkForge to the Home Screen
@@ -10677,6 +10732,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 531, when: '2026-11-24T16:00', added: [
+    'Bookings: a Reminder section. Switch on Notify me and choose how long before (15 minutes to 2 days).',
+    'Bookings: Add to phone calendar puts the booking in your phone’s own calendar with its reminder, so it comes through even when InkForge is closed.',
+    'InkForge notifies you while it’s open or running in the background (closing the app turns these off), plus a morning note of today’s bookings.'
+  ] },
   { build: 530, when: '2026-11-24T12:00', added: [
     'Google Drive workspaces and Google Calendar sync are switched off and hidden for now.',
     'InkForge works best in Chrome or Edge: they give it the most storage and let it protect your data. Brave and some other browsers hold it to about 2 GB.',

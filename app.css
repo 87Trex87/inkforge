@@ -2948,4 +2948,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .pay-bars .bar.neg i { background: #e26b6b; } .pay-neg { color: #e26b6b; } .pay-card tr.pay-now td { background: rgba(31,181,168,.1); }
 .store-note { font-size: 12px; line-height: 1.5; margin: 12px 0 0; } .store-full { margin: 12px 0 0; font-size: 13px; }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 530; }
+:root { --app-build: 531; }
