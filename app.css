@@ -2948,5 +2948,13 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .pay-bars .bar.neg i { background: #e26b6b; } .pay-neg { color: #e26b6b; } .pay-card tr.pay-now td { background: rgba(31,181,168,.1); }
 .store-note { font-size: 12px; line-height: 1.5; margin: 12px 0 0; } .store-full { margin: 12px 0 0; font-size: 13px; }
 .bkt tfoot td { border-top: 2px solid var(--line); background: var(--bg2); position: sticky; bottom: 0; }
+.tb-draw { margin-left: auto; display: flex; gap: 4px; flex: none; } .tb-draw + .tb-fs { margin-left: 6px; }
+.tb-ic { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); color: var(--ink2); display: grid; place-items: center; }
+.tb-ic svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tb-ic:hover, .tb-ic.on { color: var(--teal); border-color: var(--teal); }
+.draw-grid .tile { border-color: rgba(31,181,168,.45); background: linear-gradient(135deg, rgba(31,181,168,.14), var(--bg2) 70%); }
+.draw-grid .tile .ico { color: var(--teal); }
+@media (min-width: 700px) { .draw-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 420px) { .tb-ic { width: 32px; height: 32px; } .tb-draw { gap: 2px; } }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 532; }
+:root { --app-build: 533; }

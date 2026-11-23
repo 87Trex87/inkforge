@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 532;
+const APP_BUILD = 533;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -929,7 +929,15 @@ const tile = (icon, title, sub, soon, go) =>
   `<div class="card tile" ${go ? `data-go="${go}"` : ''}><div class="ico">${ICON[icon]}</div>
    <div class="tt"><div class="t">${title}</div><div class="s">${esc(sub)}</div></div>${soon ? '<span class="soon">Soon</span>' : ''}</div>`;
 // Menu group: a small heading over a grid of tiles.
-const tileGroup = (label, tiles) => `<div class="mgrp">${label}</div><div class="grid">${tiles.join('')}</div>`;
+const tileGroup = (label, tiles, cls = '') => `<div class="mgrp">${label}</div><div class="grid ${cls}">${tiles.join('')}</div>`;
+/* The three drawing programs, together and up front: in Studio, on the home screen and in the top bar. */
+const DRAW_APPS = [['design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', 'designs'], ['needle', 'Tattoo simulator', 'Tattoo in ink on skin with needle groupings', 'tattoo'],
+  ['sketch', 'Sketchpad', 'Notes, plans, sketches and mind maps', 'sketches']];
+const drawTiles = () => tileGroup('Draw', DRAW_APPS.map(([i, t, s0, g]) => tile(i, t, s0, false, g)), 'draw-grid');
+/* quick buttons beside full screen at the top of every main page */
+function drawBar() { const el = document.getElementById('tb-draw'); if (!el) return; const v = (location.hash.slice(1) || 'home').split('/')[0];
+  el.innerHTML = DRAW_APPS.map(([i, t, , g]) => `<a class="tb-ic ${v === g || (g === 'designs' && v === 'design') ? 'on' : ''}" href="#${g}" data-tip="${t}" aria-label="${t}">${ICON[i]}</a>`).join(''); }
+addEventListener('hashchange', drawBar); setTimeout(drawBar, 0);
 /* Form sections, the same look as the quote screens: a heading per group of fields. Folded sections
    hold the less-used fields and open by themselves when something in them is already filled in. */
 const fsec = (title, body, o = {}) => o.fold
@@ -955,6 +963,7 @@ const VIEWS = {
         <div class="big">${greet}${name ? ', ' + esc(name) : ''}</div>
         ${name ? '' : `<p class="muted">Set your name and studio in <a href="#more" style="color:var(--teal)">More &rsaquo; Settings</a>.</p>`}
       </div>
+      ${drawTiles()}
       <div class="card"><h2>Today ${help('Today\'s sessions. Tap one to open it.')}</h2>
         <div id="home-today" class="muted">…</div></div>
       <div id="home-bday"></div>
@@ -1596,15 +1605,12 @@ const VIEWS = {
   },
   studio: {
     title: () => 'Studio',
-    render: () => tileGroup('Create', [
+    render: () => drawTiles() + tileGroup('Create', [
         tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil'),
         tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reels'),
-        tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs'),
         tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend'),
         tile('split', 'Split for printing', 'Big stencils over several pages to tape together', false, 'split'),
-        tile('sketch', 'Sketchpad', 'An open page for notes, plans, sketches and mind maps', false, 'sketches'),
-        tile('sizes', 'Size sheet', 'One design in a range of sizes on a page, to try on the client', false, 'sizes'),
-        tile('needle', 'Tattoo simulator', 'Experimental: tattoo in ink on skin with needle groupings', false, 'tattoo')])
+        tile('sizes', 'Size sheet', 'One design in a range of sizes on a page, to try on the client', false, 'sizes')])
       + tileGroup('Your work', [
         tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
         tile('forms', 'Forms', 'Consent, aftercare and your own forms', false, 'forms')])
@@ -10824,6 +10830,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 533, when: '2026-11-25T09:00', added: [
+    'Design studio, Tattoo simulator and Sketchpad are grouped together under Draw, at the top of Studio and on the home screen.',
+    'Quick buttons for all three sit beside the full screen button at the top of every main page.'
+  ] },
   { build: 532, when: '2026-11-24T20:00', added: [
     'Stats: a table of every tattoo in the period, like the other tables: choose columns, filter by period, type, paid by and how they found you, search, sort and totals.',
     'Stats: CSV export and print have moved to the Stats table (the table button on Stats), and Excel export is now CSV.'
