@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 523;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 524;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -888,6 +888,7 @@ const ICON = {
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
   stats: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
   split: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18M3 12h18" stroke-dasharray="2.5 2"/></svg>',
+  sketch: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 15c2-4 4 2 6-2s3-3 4-1"/><path d="M15 6l3 3"/></svg>',
   sizes: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1.5"/><circle cx="7.5" cy="8" r="2"/><circle cx="14" cy="9" r="3"/><circle cx="10" cy="16.5" r="3.5"/></svg>',
   tour: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>',
   bend: '<svg viewBox="0 0 24 24"><path d="M3 9c5-5 13-5 18 0M5 15c4-3.5 10-3.5 14 0"/><path d="M3 9l2 6M21 9l-2 6"/></svg>',
@@ -1534,6 +1535,7 @@ const VIEWS = {
         tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs'),
         tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend'),
         tile('split', 'Split for printing', 'Big stencils over several pages to tape together', false, 'split'),
+        tile('sketch', 'Sketchpad', 'An open page for notes, plans, sketches and mind maps', false, 'sketches'),
         tile('sizes', 'Size sheet', 'One design in a range of sizes on a page, to try on the client', false, 'sizes'),
         tile('needle', 'Tattoo simulator', 'Experimental: tattoo in ink on skin with needle groupings', false, 'tattoo')])
       + tileGroup('Your work', [
@@ -1827,6 +1829,11 @@ const VIEWS = {
     title: () => 'Quote',
     render: () => '<div id="qz"></div>',
     mount() { qzDraw(); }
+  },
+  sketches: {
+    title: () => 'Sketchpad',
+    render: () => '<div id="skp-list"></div>',
+    mount() { SKP.list(); }
   },
   sizes: {
     title: () => 'Size sheet',
@@ -9870,7 +9877,7 @@ async function fxExport(shown) {
   await xSave(new File([JSON.stringify(out)], `forms-${out.ws.name.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkforms`, { type: 'application/json' }), 'Forms', `Saved ${list.length} form${list.length === 1 ? '' : 's'}.`);
 }
 /* An old doc made safe to open: only layers of a type this version draws are kept (add new layer types here). */
-const DZ_LAYER_TYPES = new Set(['text', 'shape', 'image', 'field', 'check', 'table', 'shortcut']);
+const DZ_LAYER_TYPES = new Set(['text', 'shape', 'image', 'field', 'check', 'table', 'shortcut', 'ink']);
 const dzOldDoc = (d) => { if (!d || typeof d !== 'object') return null; d.layers = (Array.isArray(d.layers) ? d.layers : []).filter(l => l && typeof l === 'object' && DZ_LAYER_TYPES.has(l.t)); d.pages ||= 1; return d; };
 async function fxImport(P0) {
   const L = await xLoad(P0, '.inkforms,application/json', 'forms', 'forms', FX_V, 'forms'); if (!L) return 0; const { P } = L;
@@ -10093,6 +10100,15 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 524, when: '2026-11-26T10:00', added: [
+    'Sketchpad (in Studio): its own section and library, an open page that grows as you add things. Two fingers move, zoom and turn it; Fit shows everything and ⌖ brings you back to the middle.',
+    'Sketchpad brushes: pencil, pen, marker, highlighter, calligraphy and manga pen, all pressure-sensitive (speed-sensitive with a mouse or finger), plus an eraser that cuts strokes.',
+    'Sketchpad: hold still at the end of a stroke to snap it to a straight line, arc, ellipse or box.',
+    'Sketchpad: lasso to select strokes and anything else, box, circle, line and arrow shapes, and a tap-to-type text tool.',
+    'Sketchpad: swatch panels. Make your own named colour sets, or one from the colours in a sketch; they’re kept for every sketch.',
+    'Sketchpad mind maps: place ideas that size to their words, tap or drag their + to add linked ideas with curved connectors, and add If questions with Yes and No branches.',
+    'Designs: forms and sketches now live in their own sections and no longer crowd the design list.'
+  ] },
   { build: 523, when: '2026-11-25T10:00', added: [
     'Clients: Referred by (under More about them): another saved contact, or Online, Advert or Other with a note like Facebook, Google or a flyer.',
     'Clients: a new Supporter contact type, for people who may never get tattooed but send people your way.',
@@ -10610,7 +10626,7 @@ const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) 
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',
   quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'inventory-table': 'more', 'rules-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
-  reel: 'studio', reels: 'studio', stencil: 'studio', sizes: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
+  reel: 'studio', reels: 'studio', stencil: 'studio', sizes: 'studio', sketches: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
 function render() {
