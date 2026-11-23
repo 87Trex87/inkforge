@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 531;
+const APP_BUILD = 532;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -1961,22 +1961,29 @@ const VIEWS = {
         <label class="bkt-sel st-who" data-tip="Whose tattoos: everyone together, only yours, or one imported artist's (by tag). Ghost bookings never count."><select id="st-who"></select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
         ${STATS.period === 'custom' ? `<input class="in" type="date" id="st-from" value="${STATS.from}"><span class="muted">to</span><input class="in" type="date" id="st-to" value="${STATS.to}">`
           : '<span class="muted" id="st-range"></span>'}
-        <span class="row no-print" style="margin-left:auto;gap:6px"><button class="btn small" id="st-csv" data-tip="Spreadsheet of the tattoos in this period; opens in Excel">Export Excel</button>
-          <button class="btn small" id="st-print" data-tip="Choose Save as PDF in the print dialog for a PDF">Print / PDF</button></span>
+        <span class="row no-print" style="margin-left:auto;gap:6px"><a class="btn small icon-btn" href="#stats-table" data-tip="Every tattoo in this period as a table: pick columns, filter, sort, export CSV and print" aria-label="Stats table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a></span>
       </div>
       <div class="st-wrap"><div id="st-body"></div><div id="st-side"></div></div>`,
     mount() {
       $('#st-period').onclick = (e) => { const b = e.target.closest('[data-p]'); if (!b) return; STATS.period = b.dataset.p; render(); };
       const f = $('#st-from'), t = $('#st-to');
       if (f) { f.onchange = () => { STATS.from = f.value; renderStats(); }; t.onchange = () => { STATS.to = t.value; renderStats(); }; }
-      $('#st-csv').onclick = statsCsv;
       (async () => { const tags = (await DB.all("SELECT DISTINCT tag FROM bookings WHERE tag IS NOT NULL AND ghost = 0 ORDER BY tag")).map(r => r.tag), sel = $('#st-who'); if (!sel) return;
         if (STATS.who !== 'all' && STATS.who !== 'mine' && !tags.includes(STATS.who)) STATS.who = 'all';
         sel.innerHTML = [['all', tags.length ? 'Everyone (whole shop)' : 'All tattoos'], ...(tags.length ? [['mine', 'Only mine']] : []), ...tags.map(t => [t, t])].map(([v, l]) => `<option value="${esc(v)}" ${STATS.who === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
         sel.closest('label').hidden = !tags.length; sel.onchange = () => { STATS.who = sel.value; renderStats(); }; })();
-      $('#st-print').onclick = () => window.print();
       renderStats();
     }
+  },
+  'stats-table': {
+    title: () => 'Stats table',
+    render: () => `<div class="bkt-page"><div class="bkt-top">
+        <label class="bkt-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" id="sx-q" placeholder="Search client, tattoo, placement" value="${esc(SX.q || '')}" aria-label="Search"></label>
+        <div class="bkt-acts">
+          <button class="bkt-btn" id="sx-csv" data-tip="Spreadsheet (CSV) of the tattoos shown, with the columns shown"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg><span>CSV</span></button>
+          <button class="bkt-btn" id="sx-print" data-tip="Print the tattoos shown, or choose Save as PDF in the print window"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="7" y="14" width="10" height="7"/></svg><span>Print</span></button></div></div>
+      <div class="bkt-panel"><div id="sx-f"></div><div id="sx"></div></div></div>`,
+    async mount() { await sxTable(); }
   },
   'quote-cal': {
     title: () => 'Calibrate quotes',
@@ -6815,6 +6822,91 @@ async function renderStats() {
   el.querySelectorAll('[data-bk]').forEach(tr => tr.onclick = () => { location.hash = 'booking-edit/' + tr.dataset.bk; });
   const rg = $('#st-range'); if (rg) rg.textContent = STATS.period === 'all' ? 'All time' : `${a} to ${z}`;
 }
+/* ---------- Stats table ----------
+   Every completed tattoo in the period, like the other tables: choose columns, filter (period, whose, type, paid by,
+   how they found you), search, sort, CSV and print. Totals along the bottom. Pay columns show when Your pay is on. */
+const SX = { q: '', kinds: null, pays: null, srcs: null, sort: { k: 'date', dir: -1 } };
+const SX_COLS = () => [['time', 'Start', false], ['kind', 'Type', true], ['description', 'Tattoo', true], ['placement', 'Placement', true], ['size', 'Size', false],
+  ['quote', 'Quote', false], ['paid', 'Paid', true], ['pay_method', 'Paid by', true], ['hours', 'Hours', true], ['rate', 'Per hour', false], ['deposit', 'Deposit', false],
+  ['loy', 'Loyalty discount', false], ['src', 'Found you', false], ['tag', 'Artist tag', false],
+  ...(payOn() ? [['studio', payCfg().mode === 'comm' ? 'Studio share' : 'Supplies', true], ['mine', 'Yours', true], ['payday', 'Pay day', false]] : [])];
+const SX_NUM = ['quote', 'paid', 'hours', 'rate', 'deposit', 'loy', 'studio', 'mine'], SX_MONEY = ['quote', 'paid', 'rate', 'deposit', 'loy', 'studio', 'mine'];
+function sxVal(r, k, pc) { const sp = pc ? paySplit(pc, +r.paid || 0, +r.loy_off || 0) : null;
+  switch (k) { case 'date': return r.start_at.slice(0, 10); case 'time': return r.start_at.slice(11, 16); case 'client': return bName(r); case 'kind': return kindLabel(r);
+    case 'hours': return r.time_min != null ? Math.round(r.time_min / 6) / 10 : null; case 'rate': return r.time_min ? Math.round((+r.paid || 0) / (r.time_min / 60)) : null;
+    case 'loy': return r.loy_off ?? null; case 'src': return r._src || ''; case 'tag': return r.tag || '';
+    case 'studio': return sp ? Math.round((pc.mode === 'comm' ? sp.studio : sp.sup) * 100) / 100 : null; case 'mine': return sp ? Math.round(sp.mine * 100) / 100 : null;
+    case 'payday': return pc ? payPeriod(pc, r.start_at).pay : ''; default: return r[k] ?? ''; } }
+const sxCell = (r, k, pc) => { const v = sxVal(r, k, pc); if (v == null || v === '') return '\u2014'; return SX_MONEY.includes(k) ? money(v) : k === 'date' || k === 'payday' ? fmtDay(v) : k === 'hours' ? fmtH(v) : String(v); };
+async function sxTable() {
+  let saved = {}; try { saved = JSON.parse(Settings.get('sx_table', '{}')); } catch {}
+  const ALL = SX_COLS(), cols = new Set((saved.cols || ALL.filter(c => c[2]).map(c => c[0])).filter(k => ALL.some(c => c[0] === k))), remember = () => Settings.set('sx_table', JSON.stringify({ cols: [...cols] }));
+  const pc = payOn() ? payCfg() : null;
+  let all = [], rows = [], open = null, tags = [];
+  const PER = [['month', 'This month'], ['3m', 'Last 3 months'], ['year', 'This year'], ['all', 'All time'], ['custom', 'Custom']];
+  const filters = () => { const hid = ALL.filter(c => !cols.has(c[0])).length, uniq = (f) => [...new Set(all.map(f))].sort();
+    const menu = (id, label, items) => `<div class="bkt-dd ${open === id ? 'open' : ''}"><button class="bkt-sel" data-dd="${id}">${label}<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>${open === id ? `<div class="bkt-menu">${items}</div>` : ''}</div>`;
+    const multi = (id, label, set, list, attr) => menu(id, `${label} <b>${set ? set.size : 'All'}</b>`, list.map(v => `<label><input type="checkbox" data-${attr}="${esc(v)}" ${!set || set.has(v) ? 'checked' : ''}>${esc(v || 'Not set')}<span class="muted" style="margin-left:auto">${all.filter(r => sxKey(attr, r) === v).length}</span></label>`).join('') || '<p>None in this period.</p>');
+    $('#sx-f').innerHTML = `<div class="bkt-filters">
+      ${menu('per', `${PER.find(p => p[0] === STATS.period)?.[1] || 'Period'}`, PER.map(([k, l]) => `<label><input type="radio" name="sxp" data-sxp="${k}" ${STATS.period === k ? 'checked' : ''}>${l}</label>`).join('')
+        + (STATS.period === 'custom' ? `<div class="row" style="gap:6px;padding:6px 8px"><input class="in" type="date" data-sxd="from" value="${STATS.from}"><input class="in" type="date" data-sxd="to" value="${STATS.to}"></div>` : ''))}
+      ${tags.length ? menu('who', STATS.who === 'all' ? 'Everyone' : STATS.who === 'mine' ? 'Only mine' : esc(STATS.who), [['all', 'Everyone (whole shop)'], ['mine', 'Only mine'], ...tags.map(t => [t, t])].map(([v, l]) => `<label><input type="radio" name="sxw" data-sxw="${esc(v)}" ${STATS.who === v ? 'checked' : ''}>${esc(l)}</label>`).join('')) : ''}
+      ${multi('kinds', 'Type', SX.kinds, uniq(r => kindLabel(r)), 'sxk')}
+      ${multi('pays', 'Paid by', SX.pays, uniq(r => r.pay_method || ''), 'sxm')}
+      ${multi('srcs', 'Found you', SX.srcs, uniq(r => r._src || ''), 'sxs')}
+      <span style="flex:1"></span>
+      ${menu('cols', `Columns${hid ? ` <b>${ALL.length - hid}/${ALL.length}</b>` : ''}`, ALL.map(([k, l]) => `<label><input type="checkbox" data-sxc="${k}" ${cols.has(k) ? 'checked' : ''}>${l}</label>`).join('') + '<p>Hidden columns are left out of the print and the CSV too. Date and client are always shown.</p>')}</div>`; };
+  const sxKey = (attr, r) => attr === 'sxk' ? kindLabel(r) : attr === 'sxm' ? r.pay_method || '' : r._src || '';
+  const table = async () => {
+    all = await statsRows(); tags = (await DB.all('SELECT DISTINCT tag FROM bookings WHERE tag IS NOT NULL AND ghost = 0 ORDER BY tag')).map(r => r.tag);
+    const RG = await refGraph(); for (const r of all) { const c = RG.byId.get(r.client_id); r._src = !c ? '' : c.referred_by ? 'A person' : (REF_SRC.find(x => x[0] === (c.ref_src || ''))?.[1] || 'Not set'); if (r._src === 'Not set') r._src = ''; }
+    const q = SX.q.trim().toLowerCase(), C = ALL.filter(c => cols.has(c[0])), S = SX.sort;
+    rows = all.filter(r => (!SX.kinds || SX.kinds.has(kindLabel(r))) && (!SX.pays || SX.pays.has(r.pay_method || '')) && (!SX.srcs || SX.srcs.has(r._src || ''))
+      && (!q || [bName(r), r.description, r.placement, r.size, r.pay_method, r.tag].some(v => v && String(v).toLowerCase().includes(q))));
+    const key = (r) => { const v = sxVal(r, S.k, pc); return S.k === 'date' ? r.start_at : SX_NUM.includes(S.k) ? (v ?? -1) : String(v ?? '').toLowerCase(); };
+    rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
+    sxTable.shown = { rows, cols: C, pc };
+    const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${S.k === k ? 'on' : ''}">${l}<i>${S.k === k ? (S.dir > 0 ? '\u2191' : '\u2193') : ''}</i></th>`;
+    const sum = (k) => rows.reduce((t, r) => t + (+sxVal(r, k, pc) || 0), 0), mins = rows.reduce((t, r) => t + (r.time_min || 0), 0);
+    const tot = (k) => k === 'hours' ? fmtH(mins / 60) : k === 'rate' ? (mins ? money(Math.round(sum('paid') / (mins / 60))) : '') : ['quote', 'paid', 'deposit', 'loy', 'studio', 'mine'].includes(k) ? money(Math.round(sum(k))) : '';
+    $('#sx').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('date', 'Date')}${th('client', 'Client')}${C.map(c => th(c[0], c[1], SX_NUM.includes(c[0]) ? 'num' : '')).join('')}</tr></thead>
+      <tbody>${rows.map(r => `<tr data-bk="${r.id}"><td class="nw">${esc(fmtDay(r.start_at.slice(0, 10)))}</td><td class="nw"><b>${esc(bName(r))}</b>${bTag(r)}</td>${C.map(c => `<td class="${SX_NUM.includes(c[0]) ? 'num' : ''}">${esc(sxCell(r, c[0], pc))}</td>`).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><td><b>Total</b></td><td>${rows.length} tattoo${rows.length === 1 ? '' : 's'}</td>${C.map(c => `<td class="${SX_NUM.includes(c[0]) ? 'num' : ''}"><b>${tot(c[0])}</b></td>`).join('')}</tr></tfoot></table></div>
+      <div class="bkt-foot">${rows.length} of ${all.length} tattoo${all.length === 1 ? '' : 's'} \u00b7 ${STATS.period === 'all' ? 'all time' : esc(statsRange().map(fmtDay).join(' to '))} \u00b7 tap a row to open the booking</div>`
+      : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><b>No tattoos match</b><span class="muted">Try another period or filter, or clear the search.</span></div>`;
+    $('#sx-csv').disabled = $('#sx-print').disabled = !rows.length; };
+  const both = async () => { await table(); filters(); };
+  await both();
+  let qq; $('#sx-q').oninput = (e) => { SX.q = e.target.value; clearTimeout(qq); qq = setTimeout(table, 200); };
+  const head = (C) => ['Date', 'Client', ...C.map(c => c[1])];
+  $('#sx-csv').onclick = () => { const { rows: R, cols: C, pc: P } = sxTable.shown, [a, z] = statsRange();
+    return saveCsv(`InkForge-tattoos-${STATS.period === 'all' ? 'all' : a + '_to_' + z}.csv`, head(C), R.map(r => [r.start_at.slice(0, 10), bName(r), ...C.map(c => { const v = sxVal(r, c[0], P); return v == null ? '' : v; })])); };
+  $('#sx-print').onclick = () => { const { rows: R, cols: C, pc: P } = sxTable.shown, studio = Settings.get('studio_name') || Settings.get('artist_name') || 'Stats';
+    let p = $('#print-area'); if (!p) { p = document.createElement('div'); p.id = 'print-area'; document.body.appendChild(p); }
+    p.innerHTML = `<div class="pbook"><div class="pb-head"><h1>${esc(studio)}</h1><div><b>Tattoos</b> \u00b7 ${STATS.period === 'all' ? 'all time' : esc(statsRange().map(fmtDay).join(' to '))}${SX.q.trim() ? ' \u00b7 \u201c' + esc(SX.q.trim()) + '\u201d' : ''}<br>${R.length} tattoo${R.length === 1 ? '' : 's'} \u00b7 ${esc(fmtDay(ymd(new Date())))}</div></div>
+      <table><thead><tr>${head(C).map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${R.map(r => `<tr><td>${esc(fmtDay(r.start_at.slice(0, 10)))}</td><td><b>${esc(bName(r))}</b></td>${C.map(c => `<td>${esc(sxCell(r, c[0], P))}</td>`).join('')}</tr>`).join('')}</tbody>
+      ${$('#sx tfoot') ? `<tfoot>${$('#sx tfoot').innerHTML}</tfoot>` : ''}</table></div>`;
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); p.innerHTML = ''; removeEventListener('afterprint', done); };
+    afterPrint(done); window.print(); };
+  const F = $('#sx-f');
+  F.onchange = async (e) => { const t = e.target, flip = (key, v, list) => { const L = list, S0 = SX[key] || new Set(L); t.checked ? S0.add(v) : S0.delete(v); SX[key] = S0.size === L.length ? null : S0; };
+    const uniq = (f) => [...new Set(all.map(f))];
+    if (t.dataset.sxp) { STATS.period = t.dataset.sxp; if (STATS.period !== 'custom') open = null; }
+    if (t.dataset.sxd) STATS[t.dataset.sxd] = t.value;
+    if (t.dataset.sxw != null) { STATS.who = t.dataset.sxw; open = null; }
+    if (t.dataset.sxk != null) flip('kinds', t.dataset.sxk, uniq(r => kindLabel(r)));
+    if (t.dataset.sxm != null) flip('pays', t.dataset.sxm, uniq(r => r.pay_method || ''));
+    if (t.dataset.sxs != null) flip('srcs', t.dataset.sxs, uniq(r => r._src || ''));
+    if (t.dataset.sxc) { t.checked ? cols.add(t.dataset.sxc) : cols.delete(t.dataset.sxc); await remember(); }
+    both(); };
+  F.onclick = (e) => { const dd = e.target.closest('[data-dd]')?.dataset.dd; if (dd) { open = open === dd ? null : dd; return filters(); } };
+  const shut = (e) => { if (!document.contains(F)) return removeEventListener('pointerdown', shut, true); if (open && !e.target.closest('.bkt-dd')) { open = null; filters(); } };
+  addEventListener('pointerdown', shut, true);
+  $('#sx').onclick = (e) => { const sk = e.target.closest('[data-sk]')?.dataset.sk; if (sk) { SX.sort = SX.sort.k === sk ? { k: sk, dir: -SX.sort.dir } : { k: sk, dir: SX_NUM.includes(sk) || sk === 'date' ? -1 : 1 }; return table(); }
+    const tr = e.target.closest('tr[data-bk]'); if (tr) location.hash = 'booking-edit/' + tr.dataset.bk; };
+}
+
 async function statsCsv() {
   const rows = await statsRows();
   if (!rows.length) return toast('Nothing to export in this period.');
@@ -10732,6 +10824,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 532, when: '2026-11-24T20:00', added: [
+    'Stats: a table of every tattoo in the period, like the other tables: choose columns, filter by period, type, paid by and how they found you, search, sort and totals.',
+    'Stats: CSV export and print have moved to the Stats table (the table button on Stats), and Excel export is now CSV.'
+  ] },
   { build: 531, when: '2026-11-24T16:00', added: [
     'Bookings: a Reminder section. Switch on Notify me and choose how long before (15 minutes to 2 days).',
     'Bookings: Add to phone calendar puts the booking in your phone’s own calendar with its reminder, so it comes through even when InkForge is closed.',
@@ -11296,7 +11392,7 @@ const WS_BIZ = new Set(['rules-table', 'inventory-table', 'quotes-table', 'clien
 const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) === 'design'; } catch { return WS.cur?.mode === 'design'; } };
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',
-  quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'inventory-table': 'more', 'rules-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more', loyalty: 'more', pay: 'more',
+  quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'stats-table': 'more', 'inventory-table': 'more', 'rules-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more', loyalty: 'more', pay: 'more',
   reel: 'studio', reels: 'studio', stencil: 'studio', sizes: 'studio', sketches: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
