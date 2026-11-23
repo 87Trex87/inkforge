@@ -1,6 +1,7 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 529;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 530;
+const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -1607,7 +1608,7 @@ const VIEWS = {
         tile('rules', 'Rule book', 'Your studio rules', false, 'rules'),
         ...(Loy.on() || (+Settings.get('loy_left') > 0 && !wsDesign()) ? [tile('loyalty', 'Loyalty', 'Your rewards program', false, 'loyalty')] : [])]))
       + tileGroup('App', [
-        tile('settings', 'Settings & backup', wsDesign() ? 'Profile, workspace and backup' : 'Profile, your week, Google, backup', false, 'settings'),
+        tile('settings', 'Settings & backup', wsDesign() ? 'Profile, workspace and backup' : GOOGLE_ON ? 'Profile, your week, Google, backup' : 'Profile, your week, backup', false, 'settings'),
         tile('tour', 'Take a tour', 'A guided look around InkForge', false, 'tour')])
       + `<p class="app-credit">Designed and crafted by Trevor Schuster using vibe coding.<br>Over 15 years of experience in tattooing.</p>`
   },
@@ -2623,7 +2624,7 @@ const VIEWS = {
         <div class="lbl" style="margin-top:6px">Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</div>
         <div id="off-card"></div>
       </details>
-      <details class="card qc-sec" data-biz data-sec="gcal" ${SET_OPEN.has('gcal') ? 'open' : ''}><summary><h2>Google Calendar ${help('Bookings sync both ways with an "InkForge" calendar in your Google account. Only time, title and the labelled note lines are used; everything else in Google is ignored.')}</h2></summary>
+      <details class="card qc-sec" data-biz data-sec="gcal" ${SET_OPEN.has('gcal') ? 'open' : ''} ${GOOGLE_ON ? '' : 'hidden'}><summary><h2>Google Calendar ${help('Bookings sync both ways with an "InkForge" calendar in your Google account. Only time, title and the labelled note lines are used; everything else in Google is ignored.')}</h2></summary>
         <div id="gcal-status" style="margin-bottom:12px"></div>
         <label class="field"><span>OAuth client ID ${help('Created once in Google Cloud. See the setup guide below.')}</span>
           <input class="in" id="s-gid" value="${esc(Settings.get('gcal_client_id'))}" placeholder="…apps.googleusercontent.com" autocapitalize="off" spellcheck="false"></label>
@@ -2649,7 +2650,7 @@ const VIEWS = {
         <div id="last-backup" class="muted" style="margin-bottom:12px"></div>
         <div class="row">
           <button class="btn primary" id="b-export" data-tip="Save this workspace as a file on this device: a backup, or to open it on another device">Save workspace file</button>
-          <button class="btn" id="b-share" data-tip="Send the workspace file to another app, e.g. Google Drive or email">Share</button>
+          <button class="btn" id="b-share" data-tip="Send the workspace file to another app, e.g. email or a cloud storage app">Share</button>
           <button class="btn" id="b-merge" data-tip="Add another backup's data to yours, e.g. from another artist or device. Pick which sections; duplicates are skipped.">Merge from file…</button>
           ${WS.list.length > 1 ? '<button class="btn" id="b-mergews" data-tip="Copy sections from another workspace on this device into this one, e.g. to update every artist from a test workspace">Merge from workspace…</button>' : ''}
           <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
@@ -2962,11 +2963,13 @@ async function renderStorage() {
     <div class="stat"><span>Used</span><span>${est.usage != null ? fmtBytes(est.usage) + ' of ' + fmtBytes(est.quota) : 'unknown'}</span></div>
     <div class="meter"><i style="width:${pct}%"></i></div>
     <div class="row" style="margin-top:12px"><span>${persisted ? '<span class="badge ok">Protected</span>' : '<span class="badge warn">Not protected</span>'}</span>
-      ${persisted ? '' : '<button class="btn" id="b-persist">Protect storage</button>'}</div>`;
+      ${persisted ? '' : '<button class="btn" id="b-persist">Protect storage</button>'}</div>
+    ${pct >= 80 ? `<div class="card store-full" style="border-color:${pct >= 95 ? 'var(--red)' : 'var(--amber,#e0a030)'}"><b>${pct >= 95 ? 'Storage is nearly full.' : 'Storage is getting full.'}</b> Save a workspace file now, then make room: delete old reels and videos, lower the portfolio picture size, or free space on the device. At 100%, new photos and changes stop saving.</div>` : ''}
+    <p class="muted store-note">${STORE_NOTE}</p>`;
   const b = $('#b-persist');
   if (b) b.onclick = async () => {
     const ok = await navigator.storage.persist();
-    toast(ok ? 'Storage protected.' : 'Browser declined. Installing the app to your home screen usually allows it.');
+    toast(ok ? 'Storage protected.' : 'Browser declined. Install InkForge from Chrome or Edge: they allow it (Brave doesn\u2019t).', 6000);
     renderStorage();
   };
 }
@@ -4042,7 +4045,7 @@ const sqlTime = (s) => new Date(s.replace(' ', 'T') + 'Z');
 const Gcal = {
   SCOPES: ['https://www.googleapis.com/auth/calendar.app.created', 'https://www.googleapis.com/auth/calendar.freebusy'],
   token: null, exp: 0, running: false, state: 'off', msg: '', _t: null,
-  enabled() { return Settings.get('gcal_on') === '1' && !!Settings.get('gcal_client_id'); },
+  enabled() { return GOOGLE_ON && Settings.get('gcal_on') === '1' && !!Settings.get('gcal_client_id'); },
   hasToken() { return !!this.token && Date.now() < this.exp - 60000; },
 
   async loadGis() {
@@ -10665,7 +10668,7 @@ const notePos = () => { try { return JSON.parse(Settings.get('note_pos', '{}'));
 async function notesRows() { return (await DB.all(`SELECT id, name, doc, thumb_ref, updated_at FROM designs WHERE kind = 'note' ORDER BY id`)).map(r => { let doc = {}; try { doc = JSON.parse(r.doc); } catch {} return { ...r, doc }; }); }
 /* The Settings screen as tabs. The sections stay where they're built, so their controls keep working; a tab just shows its own. */
 let setTab = 'start';
-const SET_TABS = [['start', 'Start', 'Quick actions and helpers.'], ['profile', 'Profile', 'Your name, studio and logo.'], ['week', 'Your week', 'Your hours, days off and time between bookings.'], ['gcal', 'Google', 'Link your bookings to Google Calendar.'], ['backup', 'Backup', 'Keep your work safe: save it, restore it, and check your storage.']];
+const SET_TABS = [['start', 'Start', 'Quick actions and helpers.'], ['profile', 'Profile', 'Your name, studio and logo.'], ['week', 'Your week', 'Your hours, days off and time between bookings.'], ['gcal', 'Google', 'Link your bookings to Google Calendar.'], ['backup', 'Backup', 'Keep your work safe: save it, restore it, and check your storage.']].filter(t => GOOGLE_ON || t[0] !== 'gcal');
 function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = 'backup';   // the tour's stop here points at the backup section
   const cards = [...document.querySelectorAll('#view > .card')]; if (!cards.length) return; const tabOf = (c) => c.dataset.sec || (c.classList.contains('su-again') ? 'start' : 'profile'); const bar = document.createElement('div'); bar.className = 'set-tabs'; bar.innerHTML = SET_TABS.map(([k, n]) => `<button data-stab="${k}">${n}</button>`).join(''); const intro = document.createElement('p'); intro.className = 'set-intro'; cards[0].before(bar, intro);
   cards.forEach(c => { if (c.tagName === 'DETAILS') { c.open = true; c.querySelector(':scope > summary').addEventListener('click', (e) => { if (!e.target.closest('button, a, .help')) e.preventDefault(); }); c.classList.add('set-fixed'); } });
@@ -10674,6 +10677,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 530, when: '2026-11-24T12:00', added: [
+    'Google Drive workspaces and Google Calendar sync are switched off and hidden for now.',
+    'InkForge works best in Chrome or Edge: they give it the most storage and let it protect your data. Brave and some other browsers hold it to about 2 GB.',
+    'Settings › Backup and the start screen explain storage: it depends on the device’s free space, is shared by every workspace on the device, and what happens when it fills up.',
+    'A warning shows in Settings › Backup when storage passes 80%.'
+  ] },
   { build: 529, when: '2026-11-29T10:00', added: [
     'Your pay: track commission (a share of each tattoo) or chair rent in Settings or at setup, with who buys supplies and when you’re paid.',
     'Stats: your take-home, the studio’s share or rent, supplies, per tattoo and per hour, a take-home chart, pay days and the next pay day.',
@@ -11341,9 +11350,13 @@ async function storageProtect() {
 }
 const storageWarn = () => storageSafe === false ? `<div class="card start-warn" style="border-color:var(--red);margin-top:12px">
   <b>Storage not protected</b><p class="muted" style="margin:4px 0 8px;font-size:13px">This browser may clear everything stored here, every workspace included, when the device runs low on space.
-  Installing InkForge to your home screen usually allows protection. Until then, save workspace files or keep workspaces in Google Drive.</p>
+  Installing InkForge to your home screen usually allows protection; Chrome and Edge allow it, Brave doesn\u2019t. Until then, save workspace files${GOOGLE_ON ? ' or keep workspaces in Google Drive' : ''}.</p>
   <button class="btn small" id="st-protect">Protect storage</button></div>` : '';
 
+/* Where InkForge keeps its data, said the same way wherever storage comes up. */
+const STORE_NOTE = `<b>Best in Chrome or Edge.</b> They give InkForge the most room (often many GB) and let it protect your data; some browsers, like Brave, Firefox and Safari, hold it to about 1\u20132 GB or won\u2019t protect it.
+  The room you get also depends on how much free space the device has left, and it\u2019s shared by every workspace on this device (several artists on one tablet all use the same space).
+  If it fills up, new photos, videos and changes can fail to save, and a browser that hasn\u2019t protected the storage may clear data to make room, so save a workspace file and free some space before it gets full.`;
 /* Start screen: like a desktop app's welcome window. New, open a workspace file, or pick a recent one. */
 function showStart() {
   const ago = (iso) => { if (!iso) return 'Never opened'; const d = (Date.now() - new Date(iso)) / 864e5;
@@ -11355,7 +11368,7 @@ function showStart() {
       <div class="start-acts">
         <button class="start-big" id="st-new"><b>+ New workspace</b><span>Start fresh, e.g. for another artist</span></button>
         <label class="start-big"><b>Open file…</b><span>A workspace or backup file (.inkforge)</span><input type="file" accept=".inkforge,.sqlite,.db" hidden id="st-file"></label>
-        <button class="start-big" id="st-drive"><b>☁ Link from Google Drive</b><span>A workspace you keep in your Drive, to use on this device too</span></button>
+        ${GOOGLE_ON ? '<button class="start-big" id="st-drive"><b>☁ Link from Google Drive</b><span>A workspace you keep in your Drive, to use on this device too</span></button>' : ''}
       </div>
       <div class="row" style="align-items:center"><div class="letter" style="flex:1">Recent</div>
         <button class="btn small" id="st-saveall" data-tip="Save every workspace as a file in your Downloads folder">Save all</button></div>
@@ -11366,7 +11379,7 @@ function showStart() {
             <button class="btn small" data-wsren="${w.id}">Rename</button>
             <button class="btn small" data-wssave="${w.id}" data-tip="Save this workspace as a file to share or keep safe">Save file</button>
             ${w.cloud ? `<button class="btn small" data-wsunlink="${w.id}" data-tip="Keep using it on this device only. The copy in your Drive stays there.">Stop using Drive</button>`
-              : w.test ? '' : `<button class="btn small" data-wsup="${w.id}" data-tip="Keep this workspace in your Google Drive so your other devices can open it">Move to Google Drive</button>`}
+              : w.test || !GOOGLE_ON ? '' : `<button class="btn small" data-wsup="${w.id}" data-tip="Keep this workspace in your Google Drive so your other devices can open it">Move to Google Drive</button>`}
             <button class="btn small danger" data-wsdel="${w.id}" style="margin-left:auto">Delete</button></div>` : ''}
         </div>`).join('')}</div>
       ${storageWarn()}
@@ -11376,7 +11389,8 @@ function showStart() {
       ${FS.can() ? `<label class="toggle" style="display:inline-flex;margin-top:8px" data-tip="Hide the browser's bars once a workspace opens. The full screen button at the top switches it back.">
         <input type="checkbox" id="st-fs" ${WS.fs !== false ? 'checked' : ''}><span>Go full screen when a workspace opens</span></label>` : ''}
       <p class="muted" style="font-size:12px;margin-top:16px">Workspaces are stored on this device. Save a workspace file to move it to another device or keep a copy safe: keeping that file safe is up to you.
-        Or keep a workspace in your own Google Drive (☁) to use it on several devices: one device edits at a time, the others can view or take over.</p>
+        ${GOOGLE_ON ? 'Or keep a workspace in your own Google Drive (☁) to use it on several devices: one device edits at a time, the others can view or take over.' : ''}</p>
+      <p class="muted store-note">${STORE_NOTE}</p>
     </div>`;
   };
   let menu = null;
