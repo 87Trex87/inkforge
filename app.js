@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 517;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 518;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -9778,6 +9778,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 518, when: '2026-11-23T21:00', added: [
+    'Eyedropper with a magnifier, everywhere: it follows the pointer over any picture, shows the pixels round it ten times bigger and the colour under it. Click to take it; with a finger or pen, press, slide to aim and let go.',
+    'Simulator: the colour boxes (skin tone, layer colours, marker colour) have an eyedropper button beside them.',
+    'Design studio: spell check for text, in British English. Check spelling (this text) or Check all text (every page) lists the mistakes with suggestions to tap, Ignore, or Add to your dictionary. Works offline.'],
+    test: ['Design studio: pick a shape, tap the eyedropper beside its fill and move over the design.', 'Design studio: type a word wrong in a text and tap Check spelling.'] },
   { build: 517, when: '2026-11-23T18:00', added: [
     'Design studio: Copy and Cut buttons on picked items (one or several), and a Paste button in the top bar: paste here, in place, on another page, on the master or on every page. Pasting onto page 1 no longer sends things back to the page they came from.',
     'Design studio: blank pages can have as many pages as you like, with a master page under them all. Tap + at the top of the design to add one.',

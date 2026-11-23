@@ -1406,6 +1406,74 @@ function dzPalMan(done) {
 /* Tools inside every colour choice (bound once for the whole page): the eyedropper, the palette menu, Palettes…,
    and remembering colours as they're used. They work on the swatch box itself, so they suit any colour choice: a
    picked colour goes in as if its swatch had been tapped. */
+/* The eyedropper, everywhere: a magnifier follows the pointer over any picture on the screen (a canvas, photo or
+   video), showing the pixels round it ten times bigger with the one in the middle ringed, and its colour. A mouse takes
+   the colour when it presses; a finger or pen presses, slides to aim (the magnifier sits above it, out from under the
+   finger) and lets go to take it. Esc, or a press off any picture, puts it away. Resolves '#rrggbb' or null. */
+function inkEyedrop() { return new Promise((res) => {
+  document.getElementById('ink-loupe')?.remove(); document.getElementById('ink-eyeshield')?.remove();
+  const sh = document.createElement('div'); sh.id = 'ink-eyeshield'; document.body.appendChild(sh);   /* catches every press, so nothing under it acts */
+  const L = document.createElement('div'); L.id = 'ink-loupe'; L.hidden = true; L.innerHTML = '<canvas width="132" height="132"></canvas><span><i></i><b></b></span>'; document.body.appendChild(L);
+  const lc = L.querySelector('canvas'), lx = lc.getContext('2d'), chip = L.querySelector('i'), lab = L.querySelector('b'), one = document.createElement('canvas'); one.width = one.height = 1;
+  const ox = one.getContext('2d', { willReadFrequently: true });
+  document.body.classList.add('dz-eyeon'); let cur = null, down = false;
+  const media = (el) => el && el !== lc && ((el.tagName === 'CANVAS' && el.width && el.height) || (el.tagName === 'IMG' && el.complete && el.naturalWidth) || (el.tagName === 'VIDEO' && el.videoWidth));
+  /* Everything showing a picture under the point, top first (the eyedropper's own parts aside). */
+  const srcsAt = (x, y) => { sh.style.display = 'none'; L.style.display = 'none'; let els = document.elementsFromPoint(x, y).filter(media); sh.style.display = ''; L.style.display = '';
+    if (!els.length) els = [...document.querySelectorAll('canvas, img, video')].filter(e => media(e) && e.getClientRects().length).reverse().filter(e => { const r = e.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; });
+    return els; };
+  const px = (el, e) => { const r = el.getBoundingClientRect(), W = el.naturalWidth || el.videoWidth || el.width, H = el.naturalHeight || el.videoHeight || el.height;
+    return { el, x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
+  /* The first that has something at that spot: a see-through overlay (guides, handles) is looked through. */
+  const at = (e) => { let last = null; for (const el of srcsAt(e.clientX, e.clientY)) { const p = px(el, e); last = p;
+      try { ox.clearRect(0, 0, 1, 1); ox.drawImage(el, Math.floor(p.x), Math.floor(p.y), 1, 1, 0, 0, 1, 1); const d = ox.getImageData(0, 0, 1, 1).data; if (d[3] > 8) { p.rgb = d; return p; } } catch { p.bad = true; } }
+    return last; };
+  const show = (e) => { const p = at(e); cur = null;
+    if (!p) { L.hidden = true; return; }
+    if (p.rgb) cur = '#' + [p.rgb[0], p.rgb[1], p.rgb[2]].map(v => v.toString(16).padStart(2, '0')).join('');
+    lx.imageSmoothingEnabled = false; lx.fillStyle = '#222'; lx.fillRect(0, 0, 132, 132);
+    try { lx.drawImage(p.el, Math.floor(p.x) - 5, Math.floor(p.y) - 5, 11, 11, 0, 0, 132, 132); } catch {}
+    lx.strokeStyle = 'rgba(0,0,0,.6)'; lx.lineWidth = 3; lx.strokeRect(60, 60, 12, 12); lx.strokeStyle = '#fff'; lx.lineWidth = 1.5; lx.strokeRect(60, 60, 12, 12);
+    chip.style.background = cur || 'transparent'; lab.textContent = cur ? cur.toUpperCase() : 'Can’t read this picture';
+    const touch = e.pointerType !== 'mouse', w = 140, h = 168;
+    let lx0 = touch ? e.clientX - w / 2 : e.clientX + 22, ly0 = touch ? e.clientY - h - 46 : e.clientY - h - 12;
+    if (ly0 < 6) ly0 = touch ? e.clientY + 46 : e.clientY + 22; lx0 = Math.max(6, Math.min(innerWidth - w - 6, lx0));
+    L.style.left = lx0 + 'px'; L.style.top = ly0 + 'px'; L.hidden = false; };
+  const done = (v) => { sh.remove(); L.remove(); document.body.classList.remove('dz-eyeon'); removeEventListener('keydown', key, true); res(v); };
+  const key = (e) => { if (e.key === 'Escape') { e.preventDefault(); done(null); } };
+  addEventListener('keydown', key, true);
+  sh.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' || down) show(e); });
+  sh.addEventListener('pointerdown', (e) => { e.preventDefault(); show(e);
+    if (e.pointerType === 'mouse') { if (!cur && L.hidden) toast('Eyedropper put away.', 1200); return done(cur); }
+    down = true; try { sh.setPointerCapture(e.pointerId); } catch {} });
+  sh.addEventListener('pointerup', (e) => { if (!down) return; down = false; show(e); if (!cur && L.hidden) toast('Eyedropper put away.', 1200); done(cur); });
+  sh.addEventListener('pointercancel', () => done(null));
+  toast(matchMedia('(pointer: fine)').matches ? 'Point at the picture and click to take the colour. Esc to cancel.' : 'Press on the picture, slide to aim, and let go to take the colour.', 2600);
+}); }
+/* Plain colour boxes (the simulator's and anywhere else without one) get an eyedropper button beside them. */
+(function inkEyeBoxes() {
+  const ICO = '<svg viewBox="0 0 24 24"><path d="M14 4l6 6M17 7l-9.5 9.5L4 20l3.5-3.5L17 7"/><path d="M12.5 5.5l6 6"/></svg>';
+  const add = (inp) => { if (inp.dataset.eyed || inp.closest('.dz-sw, .ink-dots, .dz-cw, #ink-loupe')) return; inp.dataset.eyed = 1;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'ink-eyeb'; b.innerHTML = ICO; b.title = 'Eyedropper: take a colour from the picture'; b.setAttribute('aria-label', 'Eyedropper');
+    b.onclick = async (e) => { e.preventDefault(); e.stopPropagation(); const hx = await inkEyedrop(); if (!hx || !inp.isConnected) return;
+      inp.value = hx; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); };
+    (inp.closest('label') || inp).after(b); };
+  const scan = (root) => { if (root.querySelectorAll) root.querySelectorAll('input[type=color]').forEach(add); };
+  new MutationObserver((ms) => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) { if (n.matches?.('input[type=color]')) add(n); else scan(n); } }).observe(document.documentElement, { childList: true, subtree: true });
+  scan(document);
+})();
+/* Spelling (design studio text): nspell with the British English word list, loaded the first time it's asked for
+   (lib/, kept offline). Words you add are kept in the setting dz_words, for every design. */
+let dzSpellP = null;
+function dzSpell() { return dzSpellP ||= (async () => {
+  const [{ default: nspell }, aff, dic] = await Promise.all([import('./lib/nspell.mjs'), fetch('lib/en-gb.aff').then(r => r.text()), fetch('lib/en-gb.dic').then(r => r.text())]);
+  const sp = nspell(aff, dic); for (const w of dzSpellMine()) sp.add(w); return sp; })().catch((e) => { dzSpellP = null; throw e; }); }
+const dzSpellMine = () => { try { const a = JSON.parse(Settings.get('dz_words', '[]')); return Array.isArray(a) ? a : []; } catch { return []; } };
+/* The words of a text that aren't in the dictionary: no {fields}, numbers, web or @ handles, single letters. */
+function dzSpellBad(sp, text) { const out = new Map(), T = String(text || '').replace(/\{\w+\}/g, ' ').replace(/(https?:\/\/|www\.|@)\S+/g, ' ');
+  for (const m of T.matchAll(/[\p{L}][\p{L}'’]*[\p{L}]|[\p{L}]/gu)) { const w = m[0].replace(/’/g, "'"); if (w.length < 2 || /\d/.test(w)) continue;
+    if (sp.correct(w) || sp.correct(w.toLowerCase()) || sp.correct(w.replace(/'s$/i, ''))) continue; out.set(w, (out.get(w) || 0) + 1); }
+  return [...out.keys()]; }
 const DZE = { arm: null };
 function dzSwatchTools() {
   if (DZE.bound) return; DZE.bound = true;
@@ -1424,8 +1492,7 @@ function dzSwatchTools() {
     e.preventDefault(); e.stopPropagation();
     if (pm) return dzPalMan(() => document.dispatchEvent(new CustomEvent('dz-palettes')));
     const A = { key: eb.closest('[data-swk]')?.dataset.swk, box: eb.closest('.ink-dots'), attr: eb.dataset.eya, fix: eb.dataset.eyx };
-    if (window.EyeDropper && matchMedia('(pointer: fine)').matches) { try { const r = await new EyeDropper().open(); return into(A, r.sRGBHex.length === 7 ? r.sRGBHex : '#' + r.sRGBHex.match(/\d+/g).slice(0, 3).map(v => (+v).toString(16).padStart(2, '0')).join('')); } catch { return; } }
-    DZE.arm = { ...A, cv: document.querySelector('#dz-cv') || document.querySelector('#reel-cv') }; document.body.classList.add('dz-eyeon'); toast('Tap the picture to take its colour.', 2500);
+    const hx = await inkEyedrop(); if (hx) into(A, hx);   /* the magnifier eyedropper (the old armed tap below is no longer used) */
   }, true);
   document.addEventListener('change', (e) => { const t = e.target;
     if (t.matches?.('.dz-sw [data-cpick], .ink-dots input[type=color]')) DZP.push(t.value);
@@ -3124,7 +3191,8 @@ DZ.edit = async (id) => {
       
       ${l.t === 'text' ? `
         ${l.frame ? `<p class="dz-over-note" ${l._over ? '' : 'hidden'}>Some text doesn't fit. Make the frame bigger or the letters smaller.</p>` : ''}
-        <textarea class="in dz-text" data-k="text" rows="${l.frame ? 7 : 2}" placeholder="Type here">${esc(l.text)}</textarea>
+        <textarea class="in dz-text" data-k="text" rows="${l.frame ? 7 : 2}" placeholder="Type here" spellcheck="true" lang="en-GB">${esc(l.text)}</textarea>
+        <div class="row" style="margin:-2px 0 8px;gap:6px"><button class="btn small" data-spell="one" data-tip="Find spelling mistakes in this text">Check spelling</button><button class="btn small" data-spell="all" data-tip="Every text in the design, on every page">Check all text</button></div>
         <div class="row" style="margin-bottom:8px"><select class="in" data-tk="caps" aria-label="Case" style="flex:1;min-width:0">${[['', 'As typed'], ['upper', 'ALL CAPS'], ['small', 'Small caps'], ['title', 'Title Case'], ['lower', 'lowercase']].map(([v, n]) => `<option value="${v}" ${(l.caps || '') === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
         ${fsec('Colour', `${fillUI(l, 'c')}${(l.arc || l.warp) && l.fm && l.fm !== 'solid' ? '<p class="muted" style="font-size:11px;margin:4px 0 0">Shaped text shows the plain colour.</p>' : ''}`, { fold: true, open: true, hint: { solid: 'Colour', grad: 'Gradient', tex: 'Texture' }[l.fm || 'solid'] })}
         ${l.frame || l.vert || l.on ? '' : fsec('Shape', `<div class="seg dz-tshape">${DZ_TSHAPES.map(([v, n]) => `<button data-tshape="${v}" class="${tShape(l) === v ? 'on' : ''}">${n}</button>`).join('')}</div>
@@ -4859,6 +4927,38 @@ DZ.edit = async (id) => {
       changed(true); await flush(); await DB.run('UPDATE designs SET kind = ? WHERE id = ?', [to, id]);
       toast(`Now a ${K.label.toLowerCase()}.`, 2000); render(); });
     document.body.appendChild(o); draw(); };
+  /* Check spelling: the words not in the dictionary, with up to four suggestions each (tap one to put it in, every
+     time it appears in that text), Ignore (for now) or Add (to your dictionary, for good). One text, or every text on
+     every page; tapping a word's text name jumps to it. */
+  const spellRun = async (only, btn) => {
+    document.getElementById('dz-spell')?.remove();
+    let sp; try { toast('Checking…', 900); sp = await dzSpell(); } catch (e) { return toast('Could not load the dictionary: ' + e.message, 3000); }
+    const ignored = new Set();
+    const pop = document.createElement('div'); pop.id = 'dz-spell'; pop.className = 'dz-spellp'; document.body.appendChild(pop);
+    const close = () => { pop.remove(); removeEventListener('pointerdown', out, true); }, out = (e) => { if (!pop.contains(e.target) && !btn?.contains(e.target)) close(); };
+    setTimeout(() => addEventListener('pointerdown', out, true));
+    const texts = () => (only ? [only] : doc.layers.filter(l => l.t === 'text' && l.text)).filter(l => doc.layers.includes(l));
+    const list = () => { const R = []; for (const l of texts()) for (const w of dzSpellBad(sp, l.text)) if (!ignored.has(w.toLowerCase())) R.push({ l, w }); return R; };
+    const where = (l) => { const f = dzSide(l); return dzPaged(doc) || doc.sides ? (dzFaceNames(doc)[f] || '') : ''; };
+    const draw = () => { const R = list();
+      pop.innerHTML = `<div class="dz-sp-h"><b>${R.length ? `${R.length} word${R.length > 1 ? 's' : ''} to check` : 'No spelling mistakes found'}</b><button class="pg-ib" data-spx aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+        ${R.length ? '' : `<p class="muted" style="margin:4px 2px 2px;font-size:12px">${only ? 'This text' : 'Every text in the design'} looks right (British English).</p>`}
+        <div class="dz-sp-list">${R.slice(0, 40).map(({ l, w }, i) => { const sg = sp.suggest(w).slice(0, 4).map(x => /^[A-Z]/.test(w) && /^[a-z]/.test(x) ? x[0].toUpperCase() + x.slice(1) : x);
+          return `<div class="dz-sp-it" data-spi="${i}"><div class="dz-sp-w"><b>${esc(w)}</b>${only ? '' : `<button class="dz-sp-go" data-spgo="${i}">${esc(String(l.text).replace(/\s+/g, ' ').slice(0, 26))}${where(l) ? ' · ' + esc(where(l)) : ''}</button>`}</div>
+            <div class="dz-sp-sg">${sg.length ? sg.map(x => `<button data-spfix="${i}" data-v="${esc(x)}">${esc(x)}</button>`).join('') : '<span class="muted">No suggestions</span>'}
+              <button class="ghost" data-spign="${i}" data-tip="Leave it this time">Ignore</button><button class="ghost" data-spadd="${i}" data-tip="Add to your dictionary: never flagged again">Add</button></div></div>`; }).join('')}</div>`;
+      pop._R = R;
+      const r = btn?.getBoundingClientRect(); if (r) { pop.style.top = Math.min(innerHeight - pop.offsetHeight - 8, r.bottom + 6) + 'px'; pop.style.left = Math.max(8, Math.min(innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth)) + 'px'; } };
+    pop.addEventListener('click', (e) => { const t = e.target, R = pop._R, g = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+      if (t.closest('[data-spx]')) return close();
+      if (g('spgo') != null) { const it = R[+g('spgo')]; if (dzSide(it.l) !== face) setFace(dzSide(it.l)); select(it.l.id); return; }
+      if (g('spign') != null) { ignored.add(R[+g('spign')].w.toLowerCase()); return draw(); }
+      if (g('spadd') != null) { const w = R[+g('spadd')].w; sp.add(w); Settings.set('dz_words', JSON.stringify([...new Set([...dzSpellMine(), w])])); toast(`"${w}" added to your dictionary.`, 1600); return draw(); }
+      if (g('spfix') != null) { const it = R[+g('spfix')], v = t.closest('[data-spfix]').dataset.v, esc2 = it.w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (it.l.lock) return toast('Unlock it first.');
+        it.l.text = String(it.l.text).replace(new RegExp(`(?<![\\p{L}'’])${esc2.replace(/'/g, "['’]")}(?![\\p{L}'’])`, 'gu'), v); delete it.l._bx;
+        changed(true); redraw(); if (layer() === it.l) { const ta = side.querySelector('textarea[data-k="text"]'); if (ta) ta.value = it.l.text; } return draw(); } });
+    draw(); };
   const pageMaster = (f) => { const L = doc.nomaster ||= []; const on = L.includes(f); doc.nomaster = on ? L.filter(v => v !== f) : [...L, f]; pgDone(); };
   /* Picked items onto another page (or the master), keeping their place. */
   const moveToPage = (f) => { const ids = targets(); if (!ids.length) return; const L = doc.layers.filter(l => ids.includes(l.id)); if (L.some(l => l.lock)) return toast('Unlock it first.');
@@ -5168,6 +5268,7 @@ DZ.edit = async (id) => {
       face = 'f'; sel = null; changed(true); fit(); return drawSide();
     }
     if (t.closest('[data-fpage2]')) return pageAdd(face);
+    if (t.closest('[data-spell]')) return spellRun(t.closest('[data-spell]').dataset.spell === 'all' ? null : layer(), t.closest('[data-spell]'));
     if (t.closest('[data-dzsize]')) return sizeDlg();
     if (t.closest('[data-dzconv]')) return convDlg();
     if (t.closest('#dz-code')) { doc.vals.code = Math.random().toString(36).slice(2, 8).toUpperCase(); changed(true); return drawSide(); }
