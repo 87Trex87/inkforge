@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 519;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 520;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -361,7 +361,9 @@ const MIGRATIONS = [
    CREATE INDEX idx_inventory_src ON inventory_items (src_uid);`,
   // stock items: pack = how many come in a full pack (counted in packs and loose ones), sort = your own count order
   `ALTER TABLE inventory_items ADD COLUMN pack INTEGER;
-   ALTER TABLE inventory_items ADD COLUMN sort INTEGER;`
+   ALTER TABLE inventory_items ADD COLUMN sort INTEGER;`,
+  // a portfolio entry's reel: one video (the media folder's file name), shown with its photos
+  `ALTER TABLE portfolio_items ADD COLUMN reel_ref TEXT;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -785,11 +787,13 @@ function modalClose(o) {
 }
 addEventListener('keydown', (e) => { const top = modalTop(); if (!top || top.contains(e.target)) return;
   e.stopPropagation(); if (e.key === 'Escape' && !top.classList.contains('ask-dlg') && top.id !== 'img-viewer') { e.preventDefault(); modalClose(top); } }, true);
-{ let skipPop = false;
-  new MutationObserver(() => { const open = !!modalTop();
+{ let skipPop = false;   /* a window open has its own history step (Back closes it). One step back at a time: a window
+     opening while the step back for the last one is still landing waits for it, so quick swaps never go back too far */
+  const sync = () => { if (skipPop) return; const open = !!modalTop();
     if (open && !history.state?.dlg) history.pushState({ dlg: 1 }, '');
-    else if (!open && history.state?.dlg) { skipPop = true; history.back(); } }).observe(document.body, { childList: true });
-  addEventListener('popstate', () => { if (skipPop) { skipPop = false; return; } const top = modalTop(); if (top) modalClose(top); }); }
+    else if (!open && history.state?.dlg) { skipPop = true; history.back(); } };
+  new MutationObserver(sync).observe(document.body, { childList: true });
+  addEventListener('popstate', () => { if (skipPop) { skipPop = false; return sync(); } const top = modalTop(); if (top) modalClose(top); }); }
 
 function toast(msg, ms = 2600) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -1561,6 +1565,8 @@ const VIEWS = {
             <span class="pfv-count" id="pf-count">1 / ${photos.length}</span>` : ''}
           ${photos.length ? `<button class="pfv-zoom" id="pf-zoom" aria-label="Full screen" data-tip="Full screen, pinch or scroll to zoom"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>` : ''}
         </div>
+        ${it.reel_ref ? `<div class="pfv-reel"><div class="lbl">Reel</div><video id="pf-reel" controls playsinline preload="metadata" src="${await Media.url(it.reel_ref) || ''}"></video>
+          <div class="row" style="gap:6px;margin-top:6px"><button class="btn small" id="pf-reelshare">Share reel</button><button class="btn small" id="pf-reelsave">Save reel</button></div></div>` : ''}
         ${many ? `<div class="pfv-thumbs${pfBg(it.bg)}" id="pf-dots">${photos.map((p, i) => `<button class="${i ? '' : 'on'}" data-go-i="${i}" aria-label="Photo ${i + 1}"><img src="${urls[i]}" alt=""></button>`).join('')}</div>` : ''}
         </div>
         <div class="pfv-info">
@@ -1616,6 +1622,9 @@ const VIEWS = {
       };
       const download = (file) => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
       $('#pf-post').onclick = () => DZ.post(it.id);
+      const reelFile = async () => { const f = await (await (await Media.dir()).getFileHandle(it.reel_ref)).getFile(), ext = it.reel_ref.split('.').pop();
+        return new File([f], (it.title || 'reel').replace(/[^\w-]+/g, '_') + '-reel.' + ext, { type: f.type || 'video/' + (ext === 'mov' ? 'quicktime' : ext) }); };
+      if ($('#pf-reelshare')) { $('#pf-reelshare').onclick = async () => shareFiles([await reelFile()], it.title); $('#pf-reelsave').onclick = async () => { const fl = await reelFile(); download(fl); toast(`Saved ${fl.name}`); }; }
       $('#pf-share').onclick = async () => shareFiles([await photoFile()], it.title);
       $('#pf-save').onclick = async () => { const file = await photoFile(); download(file); toast(`Saved ${file.name}`); };
       $('#pf-del').onclick = async () => {
@@ -1652,6 +1661,7 @@ const VIEWS = {
            <div class="seg" id="pf-size">${PF_SIZES.map(([k, l]) => `<button type="button" data-sz="${k}" class="${pfSizeDefault() === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
            <div class="lbl" style="margin-top:10px">Background ${help('For pictures with see-through parts, like a black flash design saved as PNG. White or black sits the design on that colour, in the portfolio and in print.')}</div>
            <div class="seg" id="pf-bg" style="margin-bottom:12px">${PF_BG.map(([k, l]) => `<button type="button" data-bg="${k}" class="${(it.bg || '') === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>`)}
+        ${fsec(`Reel ${help('One video per entry, shown with its photos: one of your saved reels (made into a video here) or a video from your device.')}`, '<div id="pf-reel"></div>', { fold: true, open: !!it.reel_ref || !!ctx.reelFile, hint: it.reel_ref ? 'has a reel' : 'none' })}
         <section class="fsec"><h3>Details<small>Title, description, placement and date</small></h3>
         <label class="field"><span>Title</span><input class="in" name="title" value="${esc(it.title)}" placeholder="Peony sleeve"></label>
         <label class="field"><span>Description</span><textarea class="in" name="description" rows="2">${esc(it.description)}</textarea></label>
@@ -1722,9 +1732,21 @@ const VIEWS = {
       $('#pf-client').addEventListener('input', (e) => { if (!e.target.value.trim()) clientId = null; });
       $('#pf-cancel').onclick = () => history.back();
       f.addEventListener('input', (e) => { if (e.target.id !== 'pf-client') Dirty.set(true); });
+      /* The reel: kept, swapped for a new file (saved on Save), or taken off. */
+      const reel = { ref: it.reel_ref || null, file: ctx.reelFile || null, url: null };
+      const drawReel = async () => { const el = $('#pf-reel'); if (!el) return; if (reel.url) URL.revokeObjectURL(reel.url); reel.url = reel.file ? URL.createObjectURL(reel.file) : null;
+        const src = reel.url || (reel.ref ? await Media.url(reel.ref) : '');
+        el.innerHTML = `${src ? `<video controls playsinline preload="metadata" src="${src}" style="width:100%;max-height:320px;border-radius:10px;background:#000"></video>` : '<p class="muted" style="margin:0 0 8px;font-size:13px">No reel yet.</p>'}
+          <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" class="btn small" data-pfr="saved">${src ? 'Use another saved reel' : 'From your reels'}</button>
+            <label class="btn small">From device<input type="file" accept="video/*" hidden data-pfr="file"></label>${src ? '<button type="button" class="btn small danger" data-pfr="off">Remove</button>' : ''}</div>`; };
+      drawReel();
+      f.addEventListener('click', async (e) => { const b = e.target.closest('[data-pfr]'); if (!b || b.tagName === 'INPUT') return; e.preventDefault();
+        if (b.dataset.pfr === 'off') { reel.ref = null; reel.file = null; Dirty.set(true); return drawReel(); }
+        const fl = await pfReelFromSaved(); if (fl) { reel.file = fl; Dirty.set(true); drawReel(); } });
+      f.addEventListener('change', (e) => { if (e.target.dataset?.pfr !== 'file') return; const fl = e.target.files[0]; if (!fl) return; reel.file = fl; Dirty.set(true); drawReel(); });
       f.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (!photos.length) return toast('Add at least one photo.');
+        if (!photos.length && !reel.ref && !reel.file) return toast('Add at least one photo or a reel.');
         if (f.dataset.saving) return; f.dataset.saving = '1';   // a double tap must not add the piece twice
         f.querySelector('[type=submit]').disabled = true;
         const d = Object.fromEntries(new FormData(f));
@@ -1733,7 +1755,8 @@ const VIEWS = {
           d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ') || null,
           it.kind === 'tattoo' ? clientId : null, it.booking_id ?? null, d.made_on || null,
           flash && d.price !== '' ? +d.price : null, flash && d.claimed ? 1 : 0, it.bg || null];
-        const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed, bg';
+        const reelRef = reel.file ? await Media.saveBig(reel.file, reelExt(reel.file)) : reel.ref; vals.push(reelRef || null);
+        const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed, bg, reel_ref';
         const rows = [];
         for (const p of photos) {
           if (p.blob) rows.push({ photo_ref: await Media.save(p.blob, p.ext || 'jpg'), thumb_ref: await Media.save(p.thumb, p.thumbExt || p.ext || 'jpg'), label: p.label || null });
@@ -1745,6 +1768,7 @@ const VIEWS = {
         await DB.tx([{ sql: 'DELETE FROM portfolio_photos WHERE item_id = ?', params: [pid] },
           ...rows.map((r, i) => ({ sql: 'INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, ?)', params: [pid, r.photo_ref, r.thumb_ref, r.label, i] }))]);
         for (const p of old) if (!rows.some(r => r.photo_ref === p.photo_ref)) { await Media.release(p.photo_ref); await Media.release(p.thumb_ref); }
+        if (it.reel_ref && it.reel_ref !== reelRef) await Media.release(it.reel_ref);
         Dirty.set(false); toast('Saved to portfolio.');
         location.replace('#pf/' + pid);
       });
@@ -2160,8 +2184,10 @@ const VIEWS = {
         o.innerHTML = `<div class="card" style="max-width:420px"><h2>Export reel</h2><p class="muted" style="margin-top:0">Drawn frame by frame, so it comes out smooth. Keep this screen open until it finishes.</p>
           <div class="dz-ex"><button data-q="720" class="${q !== '1080' ? 'on' : ''}"><b>720p</b><small>Smaller file, quick to send. Fine for most phones.</small></button>
           <button data-q="1080" class="${q === '1080' ? 'on' : ''}"><b>1080p</b><small>Sharper, bigger file. Heavier on older phones.</small></button></div>
+          <label class="toggle" style="display:flex;margin-top:10px" data-tip="When it's made, pick the tattoo it belongs to (or make a new entry). One reel per entry."><input type="checkbox" id="rx-pf" ${Settings.get('reel_to_pf', '') === '1' ? 'checked' : ''}><span>Also add to portfolio</span></label>
           <button class="btn" data-q="" style="width:100%;margin-top:10px">Cancel</button></div>`;
-        o.onclick = (e) => { const b = e.target.closest('[data-q]'); if (!b && e.target !== o) return; o.remove(); if (b?.dataset.q) { reelSetStyle('quality', b.dataset.q); reelExport(); } };
+        o.onclick = (e) => { const b = e.target.closest('[data-q]'); if (!b && e.target !== o) return; const pf = !!o.querySelector('#rx-pf')?.checked; Settings.set('reel_to_pf', pf ? '1' : '');
+          o.remove(); if (b?.dataset.q) { reelSetStyle('quality', b.dataset.q); reelExport({ pf }); } };
         document.body.appendChild(o);
       };
       /* The top strip: add, edit, the held keys for tablets and the shortcut list. */
@@ -2175,7 +2201,7 @@ const VIEWS = {
       const pb = $('#reel-pbar'); if (pb) { pb.checked = !!reelStyle().progress; pb.onchange = () => { reelSetStyle('progress', pb.checked); reelRender(); }; }
       document.querySelector('.reel-top').onclick = (e) => {
         const m = e.target.closest('[data-mod]'); if (m) { R.mods[m.dataset.mod] = !R.mods[m.dataset.mod]; return reelModsDraw(); }
-        const b = e.target.closest('[data-top]'); if (!b) return; const a = b.dataset.top, c = R.clips[R.sel], lay = R.layer?.startsWith('stk');
+        const b = e.target.closest('[data-top]'); if (!b) return; const a = b.dataset.top, c = R.clips[R.sel], lay = R.layer?.startsWith('stk') || R.multi?.size > 1;
         if (a === 'text') { if (!c) return toast('Add a clip or a page first.'); return reelAddText(c); }
         if (a === 'blank') return reelAddBlank();
         if (a === 'dup') { if (lay) return reelLayerAct('dup'); return reelClipDup(c); }
@@ -3007,7 +3033,7 @@ const MERGE_TABLES = {
   form_templates: { section: 'forms' },
   signed_forms: { section: 'forms', fk: { client_id: 'clients', booking_id: 'bookings', template_id: 'form_templates' }, refs: ['signature_ref'] },
   signed_form_pages: { section: 'forms', fk: { form_id: 'signed_forms' }, refs: ['ref'] },
-  portfolio_items: { section: 'portfolio', fk: { client_id: 'clients', booking_id: 'bookings' } },
+  portfolio_items: { section: 'portfolio', fk: { client_id: 'clients', booking_id: 'bookings' }, refs: ['reel_ref'] },
   portfolio_photos: { section: 'portfolio', fk: { item_id: 'portfolio_items' }, refs: ['photo_ref', 'thumb_ref'] },
   inventory_items: { section: 'inventory' },
   stock_takes: { section: 'inventory' },
@@ -5757,6 +5783,45 @@ async function openAvailability() {
 const PFP = { which: null, per: 4, info: 'details', theme: 'dark', cover: true, photos: 'cover' };
 const PFP_INFO = [['none', 'Images only'], ['title', 'Title'], ['details', 'Title, placement, year'], ['full', 'Everything']];
 
+/* Reels on portfolio entries: one per entry (reel_ref, a video kept in the media folder), from an export, a saved reel
+   or a video on the device. */
+/* A saved reel drawn into a video, from anywhere in the app (a hidden canvas stands in for the reel maker's). */
+async function pfReelFromSaved() {
+  if (typeof reelSavedPick !== 'function') return null;
+  const id = await reelSavedPick(true); if (!id) return null;
+  let cv = document.getElementById('reel-cv'), made = false;
+  if (!cv) { cv = document.createElement('canvas'); cv.id = 'reel-cv'; cv.style.cssText = 'position:fixed;left:-9999px;top:0;width:8px;height:8px'; document.body.appendChild(cv); made = true; }
+  try { if (!await reelOpen(id)) return null; const f = await reelRenderFile('Making the reel');
+    if (f === 'live') { toast('This browser cannot make the reel here. Export it from the reel maker with "Add to portfolio" on.', 5000); return null; }
+    return f instanceof File ? new File([f], `${(RS.name || 'reel').replace(/[\\/:*?"<>|]+/g, '')}.mp4`, { type: 'video/mp4' }) : null; }
+  catch (e) { toast('Could not make the reel: ' + e.message, 4000); return null; }
+  finally { if (made) cv.remove(); }
+}
+/* A still from a video (about a second in), as a JPEG blob: a new entry's cover. */
+async function pfReelStill(file) { const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.src = URL.createObjectURL(file);
+  try { await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = rej; setTimeout(res, 4000); }); v.currentTime = Math.min(1, (v.duration || 2) / 3); await new Promise(r => { v.onseeked = r; setTimeout(r, 2000); });
+    const c = document.createElement('canvas'), f = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight)); c.width = Math.round(v.videoWidth * f); c.height = Math.round(v.videoHeight * f); c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88)); } catch { return null; } finally { URL.revokeObjectURL(v.src); } }
+/* Export › Add to portfolio: pick the tattoo it belongs to, or make a new entry for it. */
+async function reelToPortfolio(file, name) {
+  const rows = await DB.all(`SELECT p.id, p.title, p.made_on, p.reel_ref, (SELECT thumb_ref FROM portfolio_photos x WHERE x.item_id = p.id ORDER BY sort, id LIMIT 1) AS th FROM portfolio_items p WHERE p.kind = 'tattoo' ORDER BY coalesce(p.made_on, p.created_at) DESC LIMIT 200`);
+  const urls = await Promise.all(rows.map(r => r.th ? Media.url(r.th) : ''));
+  const pick = await new Promise(res => { const o = document.createElement('div'); o.id = 'reel-pick';
+    o.innerHTML = `<div class="card"><h2>Add the reel to your portfolio</h2><p class="muted" style="margin-top:0">One reel per tattoo. Pick the tattoo it shows, or make a new entry for it.</p>
+      <button class="btn primary" data-pfn style="width:100%;margin-bottom:10px">+ New tattoo entry</button>
+      ${rows.length ? `<div class="pf-grid reel-savedg" style="max-height:50vh;overflow-y:auto">${rows.map((r, i) => `<button class="pf-tile" data-pfi="${i}">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}<span>${r.reel_ref ? '▶ ' : ''}${esc(r.title || 'Untitled')}</span></button>`).join('')}</div>` : ''}
+      <button class="btn" data-pfx style="width:100%;margin-top:10px">Not now</button></div>`;
+    document.body.appendChild(o); const done = (v) => { o.remove(); res(v); };
+    o.onclick = (e) => { if (e.target === o || e.target.closest('[data-pfx]')) return done(null); if (e.target.closest('[data-pfn]')) return done('new'); const b = e.target.closest('[data-pfi]'); if (b) done(rows[+b.dataset.pfi]); }; });
+  if (!pick) return;
+  if (pick !== 'new' && pick.reel_ref && !await ask(`"${pick.title || 'This entry'}" already has a reel.\n\nReplace it with this one?`)) return;
+  toast('Adding to portfolio…', 1500);
+  const ref = await Media.saveBig(file, 'mp4'); let id;
+  if (pick === 'new') { await DB.run(`INSERT INTO portfolio_items (kind, title, made_on, reel_ref) VALUES ('tattoo', ?, ?, ?)`, [name || null, ymd(new Date()), ref]); id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+    const still = await pfReelStill(file); if (still) { const a = await Media.save(still, 'jpg'); await DB.run('INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, 0)', [id, a, a, null]); } }
+  else { id = pick.id; await DB.run(`UPDATE portfolio_items SET reel_ref = ?, updated_at = datetime('now') WHERE id = ?`, [ref, id]); if (pick.reel_ref && pick.reel_ref !== ref) await Media.release(pick.reel_ref); }
+  toastAct(pick === 'new' ? 'Added to your portfolio as a new tattoo.' : 'Reel added to the tattoo.', 'Open', () => { location.hash = 'pf/' + id; });
+}
 async function pfPrintItems(which, photos) {
   const where = which === 'fav' ? 'p.favourite = 1' : which === 'all' ? '1' : 'p.kind = ?';
   const items = await DB.all(`SELECT p.* FROM portfolio_items p WHERE ${where} ORDER BY coalesce(p.made_on, p.created_at) DESC, p.id DESC`,
@@ -6585,6 +6650,7 @@ function reelAddText(c, text = 'Your text') {
 }
 /* Acts on the selected layer (text or sticker) of the selected clip: del, dup, flip, up, down, unstretch, nudge, size, turn. */
 function reelLayerAct(a, v = 0) {
+  if (R.multi?.size > 1) return reelGroupAct(a, v);
   const i = R.layer?.startsWith('stk') ? +R.layer.slice(3) : -1, st = R.ovl?.[i]; if (!st) return false;
   if (a === 'del') { R.ovl.splice(i, 1); R.layer = null; }
   else if (a === 'dup') { const { img, ...rest } = st; R.ovl.push({ ...JSON.parse(JSON.stringify(rest)), img, x: Math.min(0.95, st.x + 0.04), y: Math.min(0.95, st.y + 0.04) }); R.layer = 'stk' + (R.ovl.length - 1); }
@@ -6596,10 +6662,26 @@ function reelLayerAct(a, v = 0) {
   else if (a === 'turn') st.rot = (((st.rot || 0) + v + 540) % 360) - 180;
   reelChanged(); if (!['nudge', 'size', 'turn'].includes(a)) reelPanel(); return true;
 }
+/* The same actions on several picked texts and stickers at once. Flip mirrors the group about its middle (each one
+   flips and its turn mirrors); size and turn work about the middle too. */
+function reelGroupAct(a, v = 0) {
+  const OV = R.ovl || [], I = [...R.multi].filter(i => OV[i]).sort((x, y) => x - y); if (!I.length) return false;
+  const cx = I.reduce((t, i) => t + OV[i].x, 0) / I.length, cy = I.reduce((t, i) => t + OV[i].y, 0) / I.length;
+  if (a === 'del') { for (const i of [...I].reverse()) OV.splice(i, 1); R.multi = null; R.selMode = false; R.layer = null; toast(`${I.length} deleted. Undo brings them back.`, 1800); }
+  else if (a === 'dup') { const n0 = OV.length; for (const i of I) { const { img, ...rest } = OV[i]; OV.push({ ...JSON.parse(JSON.stringify(rest)), img, x: Math.min(0.95, OV[i].x + 0.04), y: Math.min(0.95, OV[i].y + 0.04) }); } R.multi = new Set(I.map((_, j) => n0 + j)); }
+  else if (a === 'flip' || a === 'flipv') for (const i of I) { const st = OV[i]; st.flip = !st.flip;
+    if (a === 'flip') { st.x = 2 * cx - st.x; st.rot = -(st.rot || 0); } else { st.y = 2 * cy - st.y; st.rot = (((180 - (st.rot || 0)) + 540) % 360) - 180; } }
+  else if (a === 'nudge') for (const i of I) { OV[i].x += v[0]; OV[i].y += v[1]; }
+  else if (a === 'size') for (const i of I) { const st = OV[i]; st.s = Math.max(0.15, Math.min(6, (st.s || 1) * v)); st.x = cx + (st.x - cx) * v; st.y = cy + (st.y - cy) * v; }
+  else if (a === 'turn') { const W = 1080, H = 1080 * PREVIEW_H / PREVIEW_W, d = v * Math.PI / 180, cs = Math.cos(d), sn = Math.sin(d);
+    for (const i of I) { const st = OV[i], px = (st.x - cx) * W, py = (st.y - cy) * H; st.x = cx + (px * cs - py * sn) / W; st.y = cy + (px * sn + py * cs) / H; st.rot = (((st.rot || 0) + v + 540) % 360) - 180; } }
+  else return false;
+  reelChanged(); reelRender(); if (!['nudge', 'size', 'turn'].includes(a)) reelPanel(); return true;
+}
 function reelKeysHelp() {
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const rows = [['Space', 'Play or pause'], ['T', 'Add text'], ['Delete', 'Delete the selected text, sticker or clip'], ['Arrows', 'Nudge (Shift: further)'], ['+ / −', 'Bigger or smaller (Shift: faster)'],
-    ['[ / ]', 'Turn 15° (Shift: 1°)'], ['H', 'Flip'], ['Ctrl D', 'Duplicate'], ['Ctrl C / V', 'Copy and paste a text or sticker, onto any clip'], ['Ctrl ] / [', 'Bring forward or send back'],
+    ['[ / ]', 'Turn 15° (Shift: 1°)'], ['H', 'Flip (Shift H: upside down, for several)'], ['Shift + click', 'Pick several texts and stickers (on a tablet: hold one, then tap more)'], ['Ctrl A', 'Pick every text and sticker showing'], ['Ctrl D', 'Duplicate'], ['Ctrl C / V', 'Copy and paste a text or sticker, onto any clip'], ['Ctrl ] / [', 'Bring forward or send back'],
     ['S', 'Split a video at the playhead'], ['Ctrl Z / Y', 'Undo and redo'], ['Esc', 'Deselect'], ['Ctrl + / − / 0', 'Zoom the preview in, out, or fit'], ['Wheel or pinch', 'Zoom the preview'], ['Drag empty space, Space + drag', 'Pan when zoomed in'],
     ['Snap button', 'Snapping on or off (Ctrl while moving skips it once)'], ['Corner handles', 'Size (Shift: stretch freely)'], ['Side handles', 'Stretch a picture'],
     ['Gold dot', 'Turn (Shift: 15° steps)'], ['Alt drag', 'Leave a copy behind'], ['Shift / Ctrl / Alt buttons', 'For tablets: tap to hold the key down']];
@@ -6771,13 +6853,15 @@ const reelMod = (e, k) => !!(e?.[k + 'Key'] || (k === 'ctrl' && e?.metaKey) || R
 function reelModsDraw() { document.querySelectorAll('[data-mod]').forEach(b => b.classList.toggle('on', !!R.mods?.[b.dataset.mod])); }
 addEventListener('keydown', (e) => {
   if (!location.hash.startsWith('#reel/') || R.recording || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
-  const ctrl = reelMod(e, 'ctrl'), shift = reelMod(e, 'shift'), k = e.key, lay = R.layer?.startsWith('stk'), c = R.clips[R.sel];
+  const ctrl = reelMod(e, 'ctrl'), shift = reelMod(e, 'shift'), k = e.key, lay = R.layer?.startsWith('stk') || R.multi?.size > 1, c = R.clips[R.sel];
   const go = (f) => { e.preventDefault(); f(); };
   if (ctrl && (k === '0')) return go(() => R.zoomFit?.());
   if (ctrl && (k === '=' || k === '+')) return go(() => R.zoomAt?.(1.25));
   if (ctrl && (k === '-' || k === '_')) return go(() => R.zoomAt?.(0.8));
   if (k === ' ') return go(() => R.playing ? reelPause() : reelPlay());
-  if (k === 'Escape') return go(() => { R.layer = null; reelRender(); reelPanel(); });
+  if (k === 'Escape') return go(() => { R.layer = null; R.multi = null; R.selMode = false; reelRender(); reelPanel(); });
+  if (ctrl && k.toLowerCase() === 'a' && R.ovl?.length) return go(() => { const vis = R.ovl.map((st, i) => R.t >= st.t0 && R.t < st.t1 ? i : -1).filter(i => i >= 0); if (vis.length > 1) { R.multi = new Set(vis); R.layer = null; } else if (vis.length) R.layer = 'stk' + vis[0]; reelRender(); reelPanel(); });
+  if (shift && k.toLowerCase() === 'h' && R.multi?.size > 1 && !ctrl) return go(() => reelGroupAct('flipv'));
   if (ctrl && k.toLowerCase() === 'c' && lay) return go(() => { const st = R.ovl[+R.layer.slice(3)], { img, ...rest } = st; R.clip = { ...JSON.parse(JSON.stringify(rest)), img }; toast('Copied.', 900); });
   if (ctrl && k.toLowerCase() === 'v' && R.clip) return go(() => { const { img, ...rest } = R.clip; reelOvAdd({ ...JSON.parse(JSON.stringify(rest)), img }, (rest.t1 - rest.t0) || 3); });
   if (ctrl && k.toLowerCase() === 'd') return go(() => lay ? reelLayerAct('dup') : reelClipDup(c));
@@ -7039,7 +7123,7 @@ function reelViewBind() {
   const pts = new Map(); let pan = null;
   const start = (e) => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { vp.setPointerCapture(e.pointerId); } catch {}
     if (pts.size === 2) { const [a, b] = [...pts.values()]; pan = { pinch: true, d0: Math.hypot(a.x - b.x, a.y - b.y), z0: R.vz.z, x0: R.vz.x, y0: R.vz.y, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; }
-    else pan = { sx: e.clientX, sy: e.clientY, x0: R.vz.x, y0: R.vz.y }; };
+    else pan = { sx: e.clientX, sy: e.clientY, x0: R.vz.x, y0: R.vz.y, tap: e.target === vp }; };
   R.panStart = start;
   vp.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.reel-zoom')) return;
@@ -7052,7 +7136,9 @@ function reelViewBind() {
     if (R.vz.z === 1) return;   /* nothing to pan at the fitted size */
     R.vz.x = pan.x0 + e.clientX - pan.sx; R.vz.y = pan.y0 + e.clientY - pan.sy; apply();
   });
-  const end = (e) => { pts.delete(e.pointerId); if (!pts.size) pan = null; else if (pan?.pinch) { const [a] = [...pts.values()]; pan = { sx: a.x, sy: a.y, x0: R.vz.x, y0: R.vz.y }; } };
+  const end = (e) => { const tapped = pan?.tap && !pan.pinch && e.type === 'pointerup' && Math.hypot(e.clientX - pan.sx, e.clientY - pan.sy) < 6;
+    pts.delete(e.pointerId); if (!pts.size) pan = null; else if (pan?.pinch) { const [a] = [...pts.values()]; pan = { sx: a.x, sy: a.y, x0: R.vz.x, y0: R.vz.y }; }
+    if (tapped && (R.layer || R.multi?.size)) { R.layer = null; R.multi = null; R.selMode = false; reelRender(); reelPanel(); } };   /* a tap on the background round the picture lets go of everything */
   vp.addEventListener('pointerup', end); vp.addEventListener('pointercancel', end);
   apply();
 }
@@ -7259,6 +7345,29 @@ function reelCanvasBind(cv) {
       drag = { ...drag, mode: 'pinch', d0: Math.hypot(a.x - b.x, a.y - b.y), pos: { ...getPos(drag.o) } };
       return;
     }
+    /* Several picked (Shift on a computer; hold one on a tablet to start picking, then tap more): the group's handles
+       size and turn them all, dragging any of them moves them all; Shift or a tap in pick mode adds or drops one. */
+    const stkAt = () => [...list].reverse().find(o => o.kind === 'stk' && inBox0(o));
+    const inBox0 = (o) => { const a = -(o.clip.stickers[o.i].rot || 0) * Math.PI / 180, dx = p.x - o.box.cx, dy = p.y - o.box.cy;
+      return Math.abs(dx * Math.cos(a) - dy * Math.sin(a)) <= o.box.w / 2 + 8 * p.k && Math.abs(dx * Math.sin(a) + dy * Math.cos(a)) <= o.box.h / 2 + 8 * p.k; };
+    const snap0 = (g) => g.M.map(o => { const st = o.clip.stickers[o.i]; return { i: o.i, x: st.x, y: st.y, s: st.s || 1, rot: st.rot || 0 }; });
+    const toggle = (o) => { R.multi ||= new Set(); if (!R.multi.size && R.layer?.startsWith('stk') && R.layer !== o.id) R.multi.add(+R.layer.slice(3));
+      R.multi.has(o.i) ? R.multi.delete(o.i) : R.multi.add(o.i);
+      if (R.multi.size === 1) { R.layer = 'stk' + [...R.multi][0]; R.multi = null; } else if (!R.multi.size) { R.multi = null; R.layer = null; } else R.layer = null;
+      pts.delete(e.pointerId); drag = null; reelRender(); reelPanel(); };
+    if (pts.size === 1 && (reelMod(e, 'shift') || R.selMode)) { const o = stkAt();
+      if (o) return toggle(o);
+      if (R.selMode) { R.selMode = false; toast('Done picking.', 900); } }
+    if (R.multi?.size > 1 && pts.size === 1) { const g = reelGroupBox(list), kk = Math.max(Math.min(cv.width, cv.height) / 540, p.k);
+      if (g) { R.pxk = p.k; const inM = g.M.find(inBox0);   /* inside a picked one, only a press right on a handle sizes or turns */
+        const h = reelGroupHandles(g, kk).map(q => [q, Math.hypot(p.x - q.x, p.y - q.y)]).filter(([, d]) => d < (inM ? 7 : 14) * p.k).sort((a, b) => a[1] - b[1])[0]?.[0];
+        const on = inM || (p.x >= g.x0 && p.x <= g.x1 && p.y >= g.y0 && p.y <= g.y1);
+        if (h || on) { R.dragging = true; drag = { mode: h ? h.kind : 'gmove', g, st0: snap0(g), sx: p.x, sy: p.y, d0: Math.max(1, Math.hypot(p.x - g.cx, p.y - g.cy)), a0: Math.atan2(p.y - g.cy, p.x - g.cx) }; return; } }
+      R.multi = null; }
+    /* Hold a text or sticker (finger or pen) to start picking several. */
+    if (pts.size === 1 && e.pointerType !== 'mouse') { const o = stkAt(); clearTimeout(R.holdT);
+      if (o) R.holdT = setTimeout(() => { if (!pts.has(e.pointerId) || drag?.live) return; R.selMode = true; R.multi = new Set(R.layer?.startsWith('stk') && R.layer !== o.id ? [+R.layer.slice(3)] : []);
+        drag = null; R.dragging = false; try { navigator.vibrate?.(15); } catch {} toggle(o); toast('Picking several: tap more texts or stickers. Tap empty space when done.', 2600); }, 520); }
     const sel = list.find(x => x.id === R.layer);
     const hk = 22 * p.k;
     if (sel?.kind === 'stk') {   /* the design studio's handles: corners size, sides stretch, the knob turns */
@@ -7294,6 +7403,16 @@ function reelCanvasBind(cv) {
     if (!drag.live && drag.mode !== 'pinch' && drag.mode !== 'mpinch') {
       const dz = e.pointerType === 'touch' ? 10 : e.pointerType === 'pen' ? 6 : 3; if (downC && Math.hypot(e.clientX - downC.x, e.clientY - downC.y) < dz) return;
       drag.live = true; }   /* past it, the layer catches up and stays under the finger */
+    if (drag.mode === 'gmove' || drag.mode === 'gscale' || drag.mode === 'grot') {   /* the picked group: every member moves, sizes or turns together */
+      const g = drag.g, OV = R.ovl;
+      if (drag.mode === 'gmove') { const dx = (p.x - drag.sx) / W, dy = (p.y - drag.sy) / H; for (const q of drag.st0) { OV[q.i].x = q.x + dx; OV[q.i].y = q.y + dy; } }
+      else if (drag.mode === 'gscale') { const f = Math.max(0.1, Math.min(8, Math.hypot(p.x - g.cx, p.y - g.cy) / drag.d0));
+        for (const q of drag.st0) { const st = OV[q.i]; st.s = Math.max(0.15, Math.min(6, q.s * f)); st.x = (g.cx + (q.x * W - g.cx) * f) / W; st.y = (g.cy + (q.y * H - g.cy) * f) / H; } }
+      else { let d = Math.atan2(p.y - g.cy, p.x - g.cx) - drag.a0, deg = d * 180 / Math.PI; if (reelMod(e, 'shift')) { deg = Math.round(deg / 15) * 15; d = deg * Math.PI / 180; }
+        const cs = Math.cos(d), sn = Math.sin(d);
+        for (const q of drag.st0) { const st = OV[q.i], px = q.x * W - g.cx, py = q.y * H - g.cy; st.x = (g.cx + px * cs - py * sn) / W; st.y = (g.cy + px * sn + py * cs) / H; st.rot = Math.round(((q.rot + deg + 540) % 360) - 180); } }
+      return reelRender();
+    }
     if (drag.mode === 'media' || drag.mode === 'mpinch') {   /* the picture under the frame: offsets live in its own turned, flipped box */
       const c = drag.c, rot = c.rot || 0, BW = rot % 180 ? H : W, BH = rot % 180 ? W : H;
       if (drag.mode === 'mpinch' && pts.size > 1) { const [a, b] = [...pts.values()];
@@ -7342,7 +7461,8 @@ function reelCanvasBind(cv) {
     if (R.tool === 'text' && o.kind === 'cap') { const b = document.querySelector('[data-cs]'); if (b) { const s = getPos(o).s; b.value = s; b.closest('.slider').querySelector('b').textContent = Math.round(s * 100) + '%'; } }
   });
   const end = (e) => {
-    pts.delete(e.pointerId);
+    pts.delete(e.pointerId); clearTimeout(R.holdT);
+    if (drag?.g && !pts.size) { drag = null; R.dragging = false; reelChanged(); return reelRender(); }
     if (pts.size) { if (drag?.mode === 'pinch') drag = null; if (drag?.mode === 'mpinch') { const q = [...pts.values()][0], c = drag.c; drag = { mode: 'media', c, sx: q.x, sy: q.y, ox0: c.ox || 0, oy0: c.oy || 0 }; } return; }
     if (drag?.mode === 'media' || drag?.mode === 'mpinch') { drag = null; R.dragging = false; reelChanged(); return reelPanel(); }
     if (drag?.o.kind === 'card' || drag?.o.kind === 'wm') Settings.set('reel_style', Settings.cache.reel_style);
@@ -8253,8 +8373,8 @@ async function reelTplImport(file) {
 }
 
 /* Picks another saved reel (not the one open). Resolves its id, or null. */
-async function reelSavedPick() {
-  const rows = (await DB.all('SELECT id, name, doc, thumb_ref FROM reels ORDER BY updated_at DESC, id DESC')).filter(r => r.id !== RS.id && (() => { try { return (JSON.parse(r.doc || '{}').clips || []).length > 0; } catch { return false; } })());
+async function reelSavedPick(all = false) {   /* all: from outside the reel maker, the open reel is a choice too */
+  const rows = (await DB.all('SELECT id, name, doc, thumb_ref FROM reels ORDER BY updated_at DESC, id DESC')).filter(r => (all || r.id !== RS.id) && (() => { try { return (JSON.parse(r.doc || '{}').clips || []).length > 0; } catch { return false; } })());
   if (!rows.length) { toast('No other reels with clips yet.'); return null; }
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   return new Promise(res => {
@@ -9506,7 +9626,8 @@ async function pxPack(S, list) {
   for (const r of list) { const photos = [];
     for (const p of ph.filter(p => p.item_id === r.id).sort((a, b) => a.sort - b.sort || a.id - b.id)) { const a = await S.b64(p.photo_ref); if (!a) continue; const t = p.thumb_ref ? await S.b64(p.thumb_ref) : null;
       photos.push({ label: p.label || null, ext: p.photo_ref.split('.').pop(), data: a, text: t ? p.thumb_ref.split('.').pop() : null, thumb: t }); }
-    items.push({ ...Object.fromEntries(PX_FIELDS.map(k => [k, r[k] ?? null])), photos }); }
+    const reel = r.reel_ref ? await S.b64(r.reel_ref) : null;   /* the entry's reel travels too (files from before it have none) */
+    items.push({ ...Object.fromEntries(PX_FIELDS.map(k => [k, r[k] ?? null])), photos, ...(reel ? { reel: { ext: r.reel_ref.split('.').pop(), data: reel } } : {}) }); }
   return { inkforge: 'portfolio', v: PX_V, ws: { uid: await S.uid(), name: xWsName(S) }, at: new Date().toISOString(), items };
 }
 async function pxExport() {
@@ -9548,15 +9669,18 @@ async function pxImport(P0) {
         : i.diff.map(d => `<div class="bix-d"><b>${PX_LABEL[d]}:</b> <s>${esc(pxNorm(d, i.h[d]) || '—')}</s> → ${esc(pxNorm(d, i.x[d]) || '—')}</div>`).join('')]), ['What', 'Piece', 'Details']);
   if (!skip) return 0;
   let n = 0;
+  const reelIn = async (x, id, had) => { if (!x.reel?.data || had) return; const ext = x.reel.ext || 'mp4';
+    const ref = await Media.saveBig(new Blob([Uint8Array.from(atob(x.reel.data), c => c.charCodeAt(0))], { type: 'video/' + (ext === 'mov' ? 'quicktime' : ext) }), ext);
+    await DB.run('UPDATE portfolio_items SET reel_ref = ? WHERE id = ?', [ref, id]); };
   for (const i of items) { if (i.st === 'same' || skip.has(i.k)) continue;
     const vals = PX_FIELDS.map(k => k === 'price' ? (i.x[k] == null || i.x[k] === '' ? null : +i.x[k]) : ['claimed', 'favourite'].includes(k) ? +!!i.x[k] : i.x[k] ?? null);
-    if (i.st === 'changed') { await DB.run(`UPDATE portfolio_items SET ${PX_FIELDS.map(k => k + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, i.h.id]); n++; continue; }
+    if (i.st === 'changed') { await DB.run(`UPDATE portfolio_items SET ${PX_FIELDS.map(k => k + ' = ?').join(', ')}, updated_at = datetime('now') WHERE id = ?`, [...vals, i.h.id]); await reelIn(i.x, i.h.id, i.h.reel_ref); n++; continue; }
     const ph = [];
     for (const p of i.x.photos || []) { const a = await Media.save(b64(p.data, p.ext), p.ext), t = p.thumb ? await Media.save(b64(p.thumb, p.text), p.text) : a; ph.push([a, t, p.label || null]); }
     await DB.run(`INSERT INTO portfolio_items (${PX_FIELDS.join(', ')}) VALUES (${PX_FIELDS.map(() => '?').join(', ')})`, vals);
     const id = (await DB.one('SELECT last_insert_rowid() AS id')).id;
     if (ph.length) await DB.tx(ph.map((p, j) => ({ sql: 'INSERT INTO portfolio_photos (item_id, photo_ref, thumb_ref, label, sort) VALUES (?, ?, ?, ?, ?)', params: [id, ...p, j] })));
-    n++;
+    await reelIn(i.x, id); n++;
   }
   toast(`Imported: ${n} piece${n === 1 ? '' : 's'} added or changed.`, 3000);
   return n;
@@ -9853,6 +9977,13 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 520, when: '2026-11-24T14:00', added: [
+    'Reel maker: tap the background round the picture to let go of everything selected.',
+    'Reel maker: pick several texts and stickers (Shift + click, or on a tablet hold one, then tap more; Ctrl A picks all showing) and move, size, turn and flip them together.',
+    'Reel maker: Export has an "Also add to portfolio" switch: pick the tattoo the reel belongs to, or make a new entry for it (with a cover from the video). One reel per entry.',
+    'Portfolio: entries show their reel with Share and Save, and Edit has a Reel section: one of your saved reels, a video from your device, or remove it.',
+    'Fixed: closing one window and opening another straight away could jump back a page.'],
+    test: ['Reel maker: Shift-click two texts (or hold one on a tablet, then tap the other), drag them, then press H.', 'Reel maker: export with Also add to portfolio on and choose New tattoo entry.'] },
   { build: 519, when: '2026-11-24T10:00', added: [
     'Inventory: a Count order for the stock list, the stock take and the printed count sheet: by category, name, supplier, lowest first, or your own order.',
     'Inventory: Arrange… lets you drag items into the order you walk the shop, so you count top to bottom without running back and forth.',

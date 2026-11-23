@@ -919,8 +919,26 @@ function reelProgress(ctx, s, W, H, t) {
   ctx.fillStyle = s.accent; ctx.fillRect(0, 0, W * Math.min(1, t / total), 8 * k); ctx.restore();
 }
 // Editing aids on the preview only (never recorded): selection box, resize handle, snap guides.
+/* Several stickers and texts picked together (R.multi: their indices): the box round them all, from each one's turned
+   corners, with handles: corners size the lot, the knob turns it. */
+function reelGroupBox(list) { const M = list.filter(o => o.kind === 'stk' && R.multi?.has(o.i)); if (M.length < 2) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const o of M) { const st = o.clip.stickers[o.i], a = (st.rot || 0) * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a), b = o.box;
+    for (const [ux, uy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const lx = ux * b.w / 2, ly = uy * b.h / 2, x = b.cx + lx * cs - ly * sn, y = b.cy + lx * sn + ly * cs;
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } }
+  return { M, x0, y0, x1, y1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }; }
+function reelGroupHandles(g, k) { const p = 6 * k; return [...[[g.x0 - p, g.y0 - p], [g.x1 + p, g.y0 - p], [g.x1 + p, g.y1 + p], [g.x0 - p, g.y1 + p]].map(([x, y]) => ({ kind: 'gscale', x, y })), { kind: 'grot', x: g.cx, y: g.y0 - p - 30 * k }]; }
 function reelDrawOverlay(ctx, W, H) {
-  if (R.recording || R.watching || !R.layer) return;
+  if (R.recording || R.watching) return;
+  if (R.multi?.size > 1) { const { list } = reelLayers(ctx, W, H), g = reelGroupBox(list); if (!g) return; const k = Math.max(Math.min(W, H) / 540, R.pxk || 0);
+    ctx.save(); ctx.strokeStyle = '#1fb5a8'; ctx.lineWidth = 1.2 * k; ctx.setLineDash([4 * k, 4 * k]);
+    for (const o of g.M) { const st = o.clip.stickers[o.i], b = o.box; ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate((st.rot || 0) * Math.PI / 180); ctx.strokeRect(-b.w / 2 - 3 * k, -b.h / 2 - 3 * k, b.w + 6 * k, b.h + 6 * k); ctx.restore(); }
+    ctx.setLineDash([]); ctx.lineWidth = 2 * k; ctx.strokeStyle = '#f0c75e'; ctx.strokeRect(g.x0 - 6 * k, g.y0 - 6 * k, g.x1 - g.x0 + 12 * k, g.y1 - g.y0 + 12 * k);
+    ctx.beginPath(); ctx.moveTo(g.cx, g.y0 - 6 * k); ctx.lineTo(g.cx, g.y0 - 36 * k); ctx.stroke();
+    for (const h of reelGroupHandles(g, k)) { ctx.beginPath(); ctx.fillStyle = h.kind === 'grot' ? '#f0c75e' : '#fff'; ctx.strokeStyle = '#c99a2e'; ctx.lineWidth = 1.5 * k;
+      if (h.kind === 'grot') ctx.arc(h.x, h.y, 7 * k, 0, 7); else ctx.rect(h.x - 5 * k, h.y - 5 * k, 10 * k, 10 * k); ctx.fill(); ctx.stroke(); }
+    ctx.restore(); return; }
+  if (!R.layer) return;
   const { list } = reelLayers(ctx, W, H), o = list.find(x => x.id === R.layer);
   if (!o) return;
   const b = o.box, k = Math.max(Math.min(W, H) / 540, R.pxk || 0);   /* handles keep their size on screen, however small the preview */
@@ -1128,11 +1146,11 @@ async function reelReplaceClip(c, file) {
    are packed into an MP4 here (reelMp4). Browsers without WebCodecs fall back to the live recording. */
 const REEL_FPS = 30;
 const reelBytes = (d) => (ArrayBuffer.isView(d) ? new Uint8Array(d.buffer, d.byteOffset, d.byteLength) : new Uint8Array(d)).slice();
-async function reelExport() {
+async function reelExport(opts = {}) {
   const f = await reelRenderFile();
-  if (f === 'live') return reelExportLive();
-  if (f === 'cancel') return toast('Export cancelled.');
-  if (f) return reelExportReady(f);
+  const out = f === 'live' ? await reelExportLive() : f === 'cancel' ? (toast('Export cancelled.'), null) : f ? reelExportReady(f) : null;
+  if (opts.pf && out instanceof File && typeof reelToPortfolio === 'function') reelToPortfolio(out, RS.name);   /* Export › Also add to portfolio */
+  return out;
 }
 async function reelRenderFile(title = 'Exporting reel') {
   if (!R.clips.length) { toast('Add at least one photo or video.'); return null; }
