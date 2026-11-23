@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 522;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 523;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -363,11 +363,17 @@ const MIGRATIONS = [
   `ALTER TABLE inventory_items ADD COLUMN pack INTEGER;
    ALTER TABLE inventory_items ADD COLUMN sort INTEGER;`,
   // a portfolio entry's reel: one video (the media folder's file name), shown with its photos
-  `ALTER TABLE portfolio_items ADD COLUMN reel_ref TEXT;`
+  `ALTER TABLE portfolio_items ADD COLUMN reel_ref TEXT;`,
+  // referrals: the contact who sent them (referred_by), or how else they found you (ref_src: online, advert, other) and a note
+  `ALTER TABLE clients ADD COLUMN referred_by INTEGER REFERENCES clients(id) ON DELETE SET NULL;
+   ALTER TABLE clients ADD COLUMN ref_src TEXT;
+   ALTER TABLE clients ADD COLUMN ref_note TEXT;`,
+  // a tattoo's kind of work: '' (new), 'cover' (cover up) or 'fix' (fix up); its photos can be tagged Before and After
+  `ALTER TABLE portfolio_items ADD COLUMN job TEXT;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
-const CLIENT_CATS = ['Client', 'Supplier', 'Service'];
+const CLIENT_CATS = ['Client', 'Supporter', 'Supplier', 'Service'];   /* Supporter: never tattooed, but sends people your way */
 /* Booking types. ink: shows the tattoo fields (placement, size, quote, deposit, references). */
 const BOOKING_KINDS = {
   tattoo: { label: 'Tattoo', ink: true }, consult: { label: 'Consultation', ink: true }, touchup: { label: 'Touch-up', ink: true },
@@ -1024,6 +1030,7 @@ const VIEWS = {
           ${field('Client since', new Date(c.created_at + 'Z').toLocaleDateString())}
         </div>
         ${c.medical ? `<div class="card alert"><h2>Medical / allergies ${help('Check before every session.')}</h2><p class="pre">${esc(c.medical)}</p></div>` : ''}
+        <div class="card" id="c-refs"></div>
         ${c.notes ? `<div class="card"><h2>Notes</h2><p class="pre">${esc(c.notes)}</p></div>` : ''}
         <div class="card"><h2>Bookings ${help('All sessions for this client, newest first.')}
             <button class="btn small" id="c-book" style="margin-left:auto">+ Book</button></h2>
@@ -1039,6 +1046,18 @@ const VIEWS = {
           <button class="btn danger" id="c-del">Delete</button>
         </div>`;
       $('#c-book').onclick = () => newBookingNext(c.id);
+      /* Referrals: how they found you, whom they brought in, and what that's earned */
+      { const G = await refGraph(), up = G.byId.get(c.referred_by), down = refDesc(G, c.id), direct = down.filter(x => x.d === 1), re = $('#c-refs');
+        const sum = (L) => L.reduce((t, x) => { const e = G.earn.get(x.c.id); return { s: t.s + (e?.s || 0), n: t.n + (e?.n || 0) }; }, { s: 0, n: 0 }), all = sum(down), dir = sum(direct);
+        const src = up ? `<a href="#client/${up.id}" style="color:var(--teal)">${esc(fullName(up))}</a>${c.ref_note ? ` <span class="muted">(${esc(c.ref_note)})</span>` : ''}` : refSrcText(c) ? esc(refSrcText(c)) : '';
+        if (re) re.innerHTML = !src && !down.length ? '' : `<h2>Referrals ${help('Who sent them to you, and the people they have sent your way. Income counts completed, paid tattoos.')}
+            ${up || down.length ? '<button class="btn small" id="c-rtree" style="margin-left:auto">Tree</button>' : ''}</h2>
+          ${src ? `<div class="stat"><span class="muted">Found you through</span><span class="val">${src}</span></div>` : ''}
+          ${down.length ? `<div class="stat"><span class="muted">Brought in</span><span class="val">${direct.length} ${direct.length === 1 ? 'person' : 'people'}${down.length > direct.length ? ` · ${down.length - direct.length} more through them` : ''}</span></div>
+            <div class="stat"><span class="muted">Their referrals earned</span><span class="val">${money(all.s)} <small class="muted">${all.n} tattoo${all.n === 1 ? '' : 's'}${down.length > direct.length ? ` · ${money(dir.s)} direct` : ''}</small></span></div>
+            <div class="ref-list">${direct.sort((a, b) => fullName(a.c).localeCompare(fullName(b.c))).map(x => `<a class="chip" href="#client/${x.c.id}">${esc(fullName(x.c))}</a>`).join('')}</div>` : ''}`;
+        if (re && !re.innerHTML) re.remove();
+        const tb = $('#c-rtree'); if (tb) tb.onclick = () => refTree(c.id); }
       const hist = await DB.all(`SELECT b.*, c.first_name, c.last_name, NULL AS medical FROM bookings b JOIN clients c ON c.id = b.client_id
         WHERE b.client_id = ? ORDER BY b.start_at DESC`, [c.id]);
       const he = $('#c-hist');
@@ -1098,7 +1117,8 @@ const VIEWS = {
       let photoRef = c.photo_ref || null, newPhoto = null;
       const inp = (name, label, type = 'text', extra = '') =>
         `<label class="field"><span>${label}</span><input class="in" name="${name}" type="${type}" value="${esc(c[name])}" ${extra}></label>`;
-      const moreOpen = !!(c.pronouns || c.dob || c.tags || (c.category && c.category !== 'Client'));
+      const moreOpen = !!(c.pronouns || c.dob || c.tags || (c.category && c.category !== 'Client') || c.ref_src || c.referred_by);
+      const refBy = c.referred_by ? await DB.one('SELECT id, first_name, last_name FROM clients WHERE id = ?', [c.referred_by]) : null, rsrc = c.ref_src || (refBy ? 'person' : '');
       f.innerHTML = `
         <section class="fsec"><h3>Contact<small>Photo, name and how to reach them</small></h3>
         <div class="photo-pick">
@@ -1114,11 +1134,16 @@ const VIEWS = {
         ${inp('instagram', 'Instagram', 'text', 'placeholder="@handle" autocapitalize="off"')}
         </section>
         ${fsec('More about them', `
-          <label class="field"><span>Category ${help('Keep suppliers, services and other contacts apart from clients. Type a new name to make your own category.')}</span>
+          <label class="field"><span>Category ${help('Keep suppliers, services and other contacts apart from clients. Supporter: someone who may never get tattooed but sends people your way. Type a new name to make your own category.')}</span>
             <input class="in" name="category" list="c-catlist" value="${esc(c.category || (VIEWS.clients.cat && VIEWS.clients.cat !== 'all' ? VIEWS.clients.cat : 'Client'))}" autocapitalize="words">
             <datalist id="c-catlist">${[...new Set([...CLIENT_CATS, ...(await DB.all('SELECT DISTINCT category AS c FROM clients')).map(r => r.c)])].map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
           <div class="two">${inp('dob', 'Birthday', 'date')}${inp('pronouns', 'Pronouns', 'text', 'placeholder="optional"')}</div>
-          ${inp('tags', 'Tags', 'text', 'placeholder="regular, blackwork"')}`, { fold: true, open: moreOpen, hint: 'category, birthday, tags' })}
+          ${inp('tags', 'Tags', 'text', 'placeholder="regular, blackwork"')}
+          <div class="field c-ref"><div class="lbl">Referred by ${help('Who sent them to you (another contact: a client or a Supporter), or how else they found you. It builds the referral tree and shows what each person’s referrals earned.')}</div>
+            <div class="seg" id="c-rsrc">${REF_SRC.map(([v, l]) => `<button type="button" data-rs="${v}" class="${rsrc === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+            <input type="hidden" name="ref_src" value="${esc(rsrc)}"><input type="hidden" name="referred_by" value="${refBy?.id || ''}">
+            <div class="picker" id="c-rp" ${rsrc === 'person' ? '' : 'hidden'} style="margin-top:6px"><input class="in" id="c-ref" placeholder="Search your contacts…" value="${esc(refBy ? fullName(refBy) : '')}" autocomplete="off"><div class="pick-list" id="c-ref-list" hidden></div></div>
+            <input class="in" name="ref_note" id="c-rnote" value="${esc(c.ref_note || '')}" placeholder="${REF_HINT[rsrc] || ''}" ${rsrc ? '' : 'hidden'} style="margin-top:6px"></div>`, { fold: true, open: moreOpen, hint: 'category, birthday, tags, referral' })}
         ${fsec('Health and notes<small>Allergies, conditions and anything to remember</small>', `
           <label class="field"><span>Medical / allergies ${help('Latex, blood thinners, skin conditions, etc. Shown highlighted on the client page.')}</span>
             <textarea class="in" name="medical" rows="2">${esc(c.medical)}</textarea></label>
@@ -1129,6 +1154,14 @@ const VIEWS = {
         </div>`;
       Dirty.set(false);
       f.addEventListener('input', () => Dirty.set(true));
+      /* Referred by: a contact (picked from search; never themselves or someone they brought in) or another way in */
+      $('#c-rsrc').onclick = (e) => { const b = e.target.closest('[data-rs]'); if (!b) return; const v = b.dataset.rs; f.ref_src.value = v;
+        $('#c-rsrc').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); $('#c-rp').hidden = v !== 'person'; const n = $('#c-rnote'); n.hidden = !v; n.placeholder = REF_HINT[v] || '';
+        if (v !== 'person') { f.referred_by.value = ''; $('#c-ref').value = ''; } Dirty.set(true); };
+      clientPicker($('#c-ref'), $('#c-ref-list'), async (cid) => { if (c.id && cid === c.id) { $('#c-ref').value = ''; return toast('They can’t refer themselves.'); }
+        if (c.id) { const G = await refGraph(); if (refDesc(G, c.id).some(x => x.c.id === cid)) { $('#c-ref').value = ''; f.referred_by.value = ''; return toast('That person was brought in by them, so they can’t be the one who referred them.', 3200); } }
+        f.referred_by.value = cid; Dirty.set(true); });
+      $('#c-ref').addEventListener('input', (e) => { if (!e.target.value.trim()) f.referred_by.value = ''; });
       $('#f-photo').addEventListener('change', async (e) => {
         const file = e.target.files[0]; if (!file) return;
         try {
@@ -1153,8 +1186,9 @@ const VIEWS = {
         if (newPhoto) photoRef = await Media.save(newPhoto, 'jpg');
         // Categories are tidied to "Title case" so "supplier" and "Supplier" stay one group.
         d.category = (d.category || 'Client').replace(/\s+/g, ' ').replace(/^./, m => m.toUpperCase());
-        const cols = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags', 'category'];
-        const vals = cols.map(k => d[k] || null); vals[0] = d.first_name; vals[1] = d.last_name || '';
+        if (d.ref_src !== 'person') d.referred_by = ''; if (d.ref_src === 'person' && !d.referred_by) d.ref_src = d.ref_note ? 'other' : '';   /* a person picked, or the note kept as Other */
+        const cols = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags', 'category', 'referred_by', 'ref_src', 'ref_note'];
+        const vals = cols.map(k => d[k] || null); vals[0] = d.first_name; vals[1] = d.last_name || ''; vals[11] = d.referred_by ? +d.referred_by : null;
         let cid = c.id;
         if (cid) {
           await DB.run(`UPDATE clients SET ${cols.map(k => k + ' = ?').join(', ')}, photo_ref = ?, updated_at = datetime('now') WHERE id = ?`, [...vals, photoRef, cid]);
@@ -1555,28 +1589,31 @@ const VIEWS = {
       if (!it) { el.innerHTML = '<div class="card muted">Not found.</div>'; return; }
       const photos = await DB.all('SELECT * FROM portfolio_photos WHERE item_id = ? ORDER BY sort, id', [it.id]);
       const urls = await Promise.all(photos.map(p => Media.url(p.photo_ref)));
+      const reelUrl = it.reel_ref ? await Media.url(it.reel_ref) : '';
       $('#view-title').textContent = PF_KIND[it.kind];
+      /* The slides: every photo, then the reel last (it plays right there, with its own controls). */
+      const N = photos.length + (reelUrl ? 1 : 0), isReel = (i) => reelUrl && i === photos.length;
       const field = (l, v) => v ? `<div class="stat"><span class="muted">${l}</span><span class="val">${v}</span></div>` : '';
-      const many = photos.length > 1;
+      const IC = (p) => `<svg viewBox="0 0 24 24">${p}</svg>`;
+      const job = PF_JOBS.find(j => j[0] === it.job)?.[1];
       el.innerHTML = `<div class="pfv">
         <div class="pfv-media">
         <div class="pfv-stage">
           <div class="carousel${pfBg(it.bg)}" id="pf-car">${photos.map((p, i) => `<div class="slide"><img src="${urls[i]}" alt="" data-i="${i}">
-            ${p.label ? `<span class="slide-label">${esc(p.label)}</span>` : ''}</div>`).join('') || '<div class="slide empty-slide muted">No photos</div>'}</div>
-          ${many ? `<button class="pfv-nav prev" id="pf-prev" aria-label="Previous photo">‹</button><button class="pfv-nav next" id="pf-next" aria-label="Next photo">›</button>
-            <span class="pfv-count" id="pf-count">1 / ${photos.length}</span>` : ''}
-          ${photos.length ? `<button class="pfv-zoom" id="pf-zoom" aria-label="Full screen" data-tip="Full screen, pinch or scroll to zoom"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>` : ''}
+            ${p.label ? `<span class="slide-label">${esc(p.label)}</span>` : ''}</div>`).join('')}${reelUrl ? `<div class="slide pfv-rslide"><video id="pf-reel" controls playsinline preload="metadata" src="${reelUrl}"></video><span class="slide-label">Reel</span></div>` : ''}${N ? '' : '<div class="slide empty-slide muted">No photos</div>'}</div>
+          ${N > 1 ? `<button class="pfv-nav prev" id="pf-prev" aria-label="Previous">‹</button><button class="pfv-nav next" id="pf-next" aria-label="Next">›</button>
+            <span class="pfv-count" id="pf-count">1 / ${N}</span>` : ''}
+          ${photos.length ? `<button class="pfv-zoom" id="pf-zoom" aria-label="Full screen" data-tip="Full screen, pinch or scroll to zoom">${IC('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>')}</button>` : ''}
         </div>
-        ${it.reel_ref ? `<div class="pfv-reel"><div class="lbl">Reel</div><video id="pf-reel" controls playsinline preload="metadata" src="${await Media.url(it.reel_ref) || ''}"></video>
-          <div class="row" style="gap:6px;margin-top:6px"><button class="btn small" id="pf-reelshare">Share reel</button><button class="btn small" id="pf-reelsave">Save reel</button></div></div>` : ''}
-        ${many ? `<div class="pfv-thumbs${pfBg(it.bg)}" id="pf-dots">${photos.map((p, i) => `<button class="${i ? '' : 'on'}" data-go-i="${i}" aria-label="Photo ${i + 1}"><img src="${urls[i]}" alt=""></button>`).join('')}</div>` : ''}
+        ${N > 1 ? `<div class="pfv-thumbs${pfBg(it.bg)}" id="pf-dots">${photos.map((p, i) => `<button class="${i ? '' : 'on'}" data-go-i="${i}" aria-label="Photo ${i + 1}"><img src="${urls[i]}" alt=""></button>`).join('')}${reelUrl ? `<button class="pfv-rthumb" data-go-i="${photos.length}" aria-label="Reel" data-tip="The reel">${IC('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/>')}</button>` : ''}</div>` : ''}
         </div>
         <div class="pfv-info">
         <div class="card">
-          <div class="row" style="justify-content:space-between;flex-wrap:nowrap">
+          <div class="row" style="justify-content:space-between;flex-wrap:nowrap;gap:10px">
             <h2 style="margin:0">${esc(it.title || PF_KIND[it.kind])}</h2>
             <button class="fav ${it.favourite ? 'on' : ''}" id="pf-fav" data-tip="Favourite" aria-label="Favourite">★</button>
           </div>
+          <div class="pfv-chips"><span class="chip">${PF_KIND[it.kind]}</span>${job ? `<span class="chip on">${job}</span>` : ''}${reelUrl ? '<span class="chip">▶ Reel</span>' : ''}</div>
           ${it.kind === 'flash' ? `<div class="row" style="margin:8px 0 4px">
             ${it.price != null ? `<span class="price paid">${money(it.price)}</span>` : ''}
             <label class="toggle" data-tip="Mark this flash as taken"><input type="checkbox" id="pf-claimed" ${it.claimed ? 'checked' : ''}><span>Claimed</span></label></div>` : ''}
@@ -1586,27 +1623,30 @@ const VIEWS = {
           ${field('Date', it.made_on ? new Date(it.made_on + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '')}
           ${it.tags ? `<div style="margin-top:10px">${tagChips(it.tags).replace('justify-content:center', '')}</div>` : ''}
         </div>
-        <div class="row" style="margin-bottom:24px">
-          <button class="btn danger icon-btn" id="pf-del" data-tip="Delete" aria-label="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-          <button class="btn" data-xone="portfolio:${it.id}" data-tip="Export this piece, photos and all, to import in another workspace">Export</button>
-          <button class="btn" id="pf-share" ${photos.length ? '' : 'disabled'}>Share</button>
-          <button class="btn" id="pf-save" ${photos.length ? '' : 'disabled'} data-tip="Save this photo to your device, exactly as it is stored">Save</button>
-          <button class="btn" id="pf-post" ${photos.length ? '' : 'disabled'} data-tip="Design a social post with this tattoo: layouts, your logo as a watermark, title and hashtags">Post</button>
-          <button class="btn primary" style="flex:1" onclick="location.hash='pf-edit/${it.id}'">Edit</button>
+        <div class="pfv-acts">
+          <button class="btn icon-btn danger" id="pf-del" data-tip="Delete" aria-label="Delete">${IC('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>')}</button>
+          <button class="btn icon-btn" data-xone="portfolio:${it.id}" data-tip="Export this piece, photos and reel, to import in another workspace" aria-label="Export">${IC('<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/>')}</button>
+          <button class="btn icon-btn" id="pf-share" ${N ? '' : 'disabled'} data-tip="Share what's showing: this photo, or the reel" aria-label="Share">${IC('<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>')}</button>
+          <button class="btn icon-btn" id="pf-save" ${N ? '' : 'disabled'} data-tip="Save what's showing to this device, exactly as it is stored" aria-label="Save">${IC('<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>')}</button>
+          <button class="btn icon-btn" id="pf-post" ${photos.length ? '' : 'disabled'} data-tip="Design a social post with this tattoo${job ? ` (there's a ${job.toLowerCase()} before-and-after layout)` : ''}" aria-label="Post">${IC('<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="12" cy="12" r="3.5"/><circle cx="17" cy="7" r=".8"/>')}</button>
+          <span style="flex:1"></span>
+          <button class="btn primary" style="min-width:110px" onclick="location.hash='pf-edit/${it.id}'">Edit</button>
         </div></div></div>`;
       const car = $('#pf-car'), dots = $('#pf-dots');
-      const cur = () => Math.round(car.scrollLeft / car.clientWidth);
-      const go = (i) => car.scrollTo({ left: Math.max(0, Math.min(photos.length - 1, i)) * car.clientWidth, behavior: 'smooth' });
+      const cur = () => Math.round(car.scrollLeft / Math.max(1, car.clientWidth));
+      const go = (i) => car.scrollTo({ left: Math.max(0, Math.min(N - 1, i)) * car.clientWidth, behavior: 'smooth' });
       const mark = () => { const i = cur();
         dots?.querySelectorAll('button').forEach((d, j) => d.classList.toggle('on', j === i));
-        const c = $('#pf-count'); if (c) c.textContent = `${i + 1} / ${photos.length}`;
-        const pv = $('#pf-prev'), nx = $('#pf-next'); if (pv) { pv.disabled = i === 0; nx.disabled = i === photos.length - 1; } };
-      if (many) { car.addEventListener('scroll', mark, { passive: true }); mark();
+        const c = $('#pf-count'); if (c) c.textContent = `${i + 1} / ${N}`;
+        const pv = $('#pf-prev'), nx = $('#pf-next'); if (pv) { pv.disabled = i === 0; nx.disabled = i === N - 1; }
+        const zb = $('#pf-zoom'); if (zb) zb.hidden = isReel(i);
+        const v = $('#pf-reel'); if (v && !isReel(i) && !v.paused) v.pause();   /* leaving the reel stops it */ };
+      if (N > 1) { car.addEventListener('scroll', mark, { passive: true }); mark();
         $('#pf-prev').onclick = () => go(cur() - 1); $('#pf-next').onclick = () => go(cur() + 1);
         dots.onclick = (e) => { const b = e.target.closest('[data-go-i]'); if (b) go(+b.dataset.goI); }; }
       const full = (i) => openGallery(urls, i, it.bg, photos.map(p => p.label));
       car.onclick = (e) => { const img = e.target.closest('img'); if (img) full(+img.dataset.i); };
-      const zb = $('#pf-zoom'); if (zb) zb.onclick = () => full(cur());
+      const zb = $('#pf-zoom'); if (zb) zb.onclick = () => { const i = cur(); if (!isReel(i)) full(i); };
       $('#pf-fav').onclick = async (e) => {
         const btn = e.currentTarget;   // currentTarget is null after the await
         it.favourite = it.favourite ? 0 : 1;
@@ -1615,25 +1655,25 @@ const VIEWS = {
       };
       const cl = $('#pf-claimed');
       if (cl) cl.onchange = () => DB.run(`UPDATE portfolio_items SET claimed = ?, updated_at = datetime('now') WHERE id = ?`, [cl.checked ? 1 : 0, it.id]);
-      // The stored file itself, named after the piece, with its real type (JPEG, PNG…).
-      const photoFile = async () => {
-        const i = cur(), p = photos[i] || photos[0], ext = p.photo_ref.split('.').pop();
+      // The stored file itself, named after the piece, with its real type: the photo showing, or the reel.
+      const shownFile = async () => {
+        const i = cur(), base = (it.title || 'inkforge').replace(/[^\w-]+/g, '_');
+        if (isReel(i)) { const f = await (await (await Media.dir()).getFileHandle(it.reel_ref)).getFile(), ext = it.reel_ref.split('.').pop();
+          return new File([f], base + '-reel.' + ext, { type: f.type || 'video/' + (ext === 'mov' ? 'quicktime' : ext) }); }
+        const p = photos[i] || photos[0], ext = p.photo_ref.split('.').pop();
         const f = await (await (await Media.dir()).getFileHandle(p.photo_ref)).getFile();
         const type = Object.keys(IMG_EXT).find(k => IMG_EXT[k] === ext) || f.type || 'image/jpeg';
-        return new File([f], (it.title || 'inkforge').replace(/[^\w-]+/g, '_') + (photos.length > 1 ? '-' + (i + 1) : '') + '.' + ext, { type });
+        return new File([f], base + (photos.length > 1 ? '-' + (i + 1) : '') + '.' + ext, { type });
       };
       const download = (file) => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
       $('#pf-post').onclick = () => DZ.post(it.id);
-      const reelFile = async () => { const f = await (await (await Media.dir()).getFileHandle(it.reel_ref)).getFile(), ext = it.reel_ref.split('.').pop();
-        return new File([f], (it.title || 'reel').replace(/[^\w-]+/g, '_') + '-reel.' + ext, { type: f.type || 'video/' + (ext === 'mov' ? 'quicktime' : ext) }); };
-      if ($('#pf-reelshare')) { $('#pf-reelshare').onclick = async () => shareFiles([await reelFile()], it.title); $('#pf-reelsave').onclick = async () => { const fl = await reelFile(); download(fl); toast(`Saved ${fl.name}`); }; }
-      $('#pf-share').onclick = async () => shareFiles([await photoFile()], it.title);
-      $('#pf-save').onclick = async () => { const file = await photoFile(); download(file); toast(`Saved ${file.name}`); };
+      $('#pf-share').onclick = async () => shareFiles([await shownFile()], it.title);
+      $('#pf-save').onclick = async () => { const file = await shownFile(); download(file); toast(`Saved ${file.name}`); };
       $('#pf-del').onclick = async () => {
-        if (!await ask(`Delete "${it.title || PF_KIND[it.kind]}" and its ${photos.length} photo${photos.length === 1 ? '' : 's'}?`)) return;
+        if (!await ask(`Delete "${it.title || PF_KIND[it.kind]}" and its ${photos.length} photo${photos.length === 1 ? '' : 's'}${reelUrl ? ' and reel' : ''}?`)) return;
         const snap = await Undel.snap([['portfolio_items', 'id = ?', [it.id]], ['portfolio_photos', 'item_id = ?', [it.id]]]);
         await DB.run('DELETE FROM portfolio_items WHERE id = ?', [it.id]); history.back();
-        Undel.offer('Deleted.', snap, photos.flatMap(p => [p.photo_ref, p.thumb_ref]), () => typeof renderPfGrid === 'function' && renderPfGrid());
+        Undel.offer('Deleted.', snap, [...photos.flatMap(p => [p.photo_ref, p.thumb_ref]), it.reel_ref], () => typeof renderPfGrid === 'function' && renderPfGrid());
       };
     }
   },
@@ -1657,7 +1697,9 @@ const VIEWS = {
       f.innerHTML = `
         <section class="fsec"><h3>Type<small>A tattoo you did, art, or flash for sale</small></h3>
         <div class="seg" id="pf-kind" style="margin-bottom:12px">${Object.entries(PF_KIND).map(([k, l]) => `<button type="button" data-k="${k}" class="${it.kind === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div></section>
-        ${fsec(`Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil or sketch. Tap ◀ to move a photo forward.')}`,
+        <div class="pf-job" ${it.kind === 'tattoo' ? '' : 'hidden'}><div class="lbl">Kind of work ${help('Cover ups and fix ups: tag a photo Before and one After. The portfolio print shows them side by side, and Post has a before-and-after layout.')}</div>
+          <div class="seg" id="pf-job" style="margin-bottom:12px">${PF_JOBS.map(([k, l]) => `<button type="button" data-j="${k}" class="${(it.job || '') === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div></div>
+        ${fsec(`Photos ${help('The first photo is the cover. Tag each one as fresh, healed, stencil, sketch or process, or Before and After for a cover up or fix up. Tap ◀ to move a photo forward.')}`,
           `<div class="thumbs pf-thumbs ${it.bg ? 'bg-' + it.bg : ''}" id="pf-thumbs"></div>
            <div class="lbl" style="margin-top:10px">Size for new photos ${help('Long side in pixels. Smaller saves space; Original keeps the file exactly as you picked it. Set the usual size in Settings.')}</div>
            <div class="seg" id="pf-size">${PF_SIZES.map(([k, l]) => `<button type="button" data-sz="${k}" class="${pfSizeDefault() === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
@@ -1688,7 +1730,11 @@ const VIEWS = {
       const syncKind = () => {
         f.querySelector('.pf-flash').hidden = it.kind !== 'flash';
         f.querySelector('.pf-client').hidden = it.kind !== 'tattoo';
+        f.querySelector('.pf-job').hidden = it.kind !== 'tattoo';
       };
+      $('#pf-job').onclick = (e) => { const b = e.target.closest('[data-j]'); if (!b) return; it.job = b.dataset.j || null;
+        $('#pf-job').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); Dirty.set(true);
+        if (it.job && !photos.some(p => /^(before|after)$/i.test(p.label || ''))) toast('Tag one photo Before and one After (the menu under each photo).', 3000); };
       syncKind();
       let pfSize = pfSizeDefault();
       $('#pf-size').onclick = (e) => { const b = e.target.closest('[data-sz]'); if (!b) return; pfSize = b.dataset.sz;
@@ -1698,7 +1744,7 @@ const VIEWS = {
         $('#pf-thumbs').className = 'thumbs pf-thumbs' + (it.bg ? ' bg-' + it.bg : ''); Dirty.set(true); };
       $('#pf-kind').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; it.kind = b.dataset.k;
         $('#pf-kind').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); syncKind(); Dirty.set(true); };
-      const LABELS = ['', 'Fresh', 'Healed', 'Stencil', 'Sketch', 'Process'];
+      const LABELS = ['', 'Fresh', 'Healed', 'Stencil', 'Sketch', 'Process', 'Before', 'After'];
       const drawThumbs = () => {
         $('#pf-thumbs').innerHTML = photos.map((p, i) => `
           <div class="pf-ph"><div class="thumb ${i ? '' : 'cover'}"><img src="${p.url}" alt="">
@@ -1756,9 +1802,9 @@ const VIEWS = {
         const vals = [it.kind, d.title.trim() || null, d.description.trim() || null, d.placement.trim() || null,
           d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ') || null,
           it.kind === 'tattoo' ? clientId : null, it.booking_id ?? null, d.made_on || null,
-          flash && d.price !== '' ? +d.price : null, flash && d.claimed ? 1 : 0, it.bg || null];
+          flash && d.price !== '' ? +d.price : null, flash && d.claimed ? 1 : 0, it.bg || null, it.kind === 'tattoo' ? it.job || null : null];
         const reelRef = reel.file ? await Media.saveBig(reel.file, reelExt(reel.file)) : reel.ref; vals.push(reelRef || null);
-        const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed, bg, reel_ref';
+        const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed, bg, job, reel_ref';
         const rows = [];
         for (const p of photos) {
           if (p.blob) rows.push({ photo_ref: await Media.save(p.blob, p.ext || 'jpg'), thumb_ref: await Media.save(p.thumb, p.thumbExt || p.ext || 'jpg'), label: p.label || null });
@@ -3036,7 +3082,7 @@ const MERGE_SECTIONS = [
 const MEDIA_REF_RE = /[0-9a-f]{32}\.(?:png|jpe?g|webp|svg|mp4|webm|mov|m4a|mp3|wav|ogg|aac)/g;
 // section null = device-specific, never merged.
 const MERGE_TABLES = {
-  clients: { section: 'clients', refs: ['photo_ref'] },
+  clients: { section: 'clients', refs: ['photo_ref'], fk: { referred_by: 'clients' } },
   bookings: { section: 'bookings', fk: { client_id: 'clients', followup_of: 'bookings' }, skip: ['gcal_id', 'gcal_updated', 'gcal_synced_at'] },
   booking_photos: { section: 'bookings', fk: { booking_id: 'bookings' }, refs: ['photo_ref'] },
   form_templates: { section: 'forms' },
@@ -5831,12 +5877,18 @@ async function reelToPortfolio(file, name) {
   else { id = pick.id; await DB.run(`UPDATE portfolio_items SET reel_ref = ?, updated_at = datetime('now') WHERE id = ?`, [ref, id]); if (pick.reel_ref && pick.reel_ref !== ref) await Media.release(pick.reel_ref); }
   toastAct(pick === 'new' ? 'Added to your portfolio as a new tattoo.' : 'Reel added to the tattoo.', 'Open', () => { location.hash = 'pf/' + id; });
 }
+/* A tattoo's kind of work (portfolio_items.job). Cover ups and fix ups pair their Before and After photos. */
+const PF_JOBS = [['', 'New tattoo'], ['cover', 'Cover up'], ['fix', 'Fix up']];
 async function pfPrintItems(which, photos) {
   const where = which === 'fav' ? 'p.favourite = 1' : which === 'all' ? '1' : 'p.kind = ?';
   const items = await DB.all(`SELECT p.* FROM portfolio_items p WHERE ${where} ORDER BY coalesce(p.made_on, p.created_at) DESC, p.id DESC`,
     ['tattoo', 'art', 'flash'].includes(which) ? [which] : []);
   const out = [];
   for (const it of items) {
+    if (it.job) { const all = await DB.all('SELECT photo_ref, label FROM portfolio_photos WHERE item_id = ? ORDER BY sort, id', [it.id]), lb = (w) => all.find(p => (p.label || '').toLowerCase() === w);
+      const b = lb('before'), a = lb('after');
+      if (b && a) { out.push({ ...it, photo_ref: a.photo_ref, pair: [b.photo_ref, a.photo_ref] });   /* cover up / fix up: before and after side by side */
+        if (photos !== 'cover') all.filter(p => p !== b && p !== a).forEach(p => out.push({ ...it, photo_ref: p.photo_ref, extra: true })); continue; } }
     const ph = await DB.all(`SELECT photo_ref FROM portfolio_photos WHERE item_id = ? ORDER BY sort, id ${photos === 'cover' ? 'LIMIT 1' : ''}`, [it.id]);
     ph.forEach((p, i) => out.push({ ...it, photo_ref: p.photo_ref, extra: i > 0 }));
   }
@@ -5980,8 +6032,18 @@ async function portfolioPages() {
       // Picture, cover-cropped into its frame
       const solid = it.bg === 'white' ? '#ffffff' : it.bg === 'black' ? '#000000' : null;
       x.fillStyle = solid || C.frame; x.fillRect(cx, cy, cw, ih);
-      const url = await Media.url(it.photo_ref);
-      const img = url ? await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = url; }) : null;
+      const ld = async (ref) => { const u = await Media.url(ref); return u ? await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; }) : null; };
+      if (it.pair) {   /* before | after, each fitted in its half, with its word on it */
+        const half = (cw - gap / 2) / 2;
+        for (const [k, ref] of it.pair.entries()) { const im = await ld(ref), hx = cx + k * (half + gap / 2); if (!im) continue;
+          const sc = Math.min(half / im.naturalWidth, ih / im.naturalHeight) * (solid ? 0.92 : 1), w = im.naturalWidth * sc, h = im.naturalHeight * sc;
+          x.save(); x.beginPath(); x.rect(hx, cy, half, ih); x.clip(); x.drawImage(im, hx + (half - w) / 2, cy + (ih - h) / 2, w, h); x.restore();
+          const tag = k ? 'AFTER' : 'BEFORE'; x.font = font(15, 700); const tw = x.measureText(tag).width + 30;
+          x.fillStyle = k ? C.accent : 'rgba(0,0,0,.7)'; x.fillRect(hx + 12, cy + ih - 46, tw, 32); text(x, tag, hx + 12 + tw / 2, cy + ih - 24, font(15, 700), k ? '#061211' : '#fff', 'center', 3); }
+        if (PFP.info !== 'none') { const word = it.job === 'fix' ? 'FIX UP' : 'COVER UP'; x.font = font(16, 700); const tw = x.measureText(word).width + 36;
+          x.fillStyle = C.accent; x.fillRect(cx + 16, cy + 16, tw, 34); text(x, word, cx + 16 + tw / 2, cy + 39, font(16, 700), '#061211', 'center', 3); }
+      }
+      const img = it.pair ? null : await ld(it.photo_ref);
       if (img) {
         // The whole picture always fits its frame, never cropped; a chosen background adds a small margin.
         const sc = Math.min(cw / img.naturalWidth, ih / img.naturalHeight) * (solid ? 0.9 : 1);
@@ -6032,6 +6094,38 @@ async function statsRows() {
   return DB.all(`SELECT b.*, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
     WHERE b.completed = 1 AND b.ghost = 0 AND substr(b.start_at, 1, 10) BETWEEN ? AND ?${extra} ORDER BY b.start_at`, [a, z, ...(w !== 'all' && w !== 'mine' ? [w] : [])]);
 }
+/* ---------- Referrals ----------
+   Each contact can say who sent them (another contact: referred_by) or how else they found you (ref_src: online,
+   advert, other, with a note like "Facebook" or "flyer at the cafe"). From that: who each person brought in, the
+   whole tree below them, and what it earned (completed, paid tattoos; ghost bookings never count). */
+const REF_SRC = [['', 'Not set'], ['person', 'A person'], ['online', 'Online'], ['advert', 'Advert'], ['other', 'Other']];
+const REF_HINT = { person: 'Note (optional)', online: 'Facebook, Instagram, Google, TikTok…', advert: 'Poster, flyer, business card, where…', other: 'How they found you' };
+async function refGraph() {
+  const cs = await DB.all('SELECT id, first_name, last_name, category, referred_by, ref_src, ref_note, photo_ref, created_at FROM clients'), kids = new Map();
+  for (const c of cs) if (c.referred_by && c.referred_by !== c.id) { if (!kids.has(c.referred_by)) kids.set(c.referred_by, []); kids.get(c.referred_by).push(c); }
+  const earn = new Map((await DB.all(`SELECT client_id AS id, SUM(coalesce(paid, 0)) AS s, COUNT(*) AS n FROM bookings WHERE completed = 1 AND coalesce(ghost, 0) = 0 AND client_id IS NOT NULL GROUP BY client_id`)).map(r => [r.id, r]));
+  return { cs, byId: new Map(cs.map(c => [c.id, c])), kids, earn };
+}
+/* Everyone below a contact (whom they referred, whom those referred…), with how many steps down. */
+function refDesc(G, id) { const out = [], seen = new Set([id]); const walk = (k, d) => { for (const c of G.kids.get(k) || []) { if (seen.has(c.id)) continue; seen.add(c.id); out.push({ c, d }); walk(c.id, d + 1); } }; walk(id, 1); return out; }
+/* The chain above a contact: who referred them, who referred that person… */
+function refUp(G, id) { const out = [], seen = new Set([id]); let c = G.byId.get(id); while (c?.referred_by && !seen.has(c.referred_by)) { seen.add(c.referred_by); c = G.byId.get(c.referred_by); if (c) out.push(c); } return out; }
+const refSrcText = (c) => c.ref_src && c.ref_src !== 'person' ? (REF_SRC.find(x => x[0] === c.ref_src)?.[1] || c.ref_src) + (c.ref_note ? ': ' + c.ref_note : '') : '';
+/* The tree as a window: the chain above them, then everyone below, each with what they earned. */
+async function refTree(id) {
+  const G = await refGraph(), me = G.byId.get(id); if (!me) return;
+  const up = refUp(G, id).reverse(), root = up[0] || me;
+  const node = (c, depth) => { const e = G.earn.get(c.id), kids = (G.kids.get(c.id) || []).sort((a, b) => fullName(a).localeCompare(fullName(b)));
+    return `<li class="${c.id === id ? 'me' : ''}"><a class="rt-n" href="#client/${c.id}"><b>${esc(fullName(c))}</b>${c.category && c.category !== 'Client' ? ` <span class="chip">${esc(c.category)}</span>` : ''}
+      <small>${e ? `${e.n} tattoo${e.n === 1 ? '' : 's'} · ${money(e.s)}` : 'no tattoos yet'}</small></a>${kids.length && depth < 12 ? `<ul>${kids.map(k => node(k, depth + 1)).join('')}</ul>` : ''}</li>`; };
+  const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card rt-card"><h2 style="margin-top:0">Referral tree</h2>
+    <p class="muted" style="margin-top:0;font-size:13px">${root.id !== id ? `From ${esc(fullName(root))}, the first in the chain, down.` : 'Everyone they brought in, and whom those brought in.'}${refSrcText(root) ? ` ${esc(fullName(root))} found you through ${esc(refSrcText(root))}.` : ''}</p>
+    <ul class="rt">${node(root, 0)}</ul>
+    <button class="btn" data-rtx style="width:100%;margin-top:12px">Close</button></div>`;
+  document.body.appendChild(o);
+  o.onclick = (e) => { if (e.target === o || e.target.closest('[data-rtx]') || e.target.closest('.rt-n')) o.remove(); };
+}
 async function renderStats() {
   const el = $('#st-body'); if (!el) return;
   const rows = await statsRows(), [a, z] = statsRange();
@@ -6045,6 +6139,14 @@ async function renderStats() {
     WHERE b.kind = 'followup' AND substr(b.start_at, 1, 10) >= ? ORDER BY b.start_at LIMIT 5`, [today]);
   const promos = await DB.all(`SELECT b.id, b.promo_kind, b.promo_value, b.promo_until, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id
     WHERE b.promo_kind IS NOT NULL AND b.promo_until >= ? ORDER BY b.promo_until`, [today]);
+  /* Referrals in this period: income by how clients found you, and the people whose referrals earned the most */
+  const RG = await refGraph(), srcOf = (cid) => { const c = RG.byId.get(cid); if (!c) return 'Not set'; return c.referred_by ? 'A person' : (REF_SRC.find(x => x[0] === (c.ref_src || ''))?.[1] || 'Not set'); };
+  const bySrc = {}; for (const r of rows) { const k = srcOf(r.client_id); (bySrc[k] ||= { s: 0, n: 0 }); bySrc[k].s += r.paid || 0; bySrc[k].n++; }
+  const inc = new Map(); for (const r of rows) if (r.client_id) inc.set(r.client_id, (inc.get(r.client_id) || 0) + (r.paid || 0));
+  const tops = RG.cs.map(c => { const D = refDesc(RG, c.id); return { c, n: D.length, s: D.reduce((t, x) => t + (inc.get(x.c.id) || 0), 0) }; }).filter(x => x.n && x.s > 0).sort((a, b) => b.s - a.s).slice(0, 8);
+  const refStats = Object.keys(bySrc).some(k => k !== 'Not set') || tops.length ? `<div class="grid st-two">
+      <div class="card"><h2>How they found you ${help('Income this period from clients by how they found you: a person (a referral), online, an advert or other. Set it on each client, under More about them.')}</h2>${Object.entries(bySrc).sort((a, b) => b[1].s - a[1].s).map(([k, v]) => `<div class="stat"><span>${esc(k)}</span><span>${money(v.s)} <small class="muted">${v.n}</small></span></div>`).join('')}</div>
+      <div class="card"><h2>Top referrers ${help('People whose referrals (and whom those referred) earned the most this period. Tap one to see their tree.')}</h2>${tops.map(t => `<a class="stat" href="#client/${t.c.id}"><span>${esc(fullName(t.c))}${t.c.category && t.c.category !== 'Client' ? ` <span class="chip">${esc(t.c.category)}</span>` : ''}</span><span>${money(t.s)} <small class="muted">${t.n} referred</small></span></a>`).join('') || '<p class="muted">No referral income this period yet.</p>'}</div></div>` : '';
   // Per month, for the chart
   const months = {}; for (const r of rows) { const k = r.start_at.slice(0, 7); (months[k] ||= { paid: 0, mins: 0, n: 0 }); months[k].paid += r.paid || 0; months[k].mins += r.time_min || 0; months[k].n++; }
   const keys = Object.keys(months).sort().slice(-12), maxP = Math.max(1, ...keys.map(k => months[k].paid));
@@ -6066,6 +6168,7 @@ async function renderStats() {
       <div class="card"><h2>Busiest days</h2>${days.map(([k, v]) => `<div class="stat"><span>${esc(k)}</span><span>${v}</span></div>`).join('') || '<p class="muted">—</p>'}</div>
       <div class="card"><h2>Top placements</h2>${places.map(([k, v]) => `<div class="stat"><span>${esc(k)}</span><span>${v}</span></div>`).join('') || '<p class="muted">—</p>'}</div>
     </div>
+    ${refStats}
     <div class="card"><h2>Tattoos (${n})</h2><div class="st-table"><table>
       <thead><tr><th>Date</th><th>Client</th><th>Tattoo</th><th>Time</th><th>Paid</th></tr></thead>
       <tbody>${rows.slice().reverse().map(r => `<tr data-bk="${r.id}"><td>${esc(r.start_at.slice(0, 10))}</td><td>${esc(bName(r))}${bTag(r)}</td>
@@ -9378,8 +9481,8 @@ async function bkImport(P0) {
    importing again updates instead of doubling up; a new one with the same phone or email as a client already here is
    not added twice: that client gets the tag and only its empty fields filled. Imported clients get a tag (whose client) and a colour.
    Medical notes go in the file only when asked for; photos never do. */
-const CX_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags', 'category'];
-const CX_LABEL = { first_name: 'First name', last_name: 'Last name', phone: 'Phone', email: 'Email', instagram: 'Instagram', dob: 'Birthday', pronouns: 'Pronouns', medical: 'Medical', notes: 'Notes', tags: 'Tags', category: 'Category' };
+const CX_FIELDS = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags', 'category', 'ref_src', 'ref_note'];
+const CX_LABEL = { first_name: 'First name', last_name: 'Last name', phone: 'Phone', email: 'Email', instagram: 'Instagram', dob: 'Birthday', pronouns: 'Pronouns', medical: 'Medical', notes: 'Notes', tags: 'Tags', category: 'Category', ref_src: 'Found you through', ref_note: 'Referral note' };
 const cTag = (c) => c.tag ? `<span class="btag" style="margin-left:6px;--tc:${esc(c.tag_color || '#1fb5a8')}" data-tip="Imported client">${esc(c.tag)}</span>` : '';
 const cxNorm = (v) => v == null ? '' : String(v).trim();
 const CX_V = 1;
@@ -9387,7 +9490,7 @@ const cxOwn = async (S) => (await S.rows('clients')).filter(r => !r.src_uid).sor
 async function cxPack(S, list, own, med, photos = false) { const uid = await S.uid(), pic = {};   /* photos: only a backup merge brings them */
   if (photos) for (const r of list) if (r.photo_ref) { const d = await S.b64(r.photo_ref); if (d) pic[r.id] = { ref: r.photo_ref, data: d }; }
   return { inkforge: 'clients', v: CX_V, med, ws: { uid, name: xWsName(S) }, at: new Date().toISOString(), all: own.map(r => uid + ':' + r.id),
-    clients: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(CX_FIELDS.filter(k => k !== 'medical' || med).map(k => [k, r[k] ?? null])), ...(pic[r.id] ? { photo: pic[r.id] } : {}) })) }; }
+    clients: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(CX_FIELDS.filter(k => k !== 'medical' || med).map(k => [k, r[k] ?? null])), ...(r.referred_by ? { ref_uid: uid + ':' + r.referred_by } : {}), ...(pic[r.id] ? { photo: pic[r.id] } : {}) })) }; }
 async function cxExport(shown) {
   const own = await cxOwn(XS_LOCAL), vis = (shown || []).filter(r => !r.src_uid), st = { med: false };
   const pick = await xChoose('Export clients', 'A file to load into another workspace, for example the shop owner\'s. Imported clients are never exported again. Photos are left out.', vis.length, own.length, 'Every contact you added',
@@ -9399,7 +9502,7 @@ async function cxExport(shown) {
 }
 async function cxImport(P0) {
   const L = await xLoad(P0, '.inkclients,application/json', 'clients', 'clients', CX_V, 'clients'); if (!L) return 0; const { P, self } = L;
-  const F = CX_FIELDS.filter(k => k !== 'medical' || P.med);
+  const F = CX_FIELDS.filter(k => (k !== 'medical' || P.med) && (!['ref_src', 'ref_note'].includes(k) || P.clients.some(x => x && k in x)));   /* older files have no referral: yours stays */
   const all = await DB.all('SELECT * FROM clients'), mine = self ? all.filter(r => !r.src_uid).map(r => ({ ...r, src_uid: P.ws.uid + ':' + r.id })) : all.filter(r => r.src_ws === P.ws.uid), byUid = new Map(mine.map(r => [r.src_uid, r]));
   const byKey = new Map(); for (const r of all) if (!r.src_ws || r.src_ws !== P.ws.uid) for (const k of clientKeys(r)) if (!byKey.has(k)) byKey.set(k, r);
   const lastTag = mine.find(r => r.tag);
@@ -9465,6 +9568,10 @@ async function cxImport(P0) {
     const ref = await xUnpackMedia({ [it.x.photo.ref]: it.x.photo.data }, it.x.photo.ref), id = it.h?.id ?? (await DB.one('SELECT id FROM clients WHERE src_uid = ? OR (src_uid IS NULL AND first_name = ? AND last_name = ?) ORDER BY id DESC', [it.x.uid, it.x.first_name || '', it.x.last_name || '']))?.id;
     if (id) await DB.run(`UPDATE clients SET photo_ref = ? WHERE id = ? AND (photo_ref IS NULL OR photo_ref = '')`, [ref, id]); }
   for (const r of g) await Media.release(r.h.photo_ref);
+  /* who referred whom, between the clients that came in (and theirs already here) */
+  { const loc = new Map((await DB.all('SELECT id, src_uid FROM clients WHERE src_uid IS NOT NULL')).map(r => [r.src_uid, r.id]));
+    for (const it of items) { const x = it.x; if (!x.ref_uid || st.skip.has(x.uid)) continue; const to = self ? +String(x.ref_uid).split(':').pop() : loc.get(x.ref_uid), me = self ? +String(x.uid).split(':').pop() : loc.get(x.uid) ?? it.h?.id;
+      if (to && me && to !== me) await DB.run('UPDATE clients SET referred_by = coalesce(referred_by, ?) WHERE id = ?', [to, me]); } }
   if (g.length) Gcal.soon();
   toast(`Imported: ${ops.length - g.length} change${ops.length - g.length === 1 ? '' : 's'} made.`, 3000);
   return ops.length;
@@ -9624,8 +9731,8 @@ async function rxImport(P0) {
    The file holds each piece's words and its photos (and their small previews) inside it. No tags: a piece whose first
    photo is already here (photos are stored by their content) is the same piece, changed if its words differ.
    Client links are left out: clients are their own export. */
-const PX_FIELDS = ['kind', 'title', 'description', 'placement', 'tags', 'made_on', 'price', 'claimed', 'favourite', 'bg'];
-const PX_LABEL = { kind: 'Type', title: 'Title', description: 'Description', placement: 'Placement', tags: 'Tags', made_on: 'Date', price: 'Price', claimed: 'Claimed', favourite: 'Favourite', bg: 'Background' };
+const PX_FIELDS = ['kind', 'title', 'description', 'placement', 'tags', 'made_on', 'price', 'claimed', 'favourite', 'bg', 'job'];
+const PX_LABEL = { kind: 'Type', title: 'Title', description: 'Description', placement: 'Placement', tags: 'Tags', made_on: 'Date', price: 'Price', claimed: 'Claimed', favourite: 'Favourite', bg: 'Background', job: 'Kind of work' };
 const pxNorm = (k, v) => ['price'].includes(k) ? (v == null || v === '' ? '' : String(+v)) : ['claimed', 'favourite'].includes(k) ? String(+!!v) : v == null ? '' : String(v).trim();
 const pxB64 = (blob) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.readAsDataURL(blob); });
 const PX_V = 1;
@@ -9986,6 +10093,16 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 523, when: '2026-11-25T10:00', added: [
+    'Clients: Referred by (under More about them): another saved contact, or Online, Advert or Other with a note like Facebook, Google or a flyer.',
+    'Clients: a new Supporter contact type, for people who may never get tattooed but send people your way.',
+    'Clients: each client page shows who referred them, whom they brought in (and more through them), and what their referrals earned, with a referral tree.',
+    'Stats: How they found you (income by a person, online, advert or other) and Top referrers for the period.',
+    'Portfolio: the reel is the last slide of an entry and plays right there; Share and Save work on whatever is showing.',
+    'Portfolio: every photo fits the picture box, and the entry page has tidy icon buttons.',
+    'Portfolio: mark a tattoo as a Cover up or Fix up and tag its photos Before and After; the portfolio print shows them side by side.',
+    'Design studio: two new post layouts, Cover up and Fix up before & after, filled from the photos tagged that way.'],
+    test: ['Clients: make a Supporter, then a client referred by them, and open the Supporter’s referral tree.', 'Portfolio: open an entry with a reel and arrow right to the end.', 'Portfolio: mark a tattoo Cover up, tag Before and After, then Post with the cover up layout.'] },
   { build: 522, when: '2026-11-24T21:00', added: [
     'Bend tool: turn left or right, flip either way, and crop (drag the box, then Apply crop), all before the bend. Undo and Redo (Ctrl Z / Y) and Reset edits.',
     'Bend tool: Straighten a crooked photo, and Repeat the design along the band (up to 12×, with a gap) so a short pattern becomes a full band.',

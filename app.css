@@ -2882,5 +2882,25 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .bt-cropbar[hidden] { display: none; }
 .bt-ctl .btn.small { display: inline-flex; align-items: center; gap: 6px; } .bt-ctl .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .bt-strip .btn[disabled] { opacity: .35; }
+/* Clients: referrals and the referral tree */
+.c-ref .lbl { margin-bottom: 4px; } .c-ref .seg button { padding: 0 6px; font-size: 12.5px; white-space: nowrap; }
+.ref-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .ref-list .chip { text-decoration: none; }
+.rt-card { max-width: 560px; } .rt-card .rt { max-height: 60vh; overflow: auto; }
+.rt, .rt ul { list-style: none; margin: 0; padding: 0; }
+.rt ul { margin-left: 14px; padding-left: 14px; border-left: 2px solid var(--line); }
+.rt li { position: relative; margin: 6px 0; }
+.rt ul > li::before { content: ''; position: absolute; left: -14px; top: 18px; width: 12px; border-top: 2px solid var(--line); }
+.rt-n { display: inline-flex; flex-direction: column; gap: 1px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-decoration: none; }
+.rt-n small { color: var(--muted); font-size: 11px; } .rt li.me > .rt-n { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+/* Portfolio entry: every slide (photos, then the reel) fits the box, no scrolling; tidy actions */
+.pfv .slide { height: clamp(240px, calc(100dvh - 330px), 640px); }
+@media (min-width: 900px) { .pfv .slide { height: clamp(300px, calc(100dvh - 210px), 820px); } }
+.pfv .slide img { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+.pfv .slide { min-height: 0; overflow: hidden; }
+.pfv-rslide video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+.pfv-rthumb { display: grid; place-items: center; color: var(--ink); } .pfv-rthumb svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.pfv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; } .pfv-chips .chip.on { border-color: var(--teal); color: var(--teal); }
+.pfv-acts { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.pfv-acts .icon-btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 522; }
+:root { --app-build: 523; }

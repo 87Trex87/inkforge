@@ -2001,6 +2001,16 @@ const DZ_TATTOO = [
     return [dzT('{title}', W * 0.06, H * 0.04, W * 0.88, Math.min(W * 0.065, H * 0.05), { font: '@1', al: 'center', fit: 1 }),
       dzPh(0, ...a, { r: W * 0.02 }), dzPh(1, ...b, { r: W * 0.02 }), ...tag(a, 'Fresh'), ...tag(b, 'Healed'),
       dzT('{tags}', W * 0.06, H * (tall ? 0.91 : 0.82), W * 0.88, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }), dzMark(W, H, { y: H - W * 0.16 })]; }],
+  /* Cover up and fix up: Before and After side by side (or stacked on a tall post), filled from the photos tagged that way. */
+  ...[['Cover up', 'COVER UP'], ['Fix up', 'FIX UP']].map(([name, word]) => [`${name}: before & after`, (W, H) => { const tall = H > W * 1.4, lab = Math.min(W * 0.045, H * 0.034);
+    const a = tall ? [W * 0.08, H * 0.15, W * 0.84, H * 0.34] : [W * 0.05, H * 0.2, W * 0.44, H * 0.56];
+    const b = tall ? [W * 0.08, H * 0.53, W * 0.84, H * 0.34] : [W * 0.51, H * 0.2, W * 0.44, H * 0.56];
+    const tag = (r, t, on) => [dzS('rect', r[0] + W * 0.02, r[1] + r[3] - lab * 1.6 - W * 0.02, W * 0.2, lab * 1.6, { r: lab * 0.8, ...(on ? {} : { fill: '@fg' }) }),
+      dzT(t, r[0] + W * 0.02, r[1] + r[3] - lab * 1.3 - W * 0.02, W * 0.2, lab, { c: '@bg', al: 'center', b: 1 })];
+    return [dzT(word, W * 0.06, H * 0.035, W * 0.88, Math.min(W * 0.04, H * 0.03), { al: 'center', c: '@accent', b: 1 }),
+      dzT('{title}', W * 0.06, H * 0.075, W * 0.88, Math.min(W * 0.06, H * 0.045), { font: '@1', al: 'center', fit: 1 }),
+      dzPh(0, ...a, { r: W * 0.02 }), dzPh(1, ...b, { r: W * 0.02 }), ...tag(a, 'Before', false), ...tag(b, 'After', true),
+      dzT('{tags}', W * 0.06, H * (tall ? 0.9 : 0.8), W * 0.88, Math.min(W * 0.03, H * 0.022), { al: 'center', c: '@soft' }), dzMark(W, H, { y: H - W * 0.16 })]; }]),
   ['Polaroid', (W, H) => { const fw = W * 0.76, fh = Math.min(H * 0.74, fw * 1.2), fx = (W - fw) / 2, fy = (H - fh) / 2 - H * 0.03;
     return [dzS('rect', fx, fy, fw, fh, { fill: '#fdfbf6', rot: -3, r: 6 }),
       dzPh(0, fx + fw * 0.06, fy + fw * 0.06, fw * 0.88, fh - fw * 0.06 - fh * 0.2, { rot: -3 }),
@@ -2056,8 +2066,8 @@ function dzFillSlots(doc, piece) {
   const used = new Set(), pick = (want) => {
     const byLabel = want && piece.photos.find(p => (p.label || '').toLowerCase() === want && !used.has(p.photo_ref));
     const p = byLabel || piece.photos.find(p => !used.has(p.photo_ref)); if (p) used.add(p.photo_ref); return p?.photo_ref || null; };
-  const fh = doc.layers.some(l => l.t === 'text' && l.text === 'Healed');
-  for (const l of doc.layers.filter(l => l.slot != null).sort((a, b) => a.slot - b.slot)) l.ref = pick(fh ? (l.slot === 0 ? 'fresh' : l.slot === 1 ? 'healed' : '') : '') || l.ref || null;
+  const fh = doc.layers.some(l => l.t === 'text' && l.text === 'Healed'), ba = doc.layers.some(l => l.t === 'text' && l.text === 'After');   /* fresh & healed, or before & after */
+  for (const l of doc.layers.filter(l => l.slot != null).sort((a, b) => a.slot - b.slot)) l.ref = pick(fh ? (l.slot === 0 ? 'fresh' : l.slot === 1 ? 'healed' : '') : ba ? (l.slot === 0 ? 'before' : l.slot === 1 ? 'after' : '') : '') || l.ref || null;
 }
 function dzNew(kind, opt, theme, piece, size, sides) {
   const k = DZ_KINDS[kind], code = Math.random().toString(36).slice(2, 8).toUpperCase(), exp = new Date(); exp.setFullYear(exp.getFullYear() + 1);
