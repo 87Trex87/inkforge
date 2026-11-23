@@ -2923,4 +2923,17 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .sk-live { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
 .sk-drawing, .sk-drawing .dz-page { cursor: crosshair; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 524; }
+.loy-form .lbl { margin-top: 12px; } .loy-form .lbl:first-child { margin-top: 0; }
+.loy-form .seg { flex-wrap: wrap; } .loy-note { font-size: 12px; margin: 6px 0 0; } .loy-togs { display: grid; gap: 8px; margin-top: 12px; }
+.loy-stack { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .loy-stack div { display: grid; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; min-width: 84px; }
+.loy-stack span { font-size: 11px; color: var(--ink2); } .loy-stack b { font-size: 15px; }
+.loy-tabs { margin-bottom: 12px; } .loy-code { font-family: ui-monospace, monospace; letter-spacing: .06em; }
+.loy-t td.loy-open { color: var(--teal); } .loy-t td.loy-expired, .loy-t td.loy-void { color: #e26b6b; }
+.b-loy { display: grid; gap: 6px; }
+.loy-msg { max-height: 92vh; overflow: auto; } .loy-prev { display: grid; place-items: center; margin-bottom: 10px; }
+.loy-prev img { width: min(100%, 300px); aspect-ratio: 1080 / 1350; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.4); background: #222; }
+.loy-msg input[type=color] { width: 56px; height: 36px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: none; }
+.loy-tier { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.loy-tier .field { margin: 0; flex: 1 1 110px; } .loy-tier .mini { margin-bottom: 6px; }
+.loy-sum p { font-size: 14px; line-height: 1.45; }
+:root { --app-build: 525; }
