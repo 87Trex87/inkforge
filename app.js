@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 521;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 522;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -9986,6 +9986,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 522, when: '2026-11-24T21:00', added: [
+    'Bend tool: turn left or right, flip either way, and crop (drag the box, then Apply crop), all before the bend. Undo and Redo (Ctrl Z / Y) and Reset edits.',
+    'Bend tool: Straighten a crooked photo, and Repeat the design along the band (up to 12×, with a gap) so a short pattern becomes a full band.',
+    'Bend tool: clean up with White see-through, Trim edges and Invert; the buttons are icons now, in the same compact layout as the rest of the studio.'],
+    test: ['Studio › Bend tool: load a band, crop it, repeat it 3×, turn White see-through on and save the PNG.'] },
   { build: 521, when: '2026-11-24T18:00', added: [
     'Studio: Size sheet, a new tool. One stencil or picture printed in a range of sizes (smallest to largest, by width or height, as many as you like) on A5, A4, A3 or Letter, to hold against your client and choose.',
     'Size sheet: Fill the page fits as many sizes as one page holds; more spill onto further pages. Layout In order or Tight, Turn to fit, space between, and the size under each copy (or not).',

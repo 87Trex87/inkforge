@@ -6816,65 +6816,145 @@ function btWarp(src, deg, max) {
   fc.translate(0, OH); fc.scale(1, -1); fc.drawImage(out, 0, 0); return fl;
 }
 const btLabel = (d) => +d === 0 ? 'Straight' : `${d > 0 ? 'Up' : 'Down'} ${Math.abs(d)}°`;
+/* Edits made before the bend (BT.e): quarter turns and a straighten angle, flips, a crop (fractions of the turned
+   picture), white made see-through, colours inverted, empty edges trimmed, and the design repeated along the band
+   with a gap. Undo and Redo step through them. */
+const BT_E0 = { rot: 0, ang: 0, fx: false, fy: false, crop: null, white: false, inv: false, trim: false, rep: 1, gap: 10 };
+BT.e = { ...BT_E0 }; BT.hist = []; BT.fut = [];
+function btPrep(src, E, max, noCrop) {
+  const k = Math.min(1, max / Math.max(src.width, src.height)), w = Math.max(1, Math.round(src.width * k)), h = Math.max(1, Math.round(src.height * k));
+  const a = ((E.rot || 0) + (E.ang || 0)) * Math.PI / 180, cs = Math.abs(Math.cos(a)), sn = Math.abs(Math.sin(a));
+  let c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * cs + h * sn)); c.height = Math.max(1, Math.round(w * sn + h * cs));
+  let x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high';
+  x.translate(c.width / 2, c.height / 2); x.rotate(a); x.scale(E.fx ? -1 : 1, E.fy ? -1 : 1); x.drawImage(src, -w / 2, -h / 2, w, h);
+  const sub = (X, Y, W, H) => { const o = document.createElement('canvas'); o.width = Math.max(1, Math.round(W)); o.height = Math.max(1, Math.round(H)); o.getContext('2d').drawImage(c, X, Y, W, H, 0, 0, o.width, o.height); c = o; x = c.getContext('2d', { willReadFrequently: true }); };
+  if (E.crop && !noCrop) { const r = E.crop; sub(r.x * c.width, r.y * c.height, r.w * c.width, r.h * c.height); }
+  if (E.white || E.inv) { const id = x.getImageData(0, 0, c.width, c.height), p = id.data;
+    for (let i2 = 0; i2 < p.length; i2 += 4) { if (E.inv) { p[i2] = 255 - p[i2]; p[i2 + 1] = 255 - p[i2 + 1]; p[i2 + 2] = 255 - p[i2 + 2]; }
+      if (E.white) { const l = 0.299 * p[i2] + 0.587 * p[i2 + 1] + 0.114 * p[i2 + 2]; if (l > 200) p[i2 + 3] = Math.round(p[i2 + 3] * Math.max(0, (245 - l) / 45)); } }   /* soft edge: lines keep their anti-aliasing */
+    x.putImageData(id, 0, 0); }
+  if (E.trim) { const p = x.getImageData(0, 0, c.width, c.height).data; let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < c.height; y++) for (let xx = 0, i2 = y * c.width * 4; xx < c.width; xx++, i2 += 4) { if (p[i2 + 3] < 16 || (p[i2] > 238 && p[i2 + 1] > 238 && p[i2 + 2] > 238)) continue; if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 >= x0) sub(x0, y0, x1 - x0 + 1, y1 - y0 + 1); }
+  if ((E.rep || 1) > 1) { const n = Math.min(12, E.rep), g = Math.round(c.width * (E.gap || 0) / 100), o = document.createElement('canvas'); o.width = c.width * n + g * (n - 1); o.height = c.height;
+    const ox = o.getContext('2d'); for (let q = 0; q < n; q++) ox.drawImage(c, q * (c.width + g), 0); c = o; }
+  return c;
+}
+/* Icons for the bend tool's buttons. */
+const BT_IC = { img: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 8"/>', undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>', redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+  rl: '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/>', rr: '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>', fx: '<path d="M12 3v18"/><path d="M8 7l-5 5 5 5zM16 7l5 5-5 5z"/>', fy: '<path d="M3 12h18"/><path d="M7 8l5-5 5 5zM7 16l5 5 5-5z"/>',
+  crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>', save: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>', share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>',
+  st: '<path d="M4 20c4-1 6-5 8-9s5-6 8-7"/><path d="M4 4h6M4 4v6"/>', reset: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/>' };
+const btI = (k) => `<svg viewBox="0 0 24 24">${BT_IC[k]}</svg>`;
 BT.mount = () => {
   const el = $('#bt'); if (!el) return;
+  const load = async (f) => { if (!f) return; try { BT.src = await createImageBitmap(f); BT.name = f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_') || 'band'; BT.e = { ...BT_E0 }; BT.hist = []; BT.fut = []; BT.mount(); } catch { toast('Could not read that image.'); } };
   if (!BT.src) {
     el.innerHTML = `<label class="card st-pick">
         <div class="empty-ico">${ICON.bend}</div>
         <div style="font:26px var(--display)">Bend a band</div>
-        <div class="muted">Bend a design into an arc so a band meets flush around a tapering arm or leg. PNGs keep their see-through background.</div>
+        <div class="muted">Bend a design into an arc so a band meets flush around a tapering arm or leg. Turn, flip, crop, clean up and repeat it first. PNGs keep their see-through background.</div>
         <span class="btn primary" style="margin-top:14px">Choose image</span>
         <input type="file" accept="image/png,image/*" id="bt-file" hidden></label>`;
-    $('#bt-file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
-      try { BT.src = await createImageBitmap(f); BT.name = f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_') || 'band'; BT.mount(); } catch { toast('Could not read that image.'); } };
-    return;
-  }
-  el.innerHTML = `<div class="st-strip bt-strip">
-      <label class="btn">Change image<input type="file" accept="image/png,image/*" id="bt-file" hidden></label>
+    $('#bt-file').onchange = (e) => load(e.target.files[0]); return; }
+  const E = () => BT.e;
+  el.innerHTML = `<div class="st-strip bt-strip sz-strip">
+      <label class="btn icon-btn" data-tip="Another image"><svg viewBox="0 0 24 24">${BT_IC.img}</svg><input type="file" accept="image/png,image/*" id="bt-file" hidden></label>
+      <button class="btn icon-btn" data-bta="undo" data-tip="Undo (Ctrl Z)" aria-label="Undo">${btI('undo')}</button><button class="btn icon-btn" data-bta="redo" data-tip="Redo (Ctrl Y)" aria-label="Redo">${btI('redo')}</button>
       <i class="st-sep"></i>
-      <button class="btn" id="bt-png">Save PNG</button>
-      <button class="btn" id="bt-share">Share</button>
-      <button class="btn primary" id="bt-st">Make a stencil</button>
+      <button class="btn icon-btn" data-bta="rl" data-tip="Turn left 90°" aria-label="Turn left">${btI('rl')}</button><button class="btn icon-btn" data-bta="rr" data-tip="Turn right 90°" aria-label="Turn right">${btI('rr')}</button>
+      <button class="btn icon-btn" data-bta="fx" data-tip="Flip left to right" aria-label="Flip left to right">${btI('fx')}</button><button class="btn icon-btn" data-bta="fy" data-tip="Flip upside down" aria-label="Flip upside down">${btI('fy')}</button>
+      <button class="btn icon-btn" data-bta="crop" data-tip="Crop: drag the box, then Apply" aria-label="Crop">${btI('crop')}</button>
+      <i class="st-sep"></i>
+      <button class="btn icon-btn" id="bt-png" data-tip="Save as PNG (see-through background)" aria-label="Save PNG">${btI('save')}</button>
+      <button class="btn icon-btn" id="bt-share" data-tip="Share" aria-label="Share">${btI('share')}</button>
+      <button class="btn primary" id="bt-st" data-tip="Open the bent design in the stencil maker">${btI('st')}<span>Make a stencil</span></button>
     </div><div class="bt">
-    <div class="bt-stage"><canvas id="bt-cv"></canvas></div>
-    <div class="card bt-ctl">
-      <label class="dz-sl"><span>Bend <b id="bt-l">${btLabel(BT.deg)}</b></span><input type="range" id="bt-deg" min="-360" max="360" step="1" value="${BT.deg}"></label>
+    <div class="bt-stage"><canvas id="bt-cv"></canvas><div id="bt-crop" hidden><i data-ch="m"></i><i data-ch="tl"></i><i data-ch="tr"></i><i data-ch="bl"></i><i data-ch="br"></i></div>
+      <div class="bt-cropbar" id="bt-cropbar" hidden><button class="btn small" data-bta="cropx">Cancel</button><button class="btn small" data-bta="cropr">Whole picture</button><button class="btn small primary" data-bta="cropok">Apply crop</button></div></div>
+    <div class="card bt-ctl sz-ctl">
+      <div class="lbl" style="margin-top:0">Bend <b id="bt-l" style="float:right;text-transform:none">${btLabel(BT.deg)}</b></div>
+      <input type="range" id="bt-deg" min="-360" max="360" step="1" value="${BT.deg}" style="width:100%">
       <div class="bt-fine">${[[-5, '−5'], [-1, '−1'], [0, 'Straight'], [1, '+1'], [5, '+5']].map(([d, l]) => `<button class="btn small" data-d="${d}">${l}</button>`).join('')}</div>
-      <p class="muted" style="font-size:12px;margin:8px 0 12px">For bands, a slight bend (around 10° to 40°) lets the ends meet flush on a limb that gets narrower. Up for a forearm band worn wrist-down, down the other way round. The middle keeps its length.</p>
+      <p class="muted" style="font-size:11.5px;margin:6px 0 0">A slight bend (10° to 40°) lets a band meet flush on a limb that narrows. Up for a forearm band worn wrist-down. The middle keeps its length.</p>
+      <div class="slider sz-gap"><span>Straighten</span><input type="range" min="-45" max="45" step="0.5" data-btn="ang" value="${E().ang}"><b id="bt-angl">${E().ang}°</b></div>
+      <div class="lbl">Repeat along the band ${help('The design side by side, as many times as you like, before it bends: a short pattern becomes a full band.')}</div>
+      <div class="row sz-nrow"><span class="ivc-r"><button type="button" class="ivc-b" data-btr="-1" aria-label="Fewer">−</button><b id="bt-rep" style="min-width:26px;text-align:center">${E().rep}×</b><button type="button" class="ivc-b" data-btr="1" aria-label="More">+</button></span></div>
+      <div class="slider sz-gap"><span>Gap between repeats</span><input type="range" min="0" max="60" step="1" data-btn="gap" value="${E().gap}"><b id="bt-gapl">${E().gap}%</b></div>
+      <div class="lbl">Clean up</div>
+      <div class="sz-tg"><label class="toggle" data-tip="White and near-white become see-through, so it sits on skin or paper cleanly"><input type="checkbox" data-btt="white" ${E().white ? 'checked' : ''}><span>White see-through</span></label>
+        <label class="toggle" data-tip="Cuts away empty edges"><input type="checkbox" data-btt="trim" ${E().trim ? 'checked' : ''}><span>Trim edges</span></label>
+        <label class="toggle" data-tip="Swap light and dark"><input type="checkbox" data-btt="inv" ${E().inv ? 'checked' : ''}><span>Invert</span></label></div>
+      <button class="btn small" data-bta="reset" style="margin-top:8px">${btI('reset')}<span>Reset edits</span></button>
       <div class="muted" id="bt-size" style="font-size:11px;margin-top:8px"></div>
     </div></div>`;
-  const cv = $('#bt-cv'), stage = el.querySelector('.bt-stage');
-  let q = 0;
-  // Preview: a smaller copy while the slider moves, so it keeps up.
+  const cv = $('#bt-cv'), stage = el.querySelector('.bt-stage'), cb = $('#bt-crop'), cbar = $('#bt-cropbar');
+  let q = 0, prepKey = '', prep = null, crop = null;   /* crop: the box being dragged, while cropping */
+  const prepped = () => { const k = JSON.stringify(BT.e) + (crop ? 'c' : ''); if (k !== prepKey) { prepKey = k; prep = btPrep(BT.src, BT.e, 900, !!crop); } return prep; };
   const show = () => { if (q) return; q = requestAnimationFrame(() => { q = 0;
-    const b = btWarp(BT.src, BT.deg, 900), r = stage.getBoundingClientRect(), s = Math.min(1, (r.width - 24) / b.width, (r.height - 24) / b.height);
+    const p = prepped(), b = crop ? p : btWarp(p, BT.deg, 900), r = stage.getBoundingClientRect(), s = Math.min(1, (r.width - 24) / b.width, (r.height - (crop ? 70 : 24)) / b.height);
     cv.width = b.width; cv.height = b.height; cv.getContext('2d').drawImage(b, 0, 0);
     cv.style.width = Math.round(b.width * s) + 'px'; cv.style.height = Math.round(b.height * s) + 'px';
-    const long = Math.max(BT.src.width, BT.src.height), k = Math.min(1, 3000 / long) / Math.min(1, 900 / long);   // full size vs preview
-    $('#bt-size').textContent = `Saves as a ${Math.round(b.width * k)} × ${Math.round(b.height * k)} px PNG with a see-through background.`;
-  }); };
+    if (crop) placeCrop();
+    if (!crop) { const L = Math.max(BT.src.width, BT.src.height), P9 = Math.max(p.width, p.height), P3 = P9 * Math.min(1, 3000 / L) / Math.min(1, 900 / L), kk = Math.min(3000, P3) / Math.min(900, P9);   /* the saved picture vs the preview (both capped on the long side) */
+      $('#bt-size').textContent = `Saves as a ${Math.round(b.width * kk)} × ${Math.round(b.height * kk)} px PNG with a see-through background.`; }
+    el.querySelectorAll('[data-bta="undo"]').forEach(x => x.disabled = !BT.hist.length); el.querySelectorAll('[data-bta="redo"]').forEach(x => x.disabled = !BT.fut.length); }); };
+  const push = () => { BT.hist.push(JSON.stringify(BT.e)); if (BT.hist.length > 60) BT.hist.shift(); BT.fut = []; };
+  const edit = (f) => { push(); f(BT.e); syncCtl(); show(); };
+  const syncCtl = () => { const e2 = BT.e; el.querySelector('[data-btn="ang"]').value = e2.ang; $('#bt-angl').textContent = e2.ang + '°'; el.querySelector('[data-btn="gap"]').value = e2.gap; $('#bt-gapl').textContent = e2.gap + '%';
+    $('#bt-rep').textContent = e2.rep + '×'; for (const t of el.querySelectorAll('[data-btt]')) t.checked = !!e2[t.dataset.btt]; };
   const set = (d) => { BT.deg = Math.max(-360, Math.min(360, Math.round(d))); $('#bt-deg').value = BT.deg; $('#bt-l').textContent = btLabel(BT.deg); show(); };
+  /* Cropping: the turned picture, unbent and uncropped, with a box to drag (corners size it, inside moves it). */
+  const placeCrop = () => { const r = cv.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    cb.style.left = (r.left - sr.left + crop.x * r.width) + 'px'; cb.style.top = (r.top - sr.top + crop.y * r.height) + 'px'; cb.style.width = (crop.w * r.width) + 'px'; cb.style.height = (crop.h * r.height) + 'px'; };
+  const startCrop = () => { crop = BT.e.crop ? { ...BT.e.crop } : { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }; cb.hidden = false; cbar.hidden = false; el.classList.add('bt-cropping'); prepKey = ''; show(); };
+  const endCrop = (apply) => { if (apply) edit(e2 => { e2.crop = crop.w > 0.995 && crop.h > 0.995 ? null : { ...crop }; }); crop = null; cb.hidden = true; cbar.hidden = true; el.classList.remove('bt-cropping'); prepKey = ''; show(); };
+  let cd = null;
+  cb.addEventListener('pointerdown', (e) => { const h = e.target.dataset.ch || 'm', r = cv.getBoundingClientRect(); cd = { h, x: e.clientX, y: e.clientY, c0: { ...crop }, W: r.width, H: r.height }; cb.setPointerCapture(e.pointerId); e.preventDefault(); });
+  cb.addEventListener('pointermove', (e) => { if (!cd) return; const dx = (e.clientX - cd.x) / cd.W, dy = (e.clientY - cd.y) / cd.H, c0 = cd.c0, m = 0.03; let { x, y, w, h } = c0;
+    if (cd.h === 'm') { x = Math.max(0, Math.min(1 - w, x + dx)); y = Math.max(0, Math.min(1 - h, y + dy)); }
+    else { if (cd.h.includes('l')) { const nx = Math.max(0, Math.min(x + w - m, x + dx)); w += x - nx; x = nx; } if (cd.h.includes('r')) w = Math.max(m, Math.min(1 - x, w + dx));
+      if (cd.h.includes('t')) { const ny = Math.max(0, Math.min(y + h - m, y + dy)); h += y - ny; y = ny; } if (cd.h.includes('b')) h = Math.max(m, Math.min(1 - y, h + dy)); }
+    crop = { x, y, w, h }; placeCrop(); });
+  cb.addEventListener('pointerup', () => { cd = null; });
+  el.onclick = (e) => { const b = e.target.closest('[data-bta]'); if (b) { const a = b.dataset.bta;
+      if (a === 'undo' && BT.hist.length) { BT.fut.push(JSON.stringify(BT.e)); BT.e = JSON.parse(BT.hist.pop()); syncCtl(); return show(); }
+      if (a === 'redo' && BT.fut.length) { BT.hist.push(JSON.stringify(BT.e)); BT.e = JSON.parse(BT.fut.pop()); syncCtl(); return show(); }
+      if (a === 'rl' || a === 'rr') return edit(e2 => { e2.rot = ((e2.rot + (a === 'rr' ? 90 : -90)) % 360 + 360) % 360; e2.crop = null; });
+      if (a === 'fx') return edit(e2 => { e2.fx = !e2.fx; if (e2.crop) e2.crop.x = 1 - e2.crop.x - e2.crop.w; });
+      if (a === 'fy') return edit(e2 => { e2.fy = !e2.fy; if (e2.crop) e2.crop.y = 1 - e2.crop.y - e2.crop.h; });
+      if (a === 'crop') return crop ? endCrop(false) : startCrop();
+      if (a === 'cropx') return endCrop(false); if (a === 'cropok') return endCrop(true);
+      if (a === 'cropr') { crop = { x: 0, y: 0, w: 1, h: 1 }; return placeCrop(); }
+      if (a === 'reset') return edit(e2 => Object.assign(e2, BT_E0)); }
+    const fb = e.target.closest('.bt-fine [data-d]'); if (fb) return set(+fb.dataset.d === 0 ? 0 : BT.deg + +fb.dataset.d);
+    const rb = e.target.closest('[data-btr]'); if (rb) return edit(e2 => { e2.rep = Math.max(1, Math.min(12, e2.rep + +rb.dataset.btr)); }); };
   $('#bt-deg').oninput = (e) => set(+e.target.value);
-  el.querySelector('.bt-fine').onclick = (e) => { const b = e.target.closest('[data-d]'); if (b) set(+b.dataset.d === 0 ? 0 : BT.deg + +b.dataset.d); };
-  $('#bt-file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
-    try { BT.src = await createImageBitmap(f); BT.name = f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_') || 'band'; BT.mount(); } catch { toast('Could not read that image.'); } };
+  /* sliders: one undo step per drag (pushed as it starts) */
+  let sliding = false;
+  el.addEventListener('input', (e) => { const k = e.target.dataset.btn; if (!k) return; if (!sliding) { push(); sliding = true; } BT.e[k] = +e.target.value; if (k === 'ang') BT.e.crop = null;
+    $(k === 'ang' ? '#bt-angl' : '#bt-gapl').textContent = BT.e[k] + (k === 'ang' ? '°' : '%'); show(); });
+  el.addEventListener('change', (e) => { if (e.target.dataset.btn) sliding = false; const t = e.target.dataset.btt; if (t) edit(e2 => { e2[t] = e.target.checked; }); });
+  $('#bt-file').onchange = (e) => load(e.target.files[0]);
+  if (!BT.keys) { BT.keys = true; addEventListener('keydown', (e) => { if (location.hash !== '#bend' || !(e.ctrlKey || e.metaKey) || e.target.closest?.('input, textarea')) return; const k = e.key.toLowerCase();
+    if (k === 'z' || k === 'y') { e.preventDefault(); $(`#bt [data-bta="${k === 'z' && !e.shiftKey ? 'undo' : 'redo'}"]`)?.click(); } }); }
   // Full quality for saving; the stencil maker gets it on white, the way it expects a photo.
+  const bentFull = (max) => btWarp(btPrep(BT.src, BT.e, max), BT.deg, max);
   const result = async () => { toast('Bending…'); await new Promise(r => setTimeout(r, 30));
-    const b = btWarp(BT.src, BT.deg, 3000); return new File([await new Promise(r => b.toBlob(r, 'image/png'))], `${BT.name}-bent.png`, { type: 'image/png' }); };
+    const b = bentFull(3000); return new File([await new Promise(r => b.toBlob(r, 'image/png'))], `${BT.name}-bent.png`, { type: 'image/png' }); };
   $('#bt-png').onclick = async () => { const f = await result(); const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); };
   $('#bt-share').onclick = async () => { const f = await result(), dl = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); };
     try { if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: f.name }); else dl(); }
     catch (err) { if (err.name !== 'AbortError') dl(); } };
   $('#bt-st').onclick = async () => {
     toast('Opening in the stencil maker…'); await new Promise(r => setTimeout(r, 30));
-    const b = btWarp(BT.src, BT.deg, 2400), w = document.createElement('canvas'); w.width = b.width; w.height = b.height;
+    const b = bentFull(2400), w = document.createElement('canvas'); w.width = b.width; w.height = b.height;
     const x = w.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w.width, w.height); x.drawImage(b, 0, 0);
     await stLoad(await new Promise(r => w.toBlob(r, 'image/png'))); location.hash = 'stencil';
   };
   BT.ro?.disconnect(); BT.ro = new ResizeObserver(show); BT.ro.observe(stage);
   show();
 };
-
 
 /* ---------- Split for printing ----------
    Big stencils (back pieces, sleeves) don't fit one sheet. The design is cut into pieces that each fit a

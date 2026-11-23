@@ -2870,5 +2870,17 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .sz-ctl .sz-tg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-top: 0; } .sz-ctl .sz-tg .toggle span { white-space: nowrap; }
 @media (max-height: 780px) { .sz-ctl { padding: 8px 10px; } .sz-ctl .lbl { margin: 5px 0 2px; } .sz-ctl .seg button { min-height: 26px; } .sz-ctl .field .in { height: 30px; } .sz-ctl .sz-info { margin-top: 3px; } .sz-ctl .slider { margin-top: 5px; } }
 .sz-ctl .sz-ol { margin-top: 0; } .sz-ctl .sz-ol .lbl { margin-top: 8px; }
+/* Bend tool: editing before the bend */
+.bt-stage { position: relative; }
+#bt-crop { position: absolute; border: 2px solid var(--teal); box-shadow: 0 0 0 9999px rgba(0,0,0,.5); cursor: move; touch-action: none; }
+#bt-crop[hidden] { display: none; }
+#bt-crop i { position: absolute; width: 18px; height: 18px; background: #fff; border: 2px solid var(--teal); border-radius: 4px; }
+#bt-crop i[data-ch="m"] { inset: 0; width: auto; height: auto; background: none; border: 0; }
+#bt-crop i[data-ch="tl"] { left: -10px; top: -10px; cursor: nwse-resize; } #bt-crop i[data-ch="tr"] { right: -10px; top: -10px; cursor: nesw-resize; }
+#bt-crop i[data-ch="bl"] { left: -10px; bottom: -10px; cursor: nesw-resize; } #bt-crop i[data-ch="br"] { right: -10px; bottom: -10px; cursor: nwse-resize; }
+.bt-cropbar { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 6px; padding: 5px; border-radius: 12px; background: rgba(15,18,19,.92); border: 1px solid var(--line); z-index: 2; }
+.bt-cropbar[hidden] { display: none; }
+.bt-ctl .btn.small { display: inline-flex; align-items: center; gap: 6px; } .bt-ctl .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bt-strip .btn[disabled] { opacity: .35; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 521; }
+:root { --app-build: 522; }
