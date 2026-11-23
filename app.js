@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 520;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 521;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -882,6 +882,7 @@ const ICON = {
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
   stats: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
   split: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M12 3v18M3 12h18" stroke-dasharray="2.5 2"/></svg>',
+  sizes: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1.5"/><circle cx="7.5" cy="8" r="2"/><circle cx="14" cy="9" r="3"/><circle cx="10" cy="16.5" r="3.5"/></svg>',
   tour: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg>',
   bend: '<svg viewBox="0 0 24 24"><path d="M3 9c5-5 13-5 18 0M5 15c4-3.5 10-3.5 14 0"/><path d="M3 9l2 6M21 9l-2 6"/></svg>',
   design: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15l3-4 3 3 2-2 3 3"/><circle cx="8.5" cy="9" r="1.2"/></svg>',
@@ -1499,6 +1500,7 @@ const VIEWS = {
         tile('design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', false, 'designs'),
         tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend'),
         tile('split', 'Split for printing', 'Big stencils over several pages to tape together', false, 'split'),
+        tile('sizes', 'Size sheet', 'One design in a range of sizes on a page, to try on the client', false, 'sizes'),
         tile('needle', 'Tattoo simulator', 'Experimental: tattoo in ink on skin with needle groupings', false, 'tattoo')])
       + tileGroup('Your work', [
         tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
@@ -1779,6 +1781,11 @@ const VIEWS = {
     title: () => 'Quote',
     render: () => '<div id="qz"></div>',
     mount() { qzDraw(); }
+  },
+  sizes: {
+    title: () => 'Size sheet',
+    render: () => '<div id="sz"></div>',
+    mount() { SZ.mount(); }
   },
   split: {
     title: () => 'Split for printing',
@@ -2249,6 +2256,7 @@ const VIEWS = {
             <input class="in" id="st-cm" type="number" inputmode="decimal" min="1" max="300" step="0.5" value="${ST.cm}"><span>cm</span></label>
           <button class="btn" id="st-print">Print</button>
           <button class="btn" id="st-split" data-tip="Too big for one sheet? Split it over several pages to tape together">Split</button>
+          <button class="btn" id="st-sizes" data-tip="Size sheet: this stencil in a range of sizes on one page, to try on the client">Size sheet</button>
           <button class="btn" id="st-keep" data-tip="Keep the stencil and the picture it was made from in Portfolio › Stencils">Keep</button>
           ${ST.ret ? '<button class="btn primary" id="st-chal" data-tip="Put this stencil on the challenge, lined up with the picture it was made from">Use in the challenge</button>' : ''}
           <button class="btn" id="st-sim" data-tip="Open a new piece in the tattoo simulator with this stencil on its stencil layer, at its print size">Simulator</button>
@@ -2305,6 +2313,7 @@ const VIEWS = {
       $('#st-keep').onclick = stKeep;
       $('#st-print').onclick = stPrint;
       $('#st-split').onclick = async () => { if (!ST.mask) return; await SP.open(await stBlob(), `stencil-${ymd(new Date())}`, ST.cm); };
+      $('#st-sizes').onclick = async () => { if (!ST.mask) return; await SZ.open(await stBlob(), `stencil-${ymd(new Date())}`, true); };
       stPrepare(); stRun();
     }
   },
@@ -9977,6 +9986,13 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 521, when: '2026-11-24T18:00', added: [
+    'Studio: Size sheet, a new tool. One stencil or picture printed in a range of sizes (smallest to largest, by width or height, as many as you like) on A5, A4, A3 or Letter, to hold against your client and choose.',
+    'Size sheet: Fill the page fits as many sizes as one page holds; more spill onto further pages. Layout In order or Tight, Turn to fit, space between, and the size under each copy (or not).',
+    'Size sheet: an Extra margin slider for printers that cut off near the edge (shown as a dashed line, not printed).',
+    'Size sheet: trims empty edges so the sizes are the design’s own; Adjust stencil goes back to the stencil maker to crop or clean it, and its Size sheet button (next to Split) brings it back.',
+    'Size sheet: fits a landscape screen without scrolling, with the pages and the settings side by side and each scrolling on its own; print at 100%, or save the pages as PNGs.'],
+    test: ['Studio › Size sheet: open a stencil, set 4 to 12 cm, tap Fill page, and print one page at 100%. Measure a copy with a ruler.'] },
   { build: 520, when: '2026-11-24T14:00', added: [
     'Reel maker: tap the background round the picture to let go of everything selected.',
     'Reel maker: pick several texts and stickers (Shift + click, or on a tablet hold one, then tap more; Ctrl A picks all showing) and move, size, turn and flip them together.',
@@ -10472,7 +10488,7 @@ const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) 
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',
   quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'inventory-table': 'more', 'rules-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more',
-  reel: 'studio', reels: 'studio', stencil: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
+  reel: 'studio', reels: 'studio', stencil: 'studio', sizes: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
 function render() {

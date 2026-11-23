@@ -6905,6 +6905,166 @@ function spPieces() {
 }
 const spFits = () => { const [mw, mh] = spMax(); return spPieces().every(p => p.x1 - p.x0 <= mw + 1e-6 && p.y1 - p.y0 <= mh + 1e-6); };
 
+/* ---------- Size sheet ----------
+   One design (a stencil, or any picture) printed in a range of sizes on a page, to hold against the client and pick
+   the size. Choose the paper, the smallest and largest size (by width or height), and how many; the sizes step evenly
+   from one to the other and are laid out on the page (in order, or packed tight, turned sideways if that fits), each
+   with its size under it if wanted. More than fit go on to more pages. Empty edges are trimmed first, so a size is the
+   design's own. Adjust in stencil maker goes back to crop or tidy it; Size sheet there brings it back. */
+const SZ = { src: null, img: null, name: 'design', fromStencil: false, paper: 'A4', land: false, by: 'w', from: 4, to: 12, n: 6, desc: false, nest: 'rows', turn: false, gap: 4, label: true, trim: true, margin: 0 };
+const SZ_PAPER = { A5: [128, 190], A4: [190, 277], A3: [277, 400], Letter: [196, 259] };   /* printable area, mm (10 mm margins) */
+const szArea = () => { const [w, h] = SZ_PAPER[SZ.paper] || SZ_PAPER.A4; return SZ.land ? [h, w] : [w, h]; };
+/* The picture with its empty edges (see-through or near white) cut away. */
+function szTrim(bmp) { const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(bmp, 0, 0);
+  if (!SZ.trim) return c;
+  const d = x.getImageData(0, 0, c.width, c.height).data; let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+  for (let y = 0; y < c.height; y++) for (let i = y * c.width * 4, xx = 0; xx < c.width; xx++, i += 4) { if (d[i + 3] < 16 || (d[i] > 238 && d[i + 1] > 238 && d[i + 2] > 238)) continue; if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < x0) return c; const p = 2, o = document.createElement('canvas'); x0 = Math.max(0, x0 - p); y0 = Math.max(0, y0 - p); x1 = Math.min(c.width - 1, x1 + p); y1 = Math.min(c.height - 1, y1 + p);
+  o.width = x1 - x0 + 1; o.height = y1 - y0 + 1; o.getContext('2d').drawImage(c, x0, y0, o.width, o.height, 0, 0, o.width, o.height); return o; }
+const szLabH = () => SZ.label ? 6 : 0;   /* mm under each copy for its size */
+/* The sizes, smallest to largest (or the other way): width and height in mm. */
+function szSizes() { const I = SZ.img; if (!I) return []; const k = I.height / I.width, n = Math.max(1, Math.round(SZ.n)), a = Math.max(0.5, +SZ.from || 1) * 10, b = Math.max(0.5, +SZ.to || 1) * 10, out = [];
+  for (let i = 0; i < n; i++) { const v = n === 1 ? a : a + (b - a) * i / (n - 1), w = SZ.by === 'w' ? v : v / k, h = SZ.by === 'w' ? v * k : v; out.push({ i, w, h }); }
+  out.sort((p, q) => (SZ.desc ? -1 : 1) * (p.w - q.w)); return out; }
+/* Laid out on pages: shelves (rows) left to right; Tight puts the tallest first and fills each row's gaps. */
+function szLayout() { const [W0, H0] = szArea(), M = Math.max(0, +SZ.margin || 0), W = Math.max(10, W0 - 2 * M), H = Math.max(10, H0 - 2 * M), g = SZ.gap, L = szLabH(), items = szSizes().map(s => ({ ...s })), pages = [], over = [];
+  if (SZ.nest === 'tight') items.sort((p, q) => (q.h + L) - (p.h + L));
+  let pg = null; const newPage = () => { pg = { shelves: [], placed: [], y: 0 }; pages.push(pg); };
+  const tryPlace = (it, P) => { for (const rot of SZ.turn ? [false, true] : [false]) { const w = rot ? it.h : it.w, h = (rot ? it.w : it.h) + L; if (w > W + 1e-6 || h > H + 1e-6) continue;
+      const shelves = SZ.nest === 'tight' ? P.shelves : P.shelves.slice(-1);
+      for (const s of shelves) if (s.x + w <= W + 1e-6 && (SZ.nest !== 'tight' || h <= s.h + 1e-6 || s === P.shelves.at(-1)) && s.y + h <= H + 1e-6) { P.placed.push({ ...it, x: s.x, y: s.y, rot }); s.x += w + g; s.h = Math.max(s.h, h); P.y = Math.max(P.y, s.y + s.h); return true; }
+      const y = P.shelves.length ? P.shelves.at(-1).y + P.shelves.at(-1).h + g : 0;
+      if (y + h <= H + 1e-6) { const s = { y, x: w + g, h }; P.shelves.push(s); P.placed.push({ ...it, x: 0, y, rot }); P.y = y + h; return true; } } return false; };
+  newPage();
+  for (const it of items) { if (tryPlace(it, pg)) continue; if (pg.placed.length) { newPage(); if (tryPlace(it, pg)) continue; } over.push(it); }
+  /* each row centred across the page */
+  for (const P of pages) for (const s of P.shelves) { const row = P.placed.filter(p => p.y === s.y), used = s.x - g, dx = (W - used) / 2; for (const p of row) p.x += dx; }
+  for (const P of pages) for (const p of P.placed) { p.x += M; p.y += M; }   /* the extra margin: everything sits that much further in */
+  return { pages: pages.filter(p => p.placed.length), over, W: W0, H: H0 }; }
+/* How many of these sizes fit on one page, at most (for Fill the page). */
+function szMaxOnPage() { const n0 = SZ.n; let best = 1; for (let n = 1; n <= 80; n++) { SZ.n = n; const L = szLayout(); if (L.pages.length === 1 && !L.over.length) best = n; else if (n > best + 3) break; } SZ.n = n0; return best; }
+const szFmt = (mm) => (Math.round(mm) / 10).toFixed(1).replace(/\.0$/, '');
+/* One page drawn at `pxmm` pixels a millimetre: the copies, and their sizes under them. */
+function szPage(P, pxmm, show) { const [W, H] = szArea(), c = document.createElement('canvas'); c.width = Math.round(W * pxmm); c.height = Math.round(H * pxmm); const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = 'high';
+  if (show && SZ.margin > 0) { const m = SZ.margin * pxmm; x.save(); x.strokeStyle = 'rgba(31,181,168,.7)'; x.setLineDash([4, 4]); x.lineWidth = 1; x.strokeRect(m, m, c.width - 2 * m, c.height - 2 * m); x.restore(); }
+  for (const p of P.placed) { const w = (p.rot ? p.h : p.w) * pxmm, h = (p.rot ? p.w : p.h) * pxmm, X = p.x * pxmm, Y = p.y * pxmm;
+    x.save(); if (p.rot) { x.translate(X + w / 2, Y + h / 2); x.rotate(Math.PI / 2); x.drawImage(SZ.img, -h / 2, -w / 2, h, w); } else x.drawImage(SZ.img, X, Y, w, h); x.restore();
+    if (SZ.label) { x.fillStyle = '#333'; x.font = `600 ${3.2 * pxmm}px Inter, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'top';
+      x.fillText(`${szFmt(p.w)} × ${szFmt(p.h)} cm${p.rot ? ' ↻' : ''}`, X + w / 2, Y + h + 1.2 * pxmm, Math.max(w, 30 * pxmm)); } }
+  return c; }
+SZ.open = async (blob, name, fromStencil) => {
+  SZ.src = await createImageBitmap(blob); SZ.name = name || 'design'; SZ.fromStencil = !!fromStencil; SZ.img = szTrim(SZ.src);
+  if (location.hash === '#sizes') SZ.mount(); else location.hash = 'sizes';
+};
+/* Icons for the size sheet's buttons. */
+const SZ_IC = { img: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 8"/>', stn: '<path d="M4 20c4-1 6-5 8-9s5-6 8-7"/><path d="M4 4h6M4 4v6"/>',
+  adj: '<path d="M14 4l6 6M17 7l-9.5 9.5L4 20l3.5-3.5"/><path d="M3 21h7"/>', save: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>', share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>',
+  print: '<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>', port: '<rect x="7" y="3" width="10" height="18" rx="1.5"/>', land: '<rect x="3" y="7" width="18" height="10" rx="1.5"/>',
+  w: '<path d="M3 12h18M6 9l-3 3 3 3M18 9l3 3-3 3"/>', h: '<path d="M12 3v18M9 6l3-3 3 3M9 18l3 3 3-3"/>', up: '<path d="M6 20h3M6 15h6M6 10h9M6 5h12"/>', down: '<path d="M6 5h3M6 10h6M6 15h9M6 20h12"/>',
+  rows: '<rect x="3" y="4" width="5" height="5" rx="1"/><rect x="10" y="4" width="5" height="5" rx="1"/><rect x="17" y="4" width="4" height="5" rx="1"/><rect x="3" y="12" width="7" height="8" rx="1"/><rect x="12" y="12" width="9" height="8" rx="1"/>',
+  tight: '<rect x="3" y="3" width="10" height="11" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="15" y="11" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="11" y="18" width="10" height="3" rx="1"/>',
+  fill: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h4v4H7zM13 7h4v4h-4zM7 13h4v4H7zM13 13h4v4h-4z"/>' };
+const szI = (k) => `<svg viewBox="0 0 24 24">${SZ_IC[k]}</svg>`;
+SZ.mount = () => {
+  const el = $('#sz'); if (!el) return;
+  const pickFile = async (f) => { if (!f) return; try { await SZ.open(f, f.name.replace(/\.\w+$/, '').replace(/[^\w-]+/g, '_'), false); } catch { toast('Could not read that image.'); } };
+  const fromStencils = async () => { const rows = await DB.all('SELECT id, name, stencil_ref, thumb_ref FROM stencils ORDER BY updated_at DESC LIMIT 120'); if (!rows.length) return toast('No saved stencils yet. Make one in the stencil maker.');
+    const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref || r.stencil_ref)));
+    const o = document.createElement('div'); o.id = 'reel-pick';
+    o.innerHTML = `<div class="card"><h2>Your stencils</h2><div class="pf-grid reel-savedg" style="max-height:55vh;overflow-y:auto">${rows.map((r, i) => `<button class="pf-tile" data-szs="${i}"><img src="${urls[i]}" alt="" style="background:#fff"><span>${esc(r.name || 'Stencil')}</span></button>`).join('')}</div>
+      <button class="btn" data-szx style="width:100%;margin-top:10px">Cancel</button></div>`;
+    document.body.appendChild(o);
+    o.onclick = async (e) => { if (e.target === o || e.target.closest('[data-szx]')) return o.remove(); const b = e.target.closest('[data-szs]'); if (!b) return; const r = rows[+b.dataset.szs]; o.remove();
+      try { const f = await (await (await Media.dir()).getFileHandle(r.stencil_ref)).getFile(); await SZ.open(f, (r.name || 'stencil').replace(/[^\w-]+/g, '_'), false); } catch { toast('Could not open that stencil.'); } }; };
+  if (!SZ.img) {
+    el.innerHTML = `<div class="card st-pick"><div class="empty-ico">${ICON.sizes}</div>
+      <div style="font:26px var(--display)">Size sheet</div>
+      <div class="muted">One design in a range of sizes on a page, to hold against your client and choose. Open a stencil from the stencil maker (Size sheet, next to Split), one of your saved stencils, or any picture.</div>
+      <div class="row" style="gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap"><label class="btn primary">Choose image<input type="file" accept="image/*" id="sz-file" hidden></label><button class="btn" id="sz-stn">Your stencils</button></div></div>`;
+    $('#sz-file').onchange = (e) => pickFile(e.target.files[0]); $('#sz-stn').onclick = fromStencils; return; }
+  try { const s = JSON.parse(Settings.get('sz_last', 'null')); if (s && !SZ.touched) { Object.assign(SZ, s); SZ.touched = true; } } catch {}
+  /* Built once: the strip, the pages and the settings. A change redraws only the pages and the counts, so a slider
+     keeps its grip all the way through a drag. */
+  const seg = (k, opts) => `<div class="seg" data-szseg="${k}">${opts.map(([v, l, ic, tip]) => `<button data-szk="${k}" data-v="${v}" class="${String(SZ[k] === true ? '1' : SZ[k] === false ? '' : SZ[k]) === v ? 'on' : ''}" ${tip ? `data-tip="${tip}" aria-label="${tip}"` : ''}>${ic ? szI(ic) : ''}${l ? `<span>${l}</span>` : ''}</button>`).join('')}</div>`;
+  el.innerHTML = `<div class="st-strip sp-strip sz-strip">
+      <label class="btn icon-btn" data-tip="Another image"><svg viewBox="0 0 24 24">${SZ_IC.img}</svg><input type="file" accept="image/*" id="sz-file" hidden></label>
+      <button class="btn icon-btn" id="sz-stn" data-tip="Your stencils" aria-label="Your stencils">${szI('stn')}</button>
+      <button class="btn" id="sz-st" data-tip="Back to the stencil maker to crop, clean up or change it; its Size sheet button brings it back">${szI('adj')}<span>Adjust stencil</span></button>
+      <span class="sz-name muted">${esc(SZ.name)}</span>
+      <i class="st-sep"></i>
+      <button class="btn icon-btn" id="sz-save" data-tip="Save the pages as PNGs at print size" aria-label="Save pages">${szI('save')}</button>
+      <button class="btn icon-btn" id="sz-share" data-tip="Share the pages" aria-label="Share">${szI('share')}</button>
+      <button class="btn primary" id="sz-print" data-tip="Print at 100% (actual size)">${szI('print')}<span id="sz-pn">Print</span></button></div>
+    <div class="sz" id="sz-box">
+      <div class="sz-stage" id="sz-stage"></div>
+      <div class="card sz-ctl">
+        <div class="lbl">Paper</div>${seg('paper', Object.keys(SZ_PAPER).map(k => [k, k]))}
+        <div class="sz-two">${seg('land', [['', 'Portrait', 'port'], ['1', 'Landscape', 'land']])}</div>
+        <div class="lbl">Sizes by</div>${seg('by', [['w', 'Width', 'w'], ['h', 'Height', 'h']])}
+        <div class="sz-two" style="margin-top:6px"><label class="field"><span>Smallest cm</span><input class="in" type="number" min="0.5" max="100" step="0.5" inputmode="decimal" data-szn="from" value="${SZ.from}"></label>
+          <label class="field"><span>Largest cm</span><input class="in" type="number" min="0.5" max="100" step="0.5" inputmode="decimal" data-szn="to" value="${SZ.to}"></label></div>
+        <div class="lbl">How many</div>
+        <div class="row sz-nrow"><span class="ivc-r"><button type="button" class="ivc-b" data-szc="-1" aria-label="Fewer">−</button><input class="in ivc-in" type="text" inputmode="numeric" data-szn="n" value="${SZ.n}" aria-label="How many sizes"><button type="button" class="ivc-b" data-szc="1" aria-label="More">+</button></span>
+          <button class="btn small" id="sz-fill" data-tip="As many sizes as fit on one page">${szI('fill')}<span>Fill page</span></button></div>
+        <p class="muted sz-info" id="sz-info"></p>
+        <div class="sz-two sz-ol"><div><div class="lbl">Order</div>${seg('desc', [['', '', 'up', 'Smallest first'], ['1', '', 'down', 'Biggest first']])}</div>
+          <div><div class="lbl">Layout</div>${seg('nest', [['rows', '', 'rows', 'In order: a row-by-row run'], ['tight', '', 'tight', 'Tight: tallest first, smaller ones in the gaps']])}</div></div>
+        <div class="slider sz-gap"><span>Space between</span><input type="range" min="0" max="20" step="1" data-szn="gap" value="${SZ.gap}"><b>${SZ.gap} mm</b></div>
+        <div class="slider sz-gap" data-tip="For printers that cut off near the edge: keeps everything this much further in (on top of the usual 10 mm). The dashed line shows it; it isn't printed."><span>Extra margin</span><input type="range" min="0" max="30" step="1" data-szn="margin" value="${SZ.margin || 0}"><b>${SZ.margin || 0} mm</b></div>
+        <div class="sz-tg"><label class="toggle" data-tip="Its size under each copy"><input type="checkbox" data-szt="label" ${SZ.label ? 'checked' : ''}><span>Size labels</span></label>
+        <label class="toggle" data-tip="A copy can turn a quarter turn when that fits better (its label shows ↻)"><input type="checkbox" data-szt="turn" ${SZ.turn ? 'checked' : ''}><span>Turn to fit</span></label>
+        <label class="toggle" data-tip="Cuts away see-through or white edges, so the sizes are the design's own"><input type="checkbox" data-szt="trim" ${SZ.trim ? 'checked' : ''}><span>Trim edges</span></label></div>
+      </div></div>`;
+  const box = $('#sz-box'), stage = $('#sz-stage');
+  /* Fits the screen when there's room side by side: the box takes the height left under the strip (above the menu bar). */
+  const fitBox = () => { const side = innerWidth >= 760;
+    box.classList.toggle('side', side); if (!side) { box.style.height = ''; return; }
+    const navT = document.getElementById('nav')?.getBoundingClientRect(), bottom = navT && navT.top > innerHeight / 2 ? navT.top : innerHeight;
+    box.style.height = Math.max(320, bottom - box.getBoundingClientRect().top - 10) + 'px'; };
+  const onR = () => { if (!box.isConnected) return removeEventListener('resize', onR); fitBox(); later(); }; addEventListener('resize', onR);
+  let raf = 0;
+  const pages = () => { const L = szLayout(), np = L.pages.length, onP1 = L.pages[0]?.placed.length || 0, [W, H] = szArea();
+    stage.innerHTML = L.pages.map((P, i) => `<div class="sz-paper" style="aspect-ratio:${W}/${H}"><canvas data-szp="${i}"></canvas>${np > 1 ? `<span>Page ${i + 1} of ${np}</span>` : ''}</div>`).join('') || '<p class="muted" style="margin:auto">Nothing fits: make the sizes smaller or the paper bigger.</p>';
+    /* side by side: each page as tall as the stage; stacked (narrow screens): as wide as it */
+    const side = box.classList.contains('side'), sh = stage.clientHeight - (np > 1 ? 30 : 12);
+    for (const pp of stage.querySelectorAll('.sz-paper')) { if (side) { pp.style.height = sh + 'px'; pp.style.width = (sh * W / H) + 'px'; } else { pp.style.width = 'min(100%, 560px)'; pp.style.height = ''; } }
+    for (const c of stage.querySelectorAll('[data-szp]')) { const P = L.pages[+c.dataset.szp], wpx = Math.max(120, c.parentElement.clientWidth) * (devicePixelRatio || 1), cv = szPage(P, wpx / W, true); c.width = cv.width; c.height = cv.height; c.getContext('2d').drawImage(cv, 0, 0); }
+    $('#sz-info').innerHTML = `${L.over.length ? `<b style="color:var(--red)">${L.over.length} too big for this paper.</b> ` : ''}${np > 1 ? `${onP1} fit on page 1 · ${np} pages.` : `All ${onP1} fit on one page.`} Steps of ${szFmt(Math.abs(SZ.to - SZ.from) * 10 / Math.max(1, SZ.n - 1))} cm.`;
+    $('#sz-pn').textContent = np > 1 ? `Print ${np}` : 'Print'; $('#sz-print').disabled = !np;
+    const ni = el.querySelector('[data-szn="n"]'); if (ni && document.activeElement !== ni) ni.value = SZ.n; };
+  const later = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(pages); };
+  const keep = () => Settings.set('sz_last', JSON.stringify({ from: SZ.from, to: SZ.to, n: SZ.n, paper: SZ.paper, land: SZ.land, by: SZ.by, desc: SZ.desc, nest: SZ.nest, gap: SZ.gap, margin: SZ.margin, turn: SZ.turn, label: SZ.label }));
+  $('#sz-file').onchange = (e) => pickFile(e.target.files[0]); $('#sz-stn').onclick = fromStencils;
+  $('#sz-st').onclick = async () => { if (SZ.fromStencil && ST.src) { location.hash = 'stencil'; return; }
+    const f = new File([await new Promise(r => { const c = document.createElement('canvas'); c.width = SZ.src.width; c.height = SZ.src.height; c.getContext('2d').drawImage(SZ.src, 0, 0); c.toBlob(r, 'image/png'); })], SZ.name + '.png', { type: 'image/png' });
+    await stLoad(f); SZ.fromStencil = true; location.hash = 'stencil'; };
+  $('#sz-fill').onclick = () => { SZ.n = szMaxOnPage(); keep(); pages(); toast(`${SZ.n} sizes fit on one page.`, 1500); };
+  el.onclick = (e) => { const b = e.target.closest('[data-szk]'); if (b) { const k = b.dataset.szk, v = b.dataset.v; SZ[k] = k === 'land' || k === 'desc' ? !!v : v;
+      b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); keep(); fitBox(); return pages(); }
+    const c = e.target.closest('[data-szc]'); if (c) { SZ.n = Math.max(1, Math.min(80, SZ.n + +c.dataset.szc)); keep(); return later(); }
+    if (e.target.closest('#sz-print')) return szPrint(); if (e.target.closest('#sz-save')) return szSave(false); if (e.target.closest('#sz-share')) return szSave(true); };
+  el.onchange = (e) => { const t = e.target;
+    if (t.dataset.szt) { SZ[t.dataset.szt] = t.checked; if (t.dataset.szt === 'trim') SZ.img = szTrim(SZ.src); keep(); return pages(); }
+    if (t.dataset.szn && t.dataset.szn !== 'gap' && t.dataset.szn !== 'margin') { const v = parseFloat(t.value); if (!(v > 0)) { t.value = SZ[t.dataset.szn]; return; }
+      SZ[t.dataset.szn] = t.dataset.szn === 'n' ? Math.max(1, Math.min(80, Math.round(v))) : Math.min(100, Math.max(0.5, v)); keep(); return pages(); }
+    if (t.dataset.szn === 'gap' || t.dataset.szn === 'margin') keep(); };
+  el.oninput = (e) => { const k = e.target.dataset.szn; if (k === 'gap' || k === 'margin') { SZ[k] = +e.target.value; e.target.closest('.slider').querySelector('b').textContent = SZ[k] + ' mm'; later(); } };
+  const szPrint = async () => { const L = szLayout(); if (!L.pages.length) return; const [W, H] = szArea();
+    let pa = $('#print-area'); if (!pa) { pa = document.createElement('div'); pa.id = 'print-area'; document.body.appendChild(pa); }
+    pa.innerHTML = L.pages.map((P, i) => { let cv = szPage(P, 300 / 25.4), w = W, h = H;
+      if (SZ.land) { const r = document.createElement('canvas'); r.width = cv.height; r.height = cv.width; const x = r.getContext('2d'); x.translate(r.width, 0); x.rotate(Math.PI / 2); x.drawImage(cv, 0, 0); cv = r; [w, h] = [h, w]; }   /* landscape prints turned onto a portrait page */
+      return `<div class="sp-page"><img src="${cv.toDataURL('image/png')}" style="width:${w}mm;height:${h}mm" alt=""><div class="sp-cap">${esc(SZ.name)} · size sheet${L.pages.length > 1 ? ` · page ${i + 1} of ${L.pages.length}` : ''} · print at 100% / actual size</div></div>`; }).join('');
+    await Promise.all([...pa.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
+    document.body.classList.add('printing'); afterPrint(() => { document.body.classList.remove('printing'); pa.innerHTML = ''; }); window.print(); };
+  const szSave = async (share) => { const L = szLayout(), files = [];
+    for (const [i, P] of L.pages.entries()) { const cv = szPage(P, 300 / 25.4); files.push(new File([await new Promise(r => cv.toBlob(r, 'image/png'))], `${SZ.name}-sizes${L.pages.length > 1 ? '-' + (i + 1) : ''}.png`, { type: 'image/png' })); }
+    try { if (share && navigator.canShare?.({ files })) return await navigator.share({ files, title: SZ.name });
+      for (const f of files) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); await new Promise(r => setTimeout(r, 250)); }
+      toast(`Saved ${files.length} page${files.length > 1 ? 's' : ''} at 300 dpi.`); } catch (err) { if (err.name !== 'AbortError') { if (share) return szSave(false); toast('Could not save: ' + err.message); } } };
+  fitBox(); pages();
+};
+
 SP.open = async (blob, name, wcm) => {
   SP.src = await createImageBitmap(blob); SP.name = name || 'stencil'; SP.wcm = wcm || SP.wcm; spReset();
   if (location.hash === '#split') SP.mount(); else location.hash = 'split';
