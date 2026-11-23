@@ -2944,5 +2944,7 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .loy-terms { margin: 6px 0 4px; padding-left: 18px; font-size: 13px; line-height: 1.5; } .loy-own { gap: 6px; flex-wrap: nowrap; margin-top: 6px; } .loy-own .in { flex: 1; }
 .loy-msg-grid { display: grid; gap: 12px; } @media (min-width: 900px) { .loy-msg-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
 .sk-op svg { width: 16px; height: 16px; flex: none; } .sk-op input { width: 70px; } .sk-op b { min-width: 32px; }
+.pay-big { font: 700 22px var(--ui); padding-top: 6px; } .pay-card h2 { margin-top: 0; } .pay-kpis { margin-bottom: 10px; }
+.pay-bars .bar.neg i { background: #e26b6b; } .pay-neg { color: #e26b6b; } .pay-card tr.pay-now td { background: rgba(31,181,168,.1); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 528; }
+:root { --app-build: 529; }

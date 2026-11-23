@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 528;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 529;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -2137,6 +2137,11 @@ const VIEWS = {
       draw(); Dirty.set(false);
     }
   },
+  pay: {
+    title: () => 'Your pay',
+    render: () => '<div id="pay-view"></div>',
+    mount() { payForm($('#pay-view')); }
+  },
   loyalty: {
     title: () => 'Loyalty',
     render: () => `<div class="seg loy-tabs" id="loy-tabs">${[['rewards', 'Rewards'], ['program', 'Program']].map(([k, l]) => `<button data-lt0="${k}" class="${LOYV.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="loy-view"></div>`,
@@ -2567,6 +2572,8 @@ const VIEWS = {
       <div class="card su-again"><div><b>This device</b><span class="muted">Fits the app to the device: on an iPad, the Apple Pencil can\u2019t select the screen or swipe out of full screen while you draw. Kept on this device only.</span></div>
         <span class="seg" style="flex:none">${OS_LIST.map(([v, n]) => `<button data-osset="${v}" class="${DevOS.get() === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
       ${AppInstall.card('su-again')}
+      <div class="card su-again" data-biz><div><b>Your pay</b><span class="muted">${payOn() ? (() => { const c = payCfg(); return c.mode === 'comm' ? `Commission: you keep ${+c.pct}%, ${PAY_EVERY.find(x => x[0] === c.every)?.[1].toLowerCase()}.` : `Chair rent: ${money(+c.rent)} per ${c.every === 'month' ? 'month' : c.every === '2week' ? '2 weeks' : 'week'}.`; })() : 'Off. Commission or chair rent, so Stats shows your take-home and pay days.'}</span></div>
+        <div class="row" style="flex:none;gap:8px">${payOn() ? '<a class="btn small" href="#pay">Set up</a>' : ''}<label class="toggle" style="flex:none"><input type="checkbox" data-payon ${payOn() ? 'checked' : ''}><span></span></label></div></div>
       <div class="card su-again" data-biz><div><b>Loyalty program</b><span class="muted">${Loy.on() ? esc(Loy.sum(Loy.cfg())) : 'Off. Reward clients for sending people your way or for what they spend; it gets its own section in More.'}</span></div>
         <div class="row" style="flex:none;gap:8px">${Loy.on() ? '<a class="btn small" href="#loyalty">Set up</a>' : ''}<label class="toggle" style="flex:none"><input type="checkbox" data-loyon ${Loy.on() ? 'checked' : ''}><span></span></label></div></div>
       <div class="card su-again" data-biz><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
@@ -2668,6 +2675,8 @@ const VIEWS = {
       settingsTabs();
       const save = (k) => (e) => Settings.set(k, e.target.value.trim());
       $('#s-setup').onclick = runSetup;
+      document.querySelector('[data-payon]')?.addEventListener('change', async (e) => { const c = payCfg(); c.on = e.target.checked; await Settings.set('pay_cfg', JSON.stringify(c));
+        if (c.on) { toast('Set how you\u2019re paid; it shows in Stats.', 2200); location.hash = 'pay'; } else { toast('Your pay is out of Stats.', 1600); render(); } });
       document.querySelector('[data-loyon]')?.addEventListener('change', async (e) => {
         if (!e.target.checked) { await Loy.backfill(); const n = await Loy.left();
           if (n && !await ask(`Switch the loyalty program off?\n\n${n} reward${n === 1 ? ' is' : 's are'} still open. Nothing new is earned while it’s off, but ${n === 1 ? 'it stays' : 'they stay'} in More › Loyalty and can still be used until claimed or run out.`)) { e.target.checked = true; return; } }
@@ -2790,7 +2799,7 @@ function runSetup() {
     max_per_day: Settings.get('max_per_day', '1'), booking_gap: Settings.get('booking_gap', '60'),
     ...(() => { const o1 = an[0] || [1, 650], o4 = an.find(a => a[0] === 4) || an[1] || [4, 2500], o9 = an.find(a => a[0] === 9) || an[an.length - 1] || [9, 4500];
       return { r1: o1[1], r4: o4[1], r9: o9[1], h1: o1[0], h4: o4[0], h9: o9[0], oh: [o1[0], o4[0], o9[0]] }; })(),   /* three points on the rate curve; their hours can be changed too */
-    loy: Settings.get('loy_on') === '1', pf_size: pfSizeDefault(), deposit: c0.deposit, touchup: c0.touchupFee, vatOn: c0.vatOn, vatRate: c0.vatRate, followup: Settings.get('followup_weeks', '6')
+    pay: payCfg().on, loy: Settings.get('loy_on') === '1', pf_size: pfSizeDefault(), deposit: c0.deposit, touchup: c0.touchupFee, vatOn: c0.vatOn, vatRate: c0.vatRate, followup: Settings.get('followup_weeks', '6')
   };
   const o = document.createElement('div'); o.id = 'setup';
   const chips = (key, opts, unit = '') => `<div class="su-chips">${opts.map(([v, l]) => `<button type="button" data-k="${key}" data-v="${v}" class="${String(S[key]) === String(v) ? 'on' : ''}">${l ?? v + unit}</button>`).join('')}</div>`;
@@ -2838,7 +2847,8 @@ function runSetup() {
         ['Touch-ups', +S.touchup ? money(+S.touchup) : 'Free'], ['VAT', S.vatOn ? S.vatRate + '%' : 'Not added']];
       body = `<h2>You're all set</h2><p class="muted">These are saved. Change any of them later in More › Settings, or fine-tune prices in Calibrate.</p>
         <div class="su-sum">${sum.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
-        <label class="toggle" style="margin-top:14px"><input type="checkbox" id="su-loy" ${S.loy ? 'checked' : ''}><span>Run a loyalty program: reward clients for sending people your way or for what they spend. You’ll choose how next.</span></label>`;
+        <label class="toggle" style="margin-top:14px"><input type="checkbox" id="su-pay" ${S.pay ? 'checked' : ''}><span>Track your pay: commission (a share of each tattoo) or chair rent, with your take-home and pay days in Stats. You\u2019ll fill it in next.</span></label>
+        <label class="toggle" style="margin-top:10px"><input type="checkbox" id="su-loy" ${S.loy ? 'checked' : ''}><span>Run a loyalty program: reward clients for sending people your way or for what they spend. You’ll choose how next.</span></label>`;
     }
     o.innerHTML = `<div class="su-in">
       <div class="su-steps">${STEPS.map((n, i) => `<span class="${i === st ? 'on' : i < st ? 'done' : ''}"><i>${i < st ? '✓' : i + 1}</i>${n}</span>`).join('')}</div>
@@ -2877,9 +2887,9 @@ function runSetup() {
     return true;
   };
   const finish = async () => {
-    await Settings.set('setup_done', '1'); await Settings.set('loy_on', S.loy ? '1' : '');
+    await Settings.set('setup_done', '1'); await Settings.set('loy_on', S.loy ? '1' : ''); await Settings.set('pay_cfg', JSON.stringify({ ...payCfg(), on: !!S.pay }));
     if (WS.cur?.fresh) { delete WS.cur.fresh; await WS.save(); }
-    o.remove(); if (S.loy) { location.hash = 'loyalty'; return; } render(); tourOffer(true);
+    o.remove(); if (S.pay) { if (S.loy) toast('Your loyalty program is set up in More \u203a Loyalty.', 4000); location.hash = 'pay'; return; } if (S.loy) { location.hash = 'loyalty'; return; } render(); tourOffer(true);
   };
   o.addEventListener('input', (e) => { const k = e.target.dataset.f; if (k) S[k] = e.target.value;
     if (k === 'country_code') Settings.set('country_code', e.target.value.replace(/\D/g, ''));   // so the number below converts as it's typed
@@ -2887,6 +2897,7 @@ function runSetup() {
   o.addEventListener('change', async (e) => {
     if (e.target.id === 'su-vat') { S.vatOn = e.target.checked; return draw(); }
     if (e.target.id === 'su-loy') { S.loy = e.target.checked; return; }
+    if (e.target.id === 'su-pay') { S.pay = e.target.checked; return; }
     if (e.target.id === 'su-logo') { const f = e.target.files[0]; if (!f) return; try { await saveLogoFile(f); toast('Logo saved.'); } catch { toast('Could not read that image.'); } return draw(); }
     if (e.target.type === 'tel') S[e.target.dataset.f] = e.target.value;      // after the +country fix-up
   });
@@ -3645,6 +3656,86 @@ const Loy = {
     return `${how}${alt} Rewards are ${mo}. ${c.kind === 'item' ? '' : use} ${c.pass ? 'They can be passed on to someone else, with no names shown.' : 'Only the client who earned one can use it.'}`;
   }
 };
+
+/* ---------- Your pay ----------
+   How the artist is paid at the studio, for Stats: commission (a share of every tattoo, the studio usually supplying
+   needles, ink and disposables) or chair rent (a set fee; the artist keeps the rest and buys their own supplies).
+   Settings 'pay_cfg': on, mode 'comm' | 'rent', pct (the artist's share, %), sup 'studio' | 'artist', supEach (about
+   what supplies cost per tattoo, when the artist buys them), rent (per pay period), every 'day' | 'week' | '2week' |
+   'month', wd (pay weekday 0-6), anchor (one fortnightly pay day), md (day of the next month; 0 = the month's last day). */
+const PAY_DEF = { on: false, mode: 'comm', pct: 50, loy: 'artist', sup: 'studio', supEach: 0, rent: 0, every: 'week', wd: 5, anchor: '', md: 0 };
+const payCfg = () => { let c = {}; try { c = JSON.parse(Settings.get('pay_cfg') || '{}') || {}; } catch {} c = { ...PAY_DEF, ...c }; if (c.mode === 'rent') { c.sup = 'artist'; if (c.every === 'day') c.every = 'week'; } return c; };
+const payOn = () => payCfg().on && !wsDesign();
+const PAY_EVERY = [['day', 'On the day'], ['week', 'Weekly'], ['2week', 'Every 2nd week'], ['month', 'Monthly']];
+const D0 = (s) => new Date(String(s).slice(0, 10) + 'T00:00');
+/* The pay period a date falls in: { k, start, end, pay } (dates as yyyy-mm-dd). */
+function payPeriod(c, day) { const d = D0(day);
+  if (c.every === 'day') return { k: ymd(d), start: ymd(d), end: ymd(d), pay: ymd(d) };
+  if (c.every === 'month') { const s0 = new Date(d.getFullYear(), d.getMonth(), 1), e0 = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const pay = +c.md ? new Date(d.getFullYear(), d.getMonth() + 1, Math.min(+c.md, new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate())) : e0;
+    return { k: ymd(s0), start: ymd(s0), end: ymd(e0), pay: ymd(pay) }; }
+  if (c.every === '2week') { const A = c.anchor ? D0(c.anchor) : (() => { const x = new Date(2026, 0, 2); while (x.getDay() !== +c.wd) x.setDate(x.getDate() + 1); return x; })();
+    const k = Math.ceil(Math.round((d - A) / 864e5) / 14), end = addDays(A, k * 14); return { k: ymd(end), start: ymd(addDays(end, -13)), end: ymd(end), pay: ymd(end) }; }
+  const end = new Date(d); while (end.getDay() !== +c.wd) end.setDate(end.getDate() + 1);   /* weekly: the week ends on pay day */
+  return { k: ymd(end), start: ymd(addDays(end, -6)), end: ymd(end), pay: ymd(end) };
+}
+const payDays = (c) => c.every === 'week' ? 7 : c.every === '2week' ? 14 : c.every === 'month' ? 30.44 : 1;
+/* One tattoo's split: what the studio takes (commission), the supplies, and what's yours (before rent). off = what
+   loyalty rewards took off the price: by default the artist covers it (the studio's share is worked out on the full
+   price), or with loy 'shared' both take the same share of the lower price. */
+const paySplit = (c, gross, off = 0) => { const studio = c.mode === 'comm' ? (gross + (c.loy === 'shared' ? 0 : +off || 0)) * (100 - +c.pct) / 100 : 0, sup = c.sup === 'artist' ? +c.supEach || 0 : 0;
+  return { studio, sup, mine: gross - studio - sup }; };
+/* Everything for Stats over a set of completed tattoos and a date range. */
+function payCalc(c, rows, a, z) {
+  const today = ymd(new Date()), r2 = (v) => Math.round(v * 100) / 100;
+  let gross = 0, studio = 0, sup = 0, mine = 0;
+  const per = new Map();
+  for (const r of rows) { const g = +r.paid || 0, sp = paySplit(c, g, +r.loy_off || 0); gross += g; studio += sp.studio; sup += sp.sup; mine += sp.mine;
+    const P = payPeriod(c, r.start_at); const e = per.get(P.k) || { ...P, n: 0, gross: 0, studio: 0, sup: 0, mine: 0, mins: 0 }; per.set(P.k, e);
+    e.n++; e.gross += g; e.studio += sp.studio; e.sup += sp.sup; e.mine += sp.mine; e.mins += r.time_min || 0; }
+  /* chair rent: due every period from the start of the range (or the first tattoo) up to today, whether busy or not */
+  let rent = 0;
+  if (c.mode === 'rent' && +c.rent) { const first = rows[0]?.start_at?.slice(0, 10), from = a > '0001' ? a : first || today, to = z < today ? z : today;
+    if (from <= to) { for (let d = D0(from); ymd(d) <= to;) { const P = payPeriod(c, ymd(d)); if (!per.has(P.k)) per.set(P.k, { ...P, n: 0, gross: 0, studio: 0, sup: 0, mine: 0, mins: 0 });
+        const e = per.get(P.k); if (e.rent == null) { e.rent = +c.rent; rent += +c.rent; } d = addDays(D0(P.end), 1); } } }
+  for (const e of per.values()) { e.rent = e.rent || 0; e.take = e.mine - e.rent; e.state = e.pay < today ? 'past' : e.start <= today ? 'now' : 'next'; }
+  const take = mine - rent, mins = rows.reduce((t, r) => t + (r.time_min || 0), 0);
+  return { gross: r2(gross), studio: r2(studio), sup: r2(sup), rent: r2(rent), take: r2(take), mins, n: rows.length,
+    periods: [...per.values()].sort((p, q) => q.k.localeCompare(p.k)) };
+}
+/* The pay settings page (Settings › Your pay). */
+function payForm(el) { const c = payCfg(), cur = esc(Settings.get('currency') || '');
+  const seg = (k, opts) => `<span class="seg">${opts.map(([v, l]) => `<button type="button" data-pk="${k}" data-pv="${v}" class="${String(c[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</span>`;
+  const num = (k, unit, o = '') => `<div class="unit-in" style="max-width:170px"><input class="in" type="number" inputmode="decimal" min="0" data-pn="${k}" value="${esc(c[k])}" ${o}><em>${unit}</em></div>`;
+  const ex = 2000, sp = paySplit(c, ex), rentNote = c.mode === 'rent' && +c.rent ? `, less ${money(+c.rent)} rent each ${c.every === 'month' ? 'month' : c.every === '2week' ? '2 weeks' : 'week'}` : '';
+  el.innerHTML = `${c.on ? '' : `<div class="card" style="border-color:var(--amber,#e0a030)"><b>Not in your stats yet.</b> <span class="muted">Switch it on to see your take-home, the studio\u2019s share and pay days in Stats.</span> <button class="btn small primary" id="pay-on" style="margin-left:8px">Switch it on</button></div>`}
+    <div class="card loy-sum"><div class="lbl">On a ${money(ex)} tattoo</div><p style="margin:4px 0 0">You keep <b>${money(sp.mine)}</b>${c.mode === 'comm' ? `, the studio gets ${money(sp.studio)}` : ''}${sp.sup ? `, supplies about ${money(sp.sup)}` : ''}${rentNote}.</p></div>
+    <div class="card loy-form"><div class="lbl">How you\u2019re paid</div>
+      ${seg('mode', [['comm', 'Commission'], ['rent', 'Chair rent']])}
+      <p class="muted loy-note">${c.mode === 'comm' ? 'The studio takes a share of every tattoo; often it supplies the needles, ink and disposables.' : 'A set fee for your spot (your part, if you split the rent with other artists). You keep everything else and buy your own supplies.'}</p>
+      ${c.mode === 'comm' ? `<div class="row" style="gap:16px;flex-wrap:wrap;margin-top:8px"><div><div class="lbl">Your share</div>${num('pct', '%', 'max="100" step="1"')}</div>
+          <div><div class="lbl">Studio keeps</div><div class="pay-big">${100 - (+c.pct || 0)}%</div></div></div>
+        <div class="lbl">Needles, ink and disposables</div>${seg('sup', [['studio', 'The studio supplies them'], ['artist', 'I buy my own']])}
+        <div class="lbl">Loyalty discounts ${help('When a client uses a loyalty reward, who pays for the discount.')}</div>${seg('loy', [['artist', 'On me (my share)'], ['shared', 'Shared with the studio']])}
+        <p class="muted loy-note">${(() => { const g = 2000, off = 200, a = paySplit({ ...c, loy: 'artist' }, g - off, off), b = paySplit({ ...c, loy: 'shared' }, g - off, off);
+          return c.loy === 'shared' ? `A ${money(g)} tattoo with 10% off is paid ${money(g - off)}: the studio gets ${money(b.studio)}, you get ${money(b.mine + b.sup)}. The discount is split.`
+            : `A ${money(g)} tattoo with 10% off is paid ${money(g - off)}: the studio still gets ${money(a.studio)} (its share of the full price), you get ${money(a.mine + a.sup)}. Rewards are yours, so the discount comes off your share.`; })()}</p>`
+      : `<div class="row" style="gap:16px;flex-wrap:wrap;margin-top:8px"><div><div class="lbl">Rent</div>${num('rent', cur, 'step="50"')}</div>
+          <div><div class="lbl">Per</div>${seg('every', [['week', 'Week'], ['2week', '2 weeks'], ['month', 'Month']])}</div></div>`}
+      ${c.sup === 'artist' ? `<div class="lbl">Supplies per tattoo, about ${help('A rough average for needles, ink, gloves and the rest; taken off your take-home in Stats. 0 to leave it out.')}</div>${num('supEach', cur, 'step="10"')}` : ''}
+    </div>
+    <div class="card loy-form"><div class="lbl">${c.mode === 'comm' ? 'You\u2019re paid' : 'Rent is due'}</div>
+      ${c.mode === 'comm' ? seg('every', PAY_EVERY) : ''}
+      ${c.every === 'week' || c.every === '2week' ? `<div class="lbl">On</div>${seg('wd', WEEKDAYS)}` : ''}
+      ${c.every === '2week' ? `<div class="lbl">One of those days ${help('Any date you were paid (or rent was due), so InkForge knows which weeks pair up.')}</div><input class="in" type="date" data-pd="anchor" value="${esc(c.anchor || '')}" style="max-width:200px">` : ''}
+      ${c.every === 'month' ? `<div class="lbl">On</div>${seg('md', [[0, 'The last day of the month'], [1, 'The 1st of the next month'], [7, 'The 7th'], [15, 'The 15th'], [25, 'The 25th']])}` : ''}
+      <p class="muted loy-note">Stats groups your tattoos by these pay periods and shows what\u2019s due on each pay day.</p></div>`;
+  const keep = () => Settings.set('pay_cfg', JSON.stringify(c));
+  el.onclick = async (e) => { const b = e.target.closest('[data-pk]'); if (b) { const k = b.dataset.pk, v = b.dataset.pv; c[k] = ['wd', 'md'].includes(k) ? +v : v; if (k === 'mode' && v === 'rent') { c.sup = 'artist'; if (c.every === 'day') c.every = 'week'; } await keep(); return payForm(el); }
+    if (e.target.closest('#pay-on')) { c.on = true; await keep(); toast('Your pay is now in Stats.', 1800); payForm(el); } };
+  el.oninput = (e) => { const k = e.target.dataset.pn; if (k) { c[k] = Math.max(0, +e.target.value || 0); if (k === 'pct') c.pct = Math.min(100, c.pct); keep(); } };
+  el.onchange = async (e) => { if (e.target.dataset.pd) { c.anchor = e.target.value; await keep(); } if (e.target.dataset.pn) payForm(el); };
+}
 
 const money = (v) => v == null ? '' : (Settings.get('currency') || '') + (+v).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const HOUR_PX = 60, DAY_FROM = 7, DAY_TO = 23;
@@ -6609,6 +6700,37 @@ async function renderStats() {
   const days = count(r => new Date(r.start_at.slice(0, 10) + 'T00:00').toLocaleDateString(undefined, { weekday: 'long' }));
   const places = count(r => (r.placement || '').replace(/^(left|right)\s+/i, '').trim().replace(/^./, c => c.toUpperCase()));
   const kpi = (v, l, tip) => `<div class="kpi" ${tip ? `data-tip="${esc(tip)}"` : ''}><b>${v}</b><span>${l}</span></div>`;
+  /* Your pay: take-home after the studio's share or the rent (and supplies, when you buy them), by pay period */
+  let payHtml = '', paySide = '';
+  if (payOn()) { const c = payCfg(), R = payCalc(c, rows, a, z), hrs = R.mins / 60, loyOff = rows.reduce((t, r) => t + (+r.loy_off || 0), 0);
+    const per = (c.every === 'month' ? 'month' : c.every === '2week' ? '2 weeks' : c.every === 'day' ? 'day' : 'week');
+    const avgT = R.n ? R.gross / R.n : 0, breakEven = c.mode === 'rent' && +c.rent && avgT ? Math.ceil(+c.rent / Math.max(1, avgT - (+c.supEach || 0))) : 0;
+    const past = R.periods.filter(p => p.state !== 'next'), best = past.length ? past.reduce((m, p) => p.take > m.take ? p : m, past[0]) : null;
+    const payKeys = Object.keys(months).sort().slice(-12), mTake = {}; for (const r of rows) { const k = r.start_at.slice(0, 7); mTake[k] = (mTake[k] || 0) + paySplit(c, +r.paid || 0, +r.loy_off || 0).mine; }
+    if (c.mode === 'rent') for (const p of R.periods) { if (!p.rent) continue; const k = p.start.slice(0, 7); mTake[k] = (mTake[k] || 0) - p.rent; }
+    const maxT = Math.max(1, ...payKeys.map(k => Math.abs(mTake[k] || 0)));
+    const lbl = (p) => c.every === 'day' ? fmtDay(p.start) : c.every === 'month' ? D0(p.start).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : `${fmtDay(p.start)} \u2013 ${fmtDay(p.end)}`;
+    payHtml = `<div class="card pay-card"><h2>Your pay ${help(c.mode === 'comm' ? `Commission: you keep ${+c.pct}% of what each tattoo was paid${c.sup === 'artist' ? ', less supplies' : ''}. Set it in Settings \u203a Your pay.` : `Chair rent of ${money(+c.rent)} per ${per}, counted for every ${per} in this period up to today${+c.supEach ? ', less supplies' : ''}. Set it in Settings \u203a Your pay.`)}</h2>
+      <div class="kpis pay-kpis">
+        ${kpi(money(R.gross), 'taken', 'Everything clients paid for completed tattoos in this period')}
+        ${kpi(money(R.take), 'your take-home', 'What\u2019s yours after the studio\u2019s share or rent' + (R.sup ? ' and supplies' : ''))}
+        ${c.mode === 'comm' ? kpi(money(R.studio), 'to the studio', `The studio\u2019s ${100 - +c.pct}%`) : kpi(money(R.rent), 'rent', `${money(+c.rent)} per ${per}, every ${per} up to today`)}
+        ${R.sup ? kpi(money(R.sup), 'supplies (about)', `${money(+c.supEach)} a tattoo`) : kpi(R.gross ? Math.round(R.take / R.gross * 100) + '%' : '—', 'you keep', 'Your take-home as a share of everything taken')}
+        ${kpi(R.n ? money(Math.round(R.take / R.n)) : '—', 'yours per tattoo')}${kpi(hrs ? money(Math.round(R.take / hrs)) : '—', 'yours per hour', 'Take-home divided by hours tattooed')}
+        ${c.mode === 'rent' ? kpi(breakEven ? breakEven + ' a ' + per : '—', 'tattoos to cover rent', 'At your average tattoo, less supplies') : kpi(best ? money(Math.round(best.take)) : '—', 'best pay period', best ? lbl(best) : '')}
+        ${kpi(loyOff ? money(loyOff) : money(0), 'loyalty discounts', 'Taken off prices by loyalty rewards this period (already out of what was paid)')}
+      </div>
+      ${payKeys.length > 1 ? `<div class="lbl">Your take-home by month</div><div class="bars pay-bars">${payKeys.map(k => { const v = mTake[k] || 0; return `<div class="bar ${v < 0 ? 'neg' : ''}" data-tip="${esc(money(Math.round(v)))} yours of ${esc(money(months[k].paid))}"><i style="height:${Math.max(3, Math.abs(v) / maxT * 100)}%"></i><span>${D0(k + '-01').toLocaleDateString(undefined, { month: 'short' })}</span></div>`; }).join('')}</div>` : ''}
+      <div class="lbl" style="margin-top:12px">Pay days</div>
+      <div class="st-table"><table><thead><tr><th>Period</th><th>${c.mode === 'comm' ? 'Paid' : 'Rent due'}</th><th>Tattoos</th><th>Taken</th><th>${c.mode === 'comm' ? 'Studio' : 'Rent'}</th>${R.sup ? '<th>Supplies</th>' : ''}<th>Yours</th><th></th></tr></thead>
+        <tbody>${R.periods.slice(0, 26).map(p => `<tr class="${p.state === 'now' ? 'pay-now' : ''}"><td>${esc(lbl(p))}</td><td>${esc(fmtDay(p.pay))}</td><td>${p.n}</td><td>${money(Math.round(p.gross))}</td><td>${money(Math.round(c.mode === 'comm' ? p.studio : p.rent))}</td>${R.sup ? `<td>${money(Math.round(p.sup))}</td>` : ''}<td><b class="${p.take < 0 ? 'pay-neg' : ''}">${money(Math.round(p.take))}</b></td><td class="muted">${p.state === 'past' ? 'Done' : p.state === 'now' ? 'This period' : 'Coming'}</td></tr>`).join('') || `<tr><td colspan="8" class="muted">No pay periods in this range.</td></tr>`}</tbody></table></div></div>`;
+    const now = payPeriod(c, ymd(new Date())), cur0 = R.periods.find(p => p.k === now.k);
+    const curRows = (await DB.all(`SELECT paid, time_min, start_at, loy_off FROM bookings WHERE completed = 1 AND ghost = 0 AND substr(start_at, 1, 10) BETWEEN ? AND ?`, [now.start, now.end]));
+    const cg = curRows.reduce((t, r) => t + (+r.paid || 0), 0), cm = curRows.reduce((t, r) => t + paySplit(c, +r.paid || 0, +r.loy_off || 0).mine, 0) - (c.mode === 'rent' ? +c.rent : 0);
+    paySide = `<div class="card pay-next"><h2>Next pay day</h2><div class="stat"><span>${esc(fmtDay(now.pay))}</span><span>${c.every === 'day' ? 'today' : esc(`${fmtDay(now.start)} \u2013 ${fmtDay(now.end)}`)}</span></div>
+      <div class="stat"><span>Tattoos so far</span><span>${curRows.length}</span></div><div class="stat"><span>Taken so far</span><span>${money(Math.round(cg))}</span></div>
+      <div class="stat"><span>${c.mode === 'comm' ? 'Yours so far' : 'Yours after rent'}</span><span><b class="${cm < 0 ? 'pay-neg' : ''}">${money(Math.round(cm))}</b></span></div>
+      ${c.mode === 'comm' ? `<div class="stat"><span>Studio\u2019s share</span><span>${money(Math.round(cg - curRows.reduce((t, r) => t + paySplit(c, +r.paid || 0, +r.loy_off || 0).mine + paySplit(c, +r.paid || 0, +r.loy_off || 0).sup, 0)))}</span></div>` : `<div class="stat"><span>Rent due</span><span>${money(+c.rent)}</span></div>`}</div>`; void cur0; }
   el.innerHTML = !n ? `<div class="card empty"><div class="empty-ico">${ICON.quote}</div><div style="font:24px var(--display)">No completed tattoos ${STATS.period === 'all' ? 'yet' : 'in this period'}</div>
       <div class="muted">Open a tattoo booking, switch on <b>Tattoo completed</b> and add what was paid and how long it took.</div></div>` : `
     <div class="kpis">
@@ -6616,6 +6738,7 @@ async function renderStats() {
       ${kpi(money(n ? Math.round(paid / n) : 0), 'average tattoo')}${kpi(hours ? money(Math.round(paid / hours)) : '—', 'per hour', 'Earned divided by hours tattooed')}
       ${kpi(n ? fmtH(hours / n) : '—', 'average session')}${kpi(clients.size, 'clients')}${kpi(`${clients.size - returning} / ${returning}`, 'new / returning', 'Returning clients had a completed tattoo before this period')}
     </div>
+    ${payHtml}
     ${keys.length > 1 ? `<div class="card"><h2>Earnings by month</h2>
       <div class="bars">${keys.map(k => `<div class="bar" data-tip="${esc(money(months[k].paid))} · ${fmtH(months[k].mins / 60)} · ${months[k].n} tattoo${months[k].n > 1 ? 's' : ''}">
         <i style="height:${Math.max(3, months[k].paid / maxP * 100)}%"></i><span>${new Date(k + '-01T00:00').toLocaleDateString(undefined, { month: 'short' })}</span></div>`).join('')}</div></div>` : ''}
@@ -6628,7 +6751,7 @@ async function renderStats() {
       <thead><tr><th>Date</th><th>Client</th><th>Tattoo</th><th>Time</th><th>Paid</th></tr></thead>
       <tbody>${rows.slice().reverse().map(r => `<tr data-bk="${r.id}"><td>${esc(r.start_at.slice(0, 10))}</td><td>${esc(bName(r))}${bTag(r)}</td>
         <td>${esc([r.description, r.placement].filter(Boolean).join(' · ') || '—')}</td><td>${r.time_min != null ? fmtH(r.time_min / 60) : '—'}</td><td>${r.paid != null ? money(r.paid) : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
-  $('#st-side').innerHTML = `
+  $('#st-side').innerHTML = `${paySide}
     <div class="card"><h2>Follow-ups coming up</h2>${fus.map(f => `<a class="stat" href="#booking-edit/${f.id}"><span>${esc(bName(f))}</span><span>${esc(fmtDay(f.start_at))}</span></a>`).join('') || '<p class="muted" style="margin:0">None booked.</p>'}</div>
     <div class="card"><h2>Open promotions</h2>${promos.map(p => `<a class="stat" href="#booking-edit/${p.id}"><span>${esc(bName(p))}: ${p.promo_kind === 'pct' ? +p.promo_value + '%' : money(p.promo_value)} off</span><span>until ${esc(p.promo_until)}</span></a>`).join('') || '<p class="muted" style="margin:0">None open.</p>'}</div>`;
   el.querySelectorAll('[data-bk]').forEach(tr => tr.onclick = () => { location.hash = 'booking-edit/' + tr.dataset.bk; });
@@ -6637,11 +6760,13 @@ async function renderStats() {
 async function statsCsv() {
   const rows = await statsRows();
   if (!rows.length) return toast('Nothing to export in this period.');
-  const head = ['Date', 'Start', 'Client', 'Type', 'Tattoo', 'Placement', 'Size', 'Quote', 'Paid', 'Paid by', 'Hours tattooed', 'Deposit', 'Promotion', 'Promotion until'];
+  const pc = payOn() ? payCfg() : null;
+  const head = ['Date', 'Start', 'Client', 'Type', 'Tattoo', 'Placement', 'Size', 'Quote', 'Paid', 'Paid by', 'Hours tattooed', 'Deposit', 'Promotion', 'Promotion until', ...(pc ? ['Loyalty discount', pc.mode === 'comm' ? 'Studio share' : 'Supplies (about)', 'Yours (before rent)', 'Pay day'] : [])];
   const [a, z] = statsRange();
   return saveCsv(`InkForge-tattoos-${STATS.period === 'all' ? 'all' : a + '_to_' + z}.csv`, head,
     rows.map(r => [r.start_at.slice(0, 10), r.start_at.slice(11, 16), bName(r), kindLabel(r), r.description, r.placement, r.size, r.quote, r.paid, r.pay_method,
-      r.time_min != null ? +(r.time_min / 60).toFixed(2) : '', r.deposit, r.promo_kind ? (r.promo_kind === 'pct' ? r.promo_value + '%' : r.promo_value) : '', r.promo_until]));
+      r.time_min != null ? +(r.time_min / 60).toFixed(2) : '', r.deposit, r.promo_kind ? (r.promo_kind === 'pct' ? r.promo_value + '%' : r.promo_value) : '', r.promo_until,
+      ...(pc ? (() => { const sp = paySplit(pc, +r.paid || 0, +r.loy_off || 0); return [r.loy_off || '', Math.round((pc.mode === 'comm' ? sp.studio : sp.sup) * 100) / 100, Math.round(sp.mine * 100) / 100, payPeriod(pc, r.start_at).pay]; })() : [])]));
 }
 
 /* ---------- Inventory & rules helpers ---------- */
@@ -10549,6 +10674,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 529, when: '2026-11-29T10:00', added: [
+    'Your pay: track commission (a share of each tattoo) or chair rent in Settings or at setup, with who buys supplies and when you’re paid.',
+    'Stats: your take-home, the studio’s share or rent, supplies, per tattoo and per hour, a take-home chart, pay days and the next pay day.',
+    'Your pay: loyalty discounts come off the artist’s share by default, or can be shared with the studio.'
+  ] },
   { build: 528, when: '2026-11-28T16:00', added: [
     'Sketchpad: an opacity slider for every brush.',
     'Loyalty: the menu tile has its icon, and Program is now split into tabs: Earning, Reward, Terms and Message.',
@@ -11097,7 +11227,7 @@ const WS_BIZ = new Set(['rules-table', 'inventory-table', 'quotes-table', 'clien
 const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) === 'design'; } catch { return WS.cur?.mode === 'design'; } };
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',
-  quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'inventory-table': 'more', 'rules-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more', loyalty: 'more',
+  quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'inventory-table': 'more', 'rules-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more', loyalty: 'more', pay: 'more',
   reel: 'studio', reels: 'studio', stencil: 'studio', sizes: 'studio', sketches: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
   forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
 let currentHash = location.hash;
