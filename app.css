@@ -2903,7 +2903,7 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .pfv-acts { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
 .pfv-acts .icon-btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 /* Sketch pad: the brush bar and the live stroke */
-.sk-bar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 3px; padding: 5px 7px; border-radius: 14px; background: rgba(15,18,19,.94); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.45); max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none; }
+.sk-bar { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 3px; padding: 5px 7px; border-radius: 14px; background: rgba(15,18,19,.94); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.45); max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none; }
 .sk-bar > button { flex: none; width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px; background: none; color: var(--ink2); cursor: pointer; }
 .sk-bar > button.on { background: var(--teal); color: #071413; }
 .sk-bar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -2912,7 +2912,6 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .sk-cols { display: flex; gap: 4px; flex: none; } .sk-cols button, .sk-cust { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); padding: 0; cursor: pointer; flex: none; }
 .sk-cols button.on, .sk-cust.on { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(31,181,168,.4); }
 .sk-cust { position: relative; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); overflow: hidden; } .sk-cust input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-#dz-stage:has(#sk-bar) .dz-zoom { bottom: 64px; }   /* above the brush bar */
 .sk-pal { flex: none; max-width: 120px; height: 30px; padding: 0 6px; border-radius: 8px; background: var(--bg2, #1b2022); color: var(--ink2); border: 1px solid var(--line); font: 600 12px var(--ui); }
 .sk-cols .sk-add { display: grid; place-items: center; background: none; color: var(--ink2); } .sk-cols .sk-add svg { width: 14px; height: 14px; }
 .sk-bar > button[data-skfill].on { background: rgba(31,181,168,.25); color: var(--teal); }
@@ -2920,6 +2919,14 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .sk-mm button { position: absolute; transform: translate(-50%, -50%); min-width: 30px; height: 30px; padding: 0 8px; border-radius: 15px; border: 2px solid #fff; background: var(--teal); color: #071413; font: 700 18px/1 var(--ui); cursor: grab; box-shadow: 0 2px 8px rgba(0,0,0,.35); touch-action: none; }
 .sk-mm button b { font-size: 12px; } .sk-mm button[data-mmbr="no"] { background: #e23b3b; color: #fff; } .sk-mm button[data-mmbr="yes"] { background: #2bb673; color: #fff; }
 .sk-mm button[data-mmcut] { background: #2a2f31; color: #fff; font-size: 15px; min-width: 24px; height: 24px; }
+.sk-colbtn i { display: block; width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,.55); }
+.sk-bar > button.sk-colbtn.on { background: rgba(31,181,168,.25); }
+.sk-bar > button.set:not(.on) { color: var(--teal); }
+.sk-pop { position: absolute; bottom: 64px; z-index: 7; display: grid; gap: 8px; padding: 10px 12px; border-radius: 14px; background: rgba(15,18,19,.97); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.45); max-width: calc(100% - 16px); width: max-content; }
+.sk-pop[hidden] { display: none; } .sk-pop-h { font: 700 11px var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
+.sk-pop .sk-cols { flex-wrap: wrap; max-width: 280px; } .sk-pop .sk-pal { max-width: none; }
+.sk-sl { display: grid; grid-template-columns: 84px 160px 28px; align-items: center; gap: 8px; font: 600 12px var(--ui); color: var(--ink2); } .sk-sl b { font-size: 11px; text-align: right; }
+.sk-pop-n { margin: 0; font-size: 11px; color: var(--ink2); max-width: 290px; }
 .sk-live { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
 .sk-drawing, .sk-drawing .dz-page { cursor: crosshair; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
@@ -2935,4 +2942,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .loy-msg input[type=color] { width: 56px; height: 36px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: none; }
 .loy-old { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: rgba(224,160,48,.18); color: #e0a030; white-space: nowrap; }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 526; }
+:root { --app-build: 527; }

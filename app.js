@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 526;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 527;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -10453,6 +10453,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 527, when: '2026-11-28T10:00', added: [
+    'Sketchpad: Steady lines for every brush. Lazy keeps the ink on a string behind the pen, and Smoothness evens out wobbles as you draw.',
+    'Sketchpad: the colours and swatch panels now sit behind one colour button, so the brush bar is shorter.',
+    'Design studio: the zoom box, Shift/Ctrl/Alt keys, size box, tool rail and brush bar now fit around each other at every screen size instead of overlapping.'
+  ] },
   { build: 526, when: '2026-11-27T14:00', added: [
     'Loyalty: tiers have been taken out to keep the program simple.',
     'Loyalty: rewards keep the rules they were earned under when you change the program, and are marked “older program” when used.',

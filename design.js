@@ -2210,7 +2210,7 @@ const DZ_BRUSH_IC = { pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 
   lasso: '<path d="M12 4c5 0 8 2.5 8 5.5S16 15 12 15s-8-2.5-8-5.5S7 4 12 4z" stroke-dasharray="3 2.5"/><path d="M8 14c-1.5 2-.5 5 3 6"/>',
   rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>', ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>', line: '<path d="M5 19L19 5"/>',
   arrow: '<path d="M5 19L19 5M11 5h8v8"/>', text: '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>', fill: '<rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/>',
-  plus: '<path d="M12 6v12M6 12h12"/>', mm: '<rect x="2" y="9" width="8" height="6" rx="2"/><rect x="15" y="3" width="7" height="5" rx="2"/><rect x="15" y="16" width="7" height="5" rx="2"/><path d="M10 12c3 0 2-6.5 5-6.5M10 12c3 0 2 6.5 5 6.5"/>',
+  plus: '<path d="M12 6v12M6 12h12"/>', steady: '<path d="M3 15c3-6 5-6 8 0s5 6 8 0"/><circle cx="19" cy="6" r="2.5"/><path d="M11 9l6-2.4" stroke-dasharray="2 2"/>', mm: '<rect x="2" y="9" width="8" height="6" rx="2"/><rect x="15" y="3" width="7" height="5" rx="2"/><rect x="15" y="16" width="7" height="5" rx="2"/><path d="M10 12c3 0 2-6.5 5-6.5M10 12c3 0 2 6.5 5 6.5"/>',
   ifn: '<path d="M12 3l8 9-8 9-8-9z"/><path d="M10 10.5a2 2 0 1 1 2.5 2c-.5.2-.5.6-.5 1M12 15.5v.5"/>' };
 /* ---------- Mind map ----------
    A mind-map node is a text layer with l.mm = { k: 'node' | 'if', p: parent id, br: 'yes' | 'no', bc: border colour }:
@@ -2638,8 +2638,9 @@ DZ.edit = async (id) => {
       transformOrigin: `${(l.w / 2 - xs[S.c0]) * k}px ${(l.h / 2 - ys[S.r0]) * k}px`, transform: `rotate(${l.rot || 0}deg) scale(${l.fx ? -1 : 1}, ${l.fy ? -1 : 1})` });
     m.hidden = false; };
   let skHook = null;   /* the sketch pad's mind-map buttons follow the selection */
+  let dzLay = null;    /* fits the floating panels around each other (set further down) */
   const placeSel = () => {
-    try { tblMark(); tgMark(); } catch {} skHook?.();
+    try { tblMark(); tgMark(); } catch {} skHook?.(); dzLay?.();
     if (!selBox) return;
     const mo = $('#dz-multi');
     if (mo) mo.innerHTML = picked().map(m => `<i class="dz-mo ${m.lock ? 'locked' : ''}" style="left:${m.x * k}px;top:${m.y * k}px;width:${m.w * k}px;height:${(m.h || 1) * k}px;transform:rotate(${m.rot || 0}deg)"></i>`).join('');
@@ -4888,8 +4889,8 @@ DZ.edit = async (id) => {
     const SKC = ['#111111', '#ffffff', '#7a7a7a', '#e23b3b', '#f28c28', '#f5c518', '#2bb673', '#1fb5a8', '#2f6fe4', '#8e44ad', '#ff6fb5', '#8b5a2b'];
     const ST0 = (() => { try { return JSON.parse(Settings.get('sk_brush', 'null')) || {}; } catch { return {}; } })();
     const SKB = { tool: null, b: ST0.b || 'pen', c: ST0.c || '#111111', sizes: ST0.sizes || Object.fromEntries(DZ_BRUSHES.map(([k, , s]) => [k, s])), er: ST0.er || 40,
-      sh: ST0.sh || 'rect', fill: !!ST0.fill, shs: ST0.shs || 8, ts: ST0.ts || 72, pal: ST0.pal ?? -1 };
-    const keepB = () => Settings.set('sk_brush', JSON.stringify({ b: SKB.b, c: SKB.c, sizes: SKB.sizes, er: SKB.er, sh: SKB.sh, fill: SKB.fill, shs: SKB.shs, ts: SKB.ts, pal: SKB.pal }));
+      sh: ST0.sh || 'rect', fill: !!ST0.fill, shs: ST0.shs || 8, ts: ST0.ts || 72, pal: ST0.pal ?? -1, lazy: ST0.lazy ?? 0, smooth: ST0.smooth ?? 25, pop: null };
+    const keepB = () => Settings.set('sk_brush', JSON.stringify({ b: SKB.b, c: SKB.c, sizes: SKB.sizes, er: SKB.er, sh: SKB.sh, fill: SKB.fill, shs: SKB.shs, ts: SKB.ts, pal: SKB.pal, lazy: SKB.lazy, smooth: SKB.smooth }));
     /* Swatch panels: your own named sets of colours, kept across sketches */
     const pals = () => { try { return JSON.parse(Settings.get('sk_pals', '[]')) || []; } catch { return []; } };
     const keepPals = (P) => Settings.set('sk_pals', JSON.stringify(P));
@@ -4909,13 +4910,27 @@ DZ.edit = async (id) => {
       <button data-skt="text" class="${SKB.tool === 'text' ? 'on' : ''}" data-tip="Text: tap where it goes, then type" aria-label="Text">${ic('text')}</button>
       <button data-skt="mm" class="${SKB.tool === 'mm' ? 'on' : ''}" data-tip="Mind map: tap to place an idea, then drag its + to add linked ones" aria-label="Mind map node">${ic('mm')}</button>
       <button data-skt="ifn" class="${SKB.tool === 'ifn' ? 'on' : ''}" data-tip="If: a question with a Yes and a No branch" aria-label="If node">${ic('ifn')}</button><i class="sep"></i>
-      <label class="sk-size" data-tip="${SKB.tool === 'text' ? 'Text size' : SKB.tool === 'shape' ? 'Line width' : 'Size'}"><input type="range" min="1" max="${sizeMax()}" step="1" value="${sizeOf()}" data-sks><b>${sizeOf()}</b></label><i class="sep"></i>
-      <select class="sk-pal" data-skp data-tip="Swatch panel" aria-label="Swatch panel"><option value="-1"${own ? '' : ' selected'}>Basic</option>${P.map((p, i) => `<option value="${i}"${SKB.pal === i ? ' selected' : ''}>${esc(p.n)}</option>`).join('')}
+      <label class="sk-size" data-tip="${SKB.tool === 'text' ? 'Text size' : SKB.tool === 'shape' ? 'Line width' : 'Size'}"><input type="range" min="1" max="${sizeMax()}" step="1" value="${sizeOf()}" data-sks><b>${sizeOf()}</b></label>
+      ${SKB.tool === 'brush' ? `<button data-skpop="steady" class="${SKB.pop === 'steady' ? 'on' : ''} ${SKB.lazy || SKB.smooth ? 'set' : ''}" data-tip="Steady lines: lazy and smoothness" aria-label="Steady lines">${ic('steady')}</button>` : ''}
+      <button data-skpop="col" class="sk-colbtn ${SKB.pop === 'col' ? 'on' : ''}" data-tip="Colour and swatch panels" aria-label="Colour"><i style="background:${SKB.c}"></i></button>`;
+      drawPop(); stage.classList.toggle('sk-drawing', !!SKB.tool); };
+    /* the pop-ups above the bar: colours (with swatch panels), and steadiness (lazy and smoothness) */
+    const pop = document.createElement('div'); pop.className = 'sk-pop'; pop.hidden = true; stage.appendChild(pop);
+    const drawPop = () => { const P = pals(), cols = palCols(), own = SKB.pal >= 0; pop.hidden = !SKB.pop; if (!SKB.pop) { pop.innerHTML = ''; return; }
+      if (SKB.pop === 'steady') pop.innerHTML = `<div class="sk-pop-h">Steady lines</div>
+        <label class="sk-sl" data-tip="The pen pulls the line along on a string this long, so wobbles under it never reach the page"><span>Lazy</span><input type="range" min="0" max="100" step="1" value="${SKB.lazy}" data-skl="lazy"><b>${SKB.lazy}</b></label>
+        <label class="sk-sl" data-tip="Evens out the line as you draw, and once more when you lift"><span>Smoothness</span><input type="range" min="0" max="100" step="1" value="${SKB.smooth}" data-skl="smooth"><b>${SKB.smooth}</b></label>
+        <p class="sk-pop-n">For every brush. 0 and 0 draws exactly where the pen goes.</p>`;
+      else pop.innerHTML = `<div class="sk-pop-h">Colour</div>
+      <select class="sk-pal" data-skp data-tip="Swatch panel" aria-label="Swatch panel"><option value="-1"${own ? '' : ' selected'}>Basic</option>${P.map((p, i) => `<option value="${i}"${SKB.pal === i ? ' selected' : ''}>${esc(p.n)}</option>`).join('')} data-skp data-tip="Swatch panel" aria-label="Swatch panel"><option value="-1"${own ? '' : ' selected'}>Basic</option>${P.map((p, i) => `<option value="${i}"${SKB.pal === i ? ' selected' : ''}>${esc(p.n)}</option>`).join('')}
         <option disabled>──────</option><option value="new">New panel…</option><option value="doc">Panel from this sketch’s colours</option>${own ? '<option value="ren">Rename this panel…</option><option value="del">Delete this panel</option>' : ''}</select>
       <span class="sk-cols">${cols.map(c => `<button data-skc="${c}" class="${SKB.c === c ? 'on' : ''}" style="background:${c}" aria-label="Colour ${c}"${own ? ' data-tip="Hold or right-click to take it off the panel"' : ''}></button>`).join('')}${own ? `<button data-skadd class="sk-add" data-tip="Add the current colour to this panel" aria-label="Add colour">${ic('plus')}</button>` : ''}<label class="sk-cust ${cols.includes(SKB.c) ? '' : 'on'}" data-tip="Any colour" style="${cols.includes(SKB.c) ? '' : `background:${SKB.c}`}"><input type="color" value="${SKB.c}" data-skcc></label></span>`;
-      stage.classList.toggle('sk-drawing', !!SKB.tool); };
+      const b = bar.querySelector(`[data-skpop="${SKB.pop}"]`), sr = stage.getBoundingClientRect(), br = b?.getBoundingClientRect();
+      if (br) pop.style.left = Math.max(8, Math.min(sr.width - pop.offsetWidth - 8, br.left + br.width / 2 - sr.left - pop.offsetWidth / 2)) + 'px'; };
     drawBar();
-    bar.addEventListener('click', (e) => { const t = e.target.closest('[data-skt]'); if (t) { const v = t.dataset.skt;
+    const onBoth = (ev, fn) => { bar.addEventListener(ev, fn); pop.addEventListener(ev, fn); };
+    onBoth('click', (e) => { const pb = e.target.closest('[data-skpop]'); if (pb) { SKB.pop = SKB.pop === pb.dataset.skpop ? null : pb.dataset.skpop; return drawBar(); }
+      const t = e.target.closest('[data-skt]'); if (t) { const v = t.dataset.skt; SKB.pop = null;
         if (v === 'sel') SKB.tool = null; else if (v === 'erase' || v === 'lasso' || v === 'text' || v === 'mm' || v === 'ifn') SKB.tool = SKB.tool === v ? null : v;
         else if (v.startsWith('sh:')) { SKB.tool = 'shape'; SKB.sh = v.slice(3); } else { SKB.tool = 'brush'; SKB.b = v; }
         if (SKB.tool) { select(null); } keepB(); return drawBar(); }
@@ -4923,11 +4938,12 @@ DZ.edit = async (id) => {
       if (e.target.closest('[data-skadd]')) { const P = pals(), p = P[SKB.pal]; if (p && !p.c.includes(SKB.c)) { p.c.push(SKB.c); keepPals(P); } return drawBar(); }
       const c = e.target.closest('[data-skc]'); if (c) { SKB.c = c.dataset.skc; if (!SKB.tool || SKB.tool === 'lasso' || SKB.tool === 'erase') SKB.tool = 'brush'; keepB(); drawBar(); } });
     /* hold (or right-click) a colour on your own panel to take it off */
-    bar.addEventListener('contextmenu', (e) => { const c = e.target.closest('[data-skc]'); if (!c || SKB.pal < 0) return; e.preventDefault();
+    pop.addEventListener('contextmenu', (e) => { const c = e.target.closest('[data-skc]'); if (!c || SKB.pal < 0) return; e.preventDefault();
       const P = pals(), p = P[SKB.pal]; if (!p) return; p.c = p.c.filter(x => x !== c.dataset.skc); keepPals(P); drawBar(); toast('Colour taken off the panel.', 1400); });
-    bar.addEventListener('input', (e) => { if (e.target.dataset.sks != null) { const v = +e.target.value;
+    onBoth('input', (e) => { const sl = e.target.dataset.skl; if (sl) { SKB[sl] = +e.target.value; e.target.nextElementSibling.textContent = e.target.value; bar.querySelector('[data-skpop="steady"]')?.classList.toggle('set', !!(SKB.lazy || SKB.smooth)); return; }
+      if (e.target.dataset.sks != null) { const v = +e.target.value;
       if (SKB.tool === 'erase') SKB.er = v; else if (SKB.tool === 'shape') SKB.shs = v; else if (SKB.tool === 'text') SKB.ts = v; else SKB.sizes[SKB.b] = v; e.target.nextElementSibling.textContent = v; } });
-    bar.addEventListener('change', async (e) => { if (e.target.dataset.sks != null) keepB();
+    onBoth('change', async (e) => { if (e.target.dataset.sks != null || e.target.dataset.skl) keepB();
       if (e.target.dataset.skcc != null) { SKB.c = e.target.value; if (!SKB.tool || SKB.tool === 'lasso' || SKB.tool === 'erase') SKB.tool = 'brush'; keepB(); drawBar(); }
       if (e.target.dataset.skp != null) { const v = e.target.value, P = pals();
         if (v === 'new' || v === 'doc') {
@@ -4939,7 +4955,7 @@ DZ.edit = async (id) => {
         else if (v === 'del') { const p = P[SKB.pal]; if (p && await ask(`Delete the swatch panel "${p.n}"?`)) { P.splice(SKB.pal, 1); keepPals(P); SKB.pal = -1; } }
         else SKB.pal = +v;
         keepB(); drawBar(); } });
-    bar.addEventListener('pointerdown', (e) => e.stopPropagation());
+    bar.addEventListener('pointerdown', (e) => e.stopPropagation()); pop.addEventListener('pointerdown', (e) => e.stopPropagation());
     /* the live layer sits on the page (so it turns and zooms with it), at screen sharpness */
     const liveFit = () => { const dpr = Math.min(2, devicePixelRatio || 1), cw = Math.min(4096, Math.round(doc.w * k * dpr)), ch = Math.min(4096, Math.round(doc.h * k * dpr));
       if (live.width !== cw || live.height !== ch) { live.width = cw; live.height = ch; } live.style.width = doc.w * k + 'px'; live.style.height = doc.h * k + 'px'; const lx = live.getContext('2d'); lx.setTransform(cw / doc.w, 0, 0, ch / doc.h, 0, 0); return lx; };
@@ -4952,11 +4968,20 @@ DZ.edit = async (id) => {
         lx.restore(); return; }
       if (S.mode === 'text' || S.mode === 'mm' || S.mode === 'ifn') return;
       if (S.erase) { lx.save(); lx.strokeStyle = 'rgba(120,120,120,.35)'; lx.lineCap = 'round'; lx.lineJoin = 'round'; lx.lineWidth = SKB.er; lx.beginPath(); S.pts.forEach((q, i) => lx[i ? 'lineTo' : 'moveTo'](q[0], q[1])); lx.stroke(); lx.restore(); return; }
-      lx.save(); dzInkPaint(lx, { b: SKB.b, c: SKB.c, s: sizeOf() }, S.snap ? S.snap.pts : S.pts); lx.restore(); };
+      lx.save(); dzInkPaint(lx, { b: SKB.b, c: SKB.c, s: sizeOf() }, S.snap ? S.snap.pts : S.pts); lx.restore();
+      if (SKB.lazy && S.raw && S.lz && !S.snap) { lx.save(); lx.strokeStyle = 'rgba(31,181,168,.8)'; lx.lineWidth = 1.5 / k; lx.setLineDash([4 / k, 4 / k]); lx.beginPath(); lx.moveTo(S.lz.x, S.lz.y); lx.lineTo(S.raw.x, S.raw.y); lx.stroke();
+        lx.setLineDash([]); lx.beginPath(); lx.arc(S.raw.x, S.raw.y, SKB.lazy * 0.6 / k, 0, Math.PI * 2); lx.globalAlpha = 0.35; lx.stroke(); lx.restore(); } };
     const pressOf = (e, q) => { const v = q ? Math.hypot(e.clientX - q.sx, e.clientY - q.sy) / Math.max(1, e.timeStamp - q.st) : 0;   /* screen px per ms */
       const real = e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : null, sp = Math.max(0.3, Math.min(1, 1.05 - v * 0.45));
       return real != null ? (SKB.b === 'manga' ? real * (1 - Math.min(0.35, v * 0.12)) : real) : sp; };
-    const addPt = (e) => { const p = pgPt(e.clientX, e.clientY), last = S.pts.at(-1), q = S.q; if (last && Math.hypot(p.x - last[0], p.y - last[1]) * k < 1.2) return;
+    /* Lazy: the ink follows the pen on a string (up to 60 screen px), so it only moves once the pen pulls it.
+       Smoothness: each new point eases toward where the pen is, evening out small wobbles. Brushes only. */
+    const addPt = (e) => { let p = pgPt(e.clientX, e.clientY); const last = S.pts.at(-1), q = S.q, br = S.mode === 'brush';
+      if (br) { S.raw = p;
+        if (SKB.lazy) { const R = SKB.lazy * 0.6 / k; if (!S.lz) S.lz = { ...p }; const dx = p.x - S.lz.x, dy = p.y - S.lz.y, dd = Math.hypot(dx, dy);
+          if (dd > R) { S.lz.x += dx * (dd - R) / dd; S.lz.y += dy * (dd - R) / dd; } else if (last) return; p = { ...S.lz }; }
+        if (SKB.smooth && last) { const a = 1 - SKB.smooth / 100 * 0.85; p = { x: last[0] + (p.x - last[0]) * a, y: last[1] + (p.y - last[1]) * a }; } }
+      if (last && Math.hypot(p.x - last[0], p.y - last[1]) * k < 1.2) return;
       S.pts.push([p.x, p.y, pressOf(e, q)]); S.q = { sx: e.clientX, sy: e.clientY, st: e.timeStamp }; };
     /* A dragged shape from a to b: boxes and circles are shapes (with Shift, square); lines and arrows are pen strokes in the current brush. */
     const skShape = (a, b) => { let x0 = Math.min(a[0], b[0]), y0 = Math.min(a[1], b[1]), w = Math.abs(b[0] - a[0]), h = Math.abs(b[1] - a[1]);
@@ -4971,7 +4996,8 @@ DZ.edit = async (id) => {
     const inLoop = (L, x, y) => { let c = false; for (let i = 0, j = L.length - 1; i < L.length; j = i++) { const [xi, yi] = L[i], [xj, yj] = L[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
     const holdCheck = () => { clearTimeout(S.ht); S.ht = setTimeout(() => { if (!S || S.erase || S.snap || S.mode !== 'brush') return; const sn = dzInkSnap(S.pts); if (sn) { S.snap = sn; navigator.vibrate?.(12); drawLive(); } }, 480); };
     stage.addEventListener('pointerdown', (e) => {
-      if (!SKB.tool || e.button > 0 || e.target.closest('.sk-bar, .dz-zoom, .dz-faces, .dz-rail, .dz-pop, .dz-mods, .dz-xf')) return;
+      if (SKB.pop && !e.target.closest('.sk-pop, .sk-bar')) { SKB.pop = null; drawBar(); }
+      if (!SKB.tool || e.button > 0 || e.target.closest('.sk-bar, .sk-pop, .dz-zoom, .dz-faces, .dz-rail, .dz-pop, .dz-mods, .dz-xf')) return;
       if (pts.size >= 2) { if (S) { S = null; drawLive(); } return; }   /* a second finger: pinch, not ink */
       if (fingerOnly(e)) return;
       e.stopImmediatePropagation(); e.preventDefault(); try { stage.setPointerCapture(e.pointerId); } catch {}
@@ -4994,7 +5020,9 @@ DZ.edit = async (id) => {
         if (sh.ink) { doc.layers.push(dzInkMake({ b: SKB.b, c: SKB.c, s: SKB.shs }, sh.ink)); return changed(true); }
         return add({ t: 'shape', shape: sh.shape, r: 0, fill: SKB.fill ? SKB.c : 'none', stroke: SKB.fill ? 'none' : SKB.c, sw: SKB.fill ? 0 : SKB.shs, x: sh.x, y: sh.y, w: sh.w, h: sh.h }); }
       let P = s0.snap ? s0.snap.pts : s0.pts; if (!P.length) return;
-      if (!s0.snap && P.length > 4) P = P.map((q, i) => i === 0 || i === P.length - 1 ? q : [(P[i - 1][0] + q[0] + P[i + 1][0]) / 3, (P[i - 1][1] + q[1] + P[i + 1][1]) / 3, q[2]]);   /* a touch of smoothing */
+      if (!s0.snap && SKB.smooth && !SKB.lazy && s0.raw && P.length > 1) { const z0 = P.at(-1); if (Math.hypot(s0.raw.x - z0[0], s0.raw.y - z0[1]) * k > 1.2) P = [...P, [s0.raw.x, s0.raw.y, z0[2]]]; }   /* the line reaches the pen */
+      for (let pass = 0, np = 1 + Math.round(SKB.smooth / 25); !s0.snap && P.length > 4 && pass < np; pass++)
+        P = P.map((q, i) => i === 0 || i === P.length - 1 ? q : [(P[i - 1][0] + q[0] + P[i + 1][0]) / 3, (P[i - 1][1] + q[1] + P[i + 1][1]) / 3, q[2]]);   /* more passes with more smoothness */
       doc.layers.push(dzInkMake({ b: SKB.b, c: SKB.c, s: sizeOf() }, P)); changed(true); };
     stage.addEventListener('pointerup', finish, true); stage.addEventListener('pointercancel', (e) => { if (S && e.pointerId === S.id) { clearTimeout(S.ht); S = null; drawLive(); } }, true);
     /* The lasso picks what it goes round: a stroke when most of it is inside, anything else when its middle is. Then it's the Select tool, to move, size, turn, copy or delete them. */
@@ -5053,6 +5081,40 @@ DZ.edit = async (id) => {
           hit.mm.p = par.id; if (br) hit.mm.br = br; else delete hit.mm.br; changed(true); return toast('Linked.', 1000); }
         mmAdd(p.x, p.y, par, 'node', br); };
       b.addEventListener('pointermove', mv); b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); });
+  }
+  /* Floating panels, fitted snugly around each other for the screen size: on a wide screen the zoom box, the
+     Shift/Ctrl/Alt keys and the size box stack up the bottom left (above the sketch pad's brush bar), the tool rail
+     stops above them, and the brush bar stays clear of the side panel. On a phone the CSS keeps them along the top;
+     only the brush bar (and its pop-up) move up out of the way of the panel sheet. */
+  {
+    const vis = (el) => el && !el.hidden && getComputedStyle(el).display !== 'none' && el.offsetHeight > 0;
+    const set = (el, o) => { if (el) for (const [k2, v] of Object.entries(o)) el.style[k2] = v; };
+    let raf = 0;
+    dzLay = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; if (!stage.isConnected) return;
+      const S0 = stage.getBoundingClientRect(); if (!S0.width) return;
+      const zoom = stage.querySelector('.dz-zoom'), mods = $('#dz-mods'), xf = $('#dz-xf'), rail = $('#dz-rail'), sbar = $('#sk-bar'), spop = stage.querySelector('.sk-pop'), sd = $('#dz-side');
+      const SR = vis(sd) ? sd.getBoundingClientRect() : null, wide = S0.width > 700, G = 8;
+      const sideR = SR && SR.left > S0.left + S0.width * 0.4 && SR.top < S0.bottom - 40 && SR.bottom > S0.top + 40 ? SR : null;   /* docked on the right */
+      const sideB = SR && !sideR && SR.top < S0.bottom && SR.top > S0.top ? SR : null;   /* a sheet from the bottom */
+      const right = sideR ? sideR.left - S0.left - G : S0.width - 10, floor = sideB ? S0.bottom - sideB.top + G : 10;
+      let base = floor;
+      if (vis(sbar)) { const clear = !sideR || sideR.bottom < S0.bottom - floor - sbar.offsetHeight - G, avail = Math.max(120, (clear ? S0.width - 10 : right) - 10);   /* only squeezed where the panel reaches down to it */ set(sbar, { maxWidth: avail + 'px', left: 10 + Math.max(0, (avail - sbar.offsetWidth) / 2) + 'px', transform: 'none', bottom: floor + 'px' });
+        base = floor + sbar.offsetHeight + G; if (spop) set(spop, { bottom: base + 'px' }); }
+      if (!wide) {   /* phone: the quick strip, then the zoom box (right) below it if they'd touch, then the keys and size box down the left beside the rail; the rail stops above the bar */
+        for (const el of [zoom, mods, xf, rail]) set(el, { left: '', right: '', top: '', bottom: '', maxHeight: '' });
+        const qs = $('#dz-qstrip'), Q = vis(qs) ? qs.getBoundingClientRect() : null, hit = (A, B) => A && B && A.left < B.right && B.left < A.right;
+        let y = Q ? Q.bottom - S0.top + 6 : 10;
+        if (vis(zoom)) { const Z = zoom.getBoundingClientRect(); if (hit(Z, Q)) set(zoom, { top: y + 'px', bottom: 'auto' }); }
+        const Zb = vis(zoom) ? zoom.getBoundingClientRect() : null;
+        for (const el of [mods, xf]) { if (!vis(el)) continue; const E = el.getBoundingClientRect(); if (hit(E, Zb)) y = Math.max(y, Zb.bottom - S0.top + 6);
+          set(el, { top: y + 'px', bottom: 'auto' }); y += el.offsetHeight + 6; }
+        if (vis(rail)) { const top = rail.getBoundingClientRect().top - S0.top; set(rail, { maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'none' }); }
+        return; }
+      for (const el of [zoom, mods, xf]) { if (!vis(el)) continue; set(el, { left: '10px', right: 'auto', top: 'auto', bottom: base + 'px' }); base += el.offsetHeight + 6; }
+      if (vis(rail)) { const top = rail.getBoundingClientRect().top - S0.top; set(rail, { maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'none' }); } }); };
+    if ('ResizeObserver' in window) { const ro = new ResizeObserver(() => dzLay()); ro.observe(stage);
+      setTimeout(() => { for (const el of [stage.querySelector('.dz-zoom'), $('#dz-mods'), $('#dz-xf'), $('#dz-side'), $('#sk-bar'), stage.querySelector('.sk-pop')]) if (el) ro.observe(el); dzLay(); }, 0); }
+    addEventListener('resize', () => dzLay());
   }
   stage.addEventListener('pointerdown', (e) => {
     if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-xf, .dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop, .dz-notebar, [data-rf]')) return;
