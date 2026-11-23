@@ -23,7 +23,9 @@ const DZ_KINDS = {
   portrait: { label: 'Portrait post', sub: '1080 × 1350, feed (4:5)', w: 1080, h: 1350, per: 0, social: 1 },
   story: { label: 'Story / reel cover', sub: '1080 × 1920 (9:16)', w: 1080, h: 1920, per: 0, social: 1 },
   /* Sketch pad: an open page that grows with what's on it (its own section, like forms; never in the design list) */
-  sketch: { label: 'Sketch pad', sub: 'Notes, plans, sketches and mind maps', w: 3200, h: 2200, per: 0, sketch: 1 }
+  sketch: { label: 'Sketch pad', sub: 'Notes, plans, sketches and mind maps', w: 3200, h: 2200, per: 0, sketch: 1 },
+  /* the loyalty reward card: one per workspace, made and opened from Loyalty (never in the design list) */
+  loycard: { label: 'Reward card', sub: '1080 × 1350 (4:5)', w: 1080, h: 1350, per: 0, loycard: 1 }
 };
 /* The types Convert to moves between. */
 const DZ_CONV = ['page', 'form', 'flyer', 'card', 'voucher', 'post', 'portrait', 'story'];
@@ -54,6 +56,44 @@ const DZ_FONTS = [['Inter', ''], ['Pirata One', ''], ['Bebas Neue', 'Bebas Neue'
   ['Playfair Display', 'Playfair Display:ital,wght@0,400;0,700;1,400'], ['Cinzel', 'Cinzel:wght@400;700'], ['Great Vibes', 'Great Vibes'],
   ['UnifrakturMaguntia', 'UnifrakturMaguntia'], ['Permanent Marker', 'Permanent Marker'], ['Courier Prime', 'Courier Prime:wght@400;700'],
   ['Georgia', ''], ['Arial', '']];
+/* the reward card's own fields (filled from the reward it's sent with) */
+const DZ_LOY_FIELDS = [['name', 'Their name'], ['reward', 'The reward'], ['reward_big', 'Reward, big (15% OFF)'], ['reward_sub', 'Under it (your next tattoo)'], ['alt', 'The product swap'],
+  ['code', 'Reward code'], ['expires', 'Valid until'], ['artist', 'Your name (who redeems it)'], ['terms', 'Terms and conditions'], ['sent', 'Who they sent (when not anonymous)']];
+/* Two starting points for the reward card; every part can be changed in the design studio afterwards. */
+const DZ_LOY_TPL = {
+  classic: { name: 'Classic', theme: 'ink', make: () => [
+    dzS('rect', 40, 40, 1000, 1270, { fill: 'none', stroke: '@accent', sw: 6, r: 0, name: 'Frame' }),
+    { id: dzId(), t: 'image', logo: true, x: 465, y: 70, w: 150, h: 90, op: 1, rot: 0 },
+    dzT('You\u2019ve earned a reward', 90, 172, 900, 64, { al: 'center', font: '@1' }),
+    dzS('rect', 160, 265, 760, 200, { r: 26, name: 'Reward box' }),
+    dzT('{reward_big}', 160, 290, 760, 100, { al: 'center', c: '#ffffff', b: true, fit: true }),
+    dzT('{reward_sub}', 160, 410, 760, 30, { al: 'center', c: '#ffffff', b: true }),
+    dzT('{alt}', 140, 482, 800, 26, { al: 'center', c: '@soft' }),
+    dzT('Hi {name}, thank you for sending someone our way!', 120, 525, 840, 30, { al: 'center' }),
+    dzS('rect', 360, 600, 360, 84, { fill: 'none', stroke: '@soft', sw: 3, r: 12, name: 'Code box' }),
+    dzT('CODE', 360, 610, 360, 18, { al: 'center', c: '@soft', b: true }),
+    dzT('{code}', 360, 632, 360, 36, { al: 'center', b: true, font: 'Courier Prime' }),
+    dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 110, 700, 860, 24, { al: 'center', b: true }),
+    dzS('rect', 110, 762, 860, 2, { fill: '@soft', name: 'Line' }),
+    dzT('TERMS AND CONDITIONS', 110, 778, 860, 16, { c: '@soft', b: true, ls: 2 }),
+    { ...dzT('{terms}', 110, 810, 860, 21, { c: '@soft', lh: 1.3, fit: true }), frame: true, h: 420, pad: 0 },
+    dzT('{studio}  \u00b7  {instagram}', 90, 1252, 900, 28, { al: 'center', b: true })] },
+  light: { name: 'Light', theme: 'paper', make: () => [
+    dzS('rect', 0, 0, 1080, 360, { name: 'Top band' }),
+    { id: dzId(), t: 'image', logo: true, x: 60, y: 45, w: 150, h: 90, op: 1, rot: 0 },
+    dzT('{studio}', 500, 62, 520, 30, { al: 'right', c: '#ffffff', b: true }),
+    dzT('A reward for you, {name}', 60, 160, 960, 48, { font: '@1', c: '#ffffff' }),
+    dzT('{reward_big}', 60, 225, 960, 96, { c: '#ffffff', b: true, fit: true }),
+    dzT('{reward_sub}', 60, 392, 960, 34, { b: true }),
+    dzT('{alt}', 60, 442, 960, 26, { c: '@soft' }),
+    dzT('Thank you for sending someone our way. Show this card when you book.', 60, 486, 960, 28),
+    dzT('Code: {code}', 60, 590, 960, 38, { b: true, font: 'Courier Prime' }),
+    dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 60, 646, 960, 26, { c: '@soft' }),
+    dzS('rect', 60, 705, 960, 3, { fill: '@soft', name: 'Line' }),
+    dzT('TERMS AND CONDITIONS', 60, 724, 960, 16, { c: '@soft', b: true, ls: 2 }),
+    { ...dzT('{terms}', 60, 756, 960, 21, { c: '@soft', lh: 1.3, fit: true }), frame: true, h: 470, pad: 0 },
+    dzT('{phone}  \u00b7  {instagram}', 60, 1262, 960, 26, { c: '@soft' })] }
+};
 // {field}: label, where it comes from.
 const DZ_FIELDS = [['page', 'Page number'], ['pages', 'Page count'], ['studio', 'Studio'], ['artist', 'Artist'], ['phone', 'Phone'], ['instagram', 'Instagram'], ['facebook', 'Facebook'], ['tiktok', 'TikTok'],
   ['amount', 'Amount'], ['to', 'For'], ['from', 'From'], ['code', 'Code'], ['expires', 'Valid until'],
@@ -471,6 +511,7 @@ function dzFill(doc, s) {
     tags: String(v.tags || '').split(',').map(t => t.trim().replace(/[^\p{L}\p{N}_]/gu, '')).filter(Boolean).map(t => '#' + t.toLowerCase()).join(' '),
     date: v.date ? new Date(v.date + 'T00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : '' };
   { const P = typeof dzPageFaces === 'function' ? dzPageFaces(doc) : ['f'], fc = dzFill.face || 'f'; map.page = fc === 'm' ? '#' : String(Math.max(1, P.indexOf(fc) + 1)); map.pages = String(P.length); }   /* the page being drawn (dzDraw sets it) */
+  { const L = dzFill.loy || (doc.kind === 'loycard' && typeof loySampleFields === 'function' ? loySampleFields() : null); if (L) Object.assign(map, L); }   /* a reward card: that reward (or a sample while designing) */
   return String(s || '').replace(/\{(\w+)\}/g, (m, k) => k in map ? map[k] : m);
 }
 const dzFontStr = (doc, l, px) => `${l.it ? 'italic ' : ''}${l.b ? 700 : 400} ${px}px "${dzFont(doc, l.font)}", Inter, sans-serif`;
@@ -2315,7 +2356,7 @@ SKP.list = async () => {
 const DZ = {};
 DZ.list = async () => {
   const el = $('#dz-list'); if (!el) return;
-  const rows = await DB.all(`SELECT id, name, kind, thumb_ref, updated_at, CASE WHEN kind = ? THEN doc END AS doc FROM designs WHERE kind NOT IN ('form', 'sketch') ORDER BY updated_at DESC, id DESC`, ['page']);   /* forms and sketches live in their own sections */
+  const rows = await DB.all(`SELECT id, name, kind, thumb_ref, updated_at, CASE WHEN kind = ? THEN doc END AS doc FROM designs WHERE kind NOT IN ('form', 'sketch', 'loycard') ORDER BY updated_at DESC, id DESC`, ['page']);   /* forms and sketches live in their own sections */
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   const all = rows.map((r, i) => { const sub = r.kind === 'page' ? (JSON.parse(r.doc || '{}').paper || 'Blank page').split(',')[0] + ' page' : DZ_KINDS[r.kind]?.label || '';
     return { ...r, url: urls[i], sub, kind: r.kind === 'page' ? 'Page' : DZ_KINDS[r.kind]?.label || r.kind, t: r.updated_at }; }), shown = Lib.apply('designs', all);
@@ -2378,7 +2419,7 @@ async function dzPicker(opts = {}) {
     return dzPaper(w, h, p ? p[0] : 'Custom');
   };
   const o = document.createElement('div'); o.id = 'merge-dlg';
-  const kinds = Object.entries(DZ_KINDS).filter(([, v]) => (!st.piece || v.social) && !v.sketch);
+  const kinds = Object.entries(DZ_KINDS).filter(([, v]) => (!st.piece || v.social) && !v.sketch && !v.loycard);
   o.addEventListener('change', (e) => { if (!e.target.matches('[data-patwi]')) return; const v = parseFloat(e.target.value); if (v > 0) { st.pat.w = Math.min(1000, Math.max(5, v)); draw(); } });
   const draw = async () => {
     if (!st.kind) {
@@ -3159,6 +3200,7 @@ DZ.edit = async (id) => {
     if (!p.hidden && btn?.classList.contains('open')) return closePop();
     closePop();
     p.innerHTML = a === 'fields' ? FF_TYPES.map(([v, n]) => mi(`data-ffadd="${v}"`, 'frametext', n)).join('') : a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="frame"', 'frametext', 'Frame text') + mi('data-add="heading"', 'heading', 'Heading')
+        + (doc.kind === 'loycard' ? `<div class="gh">Reward</div>` + DZ_LOY_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('') : '')
         + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
       : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-rail="assets"', 'asset', 'From assets') + mi('data-add="logo"', 'logo', 'Studio logo')
       : `<div class="sg">${DZ_SHAPES.map(([v, n]) => `<button class="dz-ib tt-icb" data-shape="${v}" data-tip="${n}" aria-label="${n}"><svg viewBox="0 0 24 24">${DZ_UI['s_' + v]}</svg><span>${n.replace('Rounded square', 'Rounded').replace('Speech bubble', 'Bubble')}</span></button>`).join('')}</div>` + mi('data-qradd', 'qr', 'QR code') + mi('data-tbladd', 'table', 'Table') + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
@@ -3374,6 +3416,7 @@ DZ.edit = async (id) => {
           <div class="lbl" data-tip="Across and Down at 0 make a glow">Shadow or glow</div>${swatches('shc', l.shc, true)}${l.shc && l.shc !== 'none' ? slider('shx', 'Across', -60, 60, 1, l.shx ?? 6) + slider('shy', 'Down', -60, 60, 1, l.shy ?? 6) + slider('shb', 'Blur', 0, 60, 1, l.shb ?? 8) : ''}
           <div class="lbl">Background box</div>${swatches('tbg', l.tbg, true)}${l.tbg && l.tbg !== 'none' ? slider('tbp', 'Padding', 0, Math.round(l.size * 2), 1, l.tbp ?? Math.round((l._px || l.size) * 0.3)) + slider('tbr', 'Corner rounding', 0, Math.round(l.size * 2), 1, l.tbr ?? 0) : ''}`,
           { fold: true, hint: [l.tsc && l.tsc !== 'none' && l.tsw ? 'outline' : '', l.shc && l.shc !== 'none' ? 'shadow' : '', l.tbg && l.tbg !== 'none' ? 'box' : ''].filter(Boolean).join(' · ') || 'Plain' })}
+        ${doc.kind === 'loycard' ? fsec('Reward', `<div class="dz-fields">${DZ_LOY_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true, open: true, hint: 'code, terms…' }) : ''}
         ${fsec('Studio info', `<div class="dz-fields">${DZ_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true, hint: 'name, phone…' })}`
       : l.t === 'shape' ? fsec(l.shape === 'line' ? 'Line colour' : 'Fill', fillUI(l, 'fill', true), { fold: true, open: true, hint: { solid: dzCwName(l.fill), grad: 'gradient', tex: 'texture' }[l.fm || 'solid'] })
         + (['rect', undefined, 'poly', 'star', 'ring', 'cross', 'arrow'].includes(l.shape) ? fsec('Shape', `
@@ -4889,8 +4932,8 @@ DZ.edit = async (id) => {
     const SKC = ['#111111', '#ffffff', '#7a7a7a', '#e23b3b', '#f28c28', '#f5c518', '#2bb673', '#1fb5a8', '#2f6fe4', '#8e44ad', '#ff6fb5', '#8b5a2b'];
     const ST0 = (() => { try { return JSON.parse(Settings.get('sk_brush', 'null')) || {}; } catch { return {}; } })();
     const SKB = { tool: null, b: ST0.b || 'pen', c: ST0.c || '#111111', sizes: ST0.sizes || Object.fromEntries(DZ_BRUSHES.map(([k, , s]) => [k, s])), er: ST0.er || 40,
-      sh: ST0.sh || 'rect', fill: !!ST0.fill, shs: ST0.shs || 8, ts: ST0.ts || 72, pal: ST0.pal ?? -1, lazy: ST0.lazy ?? 0, smooth: ST0.smooth ?? 25, pop: null };
-    const keepB = () => Settings.set('sk_brush', JSON.stringify({ b: SKB.b, c: SKB.c, sizes: SKB.sizes, er: SKB.er, sh: SKB.sh, fill: SKB.fill, shs: SKB.shs, ts: SKB.ts, pal: SKB.pal, lazy: SKB.lazy, smooth: SKB.smooth }));
+      sh: ST0.sh || 'rect', fill: !!ST0.fill, shs: ST0.shs || 8, ts: ST0.ts || 72, pal: ST0.pal ?? -1, lazy: ST0.lazy ?? 0, smooth: ST0.smooth ?? 25, ops: ST0.ops || {}, pop: null };
+    const keepB = () => Settings.set('sk_brush', JSON.stringify({ b: SKB.b, c: SKB.c, sizes: SKB.sizes, er: SKB.er, sh: SKB.sh, fill: SKB.fill, shs: SKB.shs, ts: SKB.ts, pal: SKB.pal, lazy: SKB.lazy, smooth: SKB.smooth, ops: SKB.ops }));
     /* Swatch panels: your own named sets of colours, kept across sketches */
     const pals = () => { try { return JSON.parse(Settings.get('sk_pals', '[]')) || []; } catch { return []; } };
     const keepPals = (P) => Settings.set('sk_pals', JSON.stringify(P));
@@ -4899,6 +4942,7 @@ DZ.edit = async (id) => {
     const live = document.createElement('canvas'); live.className = 'sk-live'; page.appendChild(live);
     const ic = (k) => `<svg viewBox="0 0 24 24">${DZ_BRUSH_IC[k]}</svg>`;
     const sizeOf = () => SKB.tool === 'erase' ? SKB.er : SKB.tool === 'shape' ? SKB.shs : SKB.tool === 'text' ? SKB.ts : SKB.sizes[SKB.b] || 8;
+    const opOf = () => SKB.ops[SKB.b] ?? 100;   /* each brush keeps its own opacity (%) */
     const sizeMax = () => SKB.tool === 'erase' ? 200 : SKB.tool === 'text' ? 400 : 140;
     const drawBar = () => { const P = pals(), cols = palCols(), own = SKB.pal >= 0;
       bar.innerHTML = `<button data-skt="sel" class="${!SKB.tool ? 'on' : ''}" data-tip="Select and move (brushes off)" aria-label="Select">${ic('sel')}</button>
@@ -4911,6 +4955,7 @@ DZ.edit = async (id) => {
       <button data-skt="mm" class="${SKB.tool === 'mm' ? 'on' : ''}" data-tip="Mind map: tap to place an idea, then drag its + to add linked ones" aria-label="Mind map node">${ic('mm')}</button>
       <button data-skt="ifn" class="${SKB.tool === 'ifn' ? 'on' : ''}" data-tip="If: a question with a Yes and a No branch" aria-label="If node">${ic('ifn')}</button><i class="sep"></i>
       <label class="sk-size" data-tip="${SKB.tool === 'text' ? 'Text size' : SKB.tool === 'shape' ? 'Line width' : 'Size'}"><input type="range" min="1" max="${sizeMax()}" step="1" value="${sizeOf()}" data-sks><b>${sizeOf()}</b></label>
+      ${SKB.tool === 'brush' ? `<label class="sk-size sk-op" data-tip="Opacity"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><input type="range" min="5" max="100" step="1" value="${opOf()}" data-sko><b>${opOf()}%</b></label>` : ''}
       ${SKB.tool === 'brush' ? `<button data-skpop="steady" class="${SKB.pop === 'steady' ? 'on' : ''} ${SKB.lazy || SKB.smooth ? 'set' : ''}" data-tip="Steady lines: lazy and smoothness" aria-label="Steady lines">${ic('steady')}</button>` : ''}
       <button data-skpop="col" class="sk-colbtn ${SKB.pop === 'col' ? 'on' : ''}" data-tip="Colour and swatch panels" aria-label="Colour"><i style="background:${SKB.c}"></i></button>`;
       drawPop(); stage.classList.toggle('sk-drawing', !!SKB.tool); };
@@ -4941,9 +4986,10 @@ DZ.edit = async (id) => {
     pop.addEventListener('contextmenu', (e) => { const c = e.target.closest('[data-skc]'); if (!c || SKB.pal < 0) return; e.preventDefault();
       const P = pals(), p = P[SKB.pal]; if (!p) return; p.c = p.c.filter(x => x !== c.dataset.skc); keepPals(P); drawBar(); toast('Colour taken off the panel.', 1400); });
     onBoth('input', (e) => { const sl = e.target.dataset.skl; if (sl) { SKB[sl] = +e.target.value; e.target.nextElementSibling.textContent = e.target.value; bar.querySelector('[data-skpop="steady"]')?.classList.toggle('set', !!(SKB.lazy || SKB.smooth)); return; }
+      if (e.target.dataset.sko != null) { SKB.ops[SKB.b] = +e.target.value; e.target.nextElementSibling.textContent = e.target.value + '%'; return; }
       if (e.target.dataset.sks != null) { const v = +e.target.value;
       if (SKB.tool === 'erase') SKB.er = v; else if (SKB.tool === 'shape') SKB.shs = v; else if (SKB.tool === 'text') SKB.ts = v; else SKB.sizes[SKB.b] = v; e.target.nextElementSibling.textContent = v; } });
-    onBoth('change', async (e) => { if (e.target.dataset.sks != null || e.target.dataset.skl) keepB();
+    onBoth('change', async (e) => { if (e.target.dataset.sks != null || e.target.dataset.skl || e.target.dataset.sko != null) keepB();
       if (e.target.dataset.skcc != null) { SKB.c = e.target.value; if (!SKB.tool || SKB.tool === 'lasso' || SKB.tool === 'erase') SKB.tool = 'brush'; keepB(); drawBar(); }
       if (e.target.dataset.skp != null) { const v = e.target.value, P = pals();
         if (v === 'new' || v === 'doc') {
@@ -4968,7 +5014,7 @@ DZ.edit = async (id) => {
         lx.restore(); return; }
       if (S.mode === 'text' || S.mode === 'mm' || S.mode === 'ifn') return;
       if (S.erase) { lx.save(); lx.strokeStyle = 'rgba(120,120,120,.35)'; lx.lineCap = 'round'; lx.lineJoin = 'round'; lx.lineWidth = SKB.er; lx.beginPath(); S.pts.forEach((q, i) => lx[i ? 'lineTo' : 'moveTo'](q[0], q[1])); lx.stroke(); lx.restore(); return; }
-      lx.save(); dzInkPaint(lx, { b: SKB.b, c: SKB.c, s: sizeOf() }, S.snap ? S.snap.pts : S.pts); lx.restore();
+      lx.save(); lx.globalAlpha = opOf() / 100; dzInkPaint(lx, { b: SKB.b, c: SKB.c, s: sizeOf() }, S.snap ? S.snap.pts : S.pts); lx.restore();
       if (SKB.lazy && S.raw && S.lz && !S.snap) { lx.save(); lx.strokeStyle = 'rgba(31,181,168,.8)'; lx.lineWidth = 1.5 / k; lx.setLineDash([4 / k, 4 / k]); lx.beginPath(); lx.moveTo(S.lz.x, S.lz.y); lx.lineTo(S.raw.x, S.raw.y); lx.stroke();
         lx.setLineDash([]); lx.beginPath(); lx.arc(S.raw.x, S.raw.y, SKB.lazy * 0.6 / k, 0, Math.PI * 2); lx.globalAlpha = 0.35; lx.stroke(); lx.restore(); } };
     const pressOf = (e, q) => { const v = q ? Math.hypot(e.clientX - q.sx, e.clientY - q.sy) / Math.max(1, e.timeStamp - q.st) : 0;   /* screen px per ms */
@@ -5023,7 +5069,7 @@ DZ.edit = async (id) => {
       if (!s0.snap && SKB.smooth && !SKB.lazy && s0.raw && P.length > 1) { const z0 = P.at(-1); if (Math.hypot(s0.raw.x - z0[0], s0.raw.y - z0[1]) * k > 1.2) P = [...P, [s0.raw.x, s0.raw.y, z0[2]]]; }   /* the line reaches the pen */
       for (let pass = 0, np = 1 + Math.round(SKB.smooth / 25); !s0.snap && P.length > 4 && pass < np; pass++)
         P = P.map((q, i) => i === 0 || i === P.length - 1 ? q : [(P[i - 1][0] + q[0] + P[i + 1][0]) / 3, (P[i - 1][1] + q[1] + P[i + 1][1]) / 3, q[2]]);   /* more passes with more smoothness */
-      doc.layers.push(dzInkMake({ b: SKB.b, c: SKB.c, s: sizeOf() }, P)); changed(true); };
+      doc.layers.push(dzInkMake({ b: SKB.b, c: SKB.c, s: sizeOf(), op: opOf() < 100 ? opOf() / 100 : undefined }, P)); changed(true); };
     stage.addEventListener('pointerup', finish, true); stage.addEventListener('pointercancel', (e) => { if (S && e.pointerId === S.id) { clearTimeout(S.ht); S = null; drawLive(); } }, true);
     /* The lasso picks what it goes round: a stroke when most of it is inside, anything else when its middle is. Then it's the Select tool, to move, size, turn, copy or delete them. */
     const skLasso = (L) => { if (L.length < 3) return;
@@ -6051,7 +6097,7 @@ DZ.edit = async (id) => {
   side.addEventListener('change', sideChange);
 
   /* Top bar */
-  $('#dz-back').onclick = async () => { await flush(); location.hash = doc.kind === 'sketch' ? 'sketches' : doc.kind === 'form' ? 'forms' : 'designs'; };
+  $('#dz-back').onclick = async () => { await flush(); location.hash = doc.kind === 'sketch' ? 'sketches' : doc.kind === 'loycard' ? 'loyalty' : doc.kind === 'form' ? 'forms' : 'designs'; };
   $('#dz-tpl').onclick = async () => {
     const n = await askText('Name for this template:', name); if (!n?.trim()) return;
     const tdoc = JSON.parse(JSON.stringify(doc));

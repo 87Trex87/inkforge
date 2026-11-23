@@ -2941,5 +2941,8 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .loy-prev img { width: min(100%, 300px); aspect-ratio: 1080 / 1350; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.4); background: #222; }
 .loy-msg input[type=color] { width: 56px; height: 36px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: none; }
 .loy-old { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: rgba(224,160,48,.18); color: #e0a030; white-space: nowrap; }
+.loy-terms { margin: 6px 0 4px; padding-left: 18px; font-size: 13px; line-height: 1.5; } .loy-own { gap: 6px; flex-wrap: nowrap; margin-top: 6px; } .loy-own .in { flex: 1; }
+.loy-msg-grid { display: grid; gap: 12px; } @media (min-width: 900px) { .loy-msg-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+.sk-op svg { width: 16px; height: 16px; flex: none; } .sk-op input { width: 70px; } .sk-op b { min-width: 32px; }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 527; }
+:root { --app-build: 528; }

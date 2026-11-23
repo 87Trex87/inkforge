@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 527;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 528;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -908,6 +908,7 @@ const ICON = {
   forms: '<svg viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M8 13h8M8 17h5"/></svg>',
   reels: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>',
   quote: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M8 15h2M12 15h2M16 11v6"/></svg>',
+  loyalty: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M12 13.2l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg>',
   stock: '<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg>',
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
   stats: '<svg viewBox="0 0 24 24"><path d="M4 20h16M7 16v-5M12 16V6M17 16v-8"/></svg>',
@@ -2177,12 +2178,13 @@ const VIEWS = {
       const cur = esc(Settings.get('currency') || '');
       const draw = () => {
         if (LOYV.tab === 'rewards') return drawR();
-        const pct = c.kind === 'pct', st = pct && c.stack, n = Math.max(2, Math.min(10, +c.maxStack || 2));   /* the program */
+        const pct = c.kind === 'pct', st = pct && c.stack, n = Math.max(2, Math.min(10, +c.maxStack || 2));   /* the program, in tab pages */
+        const PT = [['earn', 'Earning'], ['reward', 'Reward'], ['terms', 'Terms'], ['message', 'Message']], T = c.terms || {}, off = new Set(T.off || []);
         el.innerHTML = `${Loy.on() ? '' : `<div class="card" style="border-color:var(--amber,#e0a030)"><b>The loyalty program is off.</b> <span class="muted">Clients don\u2019t earn rewards until it\u2019s on.</span> <button class="btn small primary" id="loy-on" style="margin-left:8px">Switch it on</button></div>`}
-          <div class="card loy-sum"><div class="lbl">Your program</div><p style="margin:4px 0 0">${esc(Loy.sum(c))}</p>
-            <p class="muted loy-note">Changes apply to rewards earned from now on. Rewards already out keep the rules they were earned under until they’re used or run out.</p>
-            <button class="btn small" id="loy-msg" style="margin-top:10px" data-tip="The card and message clients get with a reward: wording, colours and what shows">Reward message…</button></div>
-          <div class="card loy-form">
+          <div class="st-strip qc-strip"><div class="tt-ftabs qc-tabs">${PT.map(([k, l]) => `<button data-lpt="${k}" class="${LOYV.ptab === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+          ${LOYV.ptab !== 'message' ? `<div class="card loy-sum"><div class="lbl">Your program</div><p style="margin:4px 0 0">${esc(Loy.sum(c))}</p>
+            <p class="muted loy-note">Changes apply to rewards earned from now on. Rewards already out keep the rules and terms they were earned under until they\u2019re used or run out.</p></div>` : ''}
+          ${LOYV.ptab === 'earn' ? `          <div class="card loy-form">
             <div class="lbl">How clients earn rewards</div>
             ${seg('type', [['ref', 'Sending clients your way'], ['spend', 'What they spend']])}
             ${c.type === 'ref' ? `
@@ -2193,8 +2195,8 @@ const VIEWS = {
               <div class="lbl">When a reward is earned</div>
               ${seg('carry', [['carry', 'Left-over spend counts on'], ['reset', 'Start again from zero']])}`}
             <div class="lbl">Smallest tattoo that counts ${help('0 = any tattoo. Below this, a tattoo earns nothing (and, for spend, its price isn\u2019t added).')}</div>${num('min', cur, 'step="100"')}
-          </div>
-          <div class="card loy-form">
+          </div>` : ''}
+          ${LOYV.ptab === 'reward' ? `          <div class="card loy-form">
             <div class="lbl">The reward</div>
             ${seg('kind', [['pct', 'Percentage off'], ['amount', 'Amount off'], ['item', 'A product']])}
             <div class="row" style="gap:16px;flex-wrap:wrap;margin-top:8px"><div>${c.kind === 'item' ? `<div class="lbl">Product ${help('From your inventory: a cap, a T-shirt, aftercare. Handing it over takes one off the stock count.')}</div>${itemSel('item', c.item)}` : `<div class="lbl">${pct ? 'Percentage' : 'Amount'}</div>${num('value', pct ? '%' : cur, pct ? 'max="100" step="0.5"' : 'step="50"')}`}</div>
@@ -2207,13 +2209,25 @@ const VIEWS = {
             ${st ? `<div class="lbl">Most used together</div>${num('maxStack', 'rewards', 'min="2" max="10" step="1"')}
               <div class="loy-stack">${Array.from({ length: n }, (_, i) => `<div><span>${i + 1} reward${i ? 's' : ''}</span><b>${Loy.stackPct(+c.value, i + 1, n)}% off</b></div>`).join('')}</div>
               <p class="muted loy-note">The first gives the full ${+c.value}%, the second adds half (${+c.value / 2}%), and each one after adds a quarter (${+c.value / 4}%).</p>` : ''}
-          </div>`;
+          </div>` : ''}
+          ${LOYV.ptab === 'terms' ? `<div class="card loy-form"><div class="lbl">From your program ${help('These follow from your choices in Earning and Reward, and change with them.')}</div>
+              <ul class="loy-terms">${Loy.terms({ ...c, terms: { off: LOY_STD_TERMS.map(x => x[0]) } }).map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+              <div class="lbl">The usual ones ${help('Untick any you don\u2019t want.')}</div>
+              <div class="loy-togs">${LOY_STD_TERMS.map(([k, t]) => `<label class="toggle"><input type="checkbox" data-lstd="${k}" ${off.has(k) ? '' : 'checked'}><span>${esc(loyArt(t))}</span></label>`).join('')}</div>
+              <div class="lbl">Your own</div>
+              ${(T.own || []).map((t, i) => `<div class="row loy-own"><input class="in" data-lown="${i}" value="${esc(t)}" placeholder="e.g. Not valid with other offers."><button class="mini del" data-lowndel="${i}" aria-label="Remove" data-tip="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>`).join('')}
+              <button class="btn small" id="loy-ownadd" style="margin-top:8px">+ Add your own</button>
+              <p class="muted loy-note">They go on the reward card (the {terms} field) and can be added to the message.</p></div>` : ''}
+          ${LOYV.ptab === 'message' ? '<div id="loy-msgtab"></div>' : ''}`;
+        if (LOYV.ptab === 'message') loyMsgTab($('#loy-msgtab'), c);
       };
       const keep = () => { Loy.save(c); const p = el.querySelector('.loy-sum p'); if (p) p.textContent = Loy.sum(c); };
       el.addEventListener('click', async (e) => { const t = e.target, g = (k) => t.closest(`[data-${k}]`)?.dataset[k.replace(/-./g, m => m[1].toUpperCase())];
         if (g('lf')) { LOYV.f = g('lf'); return drawR(); }
         if (g('lmsg')) return loyMessage(+g('lmsg'));
-        if (t.closest('#loy-msg')) return loyMessage(null);
+        if (g('lpt')) { LOYV.ptab = g('lpt'); return draw(); }
+        if (t.closest('#loy-ownadd')) { c.terms = { ...(c.terms || {}), own: [...(c.terms?.own || []), ''] }; keep(); draw(); el.querySelector(`[data-lown="${c.terms.own.length - 1}"]`)?.focus(); return; }
+        if (g('lowndel') != null) { c.terms.own = c.terms.own.filter((_, i) => i !== +g('lowndel')); keep(); return draw(); }
         if (g('ls')) { const k = g('ls'); LOYV.d = LOYV.k === k ? -LOYV.d : 1; LOYV.k = k; return drawR(); }
         if (t.closest('#loy-csv')) { const R0 = LOYV.shown || []; if (!R0.length) return toast('Nothing to export.');
           return saveCsv(`InkForge-loyalty-rewards-${ymd(new Date())}.csv`, COLS.map(x => x[1]), R0.map(r => COLS.map(([k]) => k === 'reward' ? (r.kind === 'pct' ? `${+r.value}%` : +r.value) : cellR(r, k)))); }
@@ -2228,10 +2242,13 @@ const VIEWS = {
         const b = t.closest('[data-lk]');
         if (b) { c[b.dataset.lk] = b.dataset.lv; keep(); return draw(); }
         if (e.target.closest('#loy-on')) { await Settings.set('loy_on', '1'); toast('Loyalty program on.', 1600); draw(); } });
-      el.addEventListener('input', (e) => { const k = e.target.dataset.ln; if (!k) return; let v = +e.target.value || 0;
+      el.addEventListener('input', (e) => { if (e.target.dataset.lown != null) { c.terms.own[+e.target.dataset.lown] = e.target.value; return keep(); }
+        const k = e.target.dataset.ln; if (!k) return; let v = +e.target.value || 0;
         if (k === 'value' && c.kind === 'pct') v = Math.min(100, v); if (k === 'maxStack') v = Math.max(2, Math.min(10, Math.round(v)));
         c[k] = v; keep(); });
-      el.addEventListener('change', (e) => { if (e.target.dataset.ln) draw(); const k = e.target.dataset.lt; if (k) { c[k] = e.target.checked; keep(); draw(); }
+      el.addEventListener('change', (e) => { if (e.target.dataset.lstd) { const T0 = c.terms || {}, o = new Set(T0.off || []); e.target.checked ? o.delete(e.target.dataset.lstd) : o.add(e.target.dataset.lstd); c.terms = { ...T0, off: [...o] }; keep(); return draw(); }
+        if (e.target.dataset.lown != null) return draw();
+        if (e.target.dataset.ln) draw(); const k = e.target.dataset.lt; if (k) { c[k] = e.target.checked; keep(); draw(); }
         const sp = e.target.dataset.lsel, nmOf = (v) => inv.find(i => i.id === +v)?.name || '';
         if (sp) { const v = e.target.value ? +e.target.value : null; c[sp] = v; c[sp === 'altItem' ? 'altName' : 'itemName'] = nmOf(v); keep(); draw(); } });
       draw();
@@ -3515,7 +3532,16 @@ const fmtTime = (s) => new Date(s).toLocaleTimeString(undefined, { hour: 'numeri
    One program for every client, switched on in Settings (or at setup); its section shows in More once on.
    Settings 'loy_on' ('1' or '') and 'loy_cfg' (JSON, see LOY_DEF). Rewards themselves come in a later phase. */
 const ordN = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
-const LOYV = { tab: 'rewards', f: 'open', q: '', k: 'issued_at', d: -1, shown: [] };   /* the Loyalty section's view */
+/* Terms and conditions: lines that follow from the program's choices, a few usual ones (each can be left out),
+   and the artist's own. A reward keeps the terms it was earned under. */
+/* the artist the reward belongs to: rewards are personal to them, not a studio promotion */
+const loyArtist = () => Settings.get('artist_name') || Settings.get('studio_name') || 'your artist';
+const loyArt = (t) => String(t).replace(/\{artist\}/g, loyArtist());
+const LOY_STD_TERMS = [['artist', 'This reward is offered personally by {artist}, not by the studio, and can only be redeemed for work done by {artist}. It can\u2019t be used with any other artist.'],
+  ['leave', 'If {artist} no longer works at the studio, the reward may be cancelled at the studio owner\u2019s discretion.'],['cash', 'Rewards have no cash value and can\u2019t be swapped for money.'], ['touch', 'Not valid on touch-ups or deposits.'],
+  ['show', 'Show your code or this card when you book or pay.'], ['lost', 'Lost codes can\u2019t be replaced.'],
+  ['change', 'The studio may change the program; rewards already earned keep the terms they were earned under.']];
+const LOYV = { ptab: 'earn', tab: 'rewards', f: 'open', q: '', k: 'issued_at', d: -1, shown: [] };   /* the Loyalty section's view */
 const LOY_DEF = { type: 'ref', every: 5000, min: 0, carry: 'carry', kind: 'pct', value: 10, months: 3, scope: 'first', pass: false, stack: false, maxStack: 4 };
 const Loy = {
   on: () => Settings.get('loy_on') === '1' && !wsDesign(),
@@ -3525,8 +3551,8 @@ const Loy = {
      one after that a quarter, up to the most allowed. 10% gives 10, 15, 17.5, 20. */
   /* the rules a reward carries with it, and that version's fingerprint (changes whenever the program's rules do) */
   ver(c) { const k = JSON.stringify(['type', 'every', 'min', 'carry', 'kind', 'value', 'months', 'scope', 'pass', 'stack', 'maxStack', 'item', 'alt', 'altItem'].map(f => c[f] ?? null));
-    let h = 5381; for (let i = 0; i < k.length; i++) h = (h * 33 ^ k.charCodeAt(i)) >>> 0; return h.toString(36); },
-  snapOf: (c) => ({ v: Loy.ver(c), stack: !!c.stack && c.kind === 'pct', maxStack: +c.maxStack || 1, pass: !!c.pass, summary: Loy.sum(c) }),
+    const k2 = k + (c.terms ? JSON.stringify(c.terms) : ''); let h = 5381; for (let i = 0; i < k2.length; i++) h = (h * 33 ^ k2.charCodeAt(i)) >>> 0; return h.toString(36); },
+  snapOf: (c) => ({ v: Loy.ver(c), stack: !!c.stack && c.kind === 'pct', maxStack: +c.maxStack || 1, pass: !!c.pass, summary: Loy.sum(c), terms: Loy.terms(c) }),
   snap(r) { let p = null; try { p = JSON.parse(r.prog || 'null'); } catch {} return p || Loy.snapOf(Loy.cfg()); },
   /* earned under an older version of the program (or the program is now off) */
   old: (r) => !!r.prog && (!Loy.on() || Loy.snap(r).v !== Loy.ver(Loy.cfg())),
@@ -3592,6 +3618,17 @@ const Loy = {
     const done = (v) => { o.remove(); res(v); };
     o.onclick = (e) => { if (e.target.closest('[data-ask]') || e.target === o) done(null); };
     document.body.appendChild(o); clientPicker($('#loy-pc', o), $('#loy-pcl', o), (cid) => done(cid)); setTimeout(() => $('#loy-pc', o)?.focus(), 30); }); },
+  terms(c) { const T = c.terms || {}, off = new Set(T.off || []), out = [];
+    out.push(c.type === 'ref' ? `Earned when someone you sent has had ${c.scope === 'every' ? 'a tattoo: one reward for each of their tattoos' : 'their first tattoo'}.` : `Earned for every ${money(+c.every)} spent on tattoos.`);
+    if (+c.min) out.push(`Only tattoos of ${money(+c.min)} or more count.`);
+    out.push(+c.months ? `Valid for ${+c.months} month${+c.months === 1 ? '' : 's'} from the day it\u2019s earned.` : 'Rewards don\u2019t run out.');
+    if (c.kind === 'item') out.push('Product rewards are while stock lasts.');
+    else out.push(c.kind === 'pct' && c.stack ? `Up to ${+c.maxStack} rewards can be used together on one tattoo: the first gives the full ${+c.value}%, the next adds half, and each after that a quarter (up to ${Loy.stackPct(+c.value, +c.maxStack, +c.maxStack)}% off).` : 'One reward per tattoo.');
+    if (c.kind !== 'item' && c.alt && c.altItem) out.push(`Can be swapped for a free ${c.altName || 'product'} instead, while stock lasts.`);
+    out.push(c.pass ? 'Can be passed on to someone else.' : 'Only the person who earned it can use it.');
+    for (const [k, t] of LOY_STD_TERMS) if (!off.has(k)) out.push(loyArt(t));
+    for (const t of T.own || []) if (String(t).trim()) out.push(String(t).trim());
+    return out; },
   stackPct(p, n, max) { n = Math.max(0, Math.min(n, max || n)); return n < 1 ? 0 : p + (n >= 2 ? p / 2 : 0) + Math.max(0, n - 2) * p / 4; },
   /* the reward in words: "10% off" or "R500 off" */
   label: (c) => c.kind === 'item' ? `a free ${c.itemName || 'product'}` : c.kind === 'pct' ? `${+c.value}% off` : `${money(+c.value)} off`,
@@ -5773,15 +5810,15 @@ function receiptText(b, p) {
    isn't named unless the artist turns that on. The wording, colours and what shows are kept in Settings 'loy_msg'.
    {name} {reward} {code} {expires} {studio} {from} fill in. */
 const LOY_MSG = { title: 'You\u2019ve earned a reward', body: 'Hi {name}, thank you for sending someone our way! Here\u2019s {reward} with {studio}.',
-  accent: '#1fb5a8', bg: '#121618', logo: true, code: true, exp: true, anon: true, claim: true, from: false };
+  accent: '#1fb5a8', bg: '#121618', logo: true, code: true, exp: true, anon: true, claim: true, from: false, terms: true, tcard: true, card: 'builtin' };
 const loyMsgCfg = () => { let c = {}; try { c = JSON.parse(Settings.get('loy_msg') || '{}') || {}; } catch {} return { ...LOY_MSG, ...c }; };
 function loyFill(t, r, m) { const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'us';
   return String(t || '').replace(/\{name\}/g, r.first || 'there').replace(/\{reward\}/g, r.kind === 'item' ? `a free ${r.item_name || 'product'}` : Loy.rLabel(r).replace(/ off( or |$)/, ' off your next tattoo$1')).replace(/\{code\}/g, r.code || '')
     .replace(/\{expires\}/g, r.expires_at ? fmtDay(r.expires_at) : 'no expiry').replace(/\{studio\}/g, studio).replace(/\{from\}/g, !m.anon && r.fromName ? r.fromName : 'someone'); }
 function loyText(r, m) { const studio = Settings.get('studio_name') || Settings.get('artist_name') || '';
   return [loyFill(m.title, r, m) + '!', '', loyFill(m.body, r, m), !m.anon && m.from && r.fromName ? `Thanks for sending ${r.fromName}.` : '',
-    '', `Reward: ${r.kind === 'item' ? Loy.rLabel(r) : Loy.rLabel(r).replace(/ off( or |$)/, ' off your next tattoo$1')}`, m.code && r.code ? `Code: ${r.code}` : '', m.exp ? (r.expires_at ? `Valid until ${fmtDay(r.expires_at)}` : 'No expiry') : '',
-    m.claim ? '\nReply with your full name to claim it, so we know it\u2019s yours.' : '', studio ? `\n${studio}` : ''].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n').trim(); }
+    '', `Reward: ${r.kind === 'item' ? Loy.rLabel(r) : Loy.rLabel(r).replace(/ off( or |$)/, ' off your next tattoo$1')}`, m.code && r.code ? `Code: ${r.code}` : '', `Redeem with ${loyArtist()} only.`, m.exp ? (r.expires_at ? `Valid until ${fmtDay(r.expires_at)}` : 'No expiry') : '',
+    m.claim ? '\nReply with your full name to claim it, so we know it\u2019s yours.' : '', m.terms ? '\nTerms:\n' + (Loy.snap(r).terms || Loy.terms(Loy.cfg())).map(t => '\u2022 ' + t).join('\n') : '', studio ? `\n${studio}` : ''].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n').trim(); }
 /* the card, 1080 x 1350 */
 async function loyCard(r, m) {
   await Promise.all([document.fonts.load("64px 'Pirata One'"), document.fonts.load('600 28px Inter'), document.fonts.load('400 28px Inter')]).catch(() => {});
@@ -5794,66 +5831,125 @@ async function loyCard(r, m) {
   x.fillStyle = m.bg; x.fillRect(0, 0, W, H);
   const g = x.createRadialGradient(W * 0.85, 0, 0, W * 0.85, 0, W); g.addColorStop(0, m.accent + '55'); g.addColorStop(1, m.accent + '00'); x.fillStyle = g; x.fillRect(0, 0, W, H);
   x.strokeStyle = m.accent; x.lineWidth = 6; x.strokeRect(40, 40, W - 80, H - 80);
-  let y = 150;
+  /* compact, so the terms fit underneath; they shrink (down to 14px) to fill what's left */
+  let y = 140;
   if (m.logo) { const u = await Media.url(Settings.get('studio_logo_ref')); if (u) { const im = new Image(); im.src = u; await im.decode().catch(() => {});
-    if (im.naturalWidth) { const s1 = Math.min(360 / im.naturalWidth, 150 / im.naturalHeight); x.drawImage(im, (W - im.naturalWidth * s1) / 2, 90, im.naturalWidth * s1, im.naturalHeight * s1); y = 90 + im.naturalHeight * s1 + 70; } } }
-  for (const l of wrap(loyFill(m.title, r, m), D(84), W - 200)) { T(l, W / 2, y, D(84), fg); y += 92; }
-  y += 40; x.fillStyle = m.accent; x.beginPath(); x.roundRect ? x.roundRect(140, y, W - 280, 250, 28) : x.rect(140, y, W - 280, 250); x.fill();
+    if (im.naturalWidth) { const s1 = Math.min(280 / im.naturalWidth, 100 / im.naturalHeight); x.drawImage(im, (W - im.naturalWidth * s1) / 2, 75, im.naturalWidth * s1, im.naturalHeight * s1); y = 75 + im.naturalHeight * s1 + 70; } } }
+  for (const l of wrap(loyFill(m.title, r, m), D(66), W - 200).slice(0, 2)) { T(l, W / 2, y, D(66), fg); y += 72; }
+  y += 10; x.fillStyle = m.accent; x.beginPath(); x.roundRect ? x.roundRect(160, y, W - 320, 200, 26) : x.rect(160, y, W - 320, 200); x.fill();
   const big = r.kind === 'item' ? 'FREE' : r.kind === 'pct' ? `${+r.value}% OFF` : `${money(+r.value)} OFF`, ink = light(m.accent) ? '#111' : '#fff';
   const sub = r.kind === 'item' ? (r.item_name || 'from the studio') : 'your next tattoo';
-  T(big, W / 2, y + 150, F(big.length > 9 ? 96 : 120, 800), ink); T(sub.length > 34 ? sub.slice(0, 33) + '…' : sub, W / 2, y + 210, F(34, 600), ink); y += 320;
-  if (r.alt_name) { T(`or swap it for a free ${r.alt_name}`, W / 2, y - 40, F(30, 600), fg); y += 20; }
-  for (const l of wrap(loyFill(m.body, r, m), F(34), W - 240).slice(0, 6)) { T(l, W / 2, y, F(34), fg); y += 48; }
-  if (!m.anon && m.from && r.fromName) { y += 6; T(`Thanks for sending ${r.fromName}.`, W / 2, y, F(30, 600), soft); y += 44; }
-  y += 30;
-  if (m.code && r.code) { x.setLineDash([12, 10]); x.strokeStyle = soft; x.lineWidth = 3; x.strokeRect(W / 2 - 220, y, 440, 100); x.setLineDash([]);
-    T('CODE', W / 2, y + 34, F(22, 600), soft); T(r.code, W / 2, y + 82, `700 44px ui-monospace, monospace`, fg); y += 140; }
-  if (m.exp) { T(r.expires_at ? `Valid until ${fmtDay(r.expires_at)}` : 'No expiry', W / 2, y, F(30, 600), fg); y += 50; }
-  if (m.claim) { y = Math.max(y + 20, H - 260); T('Claimed by', 160, y, F(26, 600), soft, 'left'); x.strokeStyle = soft; x.lineWidth = 2; x.beginPath(); x.moveTo(330, y + 4); x.lineTo(W - 160, y + 4); x.stroke(); y += 40;
-    T('Reply with your full name to claim it, so we know it\u2019s yours.', W / 2, y, F(24), soft); }
+  T(big, W / 2, y + 118, F(big.length > 9 ? 80 : 98, 800), ink); T(sub.length > 34 ? sub.slice(0, 33) + '\u2026' : sub, W / 2, y + 168, F(28, 600), ink); y += 245;
+  if (r.alt_name) { T(`or swap it for a free ${r.alt_name}`, W / 2, y, F(26, 600), fg); y += 42; }
+  for (const l of wrap(loyFill(m.body, r, m), F(30), W - 240).slice(0, 3)) { T(l, W / 2, y, F(30), fg); y += 40; }
+  if (!m.anon && m.from && r.fromName) { T(`Thanks for sending ${r.fromName}.`, W / 2, y, F(26, 600), soft); y += 38; }
+  y += 16;
+  if (m.code && r.code) { x.setLineDash([10, 8]); x.strokeStyle = soft; x.lineWidth = 3; x.strokeRect(W / 2 - 200, y, 400, 84); x.setLineDash([]);
+    T('CODE', W / 2, y + 28, F(20, 600), soft); T(r.code, W / 2, y + 68, `700 38px ui-monospace, monospace`, fg); y += 108; }
+  if (m.exp) { T(r.expires_at ? `Valid until ${fmtDay(r.expires_at)}` : 'No expiry', W / 2, y, F(26, 600), fg); y += 34; }
+  T(`Redeem with ${loyArtist()} only`, W / 2, y, F(24, 600), m.accent); y += 30;   /* the reward is the artist's, not the studio's */
+  const foot = H - 130, claimY = m.claim ? foot - 76 : foot;
+  if (m.tcard !== false) { const tm = (Loy.snap(r).terms || Loy.terms(Loy.cfg())), top = y + 18, bot = claimY - 24, avail = bot - top - 34, tw = W - 260;
+    let px = 22, lines;
+    for (;;) { lines = tm.flatMap(t => wrap('\u2022 ' + t, F(px), tw)); if (lines.length * px * 1.3 <= avail || px <= 14) break; px -= 1; }
+    const fitN = Math.max(0, Math.floor(avail / (px * 1.3)));
+    if (lines.length > fitN) lines = [...lines.slice(0, Math.max(0, fitN - 1)), 'Full terms are in the message.'];
+    if (lines.length) { x.strokeStyle = soft; x.globalAlpha = 0.5; x.lineWidth = 1.5; x.beginPath(); x.moveTo(130, top); x.lineTo(W - 130, top); x.stroke(); x.globalAlpha = 1;
+      T('TERMS AND CONDITIONS', 130, top + 30, F(16, 700), soft, 'left'); let ty = top + 30 + px * 1.35;
+      for (const l of lines) { T(l, 130, ty, F(px), soft, 'left'); ty += px * 1.3; } } }
+  if (m.claim) { T('Claimed by', 160, claimY, F(24, 600), soft, 'left'); x.strokeStyle = soft; x.lineWidth = 2; x.beginPath(); x.moveTo(310, claimY + 4); x.lineTo(W - 160, claimY + 4); x.stroke();
+    T('Reply with your full name to claim it, so we know it\u2019s yours.', W / 2, claimY + 36, F(21), soft); }
   const studio = Settings.get('studio_name') || Settings.get('artist_name') || '', ig = Settings.get('artist_instagram') || '', ph = Settings.get('artist_phone') || '';
-  T([studio, ig].filter(Boolean).join('  ·  '), W / 2, H - 120, F(30, 700), fg); if (ph) T(ph, W / 2, H - 80, F(26), soft);
+  T([studio, ig].filter(Boolean).join('  \u00b7  '), W / 2, H - 92, F(28, 700), fg); if (ph) T(ph, W / 2, H - 60, F(22), soft);
   return cv;
 }
-/* The reward message window: a preview of the card and its message, with the options; rid null = the sample (from Program) */
-async function loyMessage(rid) {
-  let r;
-  if (rid) { r = await DB.one(`SELECT l.*, h.first_name AS first, h.last_name AS last, h.phone, f.first_name AS ff, f.last_name AS fl FROM loyalty_rewards l LEFT JOIN clients h ON h.id = l.client_id LEFT JOIN clients f ON f.id = l.from_client WHERE l.id = ?`, [rid]);
-    if (!r) return; r.fromName = r.ff != null ? fullName({ first_name: r.ff, last_name: r.fl }) : ''; }
-  else { const c = Loy.cfg(); r = { kind: c.kind, value: c.value, item_name: c.itemName, alt_name: c.kind !== 'item' && c.alt ? c.altName : null, code: 'K7Q2MX', expires_at: Loy.expiry(c), first: 'Sam', fromName: 'Alex' }; }
-  const m = loyMsgCfg(), o = document.createElement('div'); o.id = 'merge-dlg'; let url = '', busy = 0;
+/* The values a reward card's {fields} take for one reward. */
+function loyFields(r, m) { const tm = Loy.snap(r).terms || Loy.terms(Loy.cfg());
+  return { name: r.first || 'there', reward: loyFill('{reward}', r, m), reward_big: r.kind === 'item' ? 'FREE' : r.kind === 'pct' ? `${+r.value}% OFF` : `${money(+r.value)} OFF`,
+    reward_sub: r.kind === 'item' ? (r.item_name || 'from the studio') : 'your next tattoo', alt: r.alt_name ? `or swap it for a free ${r.alt_name}` : '',
+    code: r.code || '', expires: r.expires_at ? fmtDay(r.expires_at) : 'No expiry', terms: tm.map(t => '\u2022 ' + t).join('\n'), sent: !m.anon && r.fromName ? `Thanks for sending ${r.fromName}.` : '' }; }
+/* A made-up reward from the program as it is now: for previews and while designing the card. */
+function loySample() { const c = Loy.cfg(); return { kind: c.kind, value: c.value, item_name: c.itemName, alt_name: c.kind !== 'item' && c.alt ? c.altName : null, code: 'K7Q2MX', expires_at: Loy.expiry(c), first: 'Sam', fromName: 'Alex', prog: JSON.stringify(Loy.snapOf(c)) }; }
+function loySampleFields() { try { return loyFields(loySample(), loyMsgCfg()); } catch { return null; } }
+/* The card for a reward: your own design (made in the design studio) or the simple built-in one. */
+async function loyRender(r, m) {
+  if (m.card === 'design') { const id = +Settings.get('loy_design'), row = id ? await DB.one(`SELECT doc FROM designs WHERE id = ? AND kind = 'loycard'`, [id]) : null;
+    if (row) { const doc = JSON.parse(row.doc), cv = document.createElement('canvas'); cv.width = doc.w; cv.height = doc.h; dzFill.loy = loyFields(r, m);
+      try { await dzDraw(cv, doc, 1); } finally { dzFill.loy = null; } return cv; } }
+  return loyCard(r, m);
+}
+/* Make (or remake) the reward card design from a template; returns its id. */
+async function loyDesignMake(tpl) { const T = DZ_LOY_TPL[tpl]; const doc = { v: 1, kind: 'loycard', w: 1080, h: 1350, theme: T.theme, bg: { c: '@bg' }, layers: T.make(), vals: {} };
+  const old = +Settings.get('loy_design'), have = old ? await DB.one(`SELECT id FROM designs WHERE id = ? AND kind = 'loycard'`, [old]) : null;
+  if (have) { await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(doc), old]); return old; }
+  await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', ['Reward card', 'loycard', JSON.stringify(doc)]);
+  const id = (await DB.one('SELECT last_insert_rowid() AS id')).id; await Settings.set('loy_design', String(id)); return id; }
+/* Program › Message: the card (built-in or your own design) and the message text. */
+async function loyMsgTab(host, c) {
+  const m = loyMsgCfg(), id = +Settings.get('loy_design'), has = id ? !!(await DB.one(`SELECT id FROM designs WHERE id = ? AND kind = 'loycard'`, [id])) : false;
+  if (m.card === 'design' && !has) m.card = 'builtin';
   const tog = (k, l, tip = '') => `<label class="toggle" ${tip ? `data-tip="${esc(tip)}"` : ''}><input type="checkbox" data-lm="${k}" ${m[k] ? 'checked' : ''}><span>${l}</span></label>`;
-  o.innerHTML = `<div class="card rc-card loy-msg"><h2>${rid ? 'Reward message' : 'Reward message (sample)'}</h2>
-    ${rid ? `<p class="muted" style="margin:-4px 0 10px">${esc([r.first, r.last].filter(Boolean).join(' ') || 'No client')} · ${esc(Loy.rLabel(r))}</p>` : '<p class="muted" style="margin:-4px 0 10px">How every reward card and message looks. Send one from Rewards.</p>'}
+  const tplBtns = Object.entries(DZ_LOY_TPL).map(([k, t]) => `<button class="btn small" data-lmtpl="${k}">${t.name}</button>`).join('');
+  host.innerHTML = `<div class="loy-msg-grid"><div class="card loy-form"><div class="lbl">Reward card</div>
+      <span class="seg"><button data-lmcard="builtin" class="${m.card !== 'design' ? 'on' : ''}">Simple card</button><button data-lmcard="design" class="${m.card === 'design' ? 'on' : ''}">Your own design</button></span>
+      <div class="loy-prev" style="margin-top:12px"><img id="lm-img" alt="Reward card preview"></div>
+      ${m.card === 'design' ? `<div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn primary small" id="lm-edit">Edit in design studio</button></div>
+          <div class="lbl">Start again from a template</div><div class="row" style="gap:6px;flex-wrap:wrap">${tplBtns}</div>
+          <p class="muted loy-note">Fields like {reward}, {code}, {expires}, {name} and {terms} fill in for each reward; add them from Reward in the design studio\u2019s Add panel.</p>`
+        : `<div class="row" style="gap:14px;flex-wrap:wrap"><label class="field" style="flex:none"><span>Colour</span><input type="color" data-lmc="accent" value="${esc(m.accent)}"></label>
+            <label class="field" style="flex:none"><span>Background</span><input type="color" data-lmc="bg" value="${esc(m.bg)}"></label></div>
+          <div class="loy-togs">${tog('logo', 'Your logo')}${tog('tcard', 'Terms and conditions on the card', 'They shrink to fit at the bottom; if there are too many, the card says the full terms are in the message')}</div>
+          <div class="lbl">Or design your own</div><div class="row" style="gap:6px;flex-wrap:wrap">${has ? '<button class="btn small" data-lmcard="design">Use my design</button>' : ''}${tplBtns}</div>
+          <p class="muted loy-note">A template opens in the design studio, where you can change everything. What you save there is the card clients get.</p>`}
+    </div>
+    <div class="card loy-form"><div class="lbl">Message text</div>
+      <label class="field"><span>Heading</span><input class="in" data-lmt="title" value="${esc(m.title)}"></label>
+      <label class="field"><span>Message ${help('{name} their first name, {reward} the reward, {code}, {expires}, {studio}, and {from} the person they sent (only when names are shown).')}</span><textarea class="in" rows="3" data-lmt="body">${esc(m.body)}</textarea></label>
+      <div class="loy-togs">${tog('code', 'The reward code')}${tog('exp', 'When it runs out')}${tog('terms', 'The terms and conditions')}
+        ${tog('claim', 'Ask them to claim it with their name', 'Adds a Claimed by line to the simple card, and asks them to reply with their full name')}
+        ${tog('anon', 'Keep it anonymous', 'Who they sent stays private. Turn off to be able to thank them by name.')}
+        ${m.anon ? '' : tog('from', 'Thank them for who they sent')}</div>
+      <button class="btn small" id="lm-copy" style="margin-top:10px">Copy a sample message</button></div></div>`;
+  const r = loySample(); let url = '', busy = 0;
+  const prev = async () => { const n = ++busy, cv = await loyRender(r, m); if (n !== busy) return; const b = await new Promise(res => cv.toBlob(res, 'image/png'));
+    if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(b); const im = $('#lm-img', host); if (im) im.src = url; };
+  const keepM = () => Settings.set('loy_msg', JSON.stringify(m));
+  let t0 = 0; const soon = () => { clearTimeout(t0); t0 = setTimeout(() => { keepM(); prev(); }, 250); };
+  host.oninput = (e) => { const k = e.target.dataset.lmt || e.target.dataset.lmc; if (k) { m[k] = e.target.value; soon(); } };
+  host.onchange = async (e) => { const k = e.target.dataset.lm; if (!k) return; m[k] = e.target.checked; await keepM(); if (k === 'anon') return loyMsgTab(host, c); prev(); };
+  host.onclick = async (e) => { const t = e.target, mc = t.closest('[data-lmcard]'), tp = t.closest('[data-lmtpl]');
+    if (mc) { m.card = mc.dataset.lmcard; await keepM(); return loyMsgTab(host, c); }
+    if (tp) { const live = +Settings.get('loy_design') && (await DB.one(`SELECT id FROM designs WHERE id = ? AND kind = 'loycard'`, [+Settings.get('loy_design')]));
+      if (live && !await ask(`Start the card again from the ${DZ_LOY_TPL[tp.dataset.lmtpl].name} template?\n\nYour own design is replaced. This can\u2019t be undone.`)) return;
+      const nid = await loyDesignMake(tp.dataset.lmtpl); m.card = 'design'; await keepM(); location.hash = 'design/' + nid; return; }
+    if (t.closest('#lm-edit')) { location.hash = 'design/' + Settings.get('loy_design'); return; }
+    if (t.closest('#lm-copy')) { try { await navigator.clipboard.writeText(loyText(r, m)); toast('Sample message copied.'); } catch { await askText('Copy this:', loyText(r, m)); } } };
+  prev();
+}
+/* Sending one reward: its card and message, by share, WhatsApp, copy or a saved image. The look is set in Loyalty › Program › Message. */
+async function loyMessage(rid) {
+  const r = await DB.one(`SELECT l.*, h.first_name AS first, h.last_name AS last, h.phone, f.first_name AS ff, f.last_name AS fl FROM loyalty_rewards l LEFT JOIN clients h ON h.id = l.client_id LEFT JOIN clients f ON f.id = l.from_client WHERE l.id = ?`, [rid]);
+  if (!r) return; r.fromName = r.ff != null ? fullName({ first_name: r.ff, last_name: r.fl }) : '';
+  const m = loyMsgCfg(), o = document.createElement('div'); o.id = 'merge-dlg'; let url = '';
+  o.innerHTML = `<div class="card rc-card loy-msg"><h2>Reward message</h2>
+    <p class="muted" style="margin:-4px 0 10px">${esc([r.first, r.last].filter(Boolean).join(' ') || 'No client')} \u00b7 ${esc(Loy.rLabel(r))}${Loy.old(r) ? ' \u00b7 older program' : ''}</p>
     <div class="loy-prev"><img id="lm-img" alt="Reward card"></div>
-    <label class="field"><span>Heading</span><input class="in" data-lmt="title" value="${esc(m.title)}"></label>
-    <label class="field"><span>Message ${help('{name} their first name, {reward} the reward, {code}, {expires}, {studio}, and {from} the person they sent (only when names are shown).')}</span><textarea class="in" rows="3" data-lmt="body">${esc(m.body)}</textarea></label>
-    <div class="row" style="gap:14px;flex-wrap:wrap"><label class="field" style="flex:none"><span>Colour</span><input type="color" data-lmc="accent" value="${esc(m.accent)}"></label>
-      <label class="field" style="flex:none"><span>Background</span><input type="color" data-lmc="bg" value="${esc(m.bg)}"></label></div>
-    <div class="loy-togs">${tog('logo', 'Your logo')}${tog('code', 'The reward code')}${tog('exp', 'When it runs out')}
-      ${tog('claim', 'Ask them to claim it with their name', 'Adds a Claimed by line, and asks them to reply with their full name so you know it\u2019s theirs')}
-      ${tog('anon', 'Keep it anonymous', 'Who they sent stays private. Turn off to be able to thank them by name.')}
-      ${m.anon ? '' : tog('from', 'Thank them for who they sent')}</div>
-    <div class="qz-acts" style="margin-top:12px"><button class="btn" id="lm-copy">Copy message</button><button class="btn" id="lm-img-s">Save image</button>${rid ? `<button class="btn primary" id="lm-send">Send</button>` : ''}</div>
-    ${rid && r.phone ? `<button class="btn" id="lm-wa" style="width:100%;margin-top:8px">WhatsApp the message</button>` : ''}
+    <div class="qz-acts" style="margin-top:12px"><button class="btn" id="lm-copy">Copy message</button><button class="btn" id="lm-img-s">Save image</button><button class="btn primary" id="lm-send">Send</button></div>
+    ${r.phone ? `<button class="btn" id="lm-wa" style="width:100%;margin-top:8px">WhatsApp the message</button>` : ''}
+    <button class="btn" id="lm-look" style="width:100%;margin-top:8px">Change the look\u2026</button>
     <button class="btn" id="lm-close" style="width:100%;margin-top:8px">Close</button></div>`;
   document.body.appendChild(o);
-  const prev = async () => { const n = ++busy, cv = await loyCard(r, m); if (n !== busy) return; const b = await new Promise(res => cv.toBlob(res, 'image/png'));
-    if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(b); const im = $('#lm-img', o); if (im) im.src = url; };
-  let t0 = 0; const soon = () => { clearTimeout(t0); t0 = setTimeout(() => { Settings.set('loy_msg', JSON.stringify(m)); prev(); }, 250); };
-  o.addEventListener('input', (e) => { const k = e.target.dataset.lmt || e.target.dataset.lmc; if (k) { m[k] = e.target.value; soon(); } });
-  o.addEventListener('change', (e) => { const k = e.target.dataset.lm; if (!k) return; m[k] = e.target.checked; Settings.set('loy_msg', JSON.stringify(m));
-    if (k === 'anon') { o.remove(); return loyMessage(rid); } prev(); });
-  o.addEventListener('click', async (e) => { const t = e.target;
-    if (t.closest('#lm-close')) { if (url) URL.revokeObjectURL(url); return o.remove(); }
-    const name = `Reward-${r.code || 'sample'}.png`;
+  const cv0 = loyRender(r, m); cv0.then(async cv => { const b = await new Promise(res => cv.toBlob(res, 'image/png')); url = URL.createObjectURL(b); const im = $('#lm-img', o); if (im) im.src = url; });
+  const close = () => { if (url) URL.revokeObjectURL(url); o.remove(); };
+  o.addEventListener('click', async (e) => { const t = e.target, name = `Reward-${r.code || 'card'}.png`;
+    if (t.closest('#lm-close')) return close();
+    if (t.closest('#lm-look')) { close(); LOYV.tab = 'program'; LOYV.ptab = 'message'; location.hash = 'more'; setTimeout(() => { location.hash = 'loyalty'; }, 0); return; }
     if (t.closest('#lm-copy')) { try { await navigator.clipboard.writeText(loyText(r, m)); toast('Message copied.'); } catch { await askText('Copy this:', loyText(r, m)); } return; }
-    if (t.closest('#lm-img-s')) return saveFiles([await canvasFile(await loyCard(r, m), name)]);
+    if (t.closest('#lm-img-s')) return saveFiles([await canvasFile(await cv0, name)]);
     if (t.closest('#lm-wa')) { const tel = String(r.phone || '').replace(/\D/g, ''); open(`https://wa.me/${tel}?text=${encodeURIComponent(loyText(r, m))}`, '_blank', 'noopener'); return; }
-    if (t.closest('#lm-send')) { const f = await canvasFile(await loyCard(r, m), name);
+    if (t.closest('#lm-send')) { const f = await canvasFile(await cv0, name);
       try { if (navigator.canShare?.({ files: [f] })) return await navigator.share({ files: [f], title: loyFill(m.title, r, m), text: loyText(r, m) }); } catch (err) { if (err.name === 'AbortError') return; }
       return shareText(loyText(r, m), 'Message copied.'); } });
-  prev();
 }
 
 /* ---------- Full screen ----------
@@ -10453,6 +10549,13 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 528, when: '2026-11-28T16:00', added: [
+    'Sketchpad: an opacity slider for every brush.',
+    'Loyalty: the menu tile has its icon, and Program is now split into tabs: Earning, Reward, Terms and Message.',
+    'Loyalty: Terms and conditions. Lines that follow from your program, the usual ones you can untick, and your own. Each reward keeps the terms it was earned under.',
+    'Loyalty: design your own reward card in the design studio, starting from the Classic or Light template. Reward fields like {reward}, {code} and {terms} fill in for each client.',
+    'Loyalty: rewards are personal to the artist. Cards say who to redeem with, and the terms say it can’t be used with another artist and may be cancelled if the artist leaves the studio.'
+  ] },
   { build: 527, when: '2026-11-28T10:00', added: [
     'Sketchpad: Steady lines for every brush. Lazy keeps the ink on a string behind the pen, and Smoothness evens out wobbles as you draw.',
     'Sketchpad: the colours and swatch panels now sit behind one colour button, so the brush bar is shorter.',
