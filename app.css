@@ -2772,5 +2772,35 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .tl-row .tl-tr { top: 0; margin-top: -2px; }
 .tl-row .tl-tr.on { transform: scale(1.12); }
 .tl-row .tl-tr.tl-edgetr { top: 0; margin-top: 1px; }
+/* Design studio: the Paste menu */
+#dz-paste.dim { opacity: .45; }
+.dz-pastem { position: fixed; z-index: 600; min-width: 230px; max-width: 300px; max-height: 70vh; overflow-y: auto; padding: 6px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg2); box-shadow: 0 12px 34px rgba(0,0,0,.5); }
+.dz-pastem .dz-pm-h { padding: 6px 10px 4px; font: 700 10px var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.dz-pastem button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); cursor: pointer; text-align: left; }
+.dz-pastem button:hover { background: rgba(255,255,255,.06); }
+.dz-pastem b { font: 600 13px var(--ui); } .dz-pastem small { font: 500 11px var(--ui); color: var(--muted); }
+/* Design studio: the Pages panel */
+.dz-faces button[disabled] { opacity: .3; cursor: default; }
+@media (min-width: 701px) and (max-width: 1100px) { .dz-ed .dz-faces { top: 56px; } .dz-ed .dz-pgpanel { top: 104px; } }   /* clear of the quick toolbar */
+#dz-faces button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+.dz-pgpanel { position: absolute; top: 58px; left: 50%; transform: translateX(-50%); z-index: 30; width: min(340px, calc(100% - 24px)); max-height: calc(100% - 80px); overflow-y: auto; padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg2); box-shadow: 0 14px 36px rgba(0,0,0,.5); }
+.dz-pgpanel .pg-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; } .dz-pgpanel .pg-h small { color: var(--muted); font-weight: 600; }
+.dz-pgpanel .pg-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.dz-pgpanel .pg-it { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; touch-action: none; user-select: none; }
+.dz-pgpanel .pg-it.on { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.dz-pgpanel .pg-it.mst { border-style: dashed; cursor: pointer; }
+.dz-pgpanel canvas { max-width: 100%; height: auto; border-radius: 3px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.dz-pgpanel .pg-n { font: 700 12px var(--ui); } .dz-pgpanel .pg-n small { font-weight: 600; font-size: 10px; color: var(--muted); }
+.dz-pgpanel .pg-acts { display: flex; gap: 2px; }
+.dz-pgpanel .pg-ib { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
+.dz-pgpanel .pg-ib:hover, .dz-pgpanel .pg-ib.on { color: var(--ink); background: rgba(255,255,255,.06); }
+.dz-pgpanel .pg-ib svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* Design studio: Convert to */
+.dz-convk { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; margin-bottom: 10px; }
+.dz-convk button { display: grid; grid-template-columns: 22px 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.dz-convk button.on { border-color: var(--teal); box-shadow: 0 0 0 1px var(--teal); }
+.dz-convk .dz-kic { grid-row: span 2; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.dz-convk b { font: 600 12px var(--ui); } .dz-convk small { font: 500 10px var(--ui); color: var(--muted); }
+.dz-convl { margin: 0 0 10px; padding-left: 18px; font-size: 12.5px; line-height: 1.45; } .dz-convl li { margin: 2px 0; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
-:root { --app-build: 516; }
+:root { --app-build: 517; }

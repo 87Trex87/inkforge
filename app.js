@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 516;   // the build number shown around the app; bump it with sw.js
+const APP_BUILD = 517;   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
 const DB = (() => {
@@ -9778,6 +9778,15 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 517, when: '2026-11-23T18:00', added: [
+    'Design studio: Copy and Cut buttons on picked items (one or several), and a Paste button in the top bar: paste here, in place, on another page, on the master or on every page. Pasting onto page 1 no longer sends things back to the page they came from.',
+    'Design studio: blank pages can have as many pages as you like, with a master page under them all. Tap + at the top of the design to add one.',
+    'Design studio: a Pages panel (the page button beside +) for blank pages and forms: duplicate, delete any page, drag to reorder, and leave the master off a page.',
+    'Design studio: Move to page for picked items, and Page number and Page count to put in text: "Page {page} of {pages}" on the master numbers every page.',
+    'Design studio: printing and saving as pictures includes every page, in order.',
+    'Design studio: change the size or orientation mid-edit (Page panel › Size): any paper, portrait or landscape, with your items scaled to fit or kept their size. Undo puts it back.',
+    'Design studio: Convert to another type (Page panel › Type): blank page, form, flyer, card, voucher or post. It shows what changes first; form fields can keep their look as pictures, become text or go, and you can convert a copy instead.'],
+    test: ['Design studio: on a blank page add three pages, put "Page {page} of {pages}" on the master, then drag a page in the Pages panel.', 'Design studio: copy something and paste it onto the master from the Paste button.', 'Design studio: convert a copy of a form to a blank page.'] },
   { build: 516, when: '2026-11-22T21:00', added: [
     'Reel maker: fixed dragging the end of a video clip to make it longer (it could get stuck, most of all with another clip right after it).',
     'Reel maker: the transition markers between clips sit on the top edge of the clips now, out of the way of the trim handles, so both are easier to grab.'],

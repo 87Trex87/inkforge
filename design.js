@@ -23,6 +23,8 @@ const DZ_KINDS = {
   portrait: { label: 'Portrait post', sub: '1080 × 1350, feed (4:5)', w: 1080, h: 1350, per: 0, social: 1 },
   story: { label: 'Story / reel cover', sub: '1080 × 1920 (9:16)', w: 1080, h: 1920, per: 0, social: 1 }
 };
+/* The types Convert to moves between. */
+const DZ_CONV = ['page', 'form', 'flyer', 'card', 'voucher', 'post', 'portrait', 'story'];
 // An icon for each kind in the New design window.
 /* The design studio's clipboard: copies of layers, kept while the app is open so they paste into any design. */
 let DZ_CLIP = null;
@@ -51,7 +53,7 @@ const DZ_FONTS = [['Inter', ''], ['Pirata One', ''], ['Bebas Neue', 'Bebas Neue'
   ['UnifrakturMaguntia', 'UnifrakturMaguntia'], ['Permanent Marker', 'Permanent Marker'], ['Courier Prime', 'Courier Prime:wght@400;700'],
   ['Georgia', ''], ['Arial', '']];
 // {field}: label, where it comes from.
-const DZ_FIELDS = [['studio', 'Studio'], ['artist', 'Artist'], ['phone', 'Phone'], ['instagram', 'Instagram'], ['facebook', 'Facebook'], ['tiktok', 'TikTok'],
+const DZ_FIELDS = [['page', 'Page number'], ['pages', 'Page count'], ['studio', 'Studio'], ['artist', 'Artist'], ['phone', 'Phone'], ['instagram', 'Instagram'], ['facebook', 'Facebook'], ['tiktok', 'TikTok'],
   ['amount', 'Amount'], ['to', 'For'], ['from', 'From'], ['code', 'Code'], ['expires', 'Valid until'],
   ['title', 'Title'], ['placement', 'Placement'], ['tags', 'Hashtags'], ['date', 'Date']];
 const DZ_PIECE_FIELDS = /\{(title|placement|tags|date)\}/;
@@ -466,6 +468,7 @@ function dzFill(doc, s) {
     // Tags become hashtags: "fine line, floral" -> "#fineline #floral"
     tags: String(v.tags || '').split(',').map(t => t.trim().replace(/[^\p{L}\p{N}_]/gu, '')).filter(Boolean).map(t => '#' + t.toLowerCase()).join(' '),
     date: v.date ? new Date(v.date + 'T00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : '' };
+  { const P = typeof dzPageFaces === 'function' ? dzPageFaces(doc) : ['f'], fc = dzFill.face || 'f'; map.page = fc === 'm' ? '#' : String(Math.max(1, P.indexOf(fc) + 1)); map.pages = String(P.length); }   /* the page being drawn (dzDraw sets it) */
   return String(s || '').replace(/\{(\w+)\}/g, (m, k) => k in map ? map[k] : m);
 }
 const dzFontStr = (doc, l, px) => `${l.it ? 'italic ' : ''}${l.b ? 700 : 400} ${px}px "${dzFont(doc, l.font)}", Inter, sans-serif`;
@@ -1269,6 +1272,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   const show = (l) => !l.hide && (!opts.only || opts.only.has(l.id));
   const one0 = one, oneW = doc.pat ? async (cx, l) => { await one0(cx, l); for (const dy of [-doc.h, 0, doc.h]) for (const dx of [-doc.w, 0, doc.w]) if (dx || dy) await one0(cx, { ...l, x: l.x + dx, y: l.y + dy }); } : one0;   /* copies, so the layer itself never moves */
   const chLines = [];   /* a challenge's outline and detail lines, drawn last so nothing covers them */
+  dzFill.face = opts.face || 'f';   /* for {page} */
   for (const L of dzPages(doc, opts.face))
   for (let i = 0; i < L.length; i++) {
     const base = L[i]; let j = i + 1;
@@ -1605,9 +1609,16 @@ const dzSide = (l) => l.side || 'f';
 function dzPages(doc, face = 'f') {
   if (!doc.sides) return [doc.layers];
   const own = doc.layers.filter(l => dzSide(l) === face);
-  return face === 'm' ? [own] : [doc.layers.filter(l => l.side === 'm'), own];
+  return face === 'm' || (doc.nomaster || []).includes(face) ? [own] : [doc.layers.filter(l => l.side === 'm'), own];   /* nomaster: pages that leave the master off */
 }
-const dzFaceNames = (doc) => doc.form ? { f: 'Page 1', b: 'Back', m: 'Master' } : doc.fold ? { f: 'Outside', b: 'Inside', m: 'Master' } : { f: 'Front', b: 'Back', m: 'Master' };
+/* Pages: forms, and blank pages once they have more than one, hold any number of pages (f first, then p2, p3… or b on
+   an older front-and-back page) in doc.porder's order, with the master under them all. */
+const dzPaged = (doc) => !!(doc.sides && (doc.form || DZ_KINDS[doc.kind]?.page));
+const dzPageFaces = (doc) => !doc.sides ? ['f'] : doc.form ? ffFaces(doc) : DZ_KINDS[doc.kind]?.page ? (Array.isArray(doc.porder) && doc.porder.length ? doc.porder : ['f', 'b']) : ['f', 'b'];
+/* Every page a print or a picture export holds, in order. */
+const dzOutFaces = (doc) => dzPaged(doc) ? dzPageFaces(doc) : doc.sides ? ['f', 'b'] : ['f'];
+const dzFaceNames = (doc) => dzPaged(doc) ? Object.fromEntries([...dzPageFaces(doc).map((f, i) => [f, 'Page ' + (i + 1)]), ['m', 'Master'], ['b', 'Back']].filter((e, i, A) => A.findIndex(q => q[0] === e[0]) === i))
+  : doc.fold ? { f: 'Outside', b: 'Inside', m: 'Master' } : { f: 'Front', b: 'Back', m: 'Master' };
 // A finished copy of the design as its own canvas (full size unless `scale`), front unless `face`.
 async function dzCanvas(doc, scale = 1, face) {
   const cv = document.createElement('canvas'); cv.width = Math.round(doc.w * scale); cv.height = Math.round(doc.h * scale);
@@ -2271,6 +2282,7 @@ DZ.edit = async (id) => {
       <button class="dz-ib" id="dz-panels" data-tip="Panels: show or hide each one" aria-label="Panels"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M3 9h6"/></svg></button>
       <button class="dz-ib" id="dz-undo" aria-label="Undo" data-tip="Undo"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg></button>
       <button class="dz-ib" id="dz-redo" aria-label="Redo" data-tip="Redo"><svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg></button>
+      <button class="dz-ib ${DZ_CLIP?.layers.length ? '' : 'dim'}" id="dz-paste" aria-label="Paste" data-tip="Paste: on this page, in place, on another page or on the master"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2.5h6V4"/><path d="M9 11h6M9 15h4"/></svg></button>
       <button class="dz-ib" id="dz-focus" aria-label="Full screen design" data-tip="Full screen: the design fills the screen (Focus hides the panels)"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       <button class="dz-ib" id="dz-tpl" aria-label="Save as template" data-tip="Save as template, to start new designs from it"><svg viewBox="0 0 24 24">${DZ_UI.tpl}</svg></button>
       <button class="dz-ib" id="dz-print" aria-label="Print" data-tip="Print it (or Save as PDF from the print screen)"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></button>
@@ -2381,13 +2393,19 @@ DZ.edit = async (id) => {
   const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) { placeSel(); try { patDraw(); if (doc.chal && !chDrag) { chOv(); chAreaDraw(); } } catch {} } };
   // Page tabs (top right of the design): front, back and the master page under both.
   const drawFaces = () => {
-    const b = $('#dz-faces'); if (!b) return; b.hidden = !doc.sides; if (!doc.sides) return;
+    const b = $('#dz-faces'); if (!b) return; const pageKind = !!DZ_KINDS[doc.kind]?.page; b.hidden = !doc.sides && !pageKind; if (b.hidden) return;
     const nm = dzFaceNames(doc), n = (f) => doc.layers.filter(l => dzSide(l) === f).length;
-    if (doc.form) { b.innerHTML = [...ffFaces(doc), 'm'].map((f, i) => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Headers and frames shown under every page"' : ''}>${f === 'm' ? 'Master' : i + 1}</button>`).join('')
-      + `<button data-fpage="add" data-tip="Add a page">+</button>${doc.pages > 1 ? '<button data-fpage="del" data-tip="Delete the last page">−</button>' : ''}`; return; }
+    const PG = '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="11" height="14" rx="1.5"/><path d="M9 21h10a1 1 0 0 0 1-1V8"/></svg>';
+    if (pageKind && !doc.sides) { b.innerHTML = `<button data-face="f" class="on">1</button><button data-fpage="add" data-tip="Add a page: a master page comes with it, for things shared by every page">+</button>`; return; }
+    if (dzPaged(doc) && dzPageFaces(doc).length > 3) { const P = dzPageFaces(doc), i = P.indexOf(face), cur = face === 'm' ? -1 : i;   /* many pages: one tab that steps through them */
+      b.innerHTML = `<button data-face="${P[Math.max(0, cur - 1)]}" ${cur <= 0 ? 'disabled' : ''} aria-label="Previous page" data-tip="Previous page">‹</button><button data-face="${cur < 0 ? P[0] : face}" class="${cur >= 0 ? 'on' : ''}" data-tip="${cur >= 0 ? 'This page' : 'Back to the pages'}">${cur >= 0 ? cur + 1 : 1} / ${P.length}</button><button data-face="${P[Math.min(P.length - 1, cur + 1)]}" ${cur < 0 || cur >= P.length - 1 ? 'disabled' : ''} aria-label="Next page" data-tip="Next page">›</button>`
+        + `<button data-face="m" class="${face === 'm' ? 'on' : ''}" data-tip="Master: headers, frames and backgrounds shown under every page">Master</button><button data-fpage="add" data-tip="Add a page after this one">+</button><button data-fpage="panel" class="${pgOpen ? 'on' : ''}" data-tip="Pages: duplicate, delete, reorder and more">${PG}</button>`; return; }
+    if (dzPaged(doc)) { b.innerHTML = [...dzPageFaces(doc), 'm'].map((f, i) => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Master: headers, frames and backgrounds shown under every page"' : `data-tip="Page ${i + 1}${(doc.nomaster || []).includes(f) ? ', without the master' : ''}"`}>${f === 'm' ? 'Master' : i + 1}</button>`).join('')
+      + `<button data-fpage="add" data-tip="Add a page after this one">+</button><button data-fpage="panel" class="${pgOpen ? 'on' : ''}" data-tip="Pages: duplicate, delete, reorder and more">${PG}</button>`; return; }
     b.innerHTML = ['f', 'b', 'm'].map(f => `<button data-face="${f}" class="${face === f ? 'on' : ''}" ${f === 'm' ? 'data-tip="Backgrounds and frames shown under both sides"' : ''}>${nm[f]}${n(f) ? ` <small>${n(f)}</small>` : ''}</button>`).join('');
   };
-  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); };
+  let pgOpen = false;
+  const setFace = (f) => { if (f === face) return; endCrop(); endCut(); endNodes(); endCont(); endPen(); endPencil(); face = f; sel = null; picks = new Set(); picking = false; drawFaces(); drawFolds(); redraw(); drawSide(); if (pgOpen) drawPagesPanel(); };
   // Leaving crop mode: an uncropped item drops its crop entirely.
   const endCrop = () => { if (!cropping) return; cropping = false; const l = layer();
     if (l?.crop && l.crop.w >= 0.999 && l.crop.h >= 0.999) delete l.crop; selBox.classList.remove('cropping'); changed(true); };
@@ -2708,7 +2726,7 @@ DZ.edit = async (id) => {
     host.innerHTML = `<div class="dz-lhead"><div class="dz-lh"><b>Layers <small>${F().length}</small></b><span class="dz-hb">${dzIB('data-rail="close"', 'close', 'Close')}</span></div>
       <div class="dz-lbar">${lmSeg}<span class="dz-lbar-r">${dzIB(`data-mact="${picking ? 'done' : 'pick'}"`, 'pick', picking ? 'Stop selecting several' : 'Select several', picking ? 'on' : '')}
         ${picking || picks.size ? dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${picks.size ? '' : 'disabled'}`, 'none', 'Select none') : ''}</span></div></div>
-      ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? 'Master page: shown under both sides.' : `${dzFaceNames(doc)[face]} only. The master page shows underneath.`}</p>` : ''}
+      ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? `Master page: shown under ${dzPaged(doc) ? 'every page' : 'both sides'}.` : `${dzFaceNames(doc)[face]} only.${(doc.nomaster || []).includes(face) ? ' The master is off on this page.' : ' The master page shows underneath.'}`}</p>` : ''}
       <div class="dz-ll" id="dz-ll">${(() => { let lastG = null; return [...F()].reverse().map(l => { const i = F().indexOf(l), cl = i > 0 && l.clip, G = l.g && doc.groups?.[l.g] ? l.g : null, shut = G && doc.groups[G].shut;
         let head = ''; if (G && G !== lastG) { const M = F().filter(x => x.g === G), on = M.every(x => picks.has(x.id)), hid = M.every(x => x.hide), lk = M.every(x => x.lock), gr = M.filter(x => x.role);
           head = `<div class="dz-lr dz-lg ${on ? 'on' : ''} ${hid ? 'off' : ''}" data-gid="${G}"><span class="grip" data-grip aria-label="Drag the group to reorder">⠿</span><button data-gfold class="dz-gfold" aria-label="${shut ? 'Open' : 'Fold'}">${shut ? '▸' : '▾'}</button><span class="li">▤</span>
@@ -2796,6 +2814,8 @@ DZ.edit = async (id) => {
     if (many() && !toolOn() && !cut && !nodes && !cropping) { cpop = null; const L = picked(), n = L.length, dis = n ? '' : 'disabled', all = (f) => n && L.every(f);
       if (n && all(l => l.lock)) { b.innerHTML = dzIB('data-mact="all"', 'all', 'Select all') + dzIB('data-mact="none"', 'none', 'Select none') + sep + `<span class="muted dz-chint" style="padding-right:8px">Locked</span>` + dzIB('data-mact="lock"', 'lock', 'Unlock', 'on') + dzIB('data-mact="dup"', 'copy', 'Duplicate'); b.scrollLeft = 0; return; }
       b.innerHTML = dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${dis}`, 'none', 'Select none') + sep
+        + dzIB(`data-mact="ccopy" ${dis}`, '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>', 'Copy (Ctrl C)') + dzIB(`data-mact="ccut" ${dis}`, '<circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.2 15.8L19 4M15.8 15.8L5 4"/>', 'Cut (Ctrl X)')
+        + (dzPaged(doc) ? dzIB(`data-mact="tomove" ${dis}`, '<rect x="3" y="5" width="9" height="12" rx="1.5"/><path d="M14 11h7M18 8l3 3-3 3"/>', 'Move to another page or the master') : '')
         + dzIB(`data-mact="dup" ${dis}`, 'copy', 'Duplicate') + dzIB(`data-mact="hide" ${dis}`, all(l => l.hide) ? 'eyeoff' : 'eye', all(l => l.hide) ? 'Show' : 'Hide') + dzIB(`data-mact="lock" ${dis}`, all(l => l.lock) ? 'lock' : 'unlock', all(l => l.lock) ? 'Unlock' : 'Lock', all(l => l.lock) ? 'on' : '') + dzIB(`data-mact="clip" ${dis}`, 'clip', 'Clip to the layer below: each only shows inside it', all(l => l.clip) ? 'on' : '') + sep
         + AL.map(([a, tp, ic]) => `<button class="dz-ib" data-align="${a}" ${!n || (a[0] === 'd' && n < 3) ? 'disabled' : ''} data-tip="Align: ${tp}${n === 1 && a[0] !== 'd' ? ' (on the page)' : ''}" aria-label="${tp}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('') + sep
         + [['add', 'Add: weld them into one outline'], ['subtract', 'Subtract: the bottom one, with the rest cut out of it'], ['intersect', 'Intersect: only where they all overlap'], ['xor', 'Exclude: everything except where they overlap'], ['divide', 'Divide: cut into every separate piece the overlaps make'], ['separate', 'Separate: split each into its separate pieces'], ['contour', 'Contour: grow or shrink the outline (O)']].map(([v, tp]) => `<button class="dz-ib" data-bool="${v}" ${!n || (n < 2 && !['separate', 'contour'].includes(v)) ? 'disabled' : ''} data-tip="${tp}" aria-label="${tp.split(':')[0]}">${DZ_BOOL_ICON[v]}</button>`).join('') + sep
@@ -2812,7 +2832,7 @@ DZ.edit = async (id) => {
     const col = (key, ic, tip, none) => { const c = l[key], paint = (key === 'c' || key === 'fill') && l.fm === 'grad' && l.grad ? dzGradCss(doc, l.grad) : (c && c !== 'none' ? dzCol(doc, c) : key === 'c' ? dzCol(doc, '@fg') : 'transparent');
       return `<button class="dz-cbtn ${cpop === key ? 'on' : ''}" data-cpop="${key}" data-none="${none ? 1 : ''}" data-tip="${tip}" aria-label="${tip}"><small>${ic}</small><i style="background:${paint}"></i></button>`; };
     const num = (k, v, tip, max) => `<label class="dz-cnum" data-tip="${tip}"><input class="in" type="text" inputmode="text" data-calc min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}"></label>`;
-    if (l.lock) { cpop = null; b.innerHTML = `<span class="muted dz-chint" style="padding-right:8px">Locked</span>` + dzIB('data-act="lock"', 'lock', 'Unlock', 'on') + dzIB('data-act="dup"', 'copy', 'Duplicate'); return; }
+    if (l.lock) { cpop = null; b.innerHTML = `<span class="muted dz-chint" style="padding-right:8px">Locked</span>` + dzIB('data-act="lock"', 'lock', 'Unlock', 'on') + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="ccopy"', '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>', 'Copy (Ctrl C)'); return; }
     let own = '';
     if (l.t === 'text') own = `${fontBtn(l.font)}${num('size', l.size, 'Text size')}${sep}`
       + tog('b', 'font-weight:800', 'Bold') + tog('it', 'font-style:italic', 'Italic') + tog('u', 'text-decoration:underline', 'Underline') + tog('st', 'text-decoration:line-through', 'Strikethrough') + sep
@@ -2833,6 +2853,8 @@ DZ.edit = async (id) => {
         + (l.isoP ? dzIB('data-iso="rl"', '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v5h5"/>', 'Turn 15° left in the plane') + dzIB('data-iso="rr"', '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>', 'Turn 15° right in the plane')
           + dzIB('data-iso="fh"', 'fx', 'Flip across in the plane') + dzIB('data-iso="fv"', 'fy', 'Flip upside down in the plane') + `<button class="dz-ib dz-isob" data-iso="flat" data-tip="Put it back flat, off the plane" aria-label="Flat"><b>⊟</b></button>` : '') + sep;
     b.innerHTML = (own ? own + sep : '')
+      + dzIB('data-act="ccopy"', '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>', 'Copy (Ctrl C): paste it on any page, the master or another design') + dzIB('data-act="ccut"', '<circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.2 15.8L19 4M15.8 15.8L5 4"/>', 'Cut (Ctrl X)')
+      + (dzPaged(doc) ? dzIB('data-act="tomove"', '<rect x="3" y="5" width="9" height="12" rx="1.5"/><path d="M14 11h7M18 8l3 3-3 3"/>', 'Move to another page or the master') : '')
       + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="dupin"', '<rect x="7" y="7" width="12" height="12" rx="2"/><rect x="5" y="5" width="12" height="12" rx="2" stroke-dasharray="2 2"/>', 'Duplicate in place: an exact copy on top (Ctrl+D)') + dzIB('data-act="up"', 'fwd', 'Bring forward') + dzIB('data-act="down"', 'back', 'Send back') + sep
       + (field ? '' : dzIB('data-act="fx"', 'fx', 'Flip left to right', l.fx ? 'on' : '') + dzIB('data-act="fy"', 'fy', 'Flip upside down', l.fy ? 'on' : '') + dzIB(`data-act="clip" ${F().indexOf(l) ? '' : 'disabled'}`, 'clip', 'Clip to the layer below: only shows inside it', clipped(l) ? 'on' : '') + sep
         + `${l.t !== 'text' ? dzIB('data-act="crop"', 'crop', 'Crop', cropping ? 'on' : '') : ''}
@@ -3044,7 +3066,12 @@ DZ.edit = async (id) => {
             <label class="field"><span>Tags ${help('Comma separated; shown as #hashtags wherever {tags} is used.')}</span><input class="in" data-v="tags" value="${esc(doc.vals?.tags ?? '')}" placeholder="blackwork, floral"></label>`) : ''}
         ${doc.form ? fsec('Form', `<label class="field" style="margin:0"><span>Keep it under</span><select class="in" data-fcat>${FF_CATS.map(([v, n]) => `<option value="${v}" ${doc.form.cat === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
           ${doc.layers.some(x => x.src?.length) ? `<button class="btn small" data-ffupd style="margin-top:8px">Update all lists from studio data</button>` : ''}`) : ''}
-        ${!DZ_KINDS[doc.kind].social && !doc.fold && !doc.form ? fsec('Sides', `<div class="seg">${[[0, 'One side'], [1, 'Front and back']].map(([v, n]) =>
+        ${DZ_CONV.includes(doc.kind) ? fsec('Type', `<p class="muted" style="font-size:12px;margin:0 0 8px">${esc(DZ_KINDS[doc.kind].label)}.</p><button class="btn small" data-dzconv>Convert to another type…</button>`) : ''}
+        ${DZ_KINDS[doc.kind].page || doc.form ? fsec('Size', `<p class="muted" style="font-size:12px;margin:0 0 8px">${esc(doc.paper || `${dzMM(doc.w * 25.4 / (doc.dpi || 300))} × ${dzMM(doc.h * 25.4 / (doc.dpi || 300))} mm`)}, ${doc.w > doc.h ? 'landscape' : 'portrait'}.</p>
+          <button class="btn small" data-dzsize>Change size or orientation…</button>`) : ''}
+        ${DZ_KINDS[doc.kind].page ? fsec('Pages', `<p class="muted" style="font-size:12px;margin:0 0 8px">${dzPaged(doc) ? `${dzPageFaces(doc).length} page${dzPageFaces(doc).length > 1 ? 's' : ''} and a master page under them all.` : 'One page.'} Add pages with + at the top of the design; the page button next to it duplicates, deletes and reorders them.</p>
+          <button class="btn small" data-fpage2="add">+ Add a page</button>`) : ''}
+        ${!DZ_KINDS[doc.kind].social && !doc.fold && !doc.form && !DZ_KINDS[doc.kind].page ? fsec('Sides', `<div class="seg">${[[0, 'One side'], [1, 'Front and back']].map(([v, n]) =>
             `<button data-sides="${v}" class="${!!doc.sides === !!v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
           <p class="muted" style="font-size:11px;margin:6px 0 0">${doc.sides ? 'Switch between Front, Back and Master at the top right of the design. Master holds backgrounds and frames shown under both sides.' : 'Front and back adds a back page and a master page for things shared by both.'}</p>`) : ''}
         ${fsec('Theme', `<div class="dz-themes">${Object.entries(DZ_THEMES).map(([kk, t]) =>
@@ -4466,6 +4493,8 @@ DZ.edit = async (id) => {
     if (a === 'all') { if (!picking && !many()) picking = true; return setPicks(F().filter(l => !l.hide).map(l => l.id)); }
     if (a === 'none') return setPicks([]);
     if (a === 'merge') return merge(targets());
+    if (a === 'ccopy' || a === 'ccut') return clipCopy(a === 'ccut');
+    if (a === 'tomove') return moveMenu(document.querySelector('[data-mact="tomove"]'));
     if (a === 'refs') return saveRef(targets());
     if (a === 'png') return savePng(targets());
     if (a === 'svg' || a === 'asset') return saveSvg(targets(), a === 'asset');
@@ -4492,12 +4521,43 @@ DZ.edit = async (id) => {
     doc.layers.splice(top + 1, 0, ...cs); if (cs.length === 1) select(cs[0].id); else setPicks(cs.map(c => c.id)); changed(true); drawSide(); return cs; };
   const clipCopy = (cut) => { const ids = targets(); if (!ids.length) return false; const L = doc.layers.filter(l => ids.includes(l.id));
     DZ_CLIP = { layers: JSON.parse(JSON.stringify(L)), n: 0 }; if (cut) { if (L.some(l => l.lock)) { toast('Unlock it first.'); return true; } doc.layers = doc.layers.filter(l => !ids.includes(l.id)); select(null); changed(true); drawSide(); }
-    toast(`${cut ? 'Cut' : 'Copied'} ${L.length === 1 ? '1 item' : L.length + ' items'}. Ctrl+V pastes, Ctrl+Shift+V pastes in place.`, 2200); return true; };
-  const clipPaste = (inPlace) => { if (!DZ_CLIP?.layers.length) return toast('Nothing copied yet.', 1500); const off = inPlace ? 0 : 30 * ++DZ_CLIP.n;
-    const cs = DZ_CLIP.layers.map(l => ({ ...JSON.parse(JSON.stringify(l)), id: dzId(), lock: undefined, x: l.x + off, y: l.y + off, ...(doc.sides ? { side: face !== 'f' ? face : l.side } : {}) }));
-    const idm = new Map(DZ_CLIP.layers.map((l, j) => [l.id, cs[j].id])); for (const c of cs) if (c.on) { delete c._bx; c.on = idm.get(c.on) || (doc.layers.some(o => o.id === c.on) ? c.on : undefined); }
-    if (!doc.chal) for (const c of cs) { delete c.role; delete c.nds; delete c.sh; }   /* grading only means something in a challenge */
-    doc.layers.push(...cs); if (cs.length === 1) select(cs[0].id); else setPicks(cs.map(c => c.id)); changed(true); drawSide(); };
+    pasteBtn(); toast(`${cut ? 'Cut' : 'Copied'} ${L.length === 1 ? '1 item' : L.length + ' items'}. Paste (top bar) puts ${L.length === 1 ? 'it' : 'them'} on this page, another page or the master.`, 2600); return true; };
+  /* Paste onto the page being edited, or onto `to`: other pages of a two-sided design or form ('m' = the master, 'all' =
+     every page but the master). Pasting where the page shows (only one target) goes to that page. */
+  const clipFaces = () => dzPaged(doc) ? [...dzPageFaces(doc), 'm'] : doc.sides ? ['f', 'b', 'm'] : [];
+  const clipFaceName = (f) => dzFaceNames(doc)[f] || f;
+  const clipPaste = (inPlace, to) => { if (!DZ_CLIP?.layers.length) return toast('Nothing copied yet.', 1500); const off = inPlace ? 0 : 30 * ++DZ_CLIP.n;
+    const tf = !doc.sides ? [face] : to === 'all' ? clipFaces().filter(f => f !== 'm') : [to || face];
+    let mine = [];
+    for (const f of tf) {
+      const cs = DZ_CLIP.layers.map(l => { const c = { ...JSON.parse(JSON.stringify(l)), id: dzId(), lock: undefined, x: l.x + off, y: l.y + off }; delete c.side; if (doc.sides && f !== 'f') c.side = f; return c; });
+      const idm = new Map(DZ_CLIP.layers.map((l, j) => [l.id, cs[j].id])); for (const c of cs) if (c.on) { delete c._bx; c.on = idm.get(c.on) || (doc.layers.some(o => o.id === c.on && dzSide(o) === f) ? c.on : undefined); }
+      if (!doc.chal) for (const c of cs) { delete c.role; delete c.nds; delete c.sh; }   /* grading only means something in a challenge */
+      doc.layers.push(...cs); if (f === face || tf.length === 1) mine = cs;
+    }
+    if (tf.length === 1 && tf[0] !== face) setFace(tf[0]);   /* show the page it went to */
+    if (mine.length === 1) select(mine[0].id); else if (mine.length) setPicks(mine.map(c => c.id));
+    if (doc.sides && (tf.length > 1 || to)) toast(`Pasted on ${tf.length > 1 ? 'every page' : clipFaceName(tf[0])}.`, 1800);
+    changed(true); drawSide(); };
+  /* The Paste button's menu: here, in place, and (with pages) onto the master, another page or every page. */
+  const pasteMenu = (btn) => {
+    document.getElementById('dz-pastem')?.remove();
+    if (!DZ_CLIP?.layers.length) return toast('Nothing copied yet. Select something and tap Copy or Cut.', 2200);
+    const n = DZ_CLIP.layers.length, m = document.createElement('div'); m.id = 'dz-pastem'; m.className = 'dz-pastem';
+    const fs = clipFaces();
+    m.innerHTML = `<div class="dz-pm-h">${n === 1 ? '1 item' : n + ' items'} copied</div>
+      <button data-pv="here"><b>Paste</b><small>A little down and right (Ctrl V)</small></button>
+      <button data-pv="inplace"><b>Paste in place</b><small>On the exact spot it came from (Ctrl Shift V)</small></button>
+      ${fs.length ? `<div class="dz-pm-h">Paste in place onto</div>${fs.filter(f => f !== face).map(f => `<button data-pv="f:${f}"><b>${clipFaceName(f)}</b>${f === 'm' ? '<small>Shown under every page</small>' : ''}</button>`).join('')}
+        ${fs.filter(f => f !== 'm').length > 1 ? `<button data-pv="all"><b>Every page</b><small>A copy on each page, not the master</small></button>` : ''}` : ''}`;
+    document.body.appendChild(m);
+    const r = btn.getBoundingClientRect(); m.style.top = (r.bottom + 6) + 'px'; m.style.left = Math.max(8, Math.min(innerWidth - m.offsetWidth - 8, r.right - m.offsetWidth)) + 'px';
+    const close = () => { m.remove(); removeEventListener('pointerdown', out, true); }, out = (e) => { if (!m.contains(e.target) && !btn.contains(e.target)) close(); };
+    setTimeout(() => addEventListener('pointerdown', out, true));
+    m.onclick = (e) => { const b = e.target.closest('[data-pv]'); if (!b) return; const v = b.dataset.pv; close();
+      if (v === 'here') return clipPaste(false); if (v === 'inplace') return clipPaste(true); if (v === 'all') return clipPaste(true, 'all'); clipPaste(true, v.slice(2)); };
+  };
+  const pasteBtn = () => { const b = $('#dz-paste'); if (b) b.classList.toggle('dim', !DZ_CLIP?.layers.length); };
 
   /* Adding things */
   const center = (w, h) => ({ x: (doc.w - w) / 2, y: (doc.h - h) / 2, w, h });
@@ -4674,10 +4734,161 @@ DZ.edit = async (id) => {
   $('#dz-mods').onclick = (e) => { const m = e.target.closest('[data-mod]')?.dataset.mod; if (!m) return; dock[m] = !dock[m]; drawMods(); };
   $('#dz-faces').onclick = async (e) => { const f = e.target.closest('[data-face]')?.dataset.face; if (f) return setFace(f);
     const a = e.target.closest('[data-fpage]')?.dataset.fpage; if (!a) return;
-    if (a === 'add') { doc.pages++; setFace('p' + doc.pages); return changed(true); }
-    const last = 'p' + doc.pages, n = doc.layers.filter(l => l.side === last).length;
-    if (!await ask(`Delete page ${doc.pages}?` + (n ? `\n\nIts ${n} item${n > 1 ? 's' : ''} will be removed.` : ''))) return;
-    if (face === last) setFace(doc.pages === 2 ? 'f' : 'p' + (doc.pages - 1)); doc.layers = doc.layers.filter(l => l.side !== last); doc.pages--; changed(true); drawFaces(); };
+    if (a === 'add') return pageAdd(face);
+    if (a === 'panel') { pgOpen = !pgOpen; drawFaces(); return drawPagesPanel(); } };
+  /* Pages (forms and blank pages): add after one, duplicate, delete any, drag to reorder, leave the master off one, and
+     move picked items to another page. The first page is always f: a structural change relabels pages to keep it so. */
+  const pgOrder = () => { if (!dzPaged(doc)) return null; doc.porder = [...dzPageFaces(doc)]; doc.pages = doc.porder.length; return doc.porder; };
+  const pgNewId = () => { const P = dzPageFaces(doc); let n = 2; const used = new Set([...P, ...doc.layers.map(l => l.side)]); while (used.has('p' + n)) n++; return 'p' + n; };
+  const pgSwapIds = (x, y) => { for (const l of doc.layers) { const sd = dzSide(l); if (sd === x) { if (y === 'f') delete l.side; else l.side = y; } else if (sd === y && l.side !== 'm') { if (x === 'f') delete l.side; else l.side = x; } }
+    doc.nomaster = (doc.nomaster || []).map(v => v === x ? y : v === y ? x : v); doc.porder = doc.porder.map(v => v === x ? y : v === y ? x : v); if (face === x) face = y; else if (face === y) face = x; };
+  const pgFix = () => { const P = doc.porder; if (!P?.length) return; if (P[0] !== 'f') { if (P.includes('f')) pgSwapIds(P[0], 'f'); else { const x = P[0]; for (const l of doc.layers) if (l.side === x) delete l.side; doc.porder[0] = 'f'; doc.nomaster = (doc.nomaster || []).map(v => v === x ? 'f' : v); if (face === x) face = 'f'; } }
+    if (!doc.nomaster?.length) delete doc.nomaster; doc.pages = doc.porder.length; };
+  const pgDone = (f) => { if (f) face = f; pgFix(); sel = null; picks = new Set(); drawFaces(); drawFolds(); redraw(); drawSide(); changed(true); if (pgOpen) drawPagesPanel(); };
+  const pageAdd = (after) => {
+    if (DZ_KINDS[doc.kind]?.page && !doc.sides) { doc.sides = 2; doc.porder = ['f']; }   /* a blank page's second page brings the master */
+    const P = pgOrder(); if (!P) return; const id = pgNewId(), at = after === 'm' || !P.includes(after) ? P.length : P.indexOf(after) + 1;
+    P.splice(at, 0, id); toast(`Page ${at + 1} added.`, 1400); pgDone(id); };
+  const pageDup = (f) => { const P = pgOrder(); if (!P) return; const id = pgNewId(), own = doc.layers.filter(l => dzSide(l) === f && l.side !== 'm'), cs = own.map(l => ({ ...JSON.parse(JSON.stringify(l)), id: dzId(), side: id }));
+    const idm = new Map(own.map((l, j) => [l.id, cs[j].id])); for (const c of cs) if (c.on) { delete c._bx; c.on = idm.get(c.on); }
+    doc.layers.push(...cs); P.splice(P.indexOf(f) + 1, 0, id); if ((doc.nomaster || []).includes(f)) doc.nomaster.push(id); toast(`Page ${P.indexOf(f) + 1} duplicated.`, 1400); pgDone(id); };
+  const pageDel = async (f) => { const P = pgOrder(); if (!P) return; if (P.length < 2) return toast('A design keeps at least one page.', 1800);
+    const i = P.indexOf(f), n = doc.layers.filter(l => dzSide(l) === f && l.side !== 'm').length;
+    if (!await ask(`Delete page ${i + 1}?` + (n ? `\n\nIts ${n} item${n > 1 ? 's' : ''} go with it. Undo brings the page back.` : ''))) return;
+    doc.layers = doc.layers.filter(l => !(dzSide(l) === f && l.side !== 'm')); P.splice(i, 1); doc.nomaster = (doc.nomaster || []).filter(v => v !== f);
+    pgDone(face === f ? P[Math.max(0, i - 1)] : face); };
+  /* Document size, mid-edit (blank pages and forms): another paper size, or portrait and landscape swapped. Items
+     either scale to fit the new page (keeping the layout, centred) or keep their real size, centred; a background
+     picture always covers the new page. Every page and the master change together; Undo puts it all back. */
+  const sizeDlg = () => {
+    const dpi0 = doc.dpi || 300, mm0 = [doc.w * 25.4 / dpi0, doc.h * 25.4 / dpi0], r1 = (v) => Math.round(v * 10) / 10;
+    const near = (p) => Math.abs(Math.min(...mm0) - Math.min(p[1], p[2])) < 1 && Math.abs(Math.max(...mm0) - Math.max(p[1], p[2])) < 1;
+    const st = { ps: DZ_PAPER.find(near)?.[0] || 'Custom', land: mm0[0] > mm0[1], cw: r1(mm0[0]), ch: r1(mm0[1]), how: 'fit' };
+    const want = () => { const p = DZ_PAPER.find(x => x[0] === st.ps); if (!p) return [Math.min(1200, Math.max(20, +st.cw || 20)), Math.min(1200, Math.max(20, +st.ch || 20)), 'Custom'];
+      const a = Math.min(p[1], p[2]), b = Math.max(p[1], p[2]); return st.land ? [b, a, p[0]] : [a, b, p[0]]; };
+    const o = document.createElement('div'); o.id = 'merge-dlg';
+    const draw = () => { const [w, h] = want(), same = Math.abs(w - mm0[0]) < 0.5 && Math.abs(h - mm0[1]) < 0.5;
+      o.innerHTML = `<div class="card dz-sizedlg" style="max-width:420px"><h2 style="margin-top:0">Document size</h2>
+        <p class="muted" style="margin-top:0;font-size:13px">Now ${dzMM(mm0[0])} × ${dzMM(mm0[1])} mm${dzPaged(doc) ? `, ${dzPageFaces(doc).length} page${dzPageFaces(doc).length > 1 ? 's' : ''} and the master` : ''}. Every page changes together.</p>
+        <label class="field"><span>Paper</span><select class="in" data-sz="ps">${[...DZ_PAPER.map(x => x[0]), 'Custom'].map(n => { const p = DZ_PAPER.find(x => x[0] === n);
+          return `<option value="${esc(n)}" ${st.ps === n ? 'selected' : ''}>${esc(n)}${p ? ` · ${dzMM(p[1])} × ${dzMM(p[2])} mm` : ' · your own size'}</option>`; }).join('')}</select></label>
+        ${st.ps === 'Custom' ? `<div class="two"><label class="field"><span>Width (mm)</span><input class="in" type="number" min="20" max="1200" step="0.1" data-sz="cw" value="${st.cw}"></label>
+          <label class="field"><span>Height (mm)</span><input class="in" type="number" min="20" max="1200" step="0.1" data-sz="ch" value="${st.ch}"></label></div>`
+          : `<div class="seg" style="margin-bottom:12px">${[[false, 'Portrait'], [true, 'Landscape']].map(([v, n]) => `<button data-szl="${v ? 1 : 0}" class="${st.land === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>`}
+        <div class="lbl">Your items</div>
+        <div class="dz-ex" style="margin-bottom:10px"><button data-szh="fit" class="${st.how === 'fit' ? 'on' : ''}"><b>Scale to fit</b><small>The whole layout grows or shrinks to fit the new page, centred.</small></button>
+          <button data-szh="keep" class="${st.how === 'keep' ? 'on' : ''}"><b>Keep their size</b><small>Items stay the same real size, centred on the new page. Some may hang off the edge.</small></button></div>
+        <p class="muted" style="font-size:12px;margin:0 0 10px">New size: ${dzMM(w)} × ${dzMM(h)} mm.${same ? ' That is the size it is now.' : ' Undo puts it back.'}</p>
+        <div class="row"><button class="btn" data-szx style="flex:1">Cancel</button><button class="btn primary" data-szok style="flex:1" ${same ? 'disabled' : ''}>Change size</button></div></div>`; };
+    o.addEventListener('change', (e) => { const k = e.target.dataset.sz; if (!k) return; st[k] = e.target.value; draw(); });
+    o.addEventListener('click', (e) => { const t = e.target;
+      if (t === o || t.closest('[data-szx]')) return o.remove();
+      const l = t.closest('[data-szl]'); if (l) { st.land = l.dataset.szl === '1'; return draw(); }
+      const hw = t.closest('[data-szh]'); if (hw) { st.how = hw.dataset.szh; return draw(); }
+      if (!t.closest('[data-szok]')) return;
+      const [w, h, label] = want(), sz = dzPaper(w, h, label), W0 = doc.w, H0 = doc.h, fx = sz.w / W0, fy = sz.h / H0;
+      const f = st.how === 'fit' ? Math.min(fx, fy) : sz.dpi / dpi0, fc = Math.max(fx, fy);
+      for (const ly of doc.layers) { const k = ly.bgpic ? fc : f, ox = (sz.w - W0 * k) / 2, oy = (sz.h - H0 * k) / 2;
+        ly.x = ly.x * k + ox; ly.y = ly.y * k + oy; ly.w *= k; if (ly.h) ly.h *= k; if (ly.size) ly.size *= k; if (ly.sw) ly.sw *= k; if (ly.r) ly.r *= k; delete ly._bx; }
+      doc.w = sz.w; doc.h = sz.h; doc.dpi = sz.dpi; doc.paper = `${label}, ${dzMM(w)} × ${dzMM(h)} mm`;
+      o.remove(); sel = null; picks = new Set(); changed(true); fit(); redraw(); drawSide(); if (pgOpen) drawPagesPanel();
+      toast(`Now ${label === 'Custom' ? '' : label + ' '}${dzMM(w)} × ${dzMM(h)} mm.`, 2000); });
+    document.body.appendChild(o); draw(); };
+  /* Convert to another type. Paper designs (blank page, form) keep their pages and size between each other; any other
+     move takes the new type's size with the layout scaled to fit. Types with a front and back keep the first two
+     pages, social posts the first (the master goes under it); a form's fill-in fields either keep their look as
+     pictures, become their labels as plain text, or go. Nothing changes until it is confirmed, and a copy can be
+     converted instead, leaving this one as it is. */
+  const convDlg = () => {
+    const from = doc.kind; if (!DZ_CONV.includes(from)) return toast('This type cannot be converted.');
+    const st = { to: null, fields: 'pic' };
+    const plan = (to) => { const K = DZ_KINDS[to], paperBoth = !!(DZ_KINDS[from].page || DZ_KINDS[from].form) && !!(K.page || K.form), out = [];
+      const faces = dzOutFaces(doc), nFields = doc.layers.filter(l => l.t === 'field').length, own = (f) => doc.layers.filter(l => dzSide(l) === f && l.side !== 'm').length;
+      const keep = K.page || K.form ? faces.length : K.social ? 1 : Math.min(2, faces.length), lost = faces.slice(keep), lostN = lost.reduce((a, f) => a + own(f), 0);
+      out.push(paperBoth ? `Keeps its size (${esc(doc.paper || 'the same page')}).` : `Becomes ${K.page || K.form ? 'an A4 page (change it after with Size)' : esc(K.sub)}; the layout is scaled to fit.`);
+      if (lost.length) out.push(`<b>${lost.length} page${lost.length > 1 ? 's' : ''} go${lost.length > 1 ? '' : 'es'}</b> (page${lost.length > 1 ? 's' : ''} ${keep + 1}${lost.length > 1 ? '–' + faces.length : ''}${lostN ? `, ${lostN} item${lostN > 1 ? 's' : ''}` : ''}): ${K.social ? 'a post is one page' : 'this type has a front and a back only'}.`);
+      if (K.social && doc.sides && doc.layers.some(l => l.side === 'm')) out.push('The master page’s items go under the page.');
+      if (!K.form && nFields) out.push(`<b>${nFields} fill-in field${nFields > 1 ? 's' : ''}</b> only work on forms: choose what happens to them below.`);
+      if (K.form && !DZ_KINDS[from].form) out.push('Add fill-in fields from the form tools once it is a form.');
+      return { out, nFields: K.form ? 0 : nFields, keep, paperBoth }; };
+    const o = document.createElement('div'); o.id = 'merge-dlg';
+    const draw = () => { const p = st.to && plan(st.to);
+      o.innerHTML = `<div class="card dz-convdlg" style="max-width:460px"><h2 style="margin-top:0">Convert to…</h2>
+        <p class="muted" style="margin-top:0;font-size:13px">Now a ${esc(DZ_KINDS[from].label.toLowerCase())}. Pick what it becomes.</p>
+        <div class="dz-convk">${DZ_CONV.filter(k => k !== from).map(k => `<button data-cvk="${k}" class="${st.to === k ? 'on' : ''}"><svg viewBox="0 0 24 24" class="dz-kic">${DZ_KIND_IC[k] || DZ_KIND_IC.page}</svg><b>${DZ_KINDS[k].label}</b><small>${DZ_KINDS[k].sub}</small></button>`).join('')}</div>
+        ${p ? `<ul class="dz-convl">${p.out.map(x => `<li>${x}</li>`).join('')}</ul>
+          ${p.nFields ? `<div class="lbl">Fill-in fields</div><div class="seg" style="margin-bottom:10px">${[['pic', 'Keep their look'], ['text', 'Labels as text'], ['drop', 'Remove']].map(([v, n]) => `<button data-cvf="${v}" class="${st.fields === v ? 'on' : ''}" style="flex:1">${n}</button>`).join('')}</div>
+            <p class="muted" style="font-size:12px;margin:-4px 0 10px">${{ pic: 'Each field becomes a picture of how it looks blank, so the page prints the same.', text: 'Each field becomes its label as plain text you can edit.', drop: 'The fields are taken off.' }[st.fields]}</p>` : ''}` : ''}
+        <div class="row" style="gap:8px"><button class="btn" data-cvx>Cancel</button><span style="flex:1"></span>
+          <button class="btn" data-cvgo="copy" ${p ? '' : 'disabled'} data-tip="Keeps this design as it is and opens the converted copy">Convert a copy</button><button class="btn primary" data-cvgo="this" ${p ? '' : 'disabled'}>Convert</button></div></div>`; };
+    o.addEventListener('click', async (e) => { const t = e.target;
+      if (t === o || t.closest('[data-cvx]')) return o.remove();
+      const k = t.closest('[data-cvk]'); if (k) { st.to = k.dataset.cvk; return draw(); }
+      const fv = t.closest('[data-cvf]'); if (fv) { st.fields = fv.dataset.cvf; return draw(); }
+      const go = t.closest('[data-cvgo]')?.dataset.cvgo; if (!go || !st.to) return;
+      o.remove(); toast('Converting…', 1200);
+      const to = st.to, K = DZ_KINDS[to], p = plan(to), d = JSON.parse(JSON.stringify(doc));
+      // fields first, while their pages are as they were (pictures are made from this design)
+      if (p.nFields) { const F = doc.layers.filter(l => l.t === 'field'), rep2 = new Map();
+        for (const l of F) {
+          if (st.fields === 'drop') { rep2.set(l.id, null); continue; }
+          if (st.fields === 'text') { rep2.set(l.id, { id: dzId(), t: 'text', text: l.label || (FF_TYPES.find(x => x[0] === l.ft)?.[1] || 'Field'), size: l.size || 46, font: l.font || '@2', c: l.c || '@fg', al: 'left', lh: 1.2, x: l.x, y: l.y, w: l.w, h: l.h, rot: l.rot, side: l.side }); continue; }
+          const f = await flatten([l]); if (!f) { rep2.set(l.id, null); continue; } const ref = await Media.save(await pngOf(f.cv), 'png'); made.add(ref);
+          rep2.set(l.id, { id: dzId(), t: 'image', ref, side: l.side, x: f.bx, y: f.by, w: f.bw, h: f.bh, op: 1, rot: 0, name: l.label ? 'Field: ' + l.label.slice(0, 24) : 'Field' }); }
+        d.layers = d.layers.map(l => rep2.has(l.id) ? rep2.get(l.id) : l).filter(Boolean); }
+      // pages
+      const faces = dzOutFaces(d);
+      if (K.page || K.form) { if (d.sides) d.porder = [...faces]; }
+      else if (K.social) { const first = faces[0]; d.layers = [...d.layers.filter(l => l.side === 'm'), ...d.layers.filter(l => dzSide(l) === first && l.side !== 'm')]; d.layers.forEach(l => delete l.side); delete d.sides; }
+      else if (d.sides) { const [a, b] = faces; d.layers = d.layers.filter(l => l.side === 'm' || dzSide(l) === a || dzSide(l) === b);
+        for (const l of d.layers) { if (l.side === 'm') continue; const sd = dzSide(l); if (sd === a) delete l.side; else l.side = 'b'; }
+        if (faces.length < 2) delete d.sides; else d.sides = 2; }
+      if (!(K.page || K.form)) { delete d.porder; delete d.pages; delete d.nomaster; }
+      if (!K.form) delete d.form;
+      // size
+      if (!p.paperBoth) { const W0 = d.w, H0 = d.h, f = Math.min(K.w / W0, K.h / H0), fc = Math.max(K.w / W0, K.h / H0);
+        for (const ly of d.layers) { const kk = ly.bgpic ? fc : f, ox = (K.w - W0 * kk) / 2, oy = (K.h - H0 * kk) / 2;
+          ly.x = ly.x * kk + ox; ly.y = ly.y * kk + oy; ly.w *= kk; if (ly.h) ly.h *= kk; if (ly.size) ly.size *= kk; if (ly.sw) ly.sw *= kk; if (ly.r) ly.r *= kk; delete ly._bx; }
+        d.w = K.w; d.h = K.h; delete d.dpi; delete d.paper; if (K.page || K.form) { d.dpi = 300; d.paper = 'A4, 210 × 297 mm'; } }
+      d.kind = to; if (K.form) ffSetup(d); if (to === 'voucher') d.vals = { amount: '', to: '', from: '', code: Math.random().toString(36).slice(2, 8).toUpperCase(), ...(d.vals || {}) };
+      if (go === 'copy') { await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [`${name} (${K.label.toLowerCase()})`, to, JSON.stringify(d)]); const nid = (await DB.one('SELECT last_insert_rowid() AS id')).id;
+        await DB.run('INSERT INTO design_assets (design_id, ref) SELECT ?, ref FROM design_assets WHERE design_id = ?', [nid, id]);
+        for (const r of new Set(d.layers.filter(l => l.t === 'image' && l.ref).map(l => l.ref))) await DB.run('INSERT INTO design_assets (design_id, ref) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM design_assets WHERE design_id = ? AND ref = ?)', [nid, r, nid, r]);
+        toast(`Converted copy made. You are now on the ${K.label.toLowerCase()}.`, 2600); await flush(); location.hash = '#design/' + nid; return; }
+      Object.keys(doc).forEach(k2 => delete doc[k2]); Object.assign(doc, d);
+      changed(true); await flush(); await DB.run('UPDATE designs SET kind = ? WHERE id = ?', [to, id]);
+      toast(`Now a ${K.label.toLowerCase()}.`, 2000); render(); });
+    document.body.appendChild(o); draw(); };
+  const pageMaster = (f) => { const L = doc.nomaster ||= []; const on = L.includes(f); doc.nomaster = on ? L.filter(v => v !== f) : [...L, f]; pgDone(); };
+  /* Picked items onto another page (or the master), keeping their place. */
+  const moveToPage = (f) => { const ids = targets(); if (!ids.length) return; const L = doc.layers.filter(l => ids.includes(l.id)); if (L.some(l => l.lock)) return toast('Unlock it first.');
+    for (const l of L) { if (f === 'f') delete l.side; else l.side = f; }
+    toast(`Moved to ${dzFaceNames(doc)[f] || 'the page'}.`, 1600); face = f; drawFaces(); drawFolds(); redraw(); changed(true); if (L.length === 1) select(L[0].id); else setPicks(L.map(l => l.id)); drawSide(); if (pgOpen) drawPagesPanel(); };
+  const moveMenu = (btn) => { document.getElementById('dz-pastem')?.remove(); const fs = [...dzPageFaces(doc), 'm'].filter(f => f !== face), nm = dzFaceNames(doc);
+    const m = document.createElement('div'); m.id = 'dz-pastem'; m.className = 'dz-pastem';
+    m.innerHTML = `<div class="dz-pm-h">Move to</div>${fs.map(f => `<button data-mv="${f}"><b>${nm[f]}</b>${f === 'm' ? '<small>Shown under every page</small>' : ''}</button>`).join('')}`;
+    document.body.appendChild(m); const r = btn.getBoundingClientRect(); m.style.top = (r.bottom + 6) + 'px'; m.style.left = Math.max(8, Math.min(innerWidth - m.offsetWidth - 8, r.left)) + 'px';
+    const close = () => { m.remove(); removeEventListener('pointerdown', out, true); }, out = (e) => { if (!m.contains(e.target) && !btn.contains(e.target)) close(); };
+    setTimeout(() => addEventListener('pointerdown', out, true)); m.onclick = (e) => { const b = e.target.closest('[data-mv]'); if (!b) return; close(); moveToPage(b.dataset.mv); }; };
+  const drawPagesPanel = async () => {
+    let p = document.getElementById('dz-pgpanel'); if (!pgOpen || !dzPaged(doc)) { p?.remove(); pgOpen = false; return; }
+    if (!p) { p = document.createElement('div'); p.id = 'dz-pgpanel'; p.className = 'dz-pgpanel'; stage.appendChild(p);
+      p.addEventListener('click', (e) => { const b = e.target.closest('[data-pga]'); if (b) { const [a, f] = b.dataset.pga.split(':'); e.stopPropagation();
+          if (a === 'dup') return pageDup(f); if (a === 'del') return pageDel(f); if (a === 'mst') return pageMaster(f); if (a === 'add') return pageAdd(f); if (a === 'close') { pgOpen = false; drawFaces(); return drawPagesPanel(); } }
+        const t = e.target.closest('[data-pgi]'); if (t) setFace(t.dataset.pgf); });
+      dzDragOrder(p, 'pgi', (i, j) => { const P = pgOrder(); const [x] = P.splice(i, 1); P.splice(j, 0, x); drawPagesPanel(); }, () => pgDone()); }
+    const P = [...dzPageFaces(doc), 'm'], nm = dzFaceNames(doc), tw = 74, th = Math.round(tw * doc.h / doc.w);
+    const IC = { dup: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>', del: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', mst: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16"/>' };
+    const ib = (a, f, ic, tip, on) => `<button class="pg-ib ${on ? 'on' : ''}" data-pga="${a}:${f}" data-tip="${tip}" aria-label="${tip}"><svg viewBox="0 0 24 24">${IC[ic]}</svg></button>`;
+    p.innerHTML = `<div class="pg-h"><b>Pages <small>${P.length - 1}</small></b><button class="pg-ib" data-pga="close:" aria-label="Close" data-tip="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="pg-list">${P.map((f, i) => { const m = f === 'm', off = (doc.nomaster || []).includes(f);
+        return `<div class="pg-it ${face === f ? 'on' : ''} ${m ? 'mst' : ''}" ${m ? '' : `data-pgi="${i}"`} data-pgf="${f}"><canvas width="${tw}" height="${th}" data-pgc="${f}"></canvas>
+          <span class="pg-n">${m ? 'Master' : i + 1}${off ? ' <small>no master</small>' : ''}</span>
+          ${m ? '' : `<span class="pg-acts">${ib('dup', f, 'dup', 'Duplicate this page')}${ib('mst', f, 'mst', off ? 'Show the master on this page' : 'Leave the master off this page', !off)}${P.length > 2 ? ib('del', f, 'del', 'Delete this page') : ''}</span>`}</div>`; }).join('')}</div>
+      <button class="btn small" data-pga="add:${face}" style="width:100%;margin-top:6px">+ Add a page after ${face === 'm' ? 'the last' : 'this one'}</button>
+      <p class="muted" style="font-size:11px;margin:6px 2px 0">Drag a page to move it. {page} and {pages} in a text show its number and the count: put "Page {page} of {pages}" on the master.</p>`;
+    for (const c of p.querySelectorAll('[data-pgc]')) { try { await dzDraw(c, doc, tw / doc.w, { face: c.dataset.pgc }); } catch {} }
+  };
   stage.querySelector('.dz-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return;
     if (b.dataset.z === 'fit') return frame(); zoomTo(z * (b.dataset.z === 'in' ? 1.4 : 1 / 1.4)); };
   let dupDrag = false;   // this drag started with Ctrl+Alt: a copy is being dragged
@@ -4956,6 +5167,9 @@ DZ.edit = async (id) => {
       }
       face = 'f'; sel = null; changed(true); fit(); return drawSide();
     }
+    if (t.closest('[data-fpage2]')) return pageAdd(face);
+    if (t.closest('[data-dzsize]')) return sizeDlg();
+    if (t.closest('[data-dzconv]')) return convDlg();
     if (t.closest('#dz-code')) { doc.vals.code = Math.random().toString(36).slice(2, 8).toUpperCase(); changed(true); return drawSide(); }
     if (t.closest('#dz-bgrm')) { const b = bgLayer(); if (b) { dropped.add(b.ref); doc.layers = doc.layers.filter(x => x !== b); } doc.bg.img = null; changed(true); return drawSide(); }
     if (t.closest('[data-bgedit]')) { let b = bgLayer(); if (!b && doc.bg?.img) { b = bgPic(doc.bg.img, doc.bg.op ?? 1); doc.bg.img = null; changed(true); } if (b) bgEdit(b); return; }
@@ -4979,6 +5193,8 @@ DZ.edit = async (id) => {
     if (d('act')) {
       const a = d('act'), i = doc.layers.indexOf(l);
       if (a === 'done') return select(null);
+      if (a === 'ccopy' || a === 'ccut') return clipCopy(a === 'ccut');
+      if (a === 'tomove') return moveMenu(e.target.closest('[data-act]'));
       if (a === 'crop') { if (cropping) { endCrop(); return drawSide(); } if (l.lock) return toast('Unlock it first to crop.');
         l.crop ||= { x: 0, y: 0, w: 1, h: 1 }; cropping = true; placeSel(); redraw(); return drawSide(); }
       if (a === 'cropdone') { endCrop(); return drawSide(); }
@@ -5346,7 +5562,7 @@ DZ.edit = async (id) => {
     toast(`Saved "${n.trim()}". It's under layouts when you start a new ${DZ_KINDS[doc.kind].label.toLowerCase()}.`, 5000);
   };
   $('#dz-name').onchange = (e) => { name = e.target.value.trim() || name; save(); };
-  $('#dz-undo').onclick = () => undo(-1); $('#dz-redo').onclick = () => undo(1);
+  $('#dz-undo').onclick = () => undo(-1); $('#dz-redo').onclick = () => undo(1); $('#dz-paste').onclick = (e) => pasteMenu(e.currentTarget);
   /* ---------- Challenge maker ----------
      The Challenge menu (rail): the instructions, the palette (and whether it is the only one allowed), and Play.
      The role menu (selection strip, a shape selected): what the shape is, its needle and, for packing, its colour,
@@ -6274,7 +6490,7 @@ function dzExport(doc, name) {
   const draw = () => {
     o.innerHTML = `<div class="card"><h2>Export</h2>
       <p class="muted" style="font-size:13px;margin-top:0">${esc(kind.label)}, ${esc(doc.paper || kind.sub)}. Saved at ${kind.social ? 'full size' : `print quality (${doc.dpi || 300} dpi)`}.
-        ${doc.sides ? `Saved as two pages, ${dzFaceNames(doc).f.toLowerCase()} then ${dzFaceNames(doc).b.toLowerCase()}. Print double-sided${doc.w > doc.h ? ', flipping on the short edge' : ''}.` : ''}</p>
+        ${dzPaged(doc) && !kind.form ? `Saved as ${dzOutFaces(doc).length} page${dzOutFaces(doc).length > 1 ? 's' : ''}, in order.` : ''}${doc.sides && !dzPaged(doc) ? `Saved as two pages, ${dzFaceNames(doc).f.toLowerCase()} then ${dzFaceNames(doc).b.toLowerCase()}. Print double-sided${doc.w > doc.h ? ', flipping on the short edge' : ''}.` : ''}</p>
       <div class="dz-ex">
         ${kind.form ? `<button data-ex="ffpdf"><b>Interactive PDF</b><small>Text boxes, check boxes, radio and combo boxes can be filled in on a device. Sign by hand or in InkForge.</small></button>
         <button data-ex="ffprint"><b>Print blank</b><small>All pages, to fill in by hand</small></button>
@@ -6297,15 +6513,15 @@ function dzExport(doc, name) {
     if (a === 'ffpdf') { toast('Preparing…'); return ffSavePdf(ffCopy(doc, ffBlankCtx()), name); }
     toast('Preparing…');
     const cv = await dzCanvas(doc);
-    if (doc.sides) {   // the two sides as their own pages
-      const sides = [cv, await dzCanvas(doc, 1, 'b')], nm = dzFaceNames(doc);
-      if (a === 'print') { o.remove(); return printCanvas(...(kind.per ? [await dzSheet(sides[0], doc.kind, st.sheet), await dzSheet(sides[1], doc.kind, st.sheet, true)] : sides)); }
-      const fs = await Promise.all(sides.map(async (c, i) => new File([await new Promise(r => c.toBlob(r, 'image/png'))], `${file()}_${(i ? nm.b : nm.f).toLowerCase()}.png`, { type: 'image/png' })));
+    if (doc.sides) {   // the two sides (or every page) as their own pages
+      const ofs = dzOutFaces(doc), sides = [cv]; for (const f of ofs.slice(1)) sides.push(await dzCanvas(doc, 1, f)); const nm = dzFaceNames(doc);
+      if (a === 'print') { o.remove(); return printCanvas(...(kind.per && sides.length === 2 ? [await dzSheet(sides[0], doc.kind, st.sheet), await dzSheet(sides[1], doc.kind, st.sheet, true)] : sides)); }
+      const fs = await Promise.all(sides.map(async (c, i) => new File([await new Promise(r => c.toBlob(r, 'image/png'))], `${file()}_${String(nm[ofs[i]] || i + 1).toLowerCase().replace(/\s+/g, '')}.png`, { type: 'image/png' })));
       if (a === 'share') {
         try { if (navigator.canShare?.({ files: fs })) return await navigator.share({ files: fs, title: name }); } catch (err) { if (err.name === 'AbortError') return; }
       }
       for (const f of fs) { const l = document.createElement('a'); l.href = URL.createObjectURL(f); l.download = f.name; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000); await new Promise(r => setTimeout(r, 250)); }
-      return toast('Saved ' + fs.map(f => f.name).join(' and '));
+      return toast(fs.length > 2 ? `Saved ${fs.length} pages.` : 'Saved ' + fs.map(f => f.name).join(' and '));
     }
     const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
     const f = new File([blob], file() + '.png', { type: 'image/png' });
@@ -6408,6 +6624,7 @@ async function dzUnpackDesign() { const r = await dzImportMany(); return r?.id |
 /* Print any design, background and all: both sides of a two-sided one, forms blank to fill by hand, cards one to a
    page. The print screen's Save as PDF makes a PDF of it. */
 async function dzPrintDoc(doc) { const kind = DZ_KINDS[doc.kind]; if (kind.form) return ffPrintBlank(doc); toast('Preparing…');
+  if (dzPaged(doc)) { const cs = []; for (const f of dzOutFaces(doc)) cs.push(await dzCanvas(doc, 1, f)); return printCanvas(...cs); }
   const cv = await dzCanvas(doc); if (doc.sides) { const b = await dzCanvas(doc, 1, 'b'); return printCanvas(...(kind.per ? [await dzSheet(cv, doc.kind, false), await dzSheet(b, doc.kind, false, true)] : [cv, b])); }
   return printCanvas(kind.per ? await dzSheet(cv, doc.kind, false) : cv); }
 /* Save as: the design as a picture (PNG, full quality; JPG, smaller), a PDF (through the print screen), or a copy kept
@@ -6428,10 +6645,10 @@ function dzSaveAs(doc, name, did) { return new Promise((res) => { const o = docu
       await DB.run('INSERT INTO design_assets (design_id, ref) SELECT ?, ref FROM design_assets WHERE design_id = ?', [nid, did]); toast('Copy saved. You are now working on the copy.', 3000); return res(nid); }
     if (a === 'pdf') { res(null); return dzPrintDoc(doc); }
     if (a === 'ink') { res(null); return dzPackDesign(did, nm); }
-    toast('Preparing…'); const faces = [await dzCanvas(doc)]; if (doc.sides) faces.push(await dzCanvas(doc, 1, 'b')); const nmF = dzFaceNames(doc);
+    toast('Preparing…'); const fl = dzOutFaces(doc), faces = []; for (const f of fl) faces.push(await dzCanvas(doc, 1, f)); const nmF = dzFaceNames(doc);
     for (let i = 0; i < faces.length; i++) { let c = faces[i]; if (a === 'jpg') { const w = document.createElement('canvas'); w.width = c.width; w.height = c.height; const g = w.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w.width, w.height); g.drawImage(c, 0, 0); c = w; }
       const blob = await new Promise(r => c.toBlob(r, a === 'jpg' ? 'image/jpeg' : 'image/png', 0.92)), l = document.createElement('a'); l.href = URL.createObjectURL(blob);
-      l.download = file(nm) + (faces.length > 1 ? '_' + (i ? nmF.b : nmF.f).toLowerCase() : '') + '.' + a; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000); await new Promise(r => setTimeout(r, 250)); }
+      l.download = file(nm) + (faces.length > 1 ? '_' + String(nmF[fl[i]] || i + 1).toLowerCase().replace(/\s+/g, '') : '') + '.' + a; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 5000); await new Promise(r => setTimeout(r, 250)); }
     toast('Saved to your downloads.', 2500); res(null); };
   document.body.appendChild(o); setTimeout(() => o.querySelector('#sa-n')?.select(), 50); }); }
 // An A4 page (300 dpi): the design once, centred, or as many copies as fit with cut marks.

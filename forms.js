@@ -13,7 +13,9 @@ function ffLinkMake(type, v) { v = String(v ?? '').trim(); if (type.startsWith('
 const ffLinkType = (l) => l.ltype ?? (!l.link ? '' : /^mailto:/.test(l.link) ? 'email' : /^tel:/.test(l.link) ? 'phone' : 'web');
 const FF_CATS = [['consent', 'Consent'], ['aftercare', 'Aftercare'], ['other', 'Other forms']];
 const FF_PREFILL = [['', 'Nothing'], ['{client}', 'Client name'], ['{phone}', 'Client phone'], ['{email}', 'Client email'], ['{date}', 'Today']];
-const ffFaces = (doc) => Array.from({ length: doc.pages || 1 }, (_, i) => i ? 'p' + (i + 1) : 'f');
+/* A form's pages, in order: doc.porder once pages have been moved, added after another or duplicated; before that
+   f, p2, p3… */
+const ffFaces = (doc) => Array.isArray(doc.porder) && doc.porder.length ? doc.porder : Array.from({ length: doc.pages || 1 }, (_, i) => i ? 'p' + (i + 1) : 'f');
 const ffX = document.createElement('canvas').getContext('2d');
 /* Studio data for option lists: [key, name, group, private, query]. Ticking a source (src) writes its values into the
    field's options, as if typed, so they travel with the form into PDFs. They stay as they are until Update lists pulls
@@ -147,7 +149,7 @@ DZ_TEMPLATES.form = [
     return out; }, { cat: 'other' })]
 ];
 // A new form's page count comes from the template's own layers.
-function ffSetup(doc, make) { doc.sides = 2; doc.form = { cat: make?.cat || doc.form?.cat || 'other' }; doc.pages = Math.max(doc.pages || 1, ...doc.layers.map(l => /^p\d+$/.test(l.side || '') ? +l.side.slice(1) : 1)); }
+function ffSetup(doc, make) { doc.sides = 2; doc.form = { cat: make?.cat || doc.form?.cat || 'other' }; if (Array.isArray(doc.porder) && doc.porder.length) { doc.pages = doc.porder.length; return doc; } doc.pages = Math.max(doc.pages || 1, ...doc.layers.map(l => /^p\d+$/.test(l.side || '') ? +l.side.slice(1) : 1)); }
 
 /* A working copy of a form with the wording filled in for this client (or left blank for paper). */
 function ffCopy(doc, ctx) { const d = JSON.parse(JSON.stringify(doc));
