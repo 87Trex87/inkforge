@@ -2927,6 +2927,8 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .sk-pop .sk-cols { flex-wrap: wrap; max-width: 280px; } .sk-pop .sk-pal { max-width: none; }
 .sk-sl { display: grid; grid-template-columns: 84px 160px 28px; align-items: center; gap: 8px; font: 600 12px var(--ui); color: var(--ink2); } .sk-sl b { font-size: 11px; text-align: right; }
 .sk-pop-n { margin: 0; font-size: 11px; color: var(--ink2); max-width: 290px; }
+.sk-hud { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 9; padding: 10px 18px; border-radius: 14px; background: rgba(15,18,19,.9); color: #fff; font: 700 18px var(--ui); pointer-events: none; }
+.sk-hud[hidden] { display: none; }
 .sk-live { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; }
 .sk-drawing, .sk-drawing .dz-page { cursor: crosshair; }
 /* The build this stylesheet belongs to: keep equal to APP_BUILD in app.js (the app reloads the stylesheet if they differ). */
@@ -2957,4 +2959,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 @media (min-width: 700px) { .draw-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 420px) { .tb-ic { width: 32px; height: 32px; } .tb-draw { gap: 2px; } }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 533; }
+:root { --app-build: 534; }

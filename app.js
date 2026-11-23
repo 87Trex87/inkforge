@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 533;
+const APP_BUILD = 534;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -10830,6 +10830,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 534, when: '2026-11-25T13:00', added: [
+    'Sketchpad: the eraser has a strength slider. Below 100% it fades what it passes over instead of cutting it.',
+    'Sketchpad on touch screens: drag three fingers up or down to change the size, left or right to change the opacity.',
+    'Sketchpad on touch screens: tap with two fingers to undo, three fingers to redo.'
+  ] },
   { build: 533, when: '2026-11-25T09:00', added: [
     'Design studio, Tattoo simulator and Sketchpad are grouped together under Draw, at the top of Studio and on the home screen.',
     'Quick buttons for all three sit beside the full screen button at the top of every main page.'

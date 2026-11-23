@@ -4932,8 +4932,8 @@ DZ.edit = async (id) => {
     const SKC = ['#111111', '#ffffff', '#7a7a7a', '#e23b3b', '#f28c28', '#f5c518', '#2bb673', '#1fb5a8', '#2f6fe4', '#8e44ad', '#ff6fb5', '#8b5a2b'];
     const ST0 = (() => { try { return JSON.parse(Settings.get('sk_brush', 'null')) || {}; } catch { return {}; } })();
     const SKB = { tool: null, b: ST0.b || 'pen', c: ST0.c || '#111111', sizes: ST0.sizes || Object.fromEntries(DZ_BRUSHES.map(([k, , s]) => [k, s])), er: ST0.er || 40,
-      sh: ST0.sh || 'rect', fill: !!ST0.fill, shs: ST0.shs || 8, ts: ST0.ts || 72, pal: ST0.pal ?? -1, lazy: ST0.lazy ?? 0, smooth: ST0.smooth ?? 25, ops: ST0.ops || {}, pop: null };
-    const keepB = () => Settings.set('sk_brush', JSON.stringify({ b: SKB.b, c: SKB.c, sizes: SKB.sizes, er: SKB.er, sh: SKB.sh, fill: SKB.fill, shs: SKB.shs, ts: SKB.ts, pal: SKB.pal, lazy: SKB.lazy, smooth: SKB.smooth, ops: SKB.ops }));
+      sh: ST0.sh || 'rect', fill: !!ST0.fill, shs: ST0.shs || 8, ts: ST0.ts || 72, pal: ST0.pal ?? -1, lazy: ST0.lazy ?? 0, smooth: ST0.smooth ?? 25, ops: ST0.ops || {}, eop: ST0.eop ?? 100, pop: null };
+    const keepB = () => Settings.set('sk_brush', JSON.stringify({ b: SKB.b, c: SKB.c, sizes: SKB.sizes, er: SKB.er, sh: SKB.sh, fill: SKB.fill, shs: SKB.shs, ts: SKB.ts, pal: SKB.pal, lazy: SKB.lazy, smooth: SKB.smooth, ops: SKB.ops, eop: SKB.eop }));
     /* Swatch panels: your own named sets of colours, kept across sketches */
     const pals = () => { try { return JSON.parse(Settings.get('sk_pals', '[]')) || []; } catch { return []; } };
     const keepPals = (P) => Settings.set('sk_pals', JSON.stringify(P));
@@ -4942,7 +4942,9 @@ DZ.edit = async (id) => {
     const live = document.createElement('canvas'); live.className = 'sk-live'; page.appendChild(live);
     const ic = (k) => `<svg viewBox="0 0 24 24">${DZ_BRUSH_IC[k]}</svg>`;
     const sizeOf = () => SKB.tool === 'erase' ? SKB.er : SKB.tool === 'shape' ? SKB.shs : SKB.tool === 'text' ? SKB.ts : SKB.sizes[SKB.b] || 8;
-    const opOf = () => SKB.ops[SKB.b] ?? 100;   /* each brush keeps its own opacity (%) */
+    const opOf = () => SKB.tool === 'erase' ? SKB.eop ?? 100 : SKB.ops[SKB.b] ?? 100;   /* each brush keeps its own opacity (%); the eraser too (a soft eraser fades) */
+    const setOp = (v) => { if (SKB.tool === 'erase') SKB.eop = v; else SKB.ops[SKB.b] = v; };
+    const setSize = (v) => { if (SKB.tool === 'erase') SKB.er = v; else if (SKB.tool === 'shape') SKB.shs = v; else if (SKB.tool === 'text') SKB.ts = v; else SKB.sizes[SKB.b] = v; };
     const sizeMax = () => SKB.tool === 'erase' ? 200 : SKB.tool === 'text' ? 400 : 140;
     const drawBar = () => { const P = pals(), cols = palCols(), own = SKB.pal >= 0;
       bar.innerHTML = `<button data-skt="sel" class="${!SKB.tool ? 'on' : ''}" data-tip="Select and move (brushes off)" aria-label="Select">${ic('sel')}</button>
@@ -4955,7 +4957,7 @@ DZ.edit = async (id) => {
       <button data-skt="mm" class="${SKB.tool === 'mm' ? 'on' : ''}" data-tip="Mind map: tap to place an idea, then drag its + to add linked ones" aria-label="Mind map node">${ic('mm')}</button>
       <button data-skt="ifn" class="${SKB.tool === 'ifn' ? 'on' : ''}" data-tip="If: a question with a Yes and a No branch" aria-label="If node">${ic('ifn')}</button><i class="sep"></i>
       <label class="sk-size" data-tip="${SKB.tool === 'text' ? 'Text size' : SKB.tool === 'shape' ? 'Line width' : 'Size'}"><input type="range" min="1" max="${sizeMax()}" step="1" value="${sizeOf()}" data-sks><b>${sizeOf()}</b></label>
-      ${SKB.tool === 'brush' ? `<label class="sk-size sk-op" data-tip="Opacity"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><input type="range" min="5" max="100" step="1" value="${opOf()}" data-sko><b>${opOf()}%</b></label>` : ''}
+      ${SKB.tool === 'brush' || SKB.tool === 'erase' ? `<label class="sk-size sk-op" data-tip="${SKB.tool === 'erase' ? 'Eraser strength: below 100% it fades what it passes over' : 'Opacity'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><input type="range" min="5" max="100" step="1" value="${opOf()}" data-sko><b>${opOf()}%</b></label>` : ''}
       ${SKB.tool === 'brush' ? `<button data-skpop="steady" class="${SKB.pop === 'steady' ? 'on' : ''} ${SKB.lazy || SKB.smooth ? 'set' : ''}" data-tip="Steady lines: lazy and smoothness" aria-label="Steady lines">${ic('steady')}</button>` : ''}
       <button data-skpop="col" class="sk-colbtn ${SKB.pop === 'col' ? 'on' : ''}" data-tip="Colour and swatch panels" aria-label="Colour"><i style="background:${SKB.c}"></i></button>`;
       drawPop(); stage.classList.toggle('sk-drawing', !!SKB.tool); };
@@ -4986,7 +4988,7 @@ DZ.edit = async (id) => {
     pop.addEventListener('contextmenu', (e) => { const c = e.target.closest('[data-skc]'); if (!c || SKB.pal < 0) return; e.preventDefault();
       const P = pals(), p = P[SKB.pal]; if (!p) return; p.c = p.c.filter(x => x !== c.dataset.skc); keepPals(P); drawBar(); toast('Colour taken off the panel.', 1400); });
     onBoth('input', (e) => { const sl = e.target.dataset.skl; if (sl) { SKB[sl] = +e.target.value; e.target.nextElementSibling.textContent = e.target.value; bar.querySelector('[data-skpop="steady"]')?.classList.toggle('set', !!(SKB.lazy || SKB.smooth)); return; }
-      if (e.target.dataset.sko != null) { SKB.ops[SKB.b] = +e.target.value; e.target.nextElementSibling.textContent = e.target.value + '%'; return; }
+      if (e.target.dataset.sko != null) { setOp(+e.target.value); e.target.nextElementSibling.textContent = e.target.value + '%'; return; }
       if (e.target.dataset.sks != null) { const v = +e.target.value;
       if (SKB.tool === 'erase') SKB.er = v; else if (SKB.tool === 'shape') SKB.shs = v; else if (SKB.tool === 'text') SKB.ts = v; else SKB.sizes[SKB.b] = v; e.target.nextElementSibling.textContent = v; } });
     onBoth('change', async (e) => { if (e.target.dataset.sks != null || e.target.dataset.skl || e.target.dataset.sko != null) keepB();
@@ -5041,6 +5043,28 @@ DZ.edit = async (id) => {
     /* inside a drawn loop (page points) */
     const inLoop = (L, x, y) => { let c = false; for (let i = 0, j = L.length - 1; i < L.length; j = i++) { const [xi, yi] = L[i], [xj, yj] = L[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
     const holdCheck = () => { clearTimeout(S.ht); S.ht = setTimeout(() => { if (!S || S.erase || S.snap || S.mode !== 'brush') return; const sn = dzInkSnap(S.pts); if (sn) { S.snap = sn; navigator.vibrate?.(12); drawLive(); } }, 480); };
+    /* Finger gestures (touch only), like painting apps: three fingers up or down change the size, left or right the
+       opacity, of the brush (or eraser); a quick two-finger tap undoes, a three-finger tap redoes. */
+    { const T = new Map(); let tap = null, G = null, hudT = 0;
+      const hud = document.createElement('div'); hud.className = 'sk-hud'; hud.hidden = true; stage.appendChild(hud);
+      const say = (s0, stay) => { hud.textContent = s0; hud.hidden = false; clearTimeout(hudT); if (!stay) hudT = setTimeout(() => { hud.hidden = true; }, 700); };
+      const cen = () => { let x = 0, y = 0; for (const p of T.values()) { x += p.x; y += p.y; } return { x: x / T.size, y: y / T.size }; };
+      stage.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch' || e.target.closest('.sk-bar, .sk-pop')) return; T.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (T.size === 1) tap = { t0: e.timeStamp, max: 1, moved: false, at: new Map() }; if (tap) { tap.max = Math.max(tap.max, T.size); tap.at.set(e.pointerId, { x: e.clientX, y: e.clientY }); }
+        if (T.size === 3) { if (S) { clearTimeout(S.ht); S = null; drawLive(); } G = { c0: cen(), axis: null, s0: sizeOf(), o0: opOf() }; }
+        if (T.size >= 3) e.stopImmediatePropagation(); }, true);
+      stage.addEventListener('pointermove', (e) => { if (!T.has(e.pointerId)) return; T.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const a0 = tap?.at.get(e.pointerId); if (a0 && Math.hypot(e.clientX - a0.x, e.clientY - a0.y) > 12) tap.moved = true;
+        if (!G || T.size < 3) return; e.stopImmediatePropagation(); e.preventDefault();
+        const c = cen(), dx = c.x - G.c0.x, dy = c.y - G.c0.y; if (!G.axis && Math.hypot(dx, dy) > 14) G.axis = Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
+        if (G.axis === 'y') { const v = Math.round(Math.max(1, Math.min(sizeMax(), G.s0 * Math.pow(2, -dy / 160)))); setSize(v); say(`Size ${v}`, true); const i = bar.querySelector('[data-sks]'); if (i) { i.value = v; i.nextElementSibling.textContent = v; } }
+        if (G.axis === 'x' && (SKB.tool === 'brush' || SKB.tool === 'erase' || !SKB.tool)) { const v = Math.round(Math.max(5, Math.min(100, G.o0 + dx / 3))); setOp(v); say(`${SKB.tool === 'erase' ? 'Eraser strength' : 'Opacity'} ${v}%`, true); const i = bar.querySelector('[data-sko]'); if (i) { i.value = v; i.nextElementSibling.textContent = v + '%'; } } }, true);
+      const up = (e) => { if (!T.has(e.pointerId)) return; T.delete(e.pointerId); if (T.size) return;
+        const g = G, t = tap; G = null; tap = null;
+        if (g?.axis) { hudT = setTimeout(() => { hud.hidden = true; }, 600); keepB(); return drawBar(); }
+        hud.hidden = true;
+        if (t && !t.moved && e.timeStamp - t.t0 < 320 && e.type === 'pointerup') { if (t.max === 2) { undo(-1); say('Undo'); } else if (t.max === 3) { undo(1); say('Redo'); } } };
+      stage.addEventListener('pointerup', up, true); stage.addEventListener('pointercancel', up, true); }
     stage.addEventListener('pointerdown', (e) => {
       if (SKB.pop && !e.target.closest('.sk-pop, .sk-bar')) { SKB.pop = null; drawBar(); }
       if (!SKB.tool || e.button > 0 || e.target.closest('.sk-bar, .sk-pop, .dz-zoom, .dz-faces, .dz-rail, .dz-pop, .dz-mods, .dz-xf')) return;
@@ -5085,8 +5109,10 @@ DZ.edit = async (id) => {
         const pg = dzInkPage(l), dense = []; for (let i = 0; i < pg.length; i++) { if (i) { const a = pg[i - 1], b2 = pg[i], n = Math.ceil(Math.hypot(b2[0] - a[0], b2[1] - a[1]) / 3); for (let j = 1; j < n; j++) dense.push([a[0] + (b2[0] - a[0]) * j / n, a[1] + (b2[1] - a[1]) * j / n, a[2] + (b2[2] - a[2]) * j / n]); } dense.push(pg[i]); }
         const w0 = (l.s || 8) * 0.3, keep = dense.map(q => !near(q, w0));
         if (keep.every(Boolean)) { out.push(l); continue; } hit = true;
-        let run = []; const flush = () => { if (run.length > 1) out.push(dzInkMake({ b: l.b, c: l.c, s: l.s, op: l.op }, run)); run = []; };
-        dense.forEach((q, i) => { if (keep[i]) run.push(q); else flush(); }); flush(); }
+        /* runs the eraser missed stay as they were; runs it passed over go, or fade with a soft eraser */
+        const eo = (SKB.eop ?? 100) / 100, o0 = l.op ?? 1; let run = [], cur = null;
+        const emit = () => { if (run.length > 1) { const o = cur ? o0 : o0 * (1 - eo); if (cur || o > 0.03) out.push(dzInkMake({ b: l.b, c: l.c, s: l.s, op: o >= 0.999 ? undefined : Math.round(o * 1000) / 1000 }, run)); } };
+        dense.forEach((q, i) => { const k = keep[i]; if (cur === null) cur = k; if (k !== cur) { const last = run.at(-1); emit(); run = last && eo < 1 ? [last] : []; cur = k; } run.push(q); }); emit(); }
       if (hit) { doc.layers = out; changed(true); } };
     addEventListener('resize', () => { if (stage.isConnected) drawLive(); });
 
