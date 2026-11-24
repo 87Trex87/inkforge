@@ -3019,5 +3019,8 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .ln-kinds { display: flex; flex-wrap: wrap; gap: 6px; } .ln-kinds .chip { cursor: pointer; font-size: 13px; padding: 7px 14px; color: var(--ink, inherit); } .ln-kinds .chip.on { background: rgba(31,181,168,.2); color: var(--teal); border-color: var(--teal); }
 .lgd-prev { display: grid; gap: 10px; justify-items: center; } .lgd-prev img { width: 100%; max-width: 520px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,.3); background: #fff; }
 .lgd-own .btn, #lgd-add { justify-self: start; width: auto; align-self: flex-start; } .lgd-own { display: grid; gap: 6px; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+.de-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; } .de-gate { border-color: var(--amber, #e0a030); }
+.de-sec { margin-top: 10px; } .de-tiles { margin-top: 6px; } .de-t td.num, .de-t th.num { text-align: right; } #de-file:disabled { opacity: .45; cursor: not-allowed; } .de-t td.num { font-variant-numeric: tabular-nums; } .de-none { font-size: 13px; margin: 4px 0 0; } .de-t tfoot td { font-weight: 700; border-top: 2px solid var(--line); } .de-acts .btn:disabled { opacity: .45; }
+.de-note { display: flex; align-items: center; gap: 10px; } .de-note .c-main { flex: 1; display: grid; } .de-note.warn { border-color: var(--amber, #e0a030); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 550; }
+:root { --app-build: 551; }

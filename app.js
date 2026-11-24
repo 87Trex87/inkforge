@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 550;
+const APP_BUILD = 551;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -409,7 +409,13 @@ const MIGRATIONS = [
   // a deleted reward is archived, not removed: when, why, and what it was before (to restore it)
   `ALTER TABLE loyalty_rewards ADD COLUMN deleted_at TEXT;
    ALTER TABLE loyalty_rewards ADD COLUMN del_reason TEXT;
-   ALTER TABLE loyalty_rewards ADD COLUMN del_prev TEXT;`
+   ALTER TABLE loyalty_rewards ADD COLUMN del_prev TEXT;`,
+  // day ends: each filed report's span (UTC 'YYYY-MM-DD HH:MM:SS'), its note, and data (JSON: what it counted, so the next one doesn't again)
+  `CREATE TABLE day_ends (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     from_at TEXT NOT NULL, to_at TEXT NOT NULL,
+     filed_at TEXT NOT NULL DEFAULT (datetime('now')),
+     note TEXT, data TEXT);`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -982,6 +988,7 @@ const VIEWS = {
       ${drawTiles()}
       <div class="card"><h2>Today ${help('Today\'s sessions. Tap one to open it.')}</h2>
         <div id="home-today" class="muted">…</div></div>
+      <div id="home-de"></div>
       <div id="home-loy"></div>
       <div id="home-bday"></div>
       <div class="grid">
@@ -1002,7 +1009,7 @@ const VIEWS = {
       else el.innerHTML = `No sessions booked. <a href="#" id="h-add" style="color:var(--teal)">Book one</a>`;
       const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBookingNext(); };
       const bw = document.querySelector('[data-go-ws]'); if (bw) bw.onclick = () => { Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(bw.dataset.goWs || null)); };
-      homeLoy();
+      homeLoy(); homeDE();
       // Birthdays in the next 7 days, with a one-tap WhatsApp greeting.
       const bd = (await DB.all('SELECT id, first_name, last_name, phone, dob, loy_off FROM clients WHERE dob IS NOT NULL AND dob <> \'\''))
         .map(c => { const [y, m, d] = c.dob.split('-').map(Number); let n = new Date(t.getFullYear(), m - 1, d); if (n < t) n = new Date(t.getFullYear() + 1, m - 1, d);
@@ -1010,7 +1017,7 @@ const VIEWS = {
         .filter(c => c.days <= bdDays()).filter(c => bdDone()[c.id] !== ymd(addDays(t, c.days))).sort((x, y) => x.days - y.days);   /* ones marked done drop off until next year */
       const be = $('#home-bday');
       const LB = Loy.on() && Loy.cfg().bday !== false;
-      if (be && bd.length) be.innerHTML = `<div class="card"><h2>Birthdays coming up ${help('Shown ' + bdDays() + ' days ahead (change it in Settings \u203a Bookings). A birthday reward can be sent up to the day itself.')}</h2><div class="card list flush">${bd.map(c => {
+      if (be && bd.length) be.innerHTML = `<div class="card"><h2>Birthdays coming up ${help('Shown ' + bdDays() + ' days ahead (change it in Settings \u203a Your week). A birthday reward can be sent up to the day itself.')}</h2><div class="card list flush">${bd.map(c => {
         const wa = (intlPhone(c.phone) || '').replace(/\D/g, ''), studio = Settings.get('studio_name') || Settings.get('artist_name') || '';
         const msg = encodeURIComponent(`Happy birthday, ${c.first_name}! 🎉 Wishing you a great year${studio ? ' from everyone at ' + studio : ''}.`);
         return `<div class="c-row bday ${c.days ? '' : 'bd-today'}"><span class="ico-c">${ICON.cake}</span>
@@ -2014,7 +2021,7 @@ const VIEWS = {
         <label class="bkt-sel st-who" data-tip="Whose tattoos: everyone together, only yours, or one imported artist's (by tag). Ghost bookings never count."><select id="st-who"></select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
         ${STATS.period === 'custom' ? `<input class="in" type="date" id="st-from" value="${STATS.from}"><span class="muted">to</span><input class="in" type="date" id="st-to" value="${STATS.to}">`
           : '<span class="muted" id="st-range"></span>'}
-        <span class="row no-print" style="margin-left:auto;gap:6px"><a class="btn small icon-btn" href="#stats-table" data-tip="Every tattoo in this period as a table: pick columns, filter, sort, export CSV and print" aria-label="Stats table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a></span>
+        <span class="row no-print" style="margin-left:auto;gap:6px"><a class="btn small" href="#day-end" data-tip="Day end: everything since you last filed one, as a report for the owner (or yourself)">Day end</a><a class="btn small icon-btn" href="#stats-table" data-tip="Every tattoo in this period as a table: pick columns, filter, sort, export CSV and print" aria-label="Stats table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a></span>
       </div>
       <div class="st-wrap"><div id="st-body"></div><div id="st-side"></div></div>`,
     mount() {
@@ -2276,6 +2283,61 @@ const VIEWS = {
         const id = await Loy.give(S.cid, c2, { src: S.kind, how: S.kind, pass: S.pass, custom: !!c2.custom, terms: terms(), note: S.note.trim() });
         if (!id) { f.querySelector('[type=submit]').disabled = false; return; }
         LOYV.tab = 'rewards'; location.hash = 'loyalty'; toast('Reward created.', 1400); setTimeout(() => loyMessage(id), 350); });
+      draw();
+    }
+  },
+  'day-end': {
+    title: () => 'Day end',
+    render: () => '<div id="de-page"></div>',
+    async mount() {
+      const el = $('#de-page'), parts = deParts(); let R = null;
+      const tm = (s) => { const d = deDate(s); return `${fmtDay(ymd(d))}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+      const who = (r) => fullName(r) || r.guest_name || '\u2014', hrs = (m) => m ? fmtH(m / 60) : '\u2014';
+      const tbl = (cols, rows, tot) => rows.length ? `<div class="bkt-scroll"><table class="bkt de-t"><thead><tr>${cols.map(c => `<th class="${c[2] || ''}">${c[0]}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(c => `<td class="${c[2] || ''}">${esc(String(c[1](r) ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody>
+        ${tot ? `<tfoot><tr>${cols.map((c, i) => `<td class="${c[2] || ''}">${esc(String(tot[i] ?? ''))}</td>`).join('')}</tr></tfoot>` : ''}</table></div>` : '<p class="muted de-none">Nothing in this period.</p>';
+      const tile = (v, l, cls = '') => `<div class="${cls}"><b>${v}</b><span>${l}</span></div>`;
+      const sec = (k, title, body) => parts[k] ? `<div class="card de-sec"><div class="lbl">${title}</div>${body}</div>` : '';
+      let hist = [];
+      const draw = async () => { const P = await dePeriod(); R = await deData(P); const S = R.sum; hist = await DB.all('SELECT * FROM day_ends ORDER BY to_at DESC, id DESC LIMIT 24');
+        el.innerHTML = `<div class="card de-head"><div><div class="lbl">Open day end</div>
+            <p style="margin:4px 0 0"><b>${tm(P.fromU)}</b> to <b>now</b> <span class="muted">(${P.days < 1 ? 'today' : P.days + ' day' + (P.days === 1 ? '' : 's')})</span></p>
+            <p class="muted loy-note">${P.last ? `Last filed ${deAgo(deDate(P.last.to_at))}.` : 'Not filed yet.'} ${P.dropped ? `Only the last ${P.max} days are kept: the oldest have dropped off, so file it soon.` : `${P.left} day${P.left === 1 ? '' : 's'} before the oldest drop off (it keeps ${P.max}; change it in Settings \u203a Your week).`}</p></div>
+            ${P.last ? '<button class="btn small" id="de-reopen" data-tip="Put the last filed day end back into this one: to add a late tattoo and send it again">Reopen last filed</button>' : ''}</div>
+          ${R.open.length ? `<div class="card de-gate"><b>Mark these tattoos completed (or cancelled) first</b><p class="muted loy-note" style="margin-top:2px">Every tattoo booked up to now needs to be finished before the day end can be filed.</p>
+            <div class="card list flush">${R.open.map(b => `<a class="c-row" href="#booking-edit/${b.id}"><span class="c-main"><span class="c-n">${esc(who(b))}</span><span class="muted c-sub">${esc(fmtDay(b.start_at.slice(0, 10)))} ${esc(b.start_at.slice(11, 16))}${b.description ? ' \u00b7 ' + esc(b.description) : ''}</span></span><span class="btn small">Open</span></a>`).join('')}</div></div>` : ''}
+          <div class="card de-sec"><div class="lbl">In the report ${help('Pick what goes in. Your choice is kept for next time.')}</div>
+            <div class="qz-chips">${DE_PARTS.map(([k, l]) => `<button class="chip qz-chip ${parts[k] ? 'on' : ''}" data-dep="${k}">${parts[k] ? '\u2713 ' : ''}${l}</button>`).join('')}</div></div>
+          ${deSections(R, parts, '').map(S => `<div class="card de-sec"><div class="lbl">${esc(S.t)}</div>${S.line ? `<p class="muted loy-note" style="margin-top:0">${esc(S.line)}</p>` : ''}
+            ${S.tiles ? `<div class="loy-use de-tiles">${S.tiles.map(([v, l, c]) => tile(esc(String(v)), esc(String(l).toLowerCase()), c)).join('')}</div>` : ''}
+            ${(S.tables || []).map(T => `${T.t ? `<div class="lbl" style="margin-top:8px">${esc(T.t)}</div>` : ''}${T.rows.length ? tbl(T.cols.map(c => [c.h, c.f, c.num ? 'num' : '']), T.rows, T.total) : `<p class="muted de-none">${esc(T.none || 'Nothing in this period.')}</p>`}`).join('')}</div>`).join('')}
+          ${sec('note', 'Your note', `<textarea class="in" id="de-note" rows="3" placeholder="Anything the report should mention">${esc(Settings.get('de_note', ''))}</textarea>`)}
+          <div class="card de-sec"><div class="lbl">Share the report</div>
+            <div class="qz-acts de-acts"><button class="btn" data-deo="print" ${R.open.length ? 'disabled' : ''}>Print / PDF</button><button class="btn" data-deo="img" ${R.open.length ? 'disabled' : ''}>Save images</button><button class="btn" data-deo="csv" ${R.open.length ? 'disabled' : ''}>Spreadsheet (CSV)</button><button class="btn primary" data-deo="send" ${R.open.length ? 'disabled' : ''}>Send</button></div>
+            <p class="muted loy-note">${R.open.length ? 'Mark every tattoo up to now completed first.' : 'Send it to the owner or keep it, then mark it as filed: the next day end starts from then.'}</p></div>
+          ${hist.length ? `<div class="card de-sec"><div class="lbl">Filed ${help('Day ends you\u2019ve filed, newest first. Print or export one again; it\u2019s worked out from your records as they are now.')}</div>
+            <div class="card list flush">${hist.map((F, i) => { let d = {}; try { d = JSON.parse(F.data || '{}').sum || {}; } catch {}
+              return `<div class="c-row de-h"><span class="c-main"><span class="c-n">${esc(deSpan({ fromU: F.from_at, toU: F.to_at }))}</span><span class="muted c-sub">Filed ${esc(fmtDay(ymd(deDate(F.filed_at))))}${d.n != null ? ` \u00b7 ${d.n} tattoo${d.n === 1 ? '' : 's'}, ${money(d.takings || 0)}` : ''}${F.note ? ' \u00b7 ' + esc(F.note.slice(0, 60)) : ''}</span></span>
+                <button class="btn small" data-dhp="${F.id}">Print / PDF</button><button class="btn small" data-dhc="${F.id}">CSV</button>${i === 0 ? '<button class="btn small" id="de-reopen2" data-tip="Put it back into the open day end, to add something late and file it again">Reopen</button>' : ''}</div>`; }).join('')}</div></div>` : ''}
+          <div class="form-foot row"><a class="btn" href="#stats">Back</a><button class="btn primary" id="de-file" style="flex:1" ${R.open.length ? 'disabled data-tip="Mark every tattoo up to now completed first"' : ''}>Mark as filed</button></div>`; };
+      el.addEventListener('click', async (e) => { const t = e.target, p = t.closest('[data-dep]');
+        if (p) { parts[p.dataset.dep] = !parts[p.dataset.dep]; await Settings.set('de_parts', JSON.stringify(parts)); return draw(); }
+        const o = t.closest('[data-deo]')?.dataset.deo;
+        if (o) { if (R.open.length) return toast('Mark every tattoo up to now completed first.', 2400); const note = Settings.get('de_note', '');
+          if (o === 'csv') return deCsv(R, parts, note);
+          toast('Preparing\u2026', 1200); const pages = await deDoc(R, parts, note);
+          if (o === 'print') return printCanvas(...pages.map(p => p.cv));
+          const files = await Promise.all(pages.map(async (p) => new File([await new Promise(r => p.cv.toBlob(r, 'image/png'))], p.name, { type: 'image/png' })));
+          try { if (o === 'send' && navigator.canShare?.({ files })) await navigator.share({ files, title: 'Day end report', text: `Day end: ${deSpan(R.P)}. ${R.sum.n} tattoo${R.sum.n === 1 ? '' : 's'}, ${money(R.sum.takings)} taken.` });
+            else { await saveFiles(files); if (o === 'send') toast('Saved. Send the pictures, or use Print / PDF to send a PDF.', 3500); } }
+          catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); } return; }
+        const hp = t.closest('[data-dhp], [data-dhc]'); if (hp) { const id = +(hp.dataset.dhp || hp.dataset.dhc), X = await deFiledPeriod(id); if (!X) return;
+          const R0 = await deData(X.P); if (hp.dataset.dhc) return deCsv(R0, parts, X.F.note || '');
+          toast('Preparing\u2026', 1200); const pages = await deDoc(R0, parts, X.F.note || ''); return printCanvas(...pages.map(p => p.cv)); }
+        if (t.closest('#de-reopen, #de-reopen2')) { if (!await ask('Reopen the last filed day end?\n\nIts time goes back into this one, so you can add anything late and send it again. File it again when it\u2019s done.')) return; await deReopen(); toast('Reopened.', 1400); return draw(); }
+        if (t.closest('#de-file')) { if (R.open.length) return toast('Mark every tattoo up to now completed first.', 2400);
+          if (!await ask(`File this day end?\n\n${R.sum.n} tattoo${R.sum.n === 1 ? '' : 's'}, ${money(R.sum.takings)} taken. Mark it filed once it\u2019s been sent to the owner or kept; the next one starts from now.`)) return;
+          await deFile(R, Settings.get('de_note', '')); toast('Filed. A new day end has started.', 2000); return draw(); } });
+      el.addEventListener('input', (e) => { if (e.target.id === 'de-note') Settings.set('de_note', e.target.value); });
       draw();
     }
   },
@@ -2832,6 +2894,10 @@ const VIEWS = {
           <input class="in" id="s-maxday" type="number" min="1" max="10" value="${esc(Settings.get('max_per_day', '1'))}"></label>
         <label class="field"><span>Time between bookings ${help('Setup, cleaning and a break. Kept free before and after every booking when working out open times.')}</span>
           <div class="unit-in"><input class="in" id="s-gap" type="number" min="0" max="240" step="15" value="${esc(Settings.get('booking_gap', '60'))}"><em>min</em></div></label></div>
+        <div class="two"><label class="field"><span>Day end keeps ${help('An open day end (Stats \u203a Day end) holds everything since you last filed one, up to this many days; past that the oldest days drop off.')}</span>
+          <div class="unit-in"><input class="in" id="s-ded" type="number" min="1" max="31" value="${deMax()}"><em>days</em></div></label>
+        <label class="field"><span>Day end reminder ${help('The home screen reminds you once a day end has run this long without being filed.')}</span>
+          <div class="unit-in"><input class="in" id="s-der" type="number" min="1" max="31" value="${deRemind()}"><em>days</em></div></label></div>
         <label class="field" style="max-width:260px"><span>Birthday notice ${help('How many days before a client\u2019s birthday it shows on the home screen (and notifies you), so you can plan for it and send a birthday reward by the day.')}</span>
           <div class="unit-in"><input class="in" id="s-bdd" type="number" min="0" max="30" value="${bdDays()}"><em>days before</em></div></label>
         <div class="lbl" style="margin-top:6px">Days off ${help('Days you never tattoo. They are greyed out in the calendar and skipped when a new booking picks a day. You can still book on them; InkForge just checks with you first.')}</div>
@@ -2911,6 +2977,7 @@ const VIEWS = {
       $('#s-start').addEventListener('change', save('day_start'));
       $('#s-end').addEventListener('change', save('day_end'));
       $('#s-maxday').addEventListener('change', (e) => Settings.set('max_per_day', String(Math.max(1, +e.target.value || 1))));
+      for (const [id, k] of [['#s-ded', 'de_days'], ['#s-der', 'de_remind']]) $(id).addEventListener('change', (e) => { const v = Math.max(1, Math.min(31, Math.round(+e.target.value) || 1)); e.target.value = v; Settings.set(k, String(v)); });
       $('#s-bdd').addEventListener('change', (e) => Settings.set('bd_days', String(Math.max(0, Math.min(30, Math.round(+e.target.value) || 0)))));
       $('#s-gap').addEventListener('change', (e) => Settings.set('booking_gap', String(Math.max(0, Math.min(240, +e.target.value || 0)))));
       const drawLogo = async () => {
@@ -3521,6 +3588,7 @@ const MERGE_TABLES = {
   design_assets: { section: 'designs', fk: { design_id: 'designs' }, refs: ['ref'] },
   loyalty_rewards: { section: 'loyalty', fk: { client_id: 'clients', from_client: 'clients', from_booking: 'bookings', used_booking: 'bookings', passed_from: 'clients', item_id: 'inventory_items', alt_id: 'inventory_items' } },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
+  day_ends: { section: null },              // this workspace's own filing record
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'signed_form_pages', 'portfolio_items',
@@ -6514,6 +6582,160 @@ const Notif = {
     await saveFiles([f]); toast('Saved. Open the file to add it to your calendar' + (b.notify_min != null ? ', with its reminder.' : '.'), 5000); }
 };
 
+/* ---------- Day end ----------
+   A report of everything since the last one was filed: tattoos done and what they earned, bookings made and
+   cancelled, new clients, rewards given, sent and used, and stock. It runs until you file it (send it to the owner,
+   or keep it), up to deMax() days (Settings, 31 at most); past that the oldest days drop off. Every tattoo booked up to now must be marked
+   completed (or cancelled) before it can be filed. Filed ones are kept in day_ends. */
+const DE_LIMIT = 31, DE_DAY = 864e5;
+const deMax = () => Math.max(1, Math.min(DE_LIMIT, Math.round(+Settings.get('de_days', '31')) || DE_LIMIT));   /* days an open day end keeps */
+const deRemind = () => Math.max(1, Math.min(DE_LIMIT, Math.round(+Settings.get('de_remind', '1')) || 1));   /* days before the home screen reminds you */
+const deUTC = (d) => d.toISOString().slice(0, 19).replace('T', ' ');   /* as SQLite's datetime('now') */
+const deDate = (s) => new Date(String(s).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? '' : 'Z'));
+const deLoc = (d) => `${ymd(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;   /* as bookings' start_at */
+const DE_PARTS = [['summary', 'Summary'], ['money', 'Takings and pay'], ['days', 'Day by day'], ['done', 'Tattoos done'], ['made', 'Bookings made'], ['cancelled', 'Cancellations'],
+  ['clients', 'New clients'], ['loyalty', 'Loyalty rewards'], ['stock', 'Stock'], ['note', 'Your note']];
+const deParts = () => { let p = null; try { p = JSON.parse(Settings.get('de_parts') || 'null'); } catch {} return p && typeof p === 'object' ? p : Object.fromEntries(DE_PARTS.map(([k]) => [k, true])); };
+const deLast = () => DB.one('SELECT * FROM day_ends ORDER BY to_at DESC, id DESC LIMIT 1');
+/* The open period: from the last one filed (or when you started keeping them), up to now, never more than deMax() days. */
+async function dePeriod() { const last = await deLast(), now = new Date();
+  let start = Settings.get('de_start'); if (!start) { const d = new Date(); d.setHours(0, 0, 0, 0); start = deUTC(d); await Settings.set('de_start', start); }
+  const MX = deMax(), since = last ? last.to_at : start, from0 = deDate(since), cap = new Date(now - MX * DE_DAY), from = from0 < cap ? cap : from0;
+  const days = Math.floor((now - from0) / DE_DAY);
+  return { last, since, from, to: now, fromU: deUTC(from), toU: deUTC(now), dropped: from0 < cap, days, max: MX, left: Math.max(0, MX - days) }; }
+/* A filed day end as a period, to print again: with the one filed before it (for the rewards it already counted). */
+async function deFiledPeriod(id) { const F = await DB.one('SELECT * FROM day_ends WHERE id = ?', [id]); if (!F) return null;
+  const last = await DB.one('SELECT * FROM day_ends WHERE to_at <= ? AND id != ? ORDER BY to_at DESC, id DESC LIMIT 1', [F.from_at, F.id]);
+  return { F, P: { last, from: deDate(F.from_at), to: deDate(F.to_at), fromU: F.from_at, toU: F.to_at } }; }
+/* Everything in a period. prev: the last filed day end, whose day-only rewards aren't counted again. */
+async function deData(P) {
+  const { fromU: a, toU: z } = P, la = deLoc(P.from), lz = deLoc(P.to), da = ymd(P.from), dz = ymd(P.to);
+  let prev = {}; try { prev = JSON.parse(P.last?.data || '{}').ids || {}; } catch {}
+  const not = (k) => (prev[k] || []).length ? ` AND l.id NOT IN (${prev[k].map(Number).join(', ')})` : '';
+  const nm = 'c.first_name, c.last_name', J = 'LEFT JOIN clients c ON c.id = b.client_id';
+  const done = await DB.all(`SELECT b.*, ${nm} FROM bookings b ${J} WHERE b.completed = 1 AND coalesce(b.ghost, 0) = 0 AND b.completed_at IS NOT NULL AND datetime(b.completed_at) > ? AND datetime(b.completed_at) <= ? ORDER BY b.completed_at`, [a, z]);
+  const made = await DB.all(`SELECT b.*, ${nm} FROM bookings b ${J} WHERE coalesce(b.ghost, 0) = 0 AND b.kind != 'block' AND datetime(b.created_at) > ? AND datetime(b.created_at) <= ? ORDER BY b.created_at`, [a, z]);
+  const cancelled = await DB.all(`SELECT b.*, ${nm} FROM bookings b ${J} WHERE b.cancelled = 1 AND coalesce(b.ghost, 0) = 0 AND b.cancelled_at IS NOT NULL AND datetime(b.cancelled_at) > ? AND datetime(b.cancelled_at) <= ? ORDER BY b.cancelled_at`, [a, z]);
+  const clients = await DB.all(`SELECT * FROM clients WHERE datetime(created_at) > ? AND datetime(created_at) <= ? ORDER BY created_at`, [a, z]);
+  const RJ = `SELECT l.*, h.first_name, h.last_name FROM loyalty_rewards l LEFT JOIN clients h ON h.id = l.client_id WHERE l.status != 'deleted' AND`;
+  const given = await DB.all(`${RJ} l.issued_at BETWEEN ? AND ?${not('given')} ORDER BY l.issued_at, l.id`, [da, dz]);
+  const sent = await DB.all(`${RJ} l.sent_at BETWEEN ? AND ?${not('sent')} ORDER BY l.sent_at, l.id`, [da, dz]);
+  const used = await DB.all(`${RJ} l.status = 'used' AND l.used_at BETWEEN ? AND ?${not('used')} ORDER BY l.used_at, l.id`, [da, dz]);
+  const takes = await DB.all(`SELECT * FROM stock_takes WHERE datetime(taken_at) > ? AND datetime(taken_at) <= ? ORDER BY taken_at`, [a, z]);
+  for (const t of takes) t.lines = await DB.all('SELECT * FROM stock_take_lines WHERE take_id = ? ORDER BY item_name COLLATE NOCASE', [t.id]);
+  const low = await DB.all(`SELECT * FROM inventory_items WHERE active = 1 AND min_qty > 0 AND qty <= min_qty ORDER BY name COLLATE NOCASE`);
+  const sheet = takes.length ? await DB.all(`SELECT * FROM inventory_items WHERE active = 1 ORDER BY coalesce(category, '') COLLATE NOCASE, name COLLATE NOCASE`) : [];
+  const open = await DB.all(`SELECT b.*, ${nm} FROM bookings b ${J} WHERE b.kind IN (${DONE_KINDS.map(k => `'${k}'`).join(', ')}) AND coalesce(b.completed, 0) = 0 AND coalesce(b.cancelled, 0) = 0 AND coalesce(b.ghost, 0) = 0 AND b.start_at >= ? AND b.start_at <= ? ORDER BY b.start_at`, [la.slice(0, 10), lz]);
+  /* the numbers */
+  const tat = done.filter(b => DONE_KINDS.includes(b.kind)), r2 = (v) => Math.round(v * 100) / 100, sum = (L, f) => r2(L.reduce((t, x) => t + (+f(x) || 0), 0));
+  const takings = sum(tat, b => b.paid), mins = sum(tat, b => b.time_min), off = sum(tat, b => b.loy_off);
+  const byPay = {}; for (const b of tat) { const k = b.pay_method || 'Not recorded'; byPay[k] = r2((byPay[k] || 0) + (+b.paid || 0)); }
+  const pc = payOn() ? payCfg() : null, pay = pc ? tat.reduce((t, b) => { const sp = paySplit(pc, +b.paid || 0, +b.loy_off || 0); t.studio += sp.studio; t.sup += sp.sup; t.mine += sp.mine; return t; }, { studio: 0, sup: 0, mine: 0 }) : null;
+  const can = { client: 0, noshow: 0, me: 0 }; for (const b of cancelled) can[b.cancel_by || 'client'] = (can[b.cancel_by || 'client'] || 0) + 1;
+  const deps = sum(made.filter(b => b.deposit_paid), b => b.deposit);
+  /* day by day, on the days anything happened */
+  const dayOf = (t) => ymd(deDate(t)), D = new Map(), g = (k) => D.get(k) || (D.set(k, { day: k, n: 0, paid: 0, made: 0, can: 0, clients: 0 }), D.get(k));
+  for (const b of tat) { const e = g(dayOf(b.completed_at)); e.n++; e.paid = r2(e.paid + (+b.paid || 0)); }
+  for (const b of made) g(dayOf(b.created_at)).made++; for (const b of cancelled) g(dayOf(b.cancelled_at)).can++; for (const c of clients) g(dayOf(c.created_at)).clients++;
+  const days = [...D.values()].sort((x, y) => x.day < y.day ? -1 : 1);
+  return { P, done, tat, made, cancelled, clients, given, sent, used, takes, low, sheet, open, days, byPay, pay, can, deps,
+    sum: { n: tat.length, other: done.length - tat.length, takings, avg: tat.length ? r2(takings / tat.length) : 0, mins, off, made: made.length, cancelled: cancelled.length, clients: clients.length, given: given.length, sent: sent.length, used: used.length },
+    ids: { given: given.map(r => r.id), sent: sent.map(r => r.id), used: used.map(r => r.id) } }; }
+/* The report's parts, shared by the screen, the A4 pages and the spreadsheet: tiles (big numbers) and tables.
+   A column: h heading, f(r) what shows, v(r) the plain value for the spreadsheet (defaults to f), num (right-aligned), w (width share). */
+function deSections(R, parts, note) {
+  const S = R.sum, r2 = (v) => Math.round(v * 100) / 100, out = [];
+  const tm = (s) => { const d = deDate(s); return `${fmtDay(ymd(d))} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const day = (s) => fmtDay(ymd(deDate(s))), who = (r) => fullName(r) || r.guest_name || '\u2014', hrs = (m) => m ? fmtH(m / 60) : '\u2014';
+  const M = (v) => v == null || v === '' ? '' : money(v), C = (h, f, o = {}) => ({ h, f, ...o });
+  if (parts.summary) out.push({ k: 'summary', t: 'Summary', tiles: [[S.n, 'Tattoos done'], [money(S.takings), 'Taken'], [S.n ? money(S.avg) : '\u2014', 'Per tattoo'], [hrs(S.mins), 'Tattooing'],
+    [S.made, 'Bookings made'], [S.cancelled, 'Cancelled', S.cancelled ? 'warn' : ''], [S.clients, 'New clients'], [S.sent, 'Rewards sent'],
+    ...(S.off ? [[money(S.off), 'Loyalty discounts']] : []), ...(R.deps ? [[money(R.deps), 'Deposits taken']] : []), ...(S.other ? [[S.other, 'Other sessions']] : [])] });
+  if (parts.money) { const by = new Map(); for (const b of R.tat) { const k = b.pay_method || 'Not recorded', e = by.get(k) || { k, n: 0, a: 0 }; e.n++; e.a = r2(e.a + (+b.paid || 0)); by.set(k, e); }
+    out.push({ k: 'money', t: 'Takings and pay', tiles: R.pay ? [[money(r2(R.pay.studio)), 'Studio\u2019s share'], ...(R.pay.sup ? [[money(r2(R.pay.sup)), 'Supplies']] : []), [money(r2(R.pay.mine)), 'Yours']] : null,
+      tables: [{ cols: [C('Paid by', r => r.k, { w: 3 }), C('Tattoos', r => r.n, { num: 1 }), C('Amount', r => M(r.a), { num: 1, v: r => r.a })], rows: [...by.values()].sort((a, b) => b.a - a.a),
+        total: ['Total', S.n, M(S.takings)], totalV: ['Total', S.n, S.takings] }] }); }
+  if (parts.days) out.push({ k: 'days', t: 'Day by day', tables: [{ cols: [C('Day', r => fmtDay(r.day), { w: 3, v: r => r.day }), C('Tattoos', r => r.n, { num: 1 }), C('Taken', r => M(r.paid), { num: 1, v: r => r.paid }),
+    C('Booked', r => r.made, { num: 1 }), C('Cancelled', r => r.can, { num: 1 }), C('New clients', r => r.clients, { num: 1 })], rows: R.days,
+    total: ['Total', S.n, M(S.takings), S.made, S.cancelled, S.clients], totalV: ['Total', S.n, S.takings, S.made, S.cancelled, S.clients] }] });
+  if (parts.done) out.push({ k: 'done', t: 'Tattoos done', tables: [{ cols: [C('Finished', r => tm(r.completed_at), { w: 2.2 }), C('Client', who, { w: 2 }), C('Tattoo', r => [r.description, r.placement].filter(Boolean).join(' \u00b7 ') || BOOKING_KINDS[r.kind]?.label || '', { w: 3.4 }),
+    C('Time', r => hrs(r.time_min), { num: 1, w: 1.1, v: r => r.time_min ? r2(r.time_min / 60) : '' }), C('Off', r => r.loy_off ? M(r.loy_off) : '', { num: 1, w: 0.9, v: r => r.loy_off || '' }), C('Paid', r => r.paid != null ? M(r.paid) : '\u2014', { num: 1, w: 1.1, v: r => r.paid ?? '' }), C('By', r => r.pay_method || '', { w: 1 })],
+    rows: R.done, total: ['', `${R.done.length} session${R.done.length === 1 ? '' : 's'}`, '', hrs(S.mins), S.off ? M(S.off) : '', M(r2(R.done.reduce((t, b) => t + (+b.paid || 0), 0))), ''] }] });
+  if (parts.made) out.push({ k: 'made', t: 'Bookings made', tables: [{ cols: [C('Made', r => tm(r.created_at), { w: 2.2 }), C('For', r => fmtDay(r.start_at.slice(0, 10)) + ' ' + r.start_at.slice(11, 16), { w: 2.2, v: r => r.start_at.replace('T', ' ') }), C('Client', who, { w: 2 }),
+    C('Type', r => BOOKING_KINDS[r.kind]?.label || r.kind, { w: 1.3 }), C('Quote', r => M(r.quote), { num: 1, v: r => r.quote ?? '' }), C('Deposit', r => r.deposit ? M(r.deposit) + (r.deposit_paid ? ' paid' : '') : '', { num: 1, w: 1.3, v: r => r.deposit ?? '' })], rows: R.made }] });
+  if (parts.cancelled) out.push({ k: 'cancelled', t: 'Cancellations', line: R.cancelled.length ? ['client', 'noshow', 'me'].filter(k => R.can[k]).map(k => `${R.can[k]} ${k === 'client' ? 'by the client' : k === 'noshow' ? 'no-show' + (R.can[k] === 1 ? '' : 's') : 'by you'}`).join(' \u00b7 ') : '',
+    tables: [{ cols: [C('Cancelled', r => tm(r.cancelled_at), { w: 2.2 }), C('Was for', r => fmtDay(r.start_at.slice(0, 10)), { w: 1.8, v: r => r.start_at.slice(0, 10) }), C('Client', who, { w: 2 }),
+      C('By', r => r.cancel_by === 'noshow' ? 'No-show' : r.cancel_by === 'me' ? 'You' : 'Client', { w: 1 }), C('Reason', r => r.cancel_reason || '', { w: 3 })], rows: R.cancelled }] });
+  if (parts.clients) out.push({ k: 'clients', t: 'New clients', tables: [{ cols: [C('Added', r => tm(r.created_at), { w: 2.2 }), C('Name', r => fullName(r), { w: 2.6 }), C('Phone', r => r.phone || '', { w: 2 }), C('Email', r => r.email || '', { w: 2.6 }), C('Type', r => r.category || 'Client', { w: 1.2 })], rows: R.clients }] });
+  if (parts.loyalty) { const kind = (r) => LOY_SRC[r.src] || (r.src === 'thanks' ? 'Thank you' : r.src === 'spend' ? 'Spend' : 'Referral'), hold = (r) => fullName(r) || (r.client_id == null ? 'Anyone with the card' : '\u2014');
+    out.push({ k: 'loyalty', t: 'Loyalty rewards', tiles: [[S.given, 'Given'], [S.sent, 'Sent'], [S.used, 'Used']],
+      tables: [{ t: 'Sent', cols: [C('Sent', r => fmtDay(r.sent_at), { w: 1.8, v: r => r.sent_at }), C('Client', hold, { w: 2.4 }), C('Kind', kind, { w: 1.6 }), C('Reward', r => Loy.rLabel(r), { w: 3 }), C('Code', r => r.code || '', { w: 1.2 })], rows: R.sent },
+        ...(R.used.length ? [{ t: 'Used', cols: [C('Used', r => fmtDay(r.used_at), { w: 1.8, v: r => r.used_at }), C('Client', hold, { w: 2.4 }), C('Kind', kind, { w: 1.6 }), C('Reward', r => r.note === 'product' ? (r.alt_name || r.item_name || 'Product') + ' handed over' : Loy.rLabel(r), { w: 3 }), C('Code', r => r.code || '', { w: 1.2 })], rows: R.used }] : [])] }); }
+  if (parts.stock) { const diff = (r) => r.expected != null ? r2(r.counted - r.expected) : '';
+    out.push({ k: 'stock', t: 'Stock', tables: [{ t: 'Running low', cols: [C('Item', r => r.name, { w: 3.4 }), C('In stock', r => +r.qty, { num: 1 }), C('Minimum', r => +r.min_qty, { num: 1 }), C('Supplier', r => r.supplier || '', { w: 2.4 })], rows: R.low, none: 'Nothing running low.' },
+      ...R.takes.map(t => ({ t: `Stock take, ${tm(t.taken_at)}${t.notes ? ' \u00b7 ' + t.notes : ''}`, cols: [C('Item', r => r.item_name, { w: 3.4 }), C('Expected', r => r.expected ?? '', { num: 1 }), C('Counted', r => r.counted, { num: 1 }), C('Difference', r => { const d = diff(r); return d === '' ? '' : (d > 0 ? '+' : '') + d; }, { num: 1, v: diff })], rows: t.lines })),
+      ...(R.sheet.length ? [{ t: 'Stock sheet', cols: [C('Item', r => r.name, { w: 3 }), C('Category', r => r.category || '', { w: 2 }), C('In stock', r => +r.qty, { num: 1 }), C('Minimum', r => +r.min_qty, { num: 1 }), C('Cost', r => M(r.cost), { num: 1, v: r => r.cost ?? '' })], rows: R.sheet }] : [])] }); }
+  if (parts.note && String(note || '').trim()) out.push({ k: 'note', t: 'Note', text: String(note).trim() });
+  return out; }
+const deSpan = (P) => { const f = deDate(P.fromU), t = deDate(P.toU), hm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; return `${fmtDay(ymd(f))} ${hm(f)} to ${fmtDay(ymd(t))} ${hm(t)}`; };
+/* The report as A4 pages: a header, the numbers in tiles, then compact tables that run on across pages (their
+   headings repeated), and a footer on each page. Small type and tight rows, so a busy month stays a few pages. */
+async function deDoc(R, parts, note) {
+  const { W, H, M, teal, ink, soft } = DOC, CW = W - 2 * M, pages = [], studio = Settings.get('studio_name') || Settings.get('artist_name') || '', artist = Settings.get('artist_name') || '';
+  let P = null, y = 0; const BOT = H - 110;
+  const page = async (first) => { P = await docCanvas(); pages.push(P); if (first) await P.header(); y = first ? 300 : 100; };
+  const fit = (t, f, w) => { P.x.font = f; t = String(t ?? ''); if (P.x.measureText(t).width <= w) return t; while (t.length > 1 && P.x.measureText(t + '\u2026').width > w) t = t.slice(0, -1); return t + '\u2026'; };
+  await page(true);
+  P.text('Day end report', M, y + 50, P.font(64, 400, true), ink);
+  P.text(deSpan(R.P), W - M, y + 14, P.font(20, 600), ink, 'right');
+  P.text([artist && artist !== studio ? artist : '', `Prepared ${fmtDay(ymd(new Date()))}`].filter(Boolean).join(' \u00b7 '), W - M, y + 44, P.font(17), soft, 'right');
+  y += 100;
+  const head = (t) => { if (y + 90 > BOT) return false; P.x.fillStyle = teal; P.x.fillRect(M, y - 22, 6, 28); P.text(t.toUpperCase(), M + 16, y, P.font(20, 700), ink); y += 26; return true; };
+  const tiles = async (T) => { const per = 4, gap = 14, bw = (CW - gap * (per - 1)) / per, bh = 86;
+    for (let i = 0; i < T.length; i += per) { if (y + bh > BOT) await page(false);
+      T.slice(i, i + per).forEach(([v, l, cls], j) => { const x0 = M + j * (bw + gap); P.x.fillStyle = cls === 'warn' ? '#fbf1e4' : '#eef6f4'; P.x.beginPath(); P.x.roundRect(x0, y, bw, bh, 12); P.x.fill();
+        P.text(fit(v, P.font(32, 700), bw - 28), x0 + 14, y + 44, P.font(32, 700), cls === 'warn' ? '#b26a12' : teal); P.text(fit(String(l).toUpperCase(), P.font(14, 700), bw - 28), x0 + 14, y + 70, P.font(14, 700), soft); });
+      y += bh + gap; } };
+  const table = async (T) => { const ws = T.cols.map(c => c.w || 1), sw = ws.reduce((a, b) => a + b, 0), X = []; let acc = M; for (const w of ws) { X.push(acc); acc += CW * w / sw; } X.push(M + CW);
+    const RH = 27, FS = 16, cell = (c, i, txt, f, col) => { const pad = 8, w = X[i + 1] - X[i] - 2 * pad, t = fit(txt, f, w); P.text(t, c.num ? X[i + 1] - pad : X[i] + pad, y + 19, f, col, c.num ? 'right' : 'left'); };
+    const hdr = (cont) => { P.x.fillStyle = '#e4efec'; P.x.fillRect(M, y, CW, RH); T.cols.forEach((c, i) => cell(c, i, c.h.toUpperCase() + (cont && i === 0 ? ' (CONT.)' : ''), P.font(13, 700), soft)); y += RH; };
+    if (T.t) { if (y + 30 + RH * 2 > BOT) await page(false); P.text(T.t, M, y + 4, P.font(17, 700), ink); y += 14; }
+    if (!T.rows.length) { P.text(T.none || 'Nothing in this period.', M, y + 18, P.font(16), soft); y += 34; return; }
+    if (y + RH * 2 > BOT) await page(false); hdr(false);
+    for (const [n, r] of T.rows.entries()) { if (y + RH > BOT) { await page(false); hdr(true); }
+      if (n % 2) { P.x.fillStyle = '#f7f7f5'; P.x.fillRect(M, y, CW, RH); } T.cols.forEach((c, i) => cell(c, i, c.f(r), P.font(FS), ink)); y += RH; }
+    if (T.total) { if (y + RH + 4 > BOT) { await page(false); hdr(true); } P.x.fillStyle = ink; P.x.fillRect(M, y, CW, 2); y += 2; T.cols.forEach((c, i) => cell(c, i, T.total[i] ?? '', P.font(FS, 700), ink)); y += RH; }
+    y += 18; };
+  for (const S of deSections(R, parts, note)) {
+    if (!head(S.t)) { await page(false); head(S.t); }
+    if (S.line) { P.text(S.line, M, y + 4, P.font(16), soft); y += 24; }
+    if (S.tiles) { y += 4; await tiles(S.tiles); }
+    for (const T of S.tables || []) await table(T);
+    if (S.text) for (const ln of P.wrap(S.text, P.font(18), CW)) { if (y + 26 > BOT) await page(false); P.text(ln, M, y + 8, P.font(18), ink); y += 26; }
+    y += 16; }
+  pages.forEach((q, i) => { q.x.fillStyle = teal; q.x.fillRect(M, H - 86, CW, 2);
+    q.text([studio, 'Day end', deSpan(R.P)].filter(Boolean).join('  \u00b7  '), M, H - 54, q.font(15), soft); q.text(`Page ${i + 1} of ${pages.length}`, W - M, H - 54, q.font(15, 600), soft, 'right'); });
+  const nm = `Day-end-${ymd(deDate(R.P.fromU))}-to-${ymd(deDate(R.P.toU))}`;
+  return pages.map((q, i) => ({ cv: q.cv, name: `${nm}${pages.length > 1 ? '-' + (i + 1) : ''}.png` })); }
+/* The same report as one spreadsheet: each part under its heading, plain numbers (no currency signs). */
+function deCsv(R, parts, note) { const rows = [['Period', deSpan(R.P)], ['Prepared', ymd(new Date())], []];
+  for (const S of deSections(R, parts, note)) { rows.push([S.t.toUpperCase()]); if (S.line) rows.push([S.line]);
+    const raw = (v) => typeof v === 'string' && /^[^\d-]*-?[\d,\s]+(\.\d+)?$/.test(v.trim()) ? +v.replace(/[^\d.-]/g, '') : v;   /* money as a plain number */
+    if (S.tiles) for (const [v, l] of S.tiles) rows.push([l, raw(v)]);
+    for (const T of S.tables || []) { if (T.t) rows.push([T.t]); rows.push(T.cols.map(c => c.h)); for (const r of T.rows) rows.push(T.cols.map(c => (c.v || c.f)(r)));
+      if (T.totalV || T.total) rows.push(T.totalV || T.total); rows.push([]); }
+    if (S.text) rows.push([S.text]); rows.push([]); }
+  return saveCsv(`Day-end-${ymd(deDate(R.P.fromU))}-to-${ymd(deDate(R.P.toU))}.csv`, ['Day end report', Settings.get('studio_name') || Settings.get('artist_name') || ''], rows); }
+/* File the open day end: it's done, and the next one starts now. */
+async function deFile(R, note) { await DB.run('INSERT INTO day_ends (from_at, to_at, note, data) VALUES (?, ?, ?, ?)', [R.P.fromU, R.P.toU, note || null, JSON.stringify({ ids: R.ids, sum: R.sum })]); await Settings.set('de_note', ''); }
+/* Reopen the last filed one: its time goes back into the open day end (to add a late tattoo, say, and send it again). */
+async function deReopen() { const L = await deLast(); if (L) await DB.run('DELETE FROM day_ends WHERE id = ?', [L.id]); return L; }
+const deAgo = (d) => { const h = Math.floor((Date.now() - d) / 36e5); return h < 1 ? 'just now' : h < 24 ? `${h} hour${h === 1 ? '' : 's'} ago` : `${Math.floor(h / 24)} day${Math.floor(h / 24) === 1 ? '' : 's'} ago`; };
+/* Home: once a day end has run a day, a note of when you last filed and how long before the oldest days drop off. */
+async function homeDE() { const el = $('#home-de'); if (!el || wsDesign() || !Settings.get('de_start')) return; let P; try { P = await dePeriod(); } catch { return; }
+  if (Date.now() - deDate(P.since) < deRemind() * DE_DAY) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card de-note ${P.left <= 3 ? 'warn' : ''}"><span class="ico-c">${ICON.stats || ''}</span><div class="c-main"><b>Day end</b><span class="muted c-sub">${P.last ? `Last filed ${deAgo(deDate(P.last.to_at))}` : `Not filed yet, started ${deAgo(deDate(P.since))}`} \u00b7 ${P.dropped ? 'the oldest days are dropping off: file it soon' : `${P.left} day${P.left === 1 ? '' : 's'} before the oldest drop off`}</span></div>
+    <a class="btn small primary" href="#day-end">Open</a></div>`; }
 /* Birthdays marked done: { client id: that birthday's date } */
 /* How many days ahead a birthday shows (and notifies): the artist has until the day itself to send a birthday reward. */
 const bdDays = () => Math.max(0, Math.min(30, +Settings.get('bd_days', '3') || 0));
@@ -11382,6 +11604,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 551, when: '2026-11-25T03:00', added: [
+    'Stats: Day end gathers everything since you last filed one: tattoos done and what they earned, bookings made and cancelled, new clients, loyalty rewards (birthday ones too) and stock, with a day-by-day table.',
+    'Day end: pick what goes in, then print it as a compact PDF, save images, send it or save a spreadsheet. Mark it filed and the next one starts. Every tattoo up to now has to be completed first.',
+    'Day end: reopen the last filed one to add a late tattoo, and print or export any filed one again.',
+    'Day end keeps up to 31 days, and the home screen reminds you when it hasn’t been filed (both set in Settings › Your week).'
+  ] },
   { build: 550, when: '2026-11-25T01:00', added: [
     'Loyalty: a program guide explains your program in plain words for clients: earning, stacking with worked numbers, product swaps, passing on and the full terms. Find it in Program › Terms or the reward message.',
     'The guide: reword any part, leave parts out or add your own definitions, then print it, save a PDF or send it. It goes along with Export program.'
@@ -11399,7 +11627,7 @@ const NEWS = [
     'Thank-you receipts: with the loyalty program on, the reward is a real loyalty reward on your program’s settings (only passing it on can change), says if it stacks and prints its terms, with the page growing to fit. Without the program, it’s a thank-you note only.',
     'Loyalty: create a reward for a client: an artist gift, birthday, Christmas, Halloween, Valentine’s Day, Easter, New Year or an apology. Use your program’s reward, or a custom amount that stands on its own and doesn’t stack.',
     'Custom rewards can be for anyone: when they come in, add them as a client and enter the card’s code on their booking.',
-    'Birthdays show 3 days ahead (change it in Settings › Bookings), with a notification and a Birthday reward to send by the day.',
+    'Birthdays show 3 days ahead (change it in Settings › Your week), with a notification and a Birthday reward to send by the day.',
     'Reward cards: every kind has its own wording and can have its own card. Template cards keep the reward’s details in place: change colours and add stickers and backgrounds. Make them in the design studio, then export and import them.',
     'Loyalty › Program: Export program and Import program share your whole program (terms, wording, cards and products) with another artist.',
     'Terms: thank-you, birthday and gift rewards say how they were given, and your own terms can use every line the card has free.',
@@ -12031,7 +12259,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
    reel maker), forms, notes and the portfolio, without the tools for running a studio (clients, bookings, quotes,
    stats, stock, rules). Kept in the workspace (setting ws_mode, so backups carry it) and on its list entry; the
    body gets the class ws-design, which hides what is marked data-biz, and those pages lead home. */
-const WS_BIZ = new Set(['rules-table', 'inventory-table', 'quotes-table', 'clients', 'clients-table', 'client', 'client-edit', 'book', 'bookings', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
+const WS_BIZ = new Set(['day-end', 'rules-table', 'inventory-table', 'quotes-table', 'clients', 'clients-table', 'client', 'client-edit', 'book', 'bookings', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
 const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) === 'design'; } catch { return WS.cur?.mode === 'design'; } };
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',
