@@ -3004,5 +3004,6 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .loy-use { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; } .loy-use > div { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; min-width: 84px; background: var(--bg2); }
 .loy-use b { font: 700 20px var(--ui); } .loy-use span { font-size: 11px; color: var(--ink2); } .loy-use .warn b { color: #e0a030; } .loy-use-rate { border-color: var(--teal) !important; } .loy-use-rate b { color: var(--teal); }
 .loy-t td.loy-deleted { color: var(--ink2); text-decoration: line-through; }
+.qz-title { margin: 0 0 14px; } .qz-title .in { font-size: 16px; } .qz-ret { font-size: 11px; background: rgba(31,181,168,.18); color: var(--teal); border-color: rgba(31,181,168,.4); margin-left: 6px; } .qz-who .picker { position: relative; }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 543; }
+:root { --app-build: 544; }

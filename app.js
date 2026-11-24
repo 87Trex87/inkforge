@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 543;
+const APP_BUILD = 544;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -4770,14 +4770,18 @@ const qSave = (cfg) => Settings.set('quote_v2', JSON.stringify(cfg));
 
 // The wizard's answers, kept while the app is open.
 // id = saved quote being edited; cfg = the saved Calibrate values while the artist keeps an old quote's prices.
-const QZ_RESET = { design: null, designRef: null, designNote: '', withDesign: false, av: null, client: '', discType: 'pct', discVal: 0, step: 0, seen: 0,
+const QZ_RESET = { design: null, designRef: null, designNote: '', withDesign: false, av: null, client: '', clientId: null, title: '', discType: 'pct', discVal: 0, step: 0, seen: 0,
   job: 'new', jobLvl: 3, place: '', side: '', w: 10, h: 10, colour: '', detail: 3, style: '', text: '', font: '', fontName: '', letter: 2, hours: null,
   id: null, cfg: null, cfgKept: false,
   sized: false, detailSet: false, styleSet: false, lettering: null,
   items: [], pos: 0 };                                                   // other tattoos in this quote; pos = where this one sits   // each step needs a real choice before Next
 const QZ = { ...QZ_RESET };
 // The answers stored with a saved quote.
-const QZ_KEYS = ['job', 'jobLvl', 'place', 'side', 'w', 'h', 'colour', 'detail', 'style', 'text', 'font', 'fontName', 'letter', 'hours',
+/* Client name in the quote: picks a returning client from your contacts (it links the quote and the booking to them). */
+document.addEventListener('focusin', (e) => { const i = e.target; if (!i.matches?.('[data-qzt="client"]') || i.dataset.pk) return; i.dataset.pk = 1;
+  clientPicker(i, i.parentElement.querySelector('.pick-list'), async (cid) => { const c = await DB.one('SELECT first_name, last_name FROM clients WHERE id = ?', [cid]); QZ.clientId = cid; QZ.client = c ? fullName(c) : i.value; qzDraw(); toast('Returning client linked.', 1400); });
+  i.dispatchEvent(new Event('input')); });
+const QZ_KEYS = ['title', 'clientId', 'job', 'jobLvl', 'place', 'side', 'w', 'h', 'colour', 'detail', 'style', 'text', 'font', 'fontName', 'letter', 'hours',
   'discType', 'discVal', 'client', 'designNote', 'withDesign', 'items', 'pos'];
 const QZ_STEPS = ['Placement', 'Size', 'Colour', 'Detail', 'Style', 'Text', 'Quote'];
 
@@ -4897,7 +4901,8 @@ function qzDraw() {
     const groups = [...new Set(c.placements.map(p => p[1]))];
     const reg = groups.includes(QZ.reg) ? QZ.reg : c.placements.find(p => p[0] === QZ.place)?.[1] || groups[0];   /* the body area shown */
     const jb = jobOf(QZ.job);
-    body = `<h2>Type of work</h2>
+    body = `<label class="field qz-title"><span>What\u2019s the tattoo? <span class="muted">(optional)</span></span><input class="in" data-qzt="title" value="${esc(QZ.title || '')}" placeholder="e.g. Fine-line rose with stem" autocomplete="off" spellcheck="true"></label>
+      <h2>Type of work</h2>
       <div class="qz-jobs">${JOB_TYPES.map(([k, n, d]) => `<button data-job="${k}" class="${QZ.job === k ? 'on' : ''}"><b>${n}</b><span>${d}</span></button>`).join('')}</div>
       ${QZ.job !== 'new' ? `<div class="qz-jl"><div class="slider"><span>Difficulty</span><b id="qz-jln">${JOB_LEVELS[QZ.jobLvl - 1]}</b></div>
         <input type="range" min="1" max="5" step="1" value="${QZ.jobLvl}" data-qz="jobLvl" class="qz-range" aria-label="Difficulty">
@@ -4972,8 +4977,8 @@ function qzDraw() {
       </details>
       </div><div class="qz-col qz-out">
         <div class="qz-who">
-          <label class="field" style="margin:0;flex:1"><span>Client name</span>
-            <input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off" placeholder="Optional"></label>
+          <div class="field" style="margin:0;flex:1"><span class="lbl">Client name ${QZ.clientId ? '<span class="chip qz-ret" data-tip="Linked to their client card">\u2713 Returning client</span>' : ''}</span>
+            <div class="picker"><input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off" placeholder="Type a name: pick a returning client, or a new one"><div class="pick-list" id="qz-cl" hidden></div></div></div>
 </div>
         <div class="lbl" style="margin-top:12px">Add to the quote</div>
         <div class="qz-extras">
@@ -5115,10 +5120,10 @@ function qzBind(el) {
       Cal.prefillQuote = { quote: pr.total, deposit: pr.deposit, duration: Math.min(600, Math.ceil(pr.per * 2) * 30), quoteId: QZ.id,
         size: cb ? cb.all.map(p => `${p.w} x ${p.h} cm`).join(' + ') : `${QZ.w} x ${QZ.h} cm`,
         placement: cb ? cb.all.map(p => qzPlacement(p)).join(' + ') : qzPlacement(),
-        description: cb ? cb.all.map((p, i) => `${i + 1}) ${qzSummary(p)}`).join('; ') : qzSummary(),
+        description: (QZ.title || '').trim() || (cb ? cb.all.map((p, i) => `${i + 1}) ${qzSummary(p)}`).join('; ') : qzSummary()),
         job: (cb ? cb.all.find(p => p.job !== 'new') : null)?.job || QZ.job,
-        design: QZ.design ? QZ.design.blob : null, notes: QZ.design && QZ.designNote ? 'Design notes: ' + QZ.designNote : null };
-      newBookingNext();
+        design: QZ.design ? QZ.design.blob : null, notes: [QZ.title && qzSummary() ? 'Quote: ' + qzSummary() : '', QZ.design && QZ.designNote ? 'Design notes: ' + QZ.designNote : ''].filter(Boolean).join('\n') || null };
+      newBookingNext(QZ.clientId || null);   /* a returning client is booked straight onto their card */
     })();
     if (t.closest('#qz-share')) return qzShare();
     if (t.closest('#qz-link')) return qzLink();
@@ -5132,7 +5137,8 @@ function qzBind(el) {
     if (k || tk === 'text' || e.target.hasAttribute('data-qzd')) qzTouch(true);
     if (e.target.hasAttribute('data-qzd')) { QZ.discVal = +e.target.value || 0; $('#qz-price').innerHTML = qzPriceBlock(); return; }
     if (e.target.dataset.avn) { e.target.closest('.slider').querySelector('b').textContent = fmtH(+e.target.value); return; }
-    if (tk) { QZ[tk] = e.target.value; if (tk === 'text') { QZ.hours = null; const nx = $('#qz-next'); if (nx) nx.disabled = !QZ.text.trim(); } return; }
+    if (tk) { QZ[tk] = e.target.value; if (tk === 'client' && QZ.clientId) { QZ.clientId = null; e.target.closest('.field')?.querySelector('.qz-ret')?.remove(); }
+      if (tk === 'text') { QZ.hours = null; const nx = $('#qz-next'); if (nx) nx.disabled = !QZ.text.trim(); } return; }
     if (!k) return;
     QZ[k] = +e.target.value; if (k !== 'hours') QZ.hours = null;
     if (k === 'w' || k === 'h') { QZ.sized = true; const nx = $('#qz-next'); if (nx) nx.disabled = false; }
@@ -5193,7 +5199,7 @@ async function qzSaveNow(quiet) {
   if (!QZ.design) ref = null;
   const old = QZ.id ? await DB.one('SELECT design_ref FROM quotes WHERE id = ?', [QZ.id]) : null;
   const cb = qzMulti() ? qCombo() : null;
-  const summary = cb ? `${cb.all.length} tattoos: ${cb.all.map(p => qzPlacement(p)).join(', ')}` : [qzPlacement(), `${QZ.w} x ${QZ.h} cm`, qzSummary()].filter(Boolean).join(' · ');
+  const summary = [(QZ.title || '').trim(), cb ? `${cb.all.length} tattoos: ${cb.all.map(p => qzPlacement(p)).join(', ')}` : [qzPlacement(), `${QZ.w} x ${QZ.h} cm`, qzSummary()].filter(Boolean).join(' · ')].filter(Boolean).join(' \u2014 ');   /* the title first, when there is one */
   const vals = [(QZ.client || '').trim() || null, summary, JSON.stringify(data), JSON.stringify(r.c), cb ? cb.tog.total : r.total, cb ? cb.tog.hours : r.hours, ref];
   if (old) await DB.run(`UPDATE quotes SET client_name = ?, summary = ?, data = ?, cfg = ?, total = ?, hours = ?, design_ref = ?, updated_at = datetime('now') WHERE id = ?`, [...vals, QZ.id]);
   else {
@@ -5450,7 +5456,7 @@ async function bookFromReply(id, rp) {
   Cal.prefillQuote = { quote: pr.total, deposit: pr.deposit, duration: Math.min(600, Math.ceil(pr.per * 2) * 30), quoteId: QZ.id,
     size: cb ? (sep ? `${p.w} x ${p.h} cm` : cb.all.map(x => `${x.w} x ${x.h} cm`).join(' + ')) : `${QZ.w} x ${QZ.h} cm`,
     placement: cb ? (sep ? qzPlacement(p) : cb.all.map(x => qzPlacement(x)).join(' + ')) : qzPlacement(),
-    description: cb ? (sep ? qzSummary(p) : cb.all.map((x, i) => `${i + 1}) ${qzSummary(x)}`).join('; ')) : qzSummary(),
+    description: (QZ.title || '').trim() || (cb ? (sep ? qzSummary(p) : cb.all.map((x, i) => `${i + 1}) ${qzSummary(x)}`).join('; ')) : qzSummary()),
     job: (cb ? (sep ? p : cb.all.find(x => x.job !== 'new')) : QZ)?.job || 'new',
     guestName: client ? null : rp.n || null, guestPhone: client ? null : intlPhone(rp.p) || rp.p || null,
     notes: [`Booked from the quote link${client ? '' : ': ' + (rp.n || '') + (rp.p ? ', ' + rp.p : '')}`, sep ? `Separately chosen: this is tattoo 1 of ${cb.all.length}.` : '', rp.m ? `Client: "${rp.m}"` : ''].filter(Boolean).join('\n') };
@@ -5702,11 +5708,33 @@ async function qzAvPanel() {
     <p class="muted" style="font-size:12px;margin:6px 0 0"><b>${count('open')}</b> open · <b>${count('part')}</b> with some time · hidden days and your Holds show as booked.</p>`;
 }
 
+/* The quote sheet with a strip along the bottom: the reference picture as a thumbnail, and its notes beside it. */
+async function qzWithRef(src) {
+  const W = src.width, M = 90, band = 360, teal = '#14857c', soft = '#6b6b6b', ink = '#1a1a1a';
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = src.height + band; const x = cv.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, cv.height); x.drawImage(src, 0, 0);
+  const y0 = src.height; x.fillStyle = teal; x.fillRect(M, y0 + 4, W - 2 * M, 3);
+  x.font = '700 22px Inter, system-ui, sans-serif'; x.fillStyle = teal; x.textBaseline = 'alphabetic'; x.fillText('YOUR REFERENCE', M, y0 + 52);
+  let tx = M;
+  if (QZ.design) { const img = new Image(); img.src = QZ.design.url; await img.decode().catch(() => {});
+    if (img.naturalWidth) { const box = 260, sc = Math.min(box / img.naturalWidth, box / img.naturalHeight), w = img.naturalWidth * sc, h = img.naturalHeight * sc, ty = y0 + 76;
+      x.fillStyle = '#f4f1ea'; x.beginPath(); x.roundRect ? x.roundRect(M, ty, box, box, 14) : x.rect(M, ty, box, box); x.fill();
+      x.save(); x.beginPath(); x.roundRect ? x.roundRect(M, ty, box, box, 14) : x.rect(M, ty, box, box); x.clip(); x.drawImage(img, M + (box - w) / 2, ty + (box - h) / 2, w, h); x.restore();
+      x.strokeStyle = '#d9d2c3'; x.lineWidth = 2; x.beginPath(); x.roundRect ? x.roundRect(M, ty, box, box, 14) : x.rect(M, ty, box, box); x.stroke(); tx = M + box + 36; } }
+  const note = (QZ.designNote || '').trim(), maxW = W - M - tx; let y = y0 + 104;
+  if (note) { x.font = '400 26px Inter, system-ui, sans-serif'; x.fillStyle = ink; const lines = []; let cur = '';
+    for (const wd of note.split(/\s+/)) { const t = cur ? cur + ' ' + wd : wd; if (x.measureText(t).width > maxW && cur) { lines.push(cur); cur = wd; } else cur = t; } if (cur) lines.push(cur);
+    for (const ln of lines.slice(0, 6)) { x.fillText(ln, tx, y); y += 38; } if (lines.length > 6) { x.fillStyle = soft; x.fillText('\u2026', tx, y); } }
+  else if (QZ.design) { x.font = '400 24px Inter, system-ui, sans-serif'; x.fillStyle = soft; x.fillText('The reference we\u2019ll work from.', tx, y); }
+  return cv;
+}
+
 async function qzSaveImage(share) {
-  const { cv, ref } = qzMulti() ? await qzComboSheet() : await qzSheet();
+  const sh = qzMulti() ? await qzComboSheet() : await qzSheet(), ref = sh.ref;
   const tag = QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : '';
+  /* With a reference picture, it goes on the same image as a small thumbnail (one picture to send, not two). */
+  const cv = qzHasDesign() ? await qzWithRef(sh.cv) : sh.cv;
   const pages = [[cv, `Quote-${ref}${tag}.png`]];
-  if (qzHasDesign()) pages.push([await designPage(), `Design-${ref}${tag}.png`]);
   if (QZ.withAvail) pages.push([(await qzAvailSheet()).cv, `Open-appointments-${ref}${tag}.png`]);
   const files = await Promise.all(pages.map(([c, n]) => canvasFile(c, n)));
   return share ? shareFiles(files, 'Tattoo quote') : saveFiles(files);
@@ -11000,6 +11028,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 544, when: '2026-11-28T15:00', added: [
+    'Quote calculator: an optional title (What’s the tattoo?) that names the saved quote and becomes the booking’s description.',
+    'Quote calculator: typing a client name suggests your saved clients; picking one marks it Returning client and books it onto their card.',
+    'Quote calculator: Save image and Share image now make one picture, with the reference as a small thumbnail and its notes at the bottom.'
+  ] },
   { build: 543, when: '2026-11-28T12:00', added: [
     'Quote calculator: Which side? has a new Unspecified option, which leaves the side out of the placement.'
   ] },
