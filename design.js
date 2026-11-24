@@ -72,7 +72,7 @@ const DZ_FONTS = [['Inter', ''], ['Pirata One', ''], ['Bebas Neue', 'Bebas Neue'
   ['UnifrakturMaguntia', 'UnifrakturMaguntia'], ['Permanent Marker', 'Permanent Marker'], ['Courier Prime', 'Courier Prime:wght@400;700'],
   ['Georgia', ''], ['Arial', '']];
 /* the reward card's own fields (filled from the reward it's sent with) */
-const DZ_LOY_FIELDS = [['heading', 'Heading (for the kind of reward)'], ['message', 'Message (for the kind of reward)'], ['name', 'Their name'], ['reward', 'The reward'], ['reward_big', 'Reward, big (15% OFF)'], ['reward_sub', 'Under it (your next tattoo)'], ['alt', 'The product swap'],
+const DZ_LOY_FIELDS = [['heading', 'Heading (for the kind of reward)'], ['message', 'Message (for the kind of reward, with any personal message)'], ['note', 'Personal message (on its own)'], ['name', 'Their name'], ['reward', 'The reward'], ['reward_big', 'Reward, big (15% OFF)'], ['reward_sub', 'Under it (your next tattoo)'], ['alt', 'The product swap'],
   ['code', 'Reward code'], ['expires', 'Valid until'], ['artist', 'Your name (who redeems it)'], ['terms', 'Terms and conditions'], ['sent', 'Who they sent (when not anonymous)']];
 /* Two starting points for the reward card; every part can be changed in the design studio afterwards. */
 const DZ_LOY_TPL = {
@@ -84,14 +84,14 @@ const DZ_LOY_TPL = {
     dzT('{reward_big}', 160, 290, 760, 100, { al: 'center', c: '#ffffff', b: true, fit: true }),
     dzT('{reward_sub}', 160, 410, 760, 30, { al: 'center', c: '#ffffff', b: true }),
     dzT('{alt}', 140, 482, 800, 26, { al: 'center', c: '@soft' }),
-    { ...dzT('{message}', 120, 506, 840, 26, { al: 'center', lh: 1.3, fit: true }), frame: true, h: 80, pad: 0 },
-    dzS('rect', 360, 600, 360, 84, { fill: 'none', stroke: '@soft', sw: 3, r: 12, name: 'Code box' }),
-    dzT('CODE', 360, 610, 360, 18, { al: 'center', c: '@soft', b: true }),
-    dzT('{code}', 360, 632, 360, 36, { al: 'center', b: true, font: 'Courier Prime' }),
-    dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 110, 700, 860, 24, { al: 'center', b: true }),
-    dzS('rect', 90, 742, 900, 2, { fill: '@soft', name: 'Line' }),
-    dzT('TERMS AND CONDITIONS', 90, 754, 900, 16, { c: '@soft', b: true, ls: 2 }),
-    { ...dzT('{terms}', 90, 780, 900, 18, { c: '@soft', lh: 1.25, fit: true }), frame: true, h: 460, pad: 0 },   /* room for the program's terms and 3 lines of your own */
+    { ...dzT('{message}', 120, 500, 840, 26, { al: 'center', lh: 1.3, fit: true }), frame: true, h: 116, pad: 0 },
+    dzS('rect', 360, 630, 360, 84, { fill: 'none', stroke: '@soft', sw: 3, r: 12, name: 'Code box' }),
+    dzT('CODE', 360, 640, 360, 18, { al: 'center', c: '@soft', b: true }),
+    dzT('{code}', 360, 662, 360, 36, { al: 'center', b: true, font: 'Courier Prime' }),
+    dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 110, 730, 860, 24, { al: 'center', b: true }),
+    dzS('rect', 90, 772, 900, 2, { fill: '@soft', name: 'Line' }),
+    dzT('TERMS AND CONDITIONS', 90, 784, 900, 16, { c: '@soft', b: true, ls: 2 }),
+    { ...dzT('{terms}', 90, 810, 900, 18, { c: '@soft', lh: 1.25, fit: true }), frame: true, h: 430, pad: 0 },   /* room for the program's terms and 3 lines of your own */
     dzT('{studio}  \u00b7  {instagram}', 90, 1252, 900, 28, { al: 'center', b: true })] },
   light: { name: 'Light', theme: 'paper', make: () => [
     dzS('rect', 0, 0, 1080, 360, { name: 'Top band' }),
@@ -101,12 +101,12 @@ const DZ_LOY_TPL = {
     dzT('{reward_big}', 60, 225, 960, 96, { c: '#ffffff', b: true, fit: true }),
     dzT('{reward_sub}', 60, 392, 960, 34, { b: true }),
     dzT('{alt}', 60, 442, 960, 26, { c: '@soft' }),
-    { ...dzT('{message}', 60, 478, 960, 26, { lh: 1.3, fit: true }), frame: true, h: 90, pad: 0 },
-    dzT('Code: {code}', 60, 590, 960, 38, { b: true, font: 'Courier Prime' }),
-    dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 60, 646, 960, 26, { c: '@soft' }),
-    dzS('rect', 60, 705, 960, 3, { fill: '@soft', name: 'Line' }),
-    dzT('TERMS AND CONDITIONS', 60, 724, 960, 16, { c: '@soft', b: true, ls: 2 }),
-    { ...dzT('{terms}', 60, 756, 960, 18, { c: '@soft', lh: 1.25, fit: true }), frame: true, h: 480, pad: 0 },   /* room for the program's terms and 3 lines of your own */
+    { ...dzT('{message}', 60, 478, 960, 26, { lh: 1.3, fit: true }), frame: true, h: 120, pad: 0 },
+    dzT('Code: {code}', 60, 620, 960, 38, { b: true, font: 'Courier Prime' }),
+    dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 60, 676, 960, 26, { c: '@soft' }),
+    dzS('rect', 60, 735, 960, 3, { fill: '@soft', name: 'Line' }),
+    dzT('TERMS AND CONDITIONS', 60, 754, 960, 16, { c: '@soft', b: true, ls: 2 }),
+    { ...dzT('{terms}', 60, 786, 960, 18, { c: '@soft', lh: 1.25, fit: true }), frame: true, h: 450, pad: 0 },   /* room for the program's terms and 3 lines of your own */
     dzT('{phone}  \u00b7  {instagram}', 60, 1262, 960, 26, { c: '@soft' })] }
 };
 // {field}: label, where it comes from.
