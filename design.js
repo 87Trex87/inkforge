@@ -58,7 +58,13 @@ const DZ_THEMES = {
   gold: { name: 'Black & gold', bg: '#0d0d0d', fg: '#f5ecd7', accent: '#c9a24a', soft: '#9b9180', f1: 'Cinzel', f2: 'Montserrat' },
   paper: { name: 'Paper', bg: '#f8f4ec', fg: '#1a1a1a', accent: '#a8322b', soft: '#6b6660', f1: 'Playfair Display', f2: 'Inter' },
   bold: { name: 'Bold', bg: '#c62828', fg: '#ffffff', accent: '#111111', soft: '#ffd7d2', f1: 'Bebas Neue', f2: 'Oswald' },
-  clean: { name: 'Clean', bg: '#ffffff', fg: '#111111', accent: '#14857c', soft: '#777777', f1: 'Montserrat', f2: 'Montserrat' }
+  clean: { name: 'Clean', bg: '#ffffff', fg: '#111111', accent: '#14857c', soft: '#777777', f1: 'Montserrat', f2: 'Montserrat' },
+  lyxmas: { name: 'Christmas', bg: '#0f2a1d', fg: '#f6efe2', accent: '#c8323a', soft: '#a9b8ad', f1: 'Great Vibes', f2: 'Inter' },
+  lyspook: { name: 'Halloween', bg: '#120d16', fg: '#f4e9dc', accent: '#ee7a1c', soft: '#9a8e9f', f1: 'UnifrakturMaguntia', f2: 'Inter' },
+  lylove: { name: 'Valentine', bg: '#2a0e17', fg: '#fbe9ee', accent: '#e0466e', soft: '#c49aa6', f1: 'Great Vibes', f2: 'Inter' },
+  lyspring: { name: 'Spring', bg: '#f4f7ec', fg: '#24301f', accent: '#7cae5a', soft: '#6f7a66', f1: 'Playfair Display', f2: 'Inter' },
+  lyspecial: { name: 'Special', bg: '#17121f', fg: '#f3ecfa', accent: '#9b6bd6', soft: '#a99bb8', f1: 'Playfair Display', f2: 'Inter' },
+  lycalm: { name: 'Calm', bg: '#10202a', fg: '#eaf2f6', accent: '#5aa7c8', soft: '#90a6b2', f1: 'Playfair Display', f2: 'Inter' }
 };
 // [family, Google Fonts spec or '' when already available]
 const DZ_FONTS = [['Inter', ''], ['Pirata One', ''], ['Bebas Neue', 'Bebas Neue'], ['Oswald', 'Oswald:wght@400;700'], ['Montserrat', 'Montserrat:wght@400;700'],
@@ -66,41 +72,41 @@ const DZ_FONTS = [['Inter', ''], ['Pirata One', ''], ['Bebas Neue', 'Bebas Neue'
   ['UnifrakturMaguntia', 'UnifrakturMaguntia'], ['Permanent Marker', 'Permanent Marker'], ['Courier Prime', 'Courier Prime:wght@400;700'],
   ['Georgia', ''], ['Arial', '']];
 /* the reward card's own fields (filled from the reward it's sent with) */
-const DZ_LOY_FIELDS = [['name', 'Their name'], ['reward', 'The reward'], ['reward_big', 'Reward, big (15% OFF)'], ['reward_sub', 'Under it (your next tattoo)'], ['alt', 'The product swap'],
+const DZ_LOY_FIELDS = [['heading', 'Heading (for the kind of reward)'], ['message', 'Message (for the kind of reward)'], ['name', 'Their name'], ['reward', 'The reward'], ['reward_big', 'Reward, big (15% OFF)'], ['reward_sub', 'Under it (your next tattoo)'], ['alt', 'The product swap'],
   ['code', 'Reward code'], ['expires', 'Valid until'], ['artist', 'Your name (who redeems it)'], ['terms', 'Terms and conditions'], ['sent', 'Who they sent (when not anonymous)']];
 /* Two starting points for the reward card; every part can be changed in the design studio afterwards. */
 const DZ_LOY_TPL = {
   classic: { name: 'Classic', theme: 'ink', make: () => [
     dzS('rect', 40, 40, 1000, 1270, { fill: 'none', stroke: '@accent', sw: 6, r: 0, name: 'Frame' }),
     { id: dzId(), t: 'image', logo: true, x: 465, y: 70, w: 150, h: 90, op: 1, rot: 0 },
-    dzT('You\u2019ve earned a reward', 90, 172, 900, 64, { al: 'center', font: '@1' }),
+    dzT('{heading}', 90, 172, 900, 64, { al: 'center', font: '@1', fit: true }),
     dzS('rect', 160, 265, 760, 200, { r: 26, name: 'Reward box' }),
     dzT('{reward_big}', 160, 290, 760, 100, { al: 'center', c: '#ffffff', b: true, fit: true }),
     dzT('{reward_sub}', 160, 410, 760, 30, { al: 'center', c: '#ffffff', b: true }),
     dzT('{alt}', 140, 482, 800, 26, { al: 'center', c: '@soft' }),
-    dzT('Hi {name}, thank you for sending someone our way!', 120, 525, 840, 30, { al: 'center' }),
+    { ...dzT('{message}', 120, 506, 840, 26, { al: 'center', lh: 1.3, fit: true }), frame: true, h: 80, pad: 0 },
     dzS('rect', 360, 600, 360, 84, { fill: 'none', stroke: '@soft', sw: 3, r: 12, name: 'Code box' }),
     dzT('CODE', 360, 610, 360, 18, { al: 'center', c: '@soft', b: true }),
     dzT('{code}', 360, 632, 360, 36, { al: 'center', b: true, font: 'Courier Prime' }),
     dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 110, 700, 860, 24, { al: 'center', b: true }),
-    dzS('rect', 110, 762, 860, 2, { fill: '@soft', name: 'Line' }),
-    dzT('TERMS AND CONDITIONS', 110, 778, 860, 16, { c: '@soft', b: true, ls: 2 }),
-    { ...dzT('{terms}', 110, 810, 860, 21, { c: '@soft', lh: 1.3, fit: true }), frame: true, h: 420, pad: 0 },
+    dzS('rect', 90, 742, 900, 2, { fill: '@soft', name: 'Line' }),
+    dzT('TERMS AND CONDITIONS', 90, 754, 900, 16, { c: '@soft', b: true, ls: 2 }),
+    { ...dzT('{terms}', 90, 780, 900, 18, { c: '@soft', lh: 1.25, fit: true }), frame: true, h: 460, pad: 0 },   /* room for the program's terms and 3 lines of your own */
     dzT('{studio}  \u00b7  {instagram}', 90, 1252, 900, 28, { al: 'center', b: true })] },
   light: { name: 'Light', theme: 'paper', make: () => [
     dzS('rect', 0, 0, 1080, 360, { name: 'Top band' }),
     { id: dzId(), t: 'image', logo: true, x: 60, y: 45, w: 150, h: 90, op: 1, rot: 0 },
     dzT('{studio}', 500, 62, 520, 30, { al: 'right', c: '#ffffff', b: true }),
-    dzT('A reward for you, {name}', 60, 160, 960, 48, { font: '@1', c: '#ffffff' }),
+    dzT('{heading}', 60, 160, 960, 48, { font: '@1', c: '#ffffff', fit: true }),
     dzT('{reward_big}', 60, 225, 960, 96, { c: '#ffffff', b: true, fit: true }),
     dzT('{reward_sub}', 60, 392, 960, 34, { b: true }),
     dzT('{alt}', 60, 442, 960, 26, { c: '@soft' }),
-    dzT('Thank you for sending someone our way. Show this card when you book.', 60, 486, 960, 28),
+    { ...dzT('{message}', 60, 478, 960, 26, { lh: 1.3, fit: true }), frame: true, h: 90, pad: 0 },
     dzT('Code: {code}', 60, 590, 960, 38, { b: true, font: 'Courier Prime' }),
     dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 60, 646, 960, 26, { c: '@soft' }),
     dzS('rect', 60, 705, 960, 3, { fill: '@soft', name: 'Line' }),
     dzT('TERMS AND CONDITIONS', 60, 724, 960, 16, { c: '@soft', b: true, ls: 2 }),
-    { ...dzT('{terms}', 60, 756, 960, 21, { c: '@soft', lh: 1.3, fit: true }), frame: true, h: 470, pad: 0 },
+    { ...dzT('{terms}', 60, 756, 960, 18, { c: '@soft', lh: 1.25, fit: true }), frame: true, h: 480, pad: 0 },   /* room for the program's terms and 3 lines of your own */
     dzT('{phone}  \u00b7  {instagram}', 60, 1262, 960, 26, { c: '@soft' })] }
 };
 // {field}: label, where it comes from.
@@ -520,7 +526,7 @@ function dzFill(doc, s) {
     tags: String(v.tags || '').split(',').map(t => t.trim().replace(/[^\p{L}\p{N}_]/gu, '')).filter(Boolean).map(t => '#' + t.toLowerCase()).join(' '),
     date: v.date ? new Date(v.date + 'T00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : '' };
   { const P = typeof dzPageFaces === 'function' ? dzPageFaces(doc) : ['f'], fc = dzFill.face || 'f'; map.page = fc === 'm' ? '#' : String(Math.max(1, P.indexOf(fc) + 1)); map.pages = String(P.length); }   /* the page being drawn (dzDraw sets it) */
-  { const L = dzFill.loy || (doc.kind === 'loycard' && typeof loySampleFields === 'function' ? loySampleFields() : null); if (L) Object.assign(map, L); }   /* a reward card: that reward (or a sample while designing) */
+  { const L = dzFill.loy || (doc.kind === 'loycard' && typeof loySampleFields === 'function' ? loySampleFields(doc.loyk) : null); if (L) Object.assign(map, L); }   /* a reward card: that reward (or a sample while designing) */
   return String(s || '').replace(/\{(\w+)\}/g, (m, k) => k in map ? map[k] : m);
 }
 const dzFontStr = (doc, l, px) => `${l.it ? 'italic ' : ''}${l.b ? 700 : 400} ${px}px "${dzFont(doc, l.font)}", Inter, sans-serif`;
@@ -2375,7 +2381,7 @@ SKP.list = async () => {
 const DZ = {};
 DZ.list = async () => {
   const el = $('#dz-list'); if (!el) return;
-  const rows = await DB.all(`SELECT id, name, kind, thumb_ref, updated_at, CASE WHEN kind = ? THEN doc END AS doc FROM designs WHERE kind NOT IN ('form', 'sketch', 'loycard') ORDER BY updated_at DESC, id DESC`, ['page']);   /* forms and sketches live in their own sections */
+  const rows = await DB.all(`SELECT id, name, kind, thumb_ref, updated_at, CASE WHEN kind = ? THEN doc END AS doc FROM designs WHERE kind NOT IN ('form', 'sketch') ORDER BY updated_at DESC, id DESC`, ['page']);   /* forms and sketches live in their own sections */
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
   const all = rows.map((r, i) => { const sub = r.kind === 'page' ? (JSON.parse(r.doc || '{}').paper || 'Blank page').split(',')[0] + ' page' : DZ_KINDS[r.kind]?.label || '';
     return { ...r, url: urls[i], sub, kind: r.kind === 'page' ? 'Page' : DZ_KINDS[r.kind]?.label || r.kind, t: r.updated_at }; }), shown = Lib.apply('designs', all);
@@ -2445,7 +2451,17 @@ async function dzPicker(opts = {}) {
       const kb = ([k, v]) => `<button data-kind="${k}"><svg viewBox="0 0 24 24" class="dz-kic">${DZ_KIND_IC[k] || DZ_KIND_IC.page}</svg><span><b>${v.label}</b><small>${v.sub}</small></span></button>`;
       o.innerHTML = `<div class="card dz-pick dz-np"><div class="np-head"><b>${st.piece ? 'Make a post' : 'New design'}</b><button class="pm-ib" data-x title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
         ${st.piece ? '' : `<div class="np-sec">Print and more</div><div class="np-kinds">${kinds.filter(([, v]) => !v.social).map(kb).join('')}</div>`}
-        <div class="np-sec">Social posts${st.piece ? '' : ' <span>show off a tattoo</span>'}</div><div class="np-kinds">${kinds.filter(([, v]) => v.social).map(kb).join('')}</div></div>`;
+        <div class="np-sec">Social posts${st.piece ? '' : ' <span>show off a tattoo</span>'}</div><div class="np-kinds">${kinds.filter(([, v]) => v.social).map(kb).join('')}</div>
+        ${!st.piece && typeof LOY_SLOTS !== 'undefined' && !wsDesign() ? `<div class="np-sec">Loyalty <span>a reward card, for one kind of reward</span></div>
+          <div class="np-kinds">${kb(['loycard', DZ_KINDS.loycard])}</div>` : ''}</div>`;
+      return;
+    }
+    if (st.kind === 'loycard') {   /* the kind first, then a template; its details stay where the template puts them */
+      st.lk ||= 'custom'; st.lt ||= 'classic';
+      o.innerHTML = `<div class="card dz-pick dz-np"><div class="np-head"><button class="pm-btn" data-back aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>Back</button><b>Reward card</b><button class="btn primary" data-lgo>Create</button></div>
+        <div class="np-sec">Kind of reward</div><div class="ln-kinds" style="margin-bottom:12px">${LOY_SLOTS.map(([k, l]) => `<button class="chip ${st.lk === k ? 'on' : ''}" data-lk="${k}">${l}</button>`).join('')}</div>
+        <div class="np-sec">Template</div><div class="seg" style="margin-bottom:12px">${Object.entries(DZ_LOY_TPL).map(([k, t]) => `<button data-ltp="${k}" class="${st.lt === k ? 'on' : ''}">${t.name}</button>`).join('')}</div>
+        <p class="muted" style="font-size:12px;margin:0">The reward\u2019s details stay where the template puts them: change their colours, and add stickers, pictures and backgrounds. Export it from Designs, then import it in Loyalty \u203a Program \u203a Message, where it\u2019s used for this kind of reward.</p></div>`;
       return;
     }
     const lays = dzLayouts(st.kind), social = DZ_KINDS[st.kind].social, pu = st.piece ? await Media.url(st.piece.thumb) : '';
@@ -2492,6 +2508,8 @@ async function dzPicker(opts = {}) {
     if (d('two') != null) { st.two = d('two') === '1'; return draw(); }
     if (DZ_KINDS[st.kind]?.pattern && patOptsAct(st.pat, t)) return draw();
     if (t.closest('[data-back]')) { st.kind = null; return draw(); }
+    if (st.kind === 'loycard') { if (d('lk')) { st.lk = d('lk'); return draw(); } if (d('ltp')) { st.lt = d('ltp'); return draw(); }
+      if (t.closest('[data-lgo]')) { const id = await loyCardNew(st.lk, st.lt); o.remove(); location.hash = 'design/' + id; } return; }
     if (d('tdel')) { e.stopPropagation();
       if (!await ask('Delete this template? Designs made from it are not affected.')) return;
       await Settings.set('dz_tpls', JSON.stringify(dzCustom().filter(c => c.id !== d('tdel')))); st.li = 0; return draw(); }
@@ -3084,7 +3102,7 @@ DZ.edit = async (id) => {
   let cpop = null, mcpop = null;   // mcpop: the colour menu open in the strip for several picked items
   /* Several picked items styled together: fill, line colour, line width and line style for shapes (a line's colour
      is its fill), text colour for text, an outline for pictures. Each shows the value they share, or blank. */
-  const mStyleable = (l) => !l.lock && (l.t === 'shape' || l.t === 'text' || (l.t === 'image' && !l.logo));
+  const mStyleable = (l) => (!l.lock || l.fix) && (l.t === 'shape' || l.t === 'text' || (l.t === 'image' && !l.logo));
   const mKeyOf = (l, key) => key === 'fill' ? (l.t === 'text' ? 'c' : l.t === 'shape' ? 'fill' : null) : key === 'stroke' ? (l.t === 'shape' ? (l.shape === 'line' ? 'fill' : 'stroke') : l.t === 'image' ? 'stroke' : null) : key === 'sw' ? (l.t === 'shape' && l.shape !== 'line' || l.t === 'image' ? 'sw' : l.t === 'shape' ? 'h' : null) : key;
   const mShared = (L, key) => { const v = L.filter(mStyleable).map(l => mKeyOf(l, key) && l[mKeyOf(l, key)]).filter(v => v !== undefined && v !== null && v !== false); return v.length && v.every(x => x === v[0]) ? v[0] : null; };
   const mStyleUI = (L) => { const S = L.filter(mStyleable), cb = (key, ic, tip) => { const c = mShared(S, key), paint = c && c !== 'none' ? dzCol(doc, c) : 'transparent';
@@ -3380,6 +3398,8 @@ DZ.edit = async (id) => {
       ${l.link && !/^(page|act):/.test(l.link) ? `<a class="btn small" href="${esc(l.link)}" target="_blank" rel="noopener">Try it</a>` : ''}${l.t === 'shape' && !l.qr && l.link && !/^(page|act):/.test(l.link) ? ' <button class="btn small" data-qrfrom>Add a QR code of this link</button>' : ''}`, { fold: true, open: !!l.link || l.ft === 'button' }); };
   const drawItem = () => {
     const l = layer();
+    if (l.fix) { const key = l.t === 'text' ? 'c' : l.t === 'shape' ? (l.fill === 'none' ? 'stroke' : 'fill') : null;
+      side.innerHTML = `<div class="dz-lh"><b>Reward card</b><button class="btn small" data-act="done">Done</button></div><div class="dz-note">Part of the reward card: it fills in for each reward and stays where it is. ${key ? 'You can change its colour.' : 'It can\u2019t be changed.'}</div>${key ? fsec('Colour', fillUI(l, key)) : ''}`; return; }
     if (l.lock) { side.innerHTML = `<div class="dz-lh"><b>Locked</b><button class="btn small" data-act="done">Done</button></div><div class="dz-lockn"><span class="muted">It can't be moved or changed while locked.</span><button class="btn small" data-act="lock">Unlock</button></div>`; return; }
     if (l.t === 'field') { side.innerHTML = `<div class="dz-lh"><b>Form field</b></div>
         <label class="field"><span>Type</span><select class="in" data-ffk="ft">${FF_TYPES.map(([v, n]) => `<option value="${v}" ${l.ft === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
@@ -4794,7 +4814,7 @@ DZ.edit = async (id) => {
     if (a === 'stencil') return toStencil(targets());
     if (!L.length) return;
     if (a === 'hide') { const v = !every(l => l.hide); L.forEach(l => l.hide = v); }
-    if (a === 'lock') { const v = !every(l => l.lock); L.forEach(l => l.lock = v); }
+    if (a === 'lock') { const v = !every(l => l.lock); L.forEach(l => { if (!l.fix) l.lock = v; }); }
     if (a === 'clip') { const v = !every(l => l.clip); L.forEach(l => { if (F().indexOf(l) > 0) l.clip = v || undefined; }); }
     if (a === 'del' && L.some(l => l.lock)) return toast('Unlock them first.');
     if (a === 'del') { const gone = new Set(L.map(l => l.id)); doc.layers = doc.layers.filter(l => !gone.has(l.id)); picks = new Set(); toast(`Deleted ${L.length}. Undo brings ${L.length === 1 ? 'it' : 'them'} back.`); }
@@ -5741,7 +5761,7 @@ DZ.edit = async (id) => {
       if (t.closest('[data-gfold]')) { doc.groups[g].shut = !doc.groups[g].shut; changed(); return drawSide(); }
       if (t.closest('[data-gun]')) return groupBreak(M.map(x => x.id));
       if (t.closest('[data-ghide]')) { const v = !M.every(x => x.hide); for (const x of M) x.hide = v || undefined; picks = new Set(); sel = null; placeSel(); changed(true); return drawSide(); }
-      if (t.closest('[data-glock]')) { const v = !M.every(x => x.lock); for (const x of M) x.lock = v || undefined; changed(true); return drawSide(); }
+      if (t.closest('[data-glock]')) { const v = !M.every(x => x.lock); for (const x of M) if (!x.fix) x.lock = v || undefined; changed(true); return drawSide(); }
       if (t.closest('[data-gname]') && M.every(x => picks.has(x.id))) { const n = await askText('Group name:', groupName(g)); if (n == null) return; doc.groups[g].name = n.trim() || 'Group'; changed(true); return drawSide(); }
       return setPicks(M.map(x => x.id)); }
     const row = t.closest('[data-lid]');
@@ -5750,7 +5770,7 @@ DZ.edit = async (id) => {
       if (rowHeld) { rowHeld = false; return; }   // the long press already picked it
       if (t.closest('[data-lclip]')) { if (F().indexOf(ly) > 0) ly.clip = !ly.clip || undefined; changed(true); return drawSide(); }
       if (t.closest('[data-lhide]')) { ly.hide = !ly.hide; if (ly.hide && sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
-      if (t.closest('[data-llock]')) { ly.lock = !ly.lock; if (!many() && !ly.hide) sel = ly.id; placeSel(); changed(true); return drawSide(); }
+      if (t.closest('[data-llock]')) { if (ly.fix) return toast('Part of the reward card: it stays where it is.'); ly.lock = !ly.lock; if (!many() && !ly.hide) sel = ly.id; placeSel(); changed(true); return drawSide(); }
       if (t.closest('[data-ldel]') && ly.lock) return toast('Unlock it first.');
       if (t.closest('[data-ldel]')) { doc.layers = doc.layers.filter(x => x !== ly); if (sel === ly.id) sel = null; placeSel(); changed(true); return drawSide(); }
       if (e.shiftKey && !t.closest('button')) {   // a range in the list, from the last one picked
@@ -5850,7 +5870,7 @@ DZ.edit = async (id) => {
         const FL = F(), o = FL[FL.indexOf(l) + (a === 'up' ? 1 : -1)];
         if (o) { const j = doc.layers.indexOf(o); [doc.layers[i], doc.layers[j]] = [doc.layers[j], doc.layers[i]]; }
       }
-      if (a === 'lock') l.lock = !l.lock;
+      if (a === 'lock') { if (l.fix) return toast('Part of the reward card: it stays where it is.'); l.lock = !l.lock; }
       if (a === 'fx') l.fx = !l.fx;
       if (a === 'fy') l.fy = !l.fy;
       if (a === 'keep') { const m = dzKeepMode(l); l.keep = m === 'none' ? 'corners' : m === 'corners' ? true : false; toast({ none: 'Corners keep the proportions; sides stretch.', corners: 'Every handle keeps the proportions.', all: 'Free: width and height change separately.' }[m], 2500); }

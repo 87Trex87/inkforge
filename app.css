@@ -3014,5 +3014,7 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .c-avdays { display: flex; flex-wrap: wrap; gap: 6px; } .c-avdays .chip.part { border-color: #e0a33a; color: #e0a33a; }
 .mday.present { position: relative; box-shadow: inset 0 0 0 2px rgba(31,181,168,.6); } .mday.present::after { content: 'in'; position: absolute; right: 4px; bottom: 2px; font: 700 9px var(--ui); color: var(--teal); }
 #m-work.on { background: rgba(31,181,168,.2); color: var(--teal); border-color: var(--teal); } .avd.off[data-avo] { cursor: pointer; } .avd.opened { box-shadow: 0 0 0 2px #fff inset; }
+.rc-loy { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(31,181,168,.4); border-radius: 12px; background: rgba(31,181,168,.07); margin-bottom: 10px; } .rc-sent { background: rgba(31,181,168,.18); color: var(--teal); }
+.ln-kinds { display: flex; flex-wrap: wrap; gap: 6px; } .ln-kinds .chip { cursor: pointer; font-size: 13px; padding: 7px 14px; color: var(--ink, inherit); } .ln-kinds .chip.on { background: rgba(31,181,168,.2); color: var(--teal); border-color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 546; }
+:root { --app-build: 547; }
