@@ -1918,7 +1918,8 @@ details.qc-page > summary .help, details.qc-page > summary [data-tip] { pointer-
 .bkt-filters > .bkt-dd:last-child .bkt-menu { left: auto; right: 0; }
 .bkt-menu label { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; } .bkt-menu label:hover { background: rgba(127,127,127,.12); }
 .bkt-menu input { width: 16px; height: 16px; accent-color: var(--teal); } .bkt-menu p { margin: 6px 8px 2px; font-size: 11px; color: var(--ink2); }
-.bkt-seg { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.bkt-seg { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); max-width: 100%; overflow-x: auto; scrollbar-width: none; }   /* narrow screens: the strip scrolls, the page doesn't */
+.bkt-seg::-webkit-scrollbar { display: none; }
 .bkt-seg button { height: 28px; padding: 0 11px; border: 0; border-radius: 6px; background: none; color: var(--ink2); font-weight: 500; font-size: 13px; font-family: inherit; cursor: pointer; white-space: nowrap; }
 .bkt-seg button.on { background: var(--bg3); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
 .bkt-scroll { overflow-x: auto; }
@@ -3023,6 +3024,8 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .de-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; } .de-gate { border-color: var(--amber, #e0a030); }
 .de-sec { margin-top: 10px; } .de-tiles { margin-top: 6px; } .de-t td.num, .de-t th.num { text-align: right; } #de-file:disabled { opacity: .45; cursor: not-allowed; } .de-t td.num { font-variant-numeric: tabular-nums; } .de-none { font-size: 13px; margin: 4px 0 0; } .de-t tfoot td { font-weight: 700; border-top: 2px solid var(--line); } .de-acts .btn:disabled { opacity: .45; }
 .de-note { display: flex; align-items: center; gap: 10px; } .de-note .c-main { flex: 1; display: grid; } .de-note.warn { border-color: var(--amber, #e0a030); }
+@media (max-width: 899px) { body.kb-up #nav { display: none; } }   /* the keyboard is up: the tab bar steps aside so it can't cover the box being typed in */
+.loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 553; }
+:root { --app-build: 554; }

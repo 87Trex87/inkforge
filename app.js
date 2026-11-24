@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 553;
+const APP_BUILD = 554;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -1055,6 +1055,7 @@ const VIEWS = {
       <div class="search-bar">
         <input class="in" id="c-search" type="search" placeholder="Search name, phone, tag…" autocomplete="off" value="${esc(VIEWS.clients.q || '')}">
         <a class="btn icon-btn" href="#clients-table" data-tip="All contacts as a table: search, filter, edit, export and print" aria-label="Contacts table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a>
+        <button class="btn icon-btn" id="c-phone" data-tip="Bring in a contact from your phone" aria-label="From your phone"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 8v7M9 12l3 3 3-3"/></svg></button>
         <button class="btn primary icon-btn" id="c-add" data-tip="Add contact" aria-label="Add contact">
           <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
@@ -1064,6 +1065,7 @@ const VIEWS = {
       const s = $('#c-search');
       s.addEventListener('input', () => { VIEWS.clients.q = s.value; renderClientList(); });
       $('#c-add').onclick = () => location.hash = 'client-edit/new';
+      $('#c-phone').onclick = () => clientFromPhone();
       $('#c-cats').onclick = (e) => { const b = e.target.closest('[data-cat]'); if (!b) return; VIEWS.clients.cat = b.dataset.cat; renderClientList(); };
       renderClientList();
     }
@@ -1118,6 +1120,7 @@ const VIEWS = {
           ${field('Phone', c.phone)}${field('Email', c.email)}${field('Instagram', ig && '@' + ig)}
           ${field('Birthday', c.dob && new Date(c.dob + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) + (age != null ? ` (${age})` : ''))}
           ${field('Client since', new Date(c.created_at + 'Z').toLocaleDateString())}
+          <button class="btn small" id="c-vcf" style="margin-top:8px" data-tip="A contact card your phone adds to its contacts">Add to phone contacts</button>
         </div>
         ${c.medical ? `<div class="card alert"><h2>Medical / allergies ${help('Check before every session.')}</h2><p class="pre">${esc(c.medical)}</p></div>` : ''}
         <div class="card" id="c-refs"></div>
@@ -1206,10 +1209,12 @@ const VIEWS = {
     title: (id) => id === 'new' ? 'New client' : 'Edit client',
     render: () => '<form id="c-form" class="card pro" autocomplete="off"></form>',
     async mount(id) {
-      const c = id === 'new' ? {} : await DB.one('SELECT * FROM clients WHERE id = ?', [+id]);
+      const pre = id === 'new' ? CPRE : null; CPRE = null;   /* from the phone: filled in, to check before saving */
+      const c = id === 'new' ? (pre ? { ...pre, photo: undefined } : {}) : await DB.one('SELECT * FROM clients WHERE id = ?', [+id]);
       if (!c) { location.hash = 'clients'; return; }
       const f = $('#c-form');
       let photoRef = c.photo_ref || null, newPhoto = null;
+      if (pre?.photo) { try { newPhoto = await Media.shrink(pre.photo); } catch {} }
       const inp = (name, label, type = 'text', extra = '') =>
         `<label class="field"><span>${label}</span><input class="in" name="${name}" type="${type}" value="${esc(c[name])}" ${extra}></label>`;
       const moreOpen = !!(c.pronouns || c.dob || c.tags || (c.category && c.category !== 'Client') || c.ref_src || c.referred_by);
@@ -1249,7 +1254,9 @@ const VIEWS = {
           <button type="button" class="btn" id="f-cancel">Cancel</button>
           <button type="submit" class="btn primary" style="flex:1">Save</button>
         </div>`;
-      Dirty.set(false);
+      Dirty.set(!!pre);
+      if (newPhoto) $('#f-ava').innerHTML = avatar(c, URL.createObjectURL(newPhoto), 'lg');
+      if (pre) toast('From your phone: check the details, add anything else, then Save.', 3200);
       f.addEventListener('input', () => Dirty.set(true));
       /* Referred by: a contact (picked from search; never themselves or someone they brought in) or another way in */
       $('#c-rsrc').onclick = (e) => { const b = e.target.closest('[data-rs]'); if (!b) return; const v = b.dataset.rs; f.ref_src.value = v;
@@ -1486,7 +1493,7 @@ const VIEWS = {
       $('#b-kind').onclick = (e) => {
         const x = e.target.closest('button'); if (!x) return;
         kind = x.dataset.k; $('#b-kind').querySelectorAll('button').forEach(y => y.classList.toggle('on', y === x));
-        showKind(); Dirty.set(true);
+        showKind(); Dirty.set(true); perks();
       };
 
       // Client picker
@@ -1505,14 +1512,14 @@ const VIEWS = {
       const showGuest = () => { gbox.hidden = !!clientId || !ci.value.trim(); };
       showGuest();
       ci.addEventListener('focus', pickClient);
-      ci.addEventListener('input', () => { clientId = null; pickClient(); showGuest(); });
+      ci.addEventListener('input', () => { const had = clientId; clientId = null; pickClient(); showGuest(); if (had) perks(); });
       $('#b-guest-add').onclick = async () => {
         const [first, ...rest] = ci.value.trim().split(/\s+/);
         const ph = intlPhone(f.guest_phone.value);
         if (ph === null) return toast(phoneBad());
         await DB.run('INSERT INTO clients (first_name, last_name, phone) VALUES (?, ?, ?)', [first, rest.join(' '), ph || null]);
         clientId = (await DB.one('SELECT last_insert_rowid() AS id')).id;
-        toast('Saved to your clients.'); showGuest(); Dirty.set(true);
+        toast('Saved to your clients.'); showGuest(); Dirty.set(true); perks();
       };
       ci.addEventListener('blur', () => setTimeout(() => cl.hidden = true, 150));
       cl.addEventListener('mousedown', e => e.preventDefault());
@@ -1529,7 +1536,7 @@ const VIEWS = {
           ci.value = r.querySelector('.c-n').textContent;
           showGuest();
         }
-        cl.hidden = true; ci.blur(); Dirty.set(true);
+        cl.hidden = true; ci.blur(); Dirty.set(true); perks();
       });
 
       // Reference photos
@@ -1585,7 +1592,7 @@ const VIEWS = {
           if (!stackOK) loySel.clear(); else if (loySel.size >= mx) { e.target.checked = false; return toast(`At most ${mx} together.`); }
           if (Loy.old(r)) toast(`This reward is from an older version of your loyalty program, so it keeps the rules it was earned under.`, 5000);
           loySel.add(id); } else loySel.delete(id);
-        const vb = vouOff(), pd = f.elements.paid, after = loyOff(); if (pd) pd.value = Math.max(0, Math.round(((+pd.value || loyPrice()) + before - after) * 100) / 100);
+        const vb = vouOff(), pd = f.elements.paid, after = loyOff(); if (pd) pd.value = Math.max(0, Math.round(((pd.value.trim() === '' ? loyPrice() : +pd.value) + before - after) * 100) / 100);
         Dirty.set(true); loyDraw(); vouDraw().then(() => repay(vb + loyOff())); });
       /* Vouchers the client holds: after loyalty rewards (which come off first), they pay towards what's left. */
       const vouSel = new Set(); let vouRows = [], vouFirst = true, vouKey0 = '';
@@ -1602,11 +1609,13 @@ const VIEWS = {
         el.innerHTML = `<div class="field b-loy"><span class="lbl">Vouchers ${help('Vouchers this client holds. They pay towards the tattoo after any loyalty rewards; the price paid goes down by what they cover.')}</span>
           ${vouRows.map(v => `<label class="toggle"><input type="checkbox" data-bvou="${v.id}" ${vouSel.has(v.id) ? 'checked' : ''}><span><b>${money(Vou.had(v))} voucher</b> <span class="muted">${esc(v.code)}${v.expires_at ? ' \u00b7 until ' + esc(fmtDay(v.expires_at)) : ''}${v.from_name && !v.anon ? ' \u00b7 from ' + esc(v.from_name) : ''}</span></span></label>`).join('')}
           ${vouSel.size ? `<div class="muted" style="font-size:13px">Vouchers pay ${money(vouOff())}${vouDue() > vouOff() ? `; ${money(vouDue() - vouOff())} still to pay` : ''}.${left > 0 ? ` ${money(left)} left over: ${left > (+P.split || 0) ? 'you\u2019ll be asked whether to keep it on a new voucher' : P.left === 'charity' ? 'goes to ' + esc(P.charity || 'charity') : 'a tip'}.` : ''}</div>` : ''}</div>`; };
-      const repay = (before) => { const pd = f.elements.paid, after = loyOff() + vouOff(); if (pd) pd.value = Math.max(0, Math.round(((+pd.value || loyPrice()) + before - after) * 100) / 100); };
+      const repay = (before) => { const pd = f.elements.paid, after = loyOff() + vouOff(); if (pd) pd.value = Math.max(0, Math.round(((pd.value.trim() === '' ? loyPrice() : +pd.value) + before - after) * 100) / 100); };   /* 0 paid is a real 0, not blank */
       $('#b-vou')?.addEventListener('change', (e) => { const id = +e.target.dataset.bvou; if (!id) return; const v = vouRows.find(x => x.id === id), before = loyOff() + vouOff();
         if (e.target.checked) { const st = (x) => Vou.snap(x).stack !== false && Vou.cfg().stack; if (!st(v) || [...vouSel].some(i => !st(vouRows.find(x => x.id === i)))) vouSel.clear(); vouSel.add(id); } else vouSel.delete(id);
         repay(before); Dirty.set(true); vouDraw(); });
       f.elements.completed?.addEventListener('change', () => { loyDraw(); vouDraw(); });
+      /* another client or type: their own rewards and vouchers (ticks for the last client's come off, and the price goes back) */
+      var perks = async () => { const before = loyOff() + vouOff(); await loyDraw(); await vouDraw(); repay(before); };
       await loyDraw(); await vouDraw();
 
       Dirty.set(false);
@@ -1620,6 +1629,7 @@ const VIEWS = {
       const del = $('#b-del');
       if (del) del.onclick = async () => {
         if (!await ask('Delete this booking and its reference photos?')) return;
+        await bookingGiveBack(b.id);
         await DB.tx([
           ...(b.gcal_id ? [{ sql: 'INSERT OR IGNORE INTO gcal_deletes VALUES (?)', params: [b.gcal_id] }] : []),
           { sql: 'DELETE FROM bookings WHERE id = ?', params: [b.id] }]);
@@ -2379,7 +2389,8 @@ const VIEWS = {
             <div class="lbl">Your own</div>
             ${c.terms.own.map((t, i) => `<div class="row loy-own"><input class="in" data-vown="${i}" value="${esc(t)}" placeholder="e.g. Not valid on public holidays."><button class="mini del" data-vowndel="${i}" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>`).join('')}
             <button class="btn small" id="vou-ownadd" style="margin-top:8px">+ Add your own</button></div>`; };
-      const draw = () => VOUV.tab === 'program' ? drawProg() : VOUV.tab === 'card' ? vouCardTab(el) : drawList();
+      const draw = () => { if (VOUV.tab !== 'card') el.onclick = el.onchange = el.oninput = null;   /* the Card tab's own handlers */
+        return VOUV.tab === 'program' ? drawProg() : VOUV.tab === 'card' ? vouCardTab(el) : drawList(); };
       const keep = () => Vou.save(c);
       el.addEventListener('click', async (e) => { if (VOUV.tab === 'card') return; const t = e.target, g = (k) => t.closest(`[data-${k}]`)?.dataset[k];
         if (g('vf')) { VOUV.f = g('vf'); return drawList(); }
@@ -6644,7 +6655,7 @@ const vouFill = (t, v) => String(t || '').replace(/\{name\}/g, v.first || 'there
 function vouFields(v, m) { const mk = vouMsgFor(m, v.kind), T = (Vou.snap(v).terms || []);
   return { heading: vouFill(mk.title, v), message: vouFill(mk.body, v) + (v.message ? '\n\u201c' + v.message + '\u201d' : ''), note: v.message || '', amount: money(Vou.bal(v)), kind: Vou.kindName(v.kind) + ' voucher',
     to_line: v.holder ? 'For ' + v.holder : 'For you', from_line: v.anon || !v.fromName ? '' : 'From ' + v.fromName, about: v.about || '', code: v.code || '', expires: v.expires_at ? fmtDay(v.expires_at) : 'no expiry',
-    terms: T.map(t => '\u2022 ' + t).join('\n'), terms_line: T.join('  \u2022  '), name: v.first || 'there' }; }
+    terms: T.map(t => '\u2022 ' + t).join('\n'), terms_line: T.join('  \u2022  '), name: v.first || 'there', artist: loyArtist() }; }
 /* A made-up voucher, for previews and while designing. */
 function vouSample(kind) { const c = Vou.cfg(); return { kind: VOU_KMSG[kind] ? kind : 'gift', amount: 1000, code: 'K7Q2MX', expires_at: Vou.expiry(c.months), first: 'Sam', holder: 'Sam', fromName: 'Alex', message: '', about: '',
   prog: JSON.stringify({ terms: Vou.terms(c, { amount: 1000 }), stack: c.stack }) }; }
@@ -6791,6 +6802,8 @@ async function homeVou() { const el = $('#home-vou'); if (!el) return; if (!Vou.
       ${v.status === 'unpaid' ? `<button class="btn small primary" data-hvpay="${v.id}">Payment received</button>` : `<button class="btn small" data-hvmsg="${v.id}" data-tip="Remind them with the card">Send</button>`}</div>`).join('')}</div></div>`;
   el.onclick = async (e) => { const p = e.target.closest('[data-hvpay]'); if (p) { if (await vouPaid(+p.dataset.hvpay)) { homeVou(); vouMessage(+p.dataset.hvpay); } return; }
     const m = e.target.closest('[data-hvmsg]'); if (m) vouMessage(+m.dataset.hvmsg); }; }
+/* A booking about to be deleted: the loyalty rewards and vouchers it used are open again (an unused split is removed). */
+async function bookingGiveBack(bid) { try { await Loy.use(bid, [], 0); await Vou.use(bid, [], 0, null); } catch {} }
 /* A lot left over on a voucher: keep it on a new voucher (to use later or pass on), or let it go as a tip or to charity. */
 function vouSplitPick(left, P) { return new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
   o.innerHTML = `<div class="card rc-card"><h2>${money(left)} left on the voucher</h2><p class="muted" style="margin:-4px 0 12px">The tattoo cost less than the voucher. Keep what\u2019s left on a new voucher with its own code, to use later or pass on to someone else?</p>
@@ -6852,7 +6865,7 @@ function loyText(r, m) { const studio = Settings.get('studio_name') || Settings.
 function loyFields(r, m) { const tm = Loy.snap(r).terms || Loy.terms(Loy.cfg());
   const mk = loyMsgFor(m, r.src);
   const note = Loy.snap(r).note;   /* a personal message, made with the reward */
-  return { heading: loyFill(mk.title, r, mk), message: loyFill(mk.body, r, mk) + (note ? '\n\u201c' + note + '\u201d' : ''), note: note || '', name: r.first || 'there', reward: loyFill('{reward}', r, m), reward_big: r.kind === 'item' ? 'FREE' : r.kind === 'pct' ? `${+r.value}% OFF` : `${money(+r.value)} OFF`,
+  return { artist: loyArtist(), heading: loyFill(mk.title, r, mk), message: loyFill(mk.body, r, mk) + (note ? '\n\u201c' + note + '\u201d' : ''), note: note || '', name: r.first || 'there', reward: loyFill('{reward}', r, m), reward_big: r.kind === 'item' ? 'FREE' : r.kind === 'pct' ? `${+r.value}% OFF` : `${money(+r.value)} OFF`,
     reward_sub: r.kind === 'item' ? (r.item_name || 'from the studio') : 'your next tattoo', alt: r.alt_name ? `or swap it for a free ${r.alt_name}` : '',
     code: r.code || '', expires: r.expires_at ? fmtDay(r.expires_at) : 'No expiry', terms: tm.map(t => '\u2022 ' + t).join('\n'), sent: !m.anon && r.fromName ? `Thanks for sending ${r.fromName}.` : '' }; }
 /* A made-up reward from the program as it is now: for previews and while designing the card. */
@@ -11262,6 +11275,50 @@ async function openPhonebookPrint() {
     o.remove(); printPhonebook([...st.cats], PB_COLS.filter(c => st.cols.has(c[0])), st.group);
   });
 }
+/* ---------- Phone contacts ----------
+   Out: a client as a contact card (.vcf) the phone adds to its contacts. In: a contact from the phone (the contact
+   picker where the browser has one, Android Chrome; otherwise a .vcf the phone shares), opened in New client to check
+   and finish before it's saved. */
+const vcEsc = (t) => String(t ?? '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, m => '\\' + m);
+async function clientVcf(id) { const c = await DB.one('SELECT * FROM clients WHERE id = ?', [id]); if (!c) return;
+  const L = ['BEGIN:VCARD', 'VERSION:3.0', `N:${vcEsc(c.last_name)};${vcEsc(c.first_name)};;;`, `FN:${vcEsc(fullName(c))}`];
+  if (c.phone) L.push(`TEL;TYPE=CELL:${intlPhone(c.phone) || c.phone}`); if (c.email) L.push(`EMAIL;TYPE=INTERNET:${c.email}`);
+  if (c.dob) L.push(`BDAY:${c.dob}`); const ig = (c.instagram || '').replace(/^@/, ''); if (ig) L.push(`URL:https://instagram.com/${ig}`, `X-SOCIALPROFILE;TYPE=instagram:https://instagram.com/${ig}`);
+  const studio = Settings.get('studio_name') || Settings.get('artist_name'); L.push(`NOTE:${vcEsc('Tattoo client' + (studio ? ' at ' + studio : ''))}`); if (studio) L.push(`ORG:${vcEsc(studio)}`);
+  const u = await Media.url(c.photo_ref); if (u) { try { const img = new Image(); img.src = u; await img.decode(); const k = Math.min(1, 240 / Math.max(img.naturalWidth, img.naturalHeight)), cv = document.createElement('canvas');
+    cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    const b64 = cv.toDataURL('image/jpeg', 0.8).split(',')[1]; L.push('PHOTO;ENCODING=b;TYPE=JPEG:' + b64.match(/.{1,74}/g).join('\r\n ')); } catch {} }
+  L.push('END:VCARD');
+  const f = new File([L.join('\r\n') + '\r\n'], `${(fullName(c) || 'Contact').replace(/[^\w-]+/g, '_')}.vcf`, { type: 'text/vcard' });
+  try { if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f], title: fullName(c) }); return; } } catch (err) { if (err.name === 'AbortError') return; }
+  await saveFiles([f]); toast('Saved. Open the file to add them to your contacts.', 4000); }
+/* the first contact in a .vcf file */
+function vcfParse(text) { const raw = String(text).replace(/\r\n|\r/g, '\n').replace(/\n[ \t]/g, ''), card = raw.split(/BEGIN:VCARD/i)[1]; if (!card) return null;
+  const un = (v) => v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1').trim(), out = {};
+  for (const ln of card.split('\n')) { const i = ln.indexOf(':'); if (i < 0) continue; const key = ln.slice(0, i), val = ln.slice(i + 1), name = key.split(';')[0].toUpperCase().replace(/^ITEM\d+\./, '');
+    if (name === 'N' && !out.first_name && !out.last_name) { const [l, f] = val.split(';'); out.last_name = un(l || ''); out.first_name = un(f || ''); }
+    else if (name === 'FN' && !out.fn) out.fn = un(val);
+    else if (name === 'TEL' && !out.phone) out.phone = val.replace(/^tel:/i, '').trim();
+    else if (name === 'EMAIL' && !out.email) out.email = val.trim();
+    else if (name === 'BDAY' && !out.dob) { const d = val.replace(/^--/, '0000').replace(/-/g, '').slice(0, 8); if (/^\d{8}$/.test(d) && !d.startsWith('0000')) out.dob = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`; }
+    else if ((name === 'URL' || name === 'X-SOCIALPROFILE') && /instagram\.com\/([\w.]+)/i.test(val) && !out.instagram) out.instagram = val.match(/instagram\.com\/([\w.]+)/i)[1];
+    else if (name === 'NOTE' && !out.notes) out.notes = un(val);
+    else if (name === 'PHOTO' && !out.photo) { const m = val.match(/^data:image\/\w+;base64,(.+)$/) || (/ENCODING=b|BASE64/i.test(key) ? [0, val] : null);
+      if (m) { try { const bin = atob(m[1].replace(/\s/g, '')), u8 = Uint8Array.from(bin, ch => ch.charCodeAt(0)); out.photo = new Blob([u8], { type: 'image/jpeg' }); } catch {} } } }
+  if (!out.first_name && !out.last_name && out.fn) { const p = out.fn.split(/\s+/); out.first_name = p.shift(); out.last_name = p.join(' '); }
+  delete out.fn; return out.first_name || out.last_name || out.phone ? out : null; }
+let CPRE = null;   /* a contact brought in from the phone, waiting in New client */
+document.addEventListener('click', (e) => { if (e.target.closest('#c-vcf')) clientVcf(+location.hash.split('/')[1]); });   /* the client page's Add to phone contacts */
+async function clientFromPhone() { let C = null;
+  if ('contacts' in navigator && 'select' in navigator.contacts) { try { const [p] = await navigator.contacts.select(['name', 'tel', 'email', 'icon'], { multiple: false }); if (!p) return;
+      const nm = (p.name?.[0] || '').trim().split(/\s+/); C = { first_name: nm.shift() || '', last_name: nm.join(' '), phone: p.tel?.[0] || '', email: p.email?.[0] || '', photo: p.icon?.[0] || null }; }
+    catch (err) { if (err.name === 'AbortError') return; } }
+  if (!C) { const f = await xPickFile('.vcf,text/vcard,text/x-vcard'); if (!f) return; C = vcfParse(await f.text());
+    if (!C) return toast('No contact found in that file. On your phone, share the contact (as a file), then pick it here.', 4000); }
+  const digits = String(intlPhone(C.phone) || C.phone || '').replace(/\D/g, '').slice(-9);
+  const have = digits.length >= 7 ? await DB.one(`SELECT id, first_name, last_name FROM clients WHERE replace(replace(replace(phone, ' ', ''), '-', ''), '+', '') LIKE ?`, ['%' + digits]) : null;
+  if (have && await ask(`${fullName(have)} is already in your contacts with that number.\n\nOpen them instead?`)) { location.hash = 'client/' + have.id; return; }
+  CPRE = C; location.hash = 'client-edit/new'; }
 // Spreadsheet export shared by the phonebook, bookings and stats. BOM so Excel reads UTF-8.
 async function saveCsv(name, head, rows) {
   // Text starting with = + - @ is kept as text, so a spreadsheet never runs it as a formula.
@@ -11400,7 +11457,7 @@ async function bkTable() {
       Gcal.soon(); toast(on ? 'Marked completed. Open it to add what was paid and how long it took.' : 'No longer completed.'); return table(); }
     const del = t.closest('[data-bdel]'); if (del) { const r = rows.find(x => x.id === +del.dataset.bdel); if (!r) return;
       if (!await ask(`Delete the booking ${r.first_name != null || r.guest_name ? 'for ' + bName(r) + ' ' : ''}on ${fmtDay(r.start_at.slice(0, 10))} at ${fmtTime(r.start_at)}, and its reference photos?`)) return;
-      const ph = await DB.all('SELECT photo_ref FROM booking_photos WHERE booking_id = ?', [r.id]);
+      const ph = await DB.all('SELECT photo_ref FROM booking_photos WHERE booking_id = ?', [r.id]); await bookingGiveBack(r.id);
       await DB.tx([...(r.gcal_id ? [{ sql: 'INSERT OR IGNORE INTO gcal_deletes VALUES (?)', params: [r.gcal_id] }] : []), { sql: 'DELETE FROM booking_photos WHERE booking_id = ?', params: [r.id] }, { sql: 'DELETE FROM bookings WHERE id = ?', params: [r.id] }]);
       for (const p of ph) await Media.release(p.photo_ref); toast('Booking deleted.'); Gcal.soon(); return table(); }
     const tr = t.closest('[data-bedit]') || t.closest('[data-bid]'); if (tr) { Cal.back = 'bookings'; location.hash = 'booking-edit/' + (tr.dataset.bedit || tr.dataset.bid); } };
@@ -12166,6 +12223,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 554, when: '2026-11-25T12:00', added: [
+    'Clients: Add to phone contacts saves a client to your phone. The new phone button in Clients brings a contact in from your phone, to check and finish before saving.',
+    'Bookings: changing the client or type updates their loyalty rewards and vouchers, and deleting a booking gives back the rewards and vouchers it used.',
+    'Phones: lists no longer push the page sideways, reward and voucher tables keep to one line a row, and the tab bar steps aside while you type so the keyboard doesn\u2019t cover the box.',
+    'Fixed: when vouchers paid the whole tattoo, changing them could double the price paid. Cards with no artist name set now say \u201cyour artist\u201d.'
+  ] },
   { build: 553, when: '2026-11-25T09:00', added: [
     'Saved quotes: Client brief. Send a link with eight quick questions (placement, size, colour, detail, style, what\u2019s in it, text and references); the client taps their answers and sends them back on WhatsApp.',
     'Paste the brief\u2019s reply in Paste client reply and the quote calculator fills itself in, with the rest in the design notes.',
@@ -13180,7 +13243,10 @@ async function startWorkspace(w, fileBytes) {
     const a = document.activeElement;
     if (!a || !/^(INPUT|TEXTAREA)$/.test(a.tagName) || /^(range|checkbox|radio|color|file|button)$/.test(a.type)) return reset();
     let f = a; while (f && f !== document.body && getComputedStyle(f).position !== 'fixed') f = f.parentElement;
-    if (!f || f === document.body) return reset();   /* not in a window: the page scrolls itself */
+    if (!f || f === document.body) { reset();   /* a box on the page: the tab bar steps aside, and the box is scrolled clear of the keyboard and the bar at the top */
+      const kb0 = innerHeight - (vv.height + vv.offsetTop); document.body.classList.toggle('kb-up', kb0 >= 80); if (kb0 < 80) return;
+      const r = a.getBoundingClientRect(), top = (document.querySelector('.form-foot')?.getBoundingClientRect().bottom || 0) + 8, bottom = vv.offsetTop + vv.height - 14;
+      if (r.bottom > bottom || r.top < top) a.scrollIntoView({ block: 'center' }); return; }
     const card = a.closest('.card, [role="dialog"]') || f, kb = innerHeight - (vv.height + vv.offsetTop);
     if (cur && cur.el !== card) reset();
     if (kb < 80) return reset();   /* no keyboard up */
@@ -13193,7 +13259,7 @@ async function startWorkspace(w, fileBytes) {
   };
   vv.addEventListener('resize', () => requestAnimationFrame(fit));
   document.addEventListener('focusin', () => setTimeout(fit, 350));   /* after the keyboard has come up */
-  document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement || !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) reset(); }, 100));
+  document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement || !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) { reset(); document.body.classList.remove('kb-up'); } }, 100));
 })();
 
 /* Scrolled lists keep their place when they are redrawn. Many panels rebuild their HTML after a tap (tick a row, pick an
