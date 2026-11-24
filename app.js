@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 551;
+const APP_BUILD = 552;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -415,7 +415,24 @@ const MIGRATIONS = [
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      from_at TEXT NOT NULL, to_at TEXT NOT NULL,
      filed_at TEXT NOT NULL DEFAULT (datetime('now')),
-     note TEXT, data TEXT);`
+     note TEXT, data TEXT);`,
+  // vouchers: money towards a tattoo, paid for before it's sent. status: unpaid, open, used, void, deleted (ran out is worked out
+  // from expires_at). client_id: who holds it (empty: anyone with the card); from: who bought it. A split leaves a new voucher
+  // (parent_id) for what's left. prog: its terms and rules as given (JSON). bookings.vou_off: what vouchers paid on a booking.
+  `CREATE TABLE vouchers (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     code TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'gift',
+     amount REAL NOT NULL DEFAULT 0, balance REAL,
+     client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     from_name TEXT, from_client INTEGER REFERENCES clients(id) ON DELETE SET NULL, anon INTEGER NOT NULL DEFAULT 0,
+     message TEXT, pass INTEGER NOT NULL DEFAULT 0, quote_id INTEGER, about TEXT,
+     status TEXT NOT NULL DEFAULT 'unpaid', paid_at TEXT, paid_amount REAL, pay_method TEXT,
+     issued_at TEXT NOT NULL DEFAULT (datetime('now')), months INTEGER, expires_at TEXT, sent_at TEXT,
+     parent_id INTEGER REFERENCES vouchers(id) ON DELETE SET NULL, passed_from INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+     used_booking INTEGER REFERENCES bookings(id) ON DELETE SET NULL, used_at TEXT, used_amount REAL, left_to TEXT, left_amount REAL,
+     prog TEXT, deleted_at TEXT, del_reason TEXT, del_prev TEXT);
+   CREATE INDEX idx_vouchers_client ON vouchers (client_id);
+   ALTER TABLE bookings ADD COLUMN vou_off REAL;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -933,6 +950,7 @@ const ICON = {
   forms: '<svg viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M8 13h8M8 17h5"/></svg>',
   reels: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>',
   quote: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M8 15h2M12 15h2M16 11v6"/></svg>',
+  voucher: '<svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M8 6v12" stroke-dasharray="2 2"/><path d="M13 12h5M13 9h3M13 15h4"/></svg>',
   loyalty: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M12 13.2l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg>',
   stock: '<svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/></svg>',
   rules: '<svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>',
@@ -990,6 +1008,7 @@ const VIEWS = {
         <div id="home-today" class="muted">…</div></div>
       <div id="home-de"></div>
       <div id="home-loy"></div>
+      <div id="home-vou"></div>
       <div id="home-bday"></div>
       <div class="grid">
         ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil')}
@@ -1009,7 +1028,7 @@ const VIEWS = {
       else el.innerHTML = `No sessions booked. <a href="#" id="h-add" style="color:var(--teal)">Book one</a>`;
       const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBookingNext(); };
       const bw = document.querySelector('[data-go-ws]'); if (bw) bw.onclick = () => { Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(bw.dataset.goWs || null)); };
-      homeLoy(); homeDE();
+      homeLoy(); homeDE(); homeVou();
       // Birthdays in the next 7 days, with a one-tap WhatsApp greeting.
       const bd = (await DB.all('SELECT id, first_name, last_name, phone, dob, loy_off FROM clients WHERE dob IS NOT NULL AND dob <> \'\''))
         .map(c => { const [y, m, d] = c.dob.split('-').map(Number); let n = new Date(t.getFullYear(), m - 1, d); if (n < t) n = new Date(t.getFullYear() + 1, m - 1, d);
@@ -1423,6 +1442,7 @@ const VIEWS = {
                 <div class="unit-in"><input class="in" name="time_h" type="number" inputmode="decimal" min="0" step="0.25" value="${b.time_min != null ? +(b.time_min / 60).toFixed(2) : +(b.duration_min / 60).toFixed(2)}"><em>hours</em></div></label>
             </div>
             <div id="b-loy"></div>
+            <div id="b-vou"></div>
             <div class="field"><span class="lbl">Paid by</span><div class="seg" id="b-pay">${PAY_METHODS.map(m => `<button type="button" data-pay="${m}" class="${b.pay_method === m ? 'on' : ''}" style="flex:1">${m}</button>`).join('')}</div></div>
             <div class="b-done-acts">
               <div class="b-fu"><button type="button" class="btn" id="b-followup" data-tip="Book a check-up to see how it healed and whether a touch-up is needed">Book follow-up</button>
@@ -1546,7 +1566,7 @@ const VIEWS = {
         loyRows = clientId && kind === 'tattoo' ? await Loy.usable(clientId, b.id) : [];
         if (loyFirst) { loyRows.filter(r => b.id && r.used_booking === b.id).forEach(r => loySel.add(r.id)); loyFirst = false; }
         for (const id of [...loySel]) if (!loyRows.some(r => r.id === id)) loySel.delete(id);
-        const claim = clientId && kind === 'tattoo' && Loy.on() ? `<div class="row b-loy-code" style="gap:6px;margin-top:6px"><input class="in" id="b-loy-code" placeholder="Reward card code" autocomplete="off" style="max-width:200px;text-transform:uppercase"><button type="button" class="btn small" id="b-loy-claim" data-tip="A reward card made for anyone: its code puts it on this client">Use a card</button></div>` : '';
+        const claim = clientId && kind === 'tattoo' && (Loy.on() || Vou.on()) ? `<div class="row b-loy-code" style="gap:6px;margin-top:6px"><input class="in" id="b-loy-code" placeholder="Reward or voucher code" autocomplete="off" style="max-width:200px;text-transform:uppercase"><button type="button" class="btn small" id="b-loy-claim" data-tip="A reward card made for anyone: its code puts it on this client">Use a card</button></div>` : '';
         if (!loyRows.length) { el.innerHTML = claim ? `<div class="field b-loy"><span class="lbl">Loyalty rewards ${help('Got a reward card made for anyone? Enter its code to use it on this tattoo.')}</span>${claim}</div>` : ''; return; }
         const off = loyOff();
         el.innerHTML = `<div class="field b-loy"><span class="lbl">Loyalty rewards ${help('Rewards this client holds. Tick the ones used on this tattoo; the price paid goes down by what they take off.')}</span>
@@ -1554,7 +1574,9 @@ const VIEWS = {
           ${loySel.size ? `<div class="muted" style="font-size:13px">Takes off ${money(off)}: ${money(Math.max(0, loyPrice() - off))} instead of ${money(loyPrice())}.</div>` : ''}${claim}</div>`; };
       $('#b-loy')?.addEventListener('click', async (e) => { if (!e.target.closest('#b-loy-claim')) return; const code = ($('#b-loy-code')?.value || '').trim().toUpperCase(); if (!code) return toast('Type the code on their card.');
         const r = await DB.one(`SELECT id FROM loyalty_rewards WHERE upper(code) = ? AND client_id IS NULL AND prog LIKE '%"anyone":true%' AND status = 'open' AND used_booking IS NULL AND (expires_at IS NULL OR expires_at >= date('now'))`, [code]);
-        if (!r) return toast('No open reward card for anyone has that code.', 2600);
+        if (!r) { const v = await DB.one(`SELECT id FROM vouchers WHERE upper(code) = ? AND client_id IS NULL AND status = 'open' AND (expires_at IS NULL OR expires_at >= date('now'))`, [code]);
+          if (!v) return toast('No open reward card or voucher for anyone has that code.', 2600);
+          await DB.run('UPDATE vouchers SET client_id = ? WHERE id = ?', [clientId, v.id]); toast('The voucher is now theirs: tick it to use it.', 2400); Dirty.set(true); return vouDraw(); }
         await DB.run('UPDATE loyalty_rewards SET client_id = ? WHERE id = ?', [clientId, r.id]); toast('The card is now theirs: tick it to use it.', 2400); Dirty.set(true); loyDraw(); });
       $('#b-loy')?.addEventListener('change', (e) => { const id = +e.target.dataset.bloy; if (!id) return; const r = loyRows.find(x => x.id === id), c = Loy.cfg();
         const before = loyOff();
@@ -1563,10 +1585,29 @@ const VIEWS = {
           if (!stackOK) loySel.clear(); else if (loySel.size >= mx) { e.target.checked = false; return toast(`At most ${mx} together.`); }
           if (Loy.old(r)) toast(`This reward is from an older version of your loyalty program, so it keeps the rules it was earned under.`, 5000);
           loySel.add(id); } else loySel.delete(id);
-        const pd = f.elements.paid, after = loyOff(); if (pd) pd.value = Math.max(0, Math.round(((+pd.value || loyPrice()) + before - after) * 100) / 100);
-        Dirty.set(true); loyDraw(); });
-      f.elements.completed?.addEventListener('change', () => loyDraw());
-      await loyDraw();
+        const vb = vouOff(), pd = f.elements.paid, after = loyOff(); if (pd) pd.value = Math.max(0, Math.round(((+pd.value || loyPrice()) + before - after) * 100) / 100);
+        Dirty.set(true); loyDraw(); vouDraw().then(() => repay(vb + loyOff())); });
+      /* Vouchers the client holds: after loyalty rewards (which come off first), they pay towards what's left. */
+      const vouSel = new Set(); let vouRows = [], vouFirst = true, vouKey0 = '';
+      const vouKey = () => [...vouSel].sort().join(',') + '|' + vouDue();   /* unchanged since it opened: leave its vouchers as they are */
+      const vouDue = () => Math.max(0, Math.round((loyPrice() - loyOff()) * 100) / 100);
+      const vouHave = () => vouRows.filter(v => vouSel.has(v.id)).reduce((t, v) => t + Vou.had(v), 0);
+      const vouOff = () => Math.min(vouHave(), vouDue());
+      const vouDraw = async () => { const el = $('#b-vou'); if (!el) return;
+        vouRows = clientId && kind === 'tattoo' ? await DB.all(`SELECT * FROM vouchers WHERE client_id = ? AND ((status = 'open' AND (expires_at IS NULL OR expires_at >= date('now'))) OR used_booking = ?)`, [clientId, b.id || -1]) : [];
+        if (vouFirst) { vouRows.filter(v => b.id && v.used_booking === b.id).forEach(v => vouSel.add(v.id)); vouFirst = false; vouKey0 = vouKey(); }
+        for (const id of [...vouSel]) if (!vouRows.some(v => v.id === id)) vouSel.delete(id);
+        if (!vouRows.length) { el.innerHTML = ''; return; }
+        const left = Math.round((vouHave() - vouDue()) * 100) / 100, P = Vou.cfg();
+        el.innerHTML = `<div class="field b-loy"><span class="lbl">Vouchers ${help('Vouchers this client holds. They pay towards the tattoo after any loyalty rewards; the price paid goes down by what they cover.')}</span>
+          ${vouRows.map(v => `<label class="toggle"><input type="checkbox" data-bvou="${v.id}" ${vouSel.has(v.id) ? 'checked' : ''}><span><b>${money(Vou.had(v))} voucher</b> <span class="muted">${esc(v.code)}${v.expires_at ? ' \u00b7 until ' + esc(fmtDay(v.expires_at)) : ''}${v.from_name && !v.anon ? ' \u00b7 from ' + esc(v.from_name) : ''}</span></span></label>`).join('')}
+          ${vouSel.size ? `<div class="muted" style="font-size:13px">Vouchers pay ${money(vouOff())}${vouDue() > vouOff() ? `; ${money(vouDue() - vouOff())} still to pay` : ''}.${left > 0 ? ` ${money(left)} left over: ${left > (+P.split || 0) ? 'you\u2019ll be asked whether to keep it on a new voucher' : P.left === 'charity' ? 'goes to ' + esc(P.charity || 'charity') : 'a tip'}.` : ''}</div>` : ''}</div>`; };
+      const repay = (before) => { const pd = f.elements.paid, after = loyOff() + vouOff(); if (pd) pd.value = Math.max(0, Math.round(((+pd.value || loyPrice()) + before - after) * 100) / 100); };
+      $('#b-vou')?.addEventListener('change', (e) => { const id = +e.target.dataset.bvou; if (!id) return; const v = vouRows.find(x => x.id === id), before = loyOff() + vouOff();
+        if (e.target.checked) { const st = (x) => Vou.snap(x).stack !== false && Vou.cfg().stack; if (!st(v) || [...vouSel].some(i => !st(vouRows.find(x => x.id === i)))) vouSel.clear(); vouSel.add(id); } else vouSel.delete(id);
+        repay(before); Dirty.set(true); vouDraw(); });
+      f.elements.completed?.addEventListener('change', () => { loyDraw(); vouDraw(); });
+      await loyDraw(); await vouDraw();
 
       Dirty.set(false);
       f.addEventListener('input', (e) => { if (e.target !== ci) Dirty.set(true); });
@@ -1615,6 +1656,9 @@ const VIEWS = {
         if (done) await DB.run(`UPDATE quotes SET completed = 1, updated_at = datetime('now') WHERE booking_id = ? AND completed = 0`, [bid]);
         if (d.notify) { await Settings.set('notify_lead', String(+d.notify_min || 60)); Notif.ask(); } Notif.plan();
         if (loySel.size || b.loy_off != null) await Loy.use(bid, done ? [...loySel] : [], loyOff());
+        if ((vouSel.size || b.vou_off != null) && !(done && b.completed && vouKey() === vouKey0)) { const lo = Math.round((vouHave() - vouDue()) * 100) / 100, P = Vou.cfg();
+          const choice = done && vouSel.size && lo > (+P.split || 0) ? await vouSplitPick(lo, P) : null;
+          b.vou_off = await Vou.use(bid, done ? [...vouSel] : [], vouDue(), choice) || null; }
         await Loy.done(bid, done);
         if (!b.id) { b.id = bid; }
         Object.assign(b, { completed: done ? 1 : 0, paid: done ? num(d.paid) : null, time_min: vals[14], pay_method: done ? payMethod : null, client_id: clientId,
@@ -1678,7 +1722,8 @@ const VIEWS = {
       + tileGroup('Running the studio', [
         tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory'),
         tile('rules', 'Rule book', 'Your studio rules', false, 'rules'),
-        ...(Loy.on() || (+Settings.get('loy_left') > 0 && !wsDesign()) ? [tile('loyalty', 'Loyalty', 'Your rewards program', false, 'loyalty')] : [])]))
+        ...(Loy.on() || (+Settings.get('loy_left') > 0 && !wsDesign()) ? [tile('loyalty', 'Loyalty', 'Your rewards program', false, 'loyalty')] : []),
+        ...(Vou.on() ? [tile('voucher', 'Vouchers', 'Gift vouchers for tattoos', false, 'vouchers')] : [])]))
       + tileGroup('App', [
         tile('settings', 'Settings & backup', wsDesign() ? 'Profile, workspace and backup' : GOOGLE_ON ? 'Profile, your week, Google, backup' : 'Profile, your week, backup', false, 'settings'),
         tile('tour', 'Take a tour', 'A guided look around InkForge', false, 'tour')])
@@ -2286,13 +2331,144 @@ const VIEWS = {
       draw();
     }
   },
+  vouchers: {
+    title: () => 'Vouchers',
+    render: () => `<div class="seg loy-tabs" id="vou-tabs">${[['list', 'Vouchers'], ['program', 'Program'], ['card', 'Card']].map(([k, l]) => `<button data-vt="${k}" class="${VOUV.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="vou-view"></div>`,
+    mount() {
+      const el = $('#vou-view'); let c = Vou.cfg();
+      $('#vou-tabs').onclick = (e) => { const b = e.target.closest('[data-vt]'); if (!b) return; VOUV.tab = b.dataset.vt; document.querySelectorAll('#vou-tabs button').forEach(x => x.classList.toggle('on', x === b)); draw(); };
+      const COLS = [['code', 'Code'], ['holder', 'For'], ['from', 'From'], ['kindN', 'Kind'], ['amount', 'Amount'], ['bal', 'Left'], ['paid', 'Paid'], ['sent_at', 'Sent'], ['expires_at', 'Expires'], ['state', 'Status']];
+      const ST = { unpaid: 'Awaiting payment', open: 'Open', used: 'Used', expired: 'Ran out', void: 'Cancelled', deleted: 'Deleted' };
+      const rows0 = async () => (await DB.all(`SELECT v.*, h.first_name AS h_f, h.last_name AS h_l, f.first_name AS f_f, f.last_name AS f_l FROM vouchers v LEFT JOIN clients h ON h.id = v.client_id LEFT JOIN clients f ON f.id = v.from_client ORDER BY v.issued_at DESC, v.id DESC`))
+        .map(v => ({ ...v, holder: v.h_f != null ? fullName({ first_name: v.h_f, last_name: v.h_l }) : 'Anyone with the card', from: (v.f_f != null ? fullName({ first_name: v.f_f, last_name: v.f_l }) : v.from_name || '') + (v.anon ? ' (anonymous)' : ''),
+          kindN: Vou.kindName(v.kind) + (v.parent_id ? ' (split)' : ''), bal: Vou.bal(v), state: Vou.state(v), paid: v.paid_at ? fmtDay(v.paid_at.slice(0, 10)) + (v.pay_method ? ' \u00b7 ' + v.pay_method : '') : '' }));
+      const cell = (v, k) => k === 'state' ? ST[v.state] : k === 'amount' || k === 'bal' ? money(v[k]) : k === 'sent_at' ? (v.sent_at ? fmtDay(v.sent_at) : v.state === 'unpaid' ? '' : 'Not yet') : k === 'expires_at' ? (v.expires_at ? fmtDay(v.expires_at) : v.state === 'unpaid' ? 'From payment' : 'Never') : v[k] ?? '';
+      const drawList = async () => { const all = await rows0(), q = VOUV.q.trim().toLowerCase(), cnt = (f) => all.filter(v => f === 'all' ? v.state !== 'deleted' : v.state === f).length;
+        let rows = all.filter(v => (VOUV.f === 'all' ? v.state !== 'deleted' : v.state === VOUV.f) && (!q || COLS.some(([k]) => String(cell(v, k)).toLowerCase().includes(q))));
+        const key = (v) => ['amount', 'bal'].includes(VOUV.k) ? +v[VOUV.k] : String(VOUV.k === 'issued_at' || VOUV.k === 'expires_at' ? v[VOUV.k] || '9999' : cell(v, VOUV.k)).toLowerCase();
+        rows.sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0) * VOUV.d);
+        const ow = await Vou.owed(), sold = all.filter(v => v.paid_at && v.state !== 'deleted').reduce((t, v) => t + (+v.paid_amount || +v.amount), 0);
+        el.innerHTML = `${Vou.on() ? '' : '<div class="card muted">Vouchers are off, so no new ones can be made. Open ones can still be used.</div>'}
+          <div class="search-bar"><input class="in" id="vou-q" type="search" placeholder="Search code, name, kind\u2026" value="${esc(VOUV.q)}" autocomplete="off">
+            ${Vou.on() ? '<a class="btn primary icon-btn" href="#vou-new" data-tip="Create a voucher" aria-label="Create a voucher"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></a>' : ''}</div>
+          ${all.length ? `<div class="loy-use"><div><b>${money(sold)}</b><span>sold</span></div><div><b>${ow.n}</b><span>open</span></div><div><b>${money(ow.a)}</b><span>still to use</span></div><div class="${cnt('unpaid') ? 'warn' : ''}"><b>${cnt('unpaid')}</b><span>awaiting payment</span></div></div>` : ''}
+          <div class="bkt-seg">${[['unpaid', 'Awaiting payment'], ['open', 'Open'], ['used', 'Used'], ['expired', 'Ran out'], ['void', 'Cancelled'], ['all', 'All'], ['deleted', 'Deleted']].map(([k, l]) => `<button data-vf="${k}" class="${VOUV.f === k ? 'on' : ''}">${l} <small>${cnt(k)}</small></button>`).join('')}</div>
+          ${rows.length ? `<div class="bkt-scroll"><table class="bkt loy-t"><thead><tr>${COLS.map(([k, l]) => `<th data-vs="${k}" class="${VOUV.k === k ? 'sorted' : ''}">${l}${VOUV.k === k ? (VOUV.d > 0 ? ' \u25b2' : ' \u25bc') : ''}</th>`).join('')}<th class="c-act"></th></tr></thead>
+            <tbody>${rows.map(v => `<tr class="${v.state !== 'open' && v.state !== 'unpaid' ? 'done' : ''}">${COLS.map(([k]) => `<td class="${k === 'code' ? 'loy-code' : ''} ${k === 'state' ? 'vou-' + v.state : ''}">${esc(cell(v, k))}</td>`).join('')}
+              <td class="c-act nw">${v.state === 'unpaid' ? `<button class="btn small primary" data-vpay="${v.id}" data-tip="The payment is in: the voucher can now be sent, and its time starts">Payment received</button>` : ''}
+                ${v.state === 'open' ? `<label class="loy-sent" data-tip="Sent to them"><input type="checkbox" data-vsent="${v.id}" ${v.sent_at ? 'checked' : ''}><span>Sent</span></label>` : ''}
+                ${v.state === 'open' ? `<button class="btn small primary" data-vmsg="${v.id}" data-tip="The card and message">Send</button>` : ''}
+                ${v.state === 'open' && v.pass ? `<button class="btn small" data-vpass="${v.id}" data-tip="Give it to someone else">Pass on</button>` : ''}
+                ${v.state === 'unpaid' || v.state === 'open' ? `<button class="btn small" data-vvoid="${v.id}">Cancel</button>` : ''}
+                ${v.state === 'deleted' ? `<button class="btn small" data-vrest="${v.id}">Restore</button>` : `<button class="mini del" data-vdel="${v.id}" aria-label="Delete" data-tip="Delete: kept under Deleted, with your reason"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`}</td></tr>`).join('')}</tbody></table></div>`
+          : `<div class="empty muted">${all.length ? 'Nothing here.' : 'No vouchers yet. Create one with +, or from a saved quote.'}</div>`}`;
+        const qi = $('#vou-q'); qi.oninput = async () => { VOUV.q = qi.value; const at = qi.selectionStart; await drawList(); const n2 = $('#vou-q'); n2.focus(); try { n2.setSelectionRange(at, at); } catch {} }; };
+      const tog = (k, l) => `<label class="toggle"><input type="checkbox" data-vck="${k}" ${c[k] ? 'checked' : ''}><span>${l}</span></label>`, cur = esc(Settings.get('currency') || '');
+      const drawProg = () => { const L = Vou.termList(c, {}), off = new Set(c.terms.off);
+        el.innerHTML = `<div class="card loy-form"><div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px"><button class="btn small" id="vou-exp" data-tip="Your voucher rules, terms, card settings, custom cards and guide, as a file another artist can import">Export settings</button><button class="btn small" id="vou-imp" data-tip="Use voucher settings another artist exported: they replace yours">Import settings</button><button class="btn small" id="vou-guide">Voucher guide\u2026</button></div>
+            <div class="lbl">Vouchers ${help('Money towards a tattoo, never a percentage. For tattoos only: no cash, no refunds. A voucher is only sent once it\u2019s paid for.')}</div>
+            <div class="two"><label class="field"><span>Valid for ${help('From the day it\u2019s paid for. 0 for no expiry.')}</span><div class="unit-in"><input class="in" type="number" min="0" max="60" data-vcn="months" value="${esc(c.months)}"><em>months</em></div></label>
+              <label class="field"><span>Left over, up to ${help('When a tattoo costs less than its vouchers: up to this much left over goes as a tip or to charity. More than this, and what\u2019s left can go on a new voucher (a split).')}</span><div class="unit-in"><input class="in" type="number" min="0" data-vcn="split" value="${esc(c.split)}"><em>${cur}</em></div></label></div>
+            <div class="loy-togs">${tog('stack', 'Several vouchers can be used together on one tattoo')}${tog('pass', 'Can be passed on to someone else (the usual choice when making one)')}</div>
+            <div class="lbl" style="margin-top:8px">What\u2019s left over goes</div>
+            <span class="seg"><button data-vleft="tip" class="${c.left !== 'charity' ? 'on' : ''}">To you, as a tip</button><button data-vleft="charity" class="${c.left === 'charity' ? 'on' : ''}">To charity</button></span>
+            ${c.left === 'charity' ? `<label class="field" style="margin-top:8px"><span>Charity</span><input class="in" data-vct="charity" value="${esc(c.charity)}" placeholder="e.g. the local animal shelter"></label>` : ''}
+            <p class="muted loy-note">Loyalty rewards and vouchers can be used together: the rewards come off first, then the vouchers. Vouchers stack among themselves, not with rewards.</p></div>
+          <div class="card loy-form"><div class="lbl">Terms ${help('These go on every voucher; untick any you don\u2019t want. Each voucher keeps the terms it was given with.')}</div>
+            <div class="loy-togs">${L.filter(([k]) => !k.startsWith('own')).map(([k, t]) => `<label class="toggle"><input type="checkbox" data-vterm="${k}" ${off.has(k) ? '' : 'checked'}><span>${esc(t)}</span></label>`).join('')}</div>
+            <div class="lbl">Your own</div>
+            ${c.terms.own.map((t, i) => `<div class="row loy-own"><input class="in" data-vown="${i}" value="${esc(t)}" placeholder="e.g. Not valid on public holidays."><button class="mini del" data-vowndel="${i}" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>`).join('')}
+            <button class="btn small" id="vou-ownadd" style="margin-top:8px">+ Add your own</button></div>`; };
+      const draw = () => VOUV.tab === 'program' ? drawProg() : VOUV.tab === 'card' ? vouCardTab(el) : drawList();
+      const keep = () => Vou.save(c);
+      el.addEventListener('click', async (e) => { if (VOUV.tab === 'card') return; const t = e.target, g = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+        if (g('vf')) { VOUV.f = g('vf'); return drawList(); }
+        if (g('vs')) { const k = g('vs'); VOUV.d = VOUV.k === k ? -VOUV.d : 1; VOUV.k = k; return drawList(); }
+        if (g('vleft')) { c.left = g('vleft'); await keep(); return drawProg(); }
+        if (t.closest('#vou-exp')) return vouExport();
+        if (t.closest('#vou-imp')) { if (await vouImport()) { c = Vou.cfg(); drawProg(); } return; }
+        if (t.closest('#vou-guide')) { location.hash = 'vou-guide'; return; }
+        if (t.closest('#vou-ownadd')) { c.terms.own.push(''); await keep(); drawProg(); el.querySelector(`[data-vown="${c.terms.own.length - 1}"]`)?.focus(); return; }
+        if (g('vowndel') != null) { c.terms.own.splice(+g('vowndel'), 1); await keep(); return drawProg(); }
+        if (g('vpay')) { if (await vouPaid(+g('vpay'))) { drawList(); vouMessage(+g('vpay')); } return; }
+        if (g('vmsg')) return vouMessage(+g('vmsg'));
+        if (g('vpass')) { const cid = await Loy.pickClient('Pass this voucher on to:'); if (!cid) return; const v = await DB.one('SELECT client_id FROM vouchers WHERE id = ?', [+g('vpass')]);
+          await DB.run('UPDATE vouchers SET passed_from = coalesce(passed_from, ?), client_id = ? WHERE id = ?', [v?.client_id ?? null, cid, +g('vpass')]); toast('Voucher passed on.', 1600); return drawList(); }
+        if (g('vvoid')) { const v = await DB.one('SELECT * FROM vouchers WHERE id = ?', [+g('vvoid')]); if (!v) return;
+          const why = v.status === 'unpaid' ? (await ask('Cancel this voucher?\n\nIt hasn\u2019t been paid for. It stays in the list as Cancelled.') ? '' : null)
+            : await askText(`Cancel this paid voucher?\n\nVouchers can\u2019t be refunded, so say why (it\u2019s kept with it):`, '');
+          if (why == null) return; await DB.run(`UPDATE vouchers SET status = 'void', del_reason = coalesce(?, del_reason) WHERE id = ?`, [why.trim() || null, v.id]); toast('Voucher cancelled.', 1600); return drawList(); }
+        if (g('vdel')) { const id = +g('vdel'), why = await askText('Why are you deleting this voucher?\n\nIt moves to Deleted with your reason, and can be restored.', ''); if (why == null) return;
+          const v = await DB.one('SELECT status FROM vouchers WHERE id = ?', [id]); await DB.run(`UPDATE vouchers SET del_prev = ?, status = 'deleted', deleted_at = ?, del_reason = ? WHERE id = ?`, [v?.status || 'open', ymd(new Date()), why.trim() || null, id]); toast('Voucher deleted. It\u2019s kept under Deleted.', 2000); return drawList(); }
+        if (g('vrest')) { const v = await DB.one('SELECT del_prev FROM vouchers WHERE id = ?', [+g('vrest')]); await DB.run(`UPDATE vouchers SET status = ?, deleted_at = NULL, del_reason = NULL, del_prev = NULL WHERE id = ?`, [v?.del_prev && v.del_prev !== 'deleted' ? v.del_prev : 'open', +g('vrest')]); toast('Voucher restored.', 1400); return drawList(); } });
+      el.addEventListener('change', async (e) => { if (VOUV.tab === 'card') return; const d = e.target.dataset;
+        if (d.vsent) { await DB.run('UPDATE vouchers SET sent_at = ? WHERE id = ?', [e.target.checked ? ymd(new Date()) : null, +d.vsent]); return drawList(); }
+        if (d.vck) { c[d.vck] = e.target.checked; await keep(); return drawProg(); }
+        if (d.vterm) { const o = new Set(c.terms.off); e.target.checked ? o.delete(d.vterm) : o.add(d.vterm); c.terms.off = [...o]; return keep(); }
+        if (d.vcn) { c[d.vcn] = Math.max(0, +e.target.value || 0); await keep(); return drawProg(); } });
+      el.addEventListener('input', (e) => { if (VOUV.tab === 'card') return; const d = e.target.dataset; if (d.vct) { c[d.vct] = e.target.value; keep(); } if (d.vown != null) { c.terms.own[+d.vown] = e.target.value; keep(); } });
+      draw();
+    }
+  },
+  'vou-new': {
+    title: () => 'Create a voucher',
+    render: () => '<form id="vn-form" class="card pro" autocomplete="off"></form>',
+    async mount(arg) {
+      if (!Vou.on()) { location.hash = 'vouchers'; return; }
+      const f = $('#vn-form'), c = Vou.cfg(), cur = esc(Settings.get('currency') || ''), NOTE = 160;
+      const quotes = await DB.all(`SELECT id, client_name, summary, total, created_at FROM quotes WHERE coalesce(completed, 0) = 0 ORDER BY created_at DESC LIMIT 40`);
+      const S = { kind: 'gift', amount: '', months: c.months, cid: null, cname: '', fid: null, from: '', anon: false, msg: '', pass: !!c.pass, quote: null, about: '', paid: false, method: 'Card', off: new Set(c.terms.off || []) };
+      const useQuote = async (id) => { const q = quotes.find(x => x.id === +id) || await DB.one('SELECT id, client_name, summary, total FROM quotes WHERE id = ?', [+id]); if (!q) return;
+        S.quote = q.id; S.amount = q.total != null ? Math.round(+q.total) : S.amount; S.about = q.summary || '';
+        if (q.client_name && !S.cid) { const h = await DB.one(`SELECT id, first_name, last_name FROM clients WHERE lower(trim(first_name || ' ' || last_name)) = lower(trim(?))`, [q.client_name]); if (h) { S.cid = h.id; S.cname = fullName(h); } } };
+      if (arg) await useQuote(arg);
+      const terms = () => Vou.termList(c, { amount: +S.amount || 0, months: S.months, pass: S.pass });
+      const draw = () => { f.innerHTML = `<div class="form-foot row"><a class="btn" href="#vouchers">Cancel</a><button type="submit" class="btn primary" style="flex:1">Create voucher</button></div>
+        ${fsec('Kind of voucher', `<div class="ln-kinds">${VOU_KINDS.map(([k, l]) => `<button type="button" class="chip ${S.kind === k ? 'on' : ''}" data-vk="${k}">${l}</button>`).join('')}</div>`)}
+        ${fsec('Value<small>Money towards a tattoo: all of a quote, or part of it</small>', `<div class="two"><label class="field"><span>Amount</span><div class="unit-in"><input class="in" id="vn-amt" type="number" inputmode="decimal" min="1" value="${esc(S.amount)}"><em>${cur}</em></div></label>
+            <label class="field"><span>Valid for ${help('From the day it\u2019s paid for. 0 for no expiry.')}</span><div class="unit-in"><input class="in" id="vn-mo" type="number" min="0" max="60" value="${esc(S.months)}"><em>months</em></div></label></div>
+          <label class="field"><span>For a quote ${help('Link a saved quote: the amount, client and what it\u2019s for fill in. The amount can be lowered for part of it.')}</span><select class="in" id="vn-q"><option value="">No quote</option>${quotes.map(q => `<option value="${q.id}" ${S.quote === q.id ? 'selected' : ''}>${esc([q.client_name, q.summary].filter(Boolean).join(' \u00b7 ') || 'Quote')} (${money(q.total || 0)})</option>`).join('')}</select></label>
+          ${S.quote ? `<label class="field"><span>What it\u2019s for</span><input class="in" id="vn-about" maxlength="120" value="${esc(S.about)}"></label>` : ''}`)}
+        ${fsec('Who it\u2019s for<small>Optional: leave it empty for a voucher anyone with the card can use</small>', `<div class="picker"><input class="in" id="vn-c" placeholder="Anyone with the card, or search your clients\u2026" value="${esc(S.cname)}" autocomplete="off"><div class="pick-list" id="vn-cl" hidden></div></div>`)}
+        ${fsec('Who it\u2019s from<small>The person paying. Each person chipping in gets their own voucher, so every share shows</small>', `<div class="picker"><input class="in" id="vn-f" placeholder="Their name, or search your clients\u2026" value="${esc(S.from)}" autocomplete="off"><div class="pick-list" id="vn-fl" hidden></div></div>
+          <label class="toggle" style="margin-top:8px"><input type="checkbox" id="vn-anon" ${S.anon ? 'checked' : ''}><span>Keep it anonymous: their name isn\u2019t on the voucher</span></label>`)}
+        ${fsec('Message<small>Optional: a few words on the voucher</small>', `<textarea class="in" id="vn-msg" rows="2" maxlength="${NOTE}" placeholder="e.g. Happy birthday! Get something you love.">${esc(S.msg)}</textarea><div class="muted loy-note" id="vn-left" style="text-align:right">${NOTE - S.msg.length} characters left</div>`)}
+        ${fsec('Passing it on', `<label class="toggle"><input type="checkbox" id="vn-pass" ${S.pass ? 'checked' : ''}><span>Can be passed on to someone else</span></label>`)}
+        ${fsec('Terms<small>Untick any that don\u2019t suit this one</small>', `<div class="loy-togs">${terms().map(([k, t]) => `<label class="toggle"><input type="checkbox" data-vnt="${k}" ${S.off.has(k) ? '' : 'checked'}><span>${esc(t)}</span></label>`).join('')}</div>`, { fold: true })}
+        ${fsec('Payment<small>A voucher is only sent once it\u2019s paid for</small>', `<label class="toggle"><input type="checkbox" id="vn-paid" ${S.paid ? 'checked' : ''}><span>The payment is in already</span></label>
+          ${S.paid ? `<label class="field" style="margin-top:8px"><span>Paid by</span><select class="in" id="vn-meth">${VOU_PAY.map(m => `<option ${S.method === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label>` : '<p class="muted loy-note">It waits as Awaiting payment; tap Payment received in Vouchers when it comes in.</p>'}`)}`;
+        clientPicker($('#vn-c'), $('#vn-cl'), async (id) => { const h = await DB.one('SELECT first_name, last_name FROM clients WHERE id = ?', [id]); S.cid = id; S.cname = fullName(h); });
+        clientPicker($('#vn-f'), $('#vn-fl'), async (id) => { const h = await DB.one('SELECT first_name, last_name FROM clients WHERE id = ?', [id]); S.fid = id; S.from = fullName(h); }); };
+      f.addEventListener('click', (e) => { const k = e.target.closest('[data-vk]'); if (k) { S.kind = k.dataset.vk; draw(); } });
+      f.addEventListener('input', (e) => { const id = e.target.id, v = e.target.value;
+        if (id === 'vn-amt') S.amount = v; if (id === 'vn-mo') S.months = v; if (id === 'vn-about') S.about = v;
+        if (id === 'vn-c') { S.cid = null; S.cname = v; } if (id === 'vn-f') { S.fid = null; S.from = v; }
+        if (id === 'vn-msg') { S.msg = v.slice(0, NOTE); $('#vn-left').textContent = `${NOTE - S.msg.length} characters left`; } });
+      f.addEventListener('change', async (e) => { const id = e.target.id;
+        if (id === 'vn-q') { if (e.target.value) await useQuote(e.target.value); else { S.quote = null; S.about = ''; } return draw(); }
+        if (id === 'vn-anon') S.anon = e.target.checked; if (id === 'vn-pass') { S.pass = e.target.checked; return draw(); }
+        if (id === 'vn-paid') { S.paid = e.target.checked; return draw(); } if (id === 'vn-meth') S.method = e.target.value;
+        if (e.target.dataset.vnt) { const k = e.target.dataset.vnt; e.target.checked ? S.off.delete(k) : S.off.add(k); } });
+      f.addEventListener('submit', async (e) => { e.preventDefault(); const amt = Math.round(+S.amount * 100) / 100;
+        if (!(amt > 0)) return toast('Set what the voucher is worth.', 2000);
+        if (!S.cid && S.cname.trim()) return toast('Pick the client from the list, or clear it to make the voucher for anyone.', 2600);
+        const T = terms().filter(([k]) => !S.off.has(k)).map(x => x[1]);   /* this voucher's own terms */
+        const prog = { terms: T, stack: !!c.stack, left: c.left, charity: c.charity, split: +c.split || 0 };
+        const code = await Vou.code(), now = new Date();
+        await DB.run(`INSERT INTO vouchers (code, kind, amount, client_id, from_name, from_client, anon, message, pass, quote_id, about, status, paid_at, paid_amount, pay_method, months, expires_at, prog)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [code, S.kind, amt, S.cid, S.fid ? null : S.from.trim() || null, S.fid, S.anon ? 1 : 0, S.msg.trim() || null, S.pass ? 1 : 0, S.quote, S.about.trim() || null,
+          S.paid ? 'open' : 'unpaid', S.paid ? now.toISOString() : null, S.paid ? amt : null, S.paid ? S.method : null, Math.max(0, +S.months || 0), S.paid ? Vou.expiry(S.months, now) : null, JSON.stringify(prog)]);
+        toast(S.paid ? `Voucher ${code} made.` : `Voucher ${code} made: awaiting payment.`, 2200); VOUV.tab = 'list'; VOUV.f = S.paid ? 'open' : 'unpaid'; location.hash = 'vouchers'; });
+      draw();
+    }
+  },
   'day-end': {
     title: () => 'Day end',
     render: () => '<div id="de-page"></div>',
     async mount() {
       const el = $('#de-page'), parts = deParts(); let R = null;
       const tm = (s) => { const d = deDate(s); return `${fmtDay(ymd(d))}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-      const who = (r) => fullName(r) || r.guest_name || '\u2014', hrs = (m) => m ? fmtH(m / 60) : '\u2014';
+      const who = (r) => nameOr(r) || r.guest_name || '\u2014', hrs = (m) => m ? fmtH(m / 60) : '\u2014';
       const tbl = (cols, rows, tot) => rows.length ? `<div class="bkt-scroll"><table class="bkt de-t"><thead><tr>${cols.map(c => `<th class="${c[2] || ''}">${c[0]}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(c => `<td class="${c[2] || ''}">${esc(String(c[1](r) ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody>
         ${tot ? `<tfoot><tr>${cols.map((c, i) => `<td class="${c[2] || ''}">${esc(String(tot[i] ?? ''))}</td>`).join('')}</tr></tfoot>` : ''}</table></div>` : '<p class="muted de-none">Nothing in this period.</p>';
       const tile = (v, l, cls = '') => `<div class="${cls}"><b>${v}</b><span>${l}</span></div>`;
@@ -2344,14 +2520,14 @@ const VIEWS = {
   'loy-guide': {
     title: () => 'Program guide',
     render: () => '<form id="lgd-form" class="card pro" autocomplete="off"></form>',
-    async mount() {
-      const f = $('#lgd-form'), c = Loy.cfg(), g = loyGuideCfg();
-      const keep = () => Settings.set('loy_guide', JSON.stringify(g));
-      const draw = () => { const P = loyGuideParts(c), off = new Set(g.off);
+    async mount(arg, K = GUIDES.loy) {
+      const f = $('#lgd-form'), c = K.cfg(), g = guideCfg(K.key);
+      const keep = () => Settings.set(K.key, JSON.stringify(g));
+      const draw = () => { const P = K.parts(c), off = new Set(g.off);
         f.innerHTML = `<div class="form-foot row"><button type="button" class="btn" id="lgd-back">Back</button><button type="button" class="btn" id="lgd-print">Print / PDF</button><button type="button" class="btn" id="lgd-img">Save images</button><button type="button" class="btn primary" id="lgd-send" style="flex:1">Send</button></div>
-          ${fsec('The guide<small>For clients with questions about their rewards: the program in plain words, longer than the card has room for. It follows your program\u2019s settings.</small>', `<div class="loy-prev lgd-prev" id="lgd-prev"></div>`)}
+          ${fsec(`The guide<small>${K.sub}</small>`, `<div class="loy-prev lgd-prev" id="lgd-prev"></div>`)}
           ${P.map(p => { const ed = g.ed[p.k], cur = ed && !p.fixed ? { ...p, ...ed } : p, out = off.has(p.k);
-            return fsec(`${esc(p.t)}${out ? ' <small>Left out</small>' : ed && !p.fixed ? ' <small>Your wording</small>' : ''}`, `${p.fixed ? `<ul class="loy-terms">${Loy.terms(c).map(t => `<li>${esc(t)}</li>`).join('')}</ul><p class="muted loy-note">Change these in Program \u203a Terms.</p>`
+            return fsec(`${esc(p.t)}${out ? ' <small>Left out</small>' : ed && !p.fixed ? ' <small>Your wording</small>' : ''}`, `${p.fixed ? `<ul class="loy-terms">${K.terms(c).map(t => `<li>${esc(t)}</li>`).join('')}</ul><p class="muted loy-note">Change these in Program \u203a Terms.</p>`
               : `<label class="field"><span>Heading</span><input class="in" data-gt="${p.k}" value="${esc(cur.t)}" ${out ? 'disabled' : ''}></label>
                 <label class="field"><span>Text ${help('Start a line with \u2022 and a space for a bullet point.')}</span><textarea class="in" rows="${Math.min(9, String(cur.b).split('\n').length + 2)}" data-gb="${p.k}" ${out ? 'disabled' : ''}>${esc(cur.b)}</textarea></label>`}
               <div class="row" style="gap:8px;flex-wrap:wrap">${ed && !p.fixed ? `<button type="button" class="btn small" data-greset="${p.k}">Back to the program\u2019s wording</button>` : ''}<button type="button" class="btn small" data-goff="${p.k}">${out ? 'Put it back' : 'Leave it out'}</button></div>`, { fold: true, open: !!ed || out ? false : p.k === 'intro' }); }).join('')}
@@ -2360,29 +2536,34 @@ const VIEWS = {
             <button type="button" class="btn small" id="lgd-add">+ Add a definition</button>`)}`;
         prev(); };
       let busy = 0, urls = [];
-      const prev = async () => { const n = ++busy, pages = await loyGuidePages(loyGuideFinal(c, g)); if (n !== busy) return;
+      const prev = async () => { const n = ++busy, pages = await loyGuidePages(guideFinal(K, c, g), K.title); if (n !== busy) return;
         urls.forEach(u => URL.revokeObjectURL(u)); urls = await Promise.all(pages.map(async p => URL.createObjectURL(await new Promise(r => p.cv.toBlob(r, 'image/png')))));
         const el = $('#lgd-prev'); if (el) el.innerHTML = urls.map((u, i) => `<img src="${u}" alt="Page ${i + 1}">`).join(''); };
       let t0 = 0; const soon = () => { clearTimeout(t0); t0 = setTimeout(() => { keep(); prev(); }, 350); };
-      const baseOf = (k) => loyGuideParts(c).find(p => p.k === k);
+      const baseOf = (k) => K.parts(c).find(p => p.k === k);
       f.addEventListener('input', (e) => { const d = e.target.dataset;
         if (d.gt || d.gb) { const k = d.gt || d.gb, b0 = baseOf(k); g.ed[k] = { t: g.ed[k]?.t ?? b0.t, b: g.ed[k]?.b ?? b0.b, [d.gt ? 't' : 'b']: e.target.value }; return soon(); }
         if (d.got || d.gob) { const o = g.own.find(x => x.id === (d.got || d.gob)); if (o) o[d.got ? 't' : 'b'] = e.target.value; return soon(); } });
       f.addEventListener('click', async (e) => { const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
-        if (t.closest('#lgd-back')) { keep(); location.hash = 'loyalty'; return; }
+        if (t.closest('#lgd-back')) { keep(); location.hash = K.back; return; }
         if (d('greset')) { if (!await ask('Go back to the program\u2019s wording for this part?\n\nYour own wording for it is lost.')) return; delete g.ed[d('greset')]; await keep(); return draw(); }
         if (d('goff')) { const k = d('goff'); g.off = g.off.includes(k) ? g.off.filter(x => x !== k) : [...g.off, k]; await keep(); return draw(); }
         if (t.closest('#lgd-add')) { g.own.push({ id: Date.now().toString(36), t: '', b: '' }); await keep(); draw(); f.querySelector(`[data-got="${g.own.at(-1).id}"]`)?.focus(); return; }
         if (d('gdel')) { const o = g.own.find(x => x.id === d('gdel')); if ((o?.t || o?.b) && !await ask('Remove this definition?')) return; g.own = g.own.filter(x => x.id !== d('gdel')); await keep(); return draw(); }
         const act = t.closest('#lgd-print, #lgd-img, #lgd-send')?.id; if (!act) return;
-        await keep(); const pages = await loyGuidePages(loyGuideFinal(c, g));
+        await keep(); const pages = await loyGuidePages(guideFinal(K, c, g), K.title);
         if (act === 'lgd-print') return printCanvas(...pages.map(p => p.cv));
         const files = await Promise.all(pages.map(async (p) => new File([await new Promise(r => p.cv.toBlob(r, 'image/png'))], p.name, { type: 'image/png' })));
-        try { if (act === 'lgd-send' && navigator.canShare?.({ files })) await navigator.share({ files, title: 'Our rewards, explained' });
+        try { if (act === 'lgd-send' && navigator.canShare?.({ files })) await navigator.share({ files, title: K.title });
           else { await saveFiles(files); if (act === 'lgd-send') toast('Saved. Send the pictures, or Print / PDF to send it as a PDF.', 3500); } }
         catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); } });
       draw();
     }
+  },
+  'vou-guide': {
+    title: () => 'Voucher guide',
+    render: () => '<form id="lgd-form" class="card pro" autocomplete="off"></form>',
+    mount(arg) { return VIEWS['loy-guide'].mount(arg, GUIDES.vou); }
   },
   loyalty: {
     title: () => 'Loyalty',
@@ -2848,6 +3029,8 @@ const VIEWS = {
       ${AppInstall.card('su-again')}
       <div class="card su-again" data-biz><div><b>Your pay</b><span class="muted">${payOn() ? (() => { const c = payCfg(); return c.mode === 'comm' ? `Commission: you keep ${+c.pct}%, ${PAY_EVERY.find(x => x[0] === c.every)?.[1].toLowerCase()}.` : `Chair rent: ${money(+c.rent)} per ${c.every === 'month' ? 'month' : c.every === '2week' ? '2 weeks' : 'week'}.`; })() : 'Off. Commission or chair rent, so Stats shows your take-home and pay days.'}</span></div>
         <div class="row" style="flex:none;gap:8px">${payOn() ? '<a class="btn small" href="#pay">Set up</a>' : ''}<label class="toggle" style="flex:none"><input type="checkbox" data-payon ${payOn() ? 'checked' : ''}><span></span></label></div></div>
+      <div class="card su-again" data-biz><div><b>Vouchers</b><span class="muted">${Vou.on() ? `On: worth money towards a tattoo, valid ${+Vou.cfg().months || 'any'} months.` : 'Off. Sell gift vouchers for tattoos, paid for before they\u2019re sent; they get their own section in More.'}</span></div>
+        <div class="row" style="flex:none;gap:8px">${Vou.on() ? '<a class="btn small" href="#vouchers">Set up</a>' : ''}<label class="toggle" style="flex:none"><input type="checkbox" data-vouon ${Vou.on() ? 'checked' : ''}><span></span></label></div></div>
       <div class="card su-again" data-biz><div><b>Loyalty program</b><span class="muted">${Loy.on() ? esc(Loy.sum(Loy.cfg())) : 'Off. Reward clients for sending people your way or for what they spend; it gets its own section in More.'}</span></div>
         <div class="row" style="flex:none;gap:8px">${Loy.on() ? '<a class="btn small" href="#loyalty">Set up</a>' : ''}<label class="toggle" style="flex:none"><input type="checkbox" data-loyon ${Loy.on() ? 'checked' : ''}><span></span></label></div></div>
       <div class="card su-again" data-biz><div><b>First-time setup</b><span class="muted">Name, hours, days off and prices in four quick steps.</span></div>
@@ -2957,6 +3140,9 @@ const VIEWS = {
       $('#s-setup').onclick = runSetup;
       document.querySelector('[data-payon]')?.addEventListener('change', async (e) => { const c = payCfg(); c.on = e.target.checked; await Settings.set('pay_cfg', JSON.stringify(c));
         if (c.on) { toast('Set how you\u2019re paid; it shows in Stats.', 2200); location.hash = 'pay'; } else { toast('Your pay is out of Stats.', 1600); render(); } });
+      document.querySelector('[data-vouon]')?.addEventListener('change', async (e) => { const o = (await Vou.owed()).n;
+        if (!e.target.checked && o && !await ask(`Switch vouchers off?\n\n${o} voucher${o === 1 ? ' is' : 's are'} still open. No new ones can be made while it\u2019s off, but ${o === 1 ? 'it' : 'they'} can still be used.`)) { e.target.checked = true; return; }
+        await Settings.set('vou_on', e.target.checked ? '1' : ''); if (e.target.checked) { toast('Vouchers on: set them up in More \u203a Vouchers.', 2400); location.hash = 'vouchers'; } else { toast('Vouchers off.', 1600); render(); } });
       document.querySelector('[data-loyon]')?.addEventListener('change', async (e) => {
         if (!e.target.checked) { await Loy.backfill(); const n = await Loy.left();
           if (n && !await ask(`Switch the loyalty program off?\n\n${n} reward${n === 1 ? ' is' : 's are'} still open. Nothing new is earned while it’s off, but ${n === 1 ? 'it stays' : 'they stay'} in More › Loyalty and can still be used until claimed or run out.`)) { e.target.checked = true; return; } }
@@ -3130,6 +3316,7 @@ function runSetup() {
       body = `<h2>You're all set</h2><p class="muted">These are saved. Change any of them later in More › Settings, or fine-tune prices in Calibrate.</p>
         <div class="su-sum">${sum.map(([k, v]) => `<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
         <label class="toggle" style="margin-top:14px"><input type="checkbox" id="su-pay" ${S.pay ? 'checked' : ''}><span>Track your pay: commission (a share of each tattoo) or chair rent, with your take-home and pay days in Stats. You\u2019ll fill it in next.</span></label>
+        <label class="toggle" style="margin-top:10px"><input type="checkbox" id="su-vou" ${S.vou ? 'checked' : ''}><span>Sell gift vouchers: money towards a tattoo, paid for before they\u2019re sent. They get their own section in More.</span></label>
         <label class="toggle" style="margin-top:10px"><input type="checkbox" id="su-loy" ${S.loy ? 'checked' : ''}><span>Run a loyalty program: reward clients for sending people your way or for what they spend. You’ll choose how next.</span></label>`;
     }
     o.innerHTML = `<div class="su-in">
@@ -3169,7 +3356,7 @@ function runSetup() {
     return true;
   };
   const finish = async () => {
-    await Settings.set('setup_done', '1'); await Settings.set('loy_on', S.loy ? '1' : ''); await Settings.set('pay_cfg', JSON.stringify({ ...payCfg(), on: !!S.pay }));
+    await Settings.set('setup_done', '1'); await Settings.set('loy_on', S.loy ? '1' : ''); await Settings.set('vou_on', S.vou ? '1' : ''); await Settings.set('pay_cfg', JSON.stringify({ ...payCfg(), on: !!S.pay }));
     if (WS.cur?.fresh) { delete WS.cur.fresh; await WS.save(); }
     o.remove(); if (S.pay) { if (S.loy) toast('Your loyalty program is set up in More \u203a Loyalty.', 4000); location.hash = 'pay'; return; } if (S.loy) { location.hash = 'loyalty'; return; } render(); tourOffer(true);
   };
@@ -3179,6 +3366,7 @@ function runSetup() {
   o.addEventListener('change', async (e) => {
     if (e.target.id === 'su-vat') { S.vatOn = e.target.checked; return draw(); }
     if (e.target.id === 'su-loy') { S.loy = e.target.checked; return; }
+    if (e.target.id === 'su-vou') { S.vou = e.target.checked; return; }
     if (e.target.id === 'su-pay') { S.pay = e.target.checked; return; }
     if (e.target.id === 'su-logo') { const f = e.target.files[0]; if (!f) return; try { await saveLogoFile(f); toast('Logo saved.'); } catch { toast('Could not read that image.'); } return draw(); }
     if (e.target.type === 'tel') S[e.target.dataset.f] = e.target.value;      // after the +country fix-up
@@ -3557,6 +3745,7 @@ const MERGE_SECTIONS = [
   ['rules', 'Rule book', 'Your studio rules'],
   ['quotes', 'Saved quotes', 'Quotes saved to finish or book later'],
   ['loyalty', 'Loyalty rewards', 'Rewards clients have earned, used and passed on'],
+  ['vouchers', 'Vouchers', 'Gift vouchers sold, sent, used and split'],
   ['designs', 'Designs', 'Vouchers, business cards, flyers and posts'],
   ['reel', 'Reels', 'Saved reels with their photos, videos and music, and reel templates'],
   ['settings', 'Settings', 'Profile, quote and app settings, only where yours are still blank']
@@ -3589,10 +3778,11 @@ const MERGE_TABLES = {
   loyalty_rewards: { section: 'loyalty', fk: { client_id: 'clients', from_client: 'clients', from_booking: 'bookings', used_booking: 'bookings', passed_from: 'clients', item_id: 'inventory_items', alt_id: 'inventory_items' } },
   settings: { section: 'settings' },        // handled by key, see mergeSettings
   day_ends: { section: null },              // this workspace's own filing record
+  vouchers: { section: 'vouchers', fk: { client_id: 'clients', from_client: 'clients', parent_id: 'vouchers', passed_from: 'clients', used_booking: 'bookings' } },
   app_meta: { section: null }, gcal_deletes: { section: null }, gcal_busy: { section: null }
 };
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'signed_form_pages', 'portfolio_items',
-  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels', 'loyalty_rewards'];
+  'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels', 'loyalty_rewards', 'vouchers'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
 const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|tt_dev|reel_templates$|reel_style$|forms_|lib_|ws_pass$|ws_mode$|dz_refs_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
@@ -5576,6 +5766,7 @@ async function qlDraw() {
       </div>
       <div class="ql-side"><b>${money(r.total)}</b><span class="muted">${fmtH(r.hours || 0)}</span>
         <label class="toggle" data-tip="Completed quotes are kept for comparing, not deleted"><input type="checkbox" data-qc="${r.id}" ${r.completed ? 'checked' : ''}><span>Done</span></label>
+        ${Vou.on() ? `<button class="btn small" data-qvou="${r.id}" data-tip="A gift voucher for this tattoo, for all or part of the quote">Voucher</button>` : ''}
         <span class="row" style="gap:4px;flex-wrap:nowrap">${Lib.tools('quotes', r.id).replace('class="lib-tools"', 'class="lib-tools rule-lib"')}<button class="mini del" data-qd="${r.id}" aria-label="Delete quote">&times;</button></span></div>
     </div>`).join('') : `<div class="empty muted">${QL.f === 'done' ? 'No completed quotes yet.' : 'No saved quotes. Save one from the price page of the quote calculator.'}</div>`}`;
   el.onclick = async (e) => {
@@ -5583,6 +5774,7 @@ async function qlDraw() {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (d('f')) { QL.f = d('f'); return qlDraw(); }
     if (t.closest('#ql-reply')) return openReplyPaste();
+    if (d('qvou')) { location.hash = 'vou-new/' + d('qvou'); return; }
     if (d('qbk')) { const q = await DB.one('SELECT reply FROM quotes WHERE id = ?', [+d('qbk')]); return bookFromReply(+d('qbk'), JSON.parse(q.reply)); }
     if (t.closest('#ql-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url); Object.assign(QZ, QZ_RESET); location.hash = 'quote'; return; }
     if (d('qd')) {
@@ -6264,6 +6456,251 @@ function receiptText(b, p) {
 }
 
 // Prints canvas pages (quote sheets, receipts, aftercare) through #print-area, one A4 page each.
+/* ---------- Vouchers ----------
+   Money towards a tattoo with the artist, bought by someone (or several people, each with their own voucher) for a
+   client or for anyone with the card. Never a percentage, never cash: for tattoos only, no refunds. A voucher waits as
+   unpaid until the payment is in; only then can it be sent, and its time starts. Settings 'vou_on' and 'vou_cfg'. */
+const VOU_DEF = { months: 6, stack: true, pass: false, left: 'tip', charity: '', split: 150, terms: { off: [], own: [] } };
+const VOU_KINDS = [['gift', 'Gift'], ['bday', 'Birthday'], ['xmas', 'Christmas'], ['valentine', 'Valentine\u2019s Day'], ['mother', 'Mother\u2019s Day'], ['father', 'Father\u2019s Day'], ['thanks', 'Thank you'], ['other', 'Other']];
+const VOU_PAY = ['Card', 'Cash', 'EFT', 'Other'];
+const VOUV = { tab: 'list', f: 'open', q: '', k: 'issued_at', d: -1, mk: 'main' };
+const Vou = {
+  on: () => Settings.get('vou_on') === '1' && !wsDesign(),
+  cfg() { let c = {}; try { c = JSON.parse(Settings.get('vou_cfg') || '{}') || {}; } catch {} return { ...VOU_DEF, ...c, terms: { off: [], own: [], ...(c.terms || {}) } }; },
+  save: (c) => Settings.set('vou_cfg', JSON.stringify(c)),
+  async code() { for (;;) { const k = Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+    if (!await DB.one('SELECT id FROM vouchers WHERE code = ?', [k]) && !await DB.one('SELECT id FROM loyalty_rewards WHERE code = ?', [k])) return k; } },
+  expiry: (months, from = new Date()) => { if (!+months) return null; const d = new Date(from); d.setMonth(d.getMonth() + +months); return ymd(d); },
+  kindName: (k) => VOU_KINDS.find(x => x[0] === k)?.[1] || 'Gift',
+  bal: (v) => v.balance != null ? +v.balance : +v.amount,
+  state: (v) => v.status === 'deleted' ? 'deleted' : v.status === 'void' ? 'void' : v.status === 'unpaid' ? 'unpaid' : v.status === 'used' ? 'used' : v.expires_at && v.expires_at < ymd(new Date()) ? 'expired' : 'open',
+  snap(v) { let p = null; try { p = JSON.parse(v.prog || 'null'); } catch {} return p || { terms: Vou.terms(Vou.cfg()), stack: Vou.cfg().stack }; },
+  /* the terms, as [key, text]; off: the keys left out (the program's, or one voucher's own) */
+  termList(c, v = {}) { const L = [], left = c.left === 'charity' ? `goes to ${c.charity || 'charity'}` : 'is kept by the artist as a tip';
+    if (v.amount) L.push(['worth', `Worth ${money(+v.amount)} towards a tattoo with ${loyArtist()}.`]);
+    L.push(['valid', +(v.months ?? c.months) ? `Valid for ${+(v.months ?? c.months)} month${+(v.months ?? c.months) === 1 ? '' : 's'} from the day it\u2019s paid for.` : 'It doesn\u2019t run out.']);
+    L.push(['tattoo', 'For tattoos only: it can\u2019t be used on products.']);
+    L.push(['cash', 'It can\u2019t be exchanged for cash or refunded.']);
+    L.push(['left', `If the tattoo costs less, what\u2019s left over ${left}${+c.split ? `; more than ${money(+c.split)} left over can be kept on a new voucher` : ''}.`]);
+    L.push(['stack', c.stack ? 'Several vouchers can be used together on one tattoo.' : 'One voucher per tattoo.']);
+    L.push(['loy', 'It can be used with loyalty rewards: the rewards come off first, then the voucher.']);
+    L.push(['pass', (v.pass ?? c.pass) ? 'It can be passed on to someone else.' : 'Only the person it\u2019s for can use it.']);
+    L.push(['show', 'Show the code or card when you book or pay.']);
+    L.push(['lost', 'Lost codes can\u2019t be replaced.']);
+    for (const [i, t] of (c.terms.own || []).entries()) if (String(t).trim()) L.push(['own' + i, String(t).trim()]);
+    return L; },
+  terms(c, v = {}, off = c.terms.off || []) { const o = new Set(off); return Vou.termList(c, v).filter(([k]) => !o.has(k)).map(x => x[1]); },
+  /* what a voucher had before it was used on a booking (to show it again, or put it back) */
+  had: (v) => v.used_booking ? Math.round(((+v.used_amount || 0) + (v.left_to === 'split' ? 0 : +v.left_amount || 0) + (v.left_to === 'split' ? +v.left_amount || 0 : 0)) * 100) / 100 : Vou.bal(v),
+  /* A completed tattoo paid partly with vouchers: each used in turn (soonest to run out first) until what's due is
+     covered. What's left on the last one goes as a tip, to charity, or (choice 'split') onto a new voucher. Undoes what
+     the booking used before, so it's safe to call again. Returns what the vouchers paid. */
+  async use(bid, ids, due, choice) { const r2 = (v) => Math.round(v * 100) / 100, today = ymd(new Date());
+    for (const v of await DB.all('SELECT * FROM vouchers WHERE used_booking = ?', [bid])) {
+      let back = +v.used_amount || 0;
+      if (v.left_to === 'split') { const kid = await DB.one(`SELECT id FROM vouchers WHERE parent_id = ? AND status = 'open' AND used_booking IS NULL`, [v.id]); if (kid) { await DB.run('DELETE FROM vouchers WHERE id = ?', [kid.id]); back += +v.left_amount || 0; } }
+      else back += +v.left_amount || 0;
+      await DB.run(`UPDATE vouchers SET status = 'open', balance = ?, used_booking = NULL, used_at = NULL, used_amount = NULL, left_to = NULL, left_amount = NULL WHERE id = ?`, [r2(back), v.id]); }
+    const rows = ids.length ? (await DB.all(`SELECT * FROM vouchers WHERE id IN (${ids.map(() => '?').join(', ')})`, ids)).sort((a, b) => (a.expires_at || '9999') < (b.expires_at || '9999') ? -1 : 1) : [];
+    let rest = r2(due), paid = 0;
+    for (const v of rows) { const bal = Vou.bal(v); if (rest <= 0) break; const take = Math.min(bal, rest), left = r2(bal - take), P = Vou.snap(v); rest = r2(rest - take); paid = r2(paid + take);
+      const to = left > 0 ? (choice === 'split' && left > (+P.split || 0) ? 'split' : P.left === 'charity' ? 'charity' : 'tip') : null;
+      await DB.run(`UPDATE vouchers SET status = 'used', balance = 0, used_booking = ?, used_at = ?, used_amount = ?, left_to = ?, left_amount = ? WHERE id = ?`, [bid, today, r2(take), to, left || null, v.id]);
+      if (to === 'split') await DB.run(`INSERT INTO vouchers (code, kind, amount, client_id, from_name, from_client, anon, message, pass, quote_id, about, status, paid_at, paid_amount, pay_method, months, expires_at, parent_id, prog)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, 'open', ?, 0, 'Split', ?, ?, ?, ?)`, [await Vou.code(), v.kind, left, v.client_id, v.from_name, v.from_client, v.anon, v.message, `What was left of ${v.code}`, new Date().toISOString(), v.months, v.expires_at, v.id, v.prog]); }
+    await DB.run('UPDATE bookings SET vou_off = ? WHERE id = ?', [paid || null, bid]); return paid; },
+  /* what's still owed on vouchers sold (open and paid) */
+  async owed() { const r = await DB.one(`SELECT coalesce(sum(coalesce(balance, amount)), 0) AS a, count(*) AS n FROM vouchers WHERE status = 'open' AND (expires_at IS NULL OR expires_at >= date('now'))`); return r || { a: 0, n: 0 }; }
+};
+/* ---------- Vouchers: the card and the message ----------
+   Every voucher gets a card: the plain default (the Classic template in your colours), or a custom one per kind of
+   voucher made in the design studio. Each kind has its own heading and message. Settings 'vou_msg':
+   { card: 'builtin' | 'design', accent, bg, logo, tcard, code, exp, terms, k: { kind: { title, body } } }. */
+const VOU_SLOTS = [['main', 'All vouchers'], ...VOU_KINDS];
+const VOU_KMSG = { gift: { title: 'A gift for you', body: 'Hi {name}, here\u2019s {amount} towards a tattoo with {artist}. Enjoy!' },
+  bday: { title: 'Happy birthday!', body: 'Happy birthday, {name}! Here\u2019s {amount} towards a tattoo with {artist}.' },
+  xmas: { title: 'Merry Christmas!', body: 'Merry Christmas, {name}! Here\u2019s {amount} towards a tattoo with {artist}.' },
+  valentine: { title: 'With love', body: 'Happy Valentine\u2019s Day, {name}! Here\u2019s {amount} towards a tattoo with {artist}.' },
+  mother: { title: 'For the best mom', body: 'Happy Mother\u2019s Day, {name}! Here\u2019s {amount} towards a tattoo with {artist}.' },
+  father: { title: 'For the best dad', body: 'Happy Father\u2019s Day, {name}! Here\u2019s {amount} towards a tattoo with {artist}.' },
+  thanks: { title: 'Thank you', body: 'Thank you, {name}! Here\u2019s {amount} towards a tattoo with {artist}.' },
+  other: { title: 'A voucher for you', body: 'Hi {name}, here\u2019s {amount} towards a tattoo with {artist}.' } };
+const VOU_MSG = { card: 'builtin', accent: '#c9a24a', bg: '#121618', logo: true, tcard: true, code: true, exp: true, terms: true };
+const VOU_NEED = [['heading', 'heading'], ['amount', 'amount'], ['code', 'code'], ['expires', 'valid until'], ['terms|terms_line', 'terms']];
+const vouMissing = (doc) => { const t = JSON.stringify(doc?.layers || []); return VOU_NEED.filter(([f]) => !f.split('|').some(x => t.includes('{' + x + '}'))).map(x => x[1]); };
+const vouMsgCfg = () => { let c = {}; try { c = JSON.parse(Settings.get('vou_msg') || '{}') || {}; } catch {} return { ...VOU_MSG, ...c }; };
+const vouMsgFor = (m, kind) => { const k = VOU_KMSG[kind] ? kind : 'gift'; return { ...m, title: m.k?.[k]?.title ?? VOU_KMSG[k].title, body: m.k?.[k]?.body ?? VOU_KMSG[k].body }; };
+const vouFill = (t, v) => String(t || '').replace(/\{name\}/g, v.first || 'there').replace(/\{amount\}/g, money(Vou.bal(v))).replace(/\{artist\}/g, loyArtist())
+  .replace(/\{studio\}/g, Settings.get('studio_name') || Settings.get('artist_name') || 'us').replace(/\{from\}/g, v.anon ? 'someone special' : v.fromName || 'someone');
+function vouFields(v, m) { const mk = vouMsgFor(m, v.kind), T = (Vou.snap(v).terms || []);
+  return { heading: vouFill(mk.title, v), message: vouFill(mk.body, v) + (v.message ? '\n\u201c' + v.message + '\u201d' : ''), note: v.message || '', amount: money(Vou.bal(v)), kind: Vou.kindName(v.kind) + ' voucher',
+    to_line: v.holder ? 'For ' + v.holder : 'For you', from_line: v.anon || !v.fromName ? '' : 'From ' + v.fromName, about: v.about || '', code: v.code || '', expires: v.expires_at ? fmtDay(v.expires_at) : 'no expiry',
+    terms: T.map(t => '\u2022 ' + t).join('\n'), terms_line: T.join('  \u2022  '), name: v.first || 'there' }; }
+/* A made-up voucher, for previews and while designing. */
+function vouSample(kind) { const c = Vou.cfg(); return { kind: VOU_KMSG[kind] ? kind : 'gift', amount: 1000, code: 'K7Q2MX', expires_at: Vou.expiry(c.months), first: 'Sam', holder: 'Sam', fromName: 'Alex', message: '', about: '',
+  prog: JSON.stringify({ terms: Vou.terms(c, { amount: 1000 }), stack: c.stack }) }; }
+function vouSampleFields(k) { try { return vouFields(vouSample(k), vouMsgCfg()); } catch { return null; } }
+const vouDesKey = (k) => k && k !== 'main' ? 'vou_design_' + k : 'vou_design';
+const vouOwnDes = async (k) => { const id = +Settings.get(vouDesKey(k)); return id && await DB.one(`SELECT id FROM designs WHERE id = ? AND kind = 'voucard'`, [id]) ? id : 0; };
+const vouDoc = (tpl, k, theme) => { const T = DZ_VOU_TPL[tpl]; return { v: 1, kind: 'voucard', vouk: k, w: 2480, h: 1169, theme: theme || T.theme, bg: { c: '@bg' }, layers: T.make().map(l => ({ ...l, lock: 1, fix: 1 })), vals: {} }; };
+async function vouDraw(doc, v, m) { const cv = document.createElement('canvas'); cv.width = doc.w; cv.height = doc.h; dzFill.vou = vouFields(v, m); try { await dzDraw(cv, doc, 1); } finally { dzFill.vou = null; } return cv; }
+/* the default card: the Classic template, plain, in the colours chosen in Vouchers > Card */
+async function vouPlain(v, m) { const lt = (h) => { const n = parseInt(String(h).slice(1), 16); return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 > 150; }, light = lt(m.bg || '#121618');
+  DZ_THEMES.vouplain = { name: 'Voucher card', bg: m.bg || '#121618', fg: light ? '#1a1a1a' : '#f1ece2', accent: m.accent || '#c9a24a', soft: light ? '#5c5c5c' : '#8c9593', f1: 'Pirata One', f2: 'Inter' };
+  const T = /TERMS AND CONDITIONS|\{terms/, doc = vouDoc('classic', 'main', 'vouplain');
+  doc.layers = doc.layers.filter(l => ((m.logo !== false && Settings.get('studio_logo_ref')) || !l.logo) && (m.tcard !== false || (!T.test(l.text || '') && l.name !== 'Line')));
+  return vouDraw(doc, v, m); }
+async function vouRender(v, m) {
+  if (m.card === 'design') { const id = await vouOwnDes(v.kind) || await vouOwnDes('main'), row = id ? await DB.one(`SELECT doc FROM designs WHERE id = ? AND kind = 'voucard'`, [id]) : null;
+    if (row) return vouDraw(JSON.parse(row.doc), v, m); }
+  return vouPlain(v, m); }
+/* A voucher card started in the design studio, for a kind of voucher (main: all of them). */
+async function vouCardNew(k, tpl) { const doc = vouDoc(tpl, k);
+  await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', ['Voucher card: ' + (VOU_SLOTS.find(x => x[0] === k)?.[1] || k), 'voucard', JSON.stringify(doc)]);
+  return (await DB.one('SELECT last_insert_rowid() AS id')).id; }
+function vouText(v, m) { const mk = vouMsgFor(m, v.kind), studio = Settings.get('studio_name') || Settings.get('artist_name') || '';
+  return [vouFill(mk.title, v), '', vouFill(mk.body, v), v.message ? `\n\u201c${v.message}\u201d` : '', !v.anon && v.fromName ? `From ${v.fromName}.` : '', '',
+    `Voucher: ${money(Vou.bal(v))} towards a tattoo${v.about ? ' (' + v.about + ')' : ''}.`, m.code ? `Code: ${v.code}` : '', `Redeem with ${loyArtist()} only.`, m.exp ? (v.expires_at ? `Valid until ${fmtDay(v.expires_at)}` : 'No expiry') : '',
+    m.terms ? '\nTerms:\n' + (Vou.snap(v).terms || []).map(t => '\u2022 ' + t).join('\n') : '', studio ? `\n${studio}` : ''].filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n').trim(); }
+/* The card and message for one voucher: only once it's paid for. */
+async function vouMessage(id) {
+  const v = await DB.one(`SELECT v.*, h.first_name AS first, h.last_name AS last, h.phone, f.first_name AS ff, f.last_name AS fl FROM vouchers v LEFT JOIN clients h ON h.id = v.client_id LEFT JOIN clients f ON f.id = v.from_client WHERE v.id = ?`, [id]);
+  if (!v) return; if (v.status === 'unpaid') return toast('It can be sent once it\u2019s paid for: tap Payment received first.', 3000);
+  v.holder = v.first != null ? fullName({ first_name: v.first, last_name: v.last }) : ''; v.fromName = v.ff != null ? fullName({ first_name: v.ff, last_name: v.fl }) : v.from_name || '';
+  const m = vouMsgCfg(), o = document.createElement('div'); o.id = 'merge-dlg'; let url = '';
+  o.innerHTML = `<div class="card rc-card loy-msg"><h2>Voucher</h2><p class="muted" style="margin:-4px 0 10px">${esc(v.holder || 'Anyone with the card')} \u00b7 ${money(Vou.bal(v))} \u00b7 ${esc(v.code)}</p>
+    <div class="loy-prev vou"><img id="vm-img" alt="Voucher card"></div>
+    <div class="qz-acts" style="margin-top:12px"><button class="btn" id="vm-copy">Copy message</button><button class="btn" id="vm-img-s">Save image</button><button class="btn primary" id="vm-send">Send</button></div>
+    ${v.phone ? '<button class="btn" id="vm-wa" style="width:100%;margin-top:8px">WhatsApp the message</button>' : ''}
+    <button class="btn" id="vm-sent" style="width:100%;margin-top:8px">${v.sent_at ? '\u2713 Sent ' + esc(fmtDay(v.sent_at)) : 'Mark as sent'}</button>
+    <button class="btn" id="vm-guide" style="width:100%;margin-top:8px">Voucher guide\u2026</button>
+    <button class="btn" id="vm-look" style="width:100%;margin-top:8px">Change the look\u2026</button>
+    <button class="btn" id="vm-close" style="width:100%;margin-top:8px">Close</button></div>`;
+  document.body.appendChild(o);
+  const cv0 = vouRender(v, m); cv0.then(async cv => { url = URL.createObjectURL(await new Promise(r => cv.toBlob(r, 'image/png'))); const im = $('#vm-img', o); if (im) im.src = url; });
+  const close = () => { if (url) URL.revokeObjectURL(url); o.remove(); }, name = `Voucher-${v.code}.png`;
+  o.addEventListener('click', async (e) => { const t = e.target;
+    if (t.closest('#vm-close')) return close();
+    if (t.closest('#vm-sent')) { v.sent_at = v.sent_at ? null : ymd(new Date()); await DB.run('UPDATE vouchers SET sent_at = ? WHERE id = ?', [v.sent_at, v.id]); t.closest('#vm-sent').textContent = v.sent_at ? '\u2713 Sent ' + fmtDay(v.sent_at) : 'Mark as sent'; return; }
+    if (t.closest('#vm-guide')) { close(); location.hash = 'vou-guide'; return; }
+    if (t.closest('#vm-look')) { close(); VOUV.tab = 'card'; location.hash = 'more'; setTimeout(() => { location.hash = 'vouchers'; }, 0); return; }
+    if (t.closest('#vm-copy')) { try { await navigator.clipboard.writeText(vouText(v, m)); toast('Message copied.'); } catch { await askText('Copy this:', vouText(v, m)); } return; }
+    if (t.closest('#vm-img-s')) return saveFiles([await canvasFile(await cv0, name)]);
+    if (t.closest('#vm-wa')) { open(`https://wa.me/${String(v.phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(vouText(v, m))}`, '_blank', 'noopener'); return; }
+    if (t.closest('#vm-send')) { const fl = await canvasFile(await cv0, name);
+      try { if (navigator.canShare?.({ files: [fl] })) { await navigator.share({ files: [fl], title: vouFill(vouMsgFor(m, v.kind).title, v), text: vouText(v, m) }); if (!v.sent_at) { v.sent_at = ymd(new Date()); await DB.run('UPDATE vouchers SET sent_at = ? WHERE id = ?', [v.sent_at, v.id]); } return; } } catch (err) { if (err.name === 'AbortError') return; }
+      return shareText(vouText(v, m), 'Message copied.'); } }); }
+/* Vouchers > Card: the default card or custom ones per kind, and each kind's wording. */
+async function vouCardTab(host) {
+  const m = vouMsgCfg(); VOUV.mk ||= 'main'; const kk = VOUV.mk === 'main' ? 'gift' : VOUV.mk, mt = vouMsgFor(m, kk), kn = VOU_SLOTS.find(x => x[0] === VOUV.mk)[1];
+  const own = await vouOwnDes(VOUV.mk), mainId = await vouOwnDes('main');
+  const allDes = (await DB.all(`SELECT id, name, doc FROM designs WHERE kind = 'voucard' ORDER BY name COLLATE NOCASE`)).map(d => { let k = ''; try { k = JSON.parse(d.doc).vouk || ''; } catch {} return { id: d.id, name: d.name, k }; }).sort((a, b) => (b.k === VOUV.mk) - (a.k === VOUV.mk));
+  const tog = (k, l) => `<label class="toggle"><input type="checkbox" data-vm="${k}" ${m[k] ? 'checked' : ''}><span>${l}</span></label>`, tpl = Object.entries(DZ_VOU_TPL).map(([k, t]) => `<button class="btn small" data-vmtpl="${k}">${t.name}</button>`).join('');
+  host.innerHTML = `<div class="card loy-form" style="margin-bottom:12px"><div class="lbl">Kind of voucher ${help('Each kind has its own wording, and can have its own custom card. All vouchers: the card every kind uses unless it has its own.')}</div>
+      <div class="ln-kinds">${VOU_SLOTS.map(([k, l]) => `<button class="chip ${VOUV.mk === k ? 'on' : ''}" data-vmk="${k}">${l}</button>`).join('')}</div></div>
+    <div class="loy-msg-grid"><div class="card loy-form"><div class="lbl">Voucher card</div>
+      <span class="seg"><button data-vmcard="builtin" class="${m.card !== 'design' ? 'on' : ''}">Default card</button><button data-vmcard="design" class="${m.card === 'design' ? 'on' : ''}">Custom</button></span>
+      <div class="loy-prev vou" style="margin-top:12px"><img id="vmt-img" alt="Voucher card preview"></div>
+      ${m.card === 'design' ? `<label class="field" style="margin-top:4px"><span>Card for ${esc(kn)}</span><select class="in" id="vmt-des">${VOUV.mk !== 'main' ? `<option value="">${mainId ? 'Same as All vouchers' : 'The default card'}</option>` : '<option value="">The default card</option>'}${allDes.map(d => `<option value="${d.id}" ${(VOUV.mk === 'main' ? mainId : own) === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>
+          <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn primary small" id="vmt-edit">Edit in design studio</button><button class="btn small" id="vmt-imp">Import a card\u2026</button>${own || mainId ? '<button class="btn small" id="vmt-exp">Export this card</button>' : ''}</div>
+          <div class="lbl">Start ${esc(kn)} a card of its own from a template</div><div class="row" style="gap:6px;flex-wrap:wrap">${tpl}</div>
+          <p class="muted loy-note">On a template, the voucher\u2019s details stay where they are: change their colours, and add stickers, pictures and backgrounds. A card you import or pick must show the ${VOU_NEED.map(x => x[1]).join(', ')}.</p>`
+        : `<div class="row" style="gap:14px;flex-wrap:wrap"><label class="field" style="flex:none"><span>Colour</span><input type="color" data-vmc="accent" value="${esc(m.accent)}"></label><label class="field" style="flex:none"><span>Background</span><input type="color" data-vmc="bg" value="${esc(m.bg)}"></label></div>
+          <div class="loy-togs">${tog('logo', 'Your logo')}${tog('tcard', 'Terms and conditions on the card')}</div>
+          <p class="muted loy-note">The plain card every kind of voucher uses, each with its own wording. Choose Custom for backgrounds, stickers and colours.</p>`}
+    </div>
+    <div class="card loy-form"><div class="lbl">Message for ${esc(VOUV.mk === 'main' ? 'Gift vouchers' : kn)}</div>
+      <label class="field"><span>Heading</span><input class="in" data-vmt="title" value="${esc(mt.title)}"></label>
+      <label class="field"><span>Message ${help('{name} their first name, {amount} what it\u2019s worth, {artist}, {studio}, and {from} who it\u2019s from. Any personal message is added under it.')}</span><textarea class="in" rows="3" data-vmt="body">${esc(mt.body)}</textarea></label>
+      <div class="loy-togs">${tog('code', 'The voucher code')}${tog('exp', 'When it runs out')}${tog('terms', 'The terms and conditions')}</div>
+      <button class="btn small" id="vmt-guide" style="margin-top:10px">Voucher guide\u2026</button></div></div>`;
+  const r = { ...vouSample(kk) }; let url = '', busy = 0;
+  const prev = async () => { const n = ++busy, cv = await vouRender(r, m); if (n !== busy) return; const b = await new Promise(res => cv.toBlob(res, 'image/png')); if (url) URL.revokeObjectURL(url); url = URL.createObjectURL(b); const im = $('#vmt-img', host); if (im) im.src = url; };
+  const keep = () => Settings.set('vou_msg', JSON.stringify(m)); let t0 = 0; const soon = () => { clearTimeout(t0); t0 = setTimeout(() => { keep(); prev(); }, 250); };
+  host.oninput = (e) => { const t = e.target.dataset.vmt; if (t) { m.k = { ...(m.k || {}) }; m.k[kk] = { ...(m.k[kk] || VOU_KMSG[kk]), [t]: e.target.value }; return soon(); } const c = e.target.dataset.vmc; if (c) { m[c] = e.target.value; soon(); } };
+  host.onchange = async (e) => { if (e.target.id === 'vmt-des') { const id = +e.target.value;
+      if (id) { const row = await DB.one('SELECT doc FROM designs WHERE id = ?', [id]), miss = vouMissing(JSON.parse(row.doc)); if (miss.length) { toast(`That card can\u2019t be used: it doesn\u2019t show the ${miss.join(', ')}.`, 4500); return vouCardTab(host); } }
+      await Settings.set(vouDesKey(VOUV.mk), id ? String(id) : ''); toast('Card changed.', 1200); return vouCardTab(host); }
+    const k = e.target.dataset.vm; if (k) { m[k] = e.target.checked; await keep(); prev(); } };
+  host.onclick = async (e) => { const t = e.target, g = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+    if (g('vmk')) { VOUV.mk = g('vmk'); return vouCardTab(host); }
+    if (g('vmcard')) { m.card = g('vmcard'); await keep(); return vouCardTab(host); }
+    if (g('vmtpl')) { if (own && !await ask(`Start the ${kn} card again from the ${DZ_VOU_TPL[g('vmtpl')].name} template?\n\nThat design is replaced. This can\u2019t be undone.`)) return;
+      const doc = vouDoc(g('vmtpl'), VOUV.mk); let id = own;
+      if (id) await DB.run(`UPDATE designs SET doc = ?, updated_at = datetime('now') WHERE id = ?`, [JSON.stringify(doc), id]);
+      else { await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', ['Voucher card: ' + kn, 'voucard', JSON.stringify(doc)]); id = (await DB.one('SELECT last_insert_rowid() AS id')).id; await Settings.set(vouDesKey(VOUV.mk), String(id)); }
+      m.card = 'design'; await keep(); location.hash = 'design/' + id; return; }
+    if (t.closest('#vmt-edit')) { const id = own || mainId; if (!id) return toast('Pick a card for it above, or start one from a template.'); location.hash = 'design/' + id; return; }
+    if (t.closest('#vmt-exp')) return dzPackDesign(own || mainId);
+    if (t.closest('#vmt-guide')) { location.hash = 'vou-guide'; return; }
+    if (t.closest('#vmt-imp')) { const f = await xPickFile('.inkdesign,.inkdesigns,application/json'); if (!f) return; let P = null; try { P = JSON.parse(await f.text()); } catch {}
+      const list = P?.inkforge === 'designs' ? P.designs : P?.inkforge === 'design' ? [P] : [], cards = list.filter(x => x.kind === 'voucard'); if (!cards.length) return toast('That file has no voucher card in it.', 2600);
+      const P1 = cards[0], miss = vouMissing(JSON.parse(P1.doc)); if (miss.length) return toast(`That card can\u2019t be used: it doesn\u2019t show the ${miss.join(', ')}.`, 5000);
+      const dk = JSON.parse(P1.doc).vouk, to = VOU_SLOTS.some(x => x[0] === dk) ? dk : VOUV.mk, nid = await dzUnpackOne(P1); await Settings.set(vouDesKey(to), String(nid)); VOUV.mk = to; m.card = 'design'; await keep();
+      toast(`Imported, and used for ${VOU_SLOTS.find(x => x[0] === to)[1]}.`, 2200); return vouCardTab(host); } };
+  prev(); }
+/* The voucher guide: how vouchers work, in plain words, from the voucher settings. */
+function vouGuideParts(c) { const art = loyArtist(), ex = 2500, used = 650, left = c.left === 'charity' ? `goes to ${c.charity || 'charity'}` : `is kept by ${art} as a tip`, out = [];
+  out.push({ k: 'intro', t: 'How our vouchers work', b: `A voucher is money towards a tattoo with ${art}. It makes a great gift: pick any amount, or the price of a tattoo that\u2019s already been quoted. This guide explains how vouchers work. If anything is unclear, just ask.` });
+  out.push({ k: 'buy', t: 'Buying a voucher', b: `Choose an amount, who it\u2019s for (or leave it open for whoever has the card) and add a message if you like. The voucher is sent once it\u2019s paid for. You can stay anonymous: your name then isn\u2019t on it.${c.stack ? '\nSeveral people can each buy a voucher for the same person, so everyone\u2019s share shows. They can be used together on one tattoo.' : ''}` });
+  out.push({ k: 'valid', t: 'How long it lasts', b: +c.months ? `A voucher is valid for ${+c.months} month${+c.months === 1 ? '' : 's'} from the day it\u2019s paid for. The date is on the card. Anything not used by then is lost, and ${left.replace(/^goes to/, 'goes to')}.` : 'Vouchers don\u2019t run out.' });
+  out.push({ k: 'use', t: 'Using a voucher', b: `Mention it when you book, and show the code or card when you pay. ${c.stack ? 'More than one voucher can be used on the same tattoo. ' : 'One voucher can be used per tattoo. '}If you also have loyalty rewards, those come off first, then the voucher pays towards what\u2019s left.` });
+  out.push({ k: 'more', t: 'If the tattoo costs more', b: 'You pay the difference on the day.' });
+  out.push({ k: 'less', t: 'If the tattoo costs less', b: `What\u2019s left over ${left}${+c.split ? `, up to ${money(+c.split)}. If more than that is left over, it can be kept on a new voucher with its own code, to use later or pass on to someone else.\nFor example, a ${money(ex)} voucher used on a ${money(used)} tattoo leaves ${money(ex - used)} on a new voucher.` : '.'}` });
+  out.push({ k: 'pass', t: 'Passing it on', b: c.pass ? 'A voucher can be passed on to someone else. Just tell us who should have it.' : 'A voucher is for the person it was made for. Vouchers made for anyone can be used by whoever has the card.' });
+  out.push({ k: 'rules', t: 'Good to know', b: `\u2022 Vouchers are for tattoos only: they can\u2019t be used on products.\n\u2022 They can\u2019t be exchanged for cash or refunded.\n\u2022 Vouchers are offered personally by ${art}, so they can only be used for work done by ${art}.\n\u2022 Lost codes can\u2019t be replaced: keep the card safe.` });
+  out.push({ k: 'terms', t: 'Terms and conditions', b: Vou.terms(c).map(t => '\u2022 ' + t).join('\n'), fixed: true });
+  return out; }
+const GUIDES = {
+  loy: { key: 'loy_guide', cfg: () => Loy.cfg(), parts: (c) => loyGuideParts(c), terms: (c) => Loy.terms(c), title: 'Our rewards, explained', back: 'loyalty',
+    sub: 'For clients with questions about their rewards: the program in plain words, longer than the card has room for. It follows your program\u2019s settings.' },
+  vou: { key: 'vou_guide', cfg: () => Vou.cfg(), parts: (c) => vouGuideParts(c), terms: (c) => Vou.terms(c), title: 'Our vouchers, explained', back: 'vouchers',
+    sub: 'For anyone with questions about a voucher: how vouchers work, in plain words. It follows your voucher settings.' } };
+/* The voucher settings as a file (.inkvouchers), so other artists can sell vouchers the same way: the rules and
+   terms, the card settings and wording, every custom card it uses, and the guide. Vouchers themselves stay here. */
+async function vouExportData() { const cards = {}; for (const [k] of VOU_SLOTS) { const id = await vouOwnDes(k); if (id) cards[k] = await dzPackOne(id); }
+  return { inkforge: 'vouchers', v: 1, at: new Date().toISOString(), cfg: Vou.cfg(), msg: vouMsgCfg(), guide: guideCfg('vou_guide'), cards }; }
+async function vouExport() { const out = await vouExportData(), nm = `voucher-settings-${(Settings.get('studio_name') || Settings.get('artist_name') || 'studio').replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkvouchers`;
+  await xSave(new File([JSON.stringify(out)], nm, { type: 'application/json' }), 'Voucher settings', 'Saved ' + nm); }
+async function vouImport(P0) { let P = P0 || null;
+  if (!P) { const f = await xPickFile('.inkvouchers,application/json'); if (!f) return false; try { P = JSON.parse(await f.text()); } catch {} }
+  if (P?.inkforge !== 'vouchers' || !P.cfg) { toast('That isn\u2019t a voucher settings file.', 2600); return false; }
+  if (+P.v > 1) { toast('That file is from a newer InkForge. Update the app, then import it.', 3500); return false; }
+  const cards = Object.entries(P.cards || {}).filter(([k, e]) => VOU_SLOTS.some(x => x[0] === k) && e?.doc && !vouMissing(JSON.parse(e.doc)).length), c = { ...VOU_DEF, ...P.cfg };
+  if (!await ask(`Use these voucher settings?\n\nValid for ${+c.months ? c.months + ' months' : 'no expiry'}, ${c.stack ? 'can be used together' : 'one per tattoo'}, left over ${c.left === 'charity' ? 'to ' + (c.charity || 'charity') : 'as a tip'}${+c.split ? ` (more than ${money(+c.split)} kept on a new voucher)` : ''}.\n\nIt replaces your voucher rules, terms, card settings, wording and guide${cards.length ? `, with ${cards.length} custom card${cards.length === 1 ? '' : 's'}` : ''}. Vouchers already made keep their own terms.`)) return false;
+  for (const [k] of VOU_SLOTS) await Settings.set(vouDesKey(k), '');
+  for (const [k, e] of cards) await Settings.set(vouDesKey(k), String(await dzUnpackOne(e)));
+  await Vou.save(c); await Settings.set('vou_msg', JSON.stringify(P.msg || {})); await Settings.set('vou_guide', JSON.stringify(P.guide || {}));
+  toast('Voucher settings imported.', 2200); return true; }
+/* Home: vouchers waiting for their payment, and open ones about to run out (within two weeks). */
+async function homeVou() { const el = $('#home-vou'); if (!el) return; if (!Vou.on()) { el.innerHTML = ''; return; } let rows = [];
+  try { rows = await DB.all(`SELECT v.*, h.first_name, h.last_name FROM vouchers v LEFT JOIN clients h ON h.id = v.client_id WHERE v.status = 'unpaid' OR (v.status = 'open' AND v.expires_at BETWEEN date('now') AND date('now', '+14 days')) ORDER BY v.status DESC, v.expires_at LIMIT 8`); } catch { return; }
+  if (!rows.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card"><h2>Vouchers ${help('Vouchers waiting for their payment (they can\u2019t be sent until it\u2019s in), and open ones that run out within two weeks.')}</h2><div class="card list flush">${rows.map(v => `<div class="c-row">
+      <span class="ico-c">${ICON.voucher}</span><span class="c-main"><span class="c-n">${esc(nameOr(v) || 'Anyone with the card')} \u00b7 ${money(Vou.bal(v))}</span>
+        <span class="muted c-sub">${v.status === 'unpaid' ? `Awaiting payment \u00b7 ${esc(v.code)}${v.from_name ? ' \u00b7 from ' + esc(v.from_name) : ''}` : `Runs out ${esc(fmtDay(v.expires_at))} \u00b7 ${esc(v.code)}`}</span></span>
+      ${v.status === 'unpaid' ? `<button class="btn small primary" data-hvpay="${v.id}">Payment received</button>` : `<button class="btn small" data-hvmsg="${v.id}" data-tip="Remind them with the card">Send</button>`}</div>`).join('')}</div></div>`;
+  el.onclick = async (e) => { const p = e.target.closest('[data-hvpay]'); if (p) { if (await vouPaid(+p.dataset.hvpay)) { homeVou(); vouMessage(+p.dataset.hvpay); } return; }
+    const m = e.target.closest('[data-hvmsg]'); if (m) vouMessage(+m.dataset.hvmsg); }; }
+/* A lot left over on a voucher: keep it on a new voucher (to use later or pass on), or let it go as a tip or to charity. */
+function vouSplitPick(left, P) { return new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card rc-card"><h2>${money(left)} left on the voucher</h2><p class="muted" style="margin:-4px 0 12px">The tattoo cost less than the voucher. Keep what\u2019s left on a new voucher with its own code, to use later or pass on to someone else?</p>
+    <button class="btn primary" data-vs="split" style="width:100%">Keep ${money(left)} on a new voucher</button>
+    <button class="btn" data-vs="gone" style="width:100%;margin-top:8px">${P.left === 'charity' ? 'Give it to ' + esc(P.charity || 'charity') : 'Keep it as a tip'}</button></div>`;
+  document.body.appendChild(o); o.addEventListener('click', (e) => { const b = e.target.closest('[data-vs]'); if (!b) return; o.remove(); res(b.dataset.vs === 'split' ? 'split' : null); }); }); }
+/* The payment for a voucher is in: how much and how, and its time starts. Returns true once recorded. */
+function vouPaid(id) { return new Promise(async (res) => { const v = await DB.one('SELECT * FROM vouchers WHERE id = ?', [id]); if (!v) return res(false);
+  const o = document.createElement('div'); o.id = 'merge-dlg'; const cur = esc(Settings.get('currency') || '');
+  o.innerHTML = `<div class="card rc-card"><h2>Payment received</h2><p class="muted" style="margin:-4px 0 10px">Voucher ${esc(v.code)} \u00b7 ${money(v.amount)}. Once it\u2019s paid it can be sent, and its time starts today.</p>
+    <div class="two"><label class="field"><span>Amount paid</span><div class="unit-in"><input class="in" id="vp-a" type="number" inputmode="decimal" value="${esc(v.amount)}"><em>${cur}</em></div></label>
+      <label class="field"><span>Paid by</span><select class="in" id="vp-m">${VOU_PAY.map(m => `<option>${m}</option>`).join('')}</select></label></div>
+    <div class="qz-acts" style="margin-top:12px"><button class="btn" id="vp-x">Cancel</button><button class="btn primary" id="vp-ok">Record payment</button></div></div>`;
+  document.body.appendChild(o);
+  o.addEventListener('click', async (e) => { if (e.target.closest('#vp-x')) { o.remove(); return res(false); }
+    if (e.target.closest('#vp-ok')) { const a = Math.round(+$('#vp-a', o).value * 100) / 100; if (!(a > 0)) return toast('Enter what was paid.');
+      if (a < +v.amount && !await ask(`${money(a)} is less than the voucher\u2019s ${money(v.amount)}. Record it anyway?`)) return;
+      const now = new Date(); await DB.run(`UPDATE vouchers SET status = 'open', paid_at = ?, paid_amount = ?, pay_method = ?, expires_at = ? WHERE id = ?`, [now.toISOString(), a, $('#vp-m', o).value, Vou.expiry(v.months, now), id]);
+      o.remove(); toast('Payment recorded. The voucher can be sent.', 2000); res(true); } }); }); }
 /* ---------- Loyalty: the reward message ----------
    A card (image) and a message telling a client they've earned a reward. Anonymous by default: who they sent
    isn't named unless the artist turns that on. The wording, colours and what shows are kept in Settings 'loy_msg'.
@@ -6454,7 +6891,8 @@ function loyTierPick(tiers, have) { return new Promise((res) => { const o = docu
    stacking with worked numbers, product swaps, passing on, other rewards and the full terms. Written from the program's
    settings; each part can be reworded or left out, and you can add your own. Kept in Settings 'loy_guide':
    { ed: { key: { t, b } }, off: [keys], own: [{ id, t, b }] }. Lines starting with '\u2022 ' print as bullet points. */
-const loyGuideCfg = () => { let g = {}; try { g = JSON.parse(Settings.get('loy_guide') || '{}') || {}; } catch {} return { ed: g.ed || {}, off: g.off || [], own: g.own || [] }; };
+const guideCfg = (key) => { let g = {}; try { g = JSON.parse(Settings.get(key) || '{}') || {}; } catch {} return { ed: g.ed || {}, off: g.off || [], own: g.own || [] }; };
+const loyGuideCfg = () => guideCfg('loy_guide');
 function loyGuideParts(c) {
   const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'We', v = +c.value || 0, out = [], ex = 2000;
   out.push({ k: 'intro', t: 'How our rewards work', b: `${studio === 'We' ? 'We run' : studio + ' runs'} a loyalty program to say thank you. This guide explains how rewards are earned, what they\u2019re worth and how to use them. If anything is unclear, just ask.` });
@@ -6480,16 +6918,17 @@ function loyGuideParts(c) {
   out.push({ k: 'terms', t: 'Terms and conditions', b: Loy.terms(c).map(t => '\u2022 ' + t).join('\n'), fixed: true });
   return out; }
 /* The parts as they print: your wording over the program's, without the ones left out, with your own before the terms. */
-function loyGuideFinal(c, g = loyGuideCfg()) { const P = loyGuideParts(c), off = new Set(g.off);
+function loyGuideFinal(c, g = loyGuideCfg()) { return guideFinal(GUIDES.loy, c, g); }
+function guideFinal(K, c, g) { const P = K.parts(c), off = new Set(g.off);
   const mine = P.filter(p => !off.has(p.k)).map(p => g.ed[p.k] && !p.fixed ? { ...p, ...g.ed[p.k] } : p), own = g.own.filter(o => (o.t || '').trim() || (o.b || '').trim());
   const at = mine.findIndex(p => p.k === 'terms'); mine.splice(at < 0 ? mine.length : at, 0, ...own); return mine; }
 /* A4 pages: the title and your studio on the first, then each part; a page number on each. */
-async function loyGuidePages(parts) {
+async function loyGuidePages(parts, title = 'Our rewards, explained') {
   const { W, H, M, teal, ink, soft } = DOC, pages = []; let P = null, y = 0;
   const page = async (first) => { P = await docCanvas(); if (first) await P.header(); pages.push(P); y = first ? 300 : 120; };
   await page(true);
   const studio = Settings.get('studio_name') || Settings.get('artist_name') || '';
-  P.text('Our rewards, explained', M, y + 70, P.font(80, 400, true), ink); y += 110; if (studio) { P.text(studio, M, y, P.font(26, 600), soft); y += 30; } y += 40;
+  P.text(title, M, y + 70, P.font(80, 400, true), ink); y += 110; if (studio) { P.text(studio, M, y, P.font(26, 600), soft); y += 30; } y += 40;
   for (const p of parts) {
     const lines = []; for (const para of String(p.b || '').split('\n')) { const bul = para.startsWith('\u2022 '), w = P.wrap(bul ? para.slice(2) : para, P.font(25), W - 2 * M - (bul ? 34 : 0));
       w.forEach((ln, i) => lines.push({ ln, bul, first: i === 0 })); lines.push(null); }
@@ -6594,8 +7033,8 @@ const deUTC = (d) => d.toISOString().slice(0, 19).replace('T', ' ');   /* as SQL
 const deDate = (s) => new Date(String(s).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? '' : 'Z'));
 const deLoc = (d) => `${ymd(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;   /* as bookings' start_at */
 const DE_PARTS = [['summary', 'Summary'], ['money', 'Takings and pay'], ['days', 'Day by day'], ['done', 'Tattoos done'], ['made', 'Bookings made'], ['cancelled', 'Cancellations'],
-  ['clients', 'New clients'], ['loyalty', 'Loyalty rewards'], ['stock', 'Stock'], ['note', 'Your note']];
-const deParts = () => { let p = null; try { p = JSON.parse(Settings.get('de_parts') || 'null'); } catch {} return p && typeof p === 'object' ? p : Object.fromEntries(DE_PARTS.map(([k]) => [k, true])); };
+  ['clients', 'New clients'], ['loyalty', 'Loyalty rewards'], ['vouchers', 'Vouchers'], ['stock', 'Stock'], ['note', 'Your note']];
+const deParts = () => { let p = null; try { p = JSON.parse(Settings.get('de_parts') || 'null'); } catch {} return p && typeof p === 'object' ? { vouchers: true, ...p } : Object.fromEntries(DE_PARTS.map(([k]) => [k, true])); };
 const deLast = () => DB.one('SELECT * FROM day_ends ORDER BY to_at DESC, id DESC LIMIT 1');
 /* The open period: from the last one filed (or when you started keeping them), up to now, never more than deMax() days. */
 async function dePeriod() { const last = await deLast(), now = new Date();
@@ -6621,6 +7060,9 @@ async function deData(P) {
   const given = await DB.all(`${RJ} l.issued_at BETWEEN ? AND ?${not('given')} ORDER BY l.issued_at, l.id`, [da, dz]);
   const sent = await DB.all(`${RJ} l.sent_at BETWEEN ? AND ?${not('sent')} ORDER BY l.sent_at, l.id`, [da, dz]);
   const used = await DB.all(`${RJ} l.status = 'used' AND l.used_at BETWEEN ? AND ?${not('used')} ORDER BY l.used_at, l.id`, [da, dz]);
+  const VJ = `SELECT v.*, h.first_name, h.last_name FROM vouchers v LEFT JOIN clients h ON h.id = v.client_id WHERE v.status != 'deleted' AND`;
+  const vsold = await DB.all(`${VJ} coalesce(v.pay_method, '') != 'Split' AND v.paid_at IS NOT NULL AND datetime(v.paid_at) > ? AND datetime(v.paid_at) <= ? ORDER BY v.paid_at`, [a, z]);
+  const vused = await DB.all(`${VJ} v.used_booking IS NOT NULL AND v.used_at BETWEEN ? AND ?${(prev.vused || []).length ? ` AND v.id NOT IN (${prev.vused.map(Number).join(', ')})` : ''} ORDER BY v.used_at`, [da, dz]);
   const takes = await DB.all(`SELECT * FROM stock_takes WHERE datetime(taken_at) > ? AND datetime(taken_at) <= ? ORDER BY taken_at`, [a, z]);
   for (const t of takes) t.lines = await DB.all('SELECT * FROM stock_take_lines WHERE take_id = ? ORDER BY item_name COLLATE NOCASE', [t.id]);
   const low = await DB.all(`SELECT * FROM inventory_items WHERE active = 1 AND min_qty > 0 AND qty <= min_qty ORDER BY name COLLATE NOCASE`);
@@ -6638,19 +7080,21 @@ async function deData(P) {
   for (const b of tat) { const e = g(dayOf(b.completed_at)); e.n++; e.paid = r2(e.paid + (+b.paid || 0)); }
   for (const b of made) g(dayOf(b.created_at)).made++; for (const b of cancelled) g(dayOf(b.cancelled_at)).can++; for (const c of clients) g(dayOf(c.created_at)).clients++;
   const days = [...D.values()].sort((x, y) => x.day < y.day ? -1 : 1);
-  return { P, done, tat, made, cancelled, clients, given, sent, used, takes, low, sheet, open, days, byPay, pay, can, deps,
+  const vou = { sold: sum(vsold, v => v.paid_amount ?? v.amount), paidBy: sum(tat, b => b.vou_off), tip: sum(vused.filter(v => v.left_to === 'tip'), v => v.left_amount), charity: sum(vused.filter(v => v.left_to === 'charity'), v => v.left_amount), split: sum(vused.filter(v => v.left_to === 'split'), v => v.left_amount) };
+  return { P, done, tat, made, cancelled, clients, given, sent, used, takes, low, sheet, open, days, byPay, pay, can, deps, vsold, vused, vou,
     sum: { n: tat.length, other: done.length - tat.length, takings, avg: tat.length ? r2(takings / tat.length) : 0, mins, off, made: made.length, cancelled: cancelled.length, clients: clients.length, given: given.length, sent: sent.length, used: used.length },
-    ids: { given: given.map(r => r.id), sent: sent.map(r => r.id), used: used.map(r => r.id) } }; }
+    ids: { given: given.map(r => r.id), sent: sent.map(r => r.id), used: used.map(r => r.id), vused: vused.map(v => v.id) } }; }
 /* The report's parts, shared by the screen, the A4 pages and the spreadsheet: tiles (big numbers) and tables.
    A column: h heading, f(r) what shows, v(r) the plain value for the spreadsheet (defaults to f), num (right-aligned), w (width share). */
 function deSections(R, parts, note) {
   const S = R.sum, r2 = (v) => Math.round(v * 100) / 100, out = [];
   const tm = (s) => { const d = deDate(s); return `${fmtDay(ymd(d))} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  const day = (s) => fmtDay(ymd(deDate(s))), who = (r) => fullName(r) || r.guest_name || '\u2014', hrs = (m) => m ? fmtH(m / 60) : '\u2014';
+  const day = (s) => fmtDay(ymd(deDate(s))), who = (r) => nameOr(r) || r.guest_name || '\u2014', hrs = (m) => m ? fmtH(m / 60) : '\u2014';
   const M = (v) => v == null || v === '' ? '' : money(v), C = (h, f, o = {}) => ({ h, f, ...o });
   if (parts.summary) out.push({ k: 'summary', t: 'Summary', tiles: [[S.n, 'Tattoos done'], [money(S.takings), 'Taken'], [S.n ? money(S.avg) : '\u2014', 'Per tattoo'], [hrs(S.mins), 'Tattooing'],
     [S.made, 'Bookings made'], [S.cancelled, 'Cancelled', S.cancelled ? 'warn' : ''], [S.clients, 'New clients'], [S.sent, 'Rewards sent'],
-    ...(S.off ? [[money(S.off), 'Loyalty discounts']] : []), ...(R.deps ? [[money(R.deps), 'Deposits taken']] : []), ...(S.other ? [[S.other, 'Other sessions']] : [])] });
+    ...(S.off ? [[money(S.off), 'Loyalty discounts']] : []), ...(R.vou.sold ? [[money(R.vou.sold), 'Vouchers sold']] : []), ...(R.vou.paidBy ? [[money(R.vou.paidBy), 'Paid by voucher']] : []),
+    ...(R.deps ? [[money(R.deps), 'Deposits taken']] : []), ...(S.other ? [[S.other, 'Other sessions']] : [])] });
   if (parts.money) { const by = new Map(); for (const b of R.tat) { const k = b.pay_method || 'Not recorded', e = by.get(k) || { k, n: 0, a: 0 }; e.n++; e.a = r2(e.a + (+b.paid || 0)); by.set(k, e); }
     out.push({ k: 'money', t: 'Takings and pay', tiles: R.pay ? [[money(r2(R.pay.studio)), 'Studio\u2019s share'], ...(R.pay.sup ? [[money(r2(R.pay.sup)), 'Supplies']] : []), [money(r2(R.pay.mine)), 'Yours']] : null,
       tables: [{ cols: [C('Paid by', r => r.k, { w: 3 }), C('Tattoos', r => r.n, { num: 1 }), C('Amount', r => M(r.a), { num: 1, v: r => r.a })], rows: [...by.values()].sort((a, b) => b.a - a.a),
@@ -6667,10 +7111,14 @@ function deSections(R, parts, note) {
     tables: [{ cols: [C('Cancelled', r => tm(r.cancelled_at), { w: 2.2 }), C('Was for', r => fmtDay(r.start_at.slice(0, 10)), { w: 1.8, v: r => r.start_at.slice(0, 10) }), C('Client', who, { w: 2 }),
       C('By', r => r.cancel_by === 'noshow' ? 'No-show' : r.cancel_by === 'me' ? 'You' : 'Client', { w: 1 }), C('Reason', r => r.cancel_reason || '', { w: 3 })], rows: R.cancelled }] });
   if (parts.clients) out.push({ k: 'clients', t: 'New clients', tables: [{ cols: [C('Added', r => tm(r.created_at), { w: 2.2 }), C('Name', r => fullName(r), { w: 2.6 }), C('Phone', r => r.phone || '', { w: 2 }), C('Email', r => r.email || '', { w: 2.6 }), C('Type', r => r.category || 'Client', { w: 1.2 })], rows: R.clients }] });
-  if (parts.loyalty) { const kind = (r) => LOY_SRC[r.src] || (r.src === 'thanks' ? 'Thank you' : r.src === 'spend' ? 'Spend' : 'Referral'), hold = (r) => fullName(r) || (r.client_id == null ? 'Anyone with the card' : '\u2014');
+  if (parts.loyalty) { const kind = (r) => LOY_SRC[r.src] || (r.src === 'thanks' ? 'Thank you' : r.src === 'spend' ? 'Spend' : 'Referral'), hold = (r) => nameOr(r) || (r.client_id == null ? 'Anyone with the card' : '\u2014');
     out.push({ k: 'loyalty', t: 'Loyalty rewards', tiles: [[S.given, 'Given'], [S.sent, 'Sent'], [S.used, 'Used']],
       tables: [{ t: 'Sent', cols: [C('Sent', r => fmtDay(r.sent_at), { w: 1.8, v: r => r.sent_at }), C('Client', hold, { w: 2.4 }), C('Kind', kind, { w: 1.6 }), C('Reward', r => Loy.rLabel(r), { w: 3 }), C('Code', r => r.code || '', { w: 1.2 })], rows: R.sent },
         ...(R.used.length ? [{ t: 'Used', cols: [C('Used', r => fmtDay(r.used_at), { w: 1.8, v: r => r.used_at }), C('Client', hold, { w: 2.4 }), C('Kind', kind, { w: 1.6 }), C('Reward', r => r.note === 'product' ? (r.alt_name || r.item_name || 'Product') + ' handed over' : Loy.rLabel(r), { w: 3 }), C('Code', r => r.code || '', { w: 1.2 })], rows: R.used }] : [])] }); }
+  if (parts.vouchers && (R.vsold.length || R.vused.length)) { const hold = (v) => nameOr(v) || (v.client_id == null ? 'Anyone with the card' : '\u2014'), lt = (v) => v.left_to === 'tip' ? 'Tip' : v.left_to === 'charity' ? 'Charity' : v.left_to === 'split' ? 'New voucher' : '';
+    out.push({ k: 'vouchers', t: 'Vouchers', tiles: [[money(R.vou.sold), 'Sold'], [money(R.vou.paidBy), 'Paid on tattoos'], ...(R.vou.tip ? [[money(R.vou.tip), 'Left as tips']] : []), ...(R.vou.charity ? [[money(R.vou.charity), 'To charity']] : []), ...(R.vou.split ? [[money(R.vou.split), 'Kept on new vouchers']] : [])],
+      tables: [{ t: 'Sold', cols: [C('Paid', r => tm(r.paid_at), { w: 2.2 }), C('Code', r => r.code, { w: 1.2 }), C('For', hold, { w: 2.2 }), C('From', r => r.anon ? 'Anonymous' : r.from_name || '', { w: 2 }), C('Kind', r => Vou.kindName(r.kind), { w: 1.4 }), C('By', r => r.pay_method || '', { w: 1 }), C('Amount', r => M(r.paid_amount ?? r.amount), { num: 1, v: r => r.paid_amount ?? r.amount })], rows: R.vsold, total: ['', '', '', '', '', '', M(R.vou.sold)], totalV: ['Total', '', '', '', '', '', R.vou.sold] },
+        { t: 'Used', cols: [C('Used', r => fmtDay(r.used_at), { w: 1.8, v: r => r.used_at }), C('Code', r => r.code, { w: 1.2 }), C('Client', hold, { w: 2.2 }), C('Paid', r => M(r.used_amount), { num: 1, v: r => r.used_amount }), C('Left over', r => r.left_amount ? M(r.left_amount) : '', { num: 1, v: r => r.left_amount || '' }), C('Went to', lt, { w: 1.4 })], rows: R.vused }] }); }
   if (parts.stock) { const diff = (r) => r.expected != null ? r2(r.counted - r.expected) : '';
     out.push({ k: 'stock', t: 'Stock', tables: [{ t: 'Running low', cols: [C('Item', r => r.name, { w: 3.4 }), C('In stock', r => +r.qty, { num: 1 }), C('Minimum', r => +r.min_qty, { num: 1 }), C('Supplier', r => r.supplier || '', { w: 2.4 })], rows: R.low, none: 'Nothing running low.' },
       ...R.takes.map(t => ({ t: `Stock take, ${tm(t.taken_at)}${t.notes ? ' \u00b7 ' + t.notes : ''}`, cols: [C('Item', r => r.item_name, { w: 3.4 }), C('Expected', r => r.expected ?? '', { num: 1 }), C('Counted', r => r.counted, { num: 1 }), C('Difference', r => { const d = diff(r); return d === '' ? '' : (d > 0 ? '+' : '') + d; }, { num: 1, v: diff })], rows: t.lines })),
@@ -7500,6 +7948,10 @@ async function renderStats() {
     <div class="card"><h2>Follow-ups coming up</h2>${fus.map(f => `<a class="stat" href="#booking-edit/${f.id}"><span>${esc(bName(f))}</span><span>${esc(fmtDay(f.start_at))}</span></a>`).join('') || '<p class="muted" style="margin:0">None booked.</p>'}</div>
     <div class="card"><h2>Open promotions</h2>${promos.map(p => `<a class="stat" href="#booking-edit/${p.id}"><span>${esc(bName(p))}: ${p.promo_kind === 'pct' ? +p.promo_value + '%' : money(p.promo_value)} off</span><span>until ${esc(p.promo_until)}</span></a>`).join('') || '<p class="muted" style="margin:0">None open.</p>'}</div>`;
   el.querySelectorAll('[data-bk]').forEach(tr => tr.onclick = () => { location.hash = 'booking-edit/' + tr.dataset.bk; });
+  if (Vou.on() || (await DB.one('SELECT id FROM vouchers LIMIT 1'))) { const V = await DB.one(`SELECT coalesce(sum(CASE WHEN coalesce(pay_method, '') != 'Split' AND substr(paid_at, 1, 10) BETWEEN ? AND ? THEN coalesce(paid_amount, amount) END), 0) AS sold,
+      coalesce(sum(CASE WHEN used_at BETWEEN ? AND ? THEN used_amount END), 0) AS used, coalesce(sum(CASE WHEN used_at BETWEEN ? AND ? AND left_to IN ('tip', 'charity') THEN left_amount END), 0) AS gone FROM vouchers WHERE status != 'deleted'`, [a, z, a, z, a, z]), ow = await Vou.owed();
+    $('#st-side').insertAdjacentHTML('afterbegin', `<div class="card"><h2>Vouchers</h2><a class="stat" href="#vouchers"><span>Sold</span><span>${money(V.sold)}</span></a><div class="stat"><span>Used on tattoos</span><span>${money(V.used)}</span></div>
+      ${V.gone ? `<div class="stat"><span>Left as tips or to charity</span><span>${money(V.gone)}</span></div>` : ''}<div class="stat"><span>Still to use (${ow.n} open)</span><span>${money(ow.a)}</span></div></div>`); }
   const rg = $('#st-range'); if (rg) rg.textContent = STATS.period === 'all' ? 'All time' : `${a} to ${z}`;
 }
 /* ---------- Stats table ----------
@@ -10541,6 +10993,7 @@ function clientPicker(input, list, onPick) {
 
 /* ---------- Clients helpers ---------- */
 const fullName = (c) => [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Unnamed';
+const nameOr = (c) => c.first_name || c.last_name ? fullName(c) : '';   /* their name, or nothing (so a fallback can show) */
 function avatar(c, url, size = '') {
   const ini = ((c.first_name || '?').charAt(0) + (c.last_name || '').charAt(0)).toUpperCase();
   return url ? `<img class="ava ${size}" src="${url}" alt="">` : `<span class="ava ${size}">${esc(ini)}</span>`;
@@ -11604,6 +12057,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 552, when: '2026-11-25T06:00', added: [
+    'Vouchers: turn them on in Settings and sell gift vouchers for tattoos. Pick the kind, the amount (or link a saved quote), who it\u2019s for and from (anonymous if they like), and a message. A voucher is only sent once it\u2019s paid for.',
+    'On a booking, vouchers pay after any loyalty rewards and can be stacked. A small leftover goes as a tip or to charity; a big one can be kept on a new voucher to use later or pass on. Day end and Stats count vouchers sold and used.',
+    'Voucher cards: a default card, or custom ones per kind made in the design studio, with each kind\u2019s own wording. Send them, share a voucher guide, and export your voucher settings for another artist.',
+    'Home: a card for vouchers awaiting payment or about to run out. Fixed: walk-in guests showed as Unnamed in Day end.'
+  ] },
   { build: 551, when: '2026-11-25T03:00', added: [
     'Stats: Day end gathers everything since you last filed one: tattoos done and what they earned, bookings made and cancelled, new clients, loyalty rewards (birthday ones too) and stock, with a day-by-day table.',
     'Day end: pick what goes in, then print it as a compact PDF, save images, send it or save a spreadsheet. Mark it filed and the next one starts. Every tattoo up to now has to be completed first.',
@@ -12259,7 +12718,7 @@ addEventListener('beforeunload', e => { if (Dirty.on) e.preventDefault(); });
    reel maker), forms, notes and the portfolio, without the tools for running a studio (clients, bookings, quotes,
    stats, stock, rules). Kept in the workspace (setting ws_mode, so backups carry it) and on its list entry; the
    body gets the class ws-design, which hides what is marked data-biz, and those pages lead home. */
-const WS_BIZ = new Set(['day-end', 'rules-table', 'inventory-table', 'quotes-table', 'clients', 'clients-table', 'client', 'client-edit', 'book', 'bookings', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
+const WS_BIZ = new Set(['vouchers', 'vou-new', 'vou-guide', 'day-end', 'rules-table', 'inventory-table', 'quotes-table', 'clients', 'clients-table', 'client', 'client-edit', 'book', 'bookings', 'booking-edit', 'quote', 'quote-cal', 'quotes', 'stats', 'inventory', 'inv-edit', 'stocktake', 'rules', 'rule-edit']);
 const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) === 'design'; } catch { return WS.cur?.mode === 'design'; } };
 /* ---------- Router ---------- */
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',

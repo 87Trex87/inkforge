@@ -25,7 +25,8 @@ const DZ_KINDS = {
   /* Sketch pad: an open page that grows with what's on it (its own section, like forms; never in the design list) */
   sketch: { label: 'Sketch pad', sub: 'Notes, plans, sketches and mind maps', w: 7016, h: 4967, per: 0, sketch: 1 },   /* A0 landscape at 150 dpi; it grows from there */
   /* the loyalty reward card: one per workspace, made and opened from Loyalty (never in the design list) */
-  loycard: { label: 'Reward card', sub: '1080 × 1350 (4:5)', w: 1080, h: 1350, per: 0, loycard: 1 }
+  loycard: { label: 'Reward card', sub: '1080 × 1350 (4:5)', w: 1080, h: 1350, per: 0, loycard: 1 },
+  voucard: { label: 'Voucher card', sub: 'DL, 210 × 99 mm', w: 2480, h: 1169, per: 2, voucard: 1 }
 };
 /* The types Convert to moves between. */
 const DZ_CONV = ['page', 'form', 'flyer', 'card', 'voucher', 'post', 'portrait', 'story'];
@@ -64,6 +65,7 @@ const DZ_THEMES = {
   lylove: { name: 'Valentine', bg: '#2a0e17', fg: '#fbe9ee', accent: '#e0466e', soft: '#c49aa6', f1: 'Great Vibes', f2: 'Inter' },
   lyspring: { name: 'Spring', bg: '#f4f7ec', fg: '#24301f', accent: '#7cae5a', soft: '#6f7a66', f1: 'Playfair Display', f2: 'Inter' },
   lyspecial: { name: 'Special', bg: '#17121f', fg: '#f3ecfa', accent: '#9b6bd6', soft: '#a99bb8', f1: 'Playfair Display', f2: 'Inter' },
+  vouplain: { name: 'Voucher card', bg: '#121618', fg: '#f1ece2', accent: '#c9a24a', soft: '#8c9593', f1: 'Pirata One', f2: 'Inter' },
   lycalm: { name: 'Calm', bg: '#10202a', fg: '#eaf2f6', accent: '#5aa7c8', soft: '#90a6b2', f1: 'Playfair Display', f2: 'Inter' }
 };
 // [family, Google Fonts spec or '' when already available]
@@ -72,6 +74,45 @@ const DZ_FONTS = [['Inter', ''], ['Pirata One', ''], ['Bebas Neue', 'Bebas Neue'
   ['UnifrakturMaguntia', 'UnifrakturMaguntia'], ['Permanent Marker', 'Permanent Marker'], ['Courier Prime', 'Courier Prime:wght@400;700'],
   ['Georgia', ''], ['Arial', '']];
 /* the reward card's own fields (filled from the reward it's sent with) */
+/* a voucher card's own fields (filled from the voucher it's sent with) */
+const DZ_VOU_FIELDS = [['heading', 'Heading (for the kind of voucher)'], ['message', 'Message (with any personal message)'], ['note', 'Personal message (on its own)'], ['amount', 'Amount (R1,000)'], ['kind', 'Kind (Birthday voucher)'],
+  ['to_line', 'For (For Sam)'], ['from_line', 'From (From Mom, or blank when anonymous)'], ['about', 'What it\u2019s for'], ['code', 'Voucher code'], ['expires', 'Valid until'], ['artist', 'Your name (who redeems it)'],
+  ['terms', 'Terms, one per line'], ['terms_line', 'Terms, in one paragraph'], ['name', 'Their first name']];
+/* Two starting points for the voucher card (DL); every part can be recoloured, and things added around it. */
+const DZ_VOU_TPL = {
+  classic: { name: 'Classic', theme: 'ink', make: () => [
+    dzS('rect', 50, 50, 2380, 1069, { fill: 'none', stroke: '@accent', sw: 8, r: 0, name: 'Frame' }),
+    { id: dzId(), t: 'image', logo: true, x: 110, y: 100, w: 240, h: 140, op: 1, rot: 0 },
+    dzT('{studio}', 390, 120, 1050, 46, { b: true }), dzT('{phone}  \u00b7  {instagram}', 390, 180, 1050, 32, { c: '@soft' }),
+    dzT('{heading}', 110, 290, 1330, 110, { font: '@1', fit: true }),
+    dzT('{to_line}', 110, 430, 1330, 54, { b: true }), dzT('{from_line}', 110, 500, 1330, 40, { c: '@soft' }),
+    { ...dzT('{message}', 110, 570, 1330, 40, { lh: 1.3, fit: true }), frame: true, h: 220, pad: 0 },
+    dzS('rect', 1500, 100, 880, 560, { r: 40, name: 'Amount box' }),
+    dzT('{amount}', 1500, 200, 880, 230, { al: 'center', c: '#ffffff', b: true, fit: true }),
+    dzT('{kind}', 1500, 460, 880, 54, { al: 'center', c: '#ffffff', b: true }),
+    dzT('{about}', 1500, 540, 880, 40, { al: 'center', c: '#ffffff', fit: true }),
+    dzS('rect', 1500, 700, 880, 130, { fill: 'none', stroke: '@soft', sw: 4, r: 16, name: 'Code box' }),
+    dzT('CODE', 1500, 712, 880, 26, { al: 'center', c: '@soft', b: true }), dzT('{code}', 1500, 748, 880, 66, { al: 'center', b: true, font: 'Courier Prime' }),
+    dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 110, 845, 2270, 40, { b: true }),
+    dzS('rect', 110, 915, 2270, 3, { fill: '@soft', name: 'Line' }),
+    dzT('TERMS AND CONDITIONS', 110, 932, 900, 22, { c: '@soft', b: true, ls: 2 }),
+    { ...dzT('{terms_line}', 110, 966, 2270, 22, { c: '@soft', lh: 1.3, fit: true }), frame: true, h: 130, pad: 0 }] },
+  light: { name: 'Light', theme: 'paper', make: () => [
+    dzS('rect', 0, 0, 900, 1169, { name: 'Side band' }),
+    { id: dzId(), t: 'image', logo: true, x: 80, y: 80, w: 220, h: 130, op: 1, rot: 0 },
+    dzT('{amount}', 60, 360, 780, 230, { al: 'center', c: '#ffffff', b: true, fit: true }),
+    dzT('{kind}', 60, 620, 780, 54, { al: 'center', c: '#ffffff', b: true }),
+    dzT('CODE', 60, 760, 780, 26, { al: 'center', c: '#ffffff', b: true }), dzT('{code}', 60, 795, 780, 70, { al: 'center', c: '#ffffff', b: true, font: 'Courier Prime' }),
+    dzT('{heading}', 980, 90, 1420, 100, { font: '@1', fit: true }),
+    dzT('{to_line}', 980, 220, 1420, 50, { b: true }), dzT('{from_line}', 980, 285, 1420, 38, { c: '@soft' }),
+    { ...dzT('{message}', 980, 345, 1420, 38, { lh: 1.3, fit: true }), frame: true, h: 220, pad: 0 },
+    dzT('{about}', 980, 585, 1420, 36, { c: '@soft', fit: true }),
+    dzT('Valid until {expires}  \u00b7  Redeem with {artist} only', 980, 650, 1420, 34, { b: true }),
+    dzS('rect', 980, 720, 1420, 3, { fill: '@soft', name: 'Line' }),
+    dzT('TERMS AND CONDITIONS', 980, 738, 900, 22, { c: '@soft', b: true, ls: 2 }),
+    { ...dzT('{terms}', 980, 772, 1420, 22, { c: '@soft', lh: 1.25, fit: true }), frame: true, h: 300, pad: 0 },
+    dzT('{studio}  \u00b7  {phone}  \u00b7  {instagram}', 980, 1100, 1420, 30, { c: '@soft' })] }
+};
 const DZ_LOY_FIELDS = [['heading', 'Heading (for the kind of reward)'], ['message', 'Message (for the kind of reward, with any personal message)'], ['note', 'Personal message (on its own)'], ['name', 'Their name'], ['reward', 'The reward'], ['reward_big', 'Reward, big (15% OFF)'], ['reward_sub', 'Under it (your next tattoo)'], ['alt', 'The product swap'],
   ['code', 'Reward code'], ['expires', 'Valid until'], ['artist', 'Your name (who redeems it)'], ['terms', 'Terms and conditions'], ['sent', 'Who they sent (when not anonymous)']];
 /* Two starting points for the reward card; every part can be changed in the design studio afterwards. */
@@ -526,7 +567,8 @@ function dzFill(doc, s) {
     tags: String(v.tags || '').split(',').map(t => t.trim().replace(/[^\p{L}\p{N}_]/gu, '')).filter(Boolean).map(t => '#' + t.toLowerCase()).join(' '),
     date: v.date ? new Date(v.date + 'T00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : '' };
   { const P = typeof dzPageFaces === 'function' ? dzPageFaces(doc) : ['f'], fc = dzFill.face || 'f'; map.page = fc === 'm' ? '#' : String(Math.max(1, P.indexOf(fc) + 1)); map.pages = String(P.length); }   /* the page being drawn (dzDraw sets it) */
-  { const L = dzFill.loy || (doc.kind === 'loycard' && typeof loySampleFields === 'function' ? loySampleFields(doc.loyk) : null); if (L) Object.assign(map, L); }   /* a reward card: that reward (or a sample while designing) */
+  { const L = dzFill.loy || (doc.kind === 'loycard' && typeof loySampleFields === 'function' ? loySampleFields(doc.loyk) : null); if (L) Object.assign(map, L); }
+  { const V = dzFill.vou || (doc.kind === 'voucard' && typeof vouSampleFields === 'function' ? vouSampleFields(doc.vouk) : null); if (V) Object.assign(map, V); }   /* a voucher card: that voucher (or a sample) */   /* a reward card: that reward (or a sample while designing) */
   return String(s || '').replace(/\{(\w+)\}/g, (m, k) => k in map ? map[k] : m);
 }
 const dzFontStr = (doc, l, px) => `${l.it ? 'italic ' : ''}${l.b ? 700 : 400} ${px}px "${dzFont(doc, l.font)}", Inter, sans-serif`;
@@ -2444,7 +2486,7 @@ async function dzPicker(opts = {}) {
     return dzPaper(w, h, p ? p[0] : 'Custom');
   };
   const o = document.createElement('div'); o.id = 'merge-dlg';
-  const kinds = Object.entries(DZ_KINDS).filter(([, v]) => (!st.piece || v.social) && !v.sketch && !v.loycard);
+  const kinds = Object.entries(DZ_KINDS).filter(([, v]) => (!st.piece || v.social) && !v.sketch && !v.loycard && !v.voucard);
   o.addEventListener('change', (e) => { if (!e.target.matches('[data-patwi]')) return; const v = parseFloat(e.target.value); if (v > 0) { st.pat.w = Math.min(1000, Math.max(5, v)); draw(); } });
   const draw = async () => {
     if (!st.kind) {
@@ -2453,7 +2495,17 @@ async function dzPicker(opts = {}) {
         ${st.piece ? '' : `<div class="np-sec">Print and more</div><div class="np-kinds">${kinds.filter(([, v]) => !v.social).map(kb).join('')}</div>`}
         <div class="np-sec">Social posts${st.piece ? '' : ' <span>show off a tattoo</span>'}</div><div class="np-kinds">${kinds.filter(([, v]) => v.social).map(kb).join('')}</div>
         ${!st.piece && typeof LOY_SLOTS !== 'undefined' && !wsDesign() ? `<div class="np-sec">Loyalty <span>a reward card, for one kind of reward</span></div>
-          <div class="np-kinds">${kb(['loycard', DZ_KINDS.loycard])}</div>` : ''}</div>`;
+          <div class="np-kinds">${kb(['loycard', DZ_KINDS.loycard])}</div>` : ''}
+        ${!st.piece && typeof VOU_KINDS !== 'undefined' && !wsDesign() ? `<div class="np-sec">Vouchers <span>a voucher card, for one kind of voucher</span></div>
+          <div class="np-kinds">${kb(['voucard', DZ_KINDS.voucard])}</div>` : ''}</div>`;
+      return;
+    }
+    if (st.kind === 'voucard') {   /* the kind first, then a template; its details stay where the template puts them */
+      st.vk ||= 'main'; st.vt ||= 'classic';
+      o.innerHTML = `<div class="card dz-pick dz-np"><div class="np-head"><button class="pm-btn" data-back aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>Back</button><b>Voucher card</b><button class="btn primary" data-vgo>Create</button></div>
+        <div class="np-sec">Kind of voucher</div><div class="ln-kinds" style="margin-bottom:12px">${VOU_SLOTS.map(([k, l]) => `<button class="chip ${st.vk === k ? 'on' : ''}" data-vk="${k}">${l}</button>`).join('')}</div>
+        <div class="np-sec">Template</div><div class="seg" style="margin-bottom:12px">${Object.entries(DZ_VOU_TPL).map(([k, t]) => `<button data-vtp="${k}" class="${st.vt === k ? 'on' : ''}">${t.name}</button>`).join('')}</div>
+        <p class="muted" style="font-size:12px;margin:0">The voucher\u2019s details stay where the template puts them: change their colours, and add stickers, pictures and backgrounds. Export it from Designs, then import it in Vouchers \u203a Card.</p></div>`;
       return;
     }
     if (st.kind === 'loycard') {   /* the kind first, then a template; its details stay where the template puts them */
@@ -2508,6 +2560,8 @@ async function dzPicker(opts = {}) {
     if (d('two') != null) { st.two = d('two') === '1'; return draw(); }
     if (DZ_KINDS[st.kind]?.pattern && patOptsAct(st.pat, t)) return draw();
     if (t.closest('[data-back]')) { st.kind = null; return draw(); }
+    if (st.kind === 'voucard') { if (d('vk')) { st.vk = d('vk'); return draw(); } if (d('vtp')) { st.vt = d('vtp'); return draw(); }
+      if (t.closest('[data-vgo]')) { const id = await vouCardNew(st.vk, st.vt); o.remove(); location.hash = 'design/' + id; } return; }
     if (st.kind === 'loycard') { if (d('lk')) { st.lk = d('lk'); return draw(); } if (d('ltp')) { st.lt = d('ltp'); return draw(); }
       if (t.closest('[data-lgo]')) { const id = await loyCardNew(st.lk, st.lt); o.remove(); location.hash = 'design/' + id; } return; }
     if (d('tdel')) { e.stopPropagation();
@@ -3244,6 +3298,7 @@ DZ.edit = async (id) => {
     closePop();
     p.innerHTML = a === 'fields' ? FF_TYPES.map(([v, n]) => mi(`data-ffadd="${v}"`, 'frametext', n)).join('') : a === 'text' ? mi('data-add="text"', 'text', 'Text') + mi('data-add="frame"', 'frametext', 'Frame text') + mi('data-add="heading"', 'heading', 'Heading')
         + (doc.kind === 'loycard' ? `<div class="gh">Reward</div>` + DZ_LOY_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('') : '')
+        + (doc.kind === 'voucard' ? `<div class="gh">Voucher</div>` + DZ_VOU_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('') : '')
         + `<div class="gh">Studio info</div>` + DZ_FIELDS.map(([f, n]) => mi(`data-field="${f}"`, 'field', n)).join('')
       : a === 'image' ? mi('data-pic="device"', 'device', 'From this device') + mi('data-pic="pf"', 'portfolio', 'From portfolio') + mi('data-pic="refs"', 'refs', 'From references') + mi('data-rail="assets"', 'asset', 'From assets') + mi('data-add="logo"', 'logo', 'Studio logo')
       : `<div class="sg">${DZ_SHAPES.map(([v, n]) => `<button class="dz-ib tt-icb" data-shape="${v}" data-tip="${n}" aria-label="${n}"><svg viewBox="0 0 24 24">${DZ_UI['s_' + v]}</svg><span>${n.replace('Rounded square', 'Rounded').replace('Speech bubble', 'Bubble')}</span></button>`).join('')}</div>` + mi('data-qradd', 'qr', 'QR code') + mi('data-tbladd', 'table', 'Table') + mi('data-rail="assets"', 'asset', 'Assets').replace('class="mi"', 'class="mi as"');
@@ -3462,6 +3517,7 @@ DZ.edit = async (id) => {
           <div class="lbl">Background box</div>${swatches('tbg', l.tbg, true)}${l.tbg && l.tbg !== 'none' ? slider('tbp', 'Padding', 0, Math.round(l.size * 2), 1, l.tbp ?? Math.round((l._px || l.size) * 0.3)) + slider('tbr', 'Corner rounding', 0, Math.round(l.size * 2), 1, l.tbr ?? 0) : ''}`,
           { fold: true, hint: [l.tsc && l.tsc !== 'none' && l.tsw ? 'outline' : '', l.shc && l.shc !== 'none' ? 'shadow' : '', l.tbg && l.tbg !== 'none' ? 'box' : ''].filter(Boolean).join(' · ') || 'Plain' })}
         ${doc.kind === 'loycard' ? fsec('Reward', `<div class="dz-fields">${DZ_LOY_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true, open: true, hint: 'code, terms…' }) : ''}
+        ${doc.kind === 'voucard' ? fsec('Voucher', `<div class="dz-fields">${DZ_VOU_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true, open: true, hint: 'amount, code, terms…' }) : ''}
         ${fsec('Studio info', `<div class="dz-fields">${DZ_FIELDS.map(([f, n]) => `<button data-ins="${f}">+ ${n}</button>`).join('')}</div>`, { fold: true, hint: 'name, phone…' })}`
       : l.t === 'shape' ? fsec(l.shape === 'line' ? 'Line colour' : 'Fill', fillUI(l, 'fill', true), { fold: true, open: true, hint: { solid: dzCwName(l.fill), grad: 'gradient', tex: 'texture' }[l.fm || 'solid'] })
         + (['rect', undefined, 'poly', 'star', 'ring', 'cross', 'arrow'].includes(l.shape) ? fsec('Shape', `
@@ -6213,7 +6269,7 @@ DZ.edit = async (id) => {
   side.addEventListener('change', sideChange);
 
   /* Top bar */
-  $('#dz-back').onclick = async () => { await flush(); location.hash = doc.kind === 'sketch' ? 'sketches' : doc.kind === 'loycard' ? 'loyalty' : doc.kind === 'form' ? 'forms' : 'designs'; };
+  $('#dz-back').onclick = async () => { await flush(); location.hash = doc.kind === 'sketch' ? 'sketches' : doc.kind === 'loycard' ? 'loyalty' : doc.kind === 'voucard' ? 'vouchers' : doc.kind === 'form' ? 'forms' : 'designs'; };
   $('#dz-tpl').onclick = async () => {
     const n = await askText('Name for this template:', name); if (!n?.trim()) return;
     const tdoc = JSON.parse(JSON.stringify(doc));
