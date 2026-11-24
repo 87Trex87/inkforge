@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 539;
+const APP_BUILD = 540;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -7048,19 +7048,33 @@ const invOrderSel = (id) => `<label class="inv-ord" data-tip="The order you coun
 async function invArrange(after) {
   let list = invOrder(await DB.all('SELECT id, name, category, supplier, qty, min_qty, sort FROM inventory_items WHERE active = 1'), 'custom');
   if (!list.length) return toast('No active stock items yet.');
-  const o = document.createElement('div'); o.id = 'merge-dlg';
-  const draw = () => { o.innerHTML = `<div class="card inv-arr"><h2 style="margin-top:0">Count order</h2>
-      <p class="muted" style="margin-top:0;font-size:13px">Drag ⠿ (or use the arrows) to put items in the order you walk the shop; swipe anywhere else to scroll. The stock take and the printed sheet follow it.</p>
-      <div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap"><span class="muted" style="font-size:12px">Start from:</span>${INV_ORDERS.filter(x => x[0] !== 'custom').map(([v, l]) => `<button class="btn small" data-ias="${v}">${l}</button>`).join('')}</div>
-      <div class="inv-arr-l" id="inv-arr-l">${list.map((r, i) => `<div class="inv-arr-it" data-io="${i}"><span class="grip">⠿</span><span class="n">${i + 1}</span><span class="nm">${esc(r.name)}<small>${esc(r.category || 'Uncategorised')}</small></span>
-        <span class="mv"><button data-iomv="${i}:-1" aria-label="Move up">↑</button><button data-iomv="${i}:1" aria-label="Move down">↓</button></span></div>`).join('')}</div>
-      <div class="row" style="margin-top:10px"><button class="btn" data-iax>Cancel</button><button class="btn primary" data-iaok style="flex:1">Save order</button></div></div>`; };
+  const o = document.createElement('div'); o.id = 'merge-dlg'; let hl = null, hlT = 0;
+  /* The window is built once; only the rows redraw, so the list keeps its scroll while you drag and move things. */
+  o.innerHTML = `<div class="card inv-arr"><h2 style="margin-top:0">Count order</h2>
+      <p class="muted" style="margin-top:0;font-size:13px">Drag \u283f to put items in the order you walk the shop (hold it near the top or bottom and the list scrolls). Or use \u2912 \u2191 \u2193 \u2913, or tap a number to send that item to a place. Swipe anywhere else to scroll.</p>
+      <div class="row" style="gap:6px;margin-bottom:6px;flex-wrap:wrap"><span class="muted" style="font-size:12px">Start from:</span>${INV_ORDERS.filter(x => x[0] !== 'custom').map(([v, l]) => `<button class="btn small" data-ias="${v}">${l}</button>`).join('')}
+        <button class="btn small" data-iagrp data-tip="Keeps your order, but puts each category's items together (in the order the categories first come)">Keep categories together</button></div>
+      <label class="inv-arr-find"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input class="in" type="search" placeholder="Find an item (jumps to it)" data-iafind autocomplete="off"></label>
+      <div class="inv-arr-l" id="inv-arr-l"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" data-iax>Cancel</button><button class="btn primary" data-iaok style="flex:1">Save order</button></div></div>`;
+  const L = o.querySelector('#inv-arr-l');
+  const draw = () => { L.innerHTML = list.map((r, i) => `<div class="inv-arr-it ${r.id === hl ? 'hl' : ''}" data-io="${i}"><span class="grip" aria-label="Drag">\u283f</span><button class="n" data-iopos="${i}" data-tip="Send it to a place">${i + 1}</button><span class="nm">${esc(r.name)}<small>${esc(r.category || 'Uncategorised')}</small></span>
+      <span class="mv"><button data-iomv="${i}:top" aria-label="To the top" data-tip="To the top" ${i ? '' : 'disabled'}>\u2912</button><button data-iomv="${i}:-1" aria-label="Move up" ${i ? '' : 'disabled'}>\u2191</button><button data-iomv="${i}:1" aria-label="Move down" ${i < list.length - 1 ? '' : 'disabled'}>\u2193</button><button data-iomv="${i}:end" aria-label="To the bottom" data-tip="To the bottom" ${i < list.length - 1 ? '' : 'disabled'}>\u2913</button></span></div>`).join(''); };
+  /* move an item to place j, mark it, and keep it in view */
+  const place = (i, j, show = true) => { j = Math.max(0, Math.min(list.length - 1, j)); if (i === j) return; const [x] = list.splice(i, 1); list.splice(j, 0, x); mark(x.id, show); };
+  const mark = (id, show) => { hl = id; draw(); clearTimeout(hlT); hlT = setTimeout(() => { hl = null; L.querySelector('.hl')?.classList.remove('hl'); }, 1400);
+    if (show) L.querySelector('.hl')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
   document.body.appendChild(o); draw();
-  dzDragOrder(o, 'io', (i, j) => { const [x] = list.splice(i, 1); list.splice(j, 0, x); draw(); }, () => {}, null, '.grip');   /* only the ⠿ drags; swipe anywhere else to scroll */
+  dzDragOrder(o, 'io', (i, j) => { const [x] = list.splice(i, 1); list.splice(j, 0, x); hl = x.id; draw(); }, () => { setTimeout(() => { hl = null; draw(); }, 600); }, null, '.grip');   /* only the \u283f drags; swipe anywhere else to scroll */
+  o.addEventListener('input', (e) => { if (e.target.dataset.iafind == null) return; const q = e.target.value.trim().toLowerCase(); if (!q) return;
+    const r = list.find(x => x.name.toLowerCase().includes(q)) || list.find(x => (x.category || '').toLowerCase().includes(q)); if (!r) return;
+    hl = r.id; draw(); L.querySelector('.hl')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
   o.addEventListener('click', async (e) => { const t = e.target;
     if (t === o || t.closest('[data-iax]')) return o.remove();
-    const s0 = t.closest('[data-ias]'); if (s0) { list = invOrder(list, s0.dataset.ias); return draw(); }
-    const mv = t.closest('[data-iomv]'); if (mv) { const [i, d] = mv.dataset.iomv.split(':').map(Number), j = i + d; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; return draw(); }
+    const s0 = t.closest('[data-ias]'); if (s0) { list = invOrder(list, s0.dataset.ias); L.scrollTop = 0; return draw(); }
+    if (t.closest('[data-iagrp]')) { const firsts = [...new Set(list.map(r => r.category || 'Uncategorised'))]; list = firsts.flatMap(c => list.filter(r => (r.category || 'Uncategorised') === c)); toast('Categories kept together, in your order.', 1600); return draw(); }
+    const mv = t.closest('[data-iomv]'); if (mv) { const [i0, dd] = mv.dataset.iomv.split(':'), i = +i0; return place(i, dd === 'top' ? 0 : dd === 'end' ? list.length - 1 : i + +dd); }
+    const ps = t.closest('[data-iopos]'); if (ps) { const i = +ps.dataset.iopos, v = await askText(`Send "${list[i].name}" to place (1 to ${list.length}):`, String(i + 1)); const n = parseInt(v, 10); if (!(n >= 1)) return; return place(i, n - 1); }
     if (!t.closest('[data-iaok]')) return;
     await DB.tx(list.map((r, i) => ({ sql: 'UPDATE inventory_items SET sort = ? WHERE id = ?', params: [i, r.id] }))); await Settings.set('inv_order', 'custom');
     o.remove(); toast('Count order saved.', 1600); after?.(); });
@@ -10905,6 +10919,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 540, when: '2026-11-27T13:00', added: [
+    'Inventory › Count order: hold a dragged item near the top or bottom and the list scrolls by itself, so one drag takes it all the way.',
+    'Count order: buttons to send an item to the top or bottom, tap its number to send it to a place, Find to jump to an item, and Keep categories together.'
+  ] },
   { build: 539, when: '2026-11-27T09:00', added: [
     'Inventory: in Count order, only the ⠿ handle drags an item, so you can swipe the list to scroll on a tablet.'
   ] },

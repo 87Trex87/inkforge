@@ -34,11 +34,20 @@ const DZ_CONV = ['page', 'form', 'flyer', 'card', 'voucher', 'post', 'portrait',
 let DZ_CLIP = null;
 /* Drag to reorder: items marked data-<attr>="index" inside root. A tap still taps; past a small move it is a drag, and
    move(from, to) runs each time it passes over another item (start() once, done() at the end). */
-function dzDragOrder(root, attr, move, done, start, handle) { let d = null;   /* handle: only a press on it starts a drag (the rest of the row scrolls) */
-  root.addEventListener('pointerdown', (e) => { const b = e.target.closest(`[data-${attr}]`); if (!b || b.dataset[attr] === '' || (handle && !e.target.closest(handle))) return; d = { i: +b.dataset[attr], x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; });
-  addEventListener('pointermove', (e) => { if (!d || e.pointerId !== d.id) return; if (!d.moved) { if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) return; d.moved = true; start?.(); }
-    e.preventDefault(); const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(`[data-${attr}]`); if (!over || !root.contains(over) || over.dataset[attr] === '') return; const j = +over.dataset[attr]; if (j !== d.i) { move(d.i, j); d.i = j; } });
-  addEventListener('pointerup', (e) => { if (!d || e.pointerId !== d.id) return; const m = d.moved; d = null; if (m) { const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; root.addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => root.removeEventListener('click', eat, true), 350); done?.(); } }); }   /* only the drag's own click is eaten, not the next tap */
+function dzDragOrder(root, attr, move, done, start, handle) { let d = null, raf = 0;   /* handle: only a press on it starts a drag (the rest of the row scrolls) */
+  /* Held near the top or bottom edge of the scrolling list, it scrolls on its own (faster the closer to the edge), and
+     the item keeps moving with it, so a long list needs one drag, not many. */
+  const scroller = (el) => { for (let p = el?.parentElement; p && p !== document.body; p = p.parentElement) { const s = getComputedStyle(p).overflowY; if ((s === 'auto' || s === 'scroll') && p.scrollHeight > p.clientHeight + 2) return p; } return null; };
+  const over = () => { const o = document.elementFromPoint(d.cx, d.cy)?.closest(`[data-${attr}]`); if (!o || !root.contains(o) || o.dataset[attr] === '') return; const j = +o.dataset[attr]; if (j !== d.i) { move(d.i, j); d.i = j; } };
+  const loop = () => { raf = 0; if (!d?.moved || !d.sc?.isConnected) return; const r = d.sc.getBoundingClientRect(), E = Math.min(64, r.height / 4); let v = 0;
+    if (d.cy < r.top + E) v = -Math.ceil(Math.min(1.6, (r.top + E - d.cy) / E) * 16); else if (d.cy > r.bottom - E) v = Math.ceil(Math.min(1.6, (d.cy - r.bottom + E) / E) * 16);
+    if (!v) return; const was = d.sc.scrollTop; d.sc.scrollTop += v; if (d.sc.scrollTop !== was) over(); raf = requestAnimationFrame(loop); };
+  root.addEventListener('pointerdown', (e) => { const b = e.target.closest(`[data-${attr}]`); if (!b || b.dataset[attr] === '' || (handle && !e.target.closest(handle))) return;
+    d = { i: +b.dataset[attr], x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, moved: false, id: e.pointerId, sc: scroller(b) }; });
+  addEventListener('pointermove', (e) => { if (!d || e.pointerId !== d.id) return; d.cx = e.clientX; d.cy = e.clientY; if (!d.moved) { if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) return; d.moved = true; start?.(); }
+    e.preventDefault(); over(); if (!raf) raf = requestAnimationFrame(loop); });
+  addEventListener('pointerup', (e) => { if (!d || e.pointerId !== d.id) return; cancelAnimationFrame(raf); raf = 0; const m = d.moved; d = null; if (m) { const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; root.addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => root.removeEventListener('click', eat, true), 350); done?.(); } });
+  addEventListener('pointercancel', (e) => { if (d && e.pointerId === d.id) { cancelAnimationFrame(raf); raf = 0; d = null; } }); }   /* only the drag's own click is eaten, not the next tap */
 const DZ_KIND_IC = { note: '<path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5"/>', form: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>', page: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/>',
   pattern: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="3" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/>',
   challenge: '<path d="M6 3h12v5a6 6 0 0 1-12 0z"/><path d="M12 14v4M8 21h8"/>', fold: '<path d="M3 5l6 2 6-2 6 2v12l-6-2-6 2-6-2z"/><path d="M9 7v12M15 5v12"/>', voucher: '<rect x="2" y="7" width="20" height="10" rx="2"/><path d="M8 7v10" stroke-dasharray="2 2"/><path d="M13 12h5"/>',
