@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 549;
+const APP_BUILD = 550;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -2279,6 +2279,49 @@ const VIEWS = {
       draw();
     }
   },
+  'loy-guide': {
+    title: () => 'Program guide',
+    render: () => '<form id="lgd-form" class="card pro" autocomplete="off"></form>',
+    async mount() {
+      const f = $('#lgd-form'), c = Loy.cfg(), g = loyGuideCfg();
+      const keep = () => Settings.set('loy_guide', JSON.stringify(g));
+      const draw = () => { const P = loyGuideParts(c), off = new Set(g.off);
+        f.innerHTML = `<div class="form-foot row"><button type="button" class="btn" id="lgd-back">Back</button><button type="button" class="btn" id="lgd-print">Print / PDF</button><button type="button" class="btn" id="lgd-img">Save images</button><button type="button" class="btn primary" id="lgd-send" style="flex:1">Send</button></div>
+          ${fsec('The guide<small>For clients with questions about their rewards: the program in plain words, longer than the card has room for. It follows your program\u2019s settings.</small>', `<div class="loy-prev lgd-prev" id="lgd-prev"></div>`)}
+          ${P.map(p => { const ed = g.ed[p.k], cur = ed && !p.fixed ? { ...p, ...ed } : p, out = off.has(p.k);
+            return fsec(`${esc(p.t)}${out ? ' <small>Left out</small>' : ed && !p.fixed ? ' <small>Your wording</small>' : ''}`, `${p.fixed ? `<ul class="loy-terms">${Loy.terms(c).map(t => `<li>${esc(t)}</li>`).join('')}</ul><p class="muted loy-note">Change these in Program \u203a Terms.</p>`
+              : `<label class="field"><span>Heading</span><input class="in" data-gt="${p.k}" value="${esc(cur.t)}" ${out ? 'disabled' : ''}></label>
+                <label class="field"><span>Text ${help('Start a line with \u2022 and a space for a bullet point.')}</span><textarea class="in" rows="${Math.min(9, String(cur.b).split('\n').length + 2)}" data-gb="${p.k}" ${out ? 'disabled' : ''}>${esc(cur.b)}</textarea></label>`}
+              <div class="row" style="gap:8px;flex-wrap:wrap">${ed && !p.fixed ? `<button type="button" class="btn small" data-greset="${p.k}">Back to the program\u2019s wording</button>` : ''}<button type="button" class="btn small" data-goff="${p.k}">${out ? 'Put it back' : 'Leave it out'}</button></div>`, { fold: true, open: !!ed || out ? false : p.k === 'intro' }); }).join('')}
+          ${fsec('Your own<small>Anything else to explain: a definition, a rule of yours, a question clients ask</small>', `${g.own.map(o => `<div class="lgd-own"><label class="field"><span>Heading</span><input class="in" data-got="${o.id}" value="${esc(o.t || '')}" placeholder="e.g. What counts as a finished tattoo?"></label>
+              <label class="field"><span>Text</span><textarea class="in" rows="3" data-gob="${o.id}">${esc(o.b || '')}</textarea></label><button type="button" class="btn small" data-gdel="${o.id}">Remove</button></div>`).join('')}
+            <button type="button" class="btn small" id="lgd-add">+ Add a definition</button>`)}`;
+        prev(); };
+      let busy = 0, urls = [];
+      const prev = async () => { const n = ++busy, pages = await loyGuidePages(loyGuideFinal(c, g)); if (n !== busy) return;
+        urls.forEach(u => URL.revokeObjectURL(u)); urls = await Promise.all(pages.map(async p => URL.createObjectURL(await new Promise(r => p.cv.toBlob(r, 'image/png')))));
+        const el = $('#lgd-prev'); if (el) el.innerHTML = urls.map((u, i) => `<img src="${u}" alt="Page ${i + 1}">`).join(''); };
+      let t0 = 0; const soon = () => { clearTimeout(t0); t0 = setTimeout(() => { keep(); prev(); }, 350); };
+      const baseOf = (k) => loyGuideParts(c).find(p => p.k === k);
+      f.addEventListener('input', (e) => { const d = e.target.dataset;
+        if (d.gt || d.gb) { const k = d.gt || d.gb, b0 = baseOf(k); g.ed[k] = { t: g.ed[k]?.t ?? b0.t, b: g.ed[k]?.b ?? b0.b, [d.gt ? 't' : 'b']: e.target.value }; return soon(); }
+        if (d.got || d.gob) { const o = g.own.find(x => x.id === (d.got || d.gob)); if (o) o[d.got ? 't' : 'b'] = e.target.value; return soon(); } });
+      f.addEventListener('click', async (e) => { const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+        if (t.closest('#lgd-back')) { keep(); location.hash = 'loyalty'; return; }
+        if (d('greset')) { if (!await ask('Go back to the program\u2019s wording for this part?\n\nYour own wording for it is lost.')) return; delete g.ed[d('greset')]; await keep(); return draw(); }
+        if (d('goff')) { const k = d('goff'); g.off = g.off.includes(k) ? g.off.filter(x => x !== k) : [...g.off, k]; await keep(); return draw(); }
+        if (t.closest('#lgd-add')) { g.own.push({ id: Date.now().toString(36), t: '', b: '' }); await keep(); draw(); f.querySelector(`[data-got="${g.own.at(-1).id}"]`)?.focus(); return; }
+        if (d('gdel')) { const o = g.own.find(x => x.id === d('gdel')); if ((o?.t || o?.b) && !await ask('Remove this definition?')) return; g.own = g.own.filter(x => x.id !== d('gdel')); await keep(); return draw(); }
+        const act = t.closest('#lgd-print, #lgd-img, #lgd-send')?.id; if (!act) return;
+        await keep(); const pages = await loyGuidePages(loyGuideFinal(c, g));
+        if (act === 'lgd-print') return printCanvas(...pages.map(p => p.cv));
+        const files = await Promise.all(pages.map(async (p) => new File([await new Promise(r => p.cv.toBlob(r, 'image/png'))], p.name, { type: 'image/png' })));
+        try { if (act === 'lgd-send' && navigator.canShare?.({ files })) await navigator.share({ files, title: 'Our rewards, explained' });
+          else { await saveFiles(files); if (act === 'lgd-send') toast('Saved. Send the pictures, or Print / PDF to send it as a PDF.', 3500); } }
+        catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); } });
+      draw();
+    }
+  },
   loyalty: {
     title: () => 'Loyalty',
     render: () => `<div class="seg loy-tabs" id="loy-tabs">${[['rewards', 'Rewards'], ['program', 'Program']].map(([k, l]) => `<button data-lt0="${k}" class="${LOYV.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="loy-view"></div>`,
@@ -2371,7 +2414,9 @@ const VIEWS = {
               <div class="lbl">Your own</div>
               ${(T.own || []).map((t, i) => `<div class="row loy-own"><input class="in" data-lown="${i}" value="${esc(t)}" placeholder="e.g. Not valid with other offers."><button class="mini del" data-lowndel="${i}" aria-label="Remove" data-tip="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>`).join('')}
               ${(() => { const n = loyOwnLines(T.own), mx = loyOwnMax(c); return `<p class="muted loy-note">Your own terms use ${n} of the ${mx} line${mx === 1 ? '' : 's'} left on the reward card. Untick a usual term to free up more.</p>${n < mx ? '<button class="btn small" id="loy-ownadd" style="margin-top:8px">+ Add your own</button>' : ''}`; })()}
-              <p class="muted loy-note">They go on the reward card (the {terms} field) and can be added to the message.</p></div>` : ''}
+              <p class="muted loy-note">They go on the reward card (the {terms} field) and can be added to the message.</p></div>
+            <div class="card loy-form"><div class="lbl">Program guide ${help('For clients with questions: your program explained in plain words, with stacking worked out in numbers, product swaps and the full terms. Reword any part, leave parts out or add your own, then print it, save a PDF or send it.')}</div>
+              <p class="muted loy-note" style="margin-top:0">The whole program in plain words, for clients who want more than the card can say.</p><button class="btn" id="loy-guide">Open the program guide</button></div>` : ''}
           ${LOYV.ptab === 'message' ? '<div id="loy-msgtab"></div>' : ''}`;
         if (LOYV.ptab === 'message') loyMsgTab($('#loy-msgtab'), c);
       };
@@ -2406,6 +2451,7 @@ const VIEWS = {
         const b = t.closest('[data-lk]');
         if (b) { c[b.dataset.lk] = b.dataset.lv; keep(); return draw(); }
         if (e.target.closest('#loy-exp')) return loyExport();
+        if (e.target.closest('#loy-guide')) { location.hash = 'loy-guide'; return; }
         if (e.target.closest('#loy-imp')) { if (await loyImport()) { c = Loy.cfg(); inv = await DB.all('SELECT id, name, qty FROM inventory_items WHERE active = 1 ORDER BY name COLLATE NOCASE'); draw(); } return; }
         if (e.target.closest('#loy-on')) { await Settings.set('loy_on', '1'); toast('Loyalty program on.', 1600); draw(); } });
       el.addEventListener('input', (e) => { if (e.target.dataset.lown != null) { const i = +e.target.dataset.lown, was = c.terms.own[i] || ''; c.terms.own[i] = e.target.value;
@@ -6225,7 +6271,7 @@ const LOY_FILE_V = 1;   /* bump when the file gains something new; the import ke
 async function loyExportData() { const c = Loy.cfg(), ids = [...new Set([c.item, c.altItem, ...(c.tiers || []).map(t => t.id)].map(Number).filter(Boolean))];
   const products = ids.length ? await DB.all(`SELECT id, name, category, unit, min_qty, supplier, cost, notes, step, pack, tag, tag_color FROM inventory_items WHERE id IN (${ids.map(() => '?').join(', ')})`, ids) : [];
   const cards = {}; for (const [k] of LOY_SLOTS) { const id = await loyOwnDes(k); if (id) cards[k] = await dzPackOne(id); }
-  return { inkforge: 'loyalty', v: LOY_FILE_V, at: new Date().toISOString(), cfg: c, msg: loyMsgCfg(), bd_days: Settings.get('bd_days', ''), products, cards }; }
+  return { inkforge: 'loyalty', v: LOY_FILE_V, at: new Date().toISOString(), cfg: c, msg: loyMsgCfg(), guide: loyGuideCfg(), bd_days: Settings.get('bd_days', ''), products, cards }; }
 async function loyExport() { const out = await loyExportData();
   const nm = `loyalty-program-${(Settings.get('studio_name') || Settings.get('artist_name') || 'studio').replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inkloyalty`;
   await xSave(new File([JSON.stringify(out)], nm, { type: 'application/json' }), 'Loyalty program', 'Saved ' + nm); }
@@ -6237,7 +6283,7 @@ async function loyImport(P0) { let P = P0 || null;   /* P0: the file's contents,
   if (+P.v > LOY_FILE_V) { toast('That file is from a newer InkForge. Update the app, then import it.', 3500); return false; }
   const cards = Object.entries(P.cards || {}).filter(([k, e]) => LOY_SLOTS.some(x => x[0] === k) && e?.doc && !loyMissing(JSON.parse(e.doc)).length), prods = P.products || [];
   const newP = []; for (const p of prods) if (!await DB.one('SELECT id FROM inventory_items WHERE lower(name) = lower(?)', [p.name])) newP.push(p.name);
-  if (!await ask(`Use this loyalty program?\n\n${Loy.sum({ ...LOY_DEF, ...P.cfg })}\n\nIt replaces your program\u2019s settings, terms and message wording${cards.length ? `, with ${cards.length} reward card design${cards.length === 1 ? '' : 's'}` : ''}.`
+  if (!await ask(`Use this loyalty program?\n\n${Loy.sum({ ...LOY_DEF, ...P.cfg })}\n\nIt replaces your program\u2019s settings, terms, message wording and guide${cards.length ? `, with ${cards.length} reward card design${cards.length === 1 ? '' : 's'}` : ''}.`
     + `${newP.length ? `\n\nAdded to Inventory with none in stock: ${newP.join(', ')}.` : ''}\n\nRewards already out keep the rules they were given under.`)) return false;
   const pmap = {};
   for (const p of prods) { const have = await DB.one('SELECT id FROM inventory_items WHERE lower(name) = lower(?)', [p.name]);
@@ -6250,7 +6296,7 @@ async function loyImport(P0) { let P = P0 || null;   /* P0: the file's contents,
   c.tiers = (c.tiers || []).map(t => ({ ...t, id: pmap[+t.id] || null })).filter(t => t.id);   /* the products for several rewards, as this workspace's items */
   for (const [k] of LOY_SLOTS) await Settings.set(loyDesKey(k), '');
   for (const [k, e] of cards) { const nid = await dzUnpackOne(e); await Settings.set(loyDesKey(k), String(nid)); }
-  await Loy.save(c); await Settings.set('loy_msg', JSON.stringify(P.msg || {}));
+  await Loy.save(c); await Settings.set('loy_msg', JSON.stringify(P.msg || {})); await Settings.set('loy_guide', JSON.stringify(P.guide || {}));
   if (P.bd_days !== undefined && P.bd_days !== '') await Settings.set('bd_days', String(P.bd_days));
   toast('Loyalty program imported.', 2200); return true; }
 /* A reward card started in the design studio: for one kind of reward, from a template; not used until it's picked
@@ -6335,6 +6381,59 @@ function loyTierPick(tiers, have) { return new Promise((res) => { const o = docu
     <button class="btn" data-tx style="width:100%;margin-top:10px">Cancel</button></div>`;
   document.body.appendChild(o);
   o.addEventListener('click', (e) => { const b = e.target.closest('[data-tn]'); if (b && !b.disabled) { o.remove(); return res(tiers.find(t => t.n === +b.dataset.tn)); } if (e.target.closest('[data-tx]') || e.target === o) { o.remove(); res(null); } }); }); }
+/* ---------- Loyalty: the program guide ----------
+   A plain-words guide to the program, longer than the card has room for: how rewards are earned, what they're worth,
+   stacking with worked numbers, product swaps, passing on, other rewards and the full terms. Written from the program's
+   settings; each part can be reworded or left out, and you can add your own. Kept in Settings 'loy_guide':
+   { ed: { key: { t, b } }, off: [keys], own: [{ id, t, b }] }. Lines starting with '\u2022 ' print as bullet points. */
+const loyGuideCfg = () => { let g = {}; try { g = JSON.parse(Settings.get('loy_guide') || '{}') || {}; } catch {} return { ed: g.ed || {}, off: g.off || [], own: g.own || [] }; };
+function loyGuideParts(c) {
+  const studio = Settings.get('studio_name') || Settings.get('artist_name') || 'We', v = +c.value || 0, out = [], ex = 2000;
+  out.push({ k: 'intro', t: 'How our rewards work', b: `${studio === 'We' ? 'We run' : studio + ' runs'} a loyalty program to say thank you. This guide explains how rewards are earned, what they\u2019re worth and how to use them. If anything is unclear, just ask.` });
+  out.push({ k: 'earn', t: 'Earning a reward', b: c.type === 'ref'
+    ? `When someone you recommend gets tattooed with us, you earn a reward${c.scope === 'every' ? ': one for each tattoo they get' : ' once they\u2019ve had their first tattoo. Later tattoos they get don\u2019t earn more'}.${+c.min ? ` Their tattoo needs to be ${money(+c.min)} or more to count.` : ''} A reward is earned once their tattoo is finished, not when they book.`
+    : `You earn a reward for every ${money(+c.every)} you spend on tattoos${+c.min ? ` (tattoos of ${money(+c.min)} or more)` : ''}. ${c.carry === 'carry' ? 'Anything over that carries forward toward your next reward.' : 'The count starts again from zero after each reward.'}` });
+  out.push({ k: 'reward', t: 'What a reward is worth', b: c.kind === 'item' ? `Each reward is a free ${c.itemName || 'product'}, while stock lasts.`
+    : `Each reward is ${Loy.label(c)} your next tattoo. It comes off the price of the tattoo itself${c.kind === 'amt' ? '; if the tattoo costs less than the reward, the difference isn\u2019t paid out' : ''}. Rewards have no cash value.` });
+  out.push({ k: 'valid', t: 'How long it lasts', b: +c.months ? `A reward is valid for ${+c.months} month${+c.months === 1 ? '' : 's'} from the day you get it. The date it runs out is on your card. Once it has run out, it can\u2019t be used or extended.` : 'Rewards don\u2019t run out: use them whenever you\u2019re ready.' });
+  if (c.kind === 'pct' && c.stack) { const n = Math.max(2, +c.maxStack || 2), k = Math.min(3, n);
+    out.push({ k: 'stack', t: 'Using more than one at a time', b: `You can use up to ${n} rewards together on one tattoo. The first gives the full ${v}%, the second adds half of that (${v / 2}%), and each one after that adds a quarter (${v / 4}%):\n`
+      + Array.from({ length: n }, (_, i) => `\u2022 ${i + 1} reward${i ? 's' : ''}: ${Loy.stackPct(v, i + 1, n)}% off`).join('\n')
+      + `\nFor example, on a ${money(ex)} tattoo, ${k} rewards together take off ${money(Math.round(ex * Loy.stackPct(v, k, n)) / 100)}. Any you don\u2019t use stay on your account for next time.` }); }
+  else if (c.kind !== 'item') out.push({ k: 'stack', t: 'Using more than one', b: 'One reward can be used per tattoo. If you have more than one, the others are kept for your next tattoos.' });
+  const tiers = Loy.tiersOf(c);
+  if (tiers.length > 1) out.push({ k: 'swap', t: 'Swapping for a product', b: `Instead of the discount, you can swap rewards for a product, while stock lasts. Handing in more rewards together gets a bigger product:\n`
+    + tiers.map(t => `\u2022 ${t.n} reward${t.n === 1 ? '' : 's'}: ${t.name || 'a product'}`).join('\n') + '\nThe rewards you hand in are used up.' });
+  else if (c.kind !== 'item' && c.alt && c.altItem) out.push({ k: 'swap', t: 'Swapping for a product', b: `Instead of the discount, you can choose a free ${c.altName || 'product'}, while stock lasts. The reward is then used up.` });
+  out.push({ k: 'pass', t: 'Passing it on', b: c.pass ? 'You can pass a reward on to a friend or family member. Just tell us who should have it and we\u2019ll move it to them.' : 'Rewards are personal: only the person who earned one can use it.' });
+  out.push({ k: 'other', t: 'Other rewards', b: [c.thanks !== false && '\u2022 After a tattoo, you may get a thank-you reward with your receipt.', c.bday !== false && '\u2022 Around your birthday, you may get a birthday reward.',
+    loyArt('\u2022 Now and then, {artist} may give a reward as a gift, for a holiday, or to make up for something.'), '\u2022 Some rewards are made just for you, with their own amount. Those can\u2019t be used together with any other reward.'].filter(Boolean).join('\n') });
+  out.push({ k: 'use', t: 'Using a reward', b: loyArt('Mention your reward when you book, and show your code or card when you pay. Rewards are offered personally by {artist}, so they can only be used for work done by {artist}.') });
+  out.push({ k: 'terms', t: 'Terms and conditions', b: Loy.terms(c).map(t => '\u2022 ' + t).join('\n'), fixed: true });
+  return out; }
+/* The parts as they print: your wording over the program's, without the ones left out, with your own before the terms. */
+function loyGuideFinal(c, g = loyGuideCfg()) { const P = loyGuideParts(c), off = new Set(g.off);
+  const mine = P.filter(p => !off.has(p.k)).map(p => g.ed[p.k] && !p.fixed ? { ...p, ...g.ed[p.k] } : p), own = g.own.filter(o => (o.t || '').trim() || (o.b || '').trim());
+  const at = mine.findIndex(p => p.k === 'terms'); mine.splice(at < 0 ? mine.length : at, 0, ...own); return mine; }
+/* A4 pages: the title and your studio on the first, then each part; a page number on each. */
+async function loyGuidePages(parts) {
+  const { W, H, M, teal, ink, soft } = DOC, pages = []; let P = null, y = 0;
+  const page = async (first) => { P = await docCanvas(); if (first) await P.header(); pages.push(P); y = first ? 300 : 120; };
+  await page(true);
+  const studio = Settings.get('studio_name') || Settings.get('artist_name') || '';
+  P.text('Our rewards, explained', M, y + 70, P.font(80, 400, true), ink); y += 110; if (studio) { P.text(studio, M, y, P.font(26, 600), soft); y += 30; } y += 40;
+  for (const p of parts) {
+    const lines = []; for (const para of String(p.b || '').split('\n')) { const bul = para.startsWith('\u2022 '), w = P.wrap(bul ? para.slice(2) : para, P.font(25), W - 2 * M - (bul ? 34 : 0));
+      w.forEach((ln, i) => lines.push({ ln, bul, first: i === 0 })); lines.push(null); }
+    if (lines.at(-1) === null) lines.pop();
+    if (y + 46 + 36 * Math.min(3, lines.length) > H - 120) await page(false);   /* keep a heading with its first lines */
+    if (p.t) { P.text(String(p.t).toUpperCase(), M, y, P.font(22, 700), teal); y += 44; }
+    for (const L of lines) { if (y > H - 130) await page(false);
+      if (!L) { y += 12; continue; }
+      if (L.bul && L.first) P.text('\u2022', M + 6, y, P.font(25), ink); P.text(L.ln, M + (L.bul ? 34 : 0), y, P.font(25), ink); y += 36; }
+    y += 34; }
+  pages.forEach((q, i) => { q.x.fillStyle = teal; q.x.fillRect(M, H - 100, W - 2 * M, 3); q.text(studio, M, H - 60, q.font(20, 600), soft); q.text(`Page ${i + 1} of ${pages.length}`, W - M, H - 60, q.font(20), soft, 'right'); });
+  return pages.map((q, i) => ({ cv: q.cv, name: `Rewards-guide${pages.length > 1 ? '-' + (i + 1) : ''}.png` })); }
 /* A birthday reward for a client's coming birthday: made once, then sent like any other. */
 async function loyBday(cid, day) { const c = Loy.cfg();
   const had = await DB.one(`SELECT id FROM loyalty_rewards WHERE client_id = ? AND src = 'bday' AND status != 'deleted' AND issued_at >= date(?, '-31 days')`, [cid, day]);
@@ -6349,6 +6448,7 @@ async function loyMessage(rid) {
     <div class="qz-acts" style="margin-top:12px"><button class="btn" id="lm-copy">Copy message</button><button class="btn" id="lm-img-s">Save image</button><button class="btn primary" id="lm-send">Send</button></div>
     ${r.phone ? `<button class="btn" id="lm-wa" style="width:100%;margin-top:8px">WhatsApp the message</button>` : ''}
     <button class="btn" id="lm-sent" style="width:100%;margin-top:8px">${r.sent_at ? '\u2713 Sent ' + esc(fmtDay(r.sent_at)) : 'Mark as sent to the client'}</button>
+    <button class="btn" id="lm-guide" style="width:100%;margin-top:8px" data-tip="The program explained in plain words, to send with it">Program guide\u2026</button>
     <button class="btn" id="lm-look" style="width:100%;margin-top:8px">Change the look\u2026</button>
     <button class="btn" id="lm-close" style="width:100%;margin-top:8px">Close</button></div>`;
   document.body.appendChild(o);
@@ -6357,6 +6457,7 @@ async function loyMessage(rid) {
   o.addEventListener('click', async (e) => { const t = e.target, name = `Reward-${r.code || 'card'}.png`;
     if (t.closest('#lm-close')) return close();
     if (t.closest('#lm-sent')) { await Loy.markSent(r.id, !r.sent_at); r.sent_at = r.sent_at ? null : ymd(new Date()); t.closest('#lm-sent').textContent = r.sent_at ? '\u2713 Sent ' + fmtDay(r.sent_at) : 'Mark as sent to the client'; toast(r.sent_at ? 'Marked as sent.' : 'Not sent yet.', 1200); homeLoy(); return; }
+    if (t.closest('#lm-guide')) { close(); location.hash = 'loy-guide'; return; }
     if (t.closest('#lm-look')) { close(); LOYV.tab = 'program'; LOYV.ptab = 'message'; location.hash = 'more'; setTimeout(() => { location.hash = 'loyalty'; }, 0); return; }
     if (t.closest('#lm-copy')) { try { await navigator.clipboard.writeText(loyText(r, m)); toast('Message copied.'); } catch { await askText('Copy this:', loyText(r, m)); } return; }
     if (t.closest('#lm-img-s')) return saveFiles([await canvasFile(await cv0, name)]);
@@ -11281,6 +11382,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 550, when: '2026-11-25T01:00', added: [
+    'Loyalty: a program guide explains your program in plain words for clients: earning, stacking with worked numbers, product swaps, passing on and the full terms. Find it in Program › Terms or the reward message.',
+    'The guide: reword any part, leave parts out or add your own definitions, then print it, save a PDF or send it. It goes along with Export program.'
+  ] },
   { build: 549, when: '2026-11-24T23:00', added: [
     'Loyalty: with stacking and a product swap on, set a bigger product for more rewards handed in together (a keyring for one, a T-shirt for four).',
     'Take product lets you pick by how many rewards they hand in. The terms, export and import include the products.'

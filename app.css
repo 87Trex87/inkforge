@@ -3017,5 +3017,7 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 #m-work.on { background: rgba(31,181,168,.2); color: var(--teal); border-color: var(--teal); } .avd.off[data-avo] { cursor: pointer; } .avd.opened { box-shadow: 0 0 0 2px #fff inset; }
 .rc-loy { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(31,181,168,.4); border-radius: 12px; background: rgba(31,181,168,.07); margin-bottom: 10px; } .rc-sent { background: rgba(31,181,168,.18); color: var(--teal); }
 .ln-kinds { display: flex; flex-wrap: wrap; gap: 6px; } .ln-kinds .chip { cursor: pointer; font-size: 13px; padding: 7px 14px; color: var(--ink, inherit); } .ln-kinds .chip.on { background: rgba(31,181,168,.2); color: var(--teal); border-color: var(--teal); }
+.lgd-prev { display: grid; gap: 10px; justify-items: center; } .lgd-prev img { width: 100%; max-width: 520px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,.3); background: #fff; }
+.lgd-own .btn, #lgd-add { justify-self: start; width: auto; align-self: flex-start; } .lgd-own { display: grid; gap: 6px; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 549; }
+:root { --app-build: 550; }
