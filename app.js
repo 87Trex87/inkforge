@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 544;
+const APP_BUILD = 545;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -6425,7 +6425,7 @@ async function availDays(start, end, opts = {}) {
     if (day.some(r => r.kind === 'hold' || r.kind === 'leave')) { out[k] = { st: 'taken', wins: [] }; continue; }
     // Only tattoo sessions use up the day's tattoo count; consultations just take time.
     if (day.filter(r => DONE_KINDS.includes(r.kind)).length >= maxPerDay()) { out[k] = { st: 'taken', wins: [] }; continue; }
-    const spans = day.map(r => { const s = minutesOf(r.start_at); return [s, s + r.duration_min]; });
+    const spans = day.filter(r => r.kind !== 'followup').map(r => { const s = minutesOf(r.start_at); return [s, s + r.duration_min]; });   /* a follow-up is a message or call: it doesn't take the time */
     for (const x of busy) { if (x.start_at >= ymd(addDays(d, 1)) || x.end_at <= k) continue;
       spans.push([x.start_at < k ? 0 : minutesOf(x.start_at), x.end_at >= ymd(addDays(d, 1)) ? 1440 : minutesOf(x.end_at)]); }
     const inside = spans.filter(([s0, e0]) => e0 > ws && s0 < we).sort((p, q) => p[0] - q[0]);
@@ -11028,6 +11028,9 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 545, when: '2026-11-28T17:00', added: [
+    'Open appointments: follow-ups (a message or call) no longer take up time, so a day with only a follow-up still shows as open.'
+  ] },
   { build: 544, when: '2026-11-28T15:00', added: [
     'Quote calculator: an optional title (What’s the tattoo?) that names the saved quote and becomes the booking’s description.',
     'Quote calculator: typing a client name suggests your saved clients; picking one marks it Returning client and books it onto their card.',
