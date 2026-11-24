@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 540;
+const APP_BUILD = 541;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -7123,7 +7123,7 @@ async function renderInventory() {
    on the list. Choices are kept in the setting it_table. */
 const IT_COLS = [['category', 'Category', true], ['qty', 'In stock', true], ['unit', 'Unit', true], ['min', 'Minimum', true], ['status', 'Status', true],
   ['supplier', 'Supplier', true], ['cost', 'Cost each', false], ['value', 'Stock value', false], ['notes', 'Notes', false], ['updated', 'Updated', false], ['tag', 'Artist tag', true]];
-const IT = { q: '', st: 'active', cats: null, sups: null, sort: { k: 'name', dir: 1 } };
+const IT = { q: '', st: 'active', cats: null, sups: null, ord: null, sort: { k: 'name', dir: 1 } };   /* ord: one of the count orders (My order too) instead of a column */
 const itStatus = (r) => !r.active ? 'Not stocked' : r.qty <= 0 ? 'Out' : r.qty <= r.min_qty ? 'Low' : 'OK';
 const itCell = (r, k) => k === 'name' ? r.name : k === 'category' ? r.category || '' : k === 'qty' ? String(fmtQty(r.qty)) : k === 'unit' ? r.unit || '' : k === 'min' ? String(fmtQty(r.min_qty)) : k === 'status' ? itStatus(r)
   : k === 'supplier' ? r.supplier || '' : k === 'tag' ? r.tag || '' : k === 'cost' ? (r.cost != null ? money(r.cost) : '') : k === 'value' ? (r.cost != null ? money(r.cost * r.qty) : '') : k === 'notes' ? r.notes || '' : k === 'updated' ? fmtDay(r.updated_at.slice(0, 10)) : '';
@@ -7139,6 +7139,9 @@ async function itTable() {
     $('#it-f').innerHTML = `<div class="bkt-filters">
       ${menu('cats', `Categories <b>${IT.cats ? IT.cats.size : 'All'}</b>`, pick(IT.cats, cats, 'icat'))}
       ${menu('sups', `Suppliers <b>${IT.sups ? IT.sups.size : 'All'}</b>`, pick(IT.sups, sups, 'isup'))}
+      ${menu('ord', `Order <b>${IT.ord ? esc(INV_ORDERS.find(x => x[0] === IT.ord)?.[1] || '') : 'Column'}</b>`, `<label><input type="radio" name="itord" data-iord="" ${IT.ord ? '' : 'checked'}>By column (tap a heading)</label>`
+        + INV_ORDERS.map(([v, l]) => `<label><input type="radio" name="itord" data-iord="${v}" ${IT.ord === v ? 'checked' : ''}>${l}${v === 'custom' ? ' <span class="muted" style="margin-left:auto">your count order</span>' : ''}</label>`).join('')
+        + '<p>My order is the order you set with Arrange in the stock take, the one you walk the shop in.</p>')}
       <div class="bkt-seg">${[['active', 'Stocked'], ['low', 'Running low'], ['off', 'Not stocked'], ['all', 'All']].map(([k, l]) => `<button data-is="${k}" class="${IT.st === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       <span style="flex:1"></span>
       ${menu('cols', `Columns${hid ? ` <b>${IT_COLS.length - hid}/${IT_COLS.length}</b>` : ''}`, IT_COLS.map(([k, l]) => `<label><input type="checkbox" data-icol="${k}" ${cols.has(k) ? 'checked' : ''}>${l}</label>`).join('') + '<p>Hidden columns are left out of the print and the CSV too. Name is always shown.</p>')}</div>`; };
@@ -7146,8 +7149,8 @@ async function itTable() {
     rows = all.filter(r => (!IT.cats || IT.cats.has(r.category || '')) && (!IT.sups || IT.sups.has(r.supplier || '')) && (IT.st === 'all' || (IT.st === 'active' ? r.active : IT.st === 'off' ? !r.active : r.active && r.qty <= r.min_qty))
       && (!q || [r.name, r.category, r.supplier, r.notes, r.unit, r.tag].some(v => v && String(v).toLowerCase().includes(q))));
     const key = (r) => S.k === 'qty' ? r.qty : S.k === 'min' ? r.min_qty : S.k === 'cost' ? r.cost ?? -1 : S.k === 'value' ? (r.cost ?? 0) * r.qty : S.k === 'updated' ? r.updated_at : S.k === 'status' ? ['Out', 'Low', 'OK', 'Not stocked'].indexOf(itStatus(r)) : String(itCell(r, S.k)).toLowerCase() || '￿';
-    rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
-    const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${S.k === k ? 'on' : ''}">${l}<i>${S.k === k ? (S.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
+    if (IT.ord) rows = invOrder(rows, IT.ord); else rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * S.dir; });
+    const th = (k, l, cls = '') => `<th data-sk="${k}" class="${cls} ${!IT.ord && S.k === k ? 'on' : ''}">${l}<i>${!IT.ord && S.k === k ? (S.dir > 0 ? '↑' : '↓') : ''}</i></th>`;
     const cell = (r, k) => k === 'tag' ? cTag(r).replace('margin-left:6px;', '') : k === 'status' ? `<span class="qt-st it-${itStatus(r).split(' ')[0].toLowerCase()}">${itStatus(r)}</span>`
       : k === 'qty' ? invCount(`data-iid="${r.id}"`, r.qty, r.step, r.pack) : esc(itCell(r, k));
     itTable.shown = { rows, cols: C };
@@ -7180,6 +7183,7 @@ async function itTable() {
     if (t.dataset.icat != null) toggle('cats', opts(r => r.category), t.dataset.icat, t.checked);
     if (t.dataset.isup != null) toggle('sups', opts(r => r.supplier), t.dataset.isup, t.checked);
     if (t.dataset.icol) { t.checked ? cols.add(t.dataset.icol) : cols.delete(t.dataset.icol); await remember(); }
+    if (t.dataset.iord != null) { IT.ord = t.dataset.iord || null; open = null; }
     both(); };
   F.onclick = (e) => { const dd = e.target.closest('[data-dd]')?.dataset.dd; if (dd) { open = open === dd ? null : dd; return filters(); }
     const st = e.target.closest('[data-is]')?.dataset.is; if (st) { IT.st = st; return both(); } };
@@ -7190,7 +7194,7 @@ async function itTable() {
   $('#it').onchange = (e) => { if (!e.target.matches('.ivc-in[data-iid]')) return; const id = +e.target.dataset.iid, v = invNum(e.target.value); if (v == null) return;
     stepQ = stepQ.then(() => DB.run(`UPDATE inventory_items SET qty = ?, updated_at = datetime('now') WHERE id = ?`, [Math.max(0, +v.toFixed(4)), id])).then(later).catch(() => {}); };
   $('#it').onclick = async (e) => { const t = e.target;
-    const sk = t.closest('[data-sk]')?.dataset.sk; if (sk) { IT.sort = IT.sort.k === sk ? { k: sk, dir: -IT.sort.dir } : { k: sk, dir: 1 }; return table(); }
+    const sk = t.closest('[data-sk]')?.dataset.sk; if (sk) { IT.sort = !IT.ord && IT.sort.k === sk ? { k: sk, dir: -IT.sort.dir } : { k: sk, dir: 1 }; IT.ord = null; filters(); return table(); }   /* a heading takes over from the count order */
     const sb = t.closest('[data-istep]'); if (sb) { const id = +sb.dataset.iid, up = +sb.dataset.istep > 0;
       stepQ = stepQ.then(async () => { const it = await DB.one('SELECT qty, step FROM inventory_items WHERE id = ?', [id]); if (!it) return; const st = +it.step || 1, n = it.qty / st;
         const q = Math.max(0, +((up ? Math.floor(n + 1e-6) + 1 : Math.ceil(n - 1e-6) - 1) * st).toFixed(4));
@@ -10919,6 +10923,9 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 541, when: '2026-11-27T16:00', added: [
+    'Inventory table: a new Order menu shows the table in My order (your count order), or by category, name, supplier or lowest first. Tap a column heading to sort by that column again.'
+  ] },
   { build: 540, when: '2026-11-27T13:00', added: [
     'Inventory › Count order: hold a dragged item near the top or bottom and the list scrolls by itself, so one drag takes it all the way.',
     'Count order: buttons to send an item to the top or bottom, tap its number to send it to a place, Find to jump to an item, and Keep categories together.'

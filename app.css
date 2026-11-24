@@ -2994,4 +2994,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .so-nav { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; } .so-nav .btn { height: 52px; font-size: 17px; }
 @media (max-height: 700px) { .so-pad button { height: 46px; font-size: 20px; } .so-pad .so-k2 { height: 38px; } .so-val { font-size: 36px; } .so-step { width: 46px; height: 46px; } }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 540; }
+:root { --app-build: 541; }
