@@ -3028,4 +3028,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 554; }
+:root { --app-build: 555; }

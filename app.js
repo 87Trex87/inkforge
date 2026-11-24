@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 554;
+const APP_BUILD = 555;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -1429,6 +1429,7 @@ const VIEWS = {
           <div class="row b-rem" style="gap:10px;flex-wrap:wrap;align-items:center">
             <label class="toggle"><input type="checkbox" name="notify" ${b.notify_min != null ? 'checked' : ''}><span>Notify me</span></label>
             <label class="bkt-sel"><select name="notify_min" aria-label="How long before">${NOTIFY_LEADS.map(([v, l]) => `<option value="${v}" ${+(b.notify_min ?? Settings.get('notify_lead', '60')) === v ? 'selected' : ''}>${l} before</option>`).join('')}</select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
+            ${b.completed ? '' : '<button type="button" class="btn small" id="b-brief" data-tip="Send the client the tattoo brief: eight quick questions for the design and the quote">Send tattoo brief</button>'}
             <button type="button" class="btn small" id="b-ics" data-tip="Saves the booking, then adds it to your phone\u2019s calendar with this reminder">Add to phone calendar</button></div>
           <p class="muted" style="font-size:12px;margin:8px 0 0">InkForge\u2019s own notifications only work while the app is open or running in the background: closing the app turns them off. Add the booking to your phone\u2019s calendar for a reminder that always comes through. If you change or cancel the booking later, change it in your calendar too.</p>`,
           { fold: true, open: b.notify_min != null, hint: b.notify_min != null ? (NOTIFY_LEADS.find(x => x[0] === +b.notify_min)?.[1] || '') + ' before' : '' })}
@@ -1450,7 +1451,7 @@ const VIEWS = {
             </div>
             <div id="b-loy"></div>
             <div id="b-vou"></div>
-            <div class="field"><span class="lbl">Paid by</span><div class="seg" id="b-pay">${PAY_METHODS.map(m => `<button type="button" data-pay="${m}" class="${b.pay_method === m ? 'on' : ''}" style="flex:1">${m}</button>`).join('')}</div></div>
+            <div class="field"><span class="lbl">Paid by</span><div class="seg" id="b-pay">${PAY_METHODS.filter(m => m !== 'Voucher' || b.pay_method === 'Voucher').map(m => `<button type="button" data-pay="${m}" class="${b.pay_method === m ? 'on' : ''}" style="flex:1">${m}</button>`).join('')}</div></div>
             <div class="b-done-acts">
               <div class="b-fu"><button type="button" class="btn" id="b-followup" data-tip="Book a check-up to see how it healed and whether a touch-up is needed">Book follow-up</button>
                 <span>in</span><input class="in" id="b-fu-w" type="number" min="1" max="52" value="${Settings.get('followup_weeks', '6')}"><span>weeks</span></div>
@@ -1647,6 +1648,7 @@ const VIEWS = {
         if (gPhone === null) { toast(phoneBad()); return null; }
         const num = (v) => v === '' || v == null ? null : +v;
         const can = !!d.cancelled, done = DONE_KINDS.includes(kind) && !!d.completed && !can;   /* a cancelled booking is never completed */
+        if (done && vouSel.size && !(+d.paid > 0) && vouOff() >= vouDue() - 0.005) payMethod = 'Voucher';   /* vouchers paid it all */
         const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
           d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind,
           done ? 1 : 0, done ? (b.completed_at || new Date().toISOString()) : null,
@@ -1703,6 +1705,7 @@ const VIEWS = {
         Gcal.soon(); toast(`Follow-up booked for ${fmtDay(when)}.`); fuInfo();
       };
       $('#b-receipt').onclick = async () => { const bid = await save(); if (bid) openReceipt(bid); };
+      $('#b-brief')?.addEventListener('click', () => briefLink());
       $('#b-ics').onclick = async () => { const bid = await save(); if (bid) Notif.ics(bid); };
       f.elements.notify?.addEventListener('change', (e) => { if (e.target.checked) Notif.ask(); });
       /* Completed and Cancelled can't both be on */
@@ -4193,6 +4196,7 @@ function payPeriod(c, day) { const d = D0(day);
   const end = new Date(d); while (end.getDay() !== +c.wd) end.setDate(end.getDate() + 1);   /* weekly: the week ends on pay day */
   return { k: ymd(end), start: ymd(addDays(end, -6)), end: ymd(end), pay: ymd(end) };
 }
+const earned = (r) => (+r.paid || 0) + (+r.vou_off || 0);   /* a tattoo's takings: cash paid plus what vouchers covered */
 const payDays = (c) => c.every === 'week' ? 7 : c.every === '2week' ? 14 : c.every === 'month' ? 30.44 : 1;
 /* One tattoo's split: what the studio takes (commission), the supplies, and what's yours (before rent). off = what
    loyalty rewards took off the price: by default the artist covers it (the studio's share is worked out on the full
@@ -4204,7 +4208,7 @@ function payCalc(c, rows, a, z) {
   const today = ymd(new Date()), r2 = (v) => Math.round(v * 100) / 100;
   let gross = 0, studio = 0, sup = 0, mine = 0;
   const per = new Map();
-  for (const r of rows) { const g = +r.paid || 0, sp = paySplit(c, g, +r.loy_off || 0); gross += g; studio += sp.studio; sup += sp.sup; mine += sp.mine;
+  for (const r of rows) { const g = earned(r), sp = paySplit(c, g, +r.loy_off || 0); gross += g; studio += sp.studio; sup += sp.sup; mine += sp.mine;
     const P = payPeriod(c, r.start_at); const e = per.get(P.k) || { ...P, n: 0, gross: 0, studio: 0, sup: 0, mine: 0, mins: 0 }; per.set(P.k, e);
     e.n++; e.gross += g; e.studio += sp.studio; e.sup += sp.sup; e.mine += sp.mine; e.mins += r.time_min || 0; }
   /* chair rent: due every period from the start of the range (or the first tattoo) up to today, whether busy or not */
@@ -7194,7 +7198,7 @@ async function deData(P) {
   const tat = done.filter(b => DONE_KINDS.includes(b.kind)), r2 = (v) => Math.round(v * 100) / 100, sum = (L, f) => r2(L.reduce((t, x) => t + (+f(x) || 0), 0));
   const takings = sum(tat, b => b.paid), mins = sum(tat, b => b.time_min), off = sum(tat, b => b.loy_off);
   const byPay = {}; for (const b of tat) { const k = b.pay_method || 'Not recorded'; byPay[k] = r2((byPay[k] || 0) + (+b.paid || 0)); }
-  const pc = payOn() ? payCfg() : null, pay = pc ? tat.reduce((t, b) => { const sp = paySplit(pc, +b.paid || 0, +b.loy_off || 0); t.studio += sp.studio; t.sup += sp.sup; t.mine += sp.mine; return t; }, { studio: 0, sup: 0, mine: 0 }) : null;
+  const pc = payOn() ? payCfg() : null, pay = pc ? tat.reduce((t, b) => { const sp = paySplit(pc, earned(b), +b.loy_off || 0); t.studio += sp.studio; t.sup += sp.sup; t.mine += sp.mine; return t; }, { studio: 0, sup: 0, mine: 0 }) : null;
   const can = { client: 0, noshow: 0, me: 0 }; for (const b of cancelled) can[b.cancel_by || 'client'] = (can[b.cancel_by || 'client'] || 0) + 1;
   const deps = sum(made.filter(b => b.deposit_paid), b => b.deposit);
   /* day by day, on the days anything happened */
@@ -7990,7 +7994,7 @@ async function refTree(id) {
 async function renderStats() {
   const el = $('#st-body'); if (!el) return;
   const rows = await statsRows(), [a, z] = statsRange();
-  const n = rows.length, mins = rows.reduce((s, r) => s + (r.time_min || 0), 0), paid = rows.reduce((s, r) => s + (r.paid || 0), 0);
+  const n = rows.length, mins = rows.reduce((s, r) => s + (r.time_min || 0), 0), paid = rows.reduce((s, r) => s + earned(r), 0);
   const hours = mins / 60, clients = new Set(rows.map(r => r.client_id).filter(Boolean));
   // Returning = had a completed tattoo before this period started.
   const before = new Set((await DB.all(`SELECT DISTINCT client_id FROM bookings WHERE completed = 1 AND substr(start_at, 1, 10) < ? AND client_id IS NOT NULL`, [a])).map(r => r.client_id));
@@ -8002,14 +8006,14 @@ async function renderStats() {
     WHERE b.promo_kind IS NOT NULL AND b.promo_until >= ? ORDER BY b.promo_until`, [today]);
   /* Referrals in this period: income by how clients found you, and the people whose referrals earned the most */
   const RG = await refGraph(), srcOf = (cid) => { const c = RG.byId.get(cid); if (!c) return 'Not set'; return c.referred_by ? 'A person' : (REF_SRC.find(x => x[0] === (c.ref_src || ''))?.[1] || 'Not set'); };
-  const bySrc = {}; for (const r of rows) { const k = srcOf(r.client_id); (bySrc[k] ||= { s: 0, n: 0 }); bySrc[k].s += r.paid || 0; bySrc[k].n++; }
-  const inc = new Map(); for (const r of rows) if (r.client_id) inc.set(r.client_id, (inc.get(r.client_id) || 0) + (r.paid || 0));
+  const bySrc = {}; for (const r of rows) { const k = srcOf(r.client_id); (bySrc[k] ||= { s: 0, n: 0 }); bySrc[k].s += earned(r); bySrc[k].n++; }
+  const inc = new Map(); for (const r of rows) if (r.client_id) inc.set(r.client_id, (inc.get(r.client_id) || 0) + earned(r));
   const tops = RG.cs.map(c => { const D = refDesc(RG, c.id); return { c, n: D.length, s: D.reduce((t, x) => t + (inc.get(x.c.id) || 0), 0) }; }).filter(x => x.n && x.s > 0).sort((a, b) => b.s - a.s).slice(0, 8);
   const refStats = Object.keys(bySrc).some(k => k !== 'Not set') || tops.length ? `<div class="grid st-two">
       <div class="card"><h2>How they found you ${help('Income this period from clients by how they found you: a person (a referral), online, an advert or other. Set it on each client, under More about them.')}</h2>${Object.entries(bySrc).sort((a, b) => b[1].s - a[1].s).map(([k, v]) => `<div class="stat"><span>${esc(k)}</span><span>${money(v.s)} <small class="muted">${v.n}</small></span></div>`).join('')}</div>
       <div class="card"><h2>Top referrers ${help('People whose referrals (and whom those referred) earned the most this period. Tap one to see their tree.')}</h2>${tops.map(t => `<a class="stat" href="#client/${t.c.id}"><span>${esc(fullName(t.c))}${t.c.category && t.c.category !== 'Client' ? ` <span class="chip">${esc(t.c.category)}</span>` : ''}</span><span>${money(t.s)} <small class="muted">${t.n} referred</small></span></a>`).join('') || '<p class="muted">No referral income this period yet.</p>'}</div></div>` : '';
   // Per month, for the chart
-  const months = {}; for (const r of rows) { const k = r.start_at.slice(0, 7); (months[k] ||= { paid: 0, mins: 0, n: 0 }); months[k].paid += r.paid || 0; months[k].mins += r.time_min || 0; months[k].n++; }
+  const months = {}; for (const r of rows) { const k = r.start_at.slice(0, 7); (months[k] ||= { paid: 0, mins: 0, n: 0 }); months[k].paid += earned(r); months[k].mins += r.time_min || 0; months[k].n++; }
   const keys = Object.keys(months).sort().slice(-12), maxP = Math.max(1, ...keys.map(k => months[k].paid));
   const count = (f) => { const m = {}; for (const r of rows) { const k = f(r); if (k) m[k] = (m[k] || 0) + 1; } return Object.entries(m).sort((p, q) => q[1] - p[1]).slice(0, 5); };
   const days = count(r => new Date(r.start_at.slice(0, 10) + 'T00:00').toLocaleDateString(undefined, { weekday: 'long' }));
@@ -8021,7 +8025,7 @@ async function renderStats() {
     const per = (c.every === 'month' ? 'month' : c.every === '2week' ? '2 weeks' : c.every === 'day' ? 'day' : 'week');
     const avgT = R.n ? R.gross / R.n : 0, breakEven = c.mode === 'rent' && +c.rent && avgT ? Math.ceil(+c.rent / Math.max(1, avgT - (+c.supEach || 0))) : 0;
     const past = R.periods.filter(p => p.state !== 'next'), best = past.length ? past.reduce((m, p) => p.take > m.take ? p : m, past[0]) : null;
-    const payKeys = Object.keys(months).sort().slice(-12), mTake = {}; for (const r of rows) { const k = r.start_at.slice(0, 7); mTake[k] = (mTake[k] || 0) + paySplit(c, +r.paid || 0, +r.loy_off || 0).mine; }
+    const payKeys = Object.keys(months).sort().slice(-12), mTake = {}; for (const r of rows) { const k = r.start_at.slice(0, 7); mTake[k] = (mTake[k] || 0) + paySplit(c, earned(r), +r.loy_off || 0).mine; }
     if (c.mode === 'rent') for (const p of R.periods) { if (!p.rent) continue; const k = p.start.slice(0, 7); mTake[k] = (mTake[k] || 0) - p.rent; }
     const maxT = Math.max(1, ...payKeys.map(k => Math.abs(mTake[k] || 0)));
     const lbl = (p) => c.every === 'day' ? fmtDay(p.start) : c.every === 'month' ? D0(p.start).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : `${fmtDay(p.start)} \u2013 ${fmtDay(p.end)}`;
@@ -8041,11 +8045,11 @@ async function renderStats() {
         <tbody>${R.periods.slice(0, 26).map(p => `<tr class="${p.state === 'now' ? 'pay-now' : ''}"><td>${esc(lbl(p))}</td><td>${esc(fmtDay(p.pay))}</td><td>${p.n}</td><td>${money(Math.round(p.gross))}</td><td>${money(Math.round(c.mode === 'comm' ? p.studio : p.rent))}</td>${R.sup ? `<td>${money(Math.round(p.sup))}</td>` : ''}<td><b class="${p.take < 0 ? 'pay-neg' : ''}">${money(Math.round(p.take))}</b></td><td class="muted">${p.state === 'past' ? 'Done' : p.state === 'now' ? 'This period' : 'Coming'}</td></tr>`).join('') || `<tr><td colspan="8" class="muted">No pay periods in this range.</td></tr>`}</tbody></table></div></div>`;
     const now = payPeriod(c, ymd(new Date())), cur0 = R.periods.find(p => p.k === now.k);
     const curRows = (await DB.all(`SELECT paid, time_min, start_at, loy_off FROM bookings WHERE completed = 1 AND ghost = 0 AND substr(start_at, 1, 10) BETWEEN ? AND ?`, [now.start, now.end]));
-    const cg = curRows.reduce((t, r) => t + (+r.paid || 0), 0), cm = curRows.reduce((t, r) => t + paySplit(c, +r.paid || 0, +r.loy_off || 0).mine, 0) - (c.mode === 'rent' ? +c.rent : 0);
+    const cg = curRows.reduce((t, r) => t + earned(r), 0), cm = curRows.reduce((t, r) => t + paySplit(c, earned(r), +r.loy_off || 0).mine, 0) - (c.mode === 'rent' ? +c.rent : 0);
     paySide = `<div class="card pay-next"><h2>Next pay day</h2><div class="stat"><span>${esc(fmtDay(now.pay))}</span><span>${c.every === 'day' ? 'today' : esc(`${fmtDay(now.start)} \u2013 ${fmtDay(now.end)}`)}</span></div>
       <div class="stat"><span>Tattoos so far</span><span>${curRows.length}</span></div><div class="stat"><span>Taken so far</span><span>${money(Math.round(cg))}</span></div>
       <div class="stat"><span>${c.mode === 'comm' ? 'Yours so far' : 'Yours after rent'}</span><span><b class="${cm < 0 ? 'pay-neg' : ''}">${money(Math.round(cm))}</b></span></div>
-      ${c.mode === 'comm' ? `<div class="stat"><span>Studio\u2019s share</span><span>${money(Math.round(cg - curRows.reduce((t, r) => t + paySplit(c, +r.paid || 0, +r.loy_off || 0).mine + paySplit(c, +r.paid || 0, +r.loy_off || 0).sup, 0)))}</span></div>` : `<div class="stat"><span>Rent due</span><span>${money(+c.rent)}</span></div>`}</div>`; void cur0; }
+      ${c.mode === 'comm' ? `<div class="stat"><span>Studio\u2019s share</span><span>${money(Math.round(cg - curRows.reduce((t, r) => t + paySplit(c, earned(r), +r.loy_off || 0).mine + paySplit(c, earned(r), +r.loy_off || 0).sup, 0)))}</span></div>` : `<div class="stat"><span>Rent due</span><span>${money(+c.rent)}</span></div>`}</div>`; void cur0; }
   el.innerHTML = !n ? `<div class="card empty"><div class="empty-ico">${ICON.quote}</div><div style="font:24px var(--display)">No completed tattoos ${STATS.period === 'all' ? 'yet' : 'in this period'}</div>
       <div class="muted">Open a tattoo booking, switch on <b>Tattoo completed</b> and add what was paid and how long it took.</div></div>` : `
     <div class="kpis">
@@ -8065,10 +8069,21 @@ async function renderStats() {
     <div class="card"><h2>Tattoos (${n})</h2><div class="st-table"><table>
       <thead><tr><th>Date</th><th>Client</th><th>Tattoo</th><th>Time</th><th>Paid</th></tr></thead>
       <tbody>${rows.slice().reverse().map(r => `<tr data-bk="${r.id}"><td>${esc(r.start_at.slice(0, 10))}</td><td>${esc(bName(r))}${bTag(r)}</td>
-        <td>${esc([r.description, r.placement].filter(Boolean).join(' · ') || '—')}</td><td>${r.time_min != null ? fmtH(r.time_min / 60) : '—'}</td><td>${r.paid != null ? money(r.paid) : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
-  $('#st-side').innerHTML = `${paySide}
+        <td>${esc([r.description, r.placement].filter(Boolean).join(' · ') || '—')}</td><td>${r.time_min != null ? fmtH(r.time_min / 60) : '—'}</td><td>${r.paid != null || r.vou_off ? money(earned(r)) + (r.vou_off ? ' (voucher)' : '') : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  /* loyalty, when it runs: discounts given on these tattoos, and rewards still open */
+  const loyOffSum = rows.reduce((t, r) => t + (+r.loy_off || 0), 0), loyOpen = Loy.on() ? (await DB.one(`SELECT count(*) AS n FROM loyalty_rewards WHERE status = 'open' AND used_booking IS NULL AND (expires_at IS NULL OR expires_at >= date('now'))`)).n : 0;
+  const loyCard = Loy.on() || loyOffSum ? `<div class="card"><h2>Loyalty</h2><div class="stat"><span>Discounts on these tattoos</span><span>${money(Math.round(loyOffSum))}</span></div><a class="stat" href="#loyalty"><span>Rewards still open</span><span>${loyOpen}</span></a></div>` : '';
+  /* cancellations in the period (by the day they were for): who called them off, and the quoted work it lost */
+  const cx = await DB.all(`SELECT cancel_by, quote FROM bookings WHERE cancelled = 1 AND coalesce(ghost, 0) = 0 AND kind IN ('tattoo', 'touchup') AND substr(start_at, 1, 10) BETWEEN ? AND ?`, [a, z]);
+  const cxN = (k) => cx.filter(r => (r.cancel_by || 'client') === k).length, cxLost = cx.reduce((t, r) => t + (+r.quote || 0), 0);
+  const cxCard = cx.length ? `<div class="card"><h2>Cancellations</h2>${[['client', 'By the client'], ['noshow', 'No-shows'], ['me', 'By you']].filter(([k]) => cxN(k)).map(([k, l]) => `<div class="stat"><span>${l}</span><span>${cxN(k)}</span></div>`).join('')}
+    ${cxLost ? `<div class="stat"><span>Quoted work lost</span><span>${money(Math.round(cxLost))}</span></div>` : ''}<a class="stat" href="#bookings"><span>${Math.round(cx.length / (cx.length + n) * 100)}% of tattoos booked</span><span>\u203a</span></a></div>` : '';
+  /* deposits taken for bookings still to come: held, not yet earned */
+  const dep = await DB.one(`SELECT count(*) AS n, coalesce(sum(deposit), 0) AS a FROM bookings WHERE deposit_paid = 1 AND deposit > 0 AND coalesce(completed, 0) = 0 AND coalesce(cancelled, 0) = 0 AND coalesce(ghost, 0) = 0 AND substr(start_at, 1, 10) >= ?`, [today]);
+  const depCard = dep.n ? `<div class="card"><h2>Deposits held ${help('Deposits paid on bookings still to come. They come off the final price, so they\u2019re not earned until the tattoo is done.')}</h2><a class="stat" href="#bookings"><span>${dep.n} upcoming booking${dep.n === 1 ? '' : 's'}</span><span>${money(Math.round(dep.a))}</span></a></div>` : '';
+  $('#st-side').innerHTML = `${paySide}${depCard}${cxCard}
     <div class="card"><h2>Follow-ups coming up</h2>${fus.map(f => `<a class="stat" href="#booking-edit/${f.id}"><span>${esc(bName(f))}</span><span>${esc(fmtDay(f.start_at))}</span></a>`).join('') || '<p class="muted" style="margin:0">None booked.</p>'}</div>
-    <div class="card"><h2>Open promotions</h2>${promos.map(p => `<a class="stat" href="#booking-edit/${p.id}"><span>${esc(bName(p))}: ${p.promo_kind === 'pct' ? +p.promo_value + '%' : money(p.promo_value)} off</span><span>until ${esc(p.promo_until)}</span></a>`).join('') || '<p class="muted" style="margin:0">None open.</p>'}</div>`;
+    ${loyCard}${promos.length ? `<div class="card"><h2>Open promotions</h2>${promos.map(p => `<a class="stat" href="#booking-edit/${p.id}"><span>${esc(bName(p))}: ${p.promo_kind === 'pct' ? +p.promo_value + '%' : money(p.promo_value)} off</span><span>until ${esc(p.promo_until)}</span></a>`).join('')}</div>` : ''}`;   /* old receipt promotions, while any are still open */
   el.querySelectorAll('[data-bk]').forEach(tr => tr.onclick = () => { location.hash = 'booking-edit/' + tr.dataset.bk; });
   if (Vou.on() || (await DB.one('SELECT id FROM vouchers LIMIT 1'))) { const V = await DB.one(`SELECT coalesce(sum(CASE WHEN coalesce(pay_method, '') != 'Split' AND substr(paid_at, 1, 10) BETWEEN ? AND ? THEN coalesce(paid_amount, amount) END), 0) AS sold,
       coalesce(sum(CASE WHEN used_at BETWEEN ? AND ? THEN used_amount END), 0) AS used, coalesce(sum(CASE WHEN used_at BETWEEN ? AND ? AND left_to IN ('tip', 'charity') THEN left_amount END), 0) AS gone FROM vouchers WHERE status != 'deleted'`, [a, z, a, z, a, z]), ow = await Vou.owed();
@@ -8081,13 +8096,14 @@ async function renderStats() {
    how they found you), search, sort, CSV and print. Totals along the bottom. Pay columns show when Your pay is on. */
 const SX = { q: '', kinds: null, pays: null, srcs: null, sort: { k: 'date', dir: -1 } };
 const SX_COLS = () => [['time', 'Start', false], ['kind', 'Type', true], ['description', 'Tattoo', true], ['placement', 'Placement', true], ['size', 'Size', false],
-  ['quote', 'Quote', false], ['paid', 'Paid', true], ['pay_method', 'Paid by', true], ['hours', 'Hours', true], ['rate', 'Per hour', false], ['deposit', 'Deposit', false],
+  ['quote', 'Quote', false], ['paid', 'Paid', true], ['vou', 'Voucher', false], ['pay_method', 'Paid by', true], ['hours', 'Hours', true], ['rate', 'Per hour', false], ['deposit', 'Deposit', false],
   ['loy', 'Loyalty discount', false], ['src', 'Found you', false], ['tag', 'Artist tag', false],
   ...(payOn() ? [['studio', payCfg().mode === 'comm' ? 'Studio share' : 'Supplies', true], ['mine', 'Yours', true], ['payday', 'Pay day', false]] : [])];
-const SX_NUM = ['quote', 'paid', 'hours', 'rate', 'deposit', 'loy', 'studio', 'mine'], SX_MONEY = ['quote', 'paid', 'rate', 'deposit', 'loy', 'studio', 'mine'];
-function sxVal(r, k, pc) { const sp = pc ? paySplit(pc, +r.paid || 0, +r.loy_off || 0) : null;
+const SX_NUM = ['quote', 'paid', 'vou', 'hours', 'rate', 'deposit', 'loy', 'studio', 'mine'], SX_MONEY = ['quote', 'paid', 'vou', 'rate', 'deposit', 'loy', 'studio', 'mine'];
+function sxVal(r, k, pc) { const sp = pc ? paySplit(pc, earned(r), +r.loy_off || 0) : null;
   switch (k) { case 'date': return r.start_at.slice(0, 10); case 'time': return r.start_at.slice(11, 16); case 'client': return bName(r); case 'kind': return kindLabel(r);
-    case 'hours': return r.time_min != null ? Math.round(r.time_min / 6) / 10 : null; case 'rate': return r.time_min ? Math.round((+r.paid || 0) / (r.time_min / 60)) : null;
+    case 'hours': return r.time_min != null ? Math.round(r.time_min / 6) / 10 : null; case 'rate': return r.time_min ? Math.round(earned(r) / (r.time_min / 60)) : null;
+    case 'vou': return r.vou_off ?? null;
     case 'loy': return r.loy_off ?? null; case 'src': return r._src || ''; case 'tag': return r.tag || '';
     case 'studio': return sp ? Math.round((pc.mode === 'comm' ? sp.studio : sp.sup) * 100) / 100 : null; case 'mine': return sp ? Math.round(sp.mine * 100) / 100 : null;
     case 'payday': return pc ? payPeriod(pc, r.start_at).pay : ''; default: return r[k] ?? ''; } }
@@ -8165,12 +8181,12 @@ async function statsCsv() {
   const rows = await statsRows();
   if (!rows.length) return toast('Nothing to export in this period.');
   const pc = payOn() ? payCfg() : null;
-  const head = ['Date', 'Start', 'Client', 'Type', 'Tattoo', 'Placement', 'Size', 'Quote', 'Paid', 'Paid by', 'Hours tattooed', 'Deposit', 'Promotion', 'Promotion until', ...(pc ? ['Loyalty discount', pc.mode === 'comm' ? 'Studio share' : 'Supplies (about)', 'Yours (before rent)', 'Pay day'] : [])];
+  const head = ['Date', 'Start', 'Client', 'Type', 'Tattoo', 'Placement', 'Size', 'Quote', 'Paid', 'Paid by voucher', 'Paid by', 'Hours tattooed', 'Deposit', 'Loyalty discount', ...(pc ? [ pc.mode === 'comm' ? 'Studio share' : 'Supplies (about)', 'Yours (before rent)', 'Pay day'] : [])];
   const [a, z] = statsRange();
   return saveCsv(`InkForge-tattoos-${STATS.period === 'all' ? 'all' : a + '_to_' + z}.csv`, head,
-    rows.map(r => [r.start_at.slice(0, 10), r.start_at.slice(11, 16), bName(r), kindLabel(r), r.description, r.placement, r.size, r.quote, r.paid, r.pay_method,
-      r.time_min != null ? +(r.time_min / 60).toFixed(2) : '', r.deposit, r.promo_kind ? (r.promo_kind === 'pct' ? r.promo_value + '%' : r.promo_value) : '', r.promo_until,
-      ...(pc ? (() => { const sp = paySplit(pc, +r.paid || 0, +r.loy_off || 0); return [r.loy_off || '', Math.round((pc.mode === 'comm' ? sp.studio : sp.sup) * 100) / 100, Math.round(sp.mine * 100) / 100, payPeriod(pc, r.start_at).pay]; })() : [])]));
+    rows.map(r => [r.start_at.slice(0, 10), r.start_at.slice(11, 16), bName(r), kindLabel(r), r.description, r.placement, r.size, r.quote, r.paid, r.vou_off || '', r.pay_method,
+      r.time_min != null ? +(r.time_min / 60).toFixed(2) : '', r.deposit, r.loy_off || '',
+      ...(pc ? (() => { const sp = paySplit(pc, earned(r), +r.loy_off || 0); return [Math.round((pc.mode === 'comm' ? sp.studio : sp.sup) * 100) / 100, Math.round(sp.mine * 100) / 100, payPeriod(pc, r.start_at).pay]; })() : [])]));
 }
 
 /* ---------- Inventory & rules helpers ---------- */
@@ -12223,6 +12239,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 555, when: '2026-11-25T15:00', added: [
+    'Stats: tattoos paid by voucher now count in earnings, averages, hourly rate and your pay; the tattoo list shows them as (voucher), and the table and spreadsheet have a Voucher column.',
+    'Stats: new Loyalty, Cancellations (with no-shows and quoted work lost) and Deposits held cards. The old promotions card only shows while one is still open.',
+    'Bookings: Send tattoo brief sends the client the brief from the booking. Paid by Voucher is now set on its own when vouchers pay the whole tattoo.'
+  ] },
   { build: 554, when: '2026-11-25T12:00', added: [
     'Clients: Add to phone contacts saves a client to your phone. The new phone button in Clients brings a contact in from your phone, to check and finish before saving.',
     'Bookings: changing the client or type updates their loyalty rewards and vouchers, and deleting a booking gives back the rewards and vouchers it used.',
