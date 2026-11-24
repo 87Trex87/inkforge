@@ -23,7 +23,7 @@ const DZ_KINDS = {
   portrait: { label: 'Portrait post', sub: '1080 × 1350, feed (4:5)', w: 1080, h: 1350, per: 0, social: 1 },
   story: { label: 'Story / reel cover', sub: '1080 × 1920 (9:16)', w: 1080, h: 1920, per: 0, social: 1 },
   /* Sketch pad: an open page that grows with what's on it (its own section, like forms; never in the design list) */
-  sketch: { label: 'Sketch pad', sub: 'Notes, plans, sketches and mind maps', w: 3200, h: 2200, per: 0, sketch: 1 },
+  sketch: { label: 'Sketch pad', sub: 'Notes, plans, sketches and mind maps', w: 7016, h: 4967, per: 0, sketch: 1 },   /* A0 landscape at 150 dpi; it grows from there */
   /* the loyalty reward card: one per workspace, made and opened from Loyalty (never in the design list) */
   loycard: { label: 'Reward card', sub: '1080 × 1350 (4:5)', w: 1080, h: 1350, per: 0, loycard: 1 }
 };
@@ -2635,7 +2635,7 @@ DZ.edit = async (id) => {
   const frame = () => { z = 1; vx = vy = 0; fit(); redraw(); };
   /* Sketches: the page is what's on it plus a wide margin, so there is always room to keep going; it grows (and
      shrinks back) as things are added, moved or removed, with the view kept where it was. */
-  const SK_M = 900, SK_MIN = [3200, 2200];
+  const SK_M = 900, SK_MIN = [7016, 4967];   /* never smaller than A0 */
   const skGrow = () => { if (!SK) return false; const L = doc.layers.filter(l => !l.bgpic); let x0, y0, x1, y1;
     if (L.length) { x0 = Math.min(...L.map(l => l.x)); y0 = Math.min(...L.map(l => l.y)); x1 = Math.max(...L.map(l => l.x + (l.w || 0))); y1 = Math.max(...L.map(l => l.y + (l.h || 0))); }
     else { x0 = doc.w / 2; y0 = doc.h / 2; x1 = x0; y1 = y0; }
@@ -5218,12 +5218,15 @@ DZ.edit = async (id) => {
         if (vis(rail)) { const top = rail.getBoundingClientRect().top - S0.top; set(rail, { maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'none', flexWrap: 'nowrap' }); }
         return; }
       for (const el of [zoom, mods, xf]) { if (!vis(el)) continue; set(el, { left: '10px', right: 'auto', top: 'auto', bottom: base + 'px' }); base += el.offsetHeight + 6; }
-      if (vis(rail)) { const top = rail.getBoundingClientRect().top - S0.top; set(rail, { maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'none', flexWrap: 'nowrap' }); } }); };
+      if (vis(rail)) { const qs = $('#dz-qstrip'), top = vis(qs) ? qs.getBoundingClientRect().bottom - S0.top + 6 : 10;
+        set(rail, { top: top + 'px', transform: 'none', maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'thin', flexWrap: 'nowrap' }); } }); };
     if ('ResizeObserver' in window) { const ro = new ResizeObserver(() => dzLay()); ro.observe(stage);
       setTimeout(() => { for (const el of [stage.querySelector('.dz-zoom'), $('#dz-mods'), $('#dz-xf'), $('#dz-side'), $('#sk-bar'), stage.querySelector('.sk-pop')]) if (el) ro.observe(el); dzLay(); }, 0); }
     addEventListener('resize', () => dzLay());
     /* full screen settles over a few frames: fit again once it has */
-    for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => { dzLay(); setTimeout(dzLay, 120); setTimeout(dzLay, 400); });
+    const settle = () => { dzLay(); setTimeout(dzLay, 120); setTimeout(dzLay, 400); setTimeout(dzLay, 1000); };
+    for (const ev of ['fullscreenchange', 'webkitfullscreenchange', 'visibilitychange']) document.addEventListener(ev, settle);
+    addEventListener('focus', settle); addEventListener('pageshow', settle); addEventListener('resize', () => setTimeout(dzLay, 250));
     if ('ResizeObserver' in window) setTimeout(() => { const r = $('#dz-rail'); if (r) new ResizeObserver(() => dzLay()).observe(r); }, 0);
   }
   stage.addEventListener('pointerdown', (e) => {

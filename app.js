@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 535;
+const APP_BUILD = 536;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -899,8 +899,11 @@ const Undel = {
 /* The left tool rail of the design studio and the simulator: when its tools don't fit the height it is given, it
    becomes two columns instead of hiding the rest behind a scroll. Watched as the window, panels and tools change. */
 function railFit(rail) { if (!rail || rail._fit) return; const fit = () => { if (!rail.isConnected) { ro.disconnect(); mo.disconnect(); return; }
-    rail.classList.remove('two'); rail.style.removeProperty('--rows'); const n = rail.children.length; if (rail.scrollHeight <= rail.clientHeight + 2 || n < 4) return;
-    rail.classList.add('two'); rail.style.setProperty('--rows', Math.ceil(n / 2)); };
+    rail.classList.remove('two'); rail.style.removeProperty('--rows');
+    const n = [...rail.children].flatMap(c => getComputedStyle(c).display === 'contents' ? [...c.children] : [c]).filter(c => !c.hidden && getComputedStyle(c).display !== 'none').length;   /* a group of tools (the sketch's) counts as its tools */
+    if (rail.scrollHeight <= rail.clientHeight + 2 || n < 4) return;
+    const ih = (rail.querySelector('.dz-ib, button')?.offsetHeight || 38) + 2, rows = Math.max(2, Math.min(Math.ceil(n / 2), Math.floor((rail.clientHeight - 8) / ih)));   /* as many columns as the height needs */
+    rail.classList.add('two'); rail.style.setProperty('--rows', rows); };
   const later = () => { cancelAnimationFrame(rail._fr); rail._fr = requestAnimationFrame(fit); }, ro = new ResizeObserver(later), mo = new MutationObserver(later);
   ro.observe(rail.parentElement); mo.observe(rail, { childList: true }); rail._fit = true; later(); }
 /* ---------- Views ---------- */
@@ -10830,6 +10833,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 536, when: '2026-11-26T09:00', added: [
+    'Sketchpad: new sketches start at A0 size and still grow from there as you need more room.',
+    'Design studio and Sketchpad: the side tool strip no longer spills over the other panels or gets cut off. It spreads into more columns when the window is short and re-fits after full screen or minimising.'
+  ] },
   { build: 535, when: '2026-11-25T18:00', added: [
     'Sketchpad: its own tools now sit in the left strip, with the brushes and the shapes each behind one button, and the bottom bar is gone.',
     'Sketchpad: a new airbrush.',
