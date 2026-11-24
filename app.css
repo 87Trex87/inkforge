@@ -2972,4 +2972,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 @media (min-width: 700px) { .draw-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 420px) { .tb-ic { width: 32px; height: 32px; } .tb-draw { gap: 2px; } }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 536; }
+:root { --app-build: 537; }

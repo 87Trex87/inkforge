@@ -1122,10 +1122,12 @@ function dzCsv(text) {
 const dzStroked = (l) => !!(l.sw && l.stroke && l.stroke !== 'none' && ((l.t === 'shape' && l.shape !== 'line') || (l.t === 'image' && !l.logo)));
 async function dzDraw(cv, doc, scale = 1, opts = {}) {
   await DZF.all(doc); dzCurveSync(doc);
-  const x = cv.getContext('2d'), W = doc.w * scale, H = doc.h * scale;
+  const x = cv.getContext('2d'), W = doc.w * scale, H = doc.h * scale, OX = (opts.ox || 0) * scale, OY = (opts.oy || 0) * scale;   /* opts.ox/oy: a window of the page (zoomed in) */
+  const V = opts.view, onView = (l) => { if (!V) return true; const p = Math.max(l.w || 0, l.h || 0) * 0.5 + (l.sw || l.s || 0) + 40, cx = l.x + (l.w || 0) / 2, cy = l.y + (l.h || 0) / 2;
+    return cx + (l.w || 0) / 2 + p >= V.x && cx - (l.w || 0) / 2 - p <= V.x + V.w && cy + (l.h || 0) / 2 + p >= V.y && cy - (l.h || 0) / 2 - p <= V.y + V.h; };
   x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height);
   if (!opts.noBg && !doc.pat?.clear) x.fillStyle = dzCol(doc, doc.bg?.c) || '#ffffff', x.fillRect(0, 0, W, H);
-  if (doc.bg?.img && !opts.noBg) { const im = await dzImg(doc.bg.img);
+  if (doc.bg?.img && !opts.noBg) { const im = await dzImg(doc.bg.img); x.setTransform(1, 0, 0, 1, -OX, -OY);
     if (im) { const s = Math.max(W / im.naturalWidth, H / im.naturalHeight); x.globalAlpha = doc.bg.op ?? 1;
       x.drawImage(im, (W - im.naturalWidth * s) / 2, (H - im.naturalHeight * s) / 2, im.naturalWidth * s, im.naturalHeight * s); x.globalAlpha = 1; } }
   const one1 = async (x, l) => {
@@ -1175,7 +1177,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
       }
     }
     x.save();
-    x.setTransform(scale, 0, 0, scale, 0, 0);
+    x.setTransform(scale, 0, 0, scale, -OX, -OY);
     x.translate(l.x + l.w / 2, l.y + (l.h || 0) / 2); x.rotate((l.rot || 0) * Math.PI / 180);
     x.globalAlpha = l.op ?? 1;
     const flip = () => { if (l.fx || l.fy) x.scale(l.fx ? -1 : 1, l.fy ? -1 : 1); };   // mirrored
@@ -1310,7 +1312,7 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
     const off = document.createElement('canvas'); off.width = x.canvas.width; off.height = x.canvas.height; const o = off.getContext('2d');
     await one1(o, l);
     const w = l.w, h = l.h || 1, A = g.a || { x: 0, y: -0.5 }, B = g.b || { x: 0, y: 0.5 };
-    o.save(); o.setTransform(scale, 0, 0, scale, 0, 0); o.translate(l.x + w / 2, l.y + h / 2); o.rotate((l.rot || 0) * Math.PI / 180); if (l.fx || l.fy) o.scale(l.fx ? -1 : 1, l.fy ? -1 : 1);
+    o.save(); o.setTransform(scale, 0, 0, scale, -OX, -OY); o.translate(l.x + w / 2, l.y + h / 2); o.rotate((l.rot || 0) * Math.PI / 180); if (l.fx || l.fy) o.scale(l.fx ? -1 : 1, l.fy ? -1 : 1);
     const ax = A.x * w, ay = A.y * h, bx = B.x * w, by = B.y * h;
     const gr = g.type === 'radial' ? o.createRadialGradient(ax, ay, 0, ax, ay, Math.max(1, Math.hypot(bx - ax, by - ay))) : o.createLinearGradient(ax, ay, bx, by);
     for (const st of [...g.stops].sort((p, q) => p.p - q.p)) gr.addColorStop(Math.max(0, Math.min(1, st.p)), `rgba(0,0,0,${Math.max(0, Math.min(1, st.o))})`);
@@ -1322,14 +1324,14 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   const chLines = [];   /* a challenge's outline and detail lines, drawn last so nothing covers them */
   dzFill.face = opts.face || 'f';   /* for {page} */
   if (!opts.only) { const mmL = (doc.layers || []).filter(l => l.mm?.p && !l.hide);   /* mind-map connectors, under the nodes */
-    if (mmL.length) { const by = new Map(doc.layers.map(l => [l.id, l])); x.save(); x.setTransform(scale, 0, 0, scale, 0, 0);
+    if (mmL.length) { const by = new Map(doc.layers.map(l => [l.id, l])); x.save(); x.setTransform(scale, 0, 0, scale, -OX, -OY);
       for (const c of mmL) { const p = by.get(c.mm.p); if (p && !p.hide) dzMmLink(x, doc, p, c); } x.restore(); } }
   for (const L of dzPages(doc, opts.face))
   for (let i = 0; i < L.length; i++) {
     const base = L[i]; let j = i + 1;
     while (j < L.length && L[j].clip) j++;
     const clips = L.slice(i + 1, j).filter(show); i = j - 1;
-    if (!show(base)) continue;
+    if (!show(base) || !onView(base)) continue;   /* off the window: not drawn */
     if (doc.chal && base.t === 'shape' && base.role) { if (base.role === 'pack') await dzChPack(x, doc, base, scale, one); else if (base.role === 'shade') await dzChShade(x, doc, base, scale); else chLines.push(base); continue; }
     if (!clips.length) { await oneW(x, base); continue; }
     const off = document.createElement('canvas'); off.width = cv.width; off.height = cv.height;
@@ -1343,9 +1345,9 @@ async function dzDraw(cv, doc, scale = 1, opts = {}) {
   }
   /* A value study's stencil, where it goes on the skin: under the judged lines (black, at their needle's width), faint
      purple, so the two never look alike. Hidden with Stencil in the Challenge menu. */
-  if (doc.chal?.stencil && !opts.noStencil && doc.chal.showSten !== false) { const S = doc.chal.stencil, im = await dzImg(S.ref); if (im) { x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); } }
+  if (doc.chal?.stencil && !opts.noStencil && doc.chal.showSten !== false) { const S = doc.chal.stencil, im = await dzImg(S.ref); if (im) { x.save(); x.setTransform(scale, 0, 0, scale, -OX, -OY); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); } }
   if (doc.chal && !opts.noStencil && doc.chal.showSten !== false) for (const l of doc.layers) { const S = l.sh?.stencil; if (l.hide || !S || l.sh.mkLive) continue; const im = await dzImg(S.ref); if (!im) continue;
-    x.save(); x.setTransform(scale, 0, 0, scale, 0, 0); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
+    x.save(); x.setTransform(scale, 0, 0, scale, -OX, -OY); x.globalAlpha = 0.55; x.drawImage(im, S.box[0] * CH_PX, S.box[1] * CH_PX, S.box[2] * CH_PX, S.box[3] * CH_PX); x.restore(); }
   for (const l of chLines) await one(x, { ...l, fill: null, fm: undefined, stroke: '#141414', sw: (CH_NW[l.nd] || 0.7) * CH_PX, dash: '' });
 }
 /* ---------- Palettes, recent colours, the eyedropper ----------
@@ -2586,7 +2588,7 @@ DZ.edit = async (id) => {
 
   // Canvas size: fit the page into the stage; drawn at device resolution for crisp text.
   /* View: zoom (z, 1 = the whole design fits) and pan (vx, vy, screen px from centred). */
-  let fitK = 1, z = 1, vx = 0, vy = 0, rs = 1, crispT = null, vrot = 0;   /* vrot: a sketch's view can be turned (degrees) */
+  let fitK = 1, z = 1, vx = 0, vy = 0, rs = 1, crispT = null, vrot = 0, VW = null;   /* VW: the window of the page being drawn, when zoomed in */   /* vrot: a sketch's view can be turned (degrees) */
   const SK = doc.kind === 'sketch';
   const tb = () => doc.kind === 'note' ? ($('#dz-notebar')?.offsetHeight || 0) + 16 : doc.sides ? 48 : 0;   // room above the design for the page tabs, or a note's bar
   // Phones: the panel is a bottom sheet (up to 48% of the stage, or just its header when folded).
@@ -2603,12 +2605,18 @@ DZ.edit = async (id) => {
     const mx = Math.max(0, (r.width + w) / 2 - 80), my = Math.max(0, (r.height + h) / 2 - 80);
     vx = Math.max(-mx, Math.min(mx, vx)); vy = Math.max(-my, Math.min(my, vy));
     Object.assign(page.style, { width: w + 'px', height: h + 'px', left: (r.width - w + rl) / 2 + vx + 'px', top: (ah - h + tb()) / 2 + vy + 'px', transform: vrot ? `rotate(${vrot}deg)` : '' });
-    cv.style.width = w + 'px'; cv.style.height = h + 'px';
-    // The drawing itself: device resolution, capped so a big zoom doesn't make a huge canvas.
-    if (crisp) { rs = Math.min(k * Math.min(2, devicePixelRatio || 1), 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
+    // The drawing itself, at device resolution. Zoomed in past what one canvas holds, only the part on screen (with
+    // a margin to move into) is drawn, so it stays sharp and quick however close you go.
+    if (crisp) { const want = k * Math.min(2, devicePixelRatio || 1);
+      if (vrot || Math.max(doc.w, doc.h) * want <= 4096) { VW = null; rs = Math.min(want, 4096 / Math.max(doc.w, doc.h)); cv.width = Math.round(doc.w * rs); cv.height = Math.round(doc.h * rs); }
+      else { const pl = (r.width - w + rl) / 2 + vx, pt = (ah - h + tb()) / 2 + vy; let x0 = -pl / k, y0 = -pt / k, x1 = (r.width - pl) / k, y1 = (r.height - pt) / k;
+        const mw = (x1 - x0) * 0.35, mh = (y1 - y0) * 0.35; x0 = Math.max(0, x0 - mw); y0 = Math.max(0, y0 - mh); x1 = Math.min(doc.w, x1 + mw); y1 = Math.min(doc.h, y1 + mh);
+        VW = { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) }; rs = Math.min(want, 4096 / Math.max(VW.w, VW.h)); cv.width = Math.round(VW.w * rs); cv.height = Math.round(VW.h * rs); } }
+    Object.assign(cv.style, VW ? { position: 'absolute', left: VW.x * k + 'px', top: VW.y * k + 'px', width: VW.w * k + 'px', height: VW.h * k + 'px' } : { position: '', left: '', top: '', width: w + 'px', height: h + 'px' });
+    if (!crisp && VW) crispLater();   /* moved or zoomed: draw the new window once it settles */
     const zl = $('#dz-zl'); if (zl) zl.textContent = Math.abs(z - 1) < 0.01 && !vx && !vy ? 'Fit' : Math.round(z * 100) + '%';
     const rb = $('#dz-vrot'); if (rb) { rb.hidden = !vrot; rb.querySelector('b').textContent = Math.round(vrot) + '°'; }
-    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel(); try { gridDraw(); patDraw(); if (doc.chal) chOv(); } catch {}   /* set up further down; nothing to draw before then */
+    drawFolds(); drawCut(); drawNodes(); drawCont(); drawPen(); placeSel(); try { if (crisp) gridDraw(); patDraw(); if (doc.chal) chOv(); } catch {}   /* set up further down; the grid is stretched while moving and redrawn when it settles */
   };
   // Zoom around a point on the stage (the spot under the fingers or cursor stays put). While zooming the
   // drawing is stretched; it's redrawn sharp a moment after zooming stops.
@@ -2658,7 +2666,7 @@ DZ.edit = async (id) => {
   let cont = null, cdrag = null;
   let penOn = false, pen = null, spaceHeld = false;
   let pclOn = false, stroke = null;   // the pencil (see "Pencil" below)   // the pen tool (see "Pen tool" below)   // the contour tool (see "Shape builder" below)   // editing a shape's nodes (see "Node tool" below)   // selecting part of an item (see "Selecting an area" below)   // crop mode for the selected picture or shape
-  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face }); if (job === drawing) { placeSel(); try { patDraw(); if (doc.chal && !chDrag) { chOv(); chAreaDraw(); } } catch {} } };
+  const redraw = async () => { const job = (drawing = Symbol()); await dzDraw(cv, doc, rs, { ghost: cropping ? sel : null, face, ...(VW ? { ox: VW.x, oy: VW.y, view: VW } : {}) }); if (job === drawing) { placeSel(); try { patDraw(); if (doc.chal && !chDrag) { chOv(); chAreaDraw(); } } catch {} } };
   // Page tabs (top right of the design): front, back and the master page under both.
   const drawFaces = () => {
     const b = $('#dz-faces'); if (!b) return; const pageKind = !!DZ_KINDS[doc.kind]?.page; b.hidden = !doc.sides && !pageKind; if (b.hidden) return;
@@ -6736,9 +6744,9 @@ DZ.edit = async (id) => {
   // moving: a vanishing point is being dragged, so its handle is moved, not rebuilt (that would drop the drag).
   function gridDraw(moving) { const c = $('#dz-gridcv'), vb = $('#dz-vps'); if (!c) return; const G = doc.grid;
     c.hidden = !G?.on; if (vb && !moving) vb.innerHTML = ''; if (!G?.on) return;
-    const W = doc.w, H = doc.h, dpr = Math.min(2, devicePixelRatio || 1), cw = Math.max(1, Math.round(W * k * dpr)), ch = Math.max(1, Math.round(H * k * dpr));
+    const W = doc.w, H = doc.h, dpr = Math.min(2, devicePixelRatio || 1), s = Math.min(k * dpr, 4096 / Math.max(W, H)), cw = Math.max(1, Math.round(W * s)), ch = Math.max(1, Math.round(H * s));   /* capped: a close zoom never makes a huge canvas */
     if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; }
-    const x = c.getContext('2d'), s = k * dpr, g = gStep(), T = G.type || 'square'; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cw, ch); x.setTransform(s, 0, 0, s, 0, 0);
+    const x = c.getContext('2d'), g = gStep(), T = G.type || 'square'; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cw, ch); x.setTransform(s, 0, 0, s, 0, 0);
     const line = (a, b) => { x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); }, span = Math.hypot(W, H) * 2;
     const op = G.op ?? 0.45; x.lineWidth = 1 / s; x.strokeStyle = `rgba(31,182,166,${op})`; x.beginPath();
     const ox = G.ox || 0, oy = G.oy || 0, md = (a, m) => ((a % m) + m) % m;   /* the grid's origin (a sketch's moves as its page grows) */
