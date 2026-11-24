@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Your tattoo brief</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pirata+One&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0b0f0f; --bg2: #121818; --line: #263131; --ink: #ecebe6; --ink2: #9aa5a3; --teal: #1fb6a6; --gold: #e8b44c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 Inter, system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 18px 16px 60px; }
+  h1, h2 { font-family: 'Pirata One', serif; font-weight: 400; }
+  h1 { font-size: 34px; margin: 0; line-height: 1.1; }
+  h2 { font-size: 26px; margin: 0 0 6px; }
+  .muted { color: var(--ink2); }
+  .card { background: var(--bg2); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-top: 14px; }
+  .head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; border-bottom: 3px solid var(--teal); padding-bottom: 10px; }
+  .bar { height: 6px; background: var(--line); border-radius: 99px; margin-top: 12px; overflow: hidden; } .bar i { display: block; height: 100%; background: var(--teal); transition: width .2s; }
+  .step { font-size: 12px; color: var(--ink2); text-transform: uppercase; letter-spacing: .06em; margin-top: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 99px; padding: 8px 13px; font: 500 14px Inter, sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chip.on { background: var(--teal); color: #061211; border-color: var(--teal); font-weight: 600; }
+  .chip i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .grp { font-size: 12px; color: var(--ink2); margin: 12px 0 0; text-transform: uppercase; letter-spacing: .05em; }
+  .opts { display: grid; gap: 8px; margin-top: 10px; }
+  .opt { text-align: left; border: 2px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 14px; padding: 12px 14px; cursor: pointer; font: inherit; }
+  .opt.on { border-color: var(--teal); background: rgba(31,182,166,.1); }
+  .opt b { display: block; } .opt small { color: var(--ink2); font-size: 13px; }
+  .chart { display: block; width: 100%; max-width: 380px; margin: 8px auto 0; border-radius: 12px; background: #fff; }
+  label.f { display: block; margin-top: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink2); font-weight: 600; }
+  input[type=text], input[type=tel], input[type=number], textarea { display: block; width: 100%; margin-top: 4px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; font: 15px Inter, sans-serif; text-transform: none; letter-spacing: 0; }
+  input:focus, textarea:focus { outline: 2px solid var(--teal); border-color: transparent; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .num { display: flex; align-items: center; gap: 10px; margin-top: 6px; } .num button { width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: 700 20px Inter; cursor: pointer; } .num b { font-size: 22px; min-width: 30px; text-align: center; }
+  .chk { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin: 12px 0 0; }
+  .chk input { width: 20px; height: 20px; accent-color: var(--teal); flex: none; margin-top: 1px; }
+  .nav { display: flex; gap: 8px; margin-top: 16px; }
+  .btn { flex: 1; display: block; border: 0; border-radius: 12px; padding: 14px; font: 700 16px Inter, sans-serif; cursor: pointer; text-align: center; }
+  .btn.pri { background: var(--teal); color: #061211; } .btn.sec { background: none; color: var(--ink2); border: 1px solid var(--line); flex: 0 0 auto; padding: 14px 18px; }
+  .warn { border-color: var(--gold); color: var(--gold); font-size: 14px; }
+  .sum div { display: grid; grid-template-columns: 26px 1fr; gap: 6px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; } .sum div:first-child { border-top: 0; } .sum b { color: var(--teal); }
+  .err { text-align: center; padding: 60px 16px; } .foot { text-align: center; font-size: 11px; color: #5d6867; margin-top: 28px; }
+</style>
+</head>
+<body>
+<main id="app"><p class="muted" style="text-align:center;margin-top:40vh">Opening…</p></main>
+<script>
+/* A short brief for a tattoo quote: eight quick questions, answered with taps. The setup travels in the link after
+   '#', which browsers never send to the server; the answers go straight to the artist on WhatsApp. */
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+const fromB64u = (t) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0));
+const toB64u = (bytes) => { let b = ''; bytes.forEach(x => b += String.fromCharCode(x)); return btoa(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+async function unpack(h) { const kind = h[0], bytes = fromB64u(h.slice(1)); if (kind === 'j') return JSON.parse(new TextDecoder().decode(bytes));
+  return JSON.parse(new TextDecoder().decode(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer())); }
+const PAIN = ['#b9b9b9', '#e6d27a', '#f0b860', '#ef9a6a', '#e0605a'];
+const SIZES = [['s', 'Small', 'About a bank card', 8, 5], ['m', 'Medium', 'About the palm of a hand', 12, 10], ['l', 'Large', 'About a hand span', 20, 15], ['xl', 'Very large', 'Half a sleeve, a back piece or more', 35, 25]];
+const COLS = [['black', 'Black', 'Black ink only'], ['bg', 'Black & grey', 'Black with grey shading'], ['colour', 'Colour', 'Full colour']];
+const BGS = [['none', 'None'], ['some', 'A little'], ['full', 'A full background']];
+const SIDES = [['L', 'Left'], ['C', 'Centre'], ['R', 'Right'], ['U', 'Not sure']];
+const STEPS = ['About you', 'Placement', 'Size', 'Colour', 'Detail', 'Style', 'What’s in it', 'Text', 'References'];
+let Q, S = { st: 0, n: '', p: '', sd: '', pl: '', sz: '', w: '', h: '', c: '', cn: '', d: 0, s: '', el: 1, eln: '', bg: '', mn: '', tx: '', f: '', sp: false, rf: true, m: '' };
+const chip = (k, v, l, extra = '') => `<button class="chip ${S[k] === v ? 'on' : ''}" data-k="${k}" data-v="${esc(v)}">${extra}${esc(l)}</button>`;
+const opt = (k, v, b, sm) => `<button class="opt ${S[k] === v ? 'on' : ''}" data-k="${k}" data-v="${esc(v)}"><b>${esc(b)}</b>${sm ? `<small>${esc(sm)}</small>` : ''}</button>`;
+const big = () => S.sz === 'xl' || S.el >= 5;
+function body() { const s = S.st;
+  if (s === 0) return `<h2>Tell us about your tattoo</h2><p class="muted">${esc(Q.in)}</p><p class="muted">Eight quick questions, about 5 minutes. Tap “Not sure” on anything you’d like the artist to decide.</p>
+    <label class="f">Your name<input type="text" id="n" autocomplete="name" value="${esc(S.n)}"></label><label class="f">Phone number<input type="tel" id="p" autocomplete="tel" placeholder="${Q.cc ? '+' + Q.cc + ' ' : '+'}…" value="${esc(S.p)}"></label>`;
+  if (s === 1) { const groups = [...new Set(Q.pl.map(x => x[1]))];
+    return `<h2>Where on your body?</h2><p class="muted">Grey is the least painful, red the most.</p><img class="chart" src="img/pain-chart.png" alt="Body pain chart">
+      <div class="grp">Which side</div><div class="chips">${SIDES.map(([k, l]) => chip('sd', k, l)).join('')}</div>
+      ${groups.map(g => `<div class="grp">${esc(g)}</div><div class="chips">${Q.pl.filter(x => x[1] === g).map(x => chip('pl', x[0], x[0], `<i style="background:${PAIN[(x[2] || 1) - 1]}"></i>`)).join('')}</div>`).join('')}
+      <div class="chips">${chip('pl', '?', 'Not sure yet')}</div>`; }
+  if (s === 2) return `<h2>Roughly how big?</h2><p class="muted">A rough idea is fine; the artist fits it to your body.</p>
+    <div class="opts">${SIZES.map(([k, b, sm, w, h]) => opt('sz', k, b, `${sm} · about ${w} × ${h} cm`)).join('')}${opt('sz', 'own', 'I know the size', 'Width and height in cm')}</div>
+    ${S.sz === 'own' ? `<div class="two"><label class="f">Width (cm)<input type="number" id="w" inputmode="decimal" value="${esc(S.w)}"></label><label class="f">Height (cm)<input type="number" id="h" inputmode="decimal" value="${esc(S.h)}"></label></div>` : ''}
+    ${S.sz === 'xl' ? '<div class="card warn">Big pieces like sleeves and back pieces usually need a quick consultation to plan. Carry on, and we’ll set one up.</div>' : ''}`;
+  if (s === 3) return `<h2>Colour or black and grey?</h2><div class="opts">${COLS.map(([k, b, sm]) => opt('c', k, b, sm)).join('')}${opt('c', '?', 'Not sure', 'The artist will suggest what suits it')}</div>
+    <label class="f">Colours to use or avoid <span style="text-transform:none">(optional)</span><input type="text" id="cn" value="${esc(S.cn)}" placeholder="e.g. no red, mostly blues"></label>`;
+  if (s === 4) return `<h2>How much detail?</h2><div class="opts">${Q.dl.map(([b, sm], i) => opt('d', i + 1, b, sm)).join('')}${opt('d', -1, 'Not sure', 'Leave it to the artist')}</div>`;
+  if (s === 5) return `<h2>Which style?</h2><p class="muted">No need to know the names: tap the closest, or send pictures of what you like.</p>
+    <div class="chips">${Q.sty.map(x => chip('s', x, x)).join('')}${chip('s', '?', 'I’ll send pictures')}</div>`;
+  if (s === 6) return `<h2>What’s in it?</h2><p class="muted">The things you want in the tattoo: a rose, a skull, a name, a place…</p>
+    <label class="f">How many things</label><div class="num"><button data-el="-1">−</button><b>${S.el}</b><button data-el="1">+</button></div>
+    <label class="f">What are they<textarea id="eln" rows="2" placeholder="e.g. a rose, a pocket watch, my son’s birth date">${esc(S.eln)}</textarea></label>
+    <div class="grp">Background</div><div class="chips">${BGS.map(([k, l]) => chip('bg', k, l)).join('')}</div>
+    <label class="f">The meaning or story <span style="text-transform:none">(optional)</span><textarea id="mn" rows="2">${esc(S.mn)}</textarea></label>
+    ${S.el >= 5 ? '<div class="card warn">That’s a lot going on: a quick consultation will help plan it. Carry on, and we’ll set one up.</div>' : ''}`;
+  if (s === 7) return `<h2>Any words?</h2><p class="muted">Names, dates or a quote. Leave it empty if there’s no text.</p>
+    <label class="f">The exact words<textarea id="tx" rows="2">${esc(S.tx)}</textarea></label>
+    ${S.tx.trim() ? `<label class="chk"><input type="checkbox" id="sp" ${S.sp ? 'checked' : ''}><span>I’ve double-checked the spelling.</span></label>
+      <div class="grp">Font</div><div class="chips">${Q.fn.map(x => chip('f', x, x)).join('')}${chip('f', '?', 'I’ll send a sample')}</div>` : ''}`;
+  if (s === 8) return `<h2>Pictures help most</h2><p class="muted">Send reference pictures with your reply: tattoos you like, photos, sketches, even AI mock-ups. They don’t need to be perfect; they show us what you have in mind.</p>
+    <label class="chk"><input type="checkbox" id="rf" ${S.rf ? 'checked' : ''}><span>I’ll send pictures after this message.</span></label>
+    <label class="f">Anything else? <span style="text-transform:none">(optional)</span><textarea id="m" rows="2">${esc(S.m)}</textarea></label>
+    ${big() ? '<div class="card warn">This one will need a quick consultation to plan; we’ll suggest a time.</div>' : ''}
+    <div class="card sum">${lines().map(([k, v], i) => `<div><b>${i + 1}.</b><span>${esc(k)}: ${esc(v)}</span></div>`).join('')}</div>`;
+  return ''; }
+const nm = (arr, k) => (arr.find(x => x[0] === k) || [])[1];
+function lines() { const sz = S.sz === 'own' ? `${S.w || '?'} × ${S.h || '?'} cm` : S.sz ? `${nm(SIZES, S.sz)} (about ${SIZES.find(x => x[0] === S.sz)[3]} × ${SIZES.find(x => x[0] === S.sz)[4]} cm)` : 'Not sure';
+  return [['Placement', `${S.pl && S.pl !== '?' ? S.pl : 'Not sure'}${S.sd && S.sd !== 'U' ? ', ' + nm(SIDES, S.sd).toLowerCase() : ''}`], ['Size', sz],
+    ['Colour', `${S.c && S.c !== '?' ? nm(COLS, S.c) : 'Not sure'}${S.cn.trim() ? ' (' + S.cn.trim() + ')' : ''}`], ['Detail', S.d > 0 ? Q.dl[S.d - 1][0] : 'Not sure'], ['Style', S.s && S.s !== '?' ? S.s : 'Sending pictures'],
+    ['In it', `${S.el} thing${S.el === 1 ? '' : 's'}${S.eln.trim() ? ': ' + S.eln.trim() : ''}; background: ${S.bg ? nm(BGS, S.bg).toLowerCase() : 'not sure'}${S.mn.trim() ? '; meaning: ' + S.mn.trim() : ''}`],
+    ['Text', S.tx.trim() ? `“${S.tx.trim()}”${S.f && S.f !== '?' ? ', ' + S.f : ''}${S.sp ? ' (spelling checked)' : ''}` : 'None'], ['References', S.rf ? 'Sending pictures' : 'None']]; }
+const intl = (v) => { const t = v.trim(); if (!t || t.startsWith('+')) return t; if (t.startsWith('00')) return '+' + t.slice(2); return /^0\d/.test(t) && Q.cc ? `+${Q.cc} ${t.slice(1)}` : t; };
+function reply() { const sz = SIZES.find(x => x[0] === S.sz), w = S.sz === 'own' ? +S.w || 0 : sz ? sz[3] : 0, h = S.sz === 'own' ? +S.h || 0 : sz ? sz[4] : 0;
+  const A = { v: 1, w0: Q.w, n: S.n.trim(), p: intl(S.p), pl: S.pl === '?' ? '' : S.pl, sd: S.sd, sw: w, sh: h, c: S.c === '?' ? '' : S.c, cn: S.cn.trim(), d: S.d > 0 ? S.d : 0, s: S.s === '?' ? '' : S.s,
+    el: S.el, eln: S.eln.trim(), bg: S.bg, mn: S.mn.trim(), tx: S.tx.trim(), f: S.f === '?' ? '' : S.f, sp: S.sp, rf: S.rf, m: S.m.trim(), big: big() };
+  return `Hi! Here’s my tattoo brief.\nName: ${A.n}\n${A.p ? 'Phone: ' + A.p + '\n' : ''}` + lines().map(([k, v], i) => `${i + 1}. ${k}: ${v}`).join('\n') + (A.m ? `\nNote: ${A.m}` : '')
+    + (A.big ? '\n(I may need a consultation.)' : '') + `\n\n(For ${Q.st}'s app) IFB1.${toB64u(new TextEncoder().encode(JSON.stringify(A)))}`; }
+function draw() { const last = STEPS.length - 1, ok = S.st !== 0 || S.n.trim();
+  $('#app').innerHTML = `<div class="head"><div><h1>${esc(Q.st)}</h1>${Q.ar && Q.ar !== Q.st ? `<div class="muted">${esc(Q.ar)}</div>` : ''}</div><small class="muted">Tattoo brief</small></div>
+    <div class="bar"><i style="width:${Math.round(S.st / last * 100)}%"></i></div><div class="step">${S.st + 1} of ${STEPS.length} · ${STEPS[S.st]}</div>
+    <div class="card">${body()}</div>
+    <div class="nav">${S.st ? '<button class="btn sec" id="bk">Back</button>' : ''}${S.st < last ? `<button class="btn pri" id="nx" ${ok ? '' : 'disabled'}>Next</button>` : `<button class="btn pri" id="go">Send to ${esc(Q.st)} on WhatsApp</button>`}</div>
+    ${S.st === last ? '<button class="btn sec" id="cp" style="width:100%;margin-top:8px">Copy my answers instead</button>' : ''}
+    <div class="foot">Nothing you type here is stored on this page; it only goes into your message.</div>`; }
+const keep = () => { for (const id of ['n', 'p', 'w', 'h', 'cn', 'eln', 'mn', 'tx', 'm']) { const el = document.getElementById(id); if (el) S[id] = el.value; }
+  for (const id of ['sp', 'rf']) { const el = document.getElementById(id); if (el) S[id] = el.checked; } };
+document.addEventListener('click', async (e) => { const t = e.target.closest('[data-k],[data-el],#nx,#bk,#go,#cp'); if (!t) return; keep();
+  if (t.dataset.k) { const k = t.dataset.k, v = t.dataset.v; S[k] = k === 'd' ? +v : v; return draw(); }
+  if (t.dataset.el) { S.el = Math.max(1, Math.min(12, S.el + +t.dataset.el)); return draw(); }
+  if (t.id === 'nx') { S.st++; draw(); return scrollTo(0, 0); } if (t.id === 'bk') { S.st--; draw(); return scrollTo(0, 0); }
+  if (t.id === 'go') { location.href = `https://wa.me/${Q.ph}?text=${encodeURIComponent(reply())}`; return; }
+  if (t.id === 'cp') { try { await navigator.clipboard.writeText(reply()); t.textContent = 'Copied. Paste it in a message to ' + Q.st; } catch { prompt('Copy this and send it:', reply()); } } });
+document.addEventListener('input', (e) => { if (e.target.id === 'n') { S.n = e.target.value; const b = $('#nx'); if (b) b.disabled = !S.n.trim(); }
+  if (e.target.id === 'tx') { const had = !!S.tx.trim(); S.tx = e.target.value; if (had !== !!S.tx.trim()) { draw(); const el = $('#tx'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); } } });
+(async () => { try { const h = location.hash.slice(1); if (!h) throw 0; Q = await unpack(h); document.title = `Your tattoo brief · ${Q.st}`; draw(); }
+  catch { $('#app').innerHTML = '<div class="err"><h1>Brief not found</h1><p class="muted">This link looks incomplete. Ask your artist to send it again.</p></div>'; } })();
+</script>
+</body>
+</html>

@@ -3025,4 +3025,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .de-note { display: flex; align-items: center; gap: 10px; } .de-note .c-main { flex: 1; display: grid; } .de-note.warn { border-color: var(--amber, #e0a030); }
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 552; }
+:root { --app-build: 553; }

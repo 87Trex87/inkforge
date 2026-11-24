@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 552;
+const APP_BUILD = 553;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -5748,7 +5748,8 @@ async function qlDraw() {
       <div class="seg" id="ql-f">${[['open', 'Open'], ['done', 'Completed'], ['all', 'All']].map(([k, l]) =>
         `<button data-f="${k}" class="${QL.f === k ? 'on' : ''}">${l} (${n[k]})</button>`).join('')}</div>
       <a class="btn small icon-btn" href="#quotes-table" style="margin-left:auto" data-tip="All quotes as a table: search, filter, export and print" aria-label="Quotes table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a>
-      <button class="btn small" id="ql-reply" data-tip="Read the reply a client sent from a quote link">Paste client reply</button>
+      <button class="btn small" id="ql-brief" data-tip="Eight quick questions for a quote, as a fill-in link or a printable sheet">Client brief</button>
+      <button class="btn small" id="ql-reply" data-tip="Read the reply a client sent from a quote link or a brief">Paste client reply</button>
       <button class="btn small primary" id="ql-new">New quote</button></div>
     ${cmp.length ? `<div class="card ql-cmp"><b>Quoted vs real time</b>
       <p>Across ${cmp.length} completed tattoo${cmp.length === 1 ? '' : 's'}, the real time was ${Math.abs(Math.round(avg)) < 1 ? 'right on the estimate' : `<b>${Math.abs(Math.round(avg))}% ${avg > 0 ? 'longer' : 'shorter'}</b> than quoted`} on average.
@@ -5774,6 +5775,7 @@ async function qlDraw() {
     const t = e.target, d = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (d('f')) { QL.f = d('f'); return qlDraw(); }
     if (t.closest('#ql-reply')) return openReplyPaste();
+    if (t.closest('#ql-brief')) return briefDlg();
     if (d('qvou')) { location.hash = 'vou-new/' + d('qvou'); return; }
     if (d('qbk')) { const q = await DB.one('SELECT reply FROM quotes WHERE id = ?', [+d('qbk')]); return bookFromReply(+d('qbk'), JSON.parse(q.reply)); }
     if (t.closest('#ql-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url); Object.assign(QZ, QZ_RESET); location.hash = 'quote'; return; }
@@ -5854,18 +5856,125 @@ function readReplyCode(t) {
 const OPT_NAMES = { one: 'As quoted', tog: 'All together', sep: 'Separately' };
 const replyLine = (rp) => `${rp.d ? fmtDay(rp.d) : 'No day'}${rp.t ? ' at ' + rp.t : ''}${rp.o && rp.o !== 'one' ? ' · ' + OPT_NAMES[rp.o].toLowerCase() : ''}`;
 
+/* ---------- Tattoo brief ----------
+   What the artist needs for a quote, asked in eight quick steps that match the quote calculator: placement, size,
+   colour, detail, style, what's in it, text and references. As a fill-in link (brief.html, answered with taps and sent
+   back on WhatsApp with a code that fills in the calculator) or as a printable sheet the client answers by number. */
+const BRIEF_INTRO = 'Tell us where, how big and what you have in mind. We use your answers as a guide for the design and the quote; the final composition is in the artist\u2019s hands.';
+const briefIntro = () => Settings.get('brief_intro') || BRIEF_INTRO;
+async function briefLink() { const wa = waNumber();
+  if (!wa) return toast(Settings.get('artist_phone') ? 'Your contact number in Settings needs its country code, e.g. +27 82 123 4567.' : 'Add your phone number in Settings first; answers are sent to it on WhatsApp.');
+  const c = qCfg(), data = { v: 1, st: Settings.get('studio_name') || Settings.get('artist_name') || 'Tattoo studio', ar: Settings.get('artist_name') || '', ph: wa, cc: countryCode(), w: WS.cur?.id ?? WS.cur,
+    in: briefIntro(), pl: c.placements.map(p => [p[0], p[1], p[2]]), sty: c.styles.map(x => x[0]), fn: c.fonts.map(x => x[0]), dl: DETAIL_LEVELS };
+  const url = new URL('brief.html', location.href).href + '#' + await packLink(data);
+  const msg = `Hi! To quote your tattoo, please fill in this short brief (about 5 minutes) and send it back to me:\n${url}`;
+  try { if (navigator.share) await navigator.share({ text: msg }); else { await navigator.clipboard.writeText(msg); toast('Link copied. Paste it into a message to the client.'); } }
+  catch (e) { if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(msg); toast('Link copied.'); } catch { toast('Could not share the link.'); } } } }
+/* The printable brief: A4, the same eight questions with boxes to tick, answered by number in a reply. */
+async function briefPages() {
+  const { W, H, M, teal, ink, soft } = DOC, CW = W - 2 * M, c = qCfg(), pages = [], F = []; let P = null, y = 0, sec = '';   /* F: the fill-in spots, for the PDF */
+  const page = async (first) => { P = await docCanvas(); pages.push(P); if (first) await P.header(); y = first ? 268 : 100; };
+  const box = (x, yy, label, f = 18) => { F.push({ p: pages.length - 1, t: 'check', x, y: yy - 17, w: 20, h: 20, n: sec + ': ' + label }); P.x.strokeStyle = '#555'; P.x.lineWidth = 2; P.x.strokeRect(x, yy - 17, 20, 20); P.text(label, x + 30, yy, P.font(f), ink); };
+  const line = (label, x, yy, w) => { P.text(label, x, yy, P.font(18, 600), ink); const lw = label ? P.x.measureText(label).width + 10 : 0; F.push({ p: pages.length - 1, t: 'text', x: x + lw, y: yy - 20, w: w - lw, h: 26, n: sec + ': ' + (label.replace(/:$/, '') || 'more') + (F.length) }); P.x.fillStyle = '#999'; P.x.fillRect(x + P.x.measureText(label).width + 10, yy + 4, w - P.x.measureText(label).width - 10, 1.5); };
+  const grid = async (items, cols, f = 17) => { const cw = CW / cols; for (let i = 0; i < items.length; i += cols) { if (y + 30 > H - 120) await page(false); items.slice(i, i + cols).forEach((t, j) => box(M + j * cw, y, t, f)); y += 27; } };
+  const head = async (n, t, sub) => { sec = n + ' ' + t; if (y + 60 > H - 110) await page(false); y += 24; P.x.fillStyle = teal; P.x.beginPath(); P.x.arc(M + 18, y - 8, 18, 0, 7); P.x.fill(); P.text(String(n), M + 18, y, P.font(20, 700), '#fff', 'center');
+    P.text(t, M + 48, y, P.font(22, 700), ink); if (sub) { P.text(sub, M + 48 + P.x.measureText(t).width + 14, y, P.font(16), soft); } y += 30; };
+  await page(true);
+  P.text('Tattoo brief', M, y + 40, P.font(56, 400, true), ink); y += 70;
+  for (const ln of P.wrap(briefIntro(), P.font(18), CW)) { P.text(ln, M, y, P.font(18), soft); y += 26; }
+  P.x.fillStyle = '#eef6f4'; P.x.beginPath(); P.x.roundRect(M, y + 2, CW, 46, 10); P.x.fill(); P.text('Reply on WhatsApp with the number and your answer, e.g. \u201c1. Left forearm\u201d. Not sure? Write \u201cartist\u2019s choice\u201d.', M + 16, y + 32, P.font(17, 600), teal); y += 58;
+  await head(1, 'Placement', 'where on your body, and which side');
+  const img = new Image(); img.src = 'img/pain-chart.png'; await img.decode().catch(() => {}); const ih = 240, iw = img.naturalWidth ? img.naturalWidth * ih / img.naturalHeight : 0;
+  if (iw) { P.x.fillStyle = '#d3dbd8'; P.x.beginPath(); P.x.roundRect(M - 8, y - 18, iw + 16, ih + 16, 10); P.x.fill(); P.x.drawImage(img, M, y - 10, iw, ih); }   /* a faint panel, so the chart's white labels show */
+  const PC = ['#b9b9b9', '#e6d27a', '#f0b860', '#ef9a6a', '#e0605a'], px = M + iw + 30, pw = W - M - px, pcol = 3, pcw = pw / pcol; let py = y;
+  ['Left', 'Centre', 'Right'].forEach((t, j) => box(px + j * pcw, py, t)); py += 34;
+  c.placements.forEach((p, i) => { const x0 = px + (i % pcol) * pcw, y0 = py + Math.floor(i / pcol) * 18; P.x.fillStyle = PC[(p[2] || 1) - 1]; P.x.beginPath(); P.x.arc(x0 + 6, y0 - 5, 6, 0, 7); P.x.fill(); P.text(p[0], x0 + 18, y0, P.font(15), ink); });
+  y = Math.max(y - 10 + ih, py + Math.ceil(c.placements.length / pcol) * 18) + 6; P.text('Grey: least painful \u00b7 red: most painful', M, y, P.font(14), soft); line('My placement:', M + CW * 0.42, y, CW * 0.58); y += 4;
+  await head(2, 'Size', 'roughly');
+  await grid(['Small: a bank card (8 \u00d7 5 cm)', 'Medium: a palm (12 \u00d7 10 cm)', 'Large: a hand span (20 \u00d7 15 cm)', 'Very large: sleeve or back (consultation)'], 2); line('Or my own size (cm):', M, y, CW / 2); y += 14;
+  await head(3, 'Colour'); await grid(['Black only', 'Black & grey', 'Colour', 'Not sure'], 4); line('Colours to use or avoid:', M, y, CW); y += 14;
+  await head(4, 'Detail'); await grid(DETAIL_LEVELS.map(d => d[0]), 5, 16);
+  await head(5, 'Style', 'tick the closest, or send pictures'); await grid(c.styles.map(x => x[0]), 5, 15);
+  await head(6, 'What\u2019s in it'); line('How many things:', M, y, 360); line('What are they:', M + 390, y, CW - 390); y += 34; line('', M, y, CW); y += 26;
+  P.text('Background:', M, y, P.font(18, 600), ink); ['None', 'A little', 'A full background'].forEach((t, j) => box(M + 150 + j * 220, y, t)); y += 32; line('Meaning or story (optional):', M, y, CW); y += 14;
+  await head(7, 'Text', 'only if there are words'); line('The exact words:', M, y, CW); y += 30; await grid(c.fonts.map(x => x[0]), 5, 16); box(M, y, 'I\u2019ve double-checked the spelling'); y += 24;
+  await head(8, 'References'); for (const ln of P.wrap('Send pictures with your reply: tattoos you like, photos, sketches or AI mock-ups. Big or very detailed pieces need a quick consultation.', P.font(17), CW)) { P.text(ln, M, y, P.font(17), ink); y += 25; }
+  const studio = Settings.get('studio_name') || Settings.get('artist_name') || '', ph = Settings.get('artist_phone') || '';
+  pages.forEach((q, i) => { q.x.fillStyle = teal; q.x.fillRect(M, H - 86, CW, 2); q.text([studio, ph].filter(Boolean).join('  \u00b7  '), M, H - 54, q.font(16), soft); q.text(`Page ${i + 1} of ${pages.length}`, W - M, H - 54, q.font(16, 600), soft, 'right'); });
+  return pages.map((q, i) => ({ cv: q.cv, name: `Tattoo-brief${pages.length > 1 ? '-' + (i + 1) : ''}.png`, fields: F.filter(f => f.p === i) })); }
+/* Client brief: send the link, or print / send the sheet; the wording at the top can be changed. */
+/* The brief as a fillable PDF: each page as a picture, with real tick boxes and text boxes where the sheet has them.
+   Fill it in on a phone or computer and send it back; it still prints as it is. */
+function briefPdf(pages) { const enc = new TextEncoder(), objs = [], add = (o) => { objs.push(o); return objs.length; }, resv = () => add(null);
+  const str = (t) => { t = String(t); return /^[\x20-\x7e]*$/.test(t) ? '(' + t.replace(/[\\()]/g, '\\$&') + ')' : '<FEFF' + [...t].map(ch => ch.charCodeAt(0).toString(16).padStart(4, '0')).join('') + '>'; };
+  const stream = (dict, bytes) => { const bb = typeof bytes === 'string' ? enc.encode(bytes) : bytes; return [enc.encode(`<<${dict}/Length ${bb.length}>>\nstream\n`), bb, enc.encode('\nendstream')]; };
+  const cat = resv(), pgs = resv(), font = add('<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>'), kids = [], fields = [], names = new Set();
+  for (const pg of pages) { const cv = pg.cv, k = 595.28 / cv.width, PW = 595.28, PH = cv.height * k, page = resv(), annots = [];
+    const jpg = Uint8Array.from(atob(cv.toDataURL('image/jpeg', 0.9).split(',')[1]), ch => ch.charCodeAt(0));
+    const img = add(stream(`/Type/XObject/Subtype/Image/Width ${cv.width}/Height ${cv.height}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode`, jpg));
+    const content = add(stream('', `q ${PW} 0 0 ${PH.toFixed(2)} 0 0 cm /I Do Q`));
+    for (const f of pg.fields || []) { let n = f.n; while (names.has(n)) n += '\''; names.add(n);
+      const x = f.x * k, yb = PH - (f.y + f.h) * k, rect = `[${x.toFixed(2)} ${yb.toFixed(2)} ${(x + f.w * k).toFixed(2)} ${(yb + f.h * k).toFixed(2)}]`, base = `/Type/Annot/Subtype/Widget/F 4/P ${page} 0 R/T${str(n)}/Rect${rect}`;
+      if (f.t === 'check') { const w = f.w * k, on = add(stream(`/Type/XObject/Subtype/Form/BBox[0 0 ${w} ${w}]`, `q 1.2 w 0 0.52 0.48 RG ${w * .18} ${w * .5} m ${w * .42} ${w * .22} l ${w * .84} ${w * .8} l S Q`)), off = add(stream(`/Type/XObject/Subtype/Form/BBox[0 0 ${w} ${w}]`, ''));
+        const a = add(`<<${base}/FT/Btn/DA(/Helv 0 Tf 0 g)/MK<<>>/AP<</N<</Yes ${on} 0 R/Off ${off} 0 R>>>>/AS/Off/V/Off>>`); annots.push(a); fields.push(a); }
+      else { const a = add(`<<${base}/FT/Tx/DA(/Helv 9 Tf 0 g)>>`); annots.push(a); fields.push(a); } }
+    objs[page - 1] = `<</Type/Page/Parent ${pgs} 0 R/MediaBox[0 0 ${PW} ${PH.toFixed(2)}]/Contents ${content} 0 R/Resources<</XObject<</I ${img} 0 R>>>>/Annots[${annots.map(n => n + ' 0 R').join(' ')}]>>`; kids.push(page); }
+  objs[cat - 1] = `<</Type/Catalog/Pages ${pgs} 0 R/AcroForm<</Fields[${fields.map(n => n + ' 0 R').join(' ')}]/NeedAppearances true/DA(/Helv 9 Tf 0 g)/DR<</Font<</Helv ${font} 0 R>>>>>>>>`;
+  objs[pgs - 1] = `<</Type/Pages/Count ${kids.length}/Kids[${kids.map(n => n + ' 0 R').join(' ')}]>>`;
+  const parts = [enc.encode('%PDF-1.5\n')], off = []; let at = parts[0].length; const push = (x) => { parts.push(x); at += x.length; };
+  objs.forEach((o, i) => { off.push(at); push(enc.encode(`${i + 1} 0 obj\n`)); (Array.isArray(o) ? o : [enc.encode(o)]).forEach(push); push(enc.encode('\nendobj\n')); });
+  const xr = at; push(enc.encode(`xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${off.map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('')}trailer\n<</Size ${objs.length + 1}/Root ${cat} 0 R>>\nstartxref\n${xr}\n%%EOF`));
+  return new Blob(parts, { type: 'application/pdf' }); }
+function briefDlg() { const o = document.createElement('div'); o.id = 'merge-dlg';
+  o.innerHTML = `<div class="card rc-card"><h2>Client brief</h2><p class="muted" style="margin:-4px 0 10px">Eight quick questions for a quote: placement, size, colour, detail, style, what\u2019s in it, text and references. About 5 minutes for the client; best for small and medium tattoos.</p>
+    <button class="btn primary" id="bf-link" style="width:100%">Send the fill-in link</button>
+    <p class="muted" style="font-size:12px;margin:4px 0 10px">They tap their answers on their phone and send them back on WhatsApp. Paste their reply in Saved quotes \u203a Paste client reply, and the quote calculator fills itself in.</p>
+    <div class="qz-acts"><button class="btn" id="bf-pdf">Fillable PDF</button><button class="btn" id="bf-print">Print</button><button class="btn" id="bf-img">Save image</button><button class="btn" id="bf-send">Send the sheet</button></div>
+    <p class="muted" style="font-size:12px;margin:4px 0 10px">One A4 sheet with boxes to tick. The fillable PDF can be filled in on a phone or computer and sent back; or they reply with numbered answers.</p>
+    <label class="field"><span>Words at the top</span><textarea class="in" id="bf-in" rows="3">${esc(briefIntro())}</textarea></label>
+    <button class="btn" id="bf-x" style="width:100%;margin-top:8px">Close</button></div>`;
+  document.body.appendChild(o);
+  o.addEventListener('input', (e) => { if (e.target.id === 'bf-in') Settings.set('brief_intro', e.target.value.trim() === BRIEF_INTRO ? '' : e.target.value); });
+  o.addEventListener('click', async (e) => { const t = e.target; if (t.closest('#bf-x')) return o.remove(); if (t.closest('#bf-link')) return briefLink();
+    const act = t.closest('#bf-print, #bf-img, #bf-send, #bf-pdf')?.id; if (!act) return; toast('Preparing\u2026', 1000); const pages = await briefPages();
+    if (act === 'bf-pdf') { const f = new File([briefPdf(pages)], 'Tattoo-brief.pdf', { type: 'application/pdf' });
+      try { if (navigator.canShare?.({ files: [f] }) && matchMedia('(pointer: coarse)').matches) return await navigator.share({ files: [f], title: 'Tattoo brief' }); } catch (err) { if (err.name === 'AbortError') return; }
+      return saveFiles([f]); }
+    if (act === 'bf-print') return printCanvas(...pages.map(p => p.cv));
+    const files = await Promise.all(pages.map(async (p) => new File([await new Promise(r => p.cv.toBlob(r, 'image/png'))], p.name, { type: 'image/png' })));
+    try { if (act === 'bf-send' && navigator.canShare?.({ files })) await navigator.share({ files, title: 'Tattoo brief', text: 'Please fill this in and reply with your numbered answers, plus any pictures.' }); else await saveFiles(files); }
+    catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); } }); }
+/* A brief's answers from a WhatsApp reply ("IFB1.xxx"), or null. */
+function readBriefCode(t) { const m = String(t || '').match(/IFB1\.([A-Za-z0-9_-]+)/); if (!m) return null; try { return JSON.parse(new TextDecoder().decode(unb64u(m[1]))); } catch { return null; } }
+/* Open the quote calculator filled in from a brief: what it can't price goes into the design notes. */
+async function briefToQuote(A) { const c = qCfg();
+  const place = c.placements.some(p => p[0] === A.pl) ? A.pl : '', style = c.styles.some(x => x[0] === A.s) ? A.s : '', font = c.fonts.some(x => x[0] === A.f) ? A.f : '';
+  const digits = String(intlPhone(A.p) || A.p || '').replace(/\D/g, '').slice(-9);
+  const cl = digits.length >= 7 ? await DB.one(`SELECT id, first_name, last_name FROM clients WHERE replace(replace(replace(phone, ' ', ''), '-', ''), '+', '') LIKE ?`, ['%' + digits]) : null;
+  const notes = [A.eln && `In it (${A.el}): ${A.eln}`, A.bg && `Background: ${A.bg === 'none' ? 'none' : A.bg === 'some' ? 'a little' : 'full'}`, A.mn && `Meaning: ${A.mn}`, A.cn && `Colours: ${A.cn}`,
+    A.tx && !font && A.f === '' ? 'Font: sending a sample' : '', A.tx && !A.sp ? 'Spelling not confirmed yet' : '', A.rf ? 'Sending reference pictures' : '', A.m && `Note: ${A.m}`, A.big ? 'May need a consultation' : '', A.p && `Phone: ${A.p}`].filter(Boolean);
+  if (QZ.design) URL.revokeObjectURL(QZ.design.url);
+  Object.assign(QZ, QZ_RESET, { client: cl ? fullName(cl) : A.n || '', clientId: cl?.id || null, place, side: ['L', 'C', 'R', 'U'].includes(A.sd) ? A.sd : '',
+    w: +A.sw || 10, h: +A.sh || 10, sized: !!+A.sw, colour: ['black', 'bg', 'colour'].includes(A.c) ? A.c : '', detail: +A.d || 3, detailSet: !!+A.d, style, styleSet: !!style,
+    text: A.tx || '', font, letter: 2, designNote: notes.join('. '), withDesign: !!notes.length, step: 0, seen: 6 });
+  location.hash = 'quote'; toast('Filled in from the brief: check each step, then adjust time and price.', 3500); }
 async function openReplyPaste() {
   const o = document.createElement('div'); o.id = 'merge-dlg';
   o.innerHTML = `<div class="card"><h2>Client reply</h2>
-    <p class="muted" style="font-size:13px;margin-top:0">Copy the client's whole WhatsApp message (or just the code at the end) and paste it here.</p>
+    <p class="muted" style="font-size:13px;margin-top:0">Copy the client's whole WhatsApp message (or just the code at the end) and paste it here: a reply to a quote, or a filled-in tattoo brief.</p>
     <textarea class="in" id="rp-in" rows="5" placeholder="Paste the message here"></textarea>
     <div id="rp-out"></div>
     <div class="row" style="margin-top:12px"><button class="btn" id="rp-close">Close</button><button class="btn primary" id="rp-go" style="flex:1" disabled>Book it</button></div></div>`;
   document.body.appendChild(o);
   const inp = o.querySelector('#rp-in'), out = o.querySelector('#rp-out'), go = o.querySelector('#rp-go');
   let rp = null, q = null;
-  try { const clip = await navigator.clipboard.readText(); if (readReplyCode(clip)) inp.value = clip; } catch {}
+  try { const clip = await navigator.clipboard.readText(); if (readReplyCode(clip) || readBriefCode(clip)) inp.value = clip; } catch {}
+  let br = null;
   const check = async () => {
+    br = readBriefCode(inp.value);
+    if (br) { go.disabled = false; go.textContent = 'Open in the quote calculator';
+      out.innerHTML = `<div class="rp-card"><b>${esc(br.n || 'Client')}</b>${br.p ? ` \u00b7 ${esc(br.p)}` : ''}<div>Tattoo brief: ${esc([br.pl, br.sw ? br.sw + ' \u00d7 ' + br.sh + ' cm' : '', br.s].filter(Boolean).join(' \u00b7 ') || 'not much filled in')}</div>${br.big ? '<div class="muted">They may need a consultation.</div>' : ''}</div>`; return; }
+    go.textContent = 'Book it';
     rp = readReplyCode(inp.value); q = rp ? await DB.one('SELECT * FROM quotes WHERE id = ?', [rp.q]) : null;
     go.disabled = !q;
     out.innerHTML = !inp.value.trim() ? '' : !rp ? '<p class="err">No reply code found in that text.</p>'
@@ -5878,7 +5987,7 @@ async function openReplyPaste() {
   };
   inp.addEventListener('input', check); if (inp.value) check();
   o.querySelector('#rp-close').onclick = () => { o.remove(); if ($('#ql')) qlDraw(); };
-  go.onclick = async () => { o.remove(); await bookFromReply(q.id, rp); };
+  go.onclick = async () => { o.remove(); if (br) return briefToQuote(br); await bookFromReply(q.id, rp); };
 }
 
 // Opens a new booking from a saved quote and the client's reply: chosen option, day and start time, contact in the notes.
@@ -12057,6 +12166,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 553, when: '2026-11-25T09:00', added: [
+    'Saved quotes: Client brief. Send a link with eight quick questions (placement, size, colour, detail, style, what\u2019s in it, text and references); the client taps their answers and sends them back on WhatsApp.',
+    'Paste the brief\u2019s reply in Paste client reply and the quote calculator fills itself in, with the rest in the design notes.',
+    'The brief as a one-page sheet: print it, send it as a picture, or as a fillable PDF clients can fill in on their phone or computer.'
+  ] },
   { build: 552, when: '2026-11-25T06:00', added: [
     'Vouchers: turn them on in Settings and sell gift vouchers for tattoos. Pick the kind, the amount (or link a saved quote), who it\u2019s for and from (anonymous if they like), and a message. A voucher is only sent once it\u2019s paid for.',
     'On a booking, vouchers pay after any loyalty rewards and can be stacked. A small leftover goes as a tip or to charity; a big one can be kept on a new voucher to use later or pass on. Day end and Stats count vouchers sold and used.',

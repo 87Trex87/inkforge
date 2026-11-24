@@ -79,7 +79,7 @@ const TOUR_STEPS = [
     pre: async () => { if (!QZ.place) Object.assign(QZ, { place: 'Forearm', side: 'L', w: 12, h: 18, colour: 'black', sized: true, detailSet: true, styleSet: true, lettering: false });
       QZ.client = 'Sam Example'; await qzSaveQuote(true); },
     text: 'Keep quotes to finish or book later.',
-    more: 'Mark them done when the tattoo is finished, and see how the real time compared with the quote, so you can fine-tune your rates. Search them, star favourites and sort them into folders. The table icon shows them all as a table with totals, to export or print, or to move them to another workspace with Export and Import.' },
+    more: 'Client brief sends eight quick questions (a link to tap through, or a one-page sheet to print or fill in as a PDF); pasting the reply in Paste client reply fills in the quote calculator. Mark them done when the tattoo is finished, and see how the real time compared with the quote, so you can fine-tune your rates. Search them, star favourites and sort them into folders. The table icon shows them all as a table with totals, to export or print, or to move them to another workspace with Export and Import.' },
   { id: 'studio', basic: 1, route: 'studio', sel: '#view', title: 'Studio tools',
     text: 'Draw (design studio, simulator, sketchpad), then stencils, reels, bends, size sheets and big prints.',
     more: 'Everything for making the work: the stencil maker, the reel maker (saved reels you can edit again), the design studio for vouchers, cards and posts, the bend tool for bands, and split printing for large stencils. Your portfolio and consent forms live here too.' },

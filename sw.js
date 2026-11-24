@@ -1,7 +1,7 @@
 /* Offline cache for the app shell. Bump VERSION whenever shipped files change. */
-const VERSION = 'inkforge-v552';
+const VERSION = 'inkforge-v553';
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'reel.js', 'design.js', 'qr.js', 'forms.js', 'tour.js', 'tattoo.js', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest',
-  'lib/sqlite3.js', 'lib/sqlite3.wasm', 'lib/db-worker.js', 'lib/stencil-worker.js', 'lib/clipper.js', 'lib/nspell.mjs', 'lib/en-gb.aff', 'lib/en-gb.dic', 'img/pain-chart.png', 'quote.html'];
+  'lib/sqlite3.js', 'lib/sqlite3.wasm', 'lib/db-worker.js', 'lib/stencil-worker.js', 'lib/clipper.js', 'lib/nspell.mjs', 'lib/en-gb.aff', 'lib/en-gb.dic', 'img/pain-chart.png', 'quote.html', 'brief.html'];
 
 self.addEventListener('install', e => {
   // cache: 'reload' skips the browser's HTTP cache so the new version is cached, not an older copy.
