@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 538;
+const APP_BUILD = 539;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -7050,13 +7050,13 @@ async function invArrange(after) {
   if (!list.length) return toast('No active stock items yet.');
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const draw = () => { o.innerHTML = `<div class="card inv-arr"><h2 style="margin-top:0">Count order</h2>
-      <p class="muted" style="margin-top:0;font-size:13px">Drag ⠿ to put items in the order you walk the shop. The stock take and the printed sheet follow it.</p>
+      <p class="muted" style="margin-top:0;font-size:13px">Drag ⠿ (or use the arrows) to put items in the order you walk the shop; swipe anywhere else to scroll. The stock take and the printed sheet follow it.</p>
       <div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap"><span class="muted" style="font-size:12px">Start from:</span>${INV_ORDERS.filter(x => x[0] !== 'custom').map(([v, l]) => `<button class="btn small" data-ias="${v}">${l}</button>`).join('')}</div>
       <div class="inv-arr-l" id="inv-arr-l">${list.map((r, i) => `<div class="inv-arr-it" data-io="${i}"><span class="grip">⠿</span><span class="n">${i + 1}</span><span class="nm">${esc(r.name)}<small>${esc(r.category || 'Uncategorised')}</small></span>
         <span class="mv"><button data-iomv="${i}:-1" aria-label="Move up">↑</button><button data-iomv="${i}:1" aria-label="Move down">↓</button></span></div>`).join('')}</div>
       <div class="row" style="margin-top:10px"><button class="btn" data-iax>Cancel</button><button class="btn primary" data-iaok style="flex:1">Save order</button></div></div>`; };
   document.body.appendChild(o); draw();
-  dzDragOrder(o, 'io', (i, j) => { const [x] = list.splice(i, 1); list.splice(j, 0, x); draw(); }, () => {});
+  dzDragOrder(o, 'io', (i, j) => { const [x] = list.splice(i, 1); list.splice(j, 0, x); draw(); }, () => {}, null, '.grip');   /* only the ⠿ drags; swipe anywhere else to scroll */
   o.addEventListener('click', async (e) => { const t = e.target;
     if (t === o || t.closest('[data-iax]')) return o.remove();
     const s0 = t.closest('[data-ias]'); if (s0) { list = invOrder(list, s0.dataset.ias); return draw(); }
@@ -10905,6 +10905,9 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 539, when: '2026-11-27T09:00', added: [
+    'Inventory: in Count order, only the ⠿ handle drags an item, so you can swipe the list to scroll on a tablet.'
+  ] },
   { build: 538, when: '2026-11-26T17:00', added: [
     'Stock: tapping a count box selects its number, so you can type straight over it.',
     'Stock take: Count one at a time. Each item fills the screen with its own number pad (no tablet keyboard), packs, As expected and None, then Next or Back, or swipe. It follows your count order and can be narrowed to one category or the uncounted ones.'

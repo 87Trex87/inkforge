@@ -34,8 +34,8 @@ const DZ_CONV = ['page', 'form', 'flyer', 'card', 'voucher', 'post', 'portrait',
 let DZ_CLIP = null;
 /* Drag to reorder: items marked data-<attr>="index" inside root. A tap still taps; past a small move it is a drag, and
    move(from, to) runs each time it passes over another item (start() once, done() at the end). */
-function dzDragOrder(root, attr, move, done, start) { let d = null;
-  root.addEventListener('pointerdown', (e) => { const b = e.target.closest(`[data-${attr}]`); if (!b || b.dataset[attr] === '') return; d = { i: +b.dataset[attr], x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; });
+function dzDragOrder(root, attr, move, done, start, handle) { let d = null;   /* handle: only a press on it starts a drag (the rest of the row scrolls) */
+  root.addEventListener('pointerdown', (e) => { const b = e.target.closest(`[data-${attr}]`); if (!b || b.dataset[attr] === '' || (handle && !e.target.closest(handle))) return; d = { i: +b.dataset[attr], x: e.clientX, y: e.clientY, moved: false, id: e.pointerId }; });
   addEventListener('pointermove', (e) => { if (!d || e.pointerId !== d.id) return; if (!d.moved) { if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) return; d.moved = true; start?.(); }
     e.preventDefault(); const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(`[data-${attr}]`); if (!over || !root.contains(over) || over.dataset[attr] === '') return; const j = +over.dataset[attr]; if (j !== d.i) { move(d.i, j); d.i = j; } });
   addEventListener('pointerup', (e) => { if (!d || e.pointerId !== d.id) return; const m = d.moved; d = null; if (m) { const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; root.addEventListener('click', eat, { capture: true, once: true }); setTimeout(() => root.removeEventListener('click', eat, true), 350); done?.(); } }); }   /* only the drag's own click is eaten, not the next tap */
