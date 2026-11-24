@@ -2953,6 +2953,7 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .loy-form .seg { flex-wrap: wrap; } .loy-note { font-size: 12px; margin: 6px 0 0; } .loy-togs { display: grid; gap: 8px; margin-top: 12px; }
 .loy-stack { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } .loy-stack div { display: grid; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; min-width: 84px; }
 .loy-stack span { font-size: 11px; color: var(--ink2); } .loy-stack b { font-size: 15px; }
+.c-row[data-tn]:disabled { opacity: .45; cursor: default; } .loy-stack.tiers { display: grid; } .loy-stack.tiers div { grid-template-columns: 80px 90px 1fr; align-items: center; gap: 8px; } .loy-stack.tiers select { max-width: none !important; }
 .loy-tabs { margin-bottom: 12px; } .loy-code { font-family: ui-monospace, monospace; letter-spacing: .06em; }
 .loy-t td.loy-open { color: var(--teal); } .loy-t td.loy-expired, .loy-t td.loy-void { color: #e26b6b; }
 .b-loy { display: grid; gap: 6px; }
@@ -3017,4 +3018,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .rc-loy { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(31,181,168,.4); border-radius: 12px; background: rgba(31,181,168,.07); margin-bottom: 10px; } .rc-sent { background: rgba(31,181,168,.18); color: var(--teal); }
 .ln-kinds { display: flex; flex-wrap: wrap; gap: 6px; } .ln-kinds .chip { cursor: pointer; font-size: 13px; padding: 7px 14px; color: var(--ink, inherit); } .ln-kinds .chip.on { background: rgba(31,181,168,.2); color: var(--teal); border-color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 548; }
+:root { --app-build: 549; }
