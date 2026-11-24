@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 542;
+const APP_BUILD = 543;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -4904,7 +4904,7 @@ function qzDraw() {
         <div class="qz-jlk muted"><span>Very easy</span><span>Very hard</span></div>
         <p class="muted qz-jlh">${jb[3]}</p>${jb[4] ? `<p class="qz-jln2">${jb[4]}</p>` : ''}</div>` : ''}
       <h2 style="margin-top:18px">Where is the tattoo?</h2>
-      <div class="qz-sideq"><span class="lbl">Which side?</span><div class="seg" id="qz-side">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right']].map(([k, l]) =>
+      <div class="qz-sideq"><span class="lbl">Which side?</span><div class="seg" id="qz-side">${[['L', 'Left'], ['C', 'Centre'], ['R', 'Right'], ['U', 'Unspecified']].map(([k, l]) =>
         `<button data-side="${k}" class="${QZ.side === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
       <div class="qz-place"><div class="qz-pin"><button class="qz-chart" id="qz-chart" data-tip="Tap to enlarge"><img src="img/pain-chart.png" alt="Body pain chart: grey least pain, red most pain"></button></div>
       <div class="qz-picks">
@@ -11000,6 +11000,9 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 543, when: '2026-11-28T12:00', added: [
+    'Quote calculator: Which side? has a new Unspecified option, which leaves the side out of the placement.'
+  ] },
   { build: 542, when: '2026-11-28T10:00', added: [
     'Home: Rewards to send, with Send and Sent ✓ (the sent date shows in Loyalty too). Birthdays and finished bookings have Done ✓ to take them off.',
     'Loyalty: switch rewards off for a client (they stay in the referral tree). Deleted rewards are kept with a reason and can be restored, and Ran out and the usage figures show what gets used.',

@@ -3005,4 +3005,4 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .loy-use b { font: 700 20px var(--ui); } .loy-use span { font-size: 11px; color: var(--ink2); } .loy-use .warn b { color: #e0a030; } .loy-use-rate { border-color: var(--teal) !important; } .loy-use-rate b { color: var(--teal); }
 .loy-t td.loy-deleted { color: var(--ink2); text-decoration: line-through; }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 542; }
+:root { --app-build: 543; }
