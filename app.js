@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 537;
+const APP_BUILD = 538;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -809,7 +809,7 @@ const Lib = {
 /* While a pop-up is open the page behind it is off limits: its keyboard shortcuts are held back (the pop-up's own
    keys still work), Escape closes the top pop-up, and Android's back button closes it rather than leaving the
    page (a history step is added while one is open). */
-const MODAL_SEL = '.ask-dlg, #merge-dlg, #reel-rec, #reel-pick, #img-viewer';
+const MODAL_SEL = '.ask-dlg, #merge-dlg, #reel-rec, #reel-pick, #img-viewer, #stk-solo';
 const modalTop = () => { const all = document.querySelectorAll(MODAL_SEL); return all[all.length - 1] || null; };
 function modalClose(o) {
   if (o.classList.contains('ask-dlg')) return o.querySelector('[data-ask="0"]')?.click();
@@ -2136,14 +2136,16 @@ const VIEWS = {
         </div>
         <section class="fsec"><h3>How it works<small>Count what’s on the shelf</small></h3>
           <p class="muted" style="margin:4px 0 12px">Each count starts at the expected amount. Change any that differ with − and +, by typing (a sum like 3x20+4 works), or by whole packs; changed counts are highlighted.</p>
-          <div class="row inv-ordrow">${invOrderSel('stk-ord')}</div></section>
+          <div class="row inv-ordrow">${invOrderSel('stk-ord')}</div>
+          <button type="button" class="btn primary stk-one-btn" id="stk-one"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M8 18h8"/></svg>Count one at a time</button></section>
         ${[...groups].map(([g, list]) => `<section class="fsec"><h3>${esc(g)}<small>${list.length} item${list.length === 1 ? '' : 's'}</small></h3>
           <div class="stt-list">${list.map(i => { const v = typed.get(i.id), cur = v != null ? (invNum(v) ?? i.qty) : i.qty; return `<div class="c-row"><span class="c-main"><span class="c-n">${esc(i.name)}</span>
             <span class="muted c-sub">Expected ${fmtQty(i.qty)}${i.unit ? ' ' + esc(i.unit) : ''}${+i.pack > 1 ? ` · packs of ${i.pack}` : ''}</span></span>
             ${invCount(`data-id="${i.id}"`, cur, i.step, i.pack).replace('class="in ivc-in"', `class="in ivc-in ${cur !== i.qty ? 'diff' : ''}"`)}</div>`; }).join('')}</div></section>`).join('')}
         <section class="fsec"><h3>Notes<small>Anything to remember about this count</small></h3>
           <label class="field"><span>Notes</span><input class="in" id="stk-notes" placeholder="optional" value="${esc(notes || '')}"></label></section>`;
-      $('#stk-cancel').onclick = () => history.back(); $('#stk-save').onclick = save; };
+      $('#stk-cancel').onclick = () => history.back(); $('#stk-save').onclick = save;
+      $('#stk-one').onclick = () => stkOne(el, items, () => { draw(); $('#stk-save')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }); };
       el.addEventListener('submit', (e) => e.preventDefault());
       el.addEventListener('change', (e) => { if (e.target.id === 'stk-ord') { Settings.set('inv_order', e.target.value); draw(); } });
       el.addEventListener('click', (e) => { if (e.target.closest('[data-invarr]')) { e.preventDefault(); invArrange(async () => { const fresh = new Map((await DB.all('SELECT id, sort FROM inventory_items')).map(r => [r.id, r.sort])); items.forEach(i => i.sort = fresh.get(i.id)); draw(); }); } });
@@ -6959,7 +6961,77 @@ function invCountSync(w) { if (!w) return; const P = +w.dataset.pk, q = Math.max
   document.addEventListener('change', (e) => { if (!e.target.matches?.('.ivc-in')) return; const v = invNum(e.target.value);
     if (v == null) { if (e.target.value.trim()) toast('Type a number, or a sum like 3x20+4.', 2200); } else e.target.value = fmtQty(Math.max(0, +v.toFixed(4))); invCountSync(e.target.closest('.ivc')); }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches?.('.ivc-in')) { e.preventDefault(); e.target.blur(); } }, true);
+  /* tapping a count box selects its number, so typing replaces it (the tap's own caret is undone straight after) */
+  let fresh = null;
+  document.addEventListener('focusin', (e) => { if (!e.target.matches?.('.ivc-in')) return; fresh = e.target; e.target.select(); setTimeout(() => { if (document.activeElement === e.target) e.target.select(); }, 0); });
+  document.addEventListener('mouseup', (e) => { if (fresh && e.target === fresh) { e.preventDefault(); fresh.select(); } fresh = null; }, true);
+  document.addEventListener('touchend', (e) => { const t = e.target; if (t.matches?.('.ivc-in')) setTimeout(() => { if (document.activeElement === t && t.selectionStart === t.selectionEnd) t.select(); }, 30); }, true);
 })();
+/* ---------- Stock take: one at a time ----------
+   Each item fills the screen in the count order (and the category picked), its count selected and ready: type it on
+   InkForge's own number pad (the tablet's keyboard stays away), or use − and +, whole packs, "as expected" and 0.
+   Next and Back step through (or swipe, or Enter and the arrow keys); the counts go straight into the stock take. */
+function stkOne(form, items, done) {
+  const inp = (i) => form.querySelector(`.ivc-in[data-id="${i.id}"]`), val = (i) => { const v = invNum(inp(i)?.value); return v == null ? i.qty : v; };
+  const cats = [...new Set(items.map(i => i.category || 'Uncategorised'))];
+  let cat = 'all', list = items, at = 0, buf = '', fresh = true, skip = false;
+  const pickList = () => { list = items.filter(i => cat === 'all' || (i.category || 'Uncategorised') === cat).filter(i => !skip || val(i) === i.qty); if (at >= list.length) at = Math.max(0, list.length - 1); };
+  const o = document.createElement('div'); o.id = 'stk-solo'; o.className = 'stk-one'; document.body.appendChild(o);
+  const cur = () => list[at], num = () => { const v = invNum(buf); return v == null ? null : Math.max(0, +v.toFixed(4)); };
+  const put = (v) => { const i = cur(), x = inp(i); if (!x) return; x.value = fmtQty(v); x.dispatchEvent(new Event('input', { bubbles: true })); x.dispatchEvent(new Event('change', { bubbles: true })); };
+  const show = () => { const i = cur(); if (i) { buf = String(fmtQty(val(i))); fresh = true; } draw(); };
+  const commit = () => { const i = cur(); if (!i) return; const v = num(); if (v == null) { toast('Type a number, or a sum like 3x20+4.', 2000); return false; } put(v); buf = String(fmtQty(v)); return true; };
+  const go = (d) => { if (!list.length) return; if (commit() === false) return; const n = at + d;
+    if (n >= list.length) return finish(); if (n < 0) return; at = n; navigator.vibrate?.(8); o.querySelector('.so-card')?.classList.add(d > 0 ? 'out-l' : 'out-r'); setTimeout(show, 90); };
+  const finish = () => { if (list.length) commit(); close(); toast(`${changedN()} count${changedN() === 1 ? '' : 's'} differ from expected. Check them, then Save stock take.`, 4500); };
+  const close = () => { o.remove(); removeEventListener('keydown', key, true); done?.(); };
+  const changedN = () => items.filter(i => val(i) !== i.qty).length;
+  const key = (e) => { if (!o.isConnected) return; const k = e.key;
+    if (/^[0-9]$/.test(k) || k === '.' || k === ',') { e.preventDefault(); return press(k === ',' ? '.' : k); }
+    if (k === 'Backspace') { e.preventDefault(); return press('back'); } if (k === 'Enter' || k === 'ArrowRight') { e.preventDefault(); return go(1); } if (k === 'ArrowLeft') { e.preventDefault(); return go(-1); }
+    if (k === '+' || k === 'x' || k === '*') { e.preventDefault(); return press(k === '+' ? '+' : 'x'); } if (k === 'Escape') { e.preventDefault(); e.stopPropagation(); return finish(); } };
+  addEventListener('keydown', key, true);
+  const press = (k) => { const i = cur(); if (!i) return;
+    if (k === 'back') { buf = fresh ? '' : buf.slice(0, -1); fresh = false; }
+    else if (k === 'clear') { buf = ''; fresh = false; }
+    else if (k === 'same') { buf = String(fmtQty(i.qty)); fresh = true; put(i.qty); }
+    else if (k === 'zero') { buf = '0'; fresh = true; put(0); }
+    else if (k === '+' || k === 'x') { if (fresh) fresh = false; if (buf && !/[+x]$/.test(buf)) buf += k; }
+    else { if (fresh) { buf = ''; fresh = false; } if (k === '.' && /(^|[+x])[^+x]*\.[^+x]*$/.test(buf)) return; if (buf.replace(/\D/g, '').length >= 7) return; buf += k; }
+    const v = num(); if (v != null && !/[+x.]$/.test(buf)) put(v); draw(); };
+  const step = (d, pack) => { const i = cur(); if (!i) return; const st = +i.step || 1, P = +i.pack > 1 ? Math.round(+i.pack) : 0, q = num() ?? val(i); let n;
+    if (pack && P) { const full = Math.floor((q + 1e-6) / P), loose = q - full * P; n = Math.max(0, full + d) * P + loose; }
+    else { const kk = q / st; n = (d > 0 ? Math.floor(kk + 1e-6) + 1 : Math.ceil(kk - 1e-6) - 1) * st; }
+    n = Math.max(0, +n.toFixed(4)); buf = String(fmtQty(n)); fresh = true; put(n); draw(); };
+  const draw = () => { const i = cur(), P = i && +i.pack > 1 ? Math.round(+i.pack) : 0, v = num(), d = i && v != null ? +(v - i.qty).toFixed(4) : 0, n = list.length;
+    o.innerHTML = `<div class="so-top"><button class="so-x close" data-so="done" aria-label="Done">\u2715</button>
+        <div class="so-prog"><b>${n ? at + 1 : 0} of ${n}</b><span><i style="width:${n ? (at + 1) / n * 100 : 0}%"></i></span></div>
+        <label class="so-cat"><select data-so-cat aria-label="Category">${['all', ...cats].map(c => `<option value="${esc(c)}" ${cat === c ? 'selected' : ''}>${c === 'all' ? 'All categories' : esc(c)}</option>`).join('')}</select></label>
+        <label class="toggle so-skip" data-tip="Only items still at the expected amount"><input type="checkbox" data-so-skip ${skip ? 'checked' : ''}><span>Uncounted</span></label></div>
+      ${i ? `<div class="so-card"><div class="so-cat2">${esc(i.category || 'Uncategorised')}</div><div class="so-name">${esc(i.name)}</div>
+        <div class="so-exp">Expected <b>${fmtQty(i.qty)}</b>${i.unit ? ' ' + esc(i.unit) : ''}${P ? ` \u00b7 packs of ${P}` : ''}${i.supplier ? ` \u00b7 ${esc(i.supplier)}` : ''}</div>
+        <div class="so-val-row"><button class="so-step" data-so-step="-1" aria-label="One less">\u2212</button>
+          <div class="so-val ${fresh ? 'sel' : ''}" aria-live="polite"><span>${esc(buf.replace(/x/g, '\u00d7') || '\u00a0')}</span>${!fresh ? '<i class="so-caret"></i>' : ''}</div>
+          <button class="so-step" data-so-step="1" aria-label="One more">+</button></div>
+        ${P ? `<div class="so-pack"><button class="so-pb" data-so-pack="-1">\u2212 pack</button><span>${invPackTxt(v ?? 0, P)}</span><button class="so-pb" data-so-pack="1">+ pack</button></div>` : ''}
+        <div class="so-diff ${v == null ? '' : d === 0 ? 'ok' : d > 0 ? 'up' : 'down'}">${v == null ? 'Finish the sum\u2026' : d === 0 ? '\u2713 Matches what was expected' : d > 0 ? `${fmtQty(d)} more than expected` : `${fmtQty(-d)} short`}</div></div>
+      <div class="so-pad">${['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'back'].map(k => `<button data-so-k="${k}" ${k === 'back' ? 'aria-label="Delete"' : ''}>${k === 'back' ? '\u232b' : k}</button>`).join('')}
+</div><div class="so-pad so-pad2"><button data-so-k="same" class="so-k2">As expected</button><button data-so-k="zero" class="so-k2">None (0)</button><button data-so-k="x" class="so-k2" data-tip="Times, for sums like 3\u00d720+4">\u00d7</button><button data-so-k="+" class="so-k2">+</button></div>
+      <div class="so-nav"><button class="btn" data-so="back" ${at ? '' : 'disabled'}>\u2039 Back</button>
+        <button class="btn primary" data-so="next">${at + 1 >= n ? 'Finish \u2713' : 'Next \u203a'}</button></div>`
+      : `<div class="so-card"><div class="so-name">Nothing to count here</div><p class="muted">Pick another category${skip ? ', or show the ones already counted' : ''}.</p></div>`}`; };
+  o.addEventListener('click', (e) => { const t = e.target, g = (a) => t.closest(`[${a}]`)?.getAttribute(a);
+    if (g('data-so-k') != null) return press(g('data-so-k'));
+    if (g('data-so-step')) return step(+g('data-so-step'), false); if (g('data-so-pack')) return step(+g('data-so-pack'), true);
+    if (g('data-so-step') == null && t.closest('.so-val')) { fresh = !fresh; return draw(); }
+    const a = g('data-so'); if (a === 'next') return go(1); if (a === 'back') return go(-1); if (a === 'done') return finish(); });
+  o.addEventListener('change', (e) => { if (e.target.dataset.soCat != null) { commit(); cat = e.target.value; at = 0; pickList(); show(); } if (e.target.dataset.soSkip != null) { commit(); skip = e.target.checked; at = 0; pickList(); show(); } });
+  /* swipe the card to move on or back */
+  let sw = null; o.addEventListener('pointerdown', (e) => { if (e.target.closest('.so-card')) sw = { x: e.clientX, y: e.clientY }; });
+  o.addEventListener('pointerup', (e) => { if (!sw) return; const dx = e.clientX - sw.x, dy = e.clientY - sw.y; sw = null; if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1); });
+  pickList(); show();
+}
+
 /* The count order (stock take, the printed sheet, the stock list): by category, name, supplier, lowest first, or your
    own order (dragged into place, kept as each item's sort). */
 const INV_ORDERS = [['cat', 'Category'], ['name', 'Name'], ['supplier', 'Supplier'], ['low', 'Lowest first'], ['custom', 'My order']];
@@ -10833,6 +10905,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 538, when: '2026-11-26T17:00', added: [
+    'Stock: tapping a count box selects its number, so you can type straight over it.',
+    'Stock take: Count one at a time. Each item fills the screen with its own number pad (no tablet keyboard), packs, As expected and None, then Next or Back, or swipe. It follows your count order and can be narrowed to one category or the uncounted ones.'
+  ] },
   { build: 537, when: '2026-11-26T13:00', added: [
     'Design studio and Sketchpad: zooming in close no longer freezes. Only the part on screen is drawn, sharp, and moving around stays smooth at full zoom.'
   ] },
