@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Bump VERSION whenever shipped files change. */
-const VERSION = 'inkforge-v545';
+const VERSION = 'inkforge-v546';
 const SHELL = ['./', 'index.html', 'app.css', 'app.js', 'reel.js', 'design.js', 'qr.js', 'forms.js', 'tour.js', 'tattoo.js', 'icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest',
   'lib/sqlite3.js', 'lib/sqlite3.wasm', 'lib/db-worker.js', 'lib/stencil-worker.js', 'lib/clipper.js', 'lib/nspell.mjs', 'lib/en-gb.aff', 'lib/en-gb.dic', 'img/pain-chart.png', 'quote.html'];
 

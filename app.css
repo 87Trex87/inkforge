@@ -3005,5 +3005,14 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .loy-use b { font: 700 20px var(--ui); } .loy-use span { font-size: 11px; color: var(--ink2); } .loy-use .warn b { color: #e0a030; } .loy-use-rate { border-color: var(--teal) !important; } .loy-use-rate b { color: var(--teal); }
 .loy-t td.loy-deleted { color: var(--ink2); text-decoration: line-through; }
 .qz-title { margin: 0 0 14px; } .qz-title .in { font-size: 16px; } .qz-ret { font-size: 11px; background: rgba(31,181,168,.18); color: var(--teal); border-color: rgba(31,181,168,.4); margin-left: 6px; } .qz-who .picker { position: relative; }
+.av-card { max-width: 560px; } .av-ed { display: grid; gap: 10px; max-height: 42vh; overflow-y: auto; margin-bottom: 8px; }
+.avgrid-ed { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; } .avgrid-ed i { font-style: normal; text-align: center; font-size: 10px; color: var(--ink2); }
+.avd { height: 32px; border-radius: 8px; border: 2px solid transparent; font: 700 12px var(--ui); cursor: pointer; color: #fff; padding: 0; }
+.avd.av-open, .av-leg .av-open { background: #14857c; } .avd.av-part, .av-leg .av-part { background: #e0a33a; } .avd.av-taken, .av-leg .av-taken { background: #5f5b55; color: #cfcac0; } .avd.av-off, .av-leg .av-off { background: transparent; color: var(--ink2); border-color: var(--line); }
+.avd.set, .av-leg .set-k { border-color: #fff; box-shadow: 0 0 0 2px var(--teal); } .avd:disabled { opacity: .3; cursor: default; }
+.av-leg { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 11px; color: var(--ink2); margin-bottom: 8px; } .av-leg span { display: inline-flex; align-items: center; gap: 4px; } .av-leg i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 2px solid transparent; }
+.c-avdays { display: flex; flex-wrap: wrap; gap: 6px; } .c-avdays .chip.part { border-color: #e0a33a; color: #e0a33a; }
+.mday.present { position: relative; box-shadow: inset 0 0 0 2px rgba(31,181,168,.6); } .mday.present::after { content: 'in'; position: absolute; right: 4px; bottom: 2px; font: 700 9px var(--ui); color: var(--teal); }
+#m-work.on { background: rgba(31,181,168,.2); color: var(--teal); border-color: var(--teal); } .avd.off[data-avo] { cursor: pointer; } .avd.opened { box-shadow: 0 0 0 2px #fff inset; }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 545; }
+:root { --app-build: 546; }

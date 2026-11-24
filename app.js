@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 545;
+const APP_BUILD = 546;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -1093,6 +1093,10 @@ const VIEWS = {
         ${c.medical ? `<div class="card alert"><h2>Medical / allergies ${help('Check before every session.')}</h2><p class="pre">${esc(c.medical)}</p></div>` : ''}
         <div class="card" id="c-refs"></div>
         ${c.notes ? `<div class="card"><h2>Notes</h2><p class="pre">${esc(c.notes)}</p></div>` : ''}
+        ${(() => { const v = avShared()[c.id]; if (!v) return ''; const t = ymd(new Date()), up = v.days.filter(d => d >= t), part = new Set(v.part || []);
+          return `<div class="card c-avs"><h2>Open days you sent ${help('What you shared with them from Share open appointments. Sharing again replaces it, and it goes once the last day has passed.')}<button class="btn small" id="c-avsend" style="margin-left:auto">Send new</button></h2>
+            <p class="muted" style="margin:0 0 6px;font-size:12px">Sent ${esc(fmtDay(v.at))}${v.msg ? ` · “${esc(v.msg)}”` : ''}</p>
+            <div class="c-avdays">${up.map(d => `<span class="chip ${part.has(d) ? 'part' : ''}">${esc(new Date(d + 'T00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }))}</span>`).join('')}</div></div>`; })()}
         <div class="card"><h2>Bookings ${help('All sessions for this client, newest first.')}
             <button class="btn small" id="c-book" style="margin-left:auto">+ Book</button></h2>
           <div id="c-hist" class="muted">…</div></div>
@@ -1107,6 +1111,7 @@ const VIEWS = {
           <button class="btn danger" id="c-del">Delete</button>
         </div>`;
       $('#c-book').onclick = () => newBookingNext(c.id);
+      $('#c-avsend')?.addEventListener('click', () => openAvailability(c.id));
       /* Referrals: how they found you, whom they brought in, and what that's earned */
       { const G = await refGraph(), up = G.byId.get(c.referred_by), down = refDesc(G, c.id), direct = down.filter(x => x.d === 1), re = $('#c-refs');
         const sum = (L) => L.reduce((t, x) => { const e = G.earn.get(x.c.id); return { s: t.s + (e?.s || 0), n: t.n + (e?.n || 0) }; }, { s: 0, n: 0 }), all = sum(down), dir = sum(direct);
@@ -3837,10 +3842,13 @@ function newBooking(startAt, clientId) { Cal.prefill = startAt; Cal.prefillClien
 const WEEKDAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'], [6, 'Sat'], [0, 'Sun']];
 function daysOff() {
   let o = {}; try { o = JSON.parse(Settings.get('days_off', '{}')); } catch {}
-  return { weekly: Array.isArray(o.weekly) ? o.weekly : [], until: o.until || '', dates: Array.isArray(o.dates) ? o.dates : [] };
+  return { weekly: Array.isArray(o.weekly) ? o.weekly : [], until: o.until || '', dates: Array.isArray(o.dates) ? o.dates : [], work: Array.isArray(o.work) ? o.work.filter(k => k >= ymd(addDays(new Date(), -1))) : [] };   /* work: usual days off you're in on */
 }
+// A day that would be off (weekly or a single date), whether or not you've marked yourself in on it.
+const usualOff = (k, o = daysOff()) => o.dates.includes(k) || (!!o.weekly.length && !(o.until && k > o.until) && o.weekly.includes(new Date(k + 'T00:00').getDay()));
 // True when the date (YYYY-MM-DD) is one of the artist's days off.
 function isDayOff(k, o = daysOff()) {
+  if (o.work?.includes(k)) return false;   /* marked as in: open for bookings like any working day */
   if (o.dates.includes(k)) return true;
   if (!o.weekly.length || (o.until && k > o.until)) return false;
   return o.weekly.includes(new Date(k + 'T00:00').getDay());
@@ -3885,7 +3893,7 @@ async function renderCal() {
     let html = '<div class="mwrap"><div class="month"><div class="wk">' + ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(x => `<span>${x}</span>`).join('') + '</div><div class="mgrid">';
     for (let i = 0; i < weeks * 7; i++) {
       const day = addDays(start, i), k = ymd(day), list = byDay[k] || [];
-      html += `<div role="button" tabindex="0" class="mday ${day.getMonth() !== d.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k === sel ? 'sel' : ''} ${isDayOff(k, off) ? 'off' : ''} ${list.length ? 'has' : ''}" data-d="${k}">
+      html += `<div role="button" tabindex="0" class="mday ${day.getMonth() !== d.getMonth() ? 'out' : ''} ${k === today ? 'today' : ''} ${k === sel ? 'sel' : ''} ${isDayOff(k, off) ? 'off' : off.work.includes(k) ? 'present' : ''} ${list.length ? 'has' : ''}" data-d="${k}">
         <span class="n">${day.getDate()}</span>
         <span class="mevs">${list.slice(0, 2).map(b => `<span class="mev k-${kindOf(b)} ${b.ghost ? 'ghost' : ''} ${b.tag ? 'tagged' : ''}" style="${b.tag_color ? '--tc:' + esc(b.tag_color) : ''}" data-bk="${b.id}" title="${esc(fmtTime(b.start_at) + ' ' + bName(b) + (b.completed ? ' · completed' : ''))}">${b.completed ? '<i class="ev-tick">✓</i>' : ''}${esc(who(b))}</span>`).join('')}
           ${list.length > 2 ? `<span class="mmore">+${list.length - 2}</span>` : ''}</span>
@@ -3894,7 +3902,8 @@ async function renderCal() {
     html += '</div></div>';
     const dayList = byDay[sel] || [];
     html += `<div class="mside"><div class="mside-h"><div><b>${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</b>
-        <span class="muted">${dayList.length ? `${dayList.length} booking${dayList.length > 1 ? 's' : ''}` : isDayOff(sel, off) ? 'Your day off' : 'Free day'}</span></div>
+        <span class="muted">${dayList.length ? `${dayList.length} booking${dayList.length > 1 ? 's' : ''}` : isDayOff(sel, off) ? 'Your day off' : off.work.includes(sel) ? 'Usually off: you\u2019re in' : 'Free day'}</span></div>
+        ${usualOff(sel, off) && sel >= today ? `<button class="btn small ${off.work.includes(sel) ? 'on' : ''}" id="m-work" data-tip="${off.work.includes(sel) ? 'Make it a day off again' : 'Going in on your day off (standing in for another artist, say): it opens for bookings and shows when you share your openings'}">${off.work.includes(sel) ? '\u2713 I\u2019m in' : 'I\u2019m in this day'}</button>` : ''}
         <button class="btn small primary" id="m-add">+ Book</button></div>`
       + (dayList.length ? '<div class="card list">' + dayList.map(agendaRow).join('') + '</div>' : '') + '</div></div>';
     if ($('#cal') !== el) return;
@@ -3908,6 +3917,8 @@ async function renderCal() {
     };
     el.querySelector('.mgrid').onkeydown = (e) => { if (e.key === 'Enter') e.target.closest('.mday')?.click(); };
     $('#m-add').onclick = () => newBooking(sel + 'T' + Settings.get('day_start', '10:00'));
+    $('#m-work')?.addEventListener('click', async () => { const o = daysOff(), on = o.work.includes(sel); o.work = on ? o.work.filter(x => x !== sel) : [...o.work, sel];
+      await Settings.set('days_off', JSON.stringify(o)); toast(on ? 'Back to a day off.' : 'You\u2019re in: the day is open for bookings and your shared openings.', 2600); renderCal(); });
     return;
   }
   // Day / week timeline
@@ -3934,7 +3945,7 @@ async function renderCal() {
       let li = lanes.findIndex(end => end <= s); if (li < 0) { li = lanes.length; lanes.push(0); }
       lanes[li] = e; b._lane = li;
     });
-    html += `<div class="tl-col ${isDayOff(k, off) ? 'off' : ''}" data-d="${k}" style="height:${(DAY_TO - DAY_FROM) * HOUR_PX}px">${isDayOff(k, off) ? '<span class="off-tag">Day off</span>' : ''}`;
+    html += `<div class="tl-col ${isDayOff(k, off) ? 'off' : off.work.includes(k) ? 'present' : ''}" data-d="${k}" style="height:${(DAY_TO - DAY_FROM) * HOUR_PX}px">${isDayOff(k, off) ? '<span class="off-tag">Day off</span>' : ''}`;
     // Personal Google events: grey, details hidden, clipped to this day and the visible hours
     const dayStart = k + 'T00:00', dayEnd = ymd(addDays(day, 1)) + 'T00:00';
     for (const x of busy) {
@@ -5109,8 +5120,10 @@ function qzBind(el) {
     if (d('dt')) { QZ.discType = d('dt'); QZ.discVal = 0; return qzDraw(); }
     const avk = t.closest('[data-avk] button');
     if (avk) { qzAvOpts(); const k = avk.parentElement.dataset.avk; QZ.av[k] = k === 'months' ? +avk.dataset.v : avk.dataset.v; return qzAvPanel(); }
-    if (d('avd')) { qzAvOpts(); const k = d('avd'), h = QZ.av.hidden; h.includes(k) ? h.splice(h.indexOf(k), 1) : h.push(k); return qzAvPanel(); }
-    if (t.closest('#qz-avclear')) { QZ.av.hidden = []; return qzAvPanel(); }
+    if (d('avo')) { qzAvOpts(); QZ.av.open.push(d('avo')); return qzAvPanel(); }
+    if (d('avd')) { qzAvOpts(); const k = d('avd'), h = QZ.av.hidden; if (QZ.av.open.includes(k)) { QZ.av.open = QZ.av.open.filter(x => x !== k); return qzAvPanel(); }
+      h.includes(k) ? h.splice(h.indexOf(k), 1) : h.push(k); return qzAvPanel(); }
+    if (t.closest('#qz-avclear')) { QZ.av.hidden = []; QZ.av.open = []; return qzAvPanel(); }
     if (d('dq')) { QZ.discVal = +QZ.discVal === +d('dq') ? 0 : +d('dq'); return qzDraw(); }
     if (t.closest('#qz-new')) { if (QZ.design) URL.revokeObjectURL(QZ.design.url);
       Object.assign(QZ, QZ_RESET); return qzDraw(); }
@@ -5636,7 +5649,7 @@ async function qzComboSheet() {
   return { cv, ref };
 }
 
-async function qzPrint() {
+async function qzPrint() { qzAvRecord();
   const { cv } = qzMulti() ? await qzComboSheet() : await qzSheet();
   const extra = [];
   if (qzHasDesign()) extra.push(await designPage());
@@ -5676,7 +5689,7 @@ async function designPage() {
    client. Kept on QZ.av for as long as the quote is open. */
 function qzAvOpts() {
   const r = qCalc(), [ws, we] = workHours().map(toMin);
-  QZ.av ||= { months: AV.months, from: AV.from, fullOnly: false, hidden: [], need: null };
+  QZ.av ||= { months: AV.months, from: AV.from, fullOnly: false, hidden: [], need: null }; QZ.av.open ||= [];   /* open: days off opened for this client */
   const needDefault = Math.min(we - ws, Math.ceil(r.per * 60 / 30) * 30);
   return { ...QZ.av, need: QZ.av.need ?? needDefault, needDefault, workMin: we - ws };
 }
@@ -5693,15 +5706,15 @@ async function qzAvPanel() {
     <div class="seg" data-avk="from" style="margin-bottom:10px">${[['now', 'This month'], ['next', 'Next month']].map(([k, l]) => `<button data-v="${k}" class="${o.from === k ? 'on' : ''}" style="flex:1">From ${l.toLowerCase()}</button>`).join('')}</div>
     ${reelSlider('data-avn', 'need', `Session needs ${help('Only days with at least this much free time inside your working hours are shown. Starts at this quote\'s session length.')}`, 0.5, o.workMin / 60, 0.5, o.need / 60, fmtH(o.need / 60))}
     <label class="toggle" style="display:inline-flex;margin-bottom:10px"><input type="checkbox" id="qz-avfull" ${o.fullOnly ? 'checked' : ''}><span>Only fully open days</span></label>
-    <div class="lbl">Tap a day to hide it for this client ${o.hidden.length ? `<button class="link" id="qz-avclear" style="margin-left:8px">Show all again (${o.hidden.length})</button>` : ''}</div>
+    <div class="lbl">Tap a day to hide it for this client, or a day off to open it ${o.hidden.length + o.open.length ? `<button class="link" id="qz-avclear" style="margin-left:8px">Undo changes (${o.hidden.length + o.open.length})</button>` : ''}</div>
     <div class="qz-avmonths">${months.map(first => {
       const lead = (first.getDay() + 6) % 7, days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
       let cells = '';
       for (let i = 0; i < lead; i++) cells += '<span></span>';
       for (let d = 1; d <= days; d++) {
         const k = ymd(new Date(first.getFullYear(), first.getMonth(), d)), st = map[k], hid = o.hidden.includes(k);
-        cells += st === 'off' ? `<span class="avd off">${d}</span>`
-          : `<button class="avd ${hid ? 'hid' : st}" data-avd="${k}" ${hid ? 'title="Hidden for this client"' : ''}>${d}</button>`;
+        cells += st === 'off' ? (k >= ymd(new Date()) ? `<button class="avd off" data-avo="${k}" title="Your day off: tap to open it for this client">${d}</button>` : `<span class="avd off">${d}</span>`)
+          : `<button class="avd ${hid ? 'hid' : st} ${o.open.includes(k) ? 'opened' : ''}" data-avd="${k}" ${hid ? 'title="Hidden for this client"' : o.open.includes(k) ? 'title="A day off, opened for this client: tap to hide"' : ''}>${d}</button>`;
       }
       return `<div class="avm"><b>${first.toLocaleDateString(undefined, { month: 'long' })}</b><div class="avgrid">${'MTWTFSS'.split('').map(l => `<i>${l}</i>`).join('')}${cells}</div></div>`;
     }).join('')}</div>
@@ -5729,7 +5742,9 @@ async function qzWithRef(src) {
   return cv;
 }
 
-async function qzSaveImage(share) {
+async function qzAvRecord() { if (!QZ.withAvail || !QZ.clientId) return; const o = qzAvOpts(), [st, en] = availRange(o.months, o.from), map = await availability(st, en, o), S = avShared();
+  S[QZ.clientId] = { at: ymd(new Date()), days: Object.entries(map).filter(([, v]) => v === 'open' || v === 'part').map(([k]) => k), part: Object.entries(map).filter(([, v]) => v === 'part').map(([k]) => k), msg: (QZ.title ? 'With the quote for ' + QZ.title : 'With a quote') }; await Settings.set('av_shared', JSON.stringify(S)); }
+async function qzSaveImage(share) { qzAvRecord();
   const sh = qzMulti() ? await qzComboSheet() : await qzSheet(), ref = sh.ref;
   const tag = QZ.client ? '-' + QZ.client.replace(/[^\w-]+/g, '_') : '';
   /* With a reference picture, it goes on the same image as a small thumbnail (one picture to send, not two). */
@@ -6400,7 +6415,7 @@ async function formPage(t, c) {
      part   = some bookings already, still room for a smaller piece
      open   = nothing booked inside working hours: room for a large, full-day piece
    Google "busy" blocks count as booked time. */
-const AV = { months: 3, from: 'now' };
+const AV = { months: 3, from: 'now', over: {}, msg: '', cid: null };   /* over: { date: 'open' | 'part' | 'taken' } for this sharing only */
 const toMin = (t) => { const [h, m] = String(t || '0:0').split(':').map(Number); return h * 60 + (m || 0); };
 const workHours = () => [Settings.get('day_start', '10:00'), Settings.get('day_end', '17:00')];
 const maxPerDay = () => Math.max(1, +Settings.get('max_per_day', '1') || 1);
@@ -6412,14 +6427,14 @@ const maxPerDay = () => Math.max(1, +Settings.get('max_per_day', '1') || 1);
 const BK_CANCEL = [['client', 'Client cancelled'], ['noshow', 'No-show'], ['me', 'I cancelled']];
 const bookingGap = () => Math.max(0, +Settings.get('booking_gap', '60') || 0);
 async function availDays(start, end, opts = {}) {
-  const need = Math.max(30, opts.need || 120), hidden = new Set(opts.hidden || []), gap = bookingGap();
+  const need = Math.max(30, opts.need || 120), hidden = new Set(opts.hidden || []), forced = new Set(opts.open || []), gap = bookingGap();   /* forced: days off opened just for this */
   const [ws, we] = workHours().map(toMin);
   const rows = await DB.all(`SELECT start_at, duration_min, kind FROM bookings WHERE start_at >= ? AND start_at < ? AND ghost = 0 AND coalesce(cancelled, 0) = 0`, [ymd(start), ymd(end)]);   /* a cancelled booking frees its time */
   const busy = Settings.get('gcal_busy', '1') === '1' ? await DB.all('SELECT start_at, end_at FROM gcal_busy WHERE start_at < ? AND end_at > ?', [ymd(end), ymd(start)]) : [];
   const off = daysOff(), today = ymd(new Date()), out = {};
   for (let d = new Date(start); d < end; d = addDays(d, 1)) {
     const k = ymd(d);
-    if (k < today || isDayOff(k, off)) { out[k] = { st: 'off', wins: [] }; continue; }
+    if (k < today || (isDayOff(k, off) && !forced.has(k))) { out[k] = { st: 'off', wins: [] }; continue; }
     if (hidden.has(k)) { out[k] = { st: 'taken', wins: [] }; continue; }
     const day = rows.filter(r => r.start_at.startsWith(k));
     if (day.some(r => r.kind === 'hold' || r.kind === 'leave')) { out[k] = { st: 'taken', wins: [] }; continue; }
@@ -6439,8 +6454,9 @@ async function availDays(start, end, opts = {}) {
   return out;
 }
 async function availability(start, end, opts = {}) {
-  const days = await availDays(start, end, opts);
-  return Object.fromEntries(Object.entries(days).map(([k, v]) => [k, v.st]));
+  const days = await availDays(start, end, opts), out = Object.fromEntries(Object.entries(days).map(([k, v]) => [k, v.st]));
+  for (const [k, v] of Object.entries(opts.over || {})) if (k in out && k >= ymd(new Date())) out[k] = v;   /* days set by hand for this sharing */
+  return out;
 }
 function availRange(months = AV.months, from = AV.from) {
   const t = new Date(), start = from === 'next' ? new Date(t.getFullYear(), t.getMonth() + 1, 1) : new Date(t.getFullYear(), t.getMonth(), 1);
@@ -6491,56 +6507,81 @@ async function availSheet(months = AV.months, from = AV.from, opts = {}) {
   }
 
   let y = H - 120 - notesH + 40;
+  const msg = (opts.msg || '').trim();
+  if (msg) { for (const ln of wrap(msg, font(26, 600), W - 2 * M).slice(0, 3)) { text(ln, M, y, font(26, 600), ink); y += 38; } y += 14; }   /* your own note, first */
   text('PLEASE NOTE', M, y, font(22, 700), teal); y += 42;
   const phone = Settings.get('artist_phone');
-  for (const s of ['Openings are live: they change as bookings come in, so a date is only yours once your deposit is paid.',
+  for (const s of [msg ? '' : 'Openings are live: they change as bookings come in, so a date is only yours once your deposit is paid.',
     opts.need ? `Days shown have room for your session of about ${fmtH(opts.need / 60)}.` : 'Large or full-day pieces need an open (green) day.',
-    phone ? `To book, get in touch: ${phone}.` : 'Get in touch to book your date.'])
-    for (const ln of wrap('•  ' + s, font(24), W - 2 * M)) { text(ln, M, y, font(24)); y += 36; }
+    phone ? `To book, get in touch: ${phone}.` : 'Get in touch to book your date.'].filter(Boolean))
+    for (const ln of wrap('•  ' + s, font(24), W - 2 * M)) { if (y > H - 130) break; text(ln, M, y, font(24)); y += 36; }
   x.fillStyle = teal; x.fillRect(M, H - 110, W - 2 * M, 3);
   text(`Made ${fmtDay(ymd(new Date()))}`, W - M, H - 66, font(20), soft, 'right');
   return { cv, map, start, end };
 }
 
 // The same openings as plain text, for messages.
-function availText(map, start, end) {
+function availText(map, start, end, msg) {
   const byMonth = {};
   for (const [k, st] of Object.entries(map)) if (st === 'open' || st === 'part') {
     const d = new Date(k + 'T00:00'), m = d.toLocaleDateString(undefined, { month: 'long' });
     (byMonth[m] ||= []).push(`${d.toLocaleDateString(undefined, { weekday: 'short' })} ${d.getDate()}${st === 'part' ? '*' : ''}`);
   }
   const lines = Object.entries(byMonth).map(([m, ds]) => `${m}: ${ds.join(', ')}`);
-  return `Open appointments\n${lines.join('\n') || 'No open days in this period.'}\n${lines.some(l => l.includes('*')) ? '* some time left, not for a full-day piece\n' : ''}`
+  return `${(msg || '').trim() ? msg.trim() + '\n\n' : ''}Open appointments\n${lines.join('\n') || 'No open days in this period.'}\n${lines.some(l => l.includes('*')) ? '* some time left, not for a full-day piece\n' : ''}`
     + 'Openings change as bookings come in; a date is only yours once your deposit is paid.';
 }
 
-async function openAvailability() {
-  const o = document.createElement('div'); o.id = 'merge-dlg';
+/* What was last shared with each client: { client id: { at, days: [open dates], msg } }, gone once its last day passes. */
+const avShared = () => { let m = {}; try { m = JSON.parse(Settings.get('av_shared', '{}')) || {}; } catch {} const t = ymd(new Date()); let changed = false;
+  for (const [k, v] of Object.entries(m)) if (!v?.days?.some(d => d >= t)) { delete m[k]; changed = true; } if (changed) Settings.set('av_shared', JSON.stringify(m)); return m; };
+async function openAvailability(cid) {
+  const o = document.createElement('div'); o.id = 'merge-dlg'; AV.over = {}; if (typeof cid === 'number') AV.cid = cid;   /* called with a client from their card; from a button it gets the click, not a client */
+  const ST = [['', 'As worked out'], ['open', 'Open'], ['part', 'Some time'], ['taken', 'Booked']];
+  const opts = () => ({ over: Object.fromEntries(Object.entries(AV.over).filter(([, v]) => v !== 'open')), open: Object.keys(AV.over).filter(k => AV.over[k] === 'open'), msg: AV.msg });
   const draw = async () => {
-    const [s, e] = availRange(), map = await availability(s, e);
-    const open = Object.values(map).filter(v => v === 'open').length, part = Object.values(map).filter(v => v === 'part').length;
-    o.innerHTML = `<div class="card"><h2>Share open appointments</h2>
-      <p class="muted" style="margin-top:0;font-size:13px">A one-page calendar of your open days, worked out from your bookings, days off, working hours (${workHours().join('–')}) and up to ${maxPerDay()} tattoo${maxPerDay() > 1 ? 's' : ''} a day. To keep a day off this sheet, add a <b>Hold</b> booking on it.</p>
+    const [s, e] = availRange(), auto = await availability(s, e), map = await availability(s, e, opts());
+    const open = Object.values(map).filter(v => v === 'open').length, part = Object.values(map).filter(v => v === 'part').length, today = ymd(new Date());
+    const cl = AV.cid ? await DB.one('SELECT id, first_name, last_name FROM clients WHERE id = ?', [AV.cid]) : null;
+    const months = []; for (let m = new Date(s); m < e; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) months.push(new Date(m));
+    const cal = months.map(first => { const lead = (first.getDay() + 6) % 7, n = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+      let cells = '<i></i>'.repeat(lead); for (let d = 1; d <= n; d++) { const k = ymd(new Date(first.getFullYear(), first.getMonth(), d)), st = map[k], set = k in AV.over;
+        cells += `<button type="button" class="avd av-${st} ${set ? 'set' : ''}" data-avd="${k}" ${k < today ? 'disabled' : ''} data-tip="${set ? 'Set by hand: ' : ''}${{ open: 'Open', part: 'Some time left', taken: 'Booked', off: 'Day off' }[st] || ''}${set && auto[k] !== st ? ` (normally ${({ open: 'open', part: 'some time', taken: 'booked', off: 'a day off' })[auto[k]]})` : ''}">${d}</button>`; }
+      return `<div class="avm"><b>${first.toLocaleDateString(undefined, { month: 'long' })}</b><div class="avgrid avgrid-ed">${'MTWTFSS'.split('').map(l => `<i>${l}</i>`).join('')}${cells}</div></div>`; }).join('');
+    o.innerHTML = `<div class="card av-card"><h2>Share open appointments</h2>
+      <p class="muted" style="margin-top:0;font-size:13px">Worked out from your bookings, days off, working hours (${workHours().join('\u2013')}) and up to ${maxPerDay()} tattoo${maxPerDay() > 1 ? 's' : ''} a day. Tap a day to change it for this sharing only: open, some time, booked, then back to as worked out. Your bookings and days off don\u2019t change.</p>
       <div class="lbl">How far ahead</div>
       <div class="seg" id="av-m" style="margin-bottom:10px">${[1, 2, 3].map(n => `<button data-m="${n}" class="${AV.months === n ? 'on' : ''}" style="flex:1">${n} month${n > 1 ? 's' : ''}</button>`).join('')}</div>
       <div class="seg" id="av-f" style="margin-bottom:12px">${[['now', 'From this month'], ['next', 'From next month']].map(([k, l]) => `<button data-f="${k}" class="${AV.from === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
-      <div class="stat"><span>Open days</span><span><b>${open}</b> full · <b>${part}</b> part</span></div>
+      <div class="av-ed">${cal}</div>
+      <div class="av-leg"><span><i class="av-open"></i>Open</span><span><i class="av-part"></i>Some time</span><span><i class="av-taken"></i>Booked</span><span><i class="av-off"></i>Day off</span><span><i class="set-k"></i>Set by hand</span>${Object.keys(AV.over).length ? '<button class="link" data-avreset>Undo all changes</button>' : ''}</div>
+      <div class="stat"><span>Open days</span><span><b>${open}</b> full \u00b7 <b>${part}</b> part</span></div>
+      <label class="field" style="margin-top:10px"><span>A note on it <span class="muted">(optional)</span></span><textarea class="in" rows="2" data-avmsg placeholder="e.g. Hi Sam, these are the days I have for your back piece.">${esc(AV.msg)}</textarea></label>
+      <div class="field"><span class="lbl">For a client <span class="muted">(optional)</span> ${help('Keeps what you sent on their client card, so you know what you offered. Sharing again with them replaces it, and it goes once its last open day has passed.')}</span>
+        ${cl ? `<div class="row" style="gap:8px"><span class="chip">${esc(fullName(cl))}</span><button class="link" data-avclx>Change</button></div>` : `<div class="picker"><input class="in" id="av-cl" placeholder="Search your clients\u2026" autocomplete="off"><div class="pick-list" id="av-cll" hidden></div></div>`}</div>
       <div class="qz-acts" style="margin-top:12px"><button class="btn" id="av-print">Print / PDF</button><button class="btn" id="av-img">Save image</button><button class="btn primary" id="av-send">Send</button></div>
       <button class="btn" id="av-close" style="width:100%;margin-top:8px">Close</button></div>`;
+    const ci = o.querySelector('#av-cl'); if (ci) clientPicker(ci, o.querySelector('#av-cll'), (id) => { AV.cid = id; draw(); });
   };
   document.body.appendChild(o); await draw();
+  o.addEventListener('input', (e) => { if (e.target.dataset.avmsg != null) AV.msg = e.target.value; });
   o.addEventListener('click', async (e) => {
-    const m = e.target.closest('[data-m]'), f = e.target.closest('[data-f]');
+    const m = e.target.closest('[data-m]'), f = e.target.closest('[data-f]'), dd = e.target.closest('[data-avd]');
     if (m) { AV.months = +m.dataset.m; return draw(); }
     if (f) { AV.from = f.dataset.f; return draw(); }
-    if (e.target.closest('#av-close')) return o.remove();
+    if (dd) { const k = dd.dataset.avd, cur = AV.over[k] || '', i = ST.findIndex(x => x[0] === cur), nx = ST[(i + 1) % ST.length][0]; if (nx) AV.over[k] = nx; else delete AV.over[k]; return draw(); }
+    if (e.target.closest('[data-avreset]')) { AV.over = {}; return draw(); }
+    if (e.target.closest('[data-avclx]')) { AV.cid = null; return draw(); }
+    if (e.target.closest('#av-close')) { AV.cid = null; return o.remove(); }
     const act = e.target.closest('#av-print, #av-img, #av-send')?.id; if (!act) return;
-    const { cv, map, start, end } = await availSheet();
+    const { cv, map, start, end } = await availSheet(AV.months, AV.from, opts());
+    if (AV.cid) { const S = avShared(); S[AV.cid] = { at: ymd(new Date()), days: Object.entries(map).filter(([, v]) => v === 'open' || v === 'part').map(([k, v]) => v === 'part' ? k + '*' : k), msg: AV.msg.trim() || null };
+      S[AV.cid].days = S[AV.cid].days.map(d => d.replace('*', '')).filter(Boolean); S[AV.cid].part = Object.entries(map).filter(([, v]) => v === 'part').map(([k]) => k); await Settings.set('av_shared', JSON.stringify(S)); }
     if (act === 'av-print') return printCanvas(cv);
     const file = new File([await new Promise(r => cv.toBlob(r, 'image/png'))], `Open-appointments-${ymd(start).slice(0, 7)}.png`, { type: 'image/png' });
     try {
-      if (act === 'av-send' && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Open appointments', text: availText(map, start, end) });
-      else if (act === 'av-send' && navigator.share) await navigator.share({ text: availText(map, start, end) });
+      if (act === 'av-send' && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: 'Open appointments', text: availText(map, start, end, AV.msg) });
+      else if (act === 'av-send' && navigator.share) await navigator.share({ text: availText(map, start, end, AV.msg) });
       else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved.'); }
     } catch (err) { if (err.name !== 'AbortError') toast('Could not share: ' + err.message); }
   });
@@ -11028,6 +11069,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 546, when: '2026-11-29T10:00', added: [
+    'Share open appointments: tap a day to open, part-open or book it out for that sharing only, add a note to the image, and link it to a client.',
+    'Clients: the open days you sent show on their card until the last one passes; sharing again replaces them.',
+    'Calendar: on a usual day off, I’m in this day opens it for bookings and your shared openings (standing in for another artist, say).',
+    'Quote calculator: its open appointments follow the same rules, can open a day off for that client, and record what you sent on a returning client’s card.'
+  ] },
   { build: 545, when: '2026-11-28T17:00', added: [
     'Open appointments: follow-ups (a message or call) no longer take up time, so a day with only a follow-up still shows as open.'
   ] },
