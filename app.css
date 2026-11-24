@@ -2993,5 +2993,16 @@ html[data-os="ios"] canvas, html[data-os="ios"] img { -webkit-user-select: none;
 .so-pad2 { grid-template-columns: repeat(4, 1fr); }
 .so-nav { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; } .so-nav .btn { height: 52px; font-size: 17px; }
 @media (max-height: 700px) { .so-pad button { height: 46px; font-size: 20px; } .so-pad .so-k2 { height: 38px; } .so-val { font-size: 36px; } .so-step { width: 46px; height: 46px; } }
+.b-fate { gap: 18px; flex-wrap: wrap; } .b-can-in { display: none; margin: 10px 0 6px; padding: 10px; border-radius: 12px; border: 1px solid rgba(226,107,107,.45); background: rgba(226,107,107,.07); }
+.b-done:has([name=cancelled]:checked) .b-can-in { display: block; } .b-done:has([name=cancelled]:checked) #b-done-in { display: none; }
+.ev.cancelled { opacity: .45; text-decoration: line-through; background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(226,107,107,.25) 6px 8px); }
+.can-chip { background: rgba(226,107,107,.18); color: #e26b6b; border-color: rgba(226,107,107,.4); font-size: 11px; } .can-ns { color: #e26b6b; }
+.bkt tr.cancelled td { opacity: .6; } .bkt tr.cancelled td.nw:first-of-type { text-decoration: line-through; }
+.bk-unrel { margin-top: 14px; } .bk-unrel h2 { margin-top: 0; }
+.ag-wrap { display: flex; align-items: center; } .ag-wrap > .c-row { flex: 1; min-width: 0; } .ag-hide { margin-right: 10px; flex: none; }
+.loy-note-row .btn { flex: none; margin-left: 6px; } .loy-sent { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; margin-right: 6px; }
+.loy-use { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; } .loy-use > div { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px; min-width: 84px; background: var(--bg2); }
+.loy-use b { font: 700 20px var(--ui); } .loy-use span { font-size: 11px; color: var(--ink2); } .loy-use .warn b { color: #e0a030; } .loy-use-rate { border-color: var(--teal) !important; } .loy-use-rate b { color: var(--teal); }
+.loy-t td.loy-deleted { color: var(--ink2); text-decoration: line-through; }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 541; }
+:root { --app-build: 542; }

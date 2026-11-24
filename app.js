@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 541;
+const APP_BUILD = 542;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -396,7 +396,20 @@ const MIGRATIONS = [
   // so changing or switching off the program never changes rewards already out
   `ALTER TABLE loyalty_rewards ADD COLUMN prog TEXT;`,
   // booking reminders: notify_min = how many minutes before the start to remind (NULL = no reminder)
-  `ALTER TABLE bookings ADD COLUMN notify_min INTEGER;`
+  `ALTER TABLE bookings ADD COLUMN notify_min INTEGER;`,
+  // reward sent to the client (date marked); a client who can't earn rewards (kept in the referral tree);
+  // cancelled bookings: kept on record but out of stats and free time (by: client, noshow or me; a reason; when)
+  `ALTER TABLE loyalty_rewards ADD COLUMN sent_at TEXT;
+   ALTER TABLE clients ADD COLUMN loy_off INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE clients ADD COLUMN loy_off_note TEXT;
+   ALTER TABLE bookings ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE bookings ADD COLUMN cancel_by TEXT;
+   ALTER TABLE bookings ADD COLUMN cancel_reason TEXT;
+   ALTER TABLE bookings ADD COLUMN cancelled_at TEXT;`,
+  // a deleted reward is archived, not removed: when, why, and what it was before (to restore it)
+  `ALTER TABLE loyalty_rewards ADD COLUMN deleted_at TEXT;
+   ALTER TABLE loyalty_rewards ADD COLUMN del_reason TEXT;
+   ALTER TABLE loyalty_rewards ADD COLUMN del_prev TEXT;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -969,6 +982,7 @@ const VIEWS = {
       ${drawTiles()}
       <div class="card"><h2>Today ${help('Today\'s sessions. Tap one to open it.')}</h2>
         <div id="home-today" class="muted">…</div></div>
+      <div id="home-loy"></div>
       <div id="home-bday"></div>
       <div class="grid">
         ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil')}
@@ -981,15 +995,19 @@ const VIEWS = {
       const t = new Date(); t.setHours(0, 0, 0, 0);
       const rows = await bookingsBetween(t, addDays(t, 1));
       const el = $('#home-today'); if (!el) return;
-      if (rows.length) { el.className = 'card list flush'; el.innerHTML = rows.map(agendaRow).join(''); }
+      const hid = todayHidden(), shown = rows.filter(b => !hid.has(b.id));
+      if (shown.length) { el.className = 'card list flush'; el.innerHTML = shown.map(b => b.completed || b.cancelled ? `<div class="ag-wrap">${agendaRow(b)}<button class="btn small ag-hide" data-thide="${b.id}" data-tip="Take it off today's list">Done \u2713</button></div>` : agendaRow(b)).join('');
+        el.onclick = async (e) => { const h = e.target.closest('[data-thide]'); if (!h) return; e.preventDefault(); const ids = [...todayHidden(), +h.dataset.thide]; await Settings.set('today_hidden', JSON.stringify({ day: ymd(new Date()), ids })); h.closest('.ag-wrap').remove(); }; }
+      else if (rows.length) el.innerHTML = 'All done for today.';
       else el.innerHTML = `No sessions booked. <a href="#" id="h-add" style="color:var(--teal)">Book one</a>`;
       const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBookingNext(); };
       const bw = document.querySelector('[data-go-ws]'); if (bw) bw.onclick = () => { Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(bw.dataset.goWs || null)); };
+      homeLoy();
       // Birthdays in the next 7 days, with a one-tap WhatsApp greeting.
       const bd = (await DB.all('SELECT id, first_name, last_name, phone, dob FROM clients WHERE dob IS NOT NULL AND dob <> \'\''))
         .map(c => { const [y, m, d] = c.dob.split('-').map(Number); let n = new Date(t.getFullYear(), m - 1, d); if (n < t) n = new Date(t.getFullYear() + 1, m - 1, d);
           return { ...c, days: Math.round((n - t) / 864e5), age: n.getFullYear() - y }; })
-        .filter(c => c.days <= 7).sort((x, y) => x.days - y.days);
+        .filter(c => c.days <= 7).filter(c => bdDone()[c.id] !== ymd(addDays(t, c.days))).sort((x, y) => x.days - y.days);   /* ones marked done drop off until next year */
       const be = $('#home-bday');
       if (be && bd.length) be.innerHTML = `<div class="card"><h2>Birthdays this week</h2><div class="card list flush">${bd.map(c => {
         const wa = (intlPhone(c.phone) || '').replace(/\D/g, ''), studio = Settings.get('studio_name') || Settings.get('artist_name') || '';
@@ -997,7 +1015,9 @@ const VIEWS = {
         return `<div class="c-row bday ${c.days ? '' : 'bd-today'}"><span class="ico-c">${ICON.cake}</span>
           <a class="c-main" href="#client/${c.id}"><span class="c-n">${esc(fullName(c))}</span>
             <span class="muted c-sub">${c.days === 0 ? 'Today' : c.days === 1 ? 'Tomorrow' : addDays(t, c.days).toLocaleDateString(undefined, { weekday: 'long' })} · turns ${c.age}</span></a>
-          ${wa ? `<a class="btn small" href="https://wa.me/${wa}?text=${msg}" target="_blank" rel="noopener">Send wishes</a>` : ''}</div>`; }).join('')}</div></div>`;
+          ${wa ? `<a class="btn small" href="https://wa.me/${wa}?text=${msg}" target="_blank" rel="noopener">Send wishes</a>` : ''}
+          <button class="btn small" data-bddone="${c.id}:${ymd(addDays(t, c.days))}" data-tip="Wishes sent: take it off the home screen">Done ✓</button></div>`; }).join('')}</div></div>`;
+      if (be) be.onclick = async (e) => { const b = e.target.closest('[data-bddone]'); if (!b) return; e.preventDefault(); const [id, day] = b.dataset.bddone.split(':'); const D = bdDone(); D[id] = day; await Settings.set('bd_done', JSON.stringify(D)); b.closest('.c-row')?.remove(); toast('Marked as done.', 1400); if (!be.querySelector('.c-row')) be.innerHTML = ''; };
     }
   },
   clients: {
@@ -1184,7 +1204,9 @@ const VIEWS = {
             <div class="seg" id="c-rsrc">${REF_SRC.map(([v, l]) => `<button type="button" data-rs="${v}" class="${rsrc === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
             <input type="hidden" name="ref_src" value="${esc(rsrc)}"><input type="hidden" name="referred_by" value="${refBy?.id || ''}">
             <div class="picker" id="c-rp" ${rsrc === 'person' ? '' : 'hidden'} style="margin-top:6px"><input class="in" id="c-ref" placeholder="Search your contacts…" value="${esc(refBy ? fullName(refBy) : '')}" autocomplete="off"><div class="pick-list" id="c-ref-list" hidden></div></div>
-            <input class="in" name="ref_note" id="c-rnote" value="${esc(c.ref_note || '')}" placeholder="${REF_HINT[rsrc] || ''}" ${rsrc ? '' : 'hidden'} style="margin-top:6px"></div>`, { fold: true, open: moreOpen, hint: 'category, birthday, tags, referral' })}
+            <input class="in" name="ref_note" id="c-rnote" value="${esc(c.ref_note || '')}" placeholder="${REF_HINT[rsrc] || ''}" ${rsrc ? '' : 'hidden'} style="margin-top:6px"></div>
+          <div class="field"><label class="toggle" data-tip="They stay in the referral tree and their referrals still count for everyone else, but they earn no loyalty rewards"><input type="checkbox" name="loy_off" ${c.loy_off ? 'checked' : ''}><span>No loyalty rewards for them</span></label>
+            <input class="in" name="loy_off_note" value="${esc(c.loy_off_note || '')}" placeholder="Why (optional): moved away, not welcome…" style="margin-top:6px"></div>`, { fold: true, open: moreOpen, hint: 'category, birthday, tags, referral' })}
         ${fsec('Health and notes<small>Allergies, conditions and anything to remember</small>', `
           <label class="field"><span>Medical / allergies ${help('Latex, blood thinners, skin conditions, etc. Shown highlighted on the client page.')}</span>
             <textarea class="in" name="medical" rows="2">${esc(c.medical)}</textarea></label>
@@ -1228,8 +1250,8 @@ const VIEWS = {
         // Categories are tidied to "Title case" so "supplier" and "Supplier" stay one group.
         d.category = (d.category || 'Client').replace(/\s+/g, ' ').replace(/^./, m => m.toUpperCase());
         if (d.ref_src !== 'person') d.referred_by = ''; if (d.ref_src === 'person' && !d.referred_by) d.ref_src = d.ref_note ? 'other' : '';   /* a person picked, or the note kept as Other */
-        const cols = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags', 'category', 'referred_by', 'ref_src', 'ref_note'];
-        const vals = cols.map(k => d[k] || null); vals[0] = d.first_name; vals[1] = d.last_name || ''; vals[11] = d.referred_by ? +d.referred_by : null;
+        const cols = ['first_name', 'last_name', 'phone', 'email', 'instagram', 'dob', 'pronouns', 'medical', 'notes', 'tags', 'category', 'referred_by', 'ref_src', 'ref_note', 'loy_off', 'loy_off_note'];
+        const vals = cols.map(k => d[k] || null); vals[0] = d.first_name; vals[1] = d.last_name || ''; vals[11] = d.referred_by ? +d.referred_by : null; vals[14] = d.loy_off ? 1 : 0; if (!d.loy_off) vals[15] = null;
         let cid = c.id;
         if (cid) {
           await DB.run(`UPDATE clients SET ${cols.map(k => k + ' = ?').join(', ')}, photo_ref = ?, updated_at = datetime('now') WHERE id = ?`, [...vals, photoRef, cid]);
@@ -1372,7 +1394,12 @@ const VIEWS = {
         ${fsec(`Reference photos ${help('Client references or your sketch. Stored on the device, included in backups.')}`, '<div class="thumbs" id="b-thumbs"></div>',
           { fold: true, open: photos.length || added.length, cls: 'b-ink', hint: photos.length || added.length ? String(photos.length + added.length) : '' })}
         <section class="fsec b-done" id="b-done"><h3>After the session<small>Final payment, follow-up and receipt</small></h3>
-          <label class="toggle b-done-t"><input type="checkbox" name="completed" ${b.completed ? 'checked' : ''}><span>Tattoo completed</span></label>
+          <div class="row b-fate"><label class="toggle b-done-t"><input type="checkbox" name="completed" ${b.completed ? 'checked' : ''}><span>Tattoo completed</span></label>
+            <label class="toggle b-can-t" data-tip="Keeps the booking on record, but out of your stats and free time"><input type="checkbox" name="cancelled" ${b.cancelled ? 'checked' : ''}><span>Cancelled</span></label></div>
+          <div id="b-can-in" class="b-can-in"><div class="seg" id="b-canby">${BK_CANCEL.map(([v, l]) => `<button type="button" data-cby="${v}" class="${(b.cancel_by || 'client') === v ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
+            <input type="hidden" name="cancel_by" value="${esc(b.cancel_by || 'client')}">
+            <label class="field" style="margin-top:8px"><span>Reason <span class="muted">(optional)</span></span><input class="in" name="cancel_reason" value="${esc(b.cancel_reason || '')}" placeholder="Sick, forgot, family emergency\u2026"></label>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">${b.cancelled_at ? `Cancelled ${esc(fmtDay(b.cancelled_at.slice(0, 10)))}. ` : ''}To put it back on, untick Cancelled and pick a new date and time above.</p></div>
           <div id="b-done-in">
             <div class="two">
               <label class="field"><span>Final price paid${cur ? ` (${esc(cur)})` : ''} ${help('What the client paid in total, deposit included. Used in Stats and on the receipt.')}</span>
@@ -1548,12 +1575,12 @@ const VIEWS = {
         const gPhone = gName ? intlPhone(d.guest_phone) : '';
         if (gPhone === null) { toast(phoneBad()); return null; }
         const num = (v) => v === '' || v == null ? null : +v;
-        const done = DONE_KINDS.includes(kind) && !!d.completed;
+        const can = !!d.cancelled, done = DONE_KINDS.includes(kind) && !!d.completed && !can;   /* a cancelled booking is never completed */
         const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
           d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind,
           done ? 1 : 0, done ? (b.completed_at || new Date().toISOString()) : null,
-          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null, gName, gPhone || null, d.notify ? +d.notify_min || 60 : null];
-        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job, guest_name, guest_phone, notify_min';
+          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null, gName, gPhone || null, d.notify ? +d.notify_min || 60 : null, can ? 1 : 0, can ? d.cancel_by || 'client' : null, can ? (d.cancel_reason || '').trim() || null : null, can ? (b.cancelled_at || new Date().toISOString()) : null];
+        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job, guest_name, guest_phone, notify_min, cancelled, cancel_by, cancel_reason, cancelled_at';
         const refs = [...keep];
         for (const a of added) refs.push(await Media.save(a.blob, 'jpg'));
         let bid = b.id;
@@ -1604,6 +1631,10 @@ const VIEWS = {
       $('#b-receipt').onclick = async () => { const bid = await save(); if (bid) openReceipt(bid); };
       $('#b-ics').onclick = async () => { const bid = await save(); if (bid) Notif.ics(bid); };
       f.elements.notify?.addEventListener('change', (e) => { if (e.target.checked) Notif.ask(); });
+      /* Completed and Cancelled can't both be on */
+      f.elements.cancelled?.addEventListener('change', (e) => { if (e.target.checked && f.elements.completed?.checked) { f.elements.completed.checked = false; f.elements.completed.dispatchEvent(new Event('change', { bubbles: true })); } });
+      f.elements.completed?.addEventListener('change', (e) => { if (e.target.checked && f.elements.cancelled?.checked) f.elements.cancelled.checked = false; });
+      $('#b-canby')?.addEventListener('click', (e) => { const b0 = e.target.closest('[data-cby]'); if (!b0) return; f.elements.cancel_by.value = b0.dataset.cby; $('#b-canby').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b0)); Dirty.set(true); });
     }
   },
   studio: {
@@ -2182,30 +2213,35 @@ const VIEWS = {
       const itemSel = (path, val) => `<select class="in" data-lsel="${path}" style="max-width:260px">${inv.length ? `<option value="">Choose a product…</option>${inv.map(i => `<option value="${i.id}" ${+val === i.id ? 'selected' : ''}>${esc(i.name)} (${+i.qty} in stock)</option>`).join('')}` : '<option value="">Add products in More › Inventory first</option>'}</select>`;
       $('#loy-tabs').onclick = (e) => { const b = e.target.closest('[data-lt0]'); if (!b) return; LOYV.tab = b.dataset.lt0; document.querySelectorAll('#loy-tabs button').forEach(x => x.classList.toggle('on', x === b)); draw(); };
       /* Rewards: every reward, open, used and expired; search, sort, export, pass on, cancel */
-      const COLS = [['code', 'Code'], ['holder', 'Client'], ['reward', 'Reward'], ['from', 'Earned from'], ['issued_at', 'Earned'], ['expires_at', 'Expires'], ['state', 'Status'], ['used', 'Used on']];
-      const ST = { open: 'Open', used: 'Used', expired: 'Expired', void: 'Cancelled' };
+      const COLS = [['code', 'Code'], ['holder', 'Client'], ['reward', 'Reward'], ['from', 'Earned from'], ['issued_at', 'Earned'], ['sent_at', 'Sent'], ['expires_at', 'Expires'], ['state', 'Status'], ['used', 'Used on']];
+      const ST = { open: 'Open', used: 'Used', expired: 'Expired', void: 'Cancelled', deleted: 'Deleted' };
       const rRows = async () => (await DB.all(`SELECT r.*, h.first_name AS h_f, h.last_name AS h_l, f.first_name AS f_f, f.last_name AS f_l, p.first_name AS p_f, p.last_name AS p_l, u.start_at AS u_at, u.description AS u_d
           FROM loyalty_rewards r LEFT JOIN clients h ON h.id = r.client_id LEFT JOIN clients f ON f.id = r.from_client LEFT JOIN clients p ON p.id = r.passed_from LEFT JOIN bookings u ON u.id = r.used_booking ORDER BY r.issued_at DESC, r.id DESC`))
         .map(r => ({ ...r, holder: r.h_f != null ? fullName({ first_name: r.h_f, last_name: r.h_l }) : '—', reward: Loy.rLabel(r) + (Loy.old(r) ? ' · older program' : ''), state: Loy.state(r),
           from: (r.src === 'spend' ? 'What they spent' : r.f_f != null ? 'Sent ' + fullName({ first_name: r.f_f, last_name: r.f_l }) : r.src === 'ref' ? 'Sending a client' : 'Added') + (r.p_f != null ? ` · passed on by ${fullName({ first_name: r.p_f, last_name: r.p_l })}` : ''),
-          used: r.u_at ? fmtDay(r.u_at.slice(0, 10)) + (r.u_d ? ' · ' + r.u_d : '') : r.note === 'product' ? `${r.used_at ? fmtDay(r.used_at) + ' · ' : ''}${(r.kind === 'item' ? r.item_name : r.alt_name) || 'Product'} handed over` : '' }));
-      const cellR = (r, k) => k === 'state' ? ST[r.state] : k === 'issued_at' || k === 'expires_at' ? (r[k] ? fmtDay(r[k]) : k === 'expires_at' ? 'Never' : '') : r[k] ?? '';
+          used: r.status === 'deleted' ? `Deleted ${r.deleted_at ? fmtDay(r.deleted_at) : ''}${r.del_reason ? ': ' + r.del_reason : ''}` : r.u_at ? fmtDay(r.u_at.slice(0, 10)) + (r.u_d ? ' · ' + r.u_d : '') : r.note === 'product' ? `${r.used_at ? fmtDay(r.used_at) + ' · ' : ''}${(r.kind === 'item' ? r.item_name : r.alt_name) || 'Product'} handed over` : '' }));
+      const cellR = (r, k) => k === 'state' ? ST[r.state] : k === 'issued_at' || k === 'expires_at' || k === 'sent_at' ? (r[k] ? fmtDay(r[k]) : k === 'expires_at' ? 'Never' : k === 'sent_at' ? 'Not yet' : '') : r[k] ?? '';
       const drawR = async () => { await Loy.backfill(); Loy.left(); const all = await rRows(), q = LOYV.q.trim().toLowerCase();
-        let rows = all.filter(r => (LOYV.f === 'all' || r.state === LOYV.f) && (!q || COLS.some(([k]) => String(cellR(r, k)).toLowerCase().includes(q))));
+        let rows = all.filter(r => (LOYV.f === 'all' ? r.state !== 'deleted' : r.state === LOYV.f) && (!q || COLS.some(([k]) => String(cellR(r, k)).toLowerCase().includes(q))));
         const key = (r) => LOYV.k === 'reward' ? (r.kind === 'pct' ? 0 : 1e6) + +r.value : String(LOYV.k === 'issued_at' || LOYV.k === 'expires_at' ? r[LOYV.k] || '9999' : cellR(r, LOYV.k)).toLowerCase();
         rows.sort((a, b) => (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0) * LOYV.d);
-        LOYV.shown = rows; const cnt = (f) => all.filter(r => f === 'all' || r.state === f).length;
+        LOYV.shown = rows; const cnt = (f) => all.filter(r => f === 'all' ? r.state !== 'deleted' : r.state === f).length;
+        /* how rewards get used: of those that have run their course (used, or ran out unclaimed), how many were used */
+        const kept = all.filter(r => r.state !== 'deleted'), nU = cnt('used'), nE = cnt('expired'), nO = cnt('open'), nV = cnt('void'), done0 = nU + nE;
+        const useHtml = kept.length ? `<div class="loy-use"><div><b>${kept.length}</b><span>earned</span></div><div><b>${nU}</b><span>used</span></div><div class="${nE ? 'warn' : ''}"><b>${nE}</b><span>ran out unclaimed</span></div><div><b>${nO}</b><span>still open</span></div>${nV ? `<div><b>${nV}</b><span>cancelled</span></div>` : ''}
+          <div class="loy-use-rate" data-tip="Of the rewards that have run their course (used, or ran out unclaimed)"><b>${done0 ? Math.round(nU / done0 * 100) + '%' : '—'}</b><span>get used</span></div></div>` : '';
         const nOld = all.filter(r => r.state === 'open' && Loy.old(r)).length;
         el.innerHTML = `${Loy.on() ? '' : `<div class="card muted">The program is off, so no new rewards are earned. ${cnt('open') ? `The ${cnt('open')} still open can be used until they’re claimed or run out.` : 'Switch it on in Program.'}</div>`}
           ${Loy.on() && nOld ? `<div class="card muted">${nOld} open reward${nOld === 1 ? ' was' : 's were'} earned under an older version of your program and keep${nOld === 1 ? 's' : ''} the rules ${nOld === 1 ? 'it was' : 'they were'} earned under.</div>` : ''}
           <div class="search-bar"><input class="in" id="loy-q" type="search" placeholder="Search code, client, reward…" value="${esc(LOYV.q)}" autocomplete="off">
             <button class="btn icon-btn" id="loy-csv" data-tip="Export what's shown as a spreadsheet (CSV)" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button></div>
-          <div class="bkt-seg">${[['open', 'Open'], ['used', 'Used'], ['expired', 'Expired'], ['all', 'All']].map(([k, l]) => `<button data-lf="${k}" class="${LOYV.f === k ? 'on' : ''}">${l} <small>${cnt(k)}</small></button>`).join('')}</div>
+          ${useHtml}
+          <div class="bkt-seg">${[['open', 'Open'], ['used', 'Used'], ['expired', 'Ran out'], ['void', 'Cancelled'], ['all', 'All'], ['deleted', 'Deleted']].map(([k, l]) => `<button data-lf="${k}" class="${LOYV.f === k ? 'on' : ''}" ${k === 'expired' ? 'data-tip="Rewards that ran out without being claimed"' : k === 'deleted' ? 'data-tip="Deleted rewards, kept with the reason; restore them from here"' : ''}>${l} <small>${cnt(k)}</small></button>`).join('')}</div>
           ${rows.length ? `<div class="bkt-scroll"><table class="bkt loy-t"><thead><tr>${COLS.map(([k, l]) => `<th data-ls="${k}" class="${LOYV.k === k ? 'sorted' : ''}">${l}${LOYV.k === k ? (LOYV.d > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}<th class="c-act"></th></tr></thead>
             <tbody>${rows.map(r => `<tr class="${r.state !== 'open' ? 'done' : ''}">${COLS.map(([k]) => `<td class="${k === 'code' ? 'loy-code' : ''} ${k === 'state' ? 'loy-' + r.state : ''}">${esc(cellR(r, k))}</td>`).join('')}
-              <td class="c-act nw">${r.state === 'open' && (r.kind === 'item' || r.alt_id) ? `<button class="btn small" data-lgive="${r.id}" data-tip="${r.kind === 'item' ? 'Give them the product' : 'They choose the product instead of the tattoo discount'}">${r.kind === 'item' ? 'Hand over' : 'Take product'}</button>` : ''}${r.state === 'open' ? `<button class="btn small primary" data-lmsg="${r.id}" data-tip="The card and message telling them about it">Send</button>` : ''}${r.state === 'open' && Loy.snap(r).pass ? `<button class="btn small" data-lpass="${r.id}" data-tip="Give this reward to another client">Pass on</button>` : ''}
+              <td class="c-act nw"><label class="loy-sent" data-tip="Sent to the client"><input type="checkbox" data-lsentc="${r.id}" ${r.sent_at ? 'checked' : ''}><span>Sent</span></label>${r.state === 'open' && (r.kind === 'item' || r.alt_id) ? `<button class="btn small" data-lgive="${r.id}" data-tip="${r.kind === 'item' ? 'Give them the product' : 'They choose the product instead of the tattoo discount'}">${r.kind === 'item' ? 'Hand over' : 'Take product'}</button>` : ''}${r.state === 'open' ? `<button class="btn small primary" data-lmsg="${r.id}" data-tip="The card and message telling them about it">Send</button>` : ''}${r.state === 'open' && Loy.snap(r).pass ? `<button class="btn small" data-lpass="${r.id}" data-tip="Give this reward to another client">Pass on</button>` : ''}
                 ${r.state === 'open' ? `<button class="btn small" data-lvoid="${r.id}" data-tip="Cancel this reward (kept in the list)">Cancel</button>` : ''}
-                <button class="mini del" data-ldel="${r.id}" aria-label="Delete" data-tip="Delete from the list"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`).join('')}</tbody></table></div>`
+                ${r.state === 'deleted' ? `<button class="btn small" data-lrest="${r.id}" ${r.expires_at && r.expires_at < ymd(new Date()) && !r.used_booking ? 'disabled data-tip="It has run out, so it can’t come back"' : 'data-tip="Put it back as it was"'}>Restore</button>` : `<button class="mini del" data-ldel="${r.id}" aria-label="Delete" data-tip="Delete: kept under Deleted, with your reason"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`}</td></tr>`).join('')}</tbody></table></div>`
           : `<div class="empty muted">${all.length ? 'Nothing matches.' : 'No rewards yet. They’re earned when a tattoo is marked completed, by the rules in Program.'}</div>`}`;
         const qi = $('#loy-q'); qi.oninput = async () => { LOYV.q = qi.value; const at = qi.selectionStart; await drawR(); const n2 = $('#loy-q'); n2.focus(); try { n2.setSelectionRange(at, at); } catch {} }; };
       const seg = (k, opts) => `<span class="seg">${opts.map(([v, l]) => `<button type="button" data-lk="${k}" data-lv="${v}" class="${String(c[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</span>`;
@@ -2271,7 +2307,12 @@ const VIEWS = {
           if (to === r?.client_id) return toast('They already hold it.');
           await DB.run('UPDATE loyalty_rewards SET passed_from = coalesce(passed_from, client_id), client_id = ? WHERE id = ?', [to, id]); toast('Reward passed on.', 1600); return drawR(); }
         if (g('lvoid')) { setTimeout(() => Loy.left(), 400); if (!await ask('Cancel this reward?\n\nIt stays in the list as Cancelled and can’t be used.')) return; await DB.run(`UPDATE loyalty_rewards SET status = 'void' WHERE id = ?`, [+g('lvoid')]); return drawR(); }
-        if (g('ldel')) { setTimeout(() => Loy.left(), 400); if (!await ask('Delete this reward from the list?\n\nThis can’t be undone.')) return; await DB.run('DELETE FROM loyalty_rewards WHERE id = ?', [+g('ldel')]); return drawR(); }
+        if (g('ldel')) { const id = +g('ldel'), why = await askText('Why are you deleting this reward?\n\nIt moves to Deleted with your reason, and can be restored from there while it hasn\u2019t run out.', ''); if (why == null) return;
+          const r0 = await DB.one('SELECT status FROM loyalty_rewards WHERE id = ?', [id]); await DB.run(`UPDATE loyalty_rewards SET del_prev = ?, status = 'deleted', deleted_at = ?, del_reason = ? WHERE id = ?`, [r0?.status || 'open', ymd(new Date()), why.trim() || null, id]);
+          Loy.left(); toast('Reward deleted. It\u2019s kept under Deleted.', 2200); return drawR(); }
+        if (g('lrest')) { const id = +g('lrest'), r0 = await DB.one('SELECT del_prev, used_booking FROM loyalty_rewards WHERE id = ?', [id]); if (!r0) return;
+          await DB.run('UPDATE loyalty_rewards SET status = ?, deleted_at = NULL, del_reason = NULL, del_prev = NULL WHERE id = ?', [r0.used_booking ? 'used' : r0.del_prev && r0.del_prev !== 'deleted' ? r0.del_prev : 'open', id]);
+          Loy.left(); toast('Reward restored.', 1600); return drawR(); }
         if (g('lgive')) { const r = await DB.one('SELECT * FROM loyalty_rewards WHERE id = ?', [+g('lgive')]); if (!r) return;
           const nm = r.kind === 'item' ? r.item_name : r.alt_name; if (!await ask(`Hand over the ${nm || 'product'}?\n\nThe reward is marked used${r.kind === 'item' ? '' : ' (instead of the tattoo discount)'} and one is taken off your stock.`)) return;
           await Loy.handOver(r); toast(Loy.old(r) ? 'Handed over. This reward was from an older version of your loyalty program; it kept its own rules.' : 'Handed over.', Loy.old(r) ? 5000 : 1400); return drawR(); }
@@ -2282,7 +2323,8 @@ const VIEWS = {
         const k = e.target.dataset.ln; if (!k) return; let v = +e.target.value || 0;
         if (k === 'value' && c.kind === 'pct') v = Math.min(100, v); if (k === 'maxStack') v = Math.max(2, Math.min(10, Math.round(v)));
         c[k] = v; keep(); });
-      el.addEventListener('change', (e) => { if (e.target.dataset.lstd) { const T0 = c.terms || {}, o = new Set(T0.off || []); e.target.checked ? o.delete(e.target.dataset.lstd) : o.add(e.target.dataset.lstd); c.terms = { ...T0, off: [...o] }; keep(); return draw(); }
+      el.addEventListener('change', async (e) => { if (e.target.dataset.lsentc) { await Loy.markSent(+e.target.dataset.lsentc, e.target.checked); toast(e.target.checked ? 'Marked as sent.' : 'Not sent yet.', 1200); return drawR(); }
+        if (e.target.dataset.lstd) { const T0 = c.terms || {}, o = new Set(T0.off || []); e.target.checked ? o.delete(e.target.dataset.lstd) : o.add(e.target.dataset.lstd); c.terms = { ...T0, off: [...o] }; keep(); return draw(); }
         if (e.target.dataset.lown != null) return draw();
         if (e.target.dataset.ln) draw(); const k = e.target.dataset.lt; if (k) { c[k] = e.target.checked; keep(); draw(); }
         const sp = e.target.dataset.lsel, nmOf = (v) => inv.find(i => i.id === +v)?.name || '';
@@ -3608,6 +3650,8 @@ const Loy = {
   code: () => Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.random() * 32 | 0]).join(''),
   expiry(c) { if (!+c.months) return null; const d = new Date(); d.setMonth(d.getMonth() + +c.months); return ymd(d); },
   async give(cid, c, f) {
+    const h = await DB.one('SELECT first_name, last_name, loy_off FROM clients WHERE id = ?', [cid]);
+    if (h?.loy_off) { toast(`${fullName(h)} would have earned a reward, but rewards are off for them.`, 4000); return false; }   /* switched off on their client page */
     const R = c;
     const nm = async (id) => id ? (await DB.one('SELECT name FROM inventory_items WHERE id = ?', [+id]))?.name || null : null;
     const item = R.kind === 'item' ? +R.item || null : null, alt = R.kind !== 'item' && c.alt && c.altItem ? +c.altItem : null;
@@ -3629,7 +3673,7 @@ const Loy = {
     const cl = await DB.one('SELECT id, first_name, last_name, referred_by FROM clients WHERE id = ?', [b.client_id]); if (!cl) return;
     if (c.type === 'ref') { if (!cl.referred_by) return;
       if (c.scope !== 'every' && await DB.one(`SELECT id FROM loyalty_rewards WHERE from_client = ? AND src = 'ref'`, [cl.id])) return;   /* first tattoo only */
-      await Loy.give(cl.referred_by, c, { src: 'ref', client: cl.id, booking: bid });
+      if (await Loy.give(cl.referred_by, c, { src: 'ref', client: cl.id, booking: bid }) === false) return;
       const r = await DB.one('SELECT first_name, last_name FROM clients WHERE id = ?', [cl.referred_by]);
       toast(`${r ? fullName(r) : 'Their referrer'} earned ${Loy.label(c)}. Send them their card from More › Loyalty.`, 4500); return; }
     if (!(+c.every > 0)) return;
@@ -3653,8 +3697,9 @@ const Loy = {
     for (const id of ids) await DB.run(`UPDATE loyalty_rewards SET used_booking = ?, used_at = date('now'), status = 'used' WHERE id = ?`, [bid, id]);
     await Loy.left();
     await DB.run('UPDATE bookings SET loy_off = ? WHERE id = ?', [ids.length ? off : null, bid]); },
+  markSent: (id, on) => DB.run('UPDATE loyalty_rewards SET sent_at = ? WHERE id = ?', [on ? ymd(new Date()) : null, id]),
   rLabel: (r) => r.kind === 'item' ? `Free ${r.item_name || 'product'}` : (r.kind === 'pct' ? `${+r.value}% off` : `${money(+r.value)} off`) + (r.alt_name ? ` or a free ${r.alt_name}` : ''),
-  state: (r) => r.status === 'used' || r.used_booking ? 'used' : r.status === 'void' ? 'void' : r.expires_at && r.expires_at < ymd(new Date()) ? 'expired' : 'open',
+  state: (r) => r.status === 'deleted' ? 'deleted' : r.status === 'used' || r.used_booking ? 'used' : r.status === 'void' ? 'void' : r.expires_at && r.expires_at < ymd(new Date()) ? 'expired' : 'open',
   /* pick a client (for passing a reward on) */
   pickClient(msg) { return new Promise((res) => { const o = document.createElement('div'); o.className = 'ask-dlg';
     o.innerHTML = `<div class="card" role="dialog" aria-modal="true" style="position:relative"><p class="ask-q">${esc(msg)}</p><input class="in" id="loy-pc" placeholder="Search clients" autocomplete="off"><div class="c-list" id="loy-pcl" hidden style="max-height:260px;overflow:auto"></div>
@@ -3908,7 +3953,7 @@ async function renderCal() {
       const w = 100 / lanes.length;
       // Too short for stacked lines (e.g. a 30-minute follow-up): put everything on one line instead.
       const short = h < 48;
-      html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''} ${short ? 'short' : ''} ${b.ghost ? 'ghost' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)${b.tag_color ? ';--tc:' + esc(b.tag_color) : ''}"
+      html += `<a class="ev k-${kindOf(b)} ${b.deposit_paid ? 'paid' : ''} ${short ? 'short' : ''} ${b.ghost ? 'ghost' : ''} ${b.cancelled ? 'cancelled' : ''}" href="#booking-edit/${b.id}" style="top:${top}px;height:${h}px;left:${b._lane * w}%;width:calc(${w}% - 3px)${b.tag_color ? ';--tc:' + esc(b.tag_color) : ''}"
         title="${esc([bName(b), kindLabel(b), fmtTime(b.start_at) + ' · ' + fmtDur(b.duration_min), b.placement, b.description].filter(Boolean).join(' · '))}">
         <b>${b.completed ? '<i class="ev-tick" data-tip="Completed">✓</i>' : ''}${esc(mode === 'week' ? (b.first_name || b.guest_name || (kindOf(b) !== 'tattoo' ? kindLabel(b) : '—')) : bName(b))}${bTag(b)}</b>
         ${mode === 'week' && !short ? `<span class="muted">${fmtTime(b.start_at)}</span>` : ''}
@@ -3939,7 +3984,7 @@ function agendaRow(b) {
   const end = new Date(new Date(b.start_at).getTime() + b.duration_min * 60000);
   return `<a class="c-row" href="#booking-edit/${b.id}">
     <span class="time-col"><b>${fmtTime(b.start_at)}</b><small class="muted">${fmtTime(end)}</small></span>
-    <span class="c-main"><span class="c-n">${b.completed ? '<span class="done-tick" data-tip="Completed">✓</span>' : ''}${esc(bName(b))}${b.first_name != null || b.guest_name ? kindChip(b) : ''}${guestChip(b)}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
+    <span class="c-main"><span class="c-n">${b.completed ? '<span class="done-tick" data-tip="Completed">✓</span>' : ''}${b.cancelled ? `<span class="chip can-chip" data-tip="${esc(BK_CANCEL.find(x => x[0] === b.cancel_by)?.[1] || 'Cancelled')}${b.cancel_reason ? ': ' + esc(b.cancel_reason) : ''}">${b.cancel_by === 'noshow' ? 'No-show' : 'Cancelled'}</span> ` : ''}${esc(bName(b))}${b.first_name != null || b.guest_name ? kindChip(b) : ''}${guestChip(b)}${b.medical ? ' <span class="dot" data-tip="Has medical notes"></span>' : ''}</span>
       <span class="muted c-sub">${esc([b.placement, b.description].filter(Boolean).join(' · ') || fmtDur(b.duration_min))}</span></span>
     ${b.quote != null ? `<span class="price ${b.deposit_paid ? 'paid' : ''}" data-tip="${b.deposit_paid ? 'Deposit paid' : 'Deposit not paid'}">${money(b.quote)}</span>` : ''}
     <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
@@ -6060,6 +6105,7 @@ async function loyMessage(rid) {
     <div class="loy-prev"><img id="lm-img" alt="Reward card"></div>
     <div class="qz-acts" style="margin-top:12px"><button class="btn" id="lm-copy">Copy message</button><button class="btn" id="lm-img-s">Save image</button><button class="btn primary" id="lm-send">Send</button></div>
     ${r.phone ? `<button class="btn" id="lm-wa" style="width:100%;margin-top:8px">WhatsApp the message</button>` : ''}
+    <button class="btn" id="lm-sent" style="width:100%;margin-top:8px">${r.sent_at ? '\u2713 Sent ' + esc(fmtDay(r.sent_at)) : 'Mark as sent to the client'}</button>
     <button class="btn" id="lm-look" style="width:100%;margin-top:8px">Change the look\u2026</button>
     <button class="btn" id="lm-close" style="width:100%;margin-top:8px">Close</button></div>`;
   document.body.appendChild(o);
@@ -6067,6 +6113,7 @@ async function loyMessage(rid) {
   const close = () => { if (url) URL.revokeObjectURL(url); o.remove(); };
   o.addEventListener('click', async (e) => { const t = e.target, name = `Reward-${r.code || 'card'}.png`;
     if (t.closest('#lm-close')) return close();
+    if (t.closest('#lm-sent')) { await Loy.markSent(r.id, !r.sent_at); r.sent_at = r.sent_at ? null : ymd(new Date()); t.closest('#lm-sent').textContent = r.sent_at ? '\u2713 Sent ' + fmtDay(r.sent_at) : 'Mark as sent to the client'; toast(r.sent_at ? 'Marked as sent.' : 'Not sent yet.', 1200); homeLoy(); return; }
     if (t.closest('#lm-look')) { close(); LOYV.tab = 'program'; LOYV.ptab = 'message'; location.hash = 'more'; setTimeout(() => { location.hash = 'loyalty'; }, 0); return; }
     if (t.closest('#lm-copy')) { try { await navigator.clipboard.writeText(loyText(r, m)); toast('Message copied.'); } catch { await askText('Copy this:', loyText(r, m)); } return; }
     if (t.closest('#lm-img-s')) return saveFiles([await canvasFile(await cv0, name)]);
@@ -6118,6 +6165,23 @@ const Notif = {
     try { if (navigator.canShare?.({ files: [f] })) { await navigator.share({ files: [f], title: 'Add to calendar' }); return; } } catch (err) { if (err.name === 'AbortError') return; }
     await saveFiles([f]); toast('Saved. Open the file to add it to your calendar' + (b.notify_min != null ? ', with its reminder.' : '.'), 5000); }
 };
+
+/* Birthdays marked done: { client id: that birthday's date } */
+const bdDone = () => { try { return JSON.parse(Settings.get('bd_done', '{}')) || {}; } catch { return {}; } };
+/* Today: completed or cancelled bookings can be taken off the home list (kept for the day only) */
+const todayHidden = () => { try { const v = JSON.parse(Settings.get('today_hidden', '{}')); return v?.day === ymd(new Date()) ? new Set(v.ids) : new Set(); } catch { return new Set(); } };
+/* Rewards waiting to be sent: on the home screen until marked sent (the date is kept, and shows in Loyalty too). */
+async function homeLoy() { const el = $('#home-loy'); if (!el) return;
+  let rows = []; try { rows = await DB.all(`SELECT r.*, h.first_name, h.last_name, f.first_name AS ff, f.last_name AS fl FROM loyalty_rewards r JOIN clients h ON h.id = r.client_id LEFT JOIN clients f ON f.id = r.from_client
+    WHERE r.sent_at IS NULL AND r.status = 'open' AND r.used_booking IS NULL AND (r.expires_at IS NULL OR r.expires_at >= date('now')) ORDER BY r.issued_at DESC, r.id DESC LIMIT 12`); } catch { return; }
+  if (!rows.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card"><h2>Rewards to send ${help('Clients who earned a loyalty reward. Send them their card, then tick Sent to take it off here; the date is kept in Loyalty.')}</h2><div class="card list flush">${rows.map(r => `<div class="c-row loy-note-row">
+      <span class="ico-c">${ICON.loyalty}</span><span class="c-main"><span class="c-n">${esc(fullName(r))} \u00b7 ${esc(Loy.rLabel(r))}</span>
+        <span class="muted c-sub">${r.src === 'spend' ? 'For what they spent' : r.ff != null ? 'For sending ' + esc(fullName({ first_name: r.ff, last_name: r.fl })) : 'Earned'} \u00b7 ${esc(fmtDay(r.issued_at))}</span></span>
+      <button class="btn small primary" data-hlsend="${r.id}">Send</button><button class="btn small" data-hlsent="${r.id}" data-tip="Sent to the client: take it off here">Sent \u2713</button></div>`).join('')}</div></div>`;
+  el.onclick = async (e) => { const s0 = e.target.closest('[data-hlsend]'); if (s0) return loyMessage(+s0.dataset.hlsend);
+    const d0 = e.target.closest('[data-hlsent]'); if (d0) { await Loy.markSent(+d0.dataset.hlsent, true); d0.closest('.c-row')?.remove(); toast('Marked as sent.', 1400); if (!el.querySelector('.c-row')) el.innerHTML = ''; } };
+}
 
 /* ---------- Full screen ----------
    Hides the browser's bars. iPhones don't let web pages do this; there, adding InkForge to the Home Screen
@@ -6317,11 +6381,12 @@ const maxPerDay = () => Math.max(1, +Settings.get('max_per_day', '1') || 1);
 // hidden = dates to leave off. Each day gets its free windows inside working hours, keeping the
 // booking gap (setup and breaks) clear before and after every booking: wins = [[earliest, latest start]]
 // in minutes, only windows long enough for `need`.
+const BK_CANCEL = [['client', 'Client cancelled'], ['noshow', 'No-show'], ['me', 'I cancelled']];
 const bookingGap = () => Math.max(0, +Settings.get('booking_gap', '60') || 0);
 async function availDays(start, end, opts = {}) {
   const need = Math.max(30, opts.need || 120), hidden = new Set(opts.hidden || []), gap = bookingGap();
   const [ws, we] = workHours().map(toMin);
-  const rows = await DB.all(`SELECT start_at, duration_min, kind FROM bookings WHERE start_at >= ? AND start_at < ? AND ghost = 0`, [ymd(start), ymd(end)]);
+  const rows = await DB.all(`SELECT start_at, duration_min, kind FROM bookings WHERE start_at >= ? AND start_at < ? AND ghost = 0 AND coalesce(cancelled, 0) = 0`, [ymd(start), ymd(end)]);   /* a cancelled booking frees its time */
   const busy = Settings.get('gcal_busy', '1') === '1' ? await DB.all('SELECT start_at, end_at FROM gcal_busy WHERE start_at < ? AND end_at > ?', [ymd(end), ymd(start)]) : [];
   const off = daysOff(), today = ymd(new Date()), out = {};
   for (let d = new Date(start); d < end; d = addDays(d, 1)) {
@@ -10087,9 +10152,20 @@ async function bkRows() {
     WHERE substr(b.start_at, 1, 10) BETWEEN ? AND ? AND b.kind IN (${kinds.map(() => '?').join(',')}) ORDER BY b.start_at`, [a, z, ...kinds]);
   const q = (BK.q || '').trim().toLowerCase(), hit = (r) => !q || [r.first_name, r.last_name, r.guest_name, r.phone, r.guest_phone, r.description, r.placement, r.size, r.notes, kindLabel(r)].some(v => v && String(v).toLowerCase().includes(q));
   const src = BK.src || 'all', bySrc = (r) => src === 'all' || (src === 'mine' ? !r.src_uid : src === 'ghost' ? r.ghost : src === 'imported' ? !!r.src_uid : r.tag === src);
-  return rows.filter(hit).filter(bySrc).filter(r => BK.status === 'all' || (BK.status === 'upcoming' ? r.start_at.slice(0, 10) >= today && !r.completed
-    : BK.status === 'done' ? r.completed : r.start_at.slice(0, 10) < today && !r.completed));
+  return rows.filter(hit).filter(bySrc).filter(r => BK.status === 'cancelled' ? r.cancelled : BK.status === 'all' || (!r.cancelled && (BK.status === 'upcoming' ? r.start_at.slice(0, 10) >= today && !r.completed
+    : BK.status === 'done' ? r.completed : r.start_at.slice(0, 10) < today && !r.completed)));
 }
+/* Unreliable clients: who cancels or doesn't turn up, all time (the artist's own cancellations aren't counted). */
+async function bkUnreliable() { const el = $('#bkt'); if (!el) return;
+  const R = await DB.all(`SELECT c.id, c.first_name, c.last_name, c.phone, SUM(b.cancel_by = 'noshow') AS ns, SUM(b.cancel_by = 'client') AS cc, MAX(b.start_at) AS last,
+      (SELECT COUNT(*) FROM bookings x WHERE x.client_id = c.id AND x.completed = 1) AS done
+    FROM bookings b JOIN clients c ON c.id = b.client_id WHERE b.cancelled = 1 AND coalesce(b.cancel_by, 'client') != 'me' GROUP BY c.id ORDER BY ns * 2 + cc DESC, last DESC LIMIT 30`);
+  if (!R.length) return;
+  el.insertAdjacentHTML('beforeend', `<div class="card bk-unrel"><h2>Unreliable clients ${help('Clients who cancelled or didn\u2019t turn up, all time. Your own cancellations aren\u2019t counted. No-shows weigh double.')}</h2>
+    <div class="card list flush">${R.map(r => { const wa = (intlPhone(r.phone) || '').replace(/\D/g, '');
+      return `<div class="c-row"><a class="c-main" href="#client/${r.id}"><span class="c-n">${esc(fullName(r))}</span><span class="muted c-sub">${+r.ns ? `<b class="can-ns">${+r.ns} no-show${+r.ns === 1 ? '' : 's'}</b> \u00b7 ` : ''}${+r.cc} cancelled \u00b7 ${+r.done} completed \u00b7 last ${esc(fmtDay(r.last.slice(0, 10)))}</span></a>
+        ${wa ? `<a class="btn small" href="https://wa.me/${wa}" target="_blank" rel="noopener" data-tip="Get in touch to rebook">WhatsApp</a>` : ''}</div>`; }).join('')}</div></div>`); }
+
 const bkRangeLabel = () => { const [a, z] = bkRange(); return BK.range === 'all' ? 'All dates' : `${fmtDay(a)} – ${fmtDay(z)}`; };
 let bkSort = { k: 'date', dir: 1 };
 async function bkTable() {
@@ -10104,7 +10180,7 @@ async function bkTable() {
       <label class="bkt-sel"><select id="bkt-range" aria-label="Dates">${RANGES.map(([k, l]) => `<option value="${k}" ${BK.range === k ? 'selected' : ''}>${l}</option>`).join('')}</select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
       ${BK.range === 'custom' ? `<input class="bkt-date" type="date" id="bk-from" value="${a}" aria-label="From"><span class="muted">to</span><input class="bkt-date" type="date" id="bk-to" value="${z}" aria-label="To">` : ''}
       ${menu('kinds', `Types <b>${BK.kinds.size === nK ? 'All' : BK.kinds.size}</b>`, Object.entries(BOOKING_KINDS).map(([k, v]) => `<label><input type="checkbox" data-bkk="${k}" ${BK.kinds.has(k) ? 'checked' : ''}>${v.label}</label>`).join(''))}
-      <div class="bkt-seg">${[['all', 'All'], ['upcoming', 'Upcoming'], ['done', 'Completed'], ['past', 'Not completed']].map(([k, l]) => `<button data-bs="${k}" class="${BK.status === k ? 'on' : ''}" ${k === 'past' ? 'data-tip="Past bookings not marked completed"' : ''}>${l}</button>`).join('')}</div>
+      <div class="bkt-seg">${[['all', 'All'], ['upcoming', 'Upcoming'], ['done', 'Completed'], ['past', 'Not completed'], ['cancelled', 'Cancelled']].map(([k, l]) => `<button data-bs="${k}" class="${BK.status === k ? 'on' : ''}" ${k === 'past' ? 'data-tip="Past bookings not marked completed"' : ''}>${l}</button>`).join('')}</div>
       ${BK.tags?.length || BK.anyImp ? `<label class="bkt-sel" data-tip="Your own bookings, or ones imported from another workspace"><select id="bkt-src"><option value="all">All sources</option><option value="mine" ${BK.src === 'mine' ? 'selected' : ''}>Mine</option><option value="imported" ${BK.src === 'imported' ? 'selected' : ''}>Imported</option><option value="ghost" ${BK.src === 'ghost' ? 'selected' : ''}>Ghosts</option>${(BK.tags || []).map(t => `<option value="${esc(t)}" ${BK.src === t ? 'selected' : ''}>Tag: ${esc(t)}</option>`).join('')}</select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>` : ''}
       ${BK.src && !['all', 'mine'].includes(BK.src) ? '<button class="bkt-btn" id="bkt-unimp" data-tip="Delete every booking shown here (only imported ones)"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><span>Remove these</span></button>' : ''}
       <span style="flex:1"></span>
@@ -10117,12 +10193,13 @@ async function bkTable() {
     const sum = (k) => rows.reduce((t, r) => t + (r[k] || 0), 0);
     $('#bkt').innerHTML = rows.length ? `<div class="bkt-scroll"><table class="bkt"><thead><tr>${th('done', '', 'c-done')}${th('date', 'Date')}<th>Time</th>${C.map(c => th(c[0], c[1], MONEY.includes(c[0]) ? 'num' : '')).join('')}<th class="c-act"></th></tr></thead><tbody>${rows.map(r => {
       const end = new Date(new Date(r.start_at).getTime() + r.duration_min * 60000), can = DONE_KINDS.includes(kindOf(r)), late = can && !r.completed && r.start_at.slice(0, 10) < today;
-      return `<tr data-bid="${r.id}" class="${r.completed ? 'done' : ''} ${late && !r.ghost ? 'late' : ''} ${r.ghost ? 'ghost' : ''}"><td class="c-done"><input type="checkbox" data-bdone="${r.id}" ${r.completed ? 'checked' : ''} ${can && !r.ghost ? '' : 'disabled'} aria-label="Completed" data-tip="${can ? (r.completed ? 'Completed' : late ? 'Past and not marked completed' : 'Mark completed') : 'Only tattoos and touch-ups are marked completed'}"></td>
+      return `<tr data-bid="${r.id}" class="${r.cancelled ? 'cancelled' : ''} ${r.completed ? 'done' : ''} ${late && !r.ghost && !r.cancelled ? 'late' : ''} ${r.ghost ? 'ghost' : ''}"><td class="c-done"><input type="checkbox" data-bdone="${r.id}" ${r.completed ? 'checked' : ''} ${can && !r.ghost ? '' : 'disabled'} aria-label="Completed" data-tip="${can ? (r.completed ? 'Completed' : late ? 'Past and not marked completed' : 'Mark completed') : 'Only tattoos and touch-ups are marked completed'}"></td>
         <td class="nw">${esc(fmtDay(r.start_at.slice(0, 10)))}</td><td class="nw muted">${esc(fmtTime(r.start_at))} – ${esc(fmtTime(end))}</td>${C.map(c => `<td class="bkt-${c[0]} ${MONEY.includes(c[0]) ? 'num' : ''}">${cell(r, c[0])}</td>`).join('')}
         <td class="c-act"><button class="bkt-ib" data-xone="booking:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button><button class="bkt-ib" data-bedit="${r.id}" data-tip="Edit" aria-label="Edit booking"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button><button class="bkt-ib del" data-bdel="${r.id}" data-tip="Delete" aria-label="Delete booking"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></td></tr>`; }).join('')}</tbody>
       ${C.some(c => MONEY.includes(c[0])) ? `<tfoot><tr><td></td><td colspan="2">Total</td>${C.map(c => `<td class="num">${MONEY.includes(c[0]) ? esc(money(sum(c[0]))) : ''}</td>`).join('')}<td></td></tr></tfoot>` : ''}</table></div>
       <div class="bkt-foot">${rows.length} booking${rows.length === 1 ? '' : 's'} · ${esc(bkRangeLabel())} · ${rows.filter(r => r.completed).length} completed</div>`
       : `<div class="bkt-empty"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><b>No bookings match</b><span class="muted">Try another date range, type or status, or clear the search.</span></div>`;
+    if (BK.status === 'cancelled') await bkUnreliable();
     $('#bkt-csv').disabled = $('#bkt-print').disabled = !rows.length; };
   const both = async () => { BK.tags = (await DB.all('SELECT DISTINCT tag FROM bookings WHERE tag IS NOT NULL ORDER BY tag')).map(r => r.tag); BK.anyImp = !!(await DB.one('SELECT 1 AS x FROM bookings WHERE src_uid IS NOT NULL LIMIT 1')); filters(); await table(); };
   await both();
@@ -10847,7 +10924,7 @@ async function openBookingsPrint() {
       <div class="lbl">Types</div>
       <div class="qz-chips">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button class="chip qz-chip ${BK.kinds.has(k) ? 'on' : ''}" data-bkk="${k}">${BK.kinds.has(k) ? '✓ ' : ''}${v.label}</button>`).join('')}</div>
       <div class="lbl">Status</div>
-      <div class="seg" style="margin-bottom:10px">${[['all', 'All'], ['upcoming', 'Upcoming'], ['done', 'Completed'], ['past', 'Past, not completed']].map(([k, l]) =>
+      <div class="seg" style="margin-bottom:10px">${[['all', 'All'], ['upcoming', 'Upcoming'], ['done', 'Completed'], ['past', 'Past, not completed'], ['cancelled', 'Cancelled']].map(([k, l]) =>
         `<button data-bs="${k}" class="${BK.status === k ? 'on' : ''}" style="flex:1;font-size:13px">${l}</button>`).join('')}</div>
       <div class="lbl">Columns <span class="muted" style="text-transform:none;letter-spacing:0">(date and time always included)</span></div>
       <div class="qz-chips">${BK_COLS.map(([k, l]) => `<button class="chip qz-chip ${cols.has(k) ? 'on' : ''}" data-bc="${k}">${cols.has(k) ? '✓ ' : ''}${l}</button>`).join('')}</div>
@@ -10923,6 +11000,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 542, when: '2026-11-28T10:00', added: [
+    'Home: Rewards to send, with Send and Sent ✓ (the sent date shows in Loyalty too). Birthdays and finished bookings have Done ✓ to take them off.',
+    'Loyalty: switch rewards off for a client (they stay in the referral tree). Deleted rewards are kept with a reason and can be restored, and Ran out and the usage figures show what gets used.',
+    'Bookings: tick Cancelled (client, no-show or you) with a reason. It stays on record but out of stats and free time, with a Cancelled filter and a list of unreliable clients.',
+    'Tour and practice workspace: loyalty, your pay, cancellations, reminders, the stock count order, the sketchpad and the size sheet are all in.'
+  ] },
   { build: 541, when: '2026-11-27T16:00', added: [
     'Inventory table: a new Order menu shows the table in My order (your count order), or by category, name, supplier or lowest first. Tap a column heading to sort by that column again.'
   ] },

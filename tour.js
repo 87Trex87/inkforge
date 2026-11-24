@@ -48,8 +48,8 @@ const TOUR_STEPS = [
     text: 'A quick look at how InkForge runs your studio, in a practice workspace full of made-up clients, bookings and work.',
     more: 'Your own workspace is untouched. Tap Next to move on; the tour does the tapping for you. At the end, keep playing here or go back to your workspace, and the practice one is deleted. Anything you make here is only for trying things out, but what you save to your device or share (a PNG, a PDF, a reel) is yours to keep.' },
   { id: 'home', basic: 1, route: 'home', sel: '#home-today', title: 'Your day at a glance',
-    text: 'Today\'s sessions, and birthdays coming up this week.',
-    more: 'Tap a session to open it. Birthdays show a Send wishes button that opens WhatsApp with a short message from your studio. Quick links for the stencil maker and quotes sit below.' },
+    text: 'Today\'s sessions, rewards to send, and birthdays this week.',
+    more: 'Tap a session to open it; once it\'s done, Done \u2713 takes it off the list. Rewards to send lists loyalty rewards clients have earned: Send opens their card, Sent \u2713 takes it off. Birthdays show Send wishes (WhatsApp) and Done \u2713. The Draw group opens the design studio, simulator and sketchpad, which also sit beside full screen at the top of every page.' },
   { id: 'clients', basic: 1, route: 'clients', sel: '#c-list', title: 'Clients',
     text: 'Everyone in one place, searchable by name, phone or tag.',
     more: 'Group contacts into categories (clients, suppliers and your own), print a phonebook or export it to a spreadsheet. The table icon shows every contact as a table to search, filter, edit, export or print. Its Export and Import move clients between workspaces (the export arrow on a row sends just that one, as it does on every card and row in the app): a preview shows what is new, changed or deleted, a client already here (same phone or email) is not added twice, and imported clients get a coloured artist tag. Phone numbers are kept with the country code so WhatsApp works from every card.' },
@@ -59,10 +59,10 @@ const TOUR_STEPS = [
   { id: 'book', basic: 1, route: 'book', sel: '.mwrap, #cal', title: 'Your calendar',
     pre: () => { Cal.mode = 'month'; Cal.date = new Date(); },
     text: 'Names on every day, coloured by booking type.',
-    more: 'Switch between day, week and month. Tap a day to see its bookings; + Book adds one. Days off are greyed out, and bookings can sync both ways with Google Calendar. Completed ones get a green tick. The table icon opens all your bookings as a table to search, filter, edit, export, print or share. Export and Import move bookings between workspaces (e.g. staff into the owner’s): a preview shows what is new, changed or deleted, and imports can be tagged with a colour, counted for real or added as read-only ghosts.' },
+    more: 'Switch between day, week and month. Tap a day to see its bookings; + Book adds one. Days off are greyed out. Completed ones get a green tick; cancelled ones are faded and struck through, and their time is free again. The table icon opens all your bookings as a table to search, filter, edit, export, print or share. Export and Import move bookings between workspaces (e.g. staff into the owner’s): a preview shows what is new, changed or deleted, and imports can be tagged with a colour, counted for real or added as read-only ghosts.' },
   { id: 'booking', route: () => 'booking-edit/' + Tour.ids.bk, sel: '#b-form', title: 'A booking',
     text: 'Who, when, the tattoo, price and deposit on one screen.',
-    more: 'Mark the deposit as paid, add reference photos and notes. After the session, tick Tattoo completed to record what was paid and how long it took; then send a thank-you receipt or book a healing check.' },
+    more: 'Mark the deposit as paid, add reference photos and notes. Reminder: Notify me before it starts, and Add to phone calendar puts it in your phone\'s calendar with the alarm (InkForge\'s own notifications only come while it\'s open). After the session, tick Tattoo completed to record what was paid and how long it took, tick any loyalty rewards the client uses (the price drops), then send a thank-you receipt or book a healing check. Or tick Cancelled (client cancelled, no-show or you) with a reason: the booking is kept, but out of stats and free time.' },
   { id: 'quote', basic: 1, route: 'quote', sel: '.qz-card-main', title: 'Quote in seconds',
     run: async () => {
       Object.assign(QZ, QZ_RESET); qzDraw(); await tourSleep(500);
@@ -81,7 +81,7 @@ const TOUR_STEPS = [
     text: 'Keep quotes to finish or book later.',
     more: 'Mark them done when the tattoo is finished, and see how the real time compared with the quote, so you can fine-tune your rates. Search them, star favourites and sort them into folders. The table icon shows them all as a table with totals, to export or print, or to move them to another workspace with Export and Import.' },
   { id: 'studio', basic: 1, route: 'studio', sel: '#view', title: 'Studio tools',
-    text: 'Stencils, reels, designs, bends and big prints.',
+    text: 'Draw (design studio, simulator, sketchpad), then stencils, reels, bends, size sheets and big prints.',
     more: 'Everything for making the work: the stencil maker, the reel maker (saved reels you can edit again), the design studio for vouchers, cards and posts, the bend tool for bands, and split printing for large stencils. Your portfolio and consent forms live here too.' },
   { id: 'stencil', route: 'stencil', sel: '#view .card', title: 'Stencil maker',
     text: 'Photo to a clean stencil, printed at real size.',
@@ -95,6 +95,12 @@ const TOUR_STEPS = [
   { id: 'designs', route: 'designs', sel: '#dz-list', title: 'Design studio',
     text: 'Vouchers, business cards, flyers, folded pamphlets (trifold, bifold and more), blank pages (A6 to A2, Letter, custom) and tattoo posts.',
     more: 'Every colour has an eyedropper, your recent colours and your palettes (Palettes… makes, exports and imports them). Animate (top bar) turns a post into a reel with each piece moving in, ready for music and effects. Tables live under Shape: add rows and columns, colour and style cells, put icons in them, or fill one from a CSV. Sticky notes are made here too: pin them on Home, Studio and More with quick links, or use the Notes button on those screens. Start from a template and theme; your studio name, logo and contact fill in. A quick strip across the top of the page holds your favourite tools, actions, colours and fonts (its + chooses them), and, as in the simulator, Focus hides every panel while Panels shows or hides each one. Tools sit down the left (hold an icon on a touchscreen to see its name); the panel on the right appears for whatever is selected and folds away with its arrow, and the page icon holds the theme, background and sides. Add text (normal, or frame text for paragraphs that wrap inside a box), pictures and shapes (Shift-drag, or hold an empty spot, to box-select several), set exact sizes in mm, bend text into an arc or run it along any shape or pen curve, crop and arrange layers, draw your own shapes with the Pen (P) or Pencil (N; hold still to snap to a shape, then keep holding and drag to resize it), reshape any shape point by point with the Nodes tool (A), or double-tap it, combine shapes with the shape builder (add, subtract, intersect, exclude, divide, separate) or grow an outline with Contour (items snap to the page and to each other; hold Alt to move freely). The grid button adds a square, isometric, perspective (one, two or three point, with vanishing points you drag) or radial grid to snap to, and pen lines follow its directions; it is never printed. Its opacity slider makes it fainter, and Lock keeps it in place. On the isometric grid, a selected shape fits onto the top, front or side plane, turns and flips within it, and new shapes can start on a plane. Fill shapes and text with a colour, a gradient of up to 5 colours or a repeating texture; trace a picture (like a silhouette PNG) into a shape, or flatten any item into a picture. Bend, in the strip under the top bar, arcs a shape or picture like the bend tool: shapes stay editable. A picture added from the device or portfolio can go into the design or float over it as a reference, as in the simulator: move, size, turn, flip, fade, hide or lock it; references are never printed. A Pattern tile (New design) is one seamless cell: what crosses an edge comes back on the other side, its neighbours show faintly round it, and the tile saves to References in Patterns, ready for any texture fill. Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste (Ctrl+Shift+V pastes in the same spot, Ctrl+D duplicates in place); a deleted design can be put back with Undo for a few seconds. Challenge (New design) makes a challenge for the simulator on 18 × 13 cm of skin. A new one starts from a picture or blank. From a picture, any drawing, photo or simulator piece is traced into shapes to tattoo: pick the style (colour line work, blackwork, fine line, black and grey or colour realism) and tune colours or zones, detail, smoothness and line weight; it comes in as an Outline, Detail lines, Packing per colour or Shading zones with their gradients, all editable with nodes. Then a short setup (skin and body area, size, needles, judging and pictures; Setup in the Challenge menu brings it back, and Trace a picture adds another). Then select a shape and use Grade as to make it the outline, a detail line, packing or a shading zone (stipple, whip, grey wash, or a colour blend of up to 10 colours, with an even, straight, radial or painted gradient: drag the dots on the shape, use Auto shading (pillow, edge fade, 3D, cast shadow), or paint it with the airbrush), each with the needle allowed (packing and shading can allow several to mix and match), pick the palette in the Challenge menu, then press Play in the simulator. Every lesson is there as a template and keeps its calibrated judging until you change its shapes; anything else is judged by the focus sliders in the Challenge menu. The Stencil tab of a shading zone has a skin marker and spirit wipe to draw the stencil for its shading by hand. Adjust colour, beside it for pictures, has the same exposure, contrast, saturation, hue and more as the simulator, previewed on the design. Select area picks part of an item (box, ellipse, lasso or colour, with feathering) to delete, split off, move or copy. Print designs can be one-sided or front and back, with a master page for shared backgrounds. Clip a texture into a shape, hold a layer (or Ctrl-click) to select several, then merge them or save them to References; shapes can also be saved as SVG or to Assets. Export and Import on the designs list move many designs at once to another workspace, pictures, references and fonts included. Every design has Print and Save as at the top (a picture, a PDF, or a copy under a new name, background and all), and Share beside them; save your own templates too. The full screen button gives the design the whole screen.' },
+  { id: 'sketch', route: 'sketches', sel: '#skp-list', title: 'Sketchpad',
+    text: 'An open page that grows as you go: notes, plans, sketches and mind maps.',
+    more: 'Its tools sit in the strip on the left: select and lasso, seven brushes behind one button (pencil, pen, marker, highlighter, calligraphy, manga pen and airbrush), the eraser (below 100% it fades), shapes, text, and mind-map ideas with an If for yes or no branches. Steady lines (lazy and smoothness), size and opacity, and colours with your own swatch panels sit underneath. Hold still at the end of a stroke to snap it to a line, arc, ellipse or box. On a tablet, two fingers move, zoom and turn the page, three fingers up or down change the size and left or right the opacity, a two-finger tap undoes and three redoes. Draw on one layer keeps every stroke in one Drawing layer. The grid stays put as the page grows, and Snap to the grid works with brushes and shapes. Open the example to see a mind map.' },
+  { id: 'sizes', route: 'sizes', sel: '#sz', title: 'Size sheet',
+    text: 'One design in a range of sizes on a page, to try on the client.',
+    more: 'Pick a design or photo, the sizes you want, then print the sheet: the client holds them up to choose. The panel scrolls on its own, fits the screen, and has spacing and a margin from the page edge.' },
   { id: 'organise', route: 'designs', sel: '.lib-bar', title: 'Keep it tidy',
     text: 'Search, sort, favourites and folders on every library.',
     more: 'Designs, simulator pieces, reels, portfolio, stencils, forms, saved quotes, the rule book and stock all have them, so a year of work stays easy to find. Tap the folder button on anything to file it. When you import a photo, reference or stencil, the picker opens on those folders too, with a search over everything.' },
@@ -109,17 +115,29 @@ const TOUR_STEPS = [
     more: 'Forms are designed in the Design studio with text boxes, check boxes, radio and combo boxes and signatures. Fill them in here, print them, or save an interactive PDF. Completed copies are kept here and on the client\'s card; aftercare can go with the receipt. Export and Import move forms, pictures and all, to another workspace.' },
   { id: 'more', basic: 1, route: 'more', sel: '#view', title: 'Running the studio',
     text: 'Quotes, stats, stock, your rule book and settings.',
-    more: 'Stats shows tattoos, hours and earnings over time. Inventory tracks stock with low-stock alerts and stock takes. The rule book keeps your studio rules for clients and staff, with search, favourites and folders, and a table view to export or print, or to move rules to another workspace with Export and Import.' },
+    more: 'Stats shows tattoos, hours and earnings over time, and your pay. Inventory tracks stock with low-stock alerts and stock takes. The rule book keeps your studio rules for clients and staff, with search, favourites and folders, and a table view to export or print, or to move rules to another workspace with Export and Import. Loyalty runs your rewards program.' },
+  { id: 'loyalty', route: 'loyalty', sel: '#loy-view', title: 'Loyalty rewards',
+    pre: () => { LOYV.tab = 'rewards'; LOYV.f = 'all'; },
+    text: 'Clients earn rewards for sending people your way, or for what they spend.',
+    more: 'Rewards are earned when a tattoo is completed and listed here: who holds it, what earned it, when it was sent and when it runs out. The figures on top show how many get used. Send opens the reward card and message (WhatsApp, share, or a saved picture); tick Sent once it\'s gone. Pass on gives a reward to someone else, Hand over gives a product instead, and a deleted reward is kept under Deleted with the reason, to restore if it hasn\'t run out. Ran out shows the ones never claimed. On a client\'s page you can switch rewards off for them: they stay in the referral tree, but earn nothing.' },
+  { id: 'loyprog', route: 'loyalty', sel: '#loy-view', title: 'Set up the program',
+    pre: () => { LOYV.tab = 'program'; LOYV.ptab = 'terms'; },
+    text: 'Earning, Reward, Terms and Message: one program for every client.',
+    more: 'Earning: per referral (first tattoo only, or every tattoo they get) or by spend. Reward: a percentage, an amount or a product, how long it lasts, passing on, stacking several on one tattoo (the full amount, then half, then a quarter), and a product they can choose instead. Terms are written from your choices, with the usual ones to untick and your own to add; each reward keeps the terms and rules it was earned under, even if you change the program later. Message: the card is a simple one or your own design in the design studio, from the Classic or Light template, with fields like {reward}, {code} and {terms} filled in for each client. Rewards are the artist\'s own, so cards say who to redeem with.' },
   { id: 'stock', route: 'inventory', sel: '#view', title: 'Stock',
     text: 'Items running low are flagged and go on a shopping list.',
-    more: 'Do a stock take on your phone, print a blank count sheet, or the current stock with values. Folders work as stock sections: one item can sit in several (a needles sheet and an ordering list), and printing a folder gives just that sheet. The table icon shows all your stock as a table to filter, adjust, export or print. Its Export and Import move stock lists between workspaces (with or without counts and costs): an item with the same name is not added twice, and imported items get a coloured artist tag.' },
+    more: 'Do a stock take on your phone, or Count one at a time: each item fills the screen with its own number pad, pack buttons, As expected and None, Next and Back. Arrange sets the order you walk the shop (drag \u283f, or send to the top, bottom or a place); the stock take, the count sheet and the table can all follow it. Tapping any count box selects its number, ready to type over. Print a blank count sheet, or the current stock with values. Folders work as stock sections: one item can sit in several (a needles sheet and an ordering list), and printing a folder gives just that sheet. The table icon shows all your stock as a table to filter, adjust, export or print. Its Export and Import move stock lists between workspaces (with or without counts and costs): an item with the same name is not added twice, and imported items get a coloured artist tag.' },
   { id: 'stats', route: 'stats', sel: '#st-body, #view', title: 'Stats',
-    text: 'Tattoos, hours and earnings by month or year.',
-    more: 'Pick a period, see averages per tattoo and per hour, and export to a spreadsheet for your books.' },
+    text: 'Tattoos, hours and earnings, and your own take-home.',
+    more: 'Pick a period, see averages per tattoo and per hour, how clients found you and your top referrers. With Your pay on (commission or chair rent, in Settings), it shows your take-home, the studio\'s share or rent, supplies, pay days and the next pay day; loyalty discounts come off your share or are shared. The table icon lists every tattoo with the columns and filters you choose, totals, CSV and print.' },
+  { id: 'cancelled', route: 'bookings', sel: '#bkt', title: 'Cancellations',
+    pre: () => { BK.status = 'cancelled'; BK.range = 'all'; },
+    text: 'Cancelled bookings, kept on record, and your unreliable clients.',
+    more: 'The bookings table\'s Cancelled filter lists every cancellation with its reason. Below, Unreliable clients ranks who cancels or doesn\'t turn up (no-shows count double, your own cancellations don\'t), with WhatsApp to rebook. To put one back on, untick Cancelled on the booking and pick a new date.' },
   { id: 'backup', basic: 1, route: 'settings', sel: '[data-sec="backup"]', title: 'Keep it safe',
     pre: () => SET_OPEN.add('backup'),
     text: 'Everything stays on this device. Save a backup file now and then.',
-    more: 'A backup holds all your data, photos and reel videos: Save workspace file puts it in your Downloads, Share sends it to Drive or email. You can merge another backup in (a section at a time, with the same previews as each Import button: what is new or changed, tick what comes in, tag clients, bookings and stock), keep a workspace in your own Google Drive to use on several devices, and run first-time setup or this tour again from Settings.' },
+    more: 'A backup holds all your data, photos and reel videos: Save workspace file puts it in your Downloads, Share sends it on. You can merge another backup in (a section at a time, with the same previews as each Import button: what is new or changed, tick what comes in, tag clients, bookings and stock), and run first-time setup or this tour again from Settings. InkForge works best installed from Chrome or Edge: they give it the most room and let it protect your data. The space depends on the device\'s free space and is shared by every workspace on it.' },
   { id: 'workspace', route: 'settings', sel: '#db-badge', title: 'Workspaces',
     text: 'Tap here to switch between studios or artists.',
     more: 'Each workspace has its own clients, bookings and settings. Keep one per artist, and give any of them a password in Settings so others can\'t open it. A new workspace can be a full studio or design only (just the design tools, forms, notes and portfolio); switch it any time under Settings, Workspace type.' },
@@ -369,6 +387,67 @@ const Practice = {
     await mk('Gift voucher', 'voucher', v);
     const piece = await dzPiece((await DB.one(`SELECT id FROM portfolio_items WHERE title = 'Black and grey rose'`)).id);
     await mk('Black and grey rose (portrait post)', 'portrait', dzNew('portrait', dzLayouts('portrait')[3], 'ink', piece));
+    await Practice.seedMore(id, at, day).catch(e => console.warn('Practice extras:', e));
+  },
+  /* The newer features, filled so each one shows itself off: referrals and a supporter, the loyalty program
+     (rewards to send, used, run out, deleted, a client with rewards off), your pay, cancelled bookings and an
+     unreliable client, a reminder, stock packs and a count order, and a sketch with a mind map. */
+  async seedMore(id, at, day) {
+    const mk2 = async (name, kind, doc) => { await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [name, kind, JSON.stringify(doc)]); await dzThumb((await DB.one('SELECT last_insert_rowid() AS id')).id, doc); };
+    const q = (sql, p = []) => DB.run(sql, p), last = async () => (await DB.one('SELECT last_insert_rowid() AS id')).id;
+    // Referrals: who sent who (a supporter too), and how others found the studio
+    await q(`INSERT INTO clients (first_name, last_name, phone, category, notes) VALUES ('Kim', 'Naidoo', '+27 00 000 7777', 'Supporter', 'Never tattooed, sends friends our way')`);
+    const ref = async (who, by) => q('UPDATE clients SET referred_by = ?, ref_src = ? WHERE first_name = ?', [await id(by), 'person', who]);
+    await ref('Jordan', 'Sam'); await ref('Riley', 'Sam'); await ref('Casey', 'Taylor'); await ref('Avery', 'Taylor'); await ref('Jamie', 'Quinn'); await ref('Morgan', 'Kim'); await ref('Drew', 'Riley');
+    await q(`UPDATE clients SET ref_src = 'online', ref_note = 'Instagram' WHERE first_name IN ('Alex', 'Quinn')`);
+    await q(`UPDATE clients SET ref_src = 'advert', ref_note = 'Flyer at the coffee shop' WHERE first_name = 'Taylor'`);
+    await q(`UPDATE clients SET loy_off = 1, loy_off_note = 'Moved overseas' WHERE first_name = 'Avery'`);
+    // Stock: a studio cap to give away, pack sizes, and a count order (the way round the shop)
+    await q(`INSERT INTO inventory_items (name, category, unit, qty, min_qty, cost) VALUES ('Studio cap', 'Merch', 'cap', 18, 5, 95)`); const cap = await last();
+    await q(`UPDATE inventory_items SET pack = 20 WHERE name LIKE 'Needles%'`); await q(`UPDATE inventory_items SET pack = 100, qty = 340, unit = 'glove' WHERE name LIKE 'Nitrile%'`);
+    const order = ['Black ink 4oz', 'Grey wash set', 'Needles 3RL', 'Needles 9RM', 'Stencil paper', 'Nitrile gloves (M)', 'Cling wrap', 'Aftercare balm', 'Studio cap'];
+    for (const [i, n] of order.entries()) await q('UPDATE inventory_items SET sort = ? WHERE name = ?', [i, n]);
+    await Settings.set('inv_order', 'custom');
+    // Loyalty: 10% off for every tattoo a referred client gets, up to 3 stacked, passable, a cap instead, 3 months
+    await Settings.set('loy_cfg', JSON.stringify({ type: 'ref', scope: 'every', kind: 'pct', value: 10, months: 3, stack: true, maxStack: 3, pass: true,
+      alt: true, altItem: cap, altName: 'Studio cap', terms: { own: ['Not valid with other offers.'] } }));
+    await Settings.set('loy_on', '1');
+    const tat = async (who, desc) => (await DB.one(`SELECT b.id FROM bookings b JOIN clients c ON c.id = b.client_id WHERE c.first_name = ? AND b.description = ?`, [who, desc]))?.id;
+    for (const [who, desc] of [['Riley', 'Script: "breathe"'], ['Casey', 'Colour koi'], ['Jamie', 'Cover-up: rose over old script']]) { const b = await tat(who, desc); if (b) await Loy.done(b, true); }
+    await q(`UPDATE loyalty_rewards SET issued_at = ? WHERE from_client = ?`, [day(-30), await id('Riley')]);
+    await q(`UPDATE loyalty_rewards SET issued_at = ?, sent_at = ? WHERE from_client = ?`, [day(-12), day(-11), await id('Jamie')]);
+    const snap = JSON.stringify(Loy.snapOf(Loy.cfg()));
+    // one already used (on Taylor's earlier session), one that ran out unclaimed, one deleted with a reason
+    const used = await tat('Taylor', 'Blackwork panther');
+    await q(`INSERT INTO loyalty_rewards (client_id, kind, value, code, src, from_client, issued_at, expires_at, status, used_booking, used_at, sent_at, prog) VALUES (?, 'pct', 10, 'PANTH3', 'ref', ?, ?, ?, 'used', ?, ?, ?, ?)`,
+      [await id('Taylor'), await id('Avery'), day(-110), day(-20), used, day(-80), day(-108), snap]);
+    if (used) await q('UPDATE bookings SET loy_off = 270 WHERE id = ?', [used]);
+    await q(`INSERT INTO loyalty_rewards (client_id, kind, value, code, src, from_client, issued_at, expires_at, status, sent_at, prog) VALUES (?, 'pct', 10, 'OLDRWD', 'ref', ?, ?, ?, 'open', ?, ?)`,
+      [await id('Kim'), await id('Morgan'), day(-130), day(-40), day(-128), snap]);
+    await q(`INSERT INTO loyalty_rewards (client_id, kind, value, code, src, from_client, issued_at, expires_at, status, deleted_at, del_reason, del_prev, prog) VALUES (?, 'pct', 10, 'DUPL1C', 'ref', ?, ?, ?, 'deleted', ?, 'Earned twice by mistake', 'open', ?)`,
+      [await id('Sam'), await id('Jordan'), day(-15), day(75), day(-14), snap]);
+    await Loy.left();
+    try { await loyDesignMake('classic'); await Settings.set('loy_msg', JSON.stringify({ ...loyMsgCfg(), card: 'design' })); } catch (e) { console.warn('Practice reward card:', e); }
+    // Your pay: half each, the studio supplies, paid weekly on Fridays
+    await Settings.set('pay_cfg', JSON.stringify({ on: true, mode: 'comm', pct: 50, sup: 'studio', every: 'week', wd: 5, loy: 'artist' }));
+    // Cancelled bookings, and so an unreliable client
+    for (const [n, hm, who, desc, by, why] of [[-9, '11:00', 'Morgan', 'Back piece, session 1', 'noshow', 'No reply on the day'], [-25, '14:00', 'Morgan', 'Back piece consult', 'client', 'Sick'],
+      [-3, '10:00', 'Drew', 'Small anchor', 'client', 'Work came up'], [3, '15:00', 'Jordan', 'Script, first tattoo', 'me', 'Artist unwell: rebook']])
+      await q(`INSERT INTO bookings (client_id, start_at, duration_min, kind, description, quote, cancelled, cancel_by, cancel_reason, cancelled_at) VALUES (?, ?, 180, 'tattoo', ?, 2000, 1, ?, ?, ?)`,
+        [await id(who), at(n, hm), desc, by, why, addDays(new Date(), Math.min(0, n)).toISOString()]);
+    // A reminder on today's session
+    await q(`UPDATE bookings SET notify_min = 60 WHERE description = 'Fine-line rose with stem'`);
+    // Sketchpad: a back piece plan as a mind map, with a few pen strokes
+    try { const sk = dzNew('sketch', null, 'ink'); sk.bg = { c: '#f7f4ee' }; sk.skOne = true; const cx = sk.w / 2, cy = sk.h / 2;
+      const node = (txt, x, y, k = 'node', p, br) => { const l = { id: dzId(), t: 'text', text: txt, size: p ? 44 : 56, font: '@2', c: '#1d2326', al: 'center', lh: 1.2, tbg: k === 'if' ? '#fff6dc' : p ? '#ffffff' : '#e6f6f4', tbr: 22, tbp: 24,
+          mm: { k, mw: 560, bc: '#1fb5a8', ...(p ? { p } : {}), ...(br ? { br } : {}) }, x: x - 200, y: y - 34, w: 400, h: 67, rot: 0, op: 1 }; sk.layers.push(l); return l.id; };
+      const root = node('Morgan\u2019s back piece', cx, cy), a = node('Peonies and koi', cx + 620, cy - 260, 'node', root), b = node('Black and grey?', cx + 620, cy + 240, 'if', root);
+      node('Wash with red accents', cx + 1260, cy + 120, 'node', b, 'yes'); node('Full colour', cx + 1260, cy + 420, 'node', b, 'no'); node('3 sessions', cx - 640, cy - 200, 'node', root); node('Deposit taken', cx - 640, cy + 200, 'node', root); void a;
+      const G = dzId(); sk.groups = { [G]: { name: 'Drawing', shut: true } }; sk.skG = G;
+      for (const [b0, c0, P] of [['pen', '#1d2326', Array.from({ length: 24 }, (_, i) => [cx - 300 + i * 25, cy + 620 + Math.sin(i / 3) * 60, 0.6])],
+        ['marker', '#f28c28', Array.from({ length: 18 }, (_, i) => [cx - 260 + i * 30, cy + 760 + Math.cos(i / 2) * 30, 0.7])]])
+        sk.layers.push({ ...dzInkMake({ b: b0, c: c0, s: b0 === 'pen' ? 8 : 28 }, P), g: G });
+      await mk2('Back piece plan', 'sketch', sk); } catch (e) { console.warn('Practice sketch:', e); }
   },
   // Keeps the practice bookings around today: everything moves on by the days since it was last opened.
   async refresh() {
