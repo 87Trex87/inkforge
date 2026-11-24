@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 555;
+const APP_BUILD = 556;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -1053,7 +1053,7 @@ const VIEWS = {
     title: () => 'Clients',
     render: () => `
       <div class="search-bar">
-        <input class="in" id="c-search" type="search" placeholder="Search name, phone, tag…" autocomplete="off" value="${esc(VIEWS.clients.q || '')}">
+        <input class="in" id="c-search" type="search" placeholder="Search clients…" autocomplete="off" value="${esc(VIEWS.clients.q || '')}">
         <a class="btn icon-btn" href="#clients-table" data-tip="All contacts as a table: search, filter, edit, export and print" aria-label="Contacts table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a>
         <button class="btn icon-btn" id="c-phone" data-tip="Bring in a contact from your phone" aria-label="From your phone"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 8v7M9 12l3 3 3-3"/></svg></button>
         <button class="btn primary icon-btn" id="c-add" data-tip="Add contact" aria-label="Add contact">
@@ -1123,6 +1123,7 @@ const VIEWS = {
           <button class="btn small" id="c-vcf" style="margin-top:8px" data-tip="A contact card your phone adds to its contacts">Add to phone contacts</button>
         </div>
         ${c.medical ? `<div class="card alert"><h2>Medical / allergies ${help('Check before every session.')}</h2><p class="pre">${esc(c.medical)}</p></div>` : ''}
+        <div id="c-perks"></div>
         <div class="card" id="c-refs"></div>
         ${c.notes ? `<div class="card"><h2>Notes</h2><p class="pre">${esc(c.notes)}</p></div>` : ''}
         ${(() => { const v = avShared()[c.id]; if (!v) return ''; const t = ymd(new Date()), up = v.days.filter(d => d >= t), part = new Set(v.part || []);
@@ -1145,6 +1146,15 @@ const VIEWS = {
       $('#c-book').onclick = () => newBookingNext(c.id);
       $('#c-avsend')?.addEventListener('click', () => openAvailability(c.id));
       /* Referrals: how they found you, whom they brought in, and what that's earned */
+      /* what they hold: open loyalty rewards and vouchers (and vouchers they bought for others), with links to each section */
+      { const lr = await DB.all(`SELECT * FROM loyalty_rewards WHERE client_id = ? AND status = 'open' AND used_booking IS NULL AND (expires_at IS NULL OR expires_at >= date('now')) ORDER BY expires_at`, [c.id]);
+        const vh = await DB.all(`SELECT * FROM vouchers WHERE client_id = ? AND status IN ('open', 'unpaid') AND (expires_at IS NULL OR expires_at >= date('now')) ORDER BY expires_at`, [c.id]);
+        const vb = await DB.all(`SELECT v.*, h.first_name, h.last_name FROM vouchers v LEFT JOIN clients h ON h.id = v.client_id WHERE v.from_client = ? AND v.status != 'deleted' ORDER BY v.issued_at DESC LIMIT 5`, [c.id]);
+        const pe = $('#c-perks'), till = (d) => d ? ' \u00b7 until ' + fmtDay(d) : '';
+        if (pe && (lr.length || vh.length || vb.length)) pe.innerHTML = `<div class="card"><h2>Rewards and vouchers</h2>
+          ${lr.map(r => `<a class="stat" href="#loyalty"><span>${esc(Loy.rLabel(r))} <span class="muted">${esc(r.code || '')}${till(r.expires_at)}</span></span><span class="chip">Reward</span></a>`).join('')}
+          ${vh.map(v => `<a class="stat" href="#vouchers"><span>${money(Vou.bal(v))} voucher <span class="muted">${esc(v.code)}${v.status === 'unpaid' ? ' \u00b7 awaiting payment' : till(v.expires_at)}</span></span><span class="chip">Voucher</span></a>`).join('')}
+          ${vb.length ? `<div class="lbl" style="margin-top:8px">Vouchers they bought</div>${vb.map(v => `<a class="stat" href="#vouchers"><span>${money(v.amount)} for ${esc(nameOr(v) || 'anyone with the card')}</span><span class="muted">${esc(Vou.state(v) === 'used' ? 'Used' : Vou.state(v) === 'unpaid' ? 'Awaiting payment' : 'Open')}</span></a>`).join('')}` : ''}</div>`; }
       { const G = await refGraph(), up = G.byId.get(c.referred_by), down = refDesc(G, c.id), direct = down.filter(x => x.d === 1), re = $('#c-refs');
         const sum = (L) => L.reduce((t, x) => { const e = G.earn.get(x.c.id); return { s: t.s + (e?.s || 0), n: t.n + (e?.n || 0) }; }, { s: 0, n: 0 }), all = sum(down), dir = sum(direct);
         const src = up ? `<a href="#client/${up.id}" style="color:var(--teal)">${esc(fullName(up))}</a>${c.ref_note ? ` <span class="muted">(${esc(c.ref_note)})</span>` : ''}` : refSrcText(c) ? esc(refSrcText(c)) : '';
@@ -1196,11 +1206,7 @@ const VIEWS = {
         }
       }
       $('#c-del').onclick = async () => {
-        if (!await ask(`Delete ${fullName(c)}?\n\nThis permanently removes the client and their photo. Their bookings stay on the calendar without a client.`)) return;
-        await DB.run('UPDATE bookings SET gcal_synced_at = NULL WHERE client_id = ?', [c.id]);
-        await DB.run('DELETE FROM clients WHERE id = ?', [c.id]);
-        Gcal.soon();
-        await Media.release(c.photo_ref);
+        if (!await clientDelete(c)) return;
         toast('Client deleted.'); location.hash = 'clients';
       };
     }
@@ -1284,7 +1290,11 @@ const VIEWS = {
         for (const k in d) d[k] = d[k].trim();
         if (!d.first_name) return toast('First name is required.');
         if (d.phone) { const ph = intlPhone(d.phone); if (ph === null) return toast(phoneBad()); d.phone = ph; }
+        if (d.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) return toast('That email doesn\u2019t look right.');
+        if (!c.id && d.phone) { const digits = d.phone.replace(/\D/g, '').slice(-9), dup = digits.length >= 7 ? await DB.one(`SELECT id, first_name, last_name FROM clients WHERE replace(replace(replace(phone, ' ', ''), '-', ''), '+', '') LIKE ?`, ['%' + digits]) : null;
+          if (dup && !await ask(`${fullName(dup)} already has that number.\n\nSave this as a new contact anyway?`)) return; }
         f.dataset.saving = '1';   // a double tap must not add the client twice
+        try {
         d.instagram = d.instagram.replace(/^@/, '');
         d.tags = d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ');
         if (newPhoto) photoRef = await Media.save(newPhoto, 'jpg');
@@ -1306,6 +1316,7 @@ const VIEWS = {
         Dirty.set(false);
         toast('Saved.');
         location.replace('#client/' + cid);
+        } catch (err) { toast('Could not save: ' + err.message, 4000); } finally { delete f.dataset.saving; }   /* a failed save can be tried again */
       });
     }
   },
@@ -7348,6 +7359,19 @@ const FS = {
   }
 };
 { let was = null; addEventListener('resize', () => { const o = FS.on(); if (o !== was) { was = o; document.dispatchEvent(new Event('fullscreenchange')); } }); }   /* keeps the buttons right when it drops out without telling us */
+/* Back to full screen after a picker. Opening a file picker, the share sheet, printing or a download can drop the page
+   out of full screen, and browsers only allow going back in on a tap. So: note when one of those opens; if full screen
+   drops within two minutes of it, the next tap anywhere puts it back. Leaving it yourself (the button, Esc) is left alone. */
+(() => { let away = 0, back = false, was = FS.on();
+  const mark = () => { if (FS.on()) away = Date.now(); };
+  const wrap = (o, k, test) => { const f = o[k]; if (typeof f !== 'function') return; o[k] = function (...a) { if (!test || test(this)) mark(); return f.apply(this, a); }; };
+  wrap(HTMLInputElement.prototype, 'click', (el) => el.type === 'file'); wrap(HTMLInputElement.prototype, 'showPicker', (el) => el.type === 'file');
+  wrap(HTMLAnchorElement.prototype, 'click', (el) => el.hasAttribute('download')); wrap(window, 'print');
+  if (navigator.share) wrap(navigator, 'share'); for (const k of ['showOpenFilePicker', 'showSaveFilePicker', 'showDirectoryPicker']) wrap(window, k);
+  if (navigator.contacts) wrap(navigator.contacts, 'select');
+  const fsSet = FS.set; FS.set = async (want) => { away = 0; back = false; return fsSet(want); };   /* the user's own choice */
+  document.addEventListener('fullscreenchange', () => { const on = FS.on(); if (was && !on && away && Date.now() - away < 120000) back = true; if (on) back = false; was = on; });
+  document.addEventListener('pointerdown', () => { if (!back || FS.on()) return; back = false; away = 0; fsSet(true); }, true); })();
 (() => {
   const b = document.getElementById('fs-btn'); if (!b) return;
   const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
@@ -11151,7 +11175,7 @@ async function renderClientList() {
   if (ce) { ce.hidden = cats.length < 2; ce.innerHTML = [['all', 'All', cats.reduce((t, x) => t + x.n, 0)], ...cats.map(x => [x.c, x.c, x.n])]
     .map(([k, l, n]) => `<button class="chip qz-chip ${cat === k ? 'on' : ''}" data-cat="${esc(k)}">${esc(l)} <span class="muted">${n}</span></button>`).join(''); }
   const rows = await DB.all(
-    `SELECT id, first_name, last_name, phone, tags, medical, photo_ref, category, tag, tag_color FROM clients
+    `SELECT id, first_name, last_name, phone, email, instagram, tags, medical, photo_ref, category, tag, tag_color FROM clients
      WHERE (?4 = 'all' OR category = ?4) AND (?1 = '' OR (first_name || ' ' || last_name) LIKE ?2 OR email LIKE ?2 OR instagram LIKE ?2 OR tags LIKE ?2 OR tag LIKE ?2
        OR (?3 <> '' AND replace(replace(replace(phone,' ',''),'-',''),'+','') LIKE '%' || ?3 || '%'))
      ORDER BY first_name COLLATE NOCASE, last_name COLLATE NOCASE`, [q, like, digits, cat]);
@@ -11168,7 +11192,7 @@ async function renderClientList() {
     const L = (c.first_name || '#').charAt(0).toUpperCase();
     if (L !== letter) { if (letter) html += '</div>'; letter = L; html += `<div class="letter">${esc(L)}</div><div class="card list">`; }
     html += `<a class="c-row" href="#client/${c.id}">${avatar(c, urls[i])}
-      <span class="c-main"><span class="c-n">${esc(fullName(c))}${cat === 'all' && c.category !== 'Client' ? ` <span class="chip c-catchip">${esc(c.category)}</span>` : ''}${cTag(c)}</span><span class="muted c-sub">${esc(c.phone || c.tags || '')}</span></span>
+      <span class="c-main"><span class="c-n">${esc(fullName(c))}${cat === 'all' && c.category !== 'Client' ? ` <span class="chip c-catchip">${esc(c.category)}</span>` : ''}${cTag(c)}</span><span class="muted c-sub">${esc(c.phone || c.email || (c.instagram ? '@' + c.instagram.replace(/^@/, '') : '') || c.tags || '')}</span></span>
       ${c.medical ? '<span class="dot" data-tip="Has medical notes"></span>' : ''}
       <svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`;
   });
@@ -11251,9 +11275,7 @@ async function ctTable() {
   $('#ct').onclick = async (e) => { const t = e.target;
     const sk = t.closest('[data-sk]')?.dataset.sk; if (sk) { CT.sort = CT.sort.k === sk ? { k: sk, dir: -CT.sort.dir } : { k: sk, dir: 1 }; return table(); }
     const del = t.closest('[data-cdel]'); if (del) { const c = rows.find(x => x.id === +del.dataset.cdel); if (!c) return;
-      if (!await ask(`Delete ${fullName(c) || 'this contact'}?\n\nThis permanently removes the contact and their photo. Their bookings stay on the calendar without a client.`)) return;
-      await DB.run('UPDATE bookings SET gcal_synced_at = NULL WHERE client_id = ?', [c.id]); await DB.run('DELETE FROM clients WHERE id = ?', [c.id]);
-      Gcal.soon(); await Media.release(c.photo_ref); toast('Contact deleted.'); return both(); }
+      if (!await clientDelete(c)) return; toast('Contact deleted.'); return both(); }
     const ed = t.closest('[data-cedit]'); if (ed) { location.hash = 'client-edit/' + ed.dataset.cedit; return; }
     const tr = t.closest('[data-cid]'); if (tr) location.hash = 'client/' + tr.dataset.cid; };
 }
@@ -11323,6 +11345,17 @@ function vcfParse(text) { const raw = String(text).replace(/\r\n|\r/g, '\n').rep
       if (m) { try { const bin = atob(m[1].replace(/\s/g, '')), u8 = Uint8Array.from(bin, ch => ch.charCodeAt(0)); out.photo = new Blob([u8], { type: 'image/jpeg' }); } catch {} } } }
   if (!out.first_name && !out.last_name && out.fn) { const p = out.fn.split(/\s+/); out.first_name = p.shift(); out.last_name = p.join(' '); }
   delete out.fn; return out.first_name || out.last_name || out.phone ? out : null; }
+/* Delete a client after asking. Their open vouchers and rewards would lose their owner (and a voucher with no owner
+   could be claimed by anyone with its code), so they're cancelled, with the reason kept. Returns true once deleted. */
+async function clientDelete(c) {
+  const v = await DB.one(`SELECT count(*) AS n, coalesce(sum(coalesce(balance, amount)), 0) AS a FROM vouchers WHERE client_id = ? AND status IN ('open', 'unpaid')`, [c.id]);
+  const r = await DB.one(`SELECT count(*) AS n FROM loyalty_rewards WHERE client_id = ? AND status = 'open' AND used_booking IS NULL`, [c.id]);
+  const more = [v.n ? `${v.n} open voucher${v.n === 1 ? '' : 's'} (${money(v.a)})` : '', r.n ? `${r.n} open loyalty reward${r.n === 1 ? '' : 's'}` : ''].filter(Boolean);
+  if (!await ask(`Delete ${fullName(c) || 'this contact'}?\n\nThis permanently removes the contact and their photo. Their bookings stay on the calendar without a client.${more.length ? `\n\nThey hold ${more.join(' and ')}. ${more.length > 1 ? 'These are' : 'It\u2019s'} cancelled too (pass ${more.length > 1 ? 'them' : 'it'} on first to keep ${more.length > 1 ? 'them' : 'it'}).` : ''}`)) return false;
+  await DB.run(`UPDATE vouchers SET status = 'void', del_reason = coalesce(del_reason, 'Client deleted') WHERE client_id = ? AND status IN ('open', 'unpaid')`, [c.id]);
+  await DB.run(`UPDATE loyalty_rewards SET status = 'void', note = coalesce(note, 'Client deleted') WHERE client_id = ? AND status = 'open' AND used_booking IS NULL`, [c.id]);
+  await DB.run('UPDATE bookings SET gcal_synced_at = NULL WHERE client_id = ?', [c.id]); await DB.run('DELETE FROM clients WHERE id = ?', [c.id]);
+  Gcal.soon(); await Media.release(c.photo_ref); Loy.left?.(); return true; }
 let CPRE = null;   /* a contact brought in from the phone, waiting in New client */
 document.addEventListener('click', (e) => { if (e.target.closest('#c-vcf')) clientVcf(+location.hash.split('/')[1]); });   /* the client page's Add to phone contacts */
 async function clientFromPhone() { let C = null;
@@ -12239,6 +12272,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 556, when: '2026-11-25T18:00', added: [
+    'Full screen: when a file picker, share, print or download drops you out of full screen, your next tap puts it back.',
+    'Clients: a client\u2019s page shows their open loyalty rewards and vouchers, and the vouchers they bought for others.',
+    'Clients: a new contact with a number already saved asks first, a mistyped email is caught, and deleting a client cancels their open vouchers and rewards (so nobody else can claim them).',
+    'Fixed: the big photo on a client\u2019s page was shrunk; the list shows an email or Instagram when there\u2019s no phone.'
+  ] },
   { build: 555, when: '2026-11-25T15:00', added: [
     'Stats: tattoos paid by voucher now count in earnings, averages, hourly rate and your pay; the tattoo list shows them as (voucher), and the table and spreadsheet have a Voucher column.',
     'Stats: new Loyalty, Cancellations (with no-shows and quoted work lost) and Deposits held cards. The old promotions card only shows while one is still open.',
