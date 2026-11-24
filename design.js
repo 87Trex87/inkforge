@@ -2244,9 +2244,10 @@ const dzCwName = (c) => !c || c === 'none' ? 'none' : ({ '@fg': 'text', '@accent
    curves: pencil (light, pressure-thin), pen (steady), marker (see-through, flat), highlighter (wide, multiplies
    over what's under it), calligraphy (a 45° nib: thick and thin by direction) and manga (a G-pen: pressure and speed
    swell and taper it, with pointed ends). */
-const DZ_BRUSHES = [['pencil', 'Pencil', 6], ['pen', 'Pen', 7], ['marker', 'Marker', 28], ['hl', 'Highlighter', 48], ['call', 'Calligraphy', 22], ['manga', 'Manga pen', 12]];
+const DZ_BRUSHES = [['pencil', 'Pencil', 6], ['pen', 'Pen', 7], ['marker', 'Marker', 28], ['hl', 'Highlighter', 48], ['call', 'Calligraphy', 22], ['manga', 'Manga pen', 12], ['air', 'Airbrush', 60]];
 const DZ_BRUSH_IC = { pencil: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M14 7l3 3"/>', pen: '<path d="M12 19l7-7-4-4-7 7-1 5z"/><path d="M15 8l1-5 5 5-5 1"/>', marker: '<path d="M6 15l9-9 3 3-9 9H6z"/><path d="M4 21h8"/>',
   hl: '<path d="M7 14l7-7 4 4-7 7H7z" /><path d="M4 21h12" stroke-width="3" stroke-opacity=".5"/>', call: '<path d="M5 19c3-6 6-9 14-14"/><path d="M12 6l6 6"/>', manga: '<path d="M4 20c6-2 10-7 14-16"/><path d="M15 4l5 2-2 5"/>',
+  air: '<path d="M4 20l7-7"/><path d="M11 13l2-6 4 4-6 2z"/><circle cx="18" cy="5" r=".6" fill="currentColor"/><circle cx="20.5" cy="8" r=".6" fill="currentColor"/><circle cx="16" cy="3" r=".6" fill="currentColor"/>',
   erase: '<path d="M8 20h12"/><path d="M4 15l9-9 6 6-6 6H8z"/>', sel: '<path d="M5 3l12 8-6 1 4 7-2 1-4-7-4 4z"/>',
   lasso: '<path d="M12 4c5 0 8 2.5 8 5.5S16 15 12 15s-8-2.5-8-5.5S7 4 12 4z" stroke-dasharray="3 2.5"/><path d="M8 14c-1.5 2-.5 5 3 6"/>',
   rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>', ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>', line: '<path d="M5 19L19 5"/>',
@@ -2291,8 +2292,15 @@ function dzInkPaint(x, l, P) {
     if (P.length === 1) x.lineTo(P[0][0] + 0.01, P[0][1]);
     for (let i = 1; i < P.length - 1; i++) { const mx = (P[i][0] + P[i + 1][0]) / 2, my = (P[i][1] + P[i + 1][1]) / 2; x.quadraticCurveTo(P[i][0], P[i][1], mx, my); }
     if (P.length > 1) x.lineTo(P.at(-1)[0], P.at(-1)[1]); x.stroke(); x.restore(); return; }
-  if (P.length === 1) { x.beginPath(); x.arc(P[0][0], P[0][1], dzInkW(l, P, 0) / 2, 0, 7); x.fill(); return; }
+  if (P.length === 1 && B !== 'air') { x.beginPath(); x.arc(P[0][0], P[0][1], dzInkW(l, P, 0) / 2, 0, 7); x.fill(); return; }
   x.save(); if (B === 'pencil') x.globalAlpha *= 0.9;
+  if (B === 'air') {   /* airbrush: soft round dabs along the path, denser where the pen presses harder */
+    const r = (l.s || 60) / 2, hex = /^#[0-9a-f]{6}$/i.test(col) ? col : '#111111', step = Math.max(1, r * 0.18);
+    const dab = (px, py, p) => { const g = x.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, hex + Math.round(Math.min(1, 0.05 + p * 0.1) * 255).toString(16).padStart(2, '0')); g.addColorStop(1, hex + '00'); x.fillStyle = g; x.beginPath(); x.arc(px, py, r, 0, 7); x.fill(); };
+    dab(P[0][0], P[0][1], P[0][2] ?? 0.5);
+    for (let i = 1; i < P.length; i++) { const a = P[i - 1], b = P[i], n = Math.max(1, Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+      for (let j = 1; j <= n; j++) { const t = j / n; dab(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (a[2] ?? 0.5) + ((b[2] ?? 0.5) - (a[2] ?? 0.5)) * t); } }
+    return x.restore(); }
   for (let i = 1; i < P.length; i++) { x.lineWidth = Math.max(0.4, (dzInkW(l, P, i - 1) + dzInkW(l, P, i)) / 2); x.beginPath(); x.moveTo(P[i - 1][0], P[i - 1][1]); x.lineTo(P[i][0], P[i][1]); x.stroke(); }
   x.restore(); }
 /* In a layer: its points stretched to the layer's box (drawn about the box's middle, as the layer is). */
@@ -2538,14 +2546,11 @@ DZ.edit = async (id) => {
       <div class="dz-stage" id="dz-stage">
         <canvas id="dz-patcv" hidden></canvas><div class="tt-qs dz-qstrip" id="dz-qstrip"></div><div class="tt-refs dz-refs" id="dz-refs"></div>
         <div class="dz-rail" id="dz-rail">
-          ${dzIB('data-rail="select"', 'select', 'Select and move')}
-          ${dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
+          ${doc.kind === 'sketch' ? '<div class="sk-rail" id="sk-tools"></div><i class="sep"></i>' : dzIB('data-rail="select"', 'select', 'Select and move') + dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
           ${doc.kind === 'form' ? dzIB('data-rail="fields"', 'frametext', 'Form fields') : ''}
-          ${dzIB('data-rail="text"', 'text', 'Text')}
+          ${doc.kind === 'sketch' ? '' : dzIB('data-rail="text"', 'text', 'Text')}
           ${dzIB('data-rail="image"', 'picture', 'Picture')}
-          ${dzIB('data-rail="shape"', 'shape', 'Shape')}
-          ${dzIB('data-add="pen"', 'pen', 'Pen (P)')}
-          ${dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
+          ${doc.kind === 'sketch' ? '' : dzIB('data-rail="shape"', 'shape', 'Shape') + dzIB('data-add="pen"', 'pen', 'Pen (P)') + dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
           ${doc.chal ? dzIB('data-rail="chal"', '<path d="M6 3h12v5a6 6 0 0 1-12 0z"/><path d="M12 14v4M8 21h8"/><path d="M9.5 7.5l1.6 1.6 3.4-3.4"/>', 'Challenge: instructions, palette, and play it in the simulator') : ''}
           ${doc.pat ? dzIB('data-rail="pattern"', '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="3" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="13" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><circle cx="7" cy="7" r="1.6"/>', 'Pattern: cell size, neighbours, fit, and save the tile') : ''}
           ${dzIB('data-rail="grid"', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective, with snapping')}
@@ -2636,8 +2641,10 @@ DZ.edit = async (id) => {
     else { x0 = doc.w / 2; y0 = doc.h / 2; x1 = x0; y1 = y0; }
     let nx0 = x0 - SK_M, ny0 = y0 - SK_M, nw = Math.max(SK_MIN[0], x1 - x0 + 2 * SK_M), nh = Math.max(SK_MIN[1], y1 - y0 + 2 * SK_M);
     nx0 -= (nw - (x1 - x0 + 2 * SK_M)) / 2; ny0 -= (nh - (y1 - y0 + 2 * SK_M)) / 2; nx0 = Math.round(nx0); ny0 = Math.round(ny0); nw = Math.round(nw); nh = Math.round(nh);
+    if (doc.grid) { doc.grid.ox = (doc.grid.ox || 0) - nx0; doc.grid.oy = (doc.grid.oy || 0) - ny0; }   /* the grid's origin moves with the work, so it stays where it was under it */
     if (Math.abs(nx0) < 40 && Math.abs(ny0) < 40 && Math.abs(nw - doc.w) < 80 && Math.abs(nh - doc.h) < 80) return false;   /* small changes: leave it */
     for (const l of doc.layers) { l.x -= nx0; l.y -= ny0; delete l._bx; }
+    for (const v of doc.grid?.vp || []) { v.x -= nx0; v.y -= ny0; }
     /* the same spot stays under the same screen point: the page's corner moves by the shift, its centre by the resize */
     const cs = Math.cos(vrot * Math.PI / 180), sn = Math.sin(vrot * Math.PI / 180), dcx = (nx0 + nw / 2 - doc.w / 2) * k, dcy = (ny0 + nh / 2 - doc.h / 2) * k;
     vx += dcx * cs - dcy * sn; vy += dcx * sn + dcy * cs; const fk = fitK;
@@ -2988,6 +2995,7 @@ DZ.edit = async (id) => {
       full: ['All layer options', '<rect x="2" y="4" width="5" height="5" rx="1"/><rect x="2" y="15" width="5" height="5" rx="1"/><path d="M9 6.5h6M9 17.5h6"/><circle cx="18.5" cy="6.5" r="1.4"/><circle cx="18.5" cy="17.5" r="1.4"/>'] };
     const lmSeg = `<span class="dz-lmseg" role="group" aria-label="Layer panel size">${Object.entries(LM).map(([k, [tip, ic]]) => `<button data-lmode="${k}" class="${lmode === k ? 'on' : ''}" data-tip="${tip}" aria-label="${tip}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('')}</span>`;
     host.innerHTML = `<div class="dz-lhead"><div class="dz-lh"><b>Layers <small>${F().length}</small></b><span class="dz-hb">${dzIB('data-rail="close"', 'close', 'Close')}</span></div>
+      ${SK ? `<label class="toggle sk-one" data-tip="Every new stroke goes into one Drawing layer, instead of a layer each. Pictures and notes keep their own."><input type="checkbox" data-skone ${doc.skOne !== false ? 'checked' : ''}><span>Draw on one layer</span></label>` : ''}
       <div class="dz-lbar">${lmSeg}<span class="dz-lbar-r">${dzIB(`data-mact="${picking ? 'done' : 'pick'}"`, 'pick', picking ? 'Stop selecting several' : 'Select several', picking ? 'on' : '')}
         ${picking || picks.size ? dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${picks.size ? '' : 'disabled'}`, 'none', 'Select none') : ''}</span></div></div>
       ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? `Master page: shown under ${dzPaged(doc) ? 'every page' : 'both sides'}.` : `${dzFaceNames(doc)[face]} only.${(doc.nomaster || []).includes(face) ? ' The master is off on this page.' : ' The master page shows underneath.'}`}</p>` : ''}
@@ -3095,7 +3103,7 @@ DZ.edit = async (id) => {
     const tog = (k, s, tip) => `<button class="dz-ib ${l[k] ? 'on' : ''}" data-tog="${k}" data-tip="${tip}" style="${s}">${tip[0]}</button>`;
     const col = (key, ic, tip, none) => { const c = l[key], paint = (key === 'c' || key === 'fill') && l.fm === 'grad' && l.grad ? dzGradCss(doc, l.grad) : (c && c !== 'none' ? dzCol(doc, c) : key === 'c' ? dzCol(doc, '@fg') : 'transparent');
       return `<button class="dz-cbtn ${cpop === key ? 'on' : ''}" data-cpop="${key}" data-none="${none ? 1 : ''}" data-tip="${tip}" aria-label="${tip}"><small>${ic}</small><i style="background:${paint}"></i></button>`; };
-    const num = (k, v, tip, max) => `<label class="dz-cnum" data-tip="${tip}"><input class="in" type="text" inputmode="text" data-calc min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}"></label>`;
+    const num = (k, v, tip, max) => `<label class="dz-cnum ${k === 'size' ? 'dz-csz' : ''}" data-tip="${tip}"><input class="in" type="text" inputmode="text" data-calc min="0" ${max ? `max="${max}"` : ''} step="1" data-ck="${k}" value="${Math.round(v)}" aria-label="${tip}">${k === 'size' ? '<button type="button" class="dz-cszb" data-csz aria-label="Text size slider" data-tip="Slide to size the text"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>' : ''}</label>`;
     if (l.lock) { cpop = null; b.innerHTML = `<span class="muted dz-chint" style="padding-right:8px">Locked</span>` + dzIB('data-act="lock"', 'lock', 'Unlock', 'on') + dzIB('data-act="dup"', 'copy', 'Duplicate') + dzIB('data-act="ccopy"', '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>', 'Copy (Ctrl C)'); return; }
     let own = '';
     if (l.t === 'text') own = `${fontBtn(l.font)}${num('size', l.size, 'Text size')}${sep}`
@@ -3343,7 +3351,7 @@ DZ.edit = async (id) => {
         ${fsec('Theme', `<div class="dz-themes">${Object.entries(DZ_THEMES).map(([kk, t]) =>
           `<button data-theme="${kk}" class="${doc.theme === kk ? 'on' : ''}"><i style="background:${t.bg}"></i><i style="background:${t.accent}"></i><i style="background:${t.fg}"></i><span>${t.name}</span></button>`).join('')}</div>`)}
         ${fsec('Background', `${swatches('bg', doc.bg?.c)}
-          <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px">${bgLayer() || doc.bg?.img ? '<button class="btn small primary" data-bgedit>Edit picture</button>' : ''}<label class="btn small">${bgLayer() || doc.bg?.img ? 'Change picture' : 'Background picture'}<input type="file" accept="image/*" hidden id="dz-bgfile"></label>
+          <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:6px" ${SK ? 'hidden' : ''}>${bgLayer() || doc.bg?.img ? '<button class="btn small primary" data-bgedit>Edit picture</button>' : ''}<label class="btn small">${bgLayer() || doc.bg?.img ? 'Change picture' : 'Background picture'}<input type="file" accept="image/*" hidden id="dz-bgfile"></label>
           ${bgLayer() || doc.bg?.img ? '<button class="btn small danger" id="dz-bgrm">Remove</button>' : ''}</div>
           ${bgLayer() || doc.bg?.img ? '<p class="muted" style="font-size:11px;margin:6px 0 0">Edit picture lets you zoom, move, turn, flip, crop and fade it. The page trims it to size.</p>' : ''}`)}
         ${SK ? '' : '<p class="muted dz-hint">{Fields} like {studio} fill in from Settings.</p>'}`;
@@ -4868,7 +4876,7 @@ DZ.edit = async (id) => {
   // while moving, resizing, placing pen points and dragging nodes. Hold Alt for none. Options are in the strip's magnet.
   const snapO = (() => { try { return { on: true, page: true, edges: true, mids: true, dist: 10, gap: 0, ...JSON.parse(Settings.get('dz_snap', '{}')) }; } catch { return { on: true, page: true, edges: true, mids: true, dist: 10, gap: 0 }; } })();
   const snapTargets = (ids) => { const tx = [], ty = [], G = snapO.gap || 0;
-    const gs = gridSteps(); if (gs) { tx.grid = gs.x; ty.grid = gs.y; }
+    const gs = gridSteps(); if (gs) { tx.grid = gs.x; ty.grid = gs.y; tx.go = doc.grid?.ox || 0; ty.go = doc.grid?.oy || 0; }
     if (!snapO.on) return { tx, ty };
     if (snapO.page) { tx.push(0, doc.w / 2, doc.w); ty.push(0, doc.h / 2, doc.h); }
     for (const o of dzPages(doc, face).flat()) if (!o.hide && !ids.has(o.id)) { const b = box(o);
@@ -4876,7 +4884,7 @@ DZ.edit = async (id) => {
       if (snapO.mids) { tx.push((b.x0 + b.x1) / 2); ty.push((b.y0 + b.y1) / 2); } }
     return { tx, ty }; };
   const snapBest = (cs, ts) => { let r = null; const try1 = (c, v) => { const d = v - c; if (Math.abs(d) < snapO.dist / k && (!r || Math.abs(d) < Math.abs(r.d))) r = { d, t: v }; };
-    for (const c of cs) { for (const v of ts) try1(c, v); if (ts.grid) try1(c, Math.round(c / ts.grid) * ts.grid); } return r; };   // ts.grid: the grid's line spacing on this axis
+    for (const c of cs) { for (const v of ts) try1(c, v); if (ts.grid) { const o = ts.go || 0; try1(c, Math.round((c - o) / ts.grid) * ts.grid + o); } } return r; };   // ts.grid: the grid's line spacing on this axis
   // lock: the axis Shift is holding still ('x' or 'y'), which doesn't snap.
   const snapTo = (list, e, lock) => {
     if (e.altKey || !(snapO.on || gSnap()) || !list.length) return guides(false, false);
@@ -4938,7 +4946,7 @@ DZ.edit = async (id) => {
     const pals = () => { try { return JSON.parse(Settings.get('sk_pals', '[]')) || []; } catch { return []; } };
     const keepPals = (P) => Settings.set('sk_pals', JSON.stringify(P));
     const palCols = () => { const P = pals(); if (SKB.pal >= P.length) SKB.pal = -1; return SKB.pal < 0 ? SKC : P[SKB.pal].c; };
-    const bar = document.createElement('div'); bar.className = 'sk-bar'; bar.id = 'sk-bar'; stage.appendChild(bar);
+    const bar = $('#sk-tools');   /* the sketch's tools sit at the top of the side strip */
     const live = document.createElement('canvas'); live.className = 'sk-live'; page.appendChild(live);
     const ic = (k) => `<svg viewBox="0 0 24 24">${DZ_BRUSH_IC[k]}</svg>`;
     const sizeOf = () => SKB.tool === 'erase' ? SKB.er : SKB.tool === 'shape' ? SKB.shs : SKB.tool === 'text' ? SKB.ts : SKB.sizes[SKB.b] || 8;
@@ -4946,42 +4954,55 @@ DZ.edit = async (id) => {
     const setOp = (v) => { if (SKB.tool === 'erase') SKB.eop = v; else SKB.ops[SKB.b] = v; };
     const setSize = (v) => { if (SKB.tool === 'erase') SKB.er = v; else if (SKB.tool === 'shape') SKB.shs = v; else if (SKB.tool === 'text') SKB.ts = v; else SKB.sizes[SKB.b] = v; };
     const sizeMax = () => SKB.tool === 'erase' ? 200 : SKB.tool === 'text' ? 400 : 140;
-    const drawBar = () => { const P = pals(), cols = palCols(), own = SKB.pal >= 0;
-      bar.innerHTML = `<button data-skt="sel" class="${!SKB.tool ? 'on' : ''}" data-tip="Select and move (brushes off)" aria-label="Select">${ic('sel')}</button>
-      <button data-skt="lasso" class="${SKB.tool === 'lasso' ? 'on' : ''}" data-tip="Lasso: draw round things to select them" aria-label="Lasso">${ic('lasso')}</button><i class="sep"></i>
-      ${DZ_BRUSHES.map(([k, l]) => `<button data-skt="${k}" class="${SKB.tool === 'brush' && SKB.b === k ? 'on' : ''}" data-tip="${l}" aria-label="${l}">${ic(k)}</button>`).join('')}
-      <button data-skt="erase" class="${SKB.tool === 'erase' ? 'on' : ''}" data-tip="Eraser: rubs out the parts of strokes it passes over" aria-label="Eraser">${ic('erase')}</button><i class="sep"></i>
-      ${DZ_SK_SHAPES.map(([k, l]) => `<button data-skt="sh:${k}" class="${SKB.tool === 'shape' && SKB.sh === k ? 'on' : ''}" data-tip="${l}: drag to draw" aria-label="${l}">${ic(k)}</button>`).join('')}
-      ${SKB.tool === 'shape' && (SKB.sh === 'rect' || SKB.sh === 'ellipse') ? `<button data-skfill class="${SKB.fill ? 'on' : ''}" data-tip="${SKB.fill ? 'Filled' : 'Outline only'}: tap to switch" aria-label="Fill">${ic('fill')}</button>` : ''}
-      <button data-skt="text" class="${SKB.tool === 'text' ? 'on' : ''}" data-tip="Text: tap where it goes, then type" aria-label="Text">${ic('text')}</button>
-      <button data-skt="mm" class="${SKB.tool === 'mm' ? 'on' : ''}" data-tip="Mind map: tap to place an idea, then drag its + to add linked ones" aria-label="Mind map node">${ic('mm')}</button>
-      <button data-skt="ifn" class="${SKB.tool === 'ifn' ? 'on' : ''}" data-tip="If: a question with a Yes and a No branch" aria-label="If node">${ic('ifn')}</button><i class="sep"></i>
-      <label class="sk-size" data-tip="${SKB.tool === 'text' ? 'Text size' : SKB.tool === 'shape' ? 'Line width' : 'Size'}"><input type="range" min="1" max="${sizeMax()}" step="1" value="${sizeOf()}" data-sks><b>${sizeOf()}</b></label>
-      ${SKB.tool === 'brush' || SKB.tool === 'erase' ? `<label class="sk-size sk-op" data-tip="${SKB.tool === 'erase' ? 'Eraser strength: below 100% it fades what it passes over' : 'Opacity'}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><input type="range" min="5" max="100" step="1" value="${opOf()}" data-sko><b>${opOf()}%</b></label>` : ''}
-      ${SKB.tool === 'brush' ? `<button data-skpop="steady" class="${SKB.pop === 'steady' ? 'on' : ''} ${SKB.lazy || SKB.smooth ? 'set' : ''}" data-tip="Steady lines: lazy and smoothness" aria-label="Steady lines">${ic('steady')}</button>` : ''}
-      <button data-skpop="col" class="sk-colbtn ${SKB.pop === 'col' ? 'on' : ''}" data-tip="Colour and swatch panels" aria-label="Colour"><i style="background:${SKB.c}"></i></button>`;
+    const bLabel = () => DZ_BRUSHES.find(x => x[0] === SKB.b)?.[1] || 'Brush', sLabel = () => DZ_SK_SHAPES.find(x => x[0] === SKB.sh)?.[1] || 'Shape';
+    const B = (attr, on, tip, inner, cls = '') => `<button ${attr} class="dz-ib ${on ? 'on' : ''} ${cls}" data-tip="${tip}" aria-label="${tip}">${inner}</button>`;
+    const drawBar = () => { if (!bar) return;
+      bar.innerHTML = B('data-skt="sel"', !SKB.tool, 'Select and move (drawing off)', ic('sel'))
+        + B('data-skt="lasso"', SKB.tool === 'lasso', 'Lasso: draw round things to select them', ic('lasso'))
+        + B('data-skcombo="brush"', SKB.tool === 'brush', `${bLabel()}: tap again for the other brushes`, ic(SKB.b) + '<i class="sk-more"></i>', SKB.pop === 'brush' ? 'open' : '')
+        + B('data-skt="erase"', SKB.tool === 'erase', 'Eraser: rubs out (or, below 100% strength, fades) what it passes over', ic('erase'))
+        + B('data-skcombo="shape"', SKB.tool === 'shape', `${sLabel()}: tap again for the other shapes`, ic(SKB.sh) + '<i class="sk-more"></i>', SKB.pop === 'shape' ? 'open' : '')
+        + B('data-skt="text"', SKB.tool === 'text', 'Text: tap where it goes, then type', ic('text'))
+        + B('data-skt="mm"', SKB.tool === 'mm', 'Mind map: tap to place an idea, then drag its + to add linked ones', ic('mm'))
+        + B('data-skt="ifn"', SKB.tool === 'ifn', 'If: a question with a Yes and a No branch', ic('ifn'))
+        + '<i class="sep"></i>'
+        + B('data-skpop="size"', SKB.pop === 'size', `${SKB.tool === 'text' ? 'Text size' : SKB.tool === 'shape' ? 'Line width' : 'Size'}${SKB.tool === 'brush' || SKB.tool === 'erase' ? ' and ' + (SKB.tool === 'erase' ? 'strength' : 'opacity') : ''} (or three fingers: up and down, left and right)`, `<b class="sk-num">${sizeOf()}</b>`)
+        + (SKB.tool === 'brush' ? B('data-skpop="steady"', SKB.pop === 'steady', 'Steady lines: lazy and smoothness', ic('steady'), SKB.lazy || SKB.smooth ? 'set' : '') : '')
+        + B('data-skpop="col"', SKB.pop === 'col', 'Colour and swatch panels', `<i class="sk-dot" style="background:${SKB.c}"></i>`);
       drawPop(); stage.classList.toggle('sk-drawing', !!SKB.tool); };
-    /* the pop-ups above the bar: colours (with swatch panels), and steadiness (lazy and smoothness) */
+    /* pop-outs beside the strip: brushes, shapes, size and opacity, steadiness, colours */
     const pop = document.createElement('div'); pop.className = 'sk-pop'; pop.hidden = true; stage.appendChild(pop);
     const drawPop = () => { const P = pals(), cols = palCols(), own = SKB.pal >= 0; pop.hidden = !SKB.pop; if (!SKB.pop) { pop.innerHTML = ''; return; }
-      if (SKB.pop === 'steady') pop.innerHTML = `<div class="sk-pop-h">Steady lines</div>
+      const row = (k, l, on, tip) => `<button data-skt="${k}" class="sk-pi ${on ? 'on' : ''}" ${tip ? `data-tip="${tip}"` : ''}>${ic(k.replace('sh:', ''))}<span>${l}</span></button>`;
+      if (SKB.pop === 'brush') pop.innerHTML = `<div class="sk-pop-h">Brushes</div><div class="sk-plist">${DZ_BRUSHES.map(([k, l]) => row(k, l, SKB.tool === 'brush' && SKB.b === k)).join('')}</div>`;
+      else if (SKB.pop === 'shape') pop.innerHTML = `<div class="sk-pop-h">Shapes</div><div class="sk-plist">${DZ_SK_SHAPES.map(([k, l]) => row('sh:' + k, l, SKB.tool === 'shape' && SKB.sh === k)).join('')}</div>
+        <label class="toggle" style="margin-top:4px"><input type="checkbox" data-skfill2 ${SKB.fill ? 'checked' : ''}><span>Fill boxes and circles</span></label>`;
+      else if (SKB.pop === 'size') pop.innerHTML = `<div class="sk-pop-h">${SKB.tool === 'erase' ? 'Eraser' : SKB.tool === 'shape' ? sLabel() : SKB.tool === 'text' ? 'Text' : bLabel()}</div>
+        <label class="sk-sl"><span>${SKB.tool === 'text' ? 'Text size' : SKB.tool === 'shape' ? 'Line width' : 'Size'}</span><input type="range" min="1" max="${sizeMax()}" step="1" value="${sizeOf()}" data-sks><b>${sizeOf()}</b></label>
+        ${SKB.tool === 'brush' || SKB.tool === 'erase' || !SKB.tool ? `<label class="sk-sl"><span>${SKB.tool === 'erase' ? 'Strength' : 'Opacity'}</span><input type="range" min="5" max="100" step="1" value="${opOf()}" data-sko><b>${opOf()}%</b></label>` : ''}
+        <p class="sk-pop-n">On a touch screen: three fingers up or down for size, left or right for ${SKB.tool === 'erase' ? 'strength' : 'opacity'}.</p>`;
+      else if (SKB.pop === 'steady') pop.innerHTML = `<div class="sk-pop-h">Steady lines</div>
         <label class="sk-sl" data-tip="The pen pulls the line along on a string this long, so wobbles under it never reach the page"><span>Lazy</span><input type="range" min="0" max="100" step="1" value="${SKB.lazy}" data-skl="lazy"><b>${SKB.lazy}</b></label>
         <label class="sk-sl" data-tip="Evens out the line as you draw, and once more when you lift"><span>Smoothness</span><input type="range" min="0" max="100" step="1" value="${SKB.smooth}" data-skl="smooth"><b>${SKB.smooth}</b></label>
         <p class="sk-pop-n">For every brush. 0 and 0 draws exactly where the pen goes.</p>`;
       else pop.innerHTML = `<div class="sk-pop-h">Colour</div>
-      <select class="sk-pal" data-skp data-tip="Swatch panel" aria-label="Swatch panel"><option value="-1"${own ? '' : ' selected'}>Basic</option>${P.map((p, i) => `<option value="${i}"${SKB.pal === i ? ' selected' : ''}>${esc(p.n)}</option>`).join('')} data-skp data-tip="Swatch panel" aria-label="Swatch panel"><option value="-1"${own ? '' : ' selected'}>Basic</option>${P.map((p, i) => `<option value="${i}"${SKB.pal === i ? ' selected' : ''}>${esc(p.n)}</option>`).join('')}
+      <select class="sk-pal" data-skp aria-label="Swatch panel"><option value="-1"${own ? '' : ' selected'}>Basic</option>${P.map((p, i) => `<option value="${i}"${SKB.pal === i ? ' selected' : ''}>${esc(p.n)}</option>`).join('')}
         <option disabled>──────</option><option value="new">New panel…</option><option value="doc">Panel from this sketch’s colours</option>${own ? '<option value="ren">Rename this panel…</option><option value="del">Delete this panel</option>' : ''}</select>
       <span class="sk-cols">${cols.map(c => `<button data-skc="${c}" class="${SKB.c === c ? 'on' : ''}" style="background:${c}" aria-label="Colour ${c}"${own ? ' data-tip="Hold or right-click to take it off the panel"' : ''}></button>`).join('')}${own ? `<button data-skadd class="sk-add" data-tip="Add the current colour to this panel" aria-label="Add colour">${ic('plus')}</button>` : ''}<label class="sk-cust ${cols.includes(SKB.c) ? '' : 'on'}" data-tip="Any colour" style="${cols.includes(SKB.c) ? '' : `background:${SKB.c}`}"><input type="color" value="${SKB.c}" data-skcc></label></span>`;
-      const b = bar.querySelector(`[data-skpop="${SKB.pop}"]`), sr = stage.getBoundingClientRect(), br = b?.getBoundingClientRect();
-      if (br) pop.style.left = Math.max(8, Math.min(sr.width - pop.offsetWidth - 8, br.left + br.width / 2 - sr.left - pop.offsetWidth / 2)) + 'px'; };
+      /* beside the button that opened it, kept on screen */
+      const b = bar.querySelector(`[data-skpop="${SKB.pop}"], [data-skcombo="${SKB.pop}"]`), sr = stage.getBoundingClientRect(), br = b?.getBoundingClientRect();
+      if (br) { pop.style.left = br.right - sr.left + 8 + 'px'; pop.style.bottom = 'auto'; pop.style.top = Math.max(8, Math.min(sr.height - pop.offsetHeight - 8, br.top - sr.top - 8)) + 'px'; } };
     drawBar();
     const onBoth = (ev, fn) => { bar.addEventListener(ev, fn); pop.addEventListener(ev, fn); };
     onBoth('click', (e) => { const pb = e.target.closest('[data-skpop]'); if (pb) { SKB.pop = SKB.pop === pb.dataset.skpop ? null : pb.dataset.skpop; return drawBar(); }
+      const cb = e.target.closest('[data-skcombo]'); if (cb) { const k = cb.dataset.skcombo, act = k === 'brush' ? SKB.tool === 'brush' : SKB.tool === 'shape';
+        if (!act) { SKB.tool = k; SKB.pop = null; select(null); keepB(); } else SKB.pop = SKB.pop === k ? null : k; return drawBar(); }
       const t = e.target.closest('[data-skt]'); if (t) { const v = t.dataset.skt; SKB.pop = null;
         if (v === 'sel') SKB.tool = null; else if (v === 'erase' || v === 'lasso' || v === 'text' || v === 'mm' || v === 'ifn') SKB.tool = SKB.tool === v ? null : v;
         else if (v.startsWith('sh:')) { SKB.tool = 'shape'; SKB.sh = v.slice(3); } else { SKB.tool = 'brush'; SKB.b = v; }
         if (SKB.tool) { select(null); } keepB(); return drawBar(); }
       if (e.target.closest('[data-skfill]')) { SKB.fill = !SKB.fill; keepB(); return drawBar(); }
+      if (e.target.closest('[data-skfill2]')) { SKB.fill = e.target.closest('[data-skfill2]').checked; keepB(); return; }
       if (e.target.closest('[data-skadd]')) { const P = pals(), p = P[SKB.pal]; if (p && !p.c.includes(SKB.c)) { p.c.push(SKB.c); keepPals(P); } return drawBar(); }
       const c = e.target.closest('[data-skc]'); if (c) { SKB.c = c.dataset.skc; if (!SKB.tool || SKB.tool === 'lasso' || SKB.tool === 'erase') SKB.tool = 'brush'; keepB(); drawBar(); } });
     /* hold (or right-click) a colour on your own panel to take it off */
@@ -4989,7 +5010,7 @@ DZ.edit = async (id) => {
       const P = pals(), p = P[SKB.pal]; if (!p) return; p.c = p.c.filter(x => x !== c.dataset.skc); keepPals(P); drawBar(); toast('Colour taken off the panel.', 1400); });
     onBoth('input', (e) => { const sl = e.target.dataset.skl; if (sl) { SKB[sl] = +e.target.value; e.target.nextElementSibling.textContent = e.target.value; bar.querySelector('[data-skpop="steady"]')?.classList.toggle('set', !!(SKB.lazy || SKB.smooth)); return; }
       if (e.target.dataset.sko != null) { setOp(+e.target.value); e.target.nextElementSibling.textContent = e.target.value + '%'; return; }
-      if (e.target.dataset.sks != null) { const v = +e.target.value;
+      if (e.target.dataset.sks != null) { const v = +e.target.value; const nb = bar.querySelector('.sk-num'); if (nb) nb.textContent = v;
       if (SKB.tool === 'erase') SKB.er = v; else if (SKB.tool === 'shape') SKB.shs = v; else if (SKB.tool === 'text') SKB.ts = v; else SKB.sizes[SKB.b] = v; e.target.nextElementSibling.textContent = v; } });
     onBoth('change', async (e) => { if (e.target.dataset.sks != null || e.target.dataset.skl || e.target.dataset.sko != null) keepB();
       if (e.target.dataset.skcc != null) { SKB.c = e.target.value; if (!SKB.tool || SKB.tool === 'lasso' || SKB.tool === 'erase') SKB.tool = 'brush'; keepB(); drawBar(); }
@@ -5032,7 +5053,9 @@ DZ.edit = async (id) => {
       if (last && Math.hypot(p.x - last[0], p.y - last[1]) * k < 1.2) return;
       S.pts.push([p.x, p.y, pressOf(e, q)]); S.q = { sx: e.clientX, sy: e.clientY, st: e.timeStamp }; };
     /* A dragged shape from a to b: boxes and circles are shapes (with Shift, square); lines and arrows are pen strokes in the current brush. */
-    const skShape = (a, b) => { let x0 = Math.min(a[0], b[0]), y0 = Math.min(a[1], b[1]), w = Math.abs(b[0] - a[0]), h = Math.abs(b[1] - a[1]);
+    const skGrid = (q) => { const r = gridPt({ x: q[0], y: q[1] }); return [r.x, r.y, q[2]]; };   /* a point on the grid, when Snap to the grid is on */
+    const skShape = (a0, b0) => { const a = skGrid(a0); let b = skGrid(b0); if (SKB.sh === 'line' || SKB.sh === 'arrow') { const pp = perspPt({ x: a[0], y: a[1] }, { x: b[0], y: b[1] }); b = [pp.x, pp.y, b[2]]; }
+      let x0 = Math.min(a[0], b[0]), y0 = Math.min(a[1], b[1]), w = Math.abs(b[0] - a[0]), h = Math.abs(b[1] - a[1]);
       if (Math.hypot(w, h) * k < 8) return null;
       if (SKB.sh === 'line' || SKB.sh === 'arrow') { const P = [[a[0], a[1], 0.8], [b[0], b[1], 0.8]];
         if (SKB.sh === 'arrow') { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), t = Math.atan2(b[1] - a[1], b[0] - a[0]), hl = Math.min(L * 0.3, Math.max(SKB.shs * 5, L * 0.12, 18 / k));
@@ -5042,14 +5065,14 @@ DZ.edit = async (id) => {
       return { shape: SKB.sh, x: x0, y: y0, w, h }; };
     /* inside a drawn loop (page points) */
     const inLoop = (L, x, y) => { let c = false; for (let i = 0, j = L.length - 1; i < L.length; j = i++) { const [xi, yi] = L[i], [xj, yj] = L[j]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; } return c; };
-    const holdCheck = () => { clearTimeout(S.ht); S.ht = setTimeout(() => { if (!S || S.erase || S.snap || S.mode !== 'brush') return; const sn = dzInkSnap(S.pts); if (sn) { S.snap = sn; navigator.vibrate?.(12); drawLive(); } }, 480); };
+    const holdCheck = () => { clearTimeout(S.ht); S.ht = setTimeout(() => { if (!S || S.erase || S.snap || S.mode !== 'brush') return; const sn = dzInkSnap(S.pts); if (sn) { if (sn.kind === 'line' && gSnap()) { sn.pts[0] = skGrid(sn.pts[0]); const pp = perspPt({ x: sn.pts[0][0], y: sn.pts[0][1] }, gridPt({ x: sn.pts[1][0], y: sn.pts[1][1] })); sn.pts[1] = [pp.x, pp.y, sn.pts[1][2]]; } S.snap = sn; navigator.vibrate?.(12); drawLive(); } }, 480); };
     /* Finger gestures (touch only), like painting apps: three fingers up or down change the size, left or right the
        opacity, of the brush (or eraser); a quick two-finger tap undoes, a three-finger tap redoes. */
     { const T = new Map(); let tap = null, G = null, hudT = 0;
       const hud = document.createElement('div'); hud.className = 'sk-hud'; hud.hidden = true; stage.appendChild(hud);
       const say = (s0, stay) => { hud.textContent = s0; hud.hidden = false; clearTimeout(hudT); if (!stay) hudT = setTimeout(() => { hud.hidden = true; }, 700); };
       const cen = () => { let x = 0, y = 0; for (const p of T.values()) { x += p.x; y += p.y; } return { x: x / T.size, y: y / T.size }; };
-      stage.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch' || e.target.closest('.sk-bar, .sk-pop')) return; T.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      stage.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch' || e.target.closest('.sk-rail, .sk-pop, .dz-rail')) return; T.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (T.size === 1) tap = { t0: e.timeStamp, max: 1, moved: false, at: new Map() }; if (tap) { tap.max = Math.max(tap.max, T.size); tap.at.set(e.pointerId, { x: e.clientX, y: e.clientY }); }
         if (T.size === 3) { if (S) { clearTimeout(S.ht); S = null; drawLive(); } G = { c0: cen(), axis: null, s0: sizeOf(), o0: opOf() }; }
         if (T.size >= 3) e.stopImmediatePropagation(); }, true);
@@ -5066,8 +5089,8 @@ DZ.edit = async (id) => {
         if (t && !t.moved && e.timeStamp - t.t0 < 320 && e.type === 'pointerup') { if (t.max === 2) { undo(-1); say('Undo'); } else if (t.max === 3) { undo(1); say('Redo'); } } };
       stage.addEventListener('pointerup', up, true); stage.addEventListener('pointercancel', up, true); }
     stage.addEventListener('pointerdown', (e) => {
-      if (SKB.pop && !e.target.closest('.sk-pop, .sk-bar')) { SKB.pop = null; drawBar(); }
-      if (!SKB.tool || e.button > 0 || e.target.closest('.sk-bar, .sk-pop, .dz-zoom, .dz-faces, .dz-rail, .dz-pop, .dz-mods, .dz-xf')) return;
+      if (SKB.pop && !e.target.closest('.sk-pop, .sk-rail')) { SKB.pop = null; drawBar(); }
+      if (!SKB.tool || e.button > 0 || e.target.closest('.sk-rail, .sk-pop, .dz-zoom, .dz-faces, .dz-rail, .dz-pop, .dz-mods, .dz-xf')) return;
       if (pts.size >= 2) { if (S) { S = null; drawLive(); } return; }   /* a second finger: pinch, not ink */
       if (fingerOnly(e)) return;
       e.stopImmediatePropagation(); e.preventDefault(); try { stage.setPointerCapture(e.pointerId); } catch {}
@@ -5075,7 +5098,7 @@ DZ.edit = async (id) => {
     stage.addEventListener('pointermove', (e) => { if (!S || e.pointerId !== S.id) return; if (pts.size >= 2) { clearTimeout(S.ht); S = null; return drawLive(); }
       e.stopImmediatePropagation();
       if (S.mode === 'shape' || S.mode === 'text' || S.mode === 'mm' || S.mode === 'ifn') { const p = pgPt(e.clientX, e.clientY); S.pts[1] = [p.x, p.y, 0.8]; S.sq = e.shiftKey; return drawLive(); }
-      if (S.snap) { if (S.snap.kind === 'line') { const p = pgPt(e.clientX, e.clientY); S.snap.pts[1] = [p.x, p.y, 0.7]; drawLive(); } return; }   /* after a snap, a line's end still follows */
+      if (S.snap) { if (S.snap.kind === 'line') { const p0 = S.snap.pts[0], p = perspPt({ x: p0[0], y: p0[1] }, gridPt(pgPt(e.clientX, e.clientY))); S.snap.pts[1] = [p.x, p.y, 0.7]; drawLive(); } return; }   /* after a snap, a line's end still follows */
       const co = e.getCoalescedEvents?.(); for (const ce of co?.length ? co : [e]) addPt(ce);   /* every pen sample, where the browser gives them */
       if (Math.hypot(e.clientX - S.hx, e.clientY - S.hy) > 6) { S.hx = e.clientX; S.hy = e.clientY; holdCheck(); }
       drawLive(); }, true);
@@ -5087,13 +5110,25 @@ DZ.edit = async (id) => {
         add({ t: 'text', text: 'Text', size: z0, font: '@2', c: SKB.c, al: 'left', lh: 1.2, x: q[0], y: q[1] - z0 * 0.6, w: z0 * 3, h: z0 * 1.2 });
         setTimeout(() => { const ta = side.querySelector('.dz-text'); if (ta) { ta.focus(); ta.select(); } }, 60); return; }
       if (s0.mode === 'shape') { const sh = s0.pts.length > 1 && skShape(s0.pts[0], s0.pts.at(-1)); if (!sh) return;
-        if (sh.ink) { doc.layers.push(dzInkMake({ b: SKB.b, c: SKB.c, s: SKB.shs }, sh.ink)); return changed(true); }
+        if (sh.ink) { skPut(dzInkMake({ b: SKB.b, c: SKB.c, s: SKB.shs }, sh.ink)); return changed(true); }
         return add({ t: 'shape', shape: sh.shape, r: 0, fill: SKB.fill ? SKB.c : 'none', stroke: SKB.fill ? 'none' : SKB.c, sw: SKB.fill ? 0 : SKB.shs, x: sh.x, y: sh.y, w: sh.w, h: sh.h }); }
       let P = s0.snap ? s0.snap.pts : s0.pts; if (!P.length) return;
       if (!s0.snap && SKB.smooth && !SKB.lazy && s0.raw && P.length > 1) { const z0 = P.at(-1); if (Math.hypot(s0.raw.x - z0[0], s0.raw.y - z0[1]) * k > 1.2) P = [...P, [s0.raw.x, s0.raw.y, z0[2]]]; }   /* the line reaches the pen */
       for (let pass = 0, np = 1 + Math.round(SKB.smooth / 25); !s0.snap && P.length > 4 && pass < np; pass++)
         P = P.map((q, i) => i === 0 || i === P.length - 1 ? q : [(P[i - 1][0] + q[0] + P[i + 1][0]) / 3, (P[i - 1][1] + q[1] + P[i + 1][1]) / 3, q[2]]);   /* more passes with more smoothness */
-      doc.layers.push(dzInkMake({ b: SKB.b, c: SKB.c, s: sizeOf(), op: opOf() < 100 ? opOf() / 100 : undefined }, P)); changed(true); };
+      if (gSnap() && P.length > 1 && (!s0.snap || s0.snap.kind === 'line')) { P = [...P]; const A = skGrid(P[0]), Z = skGrid(P.at(-1));   /* the ends on the grid, the stroke eased to meet them */
+        const dA = [A[0] - P[0][0], A[1] - P[0][1]], dZ = [Z[0] - P.at(-1)[0], Z[1] - P.at(-1)[1]], n = P.length - 1;
+        P = P.map((q, i) => { const t = i / n; return [q[0] + dA[0] * (1 - t) + dZ[0] * t, q[1] + dA[1] * (1 - t) + dZ[1] * t, q[2]]; }); }
+      skPut(dzInkMake({ b: SKB.b, c: SKB.c, s: sizeOf(), op: opOf() < 100 ? opOf() / 100 : undefined }, P)); changed(true); };
+    /* One layer (Layers › Draw on one layer): every stroke joins the "Drawing" group, kept together and folded, so
+       Layers shows one row instead of one per stroke; it sits where the group is, under anything placed above it. */
+    const skGroup = () => { doc.groups ||= {}; if (!doc.skG || !doc.groups[doc.skG]) { doc.skG = dzId(); doc.groups[doc.skG] = { name: 'Drawing', shut: true }; } return doc.skG; };
+    const skPut = (l) => { if (doc.skOne === false) return doc.layers.push(l); const G = skGroup(); l.g = G; let at = -1; doc.layers.forEach((x, i) => { if (x.g === G) at = i; });
+      if (at < 0) doc.layers.push(l); else doc.layers.splice(at + 1, 0, l); };
+    const skOneSet = (on) => { doc.skOne = on; if (on) { const G = skGroup(), ink = doc.layers.filter(l => l.t === 'ink' && !l.lock), last = Math.max(-1, ...ink.map(l => doc.layers.indexOf(l)));
+        if (ink.length) { const rest = doc.layers.filter(l => !ink.includes(l)), pos = rest.filter(l => doc.layers.indexOf(l) < last).length; ink.forEach(l => { l.g = G; }); rest.splice(pos, 0, ...ink); doc.layers = rest; } }
+      changed(true); drawSide(); toast(on ? 'New strokes go on one layer: Drawing.' : 'Each stroke gets its own layer again.', 2000); };
+    side.addEventListener('change', (e) => { if (e.target.dataset.skone != null) skOneSet(e.target.checked); });
     stage.addEventListener('pointerup', finish, true); stage.addEventListener('pointercancel', (e) => { if (S && e.pointerId === S.id) { clearTimeout(S.ht); S = null; drawLive(); } }, true);
     /* The lasso picks what it goes round: a stroke when most of it is inside, anything else when its middle is. Then it's the Select tool, to move, size, turn, copy or delete them. */
     const skLasso = (L) => { if (L.length < 3) return;
@@ -5111,7 +5146,7 @@ DZ.edit = async (id) => {
         if (keep.every(Boolean)) { out.push(l); continue; } hit = true;
         /* runs the eraser missed stay as they were; runs it passed over go, or fade with a soft eraser */
         const eo = (SKB.eop ?? 100) / 100, o0 = l.op ?? 1; let run = [], cur = null;
-        const emit = () => { if (run.length > 1) { const o = cur ? o0 : o0 * (1 - eo); if (cur || o > 0.03) out.push(dzInkMake({ b: l.b, c: l.c, s: l.s, op: o >= 0.999 ? undefined : Math.round(o * 1000) / 1000 }, run)); } };
+        const emit = () => { if (run.length > 1) { const o = cur ? o0 : o0 * (1 - eo); if (cur || o > 0.03) out.push({ ...dzInkMake({ b: l.b, c: l.c, s: l.s, op: o >= 0.999 ? undefined : Math.round(o * 1000) / 1000 }, run), ...(l.g ? { g: l.g } : {}) }); } };
         dense.forEach((q, i) => { const k = keep[i]; if (cur === null) cur = k; if (k !== cur) { const last = run.at(-1); emit(); run = last && eo < 1 ? [last] : []; cur = k; } run.push(q); }); emit(); }
       if (hit) { doc.layers = out; changed(true); } };
     addEventListener('resize', () => { if (stage.isConnected) drawLive(); });
@@ -5165,7 +5200,7 @@ DZ.edit = async (id) => {
     dzLay = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; if (!stage.isConnected) return;
       const S0 = stage.getBoundingClientRect(); if (!S0.width) return;
       const zoom = stage.querySelector('.dz-zoom'), mods = $('#dz-mods'), xf = $('#dz-xf'), rail = $('#dz-rail'), sbar = $('#sk-bar'), spop = stage.querySelector('.sk-pop'), sd = $('#dz-side');
-      const SR = vis(sd) ? sd.getBoundingClientRect() : null, wide = S0.width > 700, G = 8;
+      const SR = vis(sd) ? sd.getBoundingClientRect() : null, wide = innerWidth > 700, G = 8;   /* the CSS switches layouts by the window's width, so this does too */
       const sideR = SR && SR.left > S0.left + S0.width * 0.4 && SR.top < S0.bottom - 40 && SR.bottom > S0.top + 40 ? SR : null;   /* docked on the right */
       const sideB = SR && !sideR && SR.top < S0.bottom && SR.top > S0.top ? SR : null;   /* a sheet from the bottom */
       const right = sideR ? sideR.left - S0.left - G : S0.width - 10, floor = sideB ? S0.bottom - sideB.top + G : 10;
@@ -5180,13 +5215,16 @@ DZ.edit = async (id) => {
         const Zb = vis(zoom) ? zoom.getBoundingClientRect() : null;
         for (const el of [mods, xf]) { if (!vis(el)) continue; const E = el.getBoundingClientRect(); if (hit(E, Zb)) y = Math.max(y, Zb.bottom - S0.top + 6);
           set(el, { top: y + 'px', bottom: 'auto' }); y += el.offsetHeight + 6; }
-        if (vis(rail)) { const top = rail.getBoundingClientRect().top - S0.top; set(rail, { maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'none' }); }
+        if (vis(rail)) { const top = rail.getBoundingClientRect().top - S0.top; set(rail, { maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'none', flexWrap: 'nowrap' }); }
         return; }
       for (const el of [zoom, mods, xf]) { if (!vis(el)) continue; set(el, { left: '10px', right: 'auto', top: 'auto', bottom: base + 'px' }); base += el.offsetHeight + 6; }
-      if (vis(rail)) { const top = rail.getBoundingClientRect().top - S0.top; set(rail, { maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'none' }); } }); };
+      if (vis(rail)) { const top = rail.getBoundingClientRect().top - S0.top; set(rail, { maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'none', flexWrap: 'nowrap' }); } }); };
     if ('ResizeObserver' in window) { const ro = new ResizeObserver(() => dzLay()); ro.observe(stage);
       setTimeout(() => { for (const el of [stage.querySelector('.dz-zoom'), $('#dz-mods'), $('#dz-xf'), $('#dz-side'), $('#sk-bar'), stage.querySelector('.sk-pop')]) if (el) ro.observe(el); dzLay(); }, 0); }
     addEventListener('resize', () => dzLay());
+    /* full screen settles over a few frames: fit again once it has */
+    for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(ev, () => { dzLay(); setTimeout(dzLay, 120); setTimeout(dzLay, 400); });
+    if ('ResizeObserver' in window) setTimeout(() => { const r = $('#dz-rail'); if (r) new ResizeObserver(() => dzLay()).observe(r); }, 0);
   }
   stage.addEventListener('pointerdown', (e) => {
     if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-xf, .dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop, .dz-notebar, [data-rf]')) return;
@@ -5610,7 +5648,7 @@ DZ.edit = async (id) => {
       if (e.key === 'Enter') { e.preventDefault(); return contApply(); }
       if (e.key === 'Escape') { endCont(); return drawSide(); }
     }
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && !cut && !nodes && !cont) {   // tool keys, as on the drawing board
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !cut && !nodes && !cont && !SK) {   // tool keys, as on the drawing board (a sketch has its own tools)
       const k1 = e.key.toLowerCase();
       if (k1 === 'o' && targets().length) { e.preventDefault(); return startCont(); }
       if (k1 === 'p') { e.preventDefault(); return startPen(); }
@@ -5881,6 +5919,18 @@ DZ.edit = async (id) => {
   xfB.addEventListener('change', (e) => { if (e.target.hasAttribute('data-unit')) return sideChange(e); if (e.target.dataset.xf) { changed(true); drawXf(); } });
   const ctxB = $('#dz-ctx');
   ctxB.addEventListener('click', (e) => { const fb = e.target.closest('.dz-fpick'); if (fb) fontMenu(fb); });
+  /* The text size slider, under the size box: from small print up to half the page, in steps that suit the size. */
+  ctxB.addEventListener('click', (e) => { const b = e.target.closest('[data-csz]'); if (!b) return; e.preventDefault(); e.stopPropagation();
+    let o = $('#dz-szpop'); if (o) { o.remove(); return; } const l = layer(); if (!l || !('size' in l)) return;
+    const mx = Math.max(200, Math.round(Math.min(doc.w, doc.h) * 0.5)), toV = (t) => Math.round(6 * Math.pow(mx / 6, t / 1000)), toT = (v) => Math.round(Math.log(Math.max(6, v) / 6) / Math.log(mx / 6) * 1000);
+    o = document.createElement('div'); o.id = 'dz-szpop'; o.className = 'dz-szpop';
+    o.innerHTML = `<input type="range" min="0" max="1000" step="1" value="${toT(l.size)}" aria-label="Text size"><b>${Math.round(l.size)}</b>`;
+    document.body.appendChild(o); const r = b.closest('.dz-cnum').getBoundingClientRect(); o.style.left = Math.max(8, Math.min(innerWidth - 248, r.left)) + 'px'; o.style.top = r.bottom + 6 + 'px';
+    const inp = b.closest('.dz-cnum').querySelector('input'), sl = o.querySelector('input');
+    sl.oninput = () => { const L = layer(); if (!L) return; const v = Math.max(6, toV(+sl.value)); L.size = v; delete L._bx; o.querySelector('b').textContent = v; const cur = $('#dz-ctx [data-ck="size"]'); if (cur) cur.value = v; changed(); };
+    sl.onchange = () => changed(true);
+    const shut = (ev) => { if (ev.target.closest('#dz-szpop, [data-csz]')) return; o.remove(); removeEventListener('pointerdown', shut, true); };
+    addEventListener('pointerdown', shut, true); }, true);
   ctxB.addEventListener('click', async (e) => { if (e.target.closest('input, select, textarea, .dz-cnum')) return;   /* a box or dropdown: redrawing the strip would throw the click away */
     const iso = e.target.closest('[data-iso]'); if (iso) return isoAct(layer(), iso.dataset.iso);
     if (e.target.closest('[data-chrole]')) return chOpen('role');
@@ -6666,6 +6716,13 @@ DZ.edit = async (id) => {
   const gIdx = () => { const T = doc.grid?.type; return T === 'p1' || T === 'radial' ? [0] : T === 'p2' ? [1, 2] : T === 'p3' ? [1, 2, 3] : []; };
   function gridSteps() { if (!gSnap()) return null; const T = doc.grid.type || 'square', g = gStep();
     return T === 'square' ? { x: g, y: g } : T === 'iso' ? { x: g * Math.cos(Math.PI / 6), y: 0 } : T === 'p1' || T === 'p2' ? { x: g, y: 0 } : null; }
+  /* The nearest grid point (square: the line crossings; isometric: where the slanted lines cross), through the grid's
+     origin; perspective and radial grids give back the point as it is. */
+  function gridPt(p) { if (!gSnap()) return p; const G = doc.grid, T = G.type || 'square', g = gStep(), ox = G.ox || 0, oy = G.oy || 0;
+    if (T === 'square') return { ...p, x: ox + Math.round((p.x - ox) / g) * g, y: oy + Math.round((p.y - oy) / g) * g };
+    if (T === 'iso') { const t30 = Math.tan(Math.PI / 6), st2 = g / Math.cos(Math.PI / 6), m = Math.round((p.x - ox) / g), kk = Math.round((p.y - oy - m * g * t30) / st2);
+      return { ...p, x: ox + m * g, y: oy + kk * st2 + m * g * t30 }; }
+    return p; }
   // A pen line near a grid direction from the last point runs exactly along it.
   function perspPt(from, p) { if (!gSnap()) return p; const T = doc.grid.type || 'square'; if (T === 'square') return p;
     const dirs = []; if (T === 'iso') dirs.push(Math.PI / 6, -Math.PI / 6, Math.PI / 2); if (T === 'p1') dirs.push(0, Math.PI / 2); if (T === 'p2') dirs.push(Math.PI / 2);
@@ -6681,11 +6738,13 @@ DZ.edit = async (id) => {
     const x = c.getContext('2d'), s = k * dpr, g = gStep(), T = G.type || 'square'; x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cw, ch); x.setTransform(s, 0, 0, s, 0, 0);
     const line = (a, b) => { x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); }, span = Math.hypot(W, H) * 2;
     const op = G.op ?? 0.45; x.lineWidth = 1 / s; x.strokeStyle = `rgba(31,182,166,${op})`; x.beginPath();
-    if (T === 'square' || T === 'p1' || T === 'p2') for (let v = g; v < W; v += g) line({ x: v, y: 0 }, { x: v, y: H });
-    if (T === 'square') for (let v = g; v < H; v += g) line({ x: 0, y: v }, { x: W, y: v });
-    if (T === 'iso') { const t30 = Math.tan(Math.PI / 6), st2 = g / Math.cos(Math.PI / 6);
-      for (let q = -W * t30 - H; q < H + W * t30; q += st2) { line({ x: 0, y: q }, { x: W, y: q + W * t30 }); line({ x: 0, y: q + W * t30 }, { x: W, y: q }); }
-      for (let v = 0; v < W; v += g * Math.cos(Math.PI / 6)) line({ x: v, y: 0 }, { x: v, y: H }); }
+    const ox = G.ox || 0, oy = G.oy || 0, md = (a, m) => ((a % m) + m) % m;   /* the grid's origin (a sketch's moves as its page grows) */
+    if (T === 'square' || T === 'p1' || T === 'p2') for (let v = md(ox, g); v < W; v += g) if (v > 0.5) line({ x: v, y: 0 }, { x: v, y: H });
+    if (T === 'square') for (let v = md(oy, g); v < H; v += g) if (v > 0.5) line({ x: 0, y: v }, { x: W, y: v });
+    if (T === 'iso') { const t30 = Math.tan(Math.PI / 6), st2 = g / Math.cos(Math.PI / 6), gc = g * Math.cos(Math.PI / 6), C = [[0, 0], [W, 0], [0, H], [W, H]];
+      for (const s0 of [1, -1]) { const qs = C.map(([cx, cy]) => cy - oy - s0 * (cx - ox) * t30), lo = Math.floor(Math.min(...qs) / st2) * st2, hi = Math.max(...qs);
+        for (let q = lo; q <= hi; q += st2) line({ x: 0, y: oy + q + s0 * (0 - ox) * t30 }, { x: W, y: oy + q + s0 * (W - ox) * t30 }); }
+      for (let v = md(ox, gc); v < W; v += gc) line({ x: v, y: 0 }, { x: v, y: H }); }
     const vps = gVps(), rays = Math.max(8, Math.min(72, Math.round(300 / (+G.size || 10))));
     if (T === 'radial') { const o = vps[0]; for (let r = g; r < span / 2; r += g) { x.moveTo(o.x + r, o.y); x.arc(o.x, o.y, r, 0, Math.PI * 2); }
       for (let i = 0; i < rays; i++) { const a = Math.PI * 2 * i / rays; line(o, { x: o.x + Math.cos(a) * span, y: o.y + Math.sin(a) * span }); } }
@@ -6935,7 +6994,7 @@ DZ.edit = async (id) => {
     ...AL.map(([a, tp, ic]) => ['al:' + a, ic, 'Align: ' + tp]), ...['add', 'subtract', 'intersect', 'contour'].map(v => ['bool:' + v, DZ_BOOL_ICON[v], { add: 'Add: weld into one outline', subtract: 'Subtract', intersect: 'Intersect', contour: 'Contour' }[v]])];
   const DQ_DEF = ['select', 'text', 'image', 'shape', 'undo', 'redo'], DQ_CMAX = 8, DQ_FMAX = 5;
   const dqIcon = (ic) => String(ic).startsWith('<svg') ? ic : `<svg viewBox="0 0 24 24">${DZ_UI[ic] || ic}</svg>`;
-  const dqList = () => { try { const a = JSON.parse(Settings.get('dz_strip', 'null')); return Array.isArray(a) ? a : DQ_DEF; } catch { return DQ_DEF; } };
+  const dqList = () => { let a; try { a = JSON.parse(Settings.get('dz_strip', 'null')); } catch {} a = Array.isArray(a) ? a : DQ_DEF; return SK ? a.filter(id => !['select', 'text', 'shape', 'pen', 'pencil', 'nodes'].includes(id)) : a; };
   const dqFont = (v) => { const s = document.createElement('select'); s.innerHTML = fontOpts(v); return s.selectedOptions[0]?.textContent || v; };
   function dqDraw() { const el = $('#dz-qstrip'); if (!el) return; let last = '', fdone = false;
     const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc', grid: !!doc.grid?.on };

@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 534;
+const APP_BUILD = 535;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -10830,6 +10830,15 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 535, when: '2026-11-25T18:00', added: [
+    'Sketchpad: its own tools now sit in the left strip, with the brushes and the shapes each behind one button, and the bottom bar is gone.',
+    'Sketchpad: a new airbrush.',
+    'Sketchpad: the design studio’s vector pen, pencil, shapes, text, nodes and select are hidden in sketches, and the background is colour only.',
+    'Sketchpad: Draw on one layer (on by default, in Layers) keeps every stroke in one Drawing layer instead of one each.',
+    'Sketchpad: grids, isometric included, stay in place as the page grows, and Snap to the grid now works with brushes and shapes.',
+    'Design studio: the panels re-fit after going in or out of full screen instead of overlapping.',
+    'Design studio: a small arrow on the text size box opens a size slider.'
+  ] },
   { build: 534, when: '2026-11-25T13:00', added: [
     'Sketchpad: the eraser has a strength slider. Below 100% it fades what it passes over instead of cutting it.',
     'Sketchpad on touch screens: drag three fingers up or down to change the size, left or right to change the opacity.',
