@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 565;
+const APP_BUILD = 566;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -12312,6 +12312,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 566, when: '2026-11-27T10:00', added: [
+    'Sticky notes have the Sketchpad’s tools now: brushes, eraser, shapes, text and the mind map.',
+    'A sticky note’s colour, shortcuts, checklists, room, links and pinning are behind the note icon at the top of the tools, so the note gets the whole space.'
+  ] },
   { build: 565, when: '2026-11-27T09:00', added: [
     'Sticky notes: Add a shortcut has every app now, including Size sheet, Split for printing, Bend, Sketchpad, Vouchers, Loyalty and Day end, with sketches, forms and completed forms to pick too.',
     'Sticky note checklists can fill themselves: today’s sessions, rewards to send or vouchers to be paid, kept current on the pinned note.',

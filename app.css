@@ -1636,7 +1636,8 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .note-l { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px; background: rgba(0,0,0,.14); } .note-l a { font: 700 11px var(--ui); color: #111; background: rgba(255,255,255,.65); border-radius: 6px; padding: 3px 6px; text-decoration: none; }
 .note-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; } .note-row img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; } .note-row b { flex: 1; min-width: 0; }
 .note-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.dz-notebar { position: absolute; left: 60px; right: 10px; top: 10px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px; border-radius: 12px; background: rgba(15,18,19,.88); }
+.dz-notebar { position: absolute; left: 64px; top: 10px; width: min(264px, calc(100% - 80px)); z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px; border-radius: 14px; background: rgba(15,18,19,.96); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.45); }   /* the note's own fields: a pop-out behind its rail icon */
+.dz-notebar[hidden] { display: none; }
 .dz-notebar button { border: 0; border-radius: 7px; background: rgba(255,255,255,.08); color: var(--ink); font: 700 11px var(--ui); padding: 6px 8px; cursor: pointer; } .dz-notebar button.on { background: rgba(31,182,166,.28); color: var(--teal); }
 .dz-notebar .nc { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); } .dz-notebar .nc.on { outline: 2px solid var(--teal); outline-offset: 1px; }
 
@@ -3042,7 +3043,7 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 565; }
+:root { --app-build: 566; }
 
 /* ---------- Home screen: a slim header, the apps as a desktop, today, and one notices panel ----------
    On wide screens it keeps to a column on the left, so the rest is open for sticky notes. */
@@ -3077,11 +3078,3 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .home-notes .de-note.warn { border: 0; }
 .home .practice-note { margin: 0; }
 
-/* Sticky note editor on phones: the note's bar runs along the top and the floating strips line up under it */
-@media (max-width: 600px) {
-  .dz-notebar { left: 10px; }
-  .dz-stage:has(> .dz-notebar) .dz-qstrip, .dz-stage:has(> .dz-notebar) .dz-mods, .dz-stage:has(> .dz-notebar) .dz-zoom { top: calc(var(--nbh, 70px) + 16px) !important; }
-  .dz-stage:has(> .dz-notebar) .dz-rail { top: calc(var(--nbh, 70px) + 62px) !important; max-height: calc(100% - var(--nbh, 70px) - 72px) !important; }
-  .dz-stage:has(> .dz-notebar) .dz-qs, .dz-stage:has(> .dz-notebar) .dz-faces { top: calc(var(--nbh, 70px) + 62px) !important; }
-  .dz-stage:has(> .dz-notebar) .dz-xf { top: calc(var(--nbh, 70px) + 108px) !important; }
-}

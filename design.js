@@ -2643,11 +2643,12 @@ DZ.edit = async (id) => {
       <div class="dz-stage" id="dz-stage">
         <canvas id="dz-patcv" hidden></canvas><div class="tt-qs dz-qstrip" id="dz-qstrip"></div><div class="tt-refs dz-refs" id="dz-refs"></div>
         <div class="dz-rail" id="dz-rail">
-          ${doc.kind === 'sketch' ? '<div class="sk-rail" id="sk-tools"></div><i class="sep"></i>' : dzIB('data-rail="select"', 'select', 'Select and move') + dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
+          ${doc.kind === 'note' ? dzIB('data-rail="note"', '<path d="M5 3h14v12l-6 6H5z"/><path d="M13 21v-6h6"/><path d="M8 8h8M8 12h5"/>', 'Sticky note: colour, shortcuts, checklists, room, links and pinning') + '<i class="sep"></i>' : ''}
+          ${(doc.kind === 'sketch' || doc.kind === 'note') ? '<div class="sk-rail" id="sk-tools"></div><i class="sep"></i>' : dzIB('data-rail="select"', 'select', 'Select and move') + dzIB('data-rail="nodes"', 'nodes', 'Edit nodes (A): reshape a shape point by point. Or double-tap a shape.')}
           ${doc.kind === 'form' ? dzIB('data-rail="fields"', 'frametext', 'Form fields') : ''}
-          ${doc.kind === 'sketch' ? '' : dzIB('data-rail="text"', 'text', 'Text')}
+          ${(doc.kind === 'sketch' || doc.kind === 'note') ? '' : dzIB('data-rail="text"', 'text', 'Text')}
           ${dzIB('data-rail="image"', 'picture', 'Picture')}
-          ${doc.kind === 'sketch' ? '' : dzIB('data-rail="shape"', 'shape', 'Shape') + dzIB('data-add="pen"', 'pen', 'Pen (P)') + dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
+          ${(doc.kind === 'sketch' || doc.kind === 'note') ? '' : dzIB('data-rail="shape"', 'shape', 'Shape') + dzIB('data-add="pen"', 'pen', 'Pen (P)') + dzIB('data-add="pencil"', 'pencil', 'Pencil (N)')}
           ${doc.chal ? dzIB('data-rail="chal"', '<path d="M6 3h12v5a6 6 0 0 1-12 0z"/><path d="M12 14v4M8 21h8"/><path d="M9.5 7.5l1.6 1.6 3.4-3.4"/>', 'Challenge: instructions, palette, and play it in the simulator') : ''}
           ${doc.pat ? dzIB('data-rail="pattern"', '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="3" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><rect x="13" y="13" width="8" height="8" rx="1" stroke-dasharray="2 1.5"/><circle cx="7" cy="7" r="1.6"/>', 'Pattern: cell size, neighbours, fit, and save the tile') : ''}
           ${dzIB('data-rail="grid"', '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>', 'Grid and perspective, with snapping')}
@@ -2663,7 +2664,7 @@ DZ.edit = async (id) => {
         <i class="dz-guide v" hidden></i><i class="dz-guide hz" hidden></i></div>
         <div class="dz-xf" id="dz-xf" hidden></div>
         <div class="dz-faces" id="dz-faces"></div>
-        ${doc.kind === 'note' ? '<div class="dz-notebar" id="dz-notebar"></div>' : ''}
+        ${doc.kind === 'note' ? '<div class="dz-notebar" id="dz-notebar" hidden></div>' : ''}
         <div id="dz-qs" class="dz-qs" hidden><span class="dz-qs-what"></span><div class="dz-qs-row"><span>Yours</span><input type="range" min="0" max="100" step="1" value="50" aria-label="Closer to what you drew, or cleaner"><span>Cleaner</span></div><div class="dz-qs-row"><button class="btn small" data-qs="no" title="Put back the shape it snapped to">Cancel</button><button class="btn small primary" data-qs="ok">Keep</button></div></div><div id="dz-marq" hidden></div><div class="dz-mods" id="dz-mods" hidden><button data-mod="shift" title="Shift: straight lines, 45° steps, keep proportions">⇧ Shift</button><button data-mod="alt" title="Alt: break a handle, a sharp turn, move freely">⌥ Alt</button><button data-mod="ctrl" title="Ctrl: no snapping, pick several">Ctrl</button></div><div class="dz-zoom"><button data-z="out" aria-label="Zoom out">−</button><button data-z="fit" id="dz-zl" data-tip="${doc.kind === 'sketch' ? 'Show everything on the page' : 'Show the whole design'}">Fit</button><button data-z="in" aria-label="Zoom in">+</button>${doc.kind === 'sketch' ? '<button data-z="ctr" data-tip="Back to the middle of your work, at this zoom" aria-label="Centre">⌖</button><button data-z="rot0" id="dz-vrot" hidden data-tip="Turn the page straight again" aria-label="Straighten"><b>0°</b></button>' : ''}</div></div>
       <div class="dz-side" id="dz-side" hidden></div>
       <div class="dz-side dz-strip lm-thumb" id="dz-strip" hidden></div>
@@ -2684,8 +2685,8 @@ DZ.edit = async (id) => {
   // Canvas size: fit the page into the stage; drawn at device resolution for crisp text.
   /* View: zoom (z, 1 = the whole design fits) and pan (vx, vy, screen px from centred). */
   let fitK = 1, z = 1, vx = 0, vy = 0, rs = 1, crispT = null, vrot = 0, VW = null;   /* VW: the window of the page being drawn, when zoomed in */   /* vrot: a sketch's view can be turned (degrees) */
-  const SK = doc.kind === 'sketch';
-  const tb = () => doc.kind === 'note' ? ($('#dz-notebar')?.offsetHeight || 0) + 16 : doc.sides ? 48 : 0;   // room above the design for the page tabs, or a note's bar
+  const SK = doc.kind === 'sketch', SKT = SK || doc.kind === 'note';   /* SK: the page grows; SKT: the sketchpad's brushes, shapes and mind map */
+  const tb = () => doc.sides && doc.kind !== 'note' ? 48 : 0;   // room above the design for the page tabs, or a note's bar
   // Phones: the panel is a bottom sheet (up to 48% of the stage, or just its header when folded).
   const sheetH = (H) => innerWidth <= 700 && side && !side.hidden ? (side.classList.contains('min') ? 52 : Math.round(H * 0.48)) : 0;
   let sheetWas = 0;
@@ -2854,7 +2855,6 @@ DZ.edit = async (id) => {
   };
   /* Sticky note bar: colour, more or less room, quick links, pinned or hidden. */
   const noteBar = () => { const b = $('#dz-notebar'); if (!b) return; doc.note ||= { pin: false, links: [] };
-    requestAnimationFrame(() => b.parentElement?.style.setProperty('--nbh', b.offsetHeight + 'px'));   /* phones: the floating strips sit under the note's bar */
     b.innerHTML = DZ_NOTE_COLS.map(c => `<button class="nc ${doc.bg?.c === c ? 'on' : ''}" data-nc="${c}" style="background:${c}" aria-label="Note colour"></button>`).join('')
       + `<button data-na="short" class="add">+ Shortcut</button><button data-na="check" class="add">+ Checklist</button><button data-na="more">+ Room</button><button data-na="less">− Room</button><button data-na="links">Links${doc.note.links.length ? ' ' + doc.note.links.length : ''}</button><button data-na="pin" class="${doc.note.pin ? 'on' : ''}">${doc.note.pin ? 'Pinned' : 'Hidden'}</button>`
       + (doc.note.links.length ? `<div class="nb-links"><span>Links:</span>${doc.note.links.map(l => `<button data-na="links" data-tip="${esc(l.url || 'Change links')}">${esc(l.label || NOTE_SECTIONS.find(s => s[0] === l.go)?.[1] || l.go)}${l.url ? ' ↗' : ''}</button>`).join('')}</div>` : ''); requestAnimationFrame(() => fit(false)); };   /* next frame: on opening, the editor is still being set up */
@@ -2864,7 +2864,7 @@ DZ.edit = async (id) => {
     if (a === 'short' || a === 'check') { const y = doc.layers.length ? Math.max(...doc.layers.map(l => (l.y || 0) + (l.h || 0))) + 40 : 60;
       let l; if (a === 'short') { const p = await noteShortcutPick(); if (!p) return; l = { t: 'shortcut', ...p, x: 60, y, w: 780, h: 780 }; }
       else l = { t: 'check', title: 'To do', items: [], src: 'custom', size: 64, x: 40, y, w: 820, h: 300 };
-      l.h = l.t === 'check' ? dzCheckH(l) : l.h; if (y + l.h + 60 > doc.h) { doc.h = y + l.h + 60; fit(); } add(l); return; }
+      l.h = l.t === 'check' ? dzCheckH(l) : l.h; if (y + l.h + 60 > doc.h) { doc.h = y + l.h + 60; fit(); } closePop(); add(l); return; }   /* the panel steps aside for the new one's tools */
     if (a === 'links') { const l = await noteLinks(doc.note.links); if (l) { doc.note.links = l; changed(true); noteBar(); } return; }
     if (a === 'more' || a === 'less') { const low = Math.max(450, ...doc.layers.map(l => (l.y || 0) + (l.h || 0)));   // never cuts into what's on the note
       doc.h = a === 'more' ? doc.h + 450 : Math.max(low, doc.h - 450); if (a === 'less' && doc.h === low && low > 450) toast('That\u2019s as short as the note\u2019s contents allow.');
@@ -3102,7 +3102,7 @@ DZ.edit = async (id) => {
       full: ['All layer options', '<rect x="2" y="4" width="5" height="5" rx="1"/><rect x="2" y="15" width="5" height="5" rx="1"/><path d="M9 6.5h6M9 17.5h6"/><circle cx="18.5" cy="6.5" r="1.4"/><circle cx="18.5" cy="17.5" r="1.4"/>'] };
     const lmSeg = `<span class="dz-lmseg" role="group" aria-label="Layer panel size">${Object.entries(LM).map(([k, [tip, ic]]) => `<button data-lmode="${k}" class="${lmode === k ? 'on' : ''}" data-tip="${tip}" aria-label="${tip}"><svg viewBox="0 0 24 24">${ic}</svg></button>`).join('')}</span>`;
     host.innerHTML = `<div class="dz-lhead"><div class="dz-lh"><b>Layers <small>${F().length}</small></b><span class="dz-hb">${dzIB('data-rail="close"', 'close', 'Close')}</span></div>
-      ${SK ? `<label class="toggle sk-one" data-tip="Every new stroke goes into one Drawing layer, instead of a layer each. Pictures and notes keep their own."><input type="checkbox" data-skone ${doc.skOne !== false ? 'checked' : ''}><span>Draw on one layer</span></label>` : ''}
+      ${SKT ? `<label class="toggle sk-one" data-tip="Every new stroke goes into one Drawing layer, instead of a layer each. Pictures and notes keep their own."><input type="checkbox" data-skone ${doc.skOne !== false ? 'checked' : ''}><span>Draw on one layer</span></label>` : ''}
       <div class="dz-lbar">${lmSeg}<span class="dz-lbar-r">${dzIB(`data-mact="${picking ? 'done' : 'pick'}"`, 'pick', picking ? 'Stop selecting several' : 'Select several', picking ? 'on' : '')}
         ${picking || picks.size ? dzIB('data-mact="all"', 'all', 'Select all') + dzIB(`data-mact="none" ${picks.size ? '' : 'disabled'}`, 'none', 'Select none') : ''}</span></div></div>
       ${doc.sides ? `<p class="muted" style="font-size:12px;margin:0 2px 8px">${face === 'm' ? `Master page: shown under ${dzPaged(doc) ? 'every page' : 'both sides'}.` : `${dzFaceNames(doc)[face]} only.${(doc.nomaster || []).includes(face) ? ' The master is off on this page.' : ' The master page shows underneath.'}`}</p>` : ''}
@@ -3290,7 +3290,7 @@ DZ.edit = async (id) => {
     r.querySelectorAll('[data-rail], [data-add]').forEach(b => b.classList.toggle('on', !!on[b.dataset.rail || b.dataset.add])); try { dqDraw(); gridDraw(); } catch {} };   /* the strip is set up further down; before then there's nothing to redraw */
   /* The tool rail. Text, Picture and Shape open a small menu beside it; the rest act straight away. */
   const pop = () => $('#dz-pop');
-  const closePop = () => { const p = pop(); p?.classList.remove('dz-gpop', 'dz-ppop', 'dz-chpop'); setTimeout(() => { try { if (doc.chal) chOv(); } catch {} }); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
+  const closePop = () => { const nb = $('#dz-notebar'); if (nb && !nb.hidden) { nb.hidden = true; $('#dz-rail [data-rail="note"]')?.classList.remove('open'); } const p = pop(); p?.classList.remove('dz-gpop', 'dz-ppop', 'dz-chpop'); setTimeout(() => { try { if (doc.chal) chOv(); } catch {} }); if (p && !p.hidden) { p.hidden = true; $('#dz-rail')?.querySelectorAll('.open').forEach(b => b.classList.remove('open')); } };
   const mi = (attr, ic, label) => `<button class="mi" ${attr}><svg viewBox="0 0 24 24">${DZ_UI[ic]}</svg><span>${label}</span></button>`;
   /* Nodes: with a shape selected it opens its nodes; with none, the next shape tapped opens (nodeArm). A shape is
      also opened for node editing by double-tapping it. */
@@ -3303,6 +3303,8 @@ DZ.edit = async (id) => {
     if (a === 'chal') { if (!pop().hidden && btn?.classList.contains('open')) return closePop(); return chOpen('set', btn); }
     if (a === 'pattern') { const p0 = pop(); if (!p0.hidden && btn?.classList.contains('open')) return closePop(); closePop(); p0.innerHTML = patMenu(); p0.hidden = false; btn?.classList.add('open'); p0.classList.add('dz-gpop', 'dz-ppop');
       const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; return; }
+    if (a === 'note') { const nb = $('#dz-notebar'); if (!nb) return; if (!nb.hidden) return closePop(); closePop(); nb.hidden = false; btn?.classList.add('open');
+      const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; nb.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - nb.offsetHeight - 8)) + 'px'; return; }
     if (a === 'grid') { const p0 = pop(); if (!p0.hidden && btn?.classList.contains('open')) return closePop(); closePop(); p0.innerHTML = gridMenu(); p0.hidden = false; btn?.classList.add('open'); p0.classList.add('dz-gpop');
       const y = btn.getBoundingClientRect().top - stage.getBoundingClientRect().top; p0.style.top = Math.max(8, Math.min(y - 6, stage.clientHeight - p0.offsetHeight - 8)) + 'px'; return; }
     if (a === 'nodes') { closePop(); if (many()) { const M = picked().filter(x => canNodes(x) && !x.lock); if (M.length) return startNodes(M[0], M.slice(1)); } const l = layer(); if (canNodes(l)) return startNodes(l); nodeArm = true; drawRail(); return toast('Tap a shape to edit its nodes.', 2000); }
@@ -5050,7 +5052,7 @@ DZ.edit = async (id) => {
      A bar along the bottom: select, the six brushes, the eraser, size, and colours. With a brush on, a press
      draws (a finger too, unless Fingers only move and zoom is on); a second finger turns it into a pinch and the
      stroke is dropped. Hold still at the end of a stroke to snap it to a line, arc, ellipse or box. */
-  if (SK) {
+  if (SKT) {
     const SKC = ['#111111', '#ffffff', '#7a7a7a', '#e23b3b', '#f28c28', '#f5c518', '#2bb673', '#1fb5a8', '#2f6fe4', '#8e44ad', '#ff6fb5', '#8b5a2b'];
     const ST0 = (() => { try { return JSON.parse(Settings.get('sk_brush', 'null')) || {}; } catch { return {}; } })();
     const SKB = { tool: null, b: ST0.b || 'pen', c: ST0.c || '#111111', sizes: ST0.sizes || Object.fromEntries(DZ_BRUSHES.map(([k, , s]) => [k, s])), er: ST0.er || 40,
@@ -5769,7 +5771,7 @@ DZ.edit = async (id) => {
       if (e.key === 'Enter') { e.preventDefault(); return contApply(); }
       if (e.key === 'Escape') { endCont(); return drawSide(); }
     }
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && !cut && !nodes && !cont && !SK) {   // tool keys, as on the drawing board (a sketch has its own tools)
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && !cut && !nodes && !cont && !SKT) {   // tool keys, as on the drawing board (a sketch has its own tools)
       const k1 = e.key.toLowerCase();
       if (k1 === 'o' && targets().length) { e.preventDefault(); return startCont(); }
       if (k1 === 'p') { e.preventDefault(); return startPen(); }
@@ -7115,7 +7117,7 @@ DZ.edit = async (id) => {
     ...AL.map(([a, tp, ic]) => ['al:' + a, ic, 'Align: ' + tp]), ...['add', 'subtract', 'intersect', 'contour'].map(v => ['bool:' + v, DZ_BOOL_ICON[v], { add: 'Add: weld into one outline', subtract: 'Subtract', intersect: 'Intersect', contour: 'Contour' }[v]])];
   const DQ_DEF = ['select', 'text', 'image', 'shape', 'undo', 'redo'], DQ_CMAX = 8, DQ_FMAX = 5;
   const dqIcon = (ic) => String(ic).startsWith('<svg') ? ic : `<svg viewBox="0 0 24 24">${DZ_UI[ic] || ic}</svg>`;
-  const dqList = () => { let a; try { a = JSON.parse(Settings.get('dz_strip', 'null')); } catch {} a = Array.isArray(a) ? a : DQ_DEF; return SK ? a.filter(id => !['select', 'text', 'shape', 'pen', 'pencil', 'nodes'].includes(id)) : a; };
+  const dqList = () => { let a; try { a = JSON.parse(Settings.get('dz_strip', 'null')); } catch {} a = Array.isArray(a) ? a : DQ_DEF; return SKT ? a.filter(id => !['select', 'text', 'shape', 'pen', 'pencil', 'nodes'].includes(id)) : a; };
   const dqFont = (v) => { const s = document.createElement('select'); s.innerHTML = fontOpts(v); return s.selectedOptions[0]?.textContent || v; };
   function dqDraw() { const el = $('#dz-qstrip'); if (!el) return; let last = '', fdone = false;
     const on = { select: !toolOn() && tab === 'edit', pen: penOn, pencil: pclOn, layers: tab === 'layers', doc: tab === 'doc', grid: !!doc.grid?.on };
