@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 561;
+const APP_BUILD = 562;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -12297,6 +12297,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 562, when: '2026-11-26T18:00', added: [
+    'Design studio, Edit nodes: a node with short handles can be grabbed now. The closest point wins, and the node gets a slight edge over its handles.',
+    'Design studio: zoom in up to 3200% to work on fine detail, and zooming now stays on the spot under your finger or cursor.'
+  ] },
   { build: 561, when: '2026-11-26T16:00', added: [
     'Forms: filling in on a phone has a Page size switch. Large makes the boxes big enough to tap and read, and the page slides sideways.',
     'Forms: Show older forms under Completed, and Send on a completed form shares the PDF, or opens WhatsApp or email to the client.',

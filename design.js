@@ -2713,9 +2713,11 @@ DZ.edit = async (id) => {
   const zoomTo = (nz, sx, sy) => {
     const r = stage.getBoundingClientRect();
     if (sx == null) { sx = r.width / 2; sy = r.height / 2; }
-    const left = (r.width - doc.w * k) / 2 + vx, top = (r.height - doc.h * k + tb()) / 2 + vy, dx = (sx - left) / k, dy = (sy - top) / k;
-    z = Math.max(SK ? 0.15 : 0.5, Math.min(SK ? 16 : 8, nz)); const nk = fitK * z;
-    vx = sx - dx * nk - (r.width - doc.w * nk) / 2; vy = sy - dy * nk - (r.height - doc.h * nk + tb()) / 2;
+    /* the same place fit() puts the page (beside the tool rail, above a phone's panel), so the spot under the pointer stays put */
+    const rl = 52, ah = Math.max(160, r.height - sheetH(r.height));
+    const left = (r.width - doc.w * k + rl) / 2 + vx, top = (ah - doc.h * k + tb()) / 2 + vy, dx = (sx - left) / k, dy = (sy - top) / k;
+    z = Math.max(SK ? 0.15 : 0.5, Math.min(32, nz)); const nk = fitK * z;   /* up to 3200%: far enough in to pick apart nodes with short handles */
+    vx = sx - dx * nk - (r.width - doc.w * nk + rl) / 2; vy = sy - dy * nk - (ah - doc.h * nk + tb()) / 2;
     fit(false); crispLater();
   };
   /* The sharp redraw is the slow part (a big canvas, every layer). Wait until the fingers lift, or the wheel
@@ -3666,11 +3668,16 @@ DZ.edit = async (id) => {
     return (cut.soft = c);
   };
   // On screen: outside the selection is dimmed; the shape being drawn is outlined.
+  /* The node, pen, contour and cut overlays: a canvas over just the part of the page on screen (the whole page when the
+     view is turned), so zooming far in never makes one bigger than a canvas can be. Drawing still uses page pixels (x * k). */
+  function ovFit(oc) { const P = doc.w * k, Q = doc.h * k; let x0 = 0, y0 = 0, x1 = P, y1 = Q;
+    if (!vrot) { const r = stage.getBoundingClientRect(), g = page.getBoundingClientRect(); x0 = Math.max(0, Math.floor(r.left - g.left)); y0 = Math.max(0, Math.floor(r.top - g.top)); x1 = Math.min(P, Math.ceil(r.right - g.left)); y1 = Math.min(Q, Math.ceil(r.bottom - g.top)); }
+    const W = Math.max(1, Math.round(x1 - x0)), H = Math.max(1, Math.round(y1 - y0)); if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
+    Object.assign(oc.style, { left: x0 + 'px', top: y0 + 'px', width: W + 'px', height: H + 'px', right: 'auto', bottom: 'auto' });
+    const x = oc.getContext('2d'); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, W, H); x.translate(-x0, -y0); return x; }
   function drawCut() {
     const oc = $('#dz-cutcv'); if (!oc) return;
-    const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
-    if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
-    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !cut; if (!cut) return;
+    const x = ovFit(oc); oc.hidden = !cut; if (!cut) return;
     const R = cut.R, rx = R.x * k, ry = R.y * k, rw = R.w * k, rh = R.h * k;
     if (cut.any) { x.save(); x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, 0, W, H); x.globalCompositeOperation = 'destination-out'; x.drawImage(soft(), rx, ry, rw, rh); x.restore(); }
     x.setLineDash([6, 4]); x.lineWidth = 1.5; x.strokeStyle = '#1fb6a6'; x.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
@@ -3831,9 +3838,7 @@ DZ.edit = async (id) => {
   function endNodes() { if (!nodes) return; nodes = null; ndrag = null; drawNodes(); drawPen(); placeSel(); }
   function drawNodes() {
     const oc = $('#dz-nodecv'); if (!oc) return;
-    const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
-    if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
-    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); const L0 = nodes && nodeLayer(); oc.hidden = !L0; if (!L0) return;
+    const x = ovFit(oc); const L0 = nodes && nodeLayer(); oc.hidden = !L0; if (!L0) return;
     if (ndrag?.kind === 'box' && ndrag.moved) { const a = ndrag.p0, b = ndrag.p1; x.save(); x.setLineDash([5, 4]); x.strokeStyle = '#1fb6a6'; x.fillStyle = 'rgba(31,182,166,.08)'; x.lineWidth = 1;
       x.fillRect(Math.min(a.x, b.x) * k, Math.min(a.y, b.y) * k, Math.abs(b.x - a.x) * k, Math.abs(b.y - a.y) * k); x.strokeRect(Math.min(a.x, b.x) * k + 0.5, Math.min(a.y, b.y) * k + 0.5, Math.abs(b.x - a.x) * k, Math.abs(b.y - a.y) * k); x.restore(); }
     for (const L of nodeLayersAll()) { const SEL = selOf(L.id), active = L === L0;
@@ -3857,9 +3862,13 @@ DZ.edit = async (id) => {
   // What's under the pointer: a handle of a picked node, a node, or the outline (with where along it).
   const nodeHit = (L, p) => {
     const sp = { x: p.x * k, y: p.y * k }, D = (u, v) => { const q = n2p(L, u, v); return Math.hypot(q.x * k - sp.x, q.y * k - sp.y); };
+    /* The closest one wins, nodes and handles alike, and a node gets a few pixels' head start: with short handles the
+       node itself stays easy to grab, and a handle is still taken when the pointer is nearer to it. */
+    let near = null; const take = (d, hit) => { if (d < 11 && (!near || d < near.d)) near = { d, hit }; };
     for (const [s2, i] of nodes.sel) { const n = L.subs[s2]?.nodes[i]; if (!n) continue;
-      for (const side of ['o', 'i']) if ((n[side + 'x'] || n[side + 'y']) && D(n.x + n[side + 'x'], n.y + n[side + 'y']) < 11) return { kind: 'h', s: s2, i, side }; }
-    for (let s2 = 0; s2 < L.subs.length; s2++) for (let i = 0; i < L.subs[s2].nodes.length; i++) { const n = L.subs[s2].nodes[i]; if (D(n.x, n.y) < 11) return { kind: 'n', s: s2, i }; }
+      for (const side of ['o', 'i']) if (n[side + 'x'] || n[side + 'y']) take(D(n.x + n[side + 'x'], n.y + n[side + 'y']), { kind: 'h', s: s2, i, side }); }
+    for (let s2 = 0; s2 < L.subs.length; s2++) for (let i = 0; i < L.subs[s2].nodes.length; i++) { const n = L.subs[s2].nodes[i]; take(Math.max(0, D(n.x, n.y) - 4), { kind: 'n', s: s2, i }); }
+    if (near) return near.hit;
     let best = null;
     L.subs.forEach((sp2, s2) => { const N = sp2.nodes; for (const [i, j] of segs(sp2)) for (let t = 0.02; t < 1; t += 0.02) { const q = bez(N[i], N[j], t), d = D(q.x, q.y); if (d < 9 && (!best || d < best.d)) best = { kind: 'seg', s: s2, i, j, t, d }; } });
     return best;
@@ -4216,9 +4225,7 @@ DZ.edit = async (id) => {
   };
   function drawCont() {
     const oc = $('#dz-contcv'); if (!oc) return;
-    const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
-    if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
-    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !cont; if (!cont?.res) return;
+    const x = ovFit(oc); oc.hidden = !cont; if (!cont?.res) return;
     x.setLineDash([6, 4]); x.lineWidth = 1.6; x.strokeStyle = '#7ac8ff'; x.fillStyle = 'rgba(122,200,255,.12)'; x.beginPath();
     for (const pp of cont.res.values()) for (const r of pp) { r.forEach((q, i) => i ? x.lineTo(q.X / DZ_CS * k, q.Y / DZ_CS * k) : x.moveTo(q.X / DZ_CS * k, q.Y / DZ_CS * k)); x.closePath(); }
     x.fill('evenodd'); x.stroke();
@@ -4599,9 +4606,7 @@ DZ.edit = async (id) => {
   };
   function drawPen() {
     const oc = $('#dz-pencv'); if (!oc) return;
-    const W = Math.max(1, Math.round(doc.w * k)), H = Math.max(1, Math.round(doc.h * k));
-    if (oc.width !== W || oc.height !== H) { oc.width = W; oc.height = H; }
-    const x = oc.getContext('2d'); x.clearRect(0, 0, W, H); oc.hidden = !pen && !stroke && !symShown() && !(penOn && penHv?.kind);
+    const x = ovFit(oc); oc.hidden = !pen && !stroke && !symShown() && !(penOn && penHv?.kind);
     if (symShown()) symDraw(x);
     if (stroke) return drawStroke(x);
     { const hp = pen?.nodes.length ? (pen.drag || pen.adj ? null : pen.hover && { p: pen.hover, kind: pen.hoverKind }) : penOn ? penHv : null;
