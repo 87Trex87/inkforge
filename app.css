@@ -3043,7 +3043,7 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 566; }
+:root { --app-build: 567; }
 
 /* ---------- Home screen: a slim header, the apps as a desktop, today, and one notices panel ----------
    On wide screens it keeps to a column on the left, so the rest is open for sticky notes. */
@@ -3078,3 +3078,6 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .home-notes .de-note.warn { border: 0; }
 .home .practice-note { margin: 0; }
 
+/* Studio and More as desktops, like Home */
+.home .mgrp { margin: 8px 2px -4px; } .home .mgrp:first-child { margin-top: 2px; }
+.home .app-credit { margin-top: 8px; }

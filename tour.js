@@ -104,7 +104,7 @@ const TOUR_STEPS = [
   { id: 'organise', route: 'designs', sel: '.lib-bar', title: 'Keep it tidy',
     text: 'Search, sort, favourites and folders on every library.',
     more: 'Designs, simulator pieces, reels, portfolio, stencils, forms, saved quotes, the rule book and stock all have them, so a year of work stays easy to find. Tap the folder button on anything to file it. When you import a photo, reference or stencil, the picker opens on those folders too, with a search over everything.' },
-  { id: 'bend', route: 'studio', sel: '[data-go="bend"]', title: 'Bend and split',
+  { id: 'bend', route: 'studio', sel: '.home-apps a[href="#bend"]', title: 'Bend and split',
     text: 'Arc a band to sit flush, or split a back piece over pages.',
     more: 'The bend tool curves a design so a band meets neatly around an arm or leg, and can send it straight to the stencil maker. Split for printing cuts a large stencil into labelled pages with an overlap for taping.' },
   { id: 'portfolio', route: 'portfolio', sel: '#view', title: 'Portfolio',

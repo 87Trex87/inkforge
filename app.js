@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 566;
+const APP_BUILD = 567;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -973,6 +973,12 @@ const tileGroup = (label, tiles, cls = '') => `<div class="mgrp">${label}</div><
 /* The three drawing programs, together and up front: in Studio, on the home screen and in the top bar. */
 const DRAW_APPS = [['design', 'Design studio', 'Vouchers, cards, flyers and tattoo posts', 'designs'], ['needle', 'Tattoo simulator', 'Tattoo in ink on skin with needle groupings', 'tattoo'],
   ['sketch', 'Sketchpad', 'Notes, plans, sketches and mind maps', 'sketches']];
+/* Menus as a desktop, like the home screen: small app icons with a short name, in labelled groups. */
+const deskApp = (i, t, g) => `<a class="ha" href="#${g}"><span class="ha-i">${ICON[i] || ICON.design}</span><span class="ha-t">${t}</span></a>`;
+const deskGroup = (label, apps) => `<div class="mgrp">${label}</div><div class="home-apps">${apps.join('')}</div>`;
+const studioGroups = (draw = true) => (draw ? deskGroup('Draw', DRAW_APPS.map(([i, t, , g]) => deskApp(i, t, g))) : '')
+  + deskGroup('Create', [deskApp('stencil', 'Stencil maker', 'stencil'), deskApp('reels', 'Reel maker', 'reels'), deskApp('bend', 'Bend', 'bend'), deskApp('split', 'Split for printing', 'split'), deskApp('sizes', 'Size sheet', 'sizes')])
+  + deskGroup('Your work', [deskApp('portfolio', 'Portfolio', 'portfolio'), deskApp('forms', 'Forms', 'forms')]);
 const drawTiles = () => tileGroup('Draw', DRAW_APPS.map(([i, t, s0, g]) => tile(i, t, s0, false, g)), 'draw-grid');
 /* quick buttons beside full screen at the top of every main page */
 function drawBar() { const el = document.getElementById('tb-draw'); if (!el) return; const v = (location.hash.slice(1) || 'home').split('/')[0];
@@ -997,7 +1003,7 @@ const VIEWS = {
       /* The apps as a desktop: small icons with a short name. */
       const app = (i, t, g) => `<a class="ha" href="#${g}"><span class="ha-i">${ICON[i]}</span><span class="ha-t">${t}</span></a>`;
       const apps = (biz) => `<div class="home-apps">${app('design', 'Design studio', 'designs')}${app('needle', 'Simulator', 'tattoo')}${app('sketch', 'Sketchpad', 'sketches')}${app('stencil', 'Stencil', 'stencil')}${biz ? app('quote', 'Quick quote', 'quote') + app('saved', 'Saved quotes', 'quotes') : app('portfolio', 'Portfolio', 'portfolio') + app('forms', 'Forms', 'forms')}</div>`;
-      if (wsDesign()) return `<div class="home">${head}${apps(false)}<p class="muted home-sub">A design workspace: everything for making art, stencils and posts.</p></div>` + VIEWS.studio.render();
+      if (wsDesign()) return `<div class="home">${head}<p class="muted home-sub">A design workspace: everything for making art, stencils and posts.</p>${studioGroups()}</div>`;
       return `<div class="home">${WS.cur?.test ? `<div class="card practice-note"><b>Practice workspace</b><span>Everything here is made up: try printing, quotes, receipts and more.
           Phone numbers are fake, so nothing can be sent. Bookings move along each day you open it.</span>
           <button class="btn small" data-go-ws="${esc(WS.list.find(x => !x.test)?.id || '')}">Back to my workspace</button></div>` : ''}
@@ -1725,31 +1731,19 @@ const VIEWS = {
   },
   studio: {
     title: () => 'Studio',
-    render: () => drawTiles() + tileGroup('Create', [
-        tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil'),
-        tile('reels', 'Reel maker', 'Quick, consistent tattoo reels', false, 'reels'),
-        tile('bend', 'Bend tool', 'Arc a band so it meets flush around a limb', false, 'bend'),
-        tile('split', 'Split for printing', 'Big stencils over several pages to tape together', false, 'split'),
-        tile('sizes', 'Size sheet', 'One design in a range of sizes on a page, to try on the client', false, 'sizes')])
-      + tileGroup('Your work', [
-        tile('portfolio', 'Portfolio', 'Tattoos, art and flash', false, 'portfolio'),
-        tile('forms', 'Forms', 'Consent, aftercare and your own forms', false, 'forms')])
+    render: () => `<div class="home desk">${studioGroups()}</div>`
   },
   more: {
     title: () => 'More',
-    render: () => (wsDesign() ? '' : tileGroup('Quotes and earnings', [
-        tile('quote', 'Quote calculator', 'Price a piece from your own rates', false, 'quote'),
-        tile('saved', 'Saved quotes', 'Pick a quote up again, book it or compare', false, 'quotes'),
-        tile('stats', 'Stats', 'Tattoos, hours and earnings over time', false, 'stats')])
-      + tileGroup('Running the studio', [
-        tile('stock', 'Inventory', 'Stock, low-stock alerts and stock takes', false, 'inventory'),
-        tile('rules', 'Rule book', 'Your studio rules', false, 'rules'),
-        ...(Loy.on() || (+Settings.get('loy_left') > 0 && !wsDesign()) ? [tile('loyalty', 'Loyalty', 'Your rewards program', false, 'loyalty')] : []),
-        ...(Vou.on() ? [tile('voucher', 'Vouchers', 'Gift vouchers for tattoos', false, 'vouchers')] : [])]))
-      + tileGroup('App', [
-        tile('settings', 'Settings & backup', wsDesign() ? 'Profile, workspace and backup' : GOOGLE_ON ? 'Profile, your week, Google, backup' : 'Profile, your week, backup', false, 'settings'),
-        tile('tour', 'Take a tour', 'A guided look around InkForge', false, 'tour')])
-      + `<p class="app-credit">Designed and crafted by Trevor Schuster using vibe coding.<br>Over 15 years of experience in tattooing.</p>`
+    render: () => `<div class="home desk">${wsDesign() ? '' : deskGroup('Quotes and earnings', [
+        deskApp('quote', 'Quote calculator', 'quote'), deskApp('saved', 'Saved quotes', 'quotes'), deskApp('stats', 'Stats', 'stats'), deskApp('stats', 'Day end', 'day-end'),
+        ...(payOn() ? [deskApp('stats', 'Your pay', 'pay')] : [])])
+      + deskGroup('Running the studio', [
+        deskApp('stock', 'Inventory', 'inventory'), deskApp('rules', 'Rule book', 'rules'),
+        ...(Loy.on() || +Settings.get('loy_left') > 0 ? [deskApp('loyalty', 'Loyalty', 'loyalty')] : []),
+        ...(Vou.on() ? [deskApp('voucher', 'Vouchers', 'vouchers')] : [])])}
+      ${deskGroup('App', [deskApp('settings', 'Settings & backup', 'settings'), deskApp('tour', 'Take a tour', 'tour')])}
+      <p class="app-credit">Designed and crafted by Trevor Schuster using vibe coding.<br>Over 15 years of experience in tattooing.</p></div>`
   },
   portfolio: {
     title: () => 'Portfolio',
@@ -12312,6 +12306,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 567, when: '2026-11-27T11:00', added: [
+    'Studio and More look like the home screen now: groups of small app icons, kept to the left on a big screen.',
+    'More has Day end on it, and Your pay when it’s switched on.'
+  ] },
   { build: 566, when: '2026-11-27T10:00', added: [
     'Sticky notes have the Sketchpad’s tools now: brushes, eraser, shapes, text and the mind map.',
     'A sticky note’s colour, shortcuts, checklists, room, links and pinning are behind the note icon at the top of the tools, so the note gets the whole space.'
