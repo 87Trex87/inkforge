@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 572;
+const APP_BUILD = 573;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -3198,7 +3198,7 @@ const VIEWS = {
           <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
         </div>
         <div class="lbl" style="margin-top:14px">Settings only ${help('Just your set-up, with no clients, bookings or work: profile, your week, home screen, quote calibration, pay, loyalty and vouchers, receipts and printing, design tools, simulator and dev controls. Load it into another workspace to make it match, picking which parts to use.')}</div>
-        <div class="row"><button class="btn" id="b-setx" data-tip="Save your settings to a file, to set up another workspace the same way">Save settings file</button><button class="btn" id="b-seti" data-tip="Load settings from a file, choosing which parts to use">Load settings…</button></div>
+        <div class="row"><button class="btn" id="b-setx" data-tip="Save your settings to a file, to set up another workspace the same way">Save settings file</button><button class="btn" id="b-seti" data-tip="Load settings from a settings file or a whole backup, choosing which parts to use">Load settings…</button></div>
         <input type="file" id="merge-file" accept=".inkforge,.sqlite,.db" hidden>
 
         <div class="lbl" style="margin-top:14px">Portfolio picture size ${help('The usual size new portfolio photos are saved at (long side). You can still pick another size when adding photos.')}</div>
@@ -3365,11 +3365,18 @@ async function setxExport() {
   for (const n of names) { try { media[n] = await setxB64(await (await dir.getFileHandle(n)).getFile()); } catch {} }   /* a picture that's gone is just left out */
   const from = Settings.get('studio_name') || Settings.get('artist_name') || 'studio', nm = `settings-${from.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inksettings`;
   await xSave(new File([JSON.stringify({ app: 'InkForge', kind: 'settings', v: 1, at: new Date().toISOString(), from, build: APP_BUILD, groups, media })], nm, { type: 'application/json' }), 'Settings', 'Saved ' + nm); }
-async function setxImport(file) {   /* file: one already in hand, or pick one */
-  const f = file || await xPickFile('.inksettings,application/json'); if (!f) return; let P = null; try { P = JSON.parse(await f.text()); } catch {}
-  if (!P || P.kind !== 'settings' || !P.groups) return toast('That isn\u2019t an InkForge settings file.', 3000);
+/* A backup's settings, set out like a settings file: its settings table sorted into the same groups, and its pictures. */
+async function setxFromBackup(bytes, name) { const B = parseBackup(bytes), T = await DB.peek(B.db.slice()), all = Object.fromEntries((T.settings || []).map(r => [r.key, r.value])), groups = {};
+  for (const g of SETX_GROUPS) { const o = {}; for (const [k, v] of Object.entries(all)) if (g[3].some(m => m instanceof RegExp ? m.test(k) : m === k) && v !== '' && v != null) o[k] = setxVal(k, v); if (Object.keys(o).length) groups[g[0]] = o; }
+  return { kind: 'settings', groups, mediaBytes: B.media, from: all.studio_name || all.artist_name || B.name || name || 'a backup' }; }
+async function setxImport(file) {   /* file: one already in hand, or pick one. A settings file or a whole backup. */
+  const f = file || await xPickFile('.inksettings,.inkforge,.sqlite,.db,application/json'); if (!f) return false; let P = null;
+  const head = new TextDecoder().decode(new Uint8Array(await f.slice(0, 16).arrayBuffer()));
+  if (head.startsWith('SQLite format 3') || head.startsWith(BACKUP_MAGIC.slice(0, 16))) { try { P = await setxFromBackup(new Uint8Array(await f.arrayBuffer()), f.name); } catch (err) { toast('Could not read that backup: ' + err.message, 5000); return false; } }
+  else { try { P = JSON.parse(await f.text()); } catch {} }
+  if (!P || P.kind !== 'settings' || !P.groups) { toast('That isn\u2019t an InkForge settings file or backup.', 3000); return false; }
   const have = SETX_GROUPS.filter(g => P.groups[g[0]] && Object.keys(P.groups[g[0]]).length);
-  if (!have.length) return toast('There are no settings in that file.');
+  if (!have.length) { toast('There are no settings in that file.'); return false; }
   const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
     o.innerHTML = `<div class="card"><h2>Load settings</h2><p class="muted" style="margin-top:0">From ${esc(P.from || 'another workspace')}${P.at ? ', saved ' + esc(new Date(P.at).toLocaleDateString()) : ''}. Tick what to use here: each replaces what this workspace has for it. Your clients, bookings and work aren\u2019t touched.</p>
       <div class="setx-list">${have.map(g => `<label class="setx-row"><input type="checkbox" data-g="${g[0]}" checked><span><b>${esc(g[1])}</b><small class="muted">${esc(g[2])}</small></span></label>`).join('')}</div>
@@ -3378,14 +3385,15 @@ async function setxImport(file) {   /* file: one already in hand, or pick one */
       if (e.target.closest('[data-x]') || e.target === o) { o.remove(); res(null); }
       if (e.target.closest('[data-ok]')) { const g = [...o.querySelectorAll('[data-g]:checked')].map(c => c.dataset.g); o.remove(); res(g); } };
     document.body.appendChild(o); });
-  if (!pick?.length) return;
+  if (!pick?.length) return false;
   const keys = pick.flatMap(g => Object.entries(P.groups[g])), need = new Set(keys.flatMap(([, v]) => String(v).match(DZ_MEDIA_RE) || []));
-  for (const n of need) { const b = P.media?.[n]; if (!b) continue; try { const bin = atob(b), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); await Media.save(new Blob([u]), n.split('.').pop()); } catch {} }   /* same picture, same name */
+  for (const n of need) { try { let u = P.mediaBytes?.get(n); if (!u) { const b = P.media?.[n]; if (!b) continue; const bin = atob(b); u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); }
+      await Media.save(new Blob([u]), n.split('.').pop()); } catch {} }   /* same picture, same name */
   for (const [k, v] of keys) { if (k === 'home_apps') { let A = []; try { A = JSON.parse(v); } catch {} const mine = homeApps().filter(a => String(a.go).includes('/')); await Settings.set(k, JSON.stringify([...A, ...mine].slice(0, HOME_MAX))); continue; }   /* your own client or design shortcuts are kept */
     await Settings.set(k, v); }
   if (pick.includes('start') && WS.cur) { WS.cur.mode = Settings.get('ws_mode') || 'full'; await WS.save(); }
   if (pick.includes('dev') && typeof ttDevLoad === 'function') ttDevLoad();
-  toast(`Settings loaded: ${pick.map(g => SETX_GROUPS.find(x => x[0] === g)[1]).join(', ')}.`, 4000); render(); }
+  toast(`Settings loaded: ${pick.map(g => SETX_GROUPS.find(x => x[0] === g)[1]).join(', ')}.`, 4000); render(); return true; }
 /* ---------- First-time setup ----------
    Runs once when a new workspace is created (and again from Settings). Four short steps with the
    settings most artists change on day one, pre-filled with the current values; everything is saved
@@ -12432,6 +12440,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 573, when: '2026-11-27T17:00', added: [
+    'New workspace: after naming it, choose Start from. Start fresh, settings from a settings file or backup, or settings and work from a backup, ticking the parts you want.',
+    'Load settings (Settings › Backup) reads a whole backup too, taking just its settings.'
+  ], test: ['Make a new workspace from a backup with Settings and work, ticking only some parts and sections. Did just those come in?'] },
   { build: 572, when: '2026-11-27T16:00', added: [
     'Settings › Backup: Save settings file keeps just your set-up (profile, your week, home screen, quote calibration, pay, loyalty, vouchers, printing, design tools, simulator and dev controls), with no clients or work.',
     'Load settings puts it into another workspace, and you tick which parts to use, so you can skip your profile or rates.'
@@ -13447,7 +13459,19 @@ function showStart() {
         d.onclick = (e) => { const b = e.target.closest('[data-wm]'); if (!b && e.target !== d) return; d.remove(); res(b?.dataset.wm || null); }; document.body.appendChild(d); });
       if (!mode) return;
       const os = await DevOS.ask(); if (!os) return; DevOS.set(os);
-      const nw = await WS.create(n.trim()); nw.fresh = true; if (mode === 'design') nw.mode = 'design'; await WS.save(); o.remove(); return startWorkspace(nw);
+      /* Start fresh, or fill it in from a file: settings only (from a settings file or a backup), or a backup's work too.
+         The file is picked here, while the tap still counts; what to take from it is chosen once the workspace is open. */
+      const seed = await new Promise((res) => { const d = document.createElement('div'); d.id = 'merge-dlg'; d.style.zIndex = 99;
+        d.innerHTML = `<div class="card"><h2>Start from</h2><div class="dz-ex">
+          <button data-sf="fresh"><b>Start fresh</b><small>Empty, with the quick setup for your name, hours and prices</small></button>
+          <button data-sf="settings"><b>Settings from a file</b><small>A settings file or a backup: your profile, rates, home screen, programs and tools filled in. You pick which parts.</small></button>
+          <button data-sf="work"><b>Settings and work from a backup</b><small>The settings, then clients, bookings, portfolio and the rest, a section at a time</small></button></div>
+          <button class="btn" data-sf="" style="width:100%;margin-top:10px">Cancel</button></div>`;
+        d.onclick = async (e) => { const b = e.target.closest('[data-sf]'); if (!b && e.target !== d) return; const k = b?.dataset.sf || '';
+          if (k === 'settings' || k === 'work') { const f = await xPickFile(k === 'work' ? '.inkforge,.sqlite,.db' : '.inksettings,.inkforge,.sqlite,.db,application/json'); if (!f) return; d.remove(); return res({ kind: k, file: f }); }
+          d.remove(); res(k ? { kind: k } : null); }; document.body.appendChild(d); });
+      if (!seed) return;
+      const nw = await WS.create(n.trim()); nw.fresh = true; if (mode === 'design') nw.mode = 'design'; await WS.save(); WS.seed = seed.file ? seed : null; o.remove(); return startWorkspace(nw);
     }
   });
   o.addEventListener('change', async (e) => {
@@ -13540,8 +13564,12 @@ async function startWorkspace(w, fileBytes) {
     else { await Practice.refresh(); render(); }
   }
   if (w.mode && !Settings.get('ws_mode')) await Settings.set('ws_mode', w.mode);   /* the type chosen when it was made, kept in the workspace itself */
+  if (w.fresh && WS.seed) { const sd = WS.seed; WS.seed = null;   /* a new workspace started from a file */
+    const got = await setxImport(sd.file).catch((err) => { toast('Could not load the settings: ' + err.message, 5000); return false; });
+    if (sd.kind === 'work') { w.fromWork = true; await openMerge(sd.file); }
+    if (got) { if (WS.cur) { WS.cur.mode = Settings.get('ws_mode') || WS.cur.mode; await WS.save(); } toast('Filled in from the file. Fine-tune anything in More \u203a Settings.', 4000); } }
   if (w.fresh && wsDesign()) { delete w.fresh; await WS.save(); render(); }   /* a design workspace needs no hours or prices */
-  if (w.fresh && Settings.get('setup_done') !== '1') runSetup();
+  if (w.fresh && Settings.get('setup_done') !== '1' && !w.fromWork) runSetup();   /* not over a backup's work being brought in */
   Practice.tidy().catch(() => {}); Tour.resume();
   if (recovered) toast('Your data was missing on start-up and has been restored from the last automatic save.', 8000);
   else if (fileBytes) { toast(`Opened "${w.name}".`); Snapshot.soon(); }
