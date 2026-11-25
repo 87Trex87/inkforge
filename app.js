@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 563;
+const APP_BUILD = 564;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -992,29 +992,21 @@ const VIEWS = {
       const h = new Date().getHours();
       const greet = h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
       const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-      if (wsDesign()) return `${newsHtml()}<div class="card hero"><div class="muted">${esc(today)}</div><div class="big">${greet}${name ? ', ' + esc(name) : ''}</div>
-        <p class="muted" style="margin:6px 0 0">A design workspace: everything for making art, stencils and posts.</p></div>` + VIEWS.studio.render();
-      return `${WS.cur?.test ? `<div class="card practice-note"><b>Practice workspace</b><span>Everything here is made up: try printing, quotes, receipts and more.
+      const head = `<div class="home-head"><div class="hh-t"><div class="big">${greet}${name ? ', ' + esc(name) : ''}</div><div class="muted">${esc(today)}${name ? '' : ` \u00b7 <a href="#settings" style="color:var(--teal)">set your name</a>`}</div></div>${newsPill()}</div>
+        <div id="news-slot">${newsHtml()}</div>`;
+      /* The apps as a desktop: small icons with a short name. */
+      const app = (i, t, g) => `<a class="ha" href="#${g}"><span class="ha-i">${ICON[i]}</span><span class="ha-t">${t}</span></a>`;
+      const apps = (biz) => `<div class="home-apps">${app('design', 'Design studio', 'designs')}${app('needle', 'Simulator', 'tattoo')}${app('sketch', 'Sketchpad', 'sketches')}${app('stencil', 'Stencil', 'stencil')}${biz ? app('quote', 'Quick quote', 'quote') + app('saved', 'Saved quotes', 'quotes') : app('portfolio', 'Portfolio', 'portfolio') + app('forms', 'Forms', 'forms')}</div>`;
+      if (wsDesign()) return `<div class="home">${head}${apps(false)}<p class="muted home-sub">A design workspace: everything for making art, stencils and posts.</p></div>` + VIEWS.studio.render();
+      return `<div class="home">${WS.cur?.test ? `<div class="card practice-note"><b>Practice workspace</b><span>Everything here is made up: try printing, quotes, receipts and more.
           Phone numbers are fake, so nothing can be sent. Bookings move along each day you open it.</span>
           <button class="btn small" data-go-ws="${esc(WS.list.find(x => !x.test)?.id || '')}">Back to my workspace</button></div>` : ''}
-      ${newsHtml()}
-      <div class="card hero">
-        <div class="muted">${esc(today)}</div>
-        <div class="big">${greet}${name ? ', ' + esc(name) : ''}</div>
-        ${name ? '' : `<p class="muted">Set your name and studio in <a href="#more" style="color:var(--teal)">More &rsaquo; Settings</a>.</p>`}
-      </div>
-      ${drawTiles()}
-      <div class="card"><h2>Today ${help('Today\'s sessions. Tap one to open it.')}</h2>
+      ${head}
+      ${apps(true)}
+      <div class="card home-card"><div class="hc-h"><h2>Today</h2><a class="btn small" href="#book">Calendar</a></div>
         <div id="home-today" class="muted">…</div></div>
-      <div id="home-de"></div>
-      <div id="home-loy"></div>
-      <div id="home-vou"></div>
-      <div id="home-bday"></div>
-      <div class="grid">
-        ${tile('stencil', 'Stencil maker', 'Turn a photo into a clean stencil', false, 'stencil')}
-        ${tile('quote', 'Quick quote', 'Price a piece in seconds', false, 'quote')}
-        ${tile('saved', 'Saved quotes', 'Replies and quotes to finish', false, 'quotes')}
-      </div>`;
+      <section class="card home-card home-notes" id="home-alerts" hidden><div class="hc-h"><h2>Notices <span class="hn-n" id="hn-n"></span></h2></div>
+        <div id="home-de"></div><div id="home-bk"></div><div id="home-loy"></div><div id="home-vou"></div><div id="home-bday"></div></section></div>`;
     },
     async mount() {
       if (wsDesign()) return;   /* no bookings or birthdays here */
@@ -1028,7 +1020,9 @@ const VIEWS = {
       else el.innerHTML = `No sessions booked. <a href="#" id="h-add" style="color:var(--teal)">Book one</a>`;
       const a = $('#h-add'); if (a) a.onclick = (e) => { e.preventDefault(); newBookingNext(); };
       const bw = document.querySelector('[data-go-ws]'); if (bw) bw.onclick = () => { Dirty.set(false); Snapshot.save().finally(() => WS.switchTo(bw.dataset.goWs || null)); };
-      homeLoy(); homeDE(); homeVou();
+      const box = $('#home-alerts'), count = () => { if (!box?.isConnected) return; const n = box.querySelectorAll('.c-row, .de-note').length; if (box.hidden !== !n) box.hidden = !n; const c = $('#hn-n'); if (c && c.textContent !== String(n)) c.textContent = n; };   /* only on a change: writing the count is itself a change it watches */
+      if (box) new MutationObserver(count).observe(box, { childList: true, subtree: true });
+      homeLoy(); homeDE(); homeVou(); homeBK();
       // Birthdays in the next 7 days, with a one-tap WhatsApp greeting.
       const bd = (await DB.all('SELECT id, first_name, last_name, phone, dob, loy_off FROM clients WHERE dob IS NOT NULL AND dob <> \'\''))
         .map(c => { const [y, m, d] = c.dob.split('-').map(Number); let n = new Date(t.getFullYear(), m - 1, d); if (n < t) n = new Date(t.getFullYear() + 1, m - 1, d);
@@ -3151,6 +3145,8 @@ const VIEWS = {
           <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
         </div>
         <input type="file" id="merge-file" accept=".inkforge,.sqlite,.db" hidden>
+        <label class="field" style="max-width:260px;margin-top:14px"><span>Backup reminder ${help('The home screen reminds you to save a workspace file once this many days have passed since the last one. 0 turns it off.')}</span>
+          <div class="unit-in"><input class="in" id="s-bkr" type="number" min="0" max="90" value="${bkRemind()}"><em>days</em></div></label>
         <div class="lbl" style="margin-top:14px">Portfolio picture size ${help('The usual size new portfolio photos are saved at (long side). You can still pick another size when adding photos.')}</div>
         <div class="seg" id="s-pfsize">${PF_SIZES.map(([k, l]) => `<button type="button" data-sz="${k}" class="${pfSizeDefault() === k ? 'on' : ''}" style="flex:1">${l}</button>`).join('')}</div>
         <div class="lbl" style="margin-top:14px">Storage on this device ${help('Data is kept in an on-device SQLite database, not browser localStorage. "Protected" asks the browser never to clear it automatically.')}</div>
@@ -3189,14 +3185,20 @@ const VIEWS = {
       const pd = $('#s-pdel'); if (pd) pd.onclick = () => Practice.drop();
       $('#s-pfsize').onclick = (e) => { const b = e.target.closest('[data-sz]'); if (!b) return; Settings.set('pf_size', b.dataset.sz);
         $('#s-pfsize').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
-      $('#view').addEventListener('toggle', (e) => { const k = e.target.dataset?.sec; if (k) e.target.open ? SET_OPEN.add(k) : SET_OPEN.delete(k); }, true);
+      /* #view stays put between pages, so this is added once, not on every visit */
+      if (!SET_OPEN.wired) { SET_OPEN.wired = true; $('#view').addEventListener('toggle', (e) => { const k = e.target.dataset?.sec; if (k && document.body.dataset.route === 'settings') e.target.open ? SET_OPEN.add(k) : SET_OPEN.delete(k); }, true); }
       $('#s-name').addEventListener('change', save('artist_name'));
       $('#s-studio').addEventListener('change', save('studio_name'));
       $('#s-cur').addEventListener('change', save('currency'));
-      $('#s-start').addEventListener('change', save('day_start'));
-      $('#s-end').addEventListener('change', save('day_end'));
-      $('#s-maxday').addEventListener('change', (e) => Settings.set('max_per_day', String(Math.max(1, +e.target.value || 1))));
+      /* the day has to finish after it starts: otherwise no open times could ever be found */
+      const dayTimes = (e) => { const st = $('#s-start'), en = $('#s-end'); if (st.value && en.value && en.value <= st.value) { toast('The day has to finish after it starts.', 2600);
+          e.target.value = Settings.get(e.target === st ? 'day_start' : 'day_end', e.target === st ? '10:00' : '17:00'); return; }
+        Settings.set(e.target === st ? 'day_start' : 'day_end', e.target.value); };
+      $('#s-start').addEventListener('change', dayTimes);
+      $('#s-end').addEventListener('change', dayTimes);
+      $('#s-maxday').addEventListener('change', (e) => { const v = Math.max(1, Math.min(10, Math.round(+e.target.value) || 1)); e.target.value = v; Settings.set('max_per_day', String(v)); });
       for (const [id, k] of [['#s-ded', 'de_days'], ['#s-der', 'de_remind']]) $(id).addEventListener('change', (e) => { const v = Math.max(1, Math.min(31, Math.round(+e.target.value) || 1)); e.target.value = v; Settings.set(k, String(v)); });
+      $('#s-bkr').addEventListener('change', (e) => { const v = Math.max(0, Math.min(90, Math.round(+e.target.value) || 0)); e.target.value = v; Settings.set('bk_remind', String(v)); });
       $('#s-bdd').addEventListener('change', (e) => Settings.set('bd_days', String(Math.max(0, Math.min(30, Math.round(+e.target.value) || 0)))));
       $('#s-gap').addEventListener('change', (e) => Settings.set('booking_gap', String(Math.max(0, Math.min(240, +e.target.value || 0)))));
       const drawLogo = async () => {
@@ -3282,7 +3284,7 @@ async function saveLogoFile(f) {
   // Keep transparency: redraw as PNG, capped at 1000 px so it stays small.
   const bmp = await createImageBitmap(f), sc = Math.min(1, 1000 / Math.max(bmp.width, bmp.height));
   const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
-  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
   const ref = await Media.save(await new Promise(r => c.toBlob(r, 'image/png')), 'png');
   const old = Settings.get('studio_logo_ref');
   await Settings.set('studio_logo_ref', ref);
@@ -3817,7 +3819,7 @@ const MERGE_TABLES = {
 const MERGE_ORDER = ['clients', 'bookings', 'booking_photos', 'form_templates', 'signed_forms', 'signed_form_pages', 'portfolio_items',
   'portfolio_photos', 'inventory_items', 'stock_takes', 'stock_take_lines', 'rules', 'quotes', 'designs', 'design_assets', 'ref_images', 'assets', 'stencils', 'tattoo_pieces', 'reels', 'loyalty_rewards', 'vouchers'];
 // Settings never copied: this device's own sync state, accounts and bookkeeping.
-const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|tt_dev|reel_templates$|reel_style$|forms_|lib_|ws_pass$|ws_mode$|dz_refs_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
+const MERGE_SETTING_SKIP = /^(gcal_|last_backup$|bk_since$|bk_snooze$|tt_dev|reel_templates$|reel_style$|forms_|lib_|ws_pass$|ws_mode$|dz_refs_)/;   /* lib_: folders and favourites are kept by id, which a merge changes */
 const MERGE_META_COLS = new Set(['id', 'created_at', 'updated_at', 'sort']);
 
 function parseBackup(bytes) {
@@ -7337,6 +7339,19 @@ async function homeDE() { const el = $('#home-de'); if (!el || wsDesign() || !Se
   if (Date.now() - deDate(P.since) < deRemind() * DE_DAY) { el.innerHTML = ''; return; }
   el.innerHTML = `<div class="card de-note ${P.left <= 3 ? 'warn' : ''}"><span class="ico-c">${ICON.stats || ''}</span><div class="c-main"><b>Day end</b><span class="muted c-sub">${P.last ? `Last filed ${deAgo(deDate(P.last.to_at))}` : `Not filed yet, started ${deAgo(deDate(P.since))}`} \u00b7 ${P.dropped ? 'the oldest days are dropping off: file it soon' : `${P.left} day${P.left === 1 ? '' : 's'} before the oldest drop off`}</span></div>
     <a class="btn small primary" href="#day-end">Open</a></div>`; }
+/* Backup reminder: every bk_remind days (0 = off) without a workspace file saved, the home screen says so, with Save
+   right there. A new workspace counts from when this first ran, so day one isn't nagged; Later puts it off a day. */
+const bkRemind = () => Math.max(0, Math.min(90, Math.round(+Settings.get('bk_remind', '7')) || 0));
+async function homeBK() { const el = $('#home-bk'); if (!el) return; const n = bkRemind(); if (!n) { el.innerHTML = ''; return; }
+  if (!Settings.get('bk_since')) await Settings.set('bk_since', new Date().toISOString());
+  const last = Settings.get('last_backup'), from = new Date(last || Settings.get('bk_since')).getTime(), snooze = +Settings.get('bk_snooze', '0');
+  if (Date.now() - from < n * 864e5 || Date.now() < snooze) { el.innerHTML = ''; return; }
+  const days = Math.floor((Date.now() - from) / 864e5);
+  el.innerHTML = `<div class="card de-note warn"><span class="ico-c"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></span><div class="c-main"><b>Backup</b><span class="muted c-sub">${last ? `Last saved ${days} day${days === 1 ? '' : 's'} ago` : 'Not backed up yet'}</span></div>
+    <div class="row" style="gap:6px;flex:none"><button class="btn small" data-bk="later">Later</button><button class="btn small primary" data-bk="save">Save</button></div></div>`;
+  el.onclick = async (e) => { const b = e.target.closest('[data-bk]'); if (!b) return;
+    if (b.dataset.bk === 'later') { await Settings.set('bk_snooze', String(Date.now() + 864e5)); el.innerHTML = ''; return; }
+    try { await exportBackup(WS.cur); } catch (err) { return toast('Could not save: ' + err.message, 5000); } homeBK(); }; }
 /* Birthdays marked done: { client id: that birthday's date } */
 /* How many days ahead a birthday shows (and notifies): the artist has until the day itself to send a birthday reward. */
 const bdDays = () => Math.max(0, Math.min(30, +Settings.get('bd_days', '3') || 0));
@@ -12297,6 +12312,12 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 564, when: '2026-11-26T22:00', added: [
+    'A new home screen: a slim header, your apps as a desktop of icons, Today, and one Notices panel for rewards, vouchers, birthdays, day end and backups. On a big screen the right side is free for sticky notes.',
+    'What’s new now waits in the small pill in the top corner, closed until you tap it.',
+    'Backup reminder: the home screen reminds you to save a workspace file every 7 days (change it in Settings › Backup, 0 turns it off).',
+    'Settings on phones: the cards read more easily, and the backup buttons sit in a neat grid. The day has to finish after it starts.'
+  ] },
   { build: 563, when: '2026-11-26T20:00', added: [
     'Sketchpad: search, favourites, folders, Export and Import, like Designs. Copies keep their picture, and a deleted sketch frees its space.',
     'Sketchpad and pages: Export can send what you drew to the stencil maker, a size sheet or Split for printing, cropped to the drawing and on white.',
@@ -12849,18 +12870,22 @@ const newsState = () => { let s = {}; try { s = JSON.parse(Settings.get('news_st
 const newsList = () => { const s = newsState(); return NEWS.filter(n => !s.del[n.build]); };
 const newsWhen = (w) => new Date(w).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 let newsAt = 0;
-const newsHtml = () => { if (Settings.get('news_off') === '1') return ''; const s = newsState(), L = newsList(); if (!L.length) return ''; newsAt = Math.max(0, Math.min(L.length - 1, newsAt)); const n = L[newsAt]; if (s.hidden) return `<button class="news-mini" data-news="show">Build ${L[0].build}: what's new</button>`;
+const newsHtml = () => { if (Settings.get('news_off') === '1') return ''; const s = newsState(), L = newsList(); if (!L.length) return ''; newsAt = Math.max(0, Math.min(L.length - 1, newsAt)); const n = L[newsAt]; if (!s.open) return '';
   return `<div class="card news-card" id="news-card"><div class="news-top"><h2>What's new in build ${n.build}</h2><button class="btn small" data-news="hide">Hide</button><button class="btn small" data-news="del">Delete</button></div>
     <div class="muted news-when">${esc(newsWhen(n.when))}</div>
     ${(n.added || []).length ? `<ul class="news-list">${n.added.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}${(n.test || []).length ? '<div class="lbl">Things to test</div>' : ''}
     ${(n.test || []).map((x, i) => `<label class="news-todo"><input type="checkbox" data-news-do="${n.build}:${i}" ${s.done[n.build]?.[i] ? 'checked' : ''}><span>${esc(x)}</span></label>`).join('')}
     <div class="row news-nav"><button class="btn small" data-news="older" ${newsAt >= L.length - 1 ? 'disabled' : ''} aria-label="Older update">‹ Older</button><span class="muted">${newsAt + 1} of ${L.length}</span><button class="btn small" data-news="newer" ${newsAt ? '' : 'disabled'} aria-label="Newer update">Newer ›</button><span style="flex:1"></span><button class="btn small" data-news="sticky">Make sticky note</button></div></div>`; };
-const newsRefresh = () => { const c = document.querySelector('#news-card, .news-mini'), t = document.createElement('div'); t.innerHTML = newsHtml(); if (c) c.replaceWith(...t.childNodes); };
+/* The pill in the home header's corner opens and closes the note; closed is how it starts. */
+const newsPill = () => { if (Settings.get('news_off') === '1') return ''; const L = newsList(); if (!L.length) return ''; const open = newsState().open;
+  return `<button class="news-mini ${open ? 'on' : ''}" data-news="${open ? 'hide' : 'show'}" aria-expanded="${!!open}" data-tip="What changed in the latest builds">Build ${L[0].build} \u00b7 What\u2019s new <span aria-hidden="true">${open ? '\u25b4' : '\u25be'}</span></button>`; };
+const newsRefresh = () => { const p = document.querySelector('.news-mini'), t = document.createElement('div'); t.innerHTML = newsPill(); if (p) p.replaceWith(...t.childNodes);
+  const slot = document.getElementById('news-slot'); if (slot) slot.innerHTML = newsHtml(); };
 // The test list as an ordinary sticky note: it stays on the menu screens until its owner removes it.
 async function newsSticky(n) { const items = (n.test?.length ? n.test : n.added || []).map((x, i) => ({ s: x, on: !!newsState().done[n.build]?.[i] })), l = { t: 'check', id: dzId(), title: `Test build ${n.build}`, items, src: 'custom', size: 58, x: 40, y: 150, w: 790, h: 300 }, doc = dzNew('note', null, 'paper'); doc.bg = { c: DZ_NOTE_COLS[0] }; doc.note = { pin: true, links: [] }; l.h = Math.max(dzCheckH(l), items.reduce((h, i) => h + Math.ceil(i.s.length / 24) * 58 * 1.5 + 40, 110)); doc.h = Math.max(doc.h, l.y + l.h + 50); doc.layers = [l];
   await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [`Test build ${n.build}`, 'note', JSON.stringify(doc)]); await dzThumb((await DB.one('SELECT last_insert_rowid() AS id')).id, doc); notesShow(); toast('Sticky note added. It stays here until you remove it.'); }
 document.addEventListener('click', async (e) => { const b = e.target.closest?.('[data-news]'); if (!b || b.disabled) return; const s = newsState(), act = b.dataset.news, L = newsList(), n = L[newsAt]; if (act === 'older') { newsAt++; return newsRefresh(); } if (act === 'newer') { newsAt--; return newsRefresh(); } if (act === 'sticky') { b.disabled = true; try { await newsSticky(n); } catch (err) { b.disabled = false; toast('Could not make the note: ' + err.message, 4000); } return; }
-  if (act === 'hide') s.hidden = true; if (act === 'show') s.hidden = false; if (act === 'del') { if (!await ask(`Delete the note for build ${n.build}?`)) return; s.del[n.build] = 1; } await Settings.set('news_state', JSON.stringify(s)); newsRefresh(); });
+  if (act === 'hide') s.open = false; if (act === 'show') s.open = true; if (act === 'del') { if (!await ask(`Delete the note for build ${n.build}?`)) return; s.del[n.build] = 1; } await Settings.set('news_state', JSON.stringify(s)); newsRefresh(); });
 document.addEventListener('change', (e) => { const k = e.target.dataset?.newsDo; if (k == null) return; const [bd, i] = k.split(':'), s = newsState(); (s.done[bd] ||= {})[i] = e.target.checked; Settings.set('news_state', JSON.stringify(s)); });
 async function notesShow() {
   const run = ++noteRun, key = (location.hash.slice(1) || 'home').split('/')[0];

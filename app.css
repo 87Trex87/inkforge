@@ -2077,6 +2077,8 @@ form.pro > .fsec .btn { min-height: 0; height: 38px; padding: 0 14px; border-rad
 #view > .card.su-again .btn { min-height: 0; height: 36px; min-width: 96px; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 600; justify-content: center; }
 #view > .card.su-again .toggle { min-height: 36px; border-radius: 8px; }
 #view > .card.su-again .seg { border-radius: 9px; } #view > .card.su-again .seg button { min-height: 30px; border-radius: 7px; font-size: 13px; }
+@media (max-width: 520px) { #view > .card.su-again:has(> .seg:last-child, > .row:last-child:has(> :nth-child(2))) { flex-wrap: wrap; } #view > .card.su-again:has(> .seg:last-child, > .row:last-child:has(> :nth-child(2))) > :last-child { margin-left: auto; } }   /* phones: a wide set of buttons goes under its text instead of squeezing it */
+@media (max-width: 520px) { details[data-sec="backup"] > .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } details[data-sec="backup"] > .row .btn { width: 100%; } }   /* phones: the backup buttons in an even grid */
 #view:has(> .set-tabs) > .card:not(.su-again) { padding: 20px 22px; border-radius: 12px; }
 #view:has(> .set-tabs) > .card h2 { font: 600 17px var(--ui); letter-spacing: 0; margin: 0 0 14px; }
 #view:has(> .set-tabs) .in { min-height: 40px; border-radius: 8px; font-size: 14px; }
@@ -3040,4 +3042,37 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 563; }
+:root { --app-build: 564; }
+
+/* ---------- Home screen: a slim header, the apps as a desktop, today, and one notices panel ----------
+   On wide screens it keeps to a column on the left, so the rest is open for sticky notes. */
+.home { display: grid; gap: 12px; }
+@media (min-width: 900px) { .home { max-width: 560px; } }
+.home-head { display: flex; align-items: flex-start; gap: 10px; padding: 2px 2px 0; }
+.home-head .hh-t { flex: 1; min-width: 0; }
+.home-head .big { font: 30px/1.05 var(--display); }
+.home-head .muted { font-size: 13px; margin-top: 4px; }
+.home .news-mini { display: inline-flex; align-items: center; gap: 6px; width: auto; flex: none; margin: 2px 0 0; padding: 5px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; color: var(--ink2); }
+.home .news-mini.on, .home .news-mini:hover { color: var(--teal); border-color: var(--teal); }
+#news-slot:empty { display: none; }
+#news-slot .news-card { margin: 0; font-size: 14px; } #news-slot .news-card h2 { font-size: 17px; }
+.home-apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+@media (min-width: 560px) { .home-apps { grid-template-columns: repeat(6, 1fr); } }
+.home-apps .ha { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px; border-radius: 14px; color: var(--ink); text-decoration: none; text-align: center; transition: background .15s; }
+.home-apps .ha:hover, .home-apps .ha:focus-visible { background: var(--bg2); }
+.home-apps .ha-i { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 14px; background: linear-gradient(145deg, rgba(31,181,168,.22), var(--bg2)); border: 1px solid rgba(31,181,168,.35); color: var(--teal); }
+.home-apps .ha-i svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.home-apps .ha-t { font-size: 12px; line-height: 1.2; color: var(--ink2); }
+.home-card { margin: 0; padding: 14px 16px; }
+.home-card .hc-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.home-card .hc-h h2 { flex: 1; margin: 0; font-size: 17px; }
+.home-card #home-today.card { margin: 0; }
+.home-sub { margin: 0; font-size: 13px; }
+.home-notes .hn-n { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; border-radius: 10px; background: var(--amber, #e0a030); color: #1a1200; font: 700 11px var(--ui); vertical-align: 2px; }
+.home-notes > div:empty { display: none; }
+.home-notes > [id]:not(:empty) ~ [id]:not(:empty) { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.home-notes .card { margin: 0; padding: 0; background: none; border: 0; box-shadow: none; }
+.home-notes .card h2 { font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink2); margin: 0 0 6px; }
+.home-notes .card.list { border: 1px solid var(--line); border-radius: 10px; }
+.home-notes .de-note.warn { border: 0; }
+.home .practice-note { margin: 0; }
