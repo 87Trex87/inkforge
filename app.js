@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 557;
+const APP_BUILD = 558;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -2207,6 +2207,7 @@ const VIEWS = {
           <div class="two">${inp('supplier', 'Supplier')}${inp('cost', 'Cost per unit' + (cur ? ` (${esc(cur)})` : ''), 'number', 'inputmode="decimal" min="0" step="any"')}</div>
           <label class="field"><span>Notes</span><textarea class="in" name="notes" rows="2">${esc(it.notes ?? '')}</textarea></label>`,
           { fold: true, open: !!(it.supplier || it.cost != null || it.notes), hint: 'supplier, cost, notes' })}
+        ${it.id && invLoyUse(it.id).length ? `<p class="muted loy-note" style="margin:8px 0 0">Your <a href="#loyalty" style="color:var(--teal)">loyalty program</a> offers this as ${invLoyUse(it.id).join(' and ')}; handing one over takes it off this stock.</p>` : ''}
         <div class="form-foot row">
           ${it.id ? '<button type="button" class="btn danger icon-btn" id="inv-del" aria-label="Delete" data-tip="Delete item"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>' : ''}
           <button type="button" class="btn" id="inv-cancel">Cancel</button>
@@ -2219,8 +2220,7 @@ const VIEWS = {
       $('#inv-cancel').onclick = () => history.back();
       const del = $('#inv-del');
       if (del) del.onclick = async () => {
-        if (!await ask(`Delete "${it.name}" from inventory?`)) return;
-        await DB.run('DELETE FROM inventory_items WHERE id = ?', [it.id]);
+        if (!await invDelete(it)) return;
         Dirty.set(false); toast('Item deleted.'); location.replace('#inventory');
       };
       f.addEventListener('submit', async (e) => {
@@ -8415,6 +8415,15 @@ async function renderInventory() {
 const IT_COLS = [['category', 'Category', true], ['qty', 'In stock', true], ['unit', 'Unit', true], ['min', 'Minimum', true], ['status', 'Status', true],
   ['supplier', 'Supplier', true], ['cost', 'Cost each', false], ['value', 'Stock value', false], ['notes', 'Notes', false], ['updated', 'Updated', false], ['tag', 'Artist tag', true]];
 const IT = { q: '', st: 'active', cats: null, sups: null, ord: null, sort: { k: 'name', dir: 1 } };   /* ord: one of the count orders (My order too) instead of a column */
+/* Where the loyalty program uses a product: as the reward, the product swap, or a product for several rewards. */
+function invLoyUse(id) { const c = Loy.cfg(), out = []; id = +id;
+  if (c.kind === 'item' && +c.item === id) out.push('the reward itself'); if (c.alt && +c.altItem === id) out.push('the product swap');
+  for (const t of c.tiers || []) if (+t.id === id) out.push(`the product for ${t.n} rewards`); return out; }
+/* Delete a product after asking; the loyalty program stops offering it (rewards already given keep its name). */
+async function invDelete(it) { const use = invLoyUse(it.id);
+  if (!await ask(`Delete "${it.name}" from inventory?${use.length ? `\n\nYour loyalty program offers it as ${use.join(' and ')}. It\u2019s taken out of the program too; rewards already given keep its name.` : ''}`)) return false;
+  if (use.length) { const c = Loy.cfg(), id = +it.id; if (+c.item === id) { c.item = null; c.itemName = ''; } if (+c.altItem === id) { c.altItem = null; c.altName = ''; } c.tiers = (c.tiers || []).filter(t => +t.id !== id); await Loy.save(c); }
+  await DB.run('DELETE FROM inventory_items WHERE id = ?', [it.id]); return true; }
 const itStatus = (r) => !r.active ? 'Not stocked' : r.qty <= 0 ? 'Out' : r.qty <= r.min_qty ? 'Low' : 'OK';
 const itCell = (r, k) => k === 'name' ? r.name : k === 'category' ? r.category || '' : k === 'qty' ? String(fmtQty(r.qty)) : k === 'unit' ? r.unit || '' : k === 'min' ? String(fmtQty(r.min_qty)) : k === 'status' ? itStatus(r)
   : k === 'supplier' ? r.supplier || '' : k === 'tag' ? r.tag || '' : k === 'cost' ? (r.cost != null ? money(r.cost) : '') : k === 'value' ? (r.cost != null ? money(r.cost * r.qty) : '') : k === 'notes' ? r.notes || '' : k === 'updated' ? fmtDay(r.updated_at.slice(0, 10)) : '';
@@ -8490,8 +8499,8 @@ async function itTable() {
       stepQ = stepQ.then(async () => { const it = await DB.one('SELECT qty, step FROM inventory_items WHERE id = ?', [id]); if (!it) return; const st = +it.step || 1, n = it.qty / st;
         const q = Math.max(0, +((up ? Math.floor(n + 1e-6) + 1 : Math.ceil(n - 1e-6) - 1) * st).toFixed(4));
         await DB.run(`UPDATE inventory_items SET qty = ?, updated_at = datetime('now') WHERE id = ?`, [q, id]); await table(); }).catch(() => {}); return; }
-    const del = t.closest('[data-idel]'); if (del) { const it = rows.find(x => x.id === +del.dataset.idel); if (!it || !await ask(`Delete "${it.name}" from inventory?`)) return;
-      await DB.run('DELETE FROM inventory_items WHERE id = ?', [it.id]); toast('Item deleted.'); return both(); }
+    const del = t.closest('[data-idel]'); if (del) { const it = rows.find(x => x.id === +del.dataset.idel); if (!it || !await invDelete(it)) return;
+      toast('Item deleted.'); return both(); }
     const tr = t.closest('[data-iedit]') || t.closest('tr[data-iid]'); if (tr) location.hash = 'inv-edit/' + (tr.dataset.iedit || tr.dataset.iid); };
 }
 /* The rule book table. Columns: [key, heading, on by default]; title is always shown. Order is the rule book's own
@@ -12280,6 +12289,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 558, when: '2026-11-26T09:00', added: [
+    'Inventory: deleting a product your loyalty program gives out says where it\u2019s used and takes it out of the program; the product\u2019s page shows it too.',
+    'Phones: stock items and rules get the full width for their name, with their buttons underneath.',
+    'Fixed: the shopping list on the pinned note no longer lists items marked not stocked.'
+  ] },
   { build: 557, when: '2026-11-25T21:00', added: [
     'Quote calculator: for a returning client, the price step mentions any loyalty rewards and vouchers they hold, so you can bring them up with the price.',
     'Fixed: a time you set yourself now updates when you change the placement (the pain level changes the time), like the other steps.'
@@ -12865,7 +12879,7 @@ function noteState(n, st) { n.classList.remove('min', 'max'); if (st) n.classLis
   P[id] = { x: b0.left, y: b0.top, ...P[id], st }; const b = n.getBoundingClientRect(); if (b.right > innerWidth - 4) n.style.left = Math.max(4, innerWidth - b.width - 4) + 'px'; if (b.bottom > innerHeight - 4) n.style.top = Math.max(4, innerHeight - b.height - 4) + 'px';
   P[id].x = parseFloat(n.style.left); P[id].y = parseFloat(n.style.top); Settings.set('note_pos', JSON.stringify(P)); }
 // What's low on stock, keeping any ticks already made.
-async function noteShopItems(old = []) { const was = new Map(old.map(i => [i.s, i.on])), rows = await DB.all('SELECT name FROM inventory_items WHERE qty <= min_qty ORDER BY name COLLATE NOCASE'); return rows.map(r => ({ s: r.name, on: !!was.get(r.name) })); }
+async function noteShopItems(old = []) { const was = new Map(old.map(i => [i.s, i.on])), rows = await DB.all('SELECT name FROM inventory_items WHERE active = 1 AND qty <= min_qty ORDER BY name COLLATE NOCASE'); return rows.map(r => ({ s: r.name, on: !!was.get(r.name) })); }
 // A note's shortcuts and checklists as real links and checkboxes, placed over its picture (sized with the note).
 async function noteLayers(r) { const D = r.doc, u = (v) => v / D.w * 100, out = [];
   for (const l of D.layers || []) { if (l.t !== 'shortcut' && l.t !== 'check') continue;
