@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 574;
+const APP_BUILD = 575;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -3351,6 +3351,7 @@ const SETX_GROUPS = [
   ['design', 'Design tools', 'Palettes and swatch panels, your fonts and templates, your dictionary, brushes, units and paper, stencil, reel and form settings.', ['dz_palettes', 'dz_fonts', 'dz_tpls', 'dz_words', 'dz_unit', 'dz_unit_post', 'dz_paper', 'sk_brush', 'sk_pals', 'st_params', 'st_cm', 'reel_style', 'reel_templates', 'reel_snap', 'reel_to_pf', 'ff_zoom']],
   ['sim', 'Tattoo simulator', 'Feel and look sliders, skin, body area, challenge skin, ink palettes, the marker and panels. Not pressure, tilt or tune-in.', ['tt_feel', 'tt_thin', 'tt_tex', 'tt_skin', 'tt_area', 'tt_chskin', 'tt_pals', 'tt_mk', 'tt_magflip', 'tt_panels', 'tt_cheat_prefs']],
   ['dev', 'Dev controls', 'Whether they\u2019re unlocked and on, and every dev slider.', ['tt_devseen', 'tt_devmode', 'tt_dev']]];
+const SETX_CARD = /^(loy|vou)_design/;
 const setxKeys = (g) => Object.keys(Settings.cache).filter(k => g[3].some(m => m instanceof RegExp ? m.test(k) : m === k));
 /* home shortcuts: only the ones to an app; one to a client, design or booking means nothing in another workspace */
 const setxVal = (k, v) => { if (k !== 'home_apps' || !v) return v; try { return JSON.stringify(JSON.parse(v).filter(a => a && !String(a.go).includes('/'))); } catch { return v; } };
@@ -3358,7 +3359,10 @@ const setxB64 = (blob) => new Promise((res) => { const r = new FileReader(); r.o
 async function setxExport() {
   const groups = {}, names = new Set();
   for (const g of SETX_GROUPS) { if (wsDesign() && ['week', 'quote', 'pay', 'loyalty', 'vouchers'].includes(g[0])) continue; const o = {};
-    for (const k of setxKeys(g)) { const v = setxVal(k, Settings.get(k)); if (v === '' || v == null) continue; o[k] = v; for (const n of String(v).match(DZ_MEDIA_RE) || []) names.add(n); }
+    for (const k of setxKeys(g)) { const v = setxVal(k, Settings.get(k)); if (v === '' || v == null) continue;
+      /* a loyalty or voucher card is a design here, kept by its id: the design itself goes in the file instead */
+      if (SETX_CARD.test(k)) { const pk = +v ? await dzPackOne(+v).catch(() => null) : null; if (pk) o[k] = JSON.stringify({ setxCard: pk }); continue; }
+      o[k] = v; for (const n of String(v).match(DZ_MEDIA_RE) || []) names.add(n); }
     if (Object.keys(o).length) groups[g[0]] = o; }
   if (!Object.keys(groups).length) return toast('Nothing set up yet to save.');
   toast('Preparing\u2026'); const media = {}, dir = await Media.dir();
@@ -3367,7 +3371,7 @@ async function setxExport() {
   await xSave(new File([JSON.stringify({ app: 'InkForge', kind: 'settings', v: 1, at: new Date().toISOString(), from, build: APP_BUILD, groups, media })], nm, { type: 'application/json' }), 'Settings', 'Saved ' + nm); }
 /* A backup's settings, set out like a settings file: its settings table sorted into the same groups, and its pictures. */
 async function setxFromBackup(bytes, name) { const B = parseBackup(bytes), T = await DB.peek(B.db.slice()), all = Object.fromEntries((T.settings || []).map(r => [r.key, r.value])), groups = {};
-  for (const g of SETX_GROUPS) { const o = {}; for (const [k, v] of Object.entries(all)) if (g[3].some(m => m instanceof RegExp ? m.test(k) : m === k) && v !== '' && v != null) o[k] = setxVal(k, v); if (Object.keys(o).length) groups[g[0]] = o; }
+  for (const g of SETX_GROUPS) { const o = {}; for (const [k, v] of Object.entries(all)) if (!SETX_CARD.test(k) && g[3].some(m => m instanceof RegExp ? m.test(k) : m === k) && v !== '' && v != null) o[k] = setxVal(k, v); if (Object.keys(o).length) groups[g[0]] = o; }
   return { kind: 'settings', groups, mediaBytes: B.media, from: all.studio_name || all.artist_name || B.name || name || 'a backup' }; }
 async function setxImport(file) {   /* file: one already in hand, or pick one. A settings file or a whole backup. */
   const f = file || await xPickFile('.inksettings,.inkforge,.sqlite,.db,application/json'); if (!f) return false; let P = null;
@@ -3386,10 +3390,11 @@ async function setxImport(file) {   /* file: one already in hand, or pick one. A
       if (e.target.closest('[data-ok]')) { const g = [...o.querySelectorAll('[data-g]:checked')].map(c => c.dataset.g); o.remove(); res(g); } };
     document.body.appendChild(o); });
   if (!pick?.length) return false;
-  const keys = pick.flatMap(g => Object.entries(P.groups[g])), need = new Set(keys.flatMap(([, v]) => String(v).match(DZ_MEDIA_RE) || []));
+  const keys = pick.flatMap(g => Object.entries(P.groups[g])), need = new Set(keys.filter(([k]) => !SETX_CARD.test(k)).flatMap(([, v]) => String(v).match(DZ_MEDIA_RE) || []));
   for (const n of need) { try { let u = P.mediaBytes?.get(n); if (!u) { const b = P.media?.[n]; if (!b) continue; const bin = atob(b); u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); }
       await Media.save(new Blob([u]), n.split('.').pop()); } catch {} }   /* same picture, same name */
-  for (const [k, v] of keys) { if (k === 'home_apps') { let A = []; try { A = JSON.parse(v); } catch {} const mine = homeApps().filter(a => String(a.go).includes('/')); await Settings.set(k, JSON.stringify([...A, ...mine].slice(0, HOME_MAX))); continue; }   /* your own client or design shortcuts are kept */
+  for (const [k, v] of keys) { if (SETX_CARD.test(k)) { let c = null; try { c = JSON.parse(v).setxCard; } catch {} if (c?.doc) { const nid = await dzUnpackOne(c).catch(() => 0); if (nid) await Settings.set(k, String(nid)); } continue; }   /* the card comes in as a design of its own */
+    if (k === 'home_apps') { let A = []; try { A = JSON.parse(v); } catch {} const mine = homeApps().filter(a => String(a.go).includes('/')); await Settings.set(k, JSON.stringify([...A, ...mine].slice(0, HOME_MAX))); continue; }   /* your own client or design shortcuts are kept */
     await Settings.set(k, v); }
   if (pick.includes('start') && WS.cur) { WS.cur.mode = Settings.get('ws_mode') || 'full'; await WS.save(); }
   if (pick.includes('dev') && typeof ttDevLoad === 'function') ttDevLoad();
@@ -12440,6 +12445,9 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 575, when: '2026-11-27T19:00', added: [
+    'Settings file: your loyalty and voucher card designs now travel inside it and come in as cards of their own, instead of pointing at the wrong design.'
+  ] },
   { build: 574, when: '2026-11-27T18:00', added: [
     'Tattoo simulator: new blowout defaults (safe pace at mid-green 0.025 mm, rise with depth 0.049 mm, how sudden 0.075 mm) and magnum skin wear 1.00.'
   ], test: ['Pack with a magnum and go deep and slow. Do blowouts and skin wear feel right now?'] },
