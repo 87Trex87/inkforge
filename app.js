@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 575;
+const APP_BUILD = 576;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -4074,7 +4074,7 @@ function mergeCounts(src) {
 }
 
 // `from` is a backup File, or another workspace on this device (merged straight from its storage).
-async function openMerge(from) {
+async function openMerge(from, adopt = false) {   /* adopt: see MERGE_ADOPT */
   let parsed, src;
   try {
     const bytes = from.id ? new Uint8Array(await (await buildBackup(from)).arrayBuffer()) : new Uint8Array(await from.arrayBuffer());
@@ -4100,7 +4100,7 @@ async function openMerge(from) {
     const picked = new Set([...o.querySelectorAll('[data-sec]:checked')].map(x => x.dataset.sec));
     if (!picked.size) return toast('Tick at least one section.');
     o.remove();
-    try { const res = await mergeWithPreviews(src, parsed.media, picked, from.name); Settings.cache = {}; await Settings.load(); mergeDone(res); Gcal.soon(); }
+    try { MERGE_ADOPT = adopt; const res = await mergeWithPreviews(src, parsed.media, picked, from.name); Settings.cache = {}; await Settings.load(); mergeDone(res); Gcal.soon(); }
     catch (err) { toast('Merge failed: ' + err.message, 6000); }
   };
 }
@@ -4109,9 +4109,10 @@ async function openMerge(from) {
    what has no Import of its own: signed forms, stock takes, references, assets, stencils, reel templates, settings.
    Add a section here when a new one gets an export. */
 const MERGE_STEPS = [
-  ['clients', async (S) => cxImport(await cxPack(S, await cxOwn(S), await cxOwn(S), true, true))],
-  ['bookings', async (S) => { const own = await bkOwn(S); return bkImport(await bkPack(S, own, own)); }],
-  ['inventory', async (S) => { const own = await ivOwn(S); return ivImport(await ivPack(S, own, own)); }],
+  ['clients', async (S) => { const all = await cxAll(S); return cxImport(await cxPack(S, all, await cxOwn(S), true, true)); }],
+  ['bookings', async (S) => { const all = await bkAll(S); return bkImport(await bkPack(S, all, await bkOwn(S))); }],
+  ['inventory', async (S) => { const all = (await S.rows('inventory_items')).sort((a, b) => (a.sort ?? 1e9) - (b.sort ?? 1e9) || a.id - b.id);   /* every item, those it once took from another workspace too */
+    return ivImport(await ivPack(S, all, all, { qty: true, cost: true, order: true })); }],
   ['rules', async (S) => rxImport(await rxPack(S, await rxOwn(S)))],
   ['portfolio', async (S) => pxImport(await pxPack(S, await pxOwn(S)))],
   ['quotes', async (S) => qxImport(await qxPack(S, await qxOwn(S)))],
@@ -4120,7 +4121,8 @@ const MERGE_STEPS = [
   ['tattoo', async (S) => txImport(await txPack(S, await txOwn(S)))],
   ['reel', async (S) => rlImport(await rlPack(S, await rlOwn(S)))]
 ];
-async function mergeWithPreviews(src, media, picked, name) {
+async function mergeWithPreviews(src, media, picked, name) { try { return await mergeRun(src, media, picked, name); } finally { MERGE_ADOPT = false; } }
+async function mergeRun(src, media, picked, name) {
   const S = xsBackup(src, media, name), res = {}, steps = MERGE_STEPS.filter(([k]) => picked.has(k));
   for (const [i, [k, run]] of steps.entries()) {
     toast(`Merge ${i + 1} of ${steps.length}: ${MERGE_SECTIONS.find(x => x[0] === k)?.[1]}…`, 3000);
@@ -11729,25 +11731,29 @@ function xsBackup(src, media, name) { const set = Object.fromEntries((src.settin
 const xWsName = (S, studioFirst) => (studioFirst ? S.set('studio_name') || S.set('artist_name') : S.set('artist_name') || S.set('studio_name')) || S.wsName || WS.cur?.name || 'Workspace';
 /* An import's file: the one handed in (a backup merge), or one picked. self = it came from this same workspace
    (only allowed when handed in, e.g. a backup of this workspace from another device). */
+/* Starting a new workspace from a backup's work: the backup's own rows become this workspace's own (as they were
+   there), not tagged as brought in. Rows it had taken in from elsewhere still keep where they came from. */
+let MERGE_ADOPT = false;
 async function xLoad(P0, accept, kind, key, v, what) {
   let P = P0;
   if (!P) { const f = await xPickFile(accept); if (!f) return null; toast('Reading…', 4000); try { P = JSON.parse(await f.text()); } catch { P = null; } }
   if (!P || P.inkforge !== kind || !Array.isArray(P[key])) { toast(`That is not an InkForge ${what} file.`, 3500); return null; }
   if (xTooNew(P, v)) return null;
-  const self = !!P.ws?.uid && P.ws.uid === await wsUid();
+  const self = (MERGE_ADOPT && !!P0) || (!!P.ws?.uid && P.ws.uid === await wsUid());
   if (self && !P0) { toast(`These ${what} came from this workspace, so there is nothing to import.`, 4000); return null; }
   return { P, self };
 }
 /* File v2 adds the booking's reference photos; v1 files (no photos) still import. */
 const BKX_V = 2;
-async function bkOwn(S) { const cl = new Map((await S.rows('clients')).map(c => [c.id, c]));
-  return (await S.rows('bookings')).filter(b => !b.src_uid).map(b => { const c = cl.get(b.client_id) || {}; return { ...b, first_name: c.first_name, last_name: c.last_name, phone: c.phone }; })
+async function bkOwn(S, every = false) { const cl = new Map((await S.rows('clients')).map(c => [c.id, c]));
+  return (await S.rows('bookings')).filter(b => every || !b.src_uid).map(b => { const c = cl.get(b.client_id) || {}; return { ...b, first_name: c.first_name, last_name: c.last_name, phone: c.phone }; })
     .sort((a, b) => a.start_at < b.start_at ? -1 : a.start_at > b.start_at ? 1 : 0); }
+const bkAll = (S) => bkOwn(S, true);   /* a backup merge: other artists' bookings and ghosts too */
 async function bkPack(S, list, own) {
   const uid = await S.uid(), ph = await S.rows('booking_photos'), bookings = [];
   for (const r of list) { const photos = [];
     for (const p of ph.filter(p => p.booking_id === r.id).sort((a, b) => a.sort - b.sort)) { const d = await S.b64(p.photo_ref); if (d) photos.push({ ref: p.photo_ref, data: d }); }
-    bookings.push({ uid: uid + ':' + r.id, ...Object.fromEntries(BKX_FIELDS.map(k => [k, r[k] ?? null])), name: bName(r), phone: r.phone || r.guest_phone || null, photos }); }
+    bookings.push({ uid: uid + ':' + r.id, ...Object.fromEntries(BKX_FIELDS.map(k => [k, r[k] ?? null])), name: bName(r), phone: r.phone || r.guest_phone || null, photos, ...xVia(r) }); }
   return { inkforge: 'bookings', v: BKX_V, ws: { uid, name: xWsName(S) }, at: new Date().toISOString(), all: own.map(r => uid + ':' + r.id), bookings };
 }
 async function bkExport(shown) {
@@ -11764,9 +11770,13 @@ const BK_TAG_COLS = ['#1fb5a8', '#f0c75e', '#d2453b', '#3b5bdb', '#7b4fa0', '#e0
 async function bkImport(P0) {
   const L = await xLoad(P0, '.inkbookings,application/json', 'bookings', 'bookings', BKX_V, 'bookings'); if (!L) return 0; const { P, self } = L;
   const today = ymd(new Date()), mine = self ? (await DB.all('SELECT * FROM bookings WHERE src_uid IS NULL')).map(r => ({ ...r, src_uid: P.ws.uid + ':' + r.id, own: 1 })) : await DB.all('SELECT * FROM bookings WHERE src_ws = ?', [P.ws.uid]), byUid = new Map(mine.map(r => [r.src_uid, r]));
+  const allBk = await DB.all('SELECT * FROM bookings'), byVia = new Map(allBk.filter(r => r.src_uid).map(r => [r.src_uid, r]));
+  /* the same appointment already here (same start, type and description), e.g. from merging this backup before */
+  const bkSig = (r) => [r.start_at, r.kind || 'tattoo', String(r.description || '').trim().toLowerCase()].join('|'), bySig = new Map(allBk.map(r => [bkSig(r), r]));
   const lastTag = mine.find(r => r.tag);
   // What each row is: new, changed (with what changed), the same, or gone from the other workspace.
-  const items = P.bookings.map(x => { const h = byUid.get(x.uid);
+  const items = P.bookings.map(x => { const h = byUid.get(x.uid) ?? (x.via ? byVia.get(x.via.src_uid) : null);
+    if (!h && bySig.has(bkSig(x))) return { x, h: bySig.get(bkSig(x)), st: 'same', diff: [], past: x.start_at.slice(0, 10) < today };
     if (!h) return { x, st: 'new', past: x.start_at.slice(0, 10) < today };
     const diff = [...BKX_FIELDS, ...(h.own ? [] : ['name', 'phone'])].filter(k => bkxNorm(k, k === 'name' ? h.guest_name : k === 'phone' ? h.guest_phone : h[k]) !== bkxNorm(k, x[k]));
     return { x, h, st: diff.length ? 'changed' : 'same', diff, past: x.start_at.slice(0, 10) < today }; });
@@ -11817,7 +11827,7 @@ async function bkImport(P0) {
     const x = it.x, vals = BKX_FIELDS.map(k => x[k] ?? (k === 'duration_min' ? 120 : k === 'kind' ? 'tattoo' : ['deposit_paid', 'completed'].includes(k) ? 0 : null));
     if (it.st === 'new' && (!it.past || st.past))
     { ops.push({ sql: `INSERT INTO bookings (${BKX_FIELDS.join(', ')}, guest_name, guest_phone, src_uid, src_ws, tag, tag_color, ghost, client_id) VALUES (${BKX_FIELDS.map(() => '?').join(', ')}, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [...vals, x.name || null, x.phone || null, self ? null : x.uid, self ? null : P.ws.uid, tag, col, st.ghost ? 1 : 0, clientKeys({ phone: x.phone }).map(k => cBy.get(k)).find(Boolean) ?? null] });
+        params: [...vals, x.name || null, x.phone || null, ...xSrc(x, self, P, tag, col), x.via ? (x.via.ghost ? 1 : 0) : st.ghost ? 1 : 0, clientKeys({ phone: x.phone }).map(k => cBy.get(k)).find(Boolean) ?? null] });
       (await photosOf(x)).forEach((ref, j) => ops.push({ sql: 'INSERT INTO booking_photos (booking_id, photo_ref, sort) VALUES ((SELECT max(id) FROM bookings), ?, ?)', params: [ref, j] })); }
     else if (it.st === 'changed')
       ops.push({ sql: `UPDATE bookings SET ${BKX_FIELDS.map(k => k + ' = ?').join(', ')}, guest_name = ?, guest_phone = ?, updated_at = datetime('now') WHERE id = ?`, params: [...vals, x.name || null, x.phone || null, it.h.id] });
@@ -11839,10 +11849,11 @@ const cTag = (c) => c.tag ? `<span class="btag" style="margin-left:6px;--tc:${es
 const cxNorm = (v) => v == null ? '' : String(v).trim();
 const CX_V = 1;
 const cxOwn = async (S) => (await S.rows('clients')).filter(r => !r.src_uid).sort((a, b) => fullName(a).localeCompare(fullName(b)));
+const cxAll = async (S) => (await S.rows('clients')).sort((a, b) => fullName(a).localeCompare(fullName(b)));   /* a backup merge: those taken in from elsewhere too */
 async function cxPack(S, list, own, med, photos = false) { const uid = await S.uid(), pic = {};   /* photos: only a backup merge brings them */
   if (photos) for (const r of list) if (r.photo_ref) { const d = await S.b64(r.photo_ref); if (d) pic[r.id] = { ref: r.photo_ref, data: d }; }
   return { inkforge: 'clients', v: CX_V, med, ws: { uid, name: xWsName(S) }, at: new Date().toISOString(), all: own.map(r => uid + ':' + r.id),
-    clients: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(CX_FIELDS.filter(k => k !== 'medical' || med).map(k => [k, r[k] ?? null])), ...(r.referred_by ? { ref_uid: uid + ':' + r.referred_by } : {}), ...(pic[r.id] ? { photo: pic[r.id] } : {}) })) }; }
+    clients: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(CX_FIELDS.filter(k => k !== 'medical' || med).map(k => [k, r[k] ?? null])), ...(r.referred_by ? { ref_uid: uid + ':' + r.referred_by } : {}), ...(pic[r.id] ? { photo: pic[r.id] } : {}), ...xVia(r) })) }; }
 async function cxExport(shown) {
   const own = await cxOwn(XS_LOCAL), vis = (shown || []).filter(r => !r.src_uid), st = { med: false };
   const pick = await xChoose('Export clients', 'A file to load into another workspace, for example the shop owner\'s. Imported clients are never exported again. Photos are left out.', vis.length, own.length, 'Every contact you added',
@@ -11857,9 +11868,10 @@ async function cxImport(P0) {
   const F = CX_FIELDS.filter(k => (k !== 'medical' || P.med) && (!['ref_src', 'ref_note'].includes(k) || P.clients.some(x => x && k in x)));   /* older files have no referral: yours stays */
   const all = await DB.all('SELECT * FROM clients'), mine = self ? all.filter(r => !r.src_uid).map(r => ({ ...r, src_uid: P.ws.uid + ':' + r.id })) : all.filter(r => r.src_ws === P.ws.uid), byUid = new Map(mine.map(r => [r.src_uid, r]));
   const byKey = new Map(); for (const r of all) if (!r.src_ws || r.src_ws !== P.ws.uid) for (const k of clientKeys(r)) if (!byKey.has(k)) byKey.set(k, r);
+  const byVia = new Map(all.filter(r => r.src_uid).map(r => [r.src_uid, r]));
   const lastTag = mine.find(r => r.tag);
   /* new, changed (with what changed), the same, already here by phone or email (linked), or deleted there */
-  const items = P.clients.map(x => { const h = byUid.get(x.uid);
+  const items = P.clients.map(x => { const h = byUid.get(x.uid) ?? (x.via ? byVia.get(x.via.src_uid) : null);
     if (h) { const diff = F.filter(k => cxNorm(h[k]) !== cxNorm(x[k])); return { x, h, st: diff.length ? 'changed' : 'same', diff }; }
     const m = clientKeys(x).map(k => byKey.get(k)).find(Boolean);
     if (!m) return { x, st: 'new' };
@@ -11908,7 +11920,7 @@ async function cxImport(P0) {
   for (const it of items) {
     if (st.skip.has(it.x.uid)) continue;
     const x = it.x;
-    if (it.st === 'new') ops.push({ sql: `INSERT INTO clients (${F.join(', ')}, src_uid, src_ws, tag, tag_color) VALUES (${F.map(() => '?').join(', ')}, ?, ?, ?, ?)`, params: [...F.map(k => val(x, k)), self ? null : x.uid, self ? null : P.ws.uid, tag, col] });
+    if (it.st === 'new') ops.push({ sql: `INSERT INTO clients (${F.join(', ')}, src_uid, src_ws, tag, tag_color) VALUES (${F.map(() => '?').join(', ')}, ?, ?, ?, ?)`, params: [...F.map(k => val(x, k)), ...xSrc(x, self, P, tag, col)] });
     else if (it.st === 'changed') ops.push({ sql: `UPDATE clients SET ${F.map(k => k + ' = ?').join(', ')}, tag = ?, tag_color = ?, updated_at = datetime('now') WHERE id = ?`, params: [...F.map(k => val(x, k)), tag, col, it.h.id] });
     else if (it.st === 'match') ops.push({ sql: `UPDATE clients SET ${it.diff.map(k => k + ' = ?, ').join('')}tag = COALESCE(tag, ?), tag_color = COALESCE(tag_color, ?), updated_at = datetime('now') WHERE id = ?`,
       params: [...it.diff.map(k => val(x, k)), tag, col, it.h.id] });
@@ -11932,6 +11944,11 @@ async function cxImport(P0) {
    Like clients: matched by the id from the other workspace, so importing again updates. A new item with the same name
    as one already here is not added twice: that item gets the tag and only its empty fields filled (its count is kept).
    The file can leave out the counts (a list to stock from) or the costs. */
+/* A row that came from another workspace keeps that through any export, backup merge or new workspace started from
+   a backup: where it came from, its tag and colour, and (a booking) whether it's a ghost. The import matches it by
+   that same origin, so merging the same rows in again, or from several workspaces, never doubles them. */
+const xVia = (r) => r.src_uid ? { via: { src_uid: r.src_uid, src_ws: r.src_ws ?? null, tag: r.tag ?? null, tag_color: r.tag_color ?? null, ...(r.ghost != null ? { ghost: r.ghost ? 1 : 0 } : {}) } } : {};
+const xSrc = (x, self, P, tag, col) => x.via ? [x.via.src_uid, x.via.src_ws, x.via.tag, x.via.tag_color] : [self ? null : x.uid, self ? null : P.ws.uid, tag, col];
 const IV_FIELDS = ['name', 'category', 'unit', 'qty', 'min_qty', 'step', 'supplier', 'cost', 'notes', 'active', 'pack'];
 const IV_LABEL = { name: 'Name', category: 'Category', unit: 'Unit', qty: 'In stock', min_qty: 'Minimum', step: 'Step', supplier: 'Supplier', cost: 'Cost each', notes: 'Notes', active: 'Stocked' };
 const ivNorm = (k, v) => ['qty', 'min_qty', 'cost', 'step'].includes(k) ? (v == null || v === '' ? '' : String(+v)) : k === 'active' ? String(+(v ?? 1)) : v == null ? '' : String(v).trim();
@@ -11940,7 +11957,8 @@ const IVX_V = 1;
 const ivOwn = async (S) => (await S.rows('inventory_items')).filter(r => !r.src_uid).sort((a, b) => String(a.category || '').localeCompare(String(b.category || '')) || String(a.name).localeCompare(String(b.name)));
 async function ivPack(S, list, own, o = { qty: true, cost: true }) { const uid = await S.uid(), F = IV_FIELDS.filter(k => (k !== 'qty' || o.qty) && (k !== 'cost' || o.cost));
   return { inkforge: 'stock', v: IVX_V, qty: o.qty, cost: o.cost, ws: { uid, name: xWsName(S) }, at: new Date().toISOString(),
-    all: own.map(r => uid + ':' + r.id), items: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(F.map(k => [k, r[k] ?? null])) })) }; }
+    all: own.map(r => uid + ':' + r.id), items: list.map(r => ({ uid: uid + ':' + r.id, ...Object.fromEntries(F.map(k => [k, r[k] ?? null])), ...(r.sort != null ? { sort: r.sort } : {}), ...xVia(r) })),
+    order: o.order === false ? undefined : (S === XS_LOCAL ? Settings.get('inv_order') : (await S.set?.('inv_order'))) || undefined }; }
 async function ivExport(shown) {
   const own = await ivOwn(XS_LOCAL), vis = (shown || []).filter(r => !r.src_uid), st = { qty: true, cost: true };
   const pick = await xChoose('Export stock', 'A file to load into another workspace, for example the shop owner\'s. Imported items are never exported again.', vis.length, own.length, 'Every item you added',
@@ -11957,8 +11975,9 @@ async function ivImport(P0) {
   const F = IV_FIELDS.filter(k => (k !== 'qty' || P.qty) && (k !== 'cost' || P.cost) && (k !== 'pack' || P.items.some(x => x && 'pack' in x)));
   const all = await DB.all('SELECT * FROM inventory_items'), mine = self ? all.filter(r => !r.src_uid).map(r => ({ ...r, src_uid: P.ws.uid + ':' + r.id })) : all.filter(r => r.src_ws === P.ws.uid), byUid = new Map(mine.map(r => [r.src_uid, r]));
   const byName = new Map(); for (const r of all) if (r.src_ws !== P.ws.uid && !byName.has(ivName(r.name))) byName.set(ivName(r.name), r);
+  const byVia = new Map(all.filter(r => r.src_uid).map(r => [r.src_uid, r]));
   const lastTag = mine.find(r => r.tag);
-  const items = P.items.filter(x => ivName(x.name)).map(x => { const h = byUid.get(x.uid);
+  const items = P.items.filter(x => ivName(x.name)).map(x => { const h = byUid.get(x.uid) ?? (x.via ? byVia.get(x.via.src_uid) : null);
     if (h) { const diff = F.filter(k => ivNorm(k, h[k]) !== ivNorm(k, x[k])); return { x, h, st: diff.length ? 'changed' : 'same', diff }; }
     const m = byName.get(ivName(x.name)); if (!m) return { x, st: 'new' };
     const diff = F.filter(k => k !== 'qty' && k !== 'active' && !ivNorm(k, m[k]) && ivNorm(k, x[k]));   /* your own item keeps its count; it only gets the tag and its blanks filled */
@@ -12007,13 +12026,18 @@ async function ivImport(P0) {
   for (const it of items) {
     if (st.skip.has(it.x.uid)) continue;
     const x = it.x;
-    if (it.st === 'new') ops.push({ sql: `INSERT INTO inventory_items (${F.join(', ')}, src_uid, src_ws, tag, tag_color) VALUES (${F.map(() => '?').join(', ')}, ?, ?, ?, ?)`, params: [...F.map(k => val(x, k)), self ? null : x.uid, self ? null : P.ws.uid, tag, col] });
-    else if (it.st === 'changed') ops.push({ sql: `UPDATE inventory_items SET ${F.map(k => k + ' = ?').join(', ')}, tag = ?, tag_color = ?, updated_at = datetime('now') WHERE id = ?`, params: [...F.map(k => val(x, k)), tag, col, it.h.id] });
+    if (it.st === 'new') ops.push({ sql: `INSERT INTO inventory_items (${F.join(', ')}, src_uid, src_ws, tag, tag_color) VALUES (${F.map(() => '?').join(', ')}, ?, ?, ?, ?)`, params: [...F.map(k => val(x, k)), ...xSrc(x, self, P, tag, col)] });
+    else if (it.st === 'changed') ops.push({ sql: `UPDATE inventory_items SET ${F.map(k => k + ' = ?').join(', ')}, tag = ?, tag_color = ?, updated_at = datetime('now') WHERE id = ?`, params: [...F.map(k => val(x, k)), ...xSrc(x, self, P, tag, col).slice(2), it.h.id] });
     else if (it.st === 'match') ops.push({ sql: `UPDATE inventory_items SET ${it.diff.map(k => k + ' = ?, ').join('')}tag = COALESCE(tag, ?), tag_color = COALESCE(tag_color, ?), updated_at = datetime('now') WHERE id = ?`,
       params: [...it.diff.map(k => val(x, k)), tag, col, it.h.id] });
   }
   for (const r of g) ops.push({ sql: 'DELETE FROM inventory_items WHERE id = ?', params: [r.h.id] });
   if (ops.length) await DB.tx(ops);
+  /* the list's order: each item takes its place from the file (found by where it came from, or by name), and a list
+     kept in your own order stays that way */
+  if (P.items.some(x => x.sort != null)) { const rows = await DB.all('SELECT id, name, src_uid FROM inventory_items'), bySrc = new Map(rows.filter(r => r.src_uid).map(r => [r.src_uid, r.id])), byNm = new Map(rows.map(r => [ivName(r.name), r.id])), up = [];
+    for (const x of P.items) { if (x.sort == null) continue; const id = (self ? null : bySrc.get(x.uid)) ?? byNm.get(ivName(x.name)); if (id) up.push({ sql: 'UPDATE inventory_items SET sort = ? WHERE id = ?', params: [x.sort, id] }); }
+    if (up.length) await DB.tx(up); if (P.order) await Settings.set('inv_order', P.order); }
   toast(`Imported: ${ops.length - g.length} change${ops.length - g.length === 1 ? '' : 's'} made.`, 3000);
   return ops.length;
 }
@@ -12445,6 +12469,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 576, when: '2026-11-27T20:00', added: [
+    'Merging a backup, or starting a new workspace from one, now brings every client, booking and stock item, including ones you took in from another workspace, keeping their tags and ghosts.',
+    'Your stock keeps the order you arranged it in, and merging the same things again never doubles them.',
+    'A new workspace started from a backup gets your own work as your own, untagged, just like the original.'
+  ], test: ['Start a new workspace from your full backup with Settings and work. Is all your stock there, in your order, with the apprentice’s items still tagged?'] },
   { build: 575, when: '2026-11-27T19:00', added: [
     'Settings file: your loyalty and voucher card designs now travel inside it and come in as cards of their own, instead of pointing at the wrong design.'
   ] },
@@ -13577,7 +13606,7 @@ async function startWorkspace(w, fileBytes) {
   if (w.mode && !Settings.get('ws_mode')) await Settings.set('ws_mode', w.mode);   /* the type chosen when it was made, kept in the workspace itself */
   if (w.fresh && WS.seed) { const sd = WS.seed; WS.seed = null;   /* a new workspace started from a file */
     const got = await setxImport(sd.file).catch((err) => { toast('Could not load the settings: ' + err.message, 5000); return false; });
-    if (sd.kind === 'work') { w.fromWork = true; await openMerge(sd.file); }
+    if (sd.kind === 'work') { w.fromWork = true; await openMerge(sd.file, true); }   /* the backup's own work becomes this one's own */
     if (got) { if (WS.cur) { WS.cur.mode = Settings.get('ws_mode') || WS.cur.mode; await WS.save(); } toast('Filled in from the file. Fine-tune anything in More \u203a Settings.', 4000); } }
   if (w.fresh && wsDesign()) { delete w.fresh; await WS.save(); render(); }   /* a design workspace needs no hours or prices */
   if (w.fresh && Settings.get('setup_done') !== '1' && !w.fromWork) runSetup();   /* not over a backup's work being brought in */
