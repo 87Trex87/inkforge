@@ -2398,25 +2398,39 @@ SKP.list = async () => {
   const el = $('#skp-list'); if (!el) return;
   const rows = await DB.all(`SELECT id, name, thumb_ref, updated_at FROM designs WHERE kind = 'sketch' ORDER BY updated_at DESC, id DESC`);
   const urls = await Promise.all(rows.map(r => Media.url(r.thumb_ref)));
-  el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">An open page for notes, tattoo plans, events and trips, quick sketches and, soon, mind maps. It grows as you go.</p>
-      <button class="btn primary" id="skp-new">+ New sketch</button></div>
-    ${rows.length ? `<div class="dz-grid">${rows.map((r, i) => `<div class="dz-item" data-open="${r.id}">
-        <div class="dz-thumb">${urls[i] ? `<img src="${urls[i]}" alt="">` : ''}</div>
+  const all = rows.map((r, i) => ({ ...r, url: urls[i], kind: 'Sketch', t: r.updated_at })), shown = Lib.apply('sketches', all);
+  el.innerHTML = `<div class="row" style="margin-bottom:12px"><p class="muted" style="margin:0;flex:1;font-size:13px">An open page for notes, tattoo plans, events and trips, quick sketches and mind maps. It grows as you go.</p>
+      <button class="btn" id="skp-exp" data-tip="Save sketches to a file another workspace can import" ${rows.length ? '' : 'disabled'}>Export</button><button class="btn" id="skp-imp" data-tip="Load sketches from another workspace's file: preview first">Import</button><button class="btn primary" id="skp-new">+ New sketch</button></div>
+    ${rows.length ? Lib.bar('sketches', all) + (shown.length ? `<div class="dz-grid">${shown.map((r) => `<div class="dz-item" data-open="${r.id}">${Lib.tools('sketches', r.id)}
+        <div class="dz-thumb">${r.url ? `<img src="${r.url}" alt="">` : ''}</div>
         <div class="dz-meta"><b>${esc(r.name || 'Sketch')}</b><span class="muted">${esc(fmtDay(String(r.updated_at || '').slice(0, 10)))}</span></div>
-        <div class="card-acts"><button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
-          <button class="mini del" data-del="${r.id}" aria-label="Delete" data-tip="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div></div>`).join('')}</div>`
+        <div class="card-acts"><button class="mini" data-out="${r.id}" aria-label="Print or save" data-tip="Print or save as"><svg viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></button>
+          <button class="mini xone" data-xone="design:${r.id}" data-tip="Export this one, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>
+          <button class="mini" data-dup="${r.id}" aria-label="Duplicate" data-tip="Duplicate"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
+          <button class="mini del" data-del="${r.id}" aria-label="Delete" data-tip="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div></div>`).join('')}</div>` : Lib.empty)
       : `<div class="empty"><div class="empty-ico">${ICON.sketch}</div><div style="font:24px var(--display)">Start a sketch</div><div class="muted">Tap + New sketch: an open page to plan on.</div></div>`}`;
-  el.onclick = async (e) => { const t = e.target, g = (k) => t.closest(`[data-${k}]`)?.dataset[k];
+  Lib.wire(el, 'sketches', SKP.list);
+  el.onclick = async (e) => { if (await Lib.click(e, 'sketches', SKP.list)) return;
+    const t = e.target, g = (k) => t.closest(`[data-${k}]`)?.dataset[k];
     if (t.closest('#skp-new')) { const n = (await DB.one(`SELECT COUNT(*) AS n FROM designs WHERE kind = 'sketch'`)).n, doc = dzNew('sketch', null, 'ink');
       doc.bg = { c: '#f7f4ee' };
       await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', ['Sketch' + (n ? ' ' + (n + 1) : ''), 'sketch', JSON.stringify(doc)]);
       location.hash = 'design/' + (await DB.one('SELECT last_insert_rowid() AS id')).id; return; }
-    if (g('dup')) { e.stopPropagation(); const r = await DB.one('SELECT name, doc FROM designs WHERE id = ?', [+g('dup')]); if (!r) return;
-      await DB.run('INSERT INTO designs (name, kind, doc) VALUES (?, ?, ?)', [(r.name || 'Sketch') + ' (copy)', 'sketch', r.doc]);
+    if (t.closest('#skp-exp')) return dzExportMany(shown);
+    if (t.closest('#skp-imp')) { const r = await dzImportMany(); if (r?.id) location.hash = 'design/' + r.id; else if (r?.n) SKP.list(); return; }
+    if (g('out')) { e.stopPropagation(); const r = await DB.one('SELECT name, doc FROM designs WHERE id = ?', [+g('out')]); if (!r) return; const doc = JSON.parse(r.doc);
+      const how = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; o.innerHTML = `<div class="card"><h2>${esc(r.name || 'Sketch')}</h2><div class="dz-ex"><button data-po="print"><b>Print</b><small>Or Save as PDF from the print screen</small></button><button data-po="save"><b>Save as</b><small>A picture or PDF to share</small></button></div><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" data-po="">Cancel</button></div></div>`;
+        o.onclick = (ev) => { const b = ev.target.closest('[data-po]'); if (!b && ev.target !== o) return; o.remove(); res(b?.dataset.po || null); }; document.body.appendChild(o); });
+      if (how === 'print') return dzPrintDoc(doc); if (how === 'save') { await dzSaveAs(doc, r.name || 'sketch', +g('out')); return SKP.list(); } return; }
+    if (g('dup')) { e.stopPropagation(); const r = await DB.one('SELECT name, doc, thumb_ref FROM designs WHERE id = ?', [+g('dup')]); if (!r) return;
+      await DB.run('INSERT INTO designs (name, kind, doc, thumb_ref) VALUES (?, ?, ?, ?)', [(r.name || 'Sketch') + ' (copy)', 'sketch', r.doc, r.thumb_ref]);
       const nid = (await DB.one('SELECT last_insert_rowid() AS id')).id; await DB.run('INSERT INTO design_assets (design_id, ref) SELECT ?, ref FROM design_assets WHERE design_id = ?', [nid, +g('dup')]); return SKP.list(); }
-    if (g('del')) { e.stopPropagation(); const id0 = +g('del'), r = await DB.one('SELECT name FROM designs WHERE id = ?', [id0]); if (!r || !await ask(`Delete "${r.name || 'Sketch'}"?`)) return;
+    if (g('del')) { e.stopPropagation(); const id0 = +g('del'), r = await DB.one('SELECT name, thumb_ref FROM designs WHERE id = ?', [id0]); if (!r || !await ask(`Delete "${r.name || 'Sketch'}"?`)) return;
+      /* its pictures and thumbnail are freed once Undo has passed, as in the design list */
+      const refs = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [id0])).map(x => x.ref), rp = Settings.get('dz_refs_' + id0, '');
       const snap = await Undel.snap([['designs', 'id = ?', [id0]], ['design_assets', 'design_id = ?', [id0]]]);
-      await DB.run('DELETE FROM designs WHERE id = ?', [id0]); Undel.offer('Sketch deleted.', snap, [], SKP.list); return SKP.list(); }
+      await DB.run('DELETE FROM designs WHERE id = ?', [id0]); Settings.set('dz_refs_' + id0, '');
+      Undel.offer('Sketch deleted.', snap, [r.thumb_ref, ...refs], SKP.list, () => rp && Settings.set('dz_refs_' + id0, rp)); return SKP.list(); }
     const o = g('open'); if (o) location.hash = 'design/' + o; };
 };
 
@@ -7170,7 +7184,7 @@ DZ.edit = async (id) => {
     draw(); document.body.appendChild(m); const r = $('#dz-panels').getBoundingClientRect(); m.style.top = (r.bottom + 6) + 'px'; m.style.right = Math.max(8, innerWidth - r.right) + 'px';
     setTimeout(() => document.addEventListener('pointerdown', function off(ev) { if (!ev.target.closest('#dz-panm, #dz-panels')) { m.remove(); document.removeEventListener('pointerdown', off, true); } }, true)); };
   dpApply(); dqDraw();
-  $('#dz-export').onclick = () => { select(null); dzExport(doc, name); };
+  $('#dz-export').onclick = () => { select(null); dzExport(doc, name, id); };
   const ab = $('#dz-anim'); if (ab) ab.onclick = async () => { select(null); ab.disabled = true; try { await dzAnimate(doc, name); } catch (err) { toast('Could not animate it: ' + err.message, 4000); } finally { ab.disabled = false; } };
   railFit($('#dz-rail'));
   $('#dz-print').onclick = async () => { select(null); await flush(); dzPrintDoc(doc); };
@@ -7220,7 +7234,7 @@ async function dzDeviceFont() {
 }
 
 /* ---------- Export ---------- */
-function dzExport(doc, name) {
+function dzExport(doc, name, id) {   /* id: the design's own, for a form's Fill in now */
   const kind = DZ_KINDS[doc.kind], st = { sheet: false };
   const o = document.createElement('div'); o.id = 'merge-dlg';
   const file = () => (name || 'design').replace(/[^\w-]+/g, '_');
@@ -7233,6 +7247,9 @@ function dzExport(doc, name) {
         <button data-ex="ffprint"><b>Print blank</b><small>All pages, to fill in by hand</small></button>
         <button data-ex="ffopen"><b>Fill in now</b><small>In InkForge, saved to the client</small></button>` : `<button data-ex="png"><b>Save picture</b><small>PNG, for printing elsewhere or posting</small></button>
         <button data-ex="share"><b>Share</b><small>Send it in WhatsApp or another app</small></button>`}
+        ${kind.sketch || kind.page ? `<button data-ex="stencil"><b>Make a stencil</b><small>What's drawn, in the stencil maker</small></button>
+        <button data-ex="sizes"><b>Size sheet</b><small>What's drawn in a range of sizes, to try on the client</small></button>
+        <button data-ex="split"><b>Split for printing</b><small>What's drawn at full size over several pages</small></button>` : ''}
         ${kind.fold ? '<button data-ex="print"><b>Print / PDF</b><small>Two pages: outside, then inside</small></button>' : ''}
         ${kind.page ? `<button data-ex="print"><b>Print / PDF</b><small>${doc.sides ? 'Two pages. ' : ''}Fits the paper in your printer; choose the same size there</small></button>` : ''}
         ${kind.per ? `<button data-ex="print"><b>Print / PDF</b><small>${st.sheet ? `${kind.per} on an A4 sheet with cut marks` : 'One per page'}</small></button>` : ''}
@@ -7250,6 +7267,18 @@ function dzExport(doc, name) {
     if (a === 'ffpdf') { toast('Preparing…'); return ffSavePdf(ffCopy(doc, ffBlankCtx()), name); }
     toast('Preparing…');
     const cv = await dzCanvas(doc);
+    /* Stencil, size sheet, split: just what's drawn (the layers' boxes and a little margin), on white. */
+    if (['stencil', 'sizes', 'split'].includes(a)) { o.remove(); const L = (doc.layers || []).filter(l => !l.hide && (dzSide(l) === (dzOutFaces(doc)[0] || 'f') || l.side === 'm') && [l.x, l.y, l.w].every(Number.isFinite));
+      const sc = cv.width / doc.w; let x0 = doc.w, y0 = doc.h, x1 = 0, y1 = 0;
+      for (const l of L) { const h = l.h || l.w, a2 = (l.rot || 0) * Math.PI / 180, bw = Math.abs(l.w * Math.cos(a2)) + Math.abs(h * Math.sin(a2)), bh = Math.abs(l.w * Math.sin(a2)) + Math.abs(h * Math.cos(a2)), cx = l.x + l.w / 2, cy = l.y + h / 2;
+        x0 = Math.min(x0, cx - bw / 2); y0 = Math.min(y0, cy - bh / 2); x1 = Math.max(x1, cx + bw / 2); y1 = Math.max(y1, cy + bh / 2); }
+      if (!(x1 > x0 && y1 > y0)) { x0 = 0; y0 = 0; x1 = doc.w; y1 = doc.h; }
+      const m = Math.max(20, (x1 - x0 + y1 - y0) * 0.02); x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(doc.w, x1 + m); y1 = Math.min(doc.h, y1 + m);
+      const w = document.createElement('canvas'); w.width = Math.max(1, Math.round((x1 - x0) * sc)); w.height = Math.max(1, Math.round((y1 - y0) * sc));
+      const x = w.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w.width, w.height); x.drawImage(doc.bg ? await dzCanvas({ ...doc, bg: { c: '#ffffff' } }) : cv, -x0 * sc, -y0 * sc);   /* on white paper, not the sketch's colour */
+      const blob = await new Promise(r => w.toBlob(r, 'image/png')), nm = file();
+      if (a === 'stencil') { await stLoad(blob); location.hash = 'stencil'; return; }
+      return a === 'sizes' ? SZ.open(blob, nm) : SP.open(blob, nm); }
     if (doc.sides) {   // the two sides (or every page) as their own pages
       const ofs = dzOutFaces(doc), sides = [cv]; for (const f of ofs.slice(1)) sides.push(await dzCanvas(doc, 1, f)); const nm = dzFaceNames(doc);
       if (a === 'print') { o.remove(); return printCanvas(...(kind.per && sides.length === 2 ? [await dzSheet(sides[0], doc.kind, st.sheet), await dzSheet(sides[1], doc.kind, st.sheet, true)] : sides)); }

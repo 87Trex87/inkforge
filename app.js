@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 562;
+const APP_BUILD = 563;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -12297,6 +12297,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 563, when: '2026-11-26T20:00', added: [
+    'Sketchpad: search, favourites, folders, Export and Import, like Designs. Copies keep their picture, and a deleted sketch frees its space.',
+    'Sketchpad and pages: Export can send what you drew to the stencil maker, a size sheet or Split for printing, cropped to the drawing and on white.',
+    'Design studio: Fill in now on a form’s Export works again.'
+  ] },
   { build: 562, when: '2026-11-26T18:00', added: [
     'Design studio, Edit nodes: a node with short handles can be grabbed now. The closest point wins, and the node gets a slight edge over its handles.',
     'Design studio: zoom in up to 3200% to work on fine detail, and zooming now stays on the spot under your finger or cursor.'
