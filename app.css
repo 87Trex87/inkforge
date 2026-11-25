@@ -1568,6 +1568,9 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 .dz-side .seg button { padding-top: 6px; padding-bottom: 6px; font-size: 12px; }
 .dz-ed .dz-top { flex-wrap: nowrap; }
 .dz-ed .dz-top #dz-name { flex: 1 1 auto; order: 0; }
+@media (max-width: 600px) { .dz-ed .dz-top { overflow-x: auto; scrollbar-width: none; } .dz-ed .dz-top::-webkit-scrollbar { display: none; }
+  .dz-ed .dz-top #dz-name { min-width: 90px; } .dz-ed .dz-top > * { flex-shrink: 0; }
+  .dz-ed .dz-top #dz-export { position: sticky; right: 0; box-shadow: -10px 0 10px var(--bg2); } }   /* phones: the top bar slides sideways, Export always in reach */
 .dz-side .dz-lr { padding: 1px 4px; grid-template-columns: 22px 20px 1fr 30px 30px 30px 30px; }
 .dz-side .dz-lr button { width: 30px; height: 30px; }
 .dz-side .dz-lr .nm { padding: 4px 0; }
@@ -1664,6 +1667,8 @@ body.dz-focus.dz-noside .dz-side { display: none; }
 #dz-sel.framesel .n, #dz-sel.framesel .s { display: block; }
 /* Forms: real inputs laid over the drawn pages */
 #ff-pages { max-width: 900px; margin: 12px auto; }
+#ff-scroll { overflow-x: auto; } #ff-pages.big { width: 220%; max-width: none; }   /* Large page size on the fill-in screen */
+@media (min-width: 900px) { .ff-zoom { display: none !important; } #ff-pages.big { width: auto; max-width: 900px; } }
 .ff-page { position: relative; margin-bottom: 14px; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.35); }
 .ff-page > canvas, .ff-page > img { display: block; width: 100%; height: auto; }
 .ff-over { position: absolute; inset: 0; }
@@ -3035,4 +3040,4 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 560; }
+:root { --app-build: 561; }

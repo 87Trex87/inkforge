@@ -222,14 +222,16 @@ const FF = {
     await DB.run(`INSERT INTO app_meta VALUES ('forms_dz', '1')`); },
   async all() { await FF.seed(); return (await DB.all(`SELECT id, name, doc FROM designs WHERE kind = 'form' ORDER BY name COLLATE NOCASE`)).map(r => { const doc = JSON.parse(r.doc); return { id: r.id, name: r.name, doc, cat: doc.form?.cat || 'other' }; }); },
   async list() {
-    const every = await FF.all(), all = every.map(f => ({ ...f, t: String(f.id).padStart(9, '0'), kind: '' })), forms = Lib.apply('forms', all), done = await DB.all('SELECT id, kind, title, client_name, signed_at FROM signed_forms ORDER BY signed_at DESC LIMIT 20'), el = $('#f-list');
+    const every = await FF.all(), all = every.map(f => ({ ...f, t: String(f.id).padStart(9, '0'), kind: '' })), forms = Lib.apply('forms', all), done = await DB.all(`SELECT id, kind, title, client_name, signed_at FROM signed_forms ORDER BY signed_at DESC LIMIT ${FF.more ? -1 : 21}`), el = $('#f-list');
+    const older = !FF.more && done.length > 20; if (older) done.length = 20;
     const sec = ([cat, name]) => { const L = forms.filter(f => f.cat === cat); return !L.length && (cat === 'other' || forms.length < every.length) ? '' : `<div class="letter">${name}</div><div class="card list">${L.map(f => `
       <div class="c-row f-tpl"><span class="ava">${ICON.forms}</span><span class="c-main"><span class="c-n">${esc(f.name)}</span><span class="muted c-sub">${f.doc.pages || 1} page${(f.doc.pages || 1) > 1 ? 's' : ''}</span></span>
         <span class="f-acts">${Lib.tools('forms', f.id)}<button class="mini f-ic" data-f="dup" data-id="${f.id}" data-tip="Make a copy" aria-label="Copy"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button><button class="mini f-ic" data-xone="form:${f.id}" data-tip="Export this form, to import in another workspace" aria-label="Export"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v7h14v-7"/></svg></button>${f.doc.layers.some(l => l.src?.length) ? `<button class="btn small" data-f="upd" data-id="${f.id}" data-tip="Pull the drop-down and check lists from your studio data again">Update lists</button>` : ''}<button class="btn small" data-f="edit" data-id="${f.id}">Design</button><button class="btn small" data-f="print" data-id="${f.id}" data-tip="An empty copy to fill in by hand">Print</button><button class="btn small" data-f="pdf" data-id="${f.id}" data-tip="A PDF the client can fill in on their own device">PDF</button><button class="btn small primary" data-f="fill" data-id="${f.id}">Fill in</button></span></div>`).join('') || '<div class="muted" style="padding:14px">None yet.</div>'}</div>`; };
     el.innerHTML = `<div class="row" style="justify-content:flex-end;margin-bottom:8px;gap:8px"><button class="btn" data-f="exp" data-tip="Save forms to a file another workspace can import">Export</button><button class="btn" data-f="imp" data-tip="Load forms from another workspace's file: preview first">Import</button><button class="btn primary" data-f="new">+ New form</button></div>` + Lib.bar('forms', all) + (forms.length ? FF_CATS.map(sec).join('') : Lib.empty)
-      + `<div class="letter">Completed</div><div class="card list">${done.map(r => `<a class="c-row" href="#signed/${r.id}"><span class="c-main"><span class="c-n">${esc(r.title)}</span><span class="muted c-sub">${esc(r.client_name || 'No client')} · ${new Date(r.signed_at + 'Z').toLocaleDateString()}</span></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('') || '<div class="muted" style="padding:14px">Forms you fill in are kept here and on the client\'s card.</div>'}</div>`;
+      + `<div class="letter">Completed</div><div class="card list">${done.map(r => `<a class="c-row" href="#signed/${r.id}"><span class="c-main"><span class="c-n">${esc(r.title)}</span><span class="muted c-sub">${esc(r.client_name || 'No client')} · ${new Date(r.signed_at + 'Z').toLocaleDateString()}</span></span><svg viewBox="0 0 24 24" class="chev"><path d="M9 6l6 6-6 6"/></svg></a>`).join('') || '<div class="muted" style="padding:14px">Forms you fill in are kept here and on the client\'s card.</div>'}</div>${older ? '<button class="btn" data-f="older" style="width:100%;margin-top:8px">Show older forms</button>' : ''}`;
     Lib.wire(el, 'forms', FF.list);
     el.onclick = async (e) => { if (await Lib.click(e, 'forms', FF.list)) return; const b = e.target.closest('[data-f]'); if (!b) return; const a = b.dataset.f, f = forms.find(x => x.id === +b.dataset.id);
+      if (a === 'older') { FF.more = true; return FF.list(); }
       if (a === 'new') return dzPicker({ kind: 'form' });
       if (a === 'exp') return fxExport(forms);
       if (a === 'imp') return fxImport().then(n => { if (n) FF.list(); });
@@ -247,8 +249,9 @@ const FF = {
     let client = ctx0.clientId ? await DB.one('SELECT * FROM clients WHERE id = ?', [ctx0.clientId]) : null;
     const booking = ctx0.bookingId ? await DB.one('SELECT * FROM bookings WHERE id = ?', [ctx0.bookingId]) : null;
     const el = $('#fs'), vals = {}, typed = new Set(), pads = {}, faces = ffFaces(src), cat = src.form?.cat || 'other'; let d;
-    el.innerHTML = `<div class="card"><label class="field" style="margin:0"><span>Client</span><div class="picker"><input class="in" id="fs-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off"><div class="pick-list" id="fs-list" hidden></div></div></label></div>
-      <div id="ff-pages">${faces.map(f => `<div class="ff-page" data-face="${f}"><canvas></canvas><div class="ff-over"></div></div>`).join('')}</div>
+    el.innerHTML = `<div class="card"><label class="field" style="margin:0"><span>Client</span><div class="picker"><input class="in" id="fs-client" placeholder="Search clients…" value="${esc(client ? fullName(client) : '')}" autocomplete="off"><div class="pick-list" id="fs-list" hidden></div></div></label>
+        <div class="row ff-zoom" style="margin-top:10px;gap:8px"><span class="muted" style="font-size:13px">Page size</span><span class="seg" id="fs-zoom">${[['1', 'Fit'], ['2', 'Large']].map(([k, n]) => `<button type="button" data-z="${k}" class="${(Settings.get('ff_zoom') || (innerWidth < 600 ? '2' : '1')) === k ? 'on' : ''}">${n}</button>`).join('')}</span></div></div>
+      <div id="ff-scroll"><div id="ff-pages">${faces.map(f => `<div class="ff-page" data-face="${f}"><canvas></canvas><div class="ff-over"></div></div>`).join('')}</div></div>
       <div class="form-foot row" style="background:var(--bg)"><button type="button" class="btn" id="fs-cancel">Cancel</button><button type="button" class="btn" id="fs-print">Print</button><button type="button" class="btn" id="fs-pdf">PDF</button><button type="button" class="btn primary" style="flex:1" id="fs-save">Save to client</button></div>`;
     const K = () => $('#ff-pages').clientWidth / src.w;
     const fontFit = () => { const k = K(); for (const n of el.querySelectorAll('[data-s]')) { n.style.fontSize = n.dataset.s * k * 0.9 + 'px'; n.style.fontFamily = `"${n.dataset.ff}", Inter, sans-serif`; n.style.fontWeight = n.dataset.fb; n.style.fontStyle = n.dataset.fi; n.style.color = n.dataset.fc; } };
@@ -268,9 +271,13 @@ const FF = {
           return `<input class="ff-i" type="${l.ft === 'date' ? 'date' : 'text'}" value="${esc(v)}" ${a} style="${pct(g.box, l)}">`; }).join('');
         for (const s of host.querySelectorAll('[data-sig]')) { const p = signaturePad(s); pads[s.dataset.sig] = p; if (sigs[s.dataset.sig]) p.restore(sigs[s.dataset.sig]); } }
       fontFit(); };
+    /* Large: the page twice the screen wide, scrolled sideways, so the boxes are big enough to tap and read on a phone. */
+    const zoom = (z) => { $('#ff-pages').classList.toggle('big', z === '2'); $('#fs-zoom').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.z === z)); };
+    zoom((Settings.get('ff_zoom') || (innerWidth < 600 ? '2' : '1')));
+    $('#fs-zoom').onclick = (e) => { const b = e.target.closest('[data-z]'); if (!b) return; Settings.set('ff_zoom', b.dataset.z); zoom(b.dataset.z); };
     await paint();
-    new ResizeObserver(fontFit).observe($('#ff-pages'));
     const pagesEl = $('#ff-pages');
+    const ro = new ResizeObserver(() => { if (!pagesEl.isConnected) return ro.disconnect(); fontFit(); }); ro.observe(pagesEl);   // stops once the page is left
     pagesEl.addEventListener('input', (e) => { const t = e.target, i = t.dataset.id; if (!i) return; vals[i] = t.hasAttribute('data-many') ? [...pagesEl.querySelectorAll(`[data-id="${i}"]:checked`)].map(n => n.value) : t.type === 'checkbox' ? t.checked : t.value; typed.add(i); Dirty.set(true); });
     pagesEl.addEventListener('click', async (e) => { const c = e.target.dataset.sigc; if (c) pads[c]?.clear(); const go = e.target.dataset.fflink; if (!go) return; e.preventDefault();
       const host = e.target.closest('.ff-page'), i = faces.indexOf(host.dataset.face), jump = (n) => el.querySelector(`.ff-page[data-face="${faces[n]}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -302,11 +309,26 @@ const FF = {
     const s = await DB.one('SELECT * FROM signed_forms WHERE id = ?', [id]), el = $('#sf'); if (!s) { el.innerHTML = '<div class="card muted">Form not found.</div>'; return; }
     const pages = await DB.all('SELECT ref FROM signed_form_pages WHERE form_id = ? ORDER BY sort', [id]), urls = await Promise.all(pages.map(p => Media.url(p.ref)));
     el.innerHTML = `<p class="muted no-print">${esc(s.client_name || '')} · ${new Date(s.signed_at + 'Z').toLocaleString()}</p><div id="ff-pages">${urls.map(u => `<div class="ff-page"><img src="${u}" alt="Form page"></div>`).join('') || '<div class="card muted">This form has no saved pages.</div>'}</div>
-      <div class="row no-print" style="margin:14px 0 24px">${s.client_id ? `<a class="btn" href="#client/${s.client_id}">Client</a>` : ''}<button class="btn danger" id="sf-del">Delete</button><button class="btn" id="sf-pdf">PDF</button><button class="btn primary" style="flex:1" id="sf-print">Print</button></div>`;
+      <div class="row no-print" style="margin:14px 0 24px">${s.client_id ? `<a class="btn" href="#client/${s.client_id}">Client</a>` : ''}<button class="btn danger" id="sf-del">Delete</button><button class="btn" id="sf-pdf">PDF</button><button class="btn" id="sf-send" data-tip="Send the client a PDF copy">Send</button><button class="btn primary" style="flex:1" id="sf-print">Print</button></div>`;
     const canv = async () => { const out = []; for (const i of el.querySelectorAll('.ff-page img')) { await i.decode(); const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; c.getContext('2d').drawImage(i, 0, 0); out.push(c); } return out; };
     $('#sf-print').onclick = async () => printCanvas(...await canv());
-    $('#sf-pdf').onclick = async () => { const cs = await canv(); if (!cs.length) return;
-      const d = { w: cs[0].width, h: cs[0].height, dpi: cs[0].width / 8.27, pages: cs.length, sides: 2, layers: cs.map(() => null) }; const pdf = await ffImagesPdf(cs, d); const f = new File([pdf], s.title.replace(/[^\w-]+/g, '_') + '.pdf', { type: 'application/pdf' }); const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); };
+    const pdfFile = async () => { const cs = await canv(); if (!cs.length) return null;
+      const d = { w: cs[0].width, h: cs[0].height, dpi: cs[0].width / 8.27, pages: cs.length, sides: 2, layers: cs.map(() => null) };
+      return new File([await ffImagesPdf(cs, d)], s.title.replace(/[^\w-]+/g, '_') + '.pdf', { type: 'application/pdf' }); };
+    const download = (f) => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); };
+    $('#sf-pdf').onclick = async () => { const f = await pdfFile(); if (f) download(f); };
+    /* Send: the share sheet where the device has one (the PDF goes straight into WhatsApp, email…); otherwise the PDF is
+       saved and WhatsApp or email opens to the client, ready for it to be attached. */
+    $('#sf-send').onclick = async (e) => { const btn = e.currentTarget, c = s.client_id ? await DB.one('SELECT * FROM clients WHERE id = ?', [s.client_id]) : null;
+      const tel = intlPhone(c?.phone || '')?.replace(/\D/g, ''), mail = c?.email || '', canShare = !!navigator.canShare?.({ files: [new File([''], 'x.pdf', { type: 'application/pdf' })] });
+      const items = [...(canShare ? [['share', 'Share the PDF…']] : []), ...(tel ? [['wa', 'WhatsApp']] : []), ...(mail ? [['mail', 'Email']] : [])].map(([v, n]) => [v, n, 'Inter']);
+      if (!items.length) return toast('No phone or email on this client\u2019s card: use PDF to save a copy.', 3500);
+      const how = items.length === 1 ? items[0][0] : await stripMenu(btn, items, 'Send to ' + (s.client_name || 'client')); if (!how) return;
+      const f = await pdfFile(); if (!f) return; const msg = `Hi ${c?.first_name || ''}, here is your signed ${s.title} from ${Settings.get('studio_name') || Settings.get('artist_name') || 'the studio'}.`.replace('Hi ,', 'Hi,');
+      if (how === 'share') { try { await navigator.share({ files: [f], title: s.title, text: msg }); } catch {} return; }
+      download(f); toast('PDF saved: attach it to the message.', 3500);
+      if (how === 'wa') open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+      else location.href = `mailto:${encodeURIComponent(mail)}?subject=${encodeURIComponent(s.title)}&body=${encodeURIComponent(msg)}`; };
     $('#sf-del').onclick = async () => { if (!await ask('Delete this completed form?\n\nThis cannot be undone.')) return;
       await DB.tx([{ sql: 'DELETE FROM signed_form_pages WHERE form_id = ?', params: [id] }, { sql: 'DELETE FROM signed_forms WHERE id = ?', params: [id] }]);
       for (const p of pages) await Media.release(p.ref); await Media.release(s.signature_ref); toast('Deleted.'); history.back(); };

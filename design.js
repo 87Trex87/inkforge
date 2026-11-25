@@ -5287,6 +5287,9 @@ DZ.edit = async (id) => {
      stops above them, and the brush bar stays clear of the side panel. On a phone the CSS keeps them along the top;
      only the brush bar (and its pop-up) move up out of the way of the panel sheet. */
   {
+    /* Everything below listens on the window: once this editor is gone it all stops, so old editors don't keep laying out. */
+    const layAC = new AbortController(), on = { signal: layAC.signal }, ros = [];
+    const gone = () => { if (stage.isConnected) return false; layAC.abort(); ros.forEach(r => r.disconnect()); return true; };
     const vis = (el) => el && !el.hidden && getComputedStyle(el).display !== 'none' && el.offsetHeight > 0;
     const set = (el, o) => { if (el) for (const [k2, v] of Object.entries(o)) el.style[k2] = v; };
     let raf = 0;
@@ -5313,14 +5316,15 @@ DZ.edit = async (id) => {
       for (const el of [zoom, mods, xf]) { if (!vis(el)) continue; set(el, { left: '10px', right: 'auto', top: 'auto', bottom: base + 'px' }); base += el.offsetHeight + 6; }
       if (vis(rail)) { const qs = $('#dz-qstrip'), top = vis(qs) ? qs.getBoundingClientRect().bottom - S0.top + 6 : 10;
         set(rail, { top: top + 'px', transform: 'none', maxHeight: Math.max(80, S0.height - base - top - 4) + 'px', overflowY: 'auto', scrollbarWidth: 'thin', flexWrap: 'nowrap' }); } }); };
-    if ('ResizeObserver' in window) { const ro = new ResizeObserver(() => dzLay()); ro.observe(stage);
+    if ('ResizeObserver' in window) { const ro = new ResizeObserver(() => gone() || dzLay()); ros.push(ro); ro.observe(stage);
       setTimeout(() => { for (const el of [stage.querySelector('.dz-zoom'), $('#dz-mods'), $('#dz-xf'), $('#dz-side'), $('#sk-bar'), stage.querySelector('.sk-pop')]) if (el) ro.observe(el); dzLay(); }, 0); }
-    addEventListener('resize', () => dzLay());
+    addEventListener('resize', () => gone() || dzLay(), on);
     /* full screen settles over a few frames: fit again once it has */
-    const settle = () => { dzLay(); setTimeout(dzLay, 120); setTimeout(dzLay, 400); setTimeout(dzLay, 1000); };
-    for (const ev of ['fullscreenchange', 'webkitfullscreenchange', 'visibilitychange']) document.addEventListener(ev, settle);
-    addEventListener('focus', settle); addEventListener('pageshow', settle); addEventListener('resize', () => setTimeout(dzLay, 250));
-    if ('ResizeObserver' in window) setTimeout(() => { const r = $('#dz-rail'); if (r) new ResizeObserver(() => dzLay()).observe(r); }, 0);
+    const settle = () => { if (gone()) return; dzLay(); setTimeout(dzLay, 120); setTimeout(dzLay, 400); setTimeout(dzLay, 1000); };
+    for (const ev of ['fullscreenchange', 'webkitfullscreenchange', 'visibilitychange']) document.addEventListener(ev, settle, on);
+    addEventListener('focus', settle, on); addEventListener('pageshow', settle, on); addEventListener('resize', () => gone() || setTimeout(dzLay, 250), on);
+    if ('ResizeObserver' in window) setTimeout(() => { const r = $('#dz-rail'); if (r) { const ro = new ResizeObserver(() => gone() || dzLay()); ros.push(ro); ro.observe(r); } }, 0);
+    addEventListener('hashchange', () => setTimeout(gone, 0), on);   /* leaving the editor tidies up straight away */
   }
   stage.addEventListener('pointerdown', (e) => {
     if (pinch || e.dzHit || rest.has(e.pointerId) || e.target.closest('.dz-xf, .dz-zoom, .dz-faces, .dz-mods, .dz-nmenu, .dz-qs, .dz-rail, .dz-pop, .dz-notebar, [data-rf]')) return;

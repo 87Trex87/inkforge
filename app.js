@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 560;
+const APP_BUILD = 561;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -1441,6 +1441,7 @@ const VIEWS = {
             <label class="toggle"><input type="checkbox" name="notify" ${b.notify_min != null ? 'checked' : ''}><span>Notify me</span></label>
             <label class="bkt-sel"><select name="notify_min" aria-label="How long before">${NOTIFY_LEADS.map(([v, l]) => `<option value="${v}" ${+(b.notify_min ?? Settings.get('notify_lead', '60')) === v ? 'selected' : ''}>${l} before</option>`).join('')}</select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
             ${b.completed ? '' : '<button type="button" class="btn small" id="b-brief" data-tip="Send the client the tattoo brief: eight quick questions for the design and the quote">Send tattoo brief</button>'}
+            <button type="button" class="btn small" id="b-form" data-tip="Saves the booking, then opens a form (consent, aftercare…) filled in for this client and booking">Fill in a form</button>
             <button type="button" class="btn small" id="b-ics" data-tip="Saves the booking, then adds it to your phone\u2019s calendar with this reminder">Add to phone calendar</button></div>
           <p class="muted" style="font-size:12px;margin:8px 0 0">InkForge\u2019s own notifications only work while the app is open or running in the background: closing the app turns them off. Add the booking to your phone\u2019s calendar for a reminder that always comes through. If you change or cancel the booking later, change it in your calendar too.</p>`,
           { fold: true, open: b.notify_min != null, hint: b.notify_min != null ? (NOTIFY_LEADS.find(x => x[0] === +b.notify_min)?.[1] || '') + ' before' : '' })}
@@ -1717,6 +1718,9 @@ const VIEWS = {
       };
       $('#b-receipt').onclick = async () => { const bid = await save(); if (bid) openReceipt(bid); };
       $('#b-brief')?.addEventListener('click', () => briefLink());
+      $('#b-form').onclick = async (e) => { const btn = e.currentTarget, tpls = await FF.all(); if (!tpls.length) return toast('No forms yet: make one in Forms.');
+        const pick = tpls.length === 1 ? String(tpls[0].id) : await stripMenu(btn, tpls.map(t => [String(t.id), t.name, 'Inter']), 'Fill in a form'); if (!pick) return;
+        const bid = await save(); if (!bid) return; const r = await DB.one('SELECT client_id FROM bookings WHERE id = ?', [bid]); openForm(+pick, r?.client_id || null, bid); };
       $('#b-ics').onclick = async () => { const bid = await save(); if (bid) Notif.ics(bid); };
       f.elements.notify?.addEventListener('change', (e) => { if (e.target.checked) Notif.ask(); });
       /* Completed and Cancelled can't both be on */
@@ -12293,6 +12297,13 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 561, when: '2026-11-26T16:00', added: [
+    'Forms: filling in on a phone has a Page size switch. Large makes the boxes big enough to tap and read, and the page slides sideways.',
+    'Forms: Show older forms under Completed, and Send on a completed form shares the PDF, or opens WhatsApp or email to the client.',
+    'Bookings: Fill in a form opens consent, aftercare or any form for that booking\u2019s client.',
+    'Design studio on phones: the top bar slides sideways and Export is always in reach. The editor also runs lighter after opening many designs.',
+    'The bottom bar lights the right tab on every Studio and More page.'
+  ] },
   { build: 560, when: '2026-11-26T14:00', added: [
     'Portfolio: on phones the filter buttons wrap onto two rows instead of squashing together.',
     'Page titles fit on phones, so pages no longer slide sideways a little.',
@@ -13001,7 +13012,8 @@ const wsDesign = () => { try { return (Settings.get('ws_mode') || WS.cur?.mode) 
 const NAV_PARENT = { settings: 'more', client: 'clients', 'client-edit': 'clients', 'clients-table': 'clients', 'booking-edit': 'book', bookings: 'book',
   quote: 'more', 'quote-cal': 'more', 'quotes-table': 'more', 'stats-table': 'more', 'inventory-table': 'more', 'rules-table': 'more', stats: 'more', inventory: 'more', 'inv-edit': 'more', stocktake: 'more', rules: 'more', 'rule-edit': 'more', loyalty: 'more', pay: 'more',
   reel: 'studio', reels: 'studio', stencil: 'studio', sizes: 'studio', sketches: 'studio', tattoo: 'studio', portfolio: 'studio', pf: 'studio', 'pf-edit': 'studio',
-  forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio' };
+  forms: 'studio', 'form-edit': 'studio', 'form-sign': 'studio', signed: 'studio', designs: 'studio', design: 'studio', bend: 'studio', split: 'studio',
+  'loy-new': 'more', 'loy-guide': 'more', vouchers: 'more', 'vou-new': 'more', 'vou-guide': 'more', 'day-end': 'more' };
 let currentHash = location.hash;
 function render() {
   if (location.hash !== currentHash && !Dirty.ok()) { history.replaceState(null, '', currentHash || '#'); return; }
