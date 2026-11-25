@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 559;
+const APP_BUILD = 560;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -1819,6 +1819,7 @@ const VIEWS = {
           ${it.description ? `<p class="pre">${esc(it.description)}</p>` : ''}
           ${field('Placement', esc(it.placement || ''))}
           ${field('Client', it.client_id ? `<a href="#client/${it.client_id}" style="color:var(--teal)">${esc(fullName(it))}</a>` : '')}
+          ${field('Booking', it.booking_id ? `<a href="#booking-edit/${it.booking_id}" style="color:var(--teal)">Open booking</a>` : '')}
           ${field('Date', it.made_on ? new Date(it.made_on + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '')}
           ${it.tags ? `<div style="margin-top:10px">${tagChips(it.tags).replace('justify-content:center', '')}</div>` : ''}
         </div>
@@ -1969,7 +1970,7 @@ const VIEWS = {
       };
       $('#pf-thumbs').addEventListener('click', (e) => {
         const b = e.target.closest('button'); if (!b) return;
-        if (b.dataset.rm != null) photos.splice(+b.dataset.rm, 1);
+        if (b.dataset.rm != null) { const [gone] = photos.splice(+b.dataset.rm, 1); if (gone?.blob) URL.revokeObjectURL(gone.url); }
         else if (b.dataset.fwd != null) { const i = +b.dataset.fwd; photos.splice(i - 1, 0, photos.splice(i, 1)[0]); }
         Dirty.set(true); drawThumbs();
       });
@@ -2001,7 +2002,8 @@ const VIEWS = {
         const vals = [it.kind, d.title.trim() || null, d.description.trim() || null, d.placement.trim() || null,
           d.tags.split(',').map(t => t.trim()).filter(Boolean).join(', ') || null,
           it.kind === 'tattoo' ? clientId : null, it.booking_id ?? null, d.made_on || null,
-          flash && d.price !== '' ? +d.price : null, flash && d.claimed ? 1 : 0, it.bg || null, it.kind === 'tattoo' ? it.job || null : null];
+          flash && d.price !== '' ? Math.max(0, +d.price || 0) : null, flash && d.claimed ? 1 : 0, it.bg || null, it.kind === 'tattoo' ? it.job || null : null];
+        try {
         const reelRef = reel.file ? await Media.saveBig(reel.file, reelExt(reel.file)) : reel.ref; vals.push(reelRef || null);
         const cols = 'kind, title, description, placement, tags, client_id, booking_id, made_on, price, claimed, bg, job, reel_ref';
         const rows = [];
@@ -2017,7 +2019,9 @@ const VIEWS = {
         for (const p of old) if (!rows.some(r => r.photo_ref === p.photo_ref)) { await Media.release(p.photo_ref); await Media.release(p.thumb_ref); }
         if (it.reel_ref && it.reel_ref !== reelRef) await Media.release(it.reel_ref);
         Dirty.set(false); toast('Saved to portfolio.');
+        photos.forEach(ph => ph.blob && URL.revokeObjectURL(ph.url));
         location.replace('#pf/' + pid);
+        } catch (err) { console.error(err); toast('Could not save. Nothing was lost, try again.'); delete f.dataset.saving; f.querySelector('[type=submit]').disabled = false; }
       });
       Dirty.set(false);
     }
@@ -12289,6 +12293,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 560, when: '2026-11-26T14:00', added: [
+    'Portfolio: on phones the filter buttons wrap onto two rows instead of squashing together.',
+    'Page titles fit on phones, so pages no longer slide sideways a little.',
+    'Portfolio: if saving a piece fails you can simply try again, a flash price can\u2019t go below zero, and a piece made from a booking links back to it.'
+  ] },
   { build: 559, when: '2026-11-26T12:00', added: [
     'Size sheet and Split for printing now print on the paper you chose (A3, A5 or Letter, not always A4), at actual size, with the caption fitting on the page.',
     'Bend tool: send the bent band straight to the Size sheet or Split for printing. Split can use A5 paper too.',
