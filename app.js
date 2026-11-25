@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 556;
+const APP_BUILD = 557;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -5435,7 +5435,7 @@ function qzDraw() {
       </div><div class="qz-col qz-out">
         <div class="qz-who">
           <div class="field" style="margin:0;flex:1"><span class="lbl">Client name ${QZ.clientId ? '<span class="chip qz-ret" data-tip="Linked to their client card">\u2713 Returning client</span>' : ''}</span>
-            <div class="picker"><input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off" placeholder="Type a name: pick a returning client, or a new one"><div class="pick-list" id="qz-cl" hidden></div></div></div>
+            <div class="picker"><input class="in" data-qzt="client" value="${esc(QZ.client || '')}" autocomplete="off" placeholder="Type a name: pick a returning client, or a new one"><div class="pick-list" id="qz-cl" hidden></div></div><div id="qz-perks"></div></div>
 </div>
         <div class="lbl" style="margin-top:12px">Add to the quote</div>
         <div class="qz-extras">
@@ -5483,7 +5483,15 @@ function qzDraw() {
     ${s === 0 ? '<div class="row qz-links"><a class="btn small" href="#quotes">Saved quotes</a><a class="btn small" href="#quote-cal">Calibrate</a></div>' : ''}`;
   qzBind(el);
   if (QZ.withAvail && s === 6) qzAvPanel();
+  if (s === 6) qzPerks();
 }
+/* A returning client: what they hold that could come off this tattoo (loyalty rewards and vouchers), as a reminder. */
+async function qzPerks() { const el = $('#qz-perks'); if (!el) return; if (!QZ.clientId) { el.innerHTML = ''; return; }
+  const lr = await DB.all(`SELECT * FROM loyalty_rewards WHERE client_id = ? AND status = 'open' AND used_booking IS NULL AND (expires_at IS NULL OR expires_at >= date('now'))`, [QZ.clientId]);
+  const vh = await DB.all(`SELECT * FROM vouchers WHERE client_id = ? AND status = 'open' AND (expires_at IS NULL OR expires_at >= date('now'))`, [QZ.clientId]);
+  if (!lr.length && !vh.length) { el.innerHTML = ''; return; }
+  const vt = vh.reduce((t, v) => t + Vou.bal(v), 0);
+  el.innerHTML = `<p class="qz-perks muted">They hold ${[lr.length ? `${lr.length} loyalty reward${lr.length === 1 ? '' : 's'} (${lr.map(r => Loy.rLabel(r)).join(', ')})` : '', vh.length ? `${vh.length === 1 ? 'a voucher' : vh.length + ' vouchers'} worth ${money(vt)}` : ''].filter(Boolean).join(' and ')}: they can use ${lr.length + vh.length === 1 ? 'it' : 'them'} on this tattoo when it\u2019s booked.</p>`; }
 
 const qzPriceBlock = () => qzMulti() ? qzComboHTML(qCombo()) : qzPriceHTML(qCalc());
 function qzComboHTML(cb) {
@@ -5551,7 +5559,7 @@ function qzBind(el) {
       return qzDraw();
     }
     if (d('reg') != null) { QZ.reg = d('reg'); return qzDraw(); }
-    if (d('place') != null) { QZ.place = d('place'); return qzDraw(); }
+    if (d('place') != null) { QZ.place = d('place'); QZ.hours = null; return qzDraw(); }   /* the pain level changes the time */
     if (d('side')) { QZ.side = d('side'); return qzDraw(); }
     if (d('job')) { QZ.job = d('job'); QZ.hours = null; return qzDraw(); }
     if (d('preset')) { const [w, h] = d('preset').split('x').map(Number); Object.assign(QZ, { w, h, hours: null, sized: true }); return qzDraw(); }
@@ -12272,6 +12280,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 557, when: '2026-11-25T21:00', added: [
+    'Quote calculator: for a returning client, the price step mentions any loyalty rewards and vouchers they hold, so you can bring them up with the price.',
+    'Fixed: a time you set yourself now updates when you change the placement (the pain level changes the time), like the other steps.'
+  ] },
   { build: 556, when: '2026-11-25T18:00', added: [
     'Full screen: when a file picker, share, print or download drops you out of full screen, your next tap puts it back.',
     'Clients: a client\u2019s page shows their open loyalty rewards and vouchers, and the vouchers they bought for others.',
