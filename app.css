@@ -3043,7 +3043,7 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 570; }
+:root { --app-build: 571; }
 
 /* ---------- Home screen: a slim header, the apps as a desktop, today, and one notices panel ----------
    On wide screens it keeps to a column on the left, so the rest is open for sticky notes. */
@@ -3108,3 +3108,9 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 @keyframes calSwR { from { transform: translateX(-28px); opacity: .4; } to { transform: none; opacity: 1; } }
 #cal.cal-sw-l { animation: calSwL .22s ease-out; } #cal.cal-sw-r { animation: calSwR .22s ease-out; }
 #cal { touch-action: pan-y; }
+/* Pull down to refresh off: nothing lets a pull reach the browser's reload */
+html.no-ptr, html.no-ptr body, html.no-ptr #main, html.no-ptr #app { overscroll-behavior-y: none !important; }
+/* Refresh beside full screen: the pair sit close, and on phones they shrink like the drawing icons */
+.tb-fs + .tb-fs { margin-left: 4px; } .tb-fs { flex: none; }
+@media (max-width: 420px) { .tb-fs { width: 32px; height: 32px; } .tb-draw + .tb-fs { margin-left: 4px; } html.no-ptr .tb-draw { gap: 2px; } }
+@media (max-width: 420px) { html.no-ptr .tb-ic, html.no-ptr .tb-fs { width: 30px; height: 30px; } html.no-ptr body #topbar #view-title { font-size: clamp(15px, 4.1vw, 24px); } }

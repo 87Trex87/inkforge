@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 570;
+const APP_BUILD = 571;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -3109,6 +3109,8 @@ const VIEWS = {
         <span class="seg" style="flex:none">${[['full', 'Full studio'], ['design', 'Design only']].map(([v, n]) => `<button data-wsmode="${v}" class="${(wsDesign() ? 'design' : 'full') === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
       <div class="card su-again"><div><b>This device</b><span class="muted">Fits the app to the device: on an iPad, the Apple Pencil can\u2019t select the screen or swipe out of full screen while you draw. Kept on this device only.</span></div>
         <span class="seg" style="flex:none">${OS_LIST.map(([v, n]) => `<button data-osset="${v}" class="${DevOS.get() === v ? 'on' : ''}">${n}</button>`).join('')}</span></div>
+      <div class="card su-again"><div><b>Pull down to refresh</b><span class="muted">Pulling the page down reloads InkForge and drops whatever is open. Off: a Refresh button sits beside full screen instead. Kept on this device only.</span></div>
+        <label class="toggle" style="flex:none"><input type="checkbox" id="s-ptr" ${Ptr.off() ? '' : 'checked'}><span></span></label></div>
       ${AppInstall.card('su-again')}
       <div class="card su-again" data-biz><div><b>Your pay</b><span class="muted">${payOn() ? (() => { const c = payCfg(); return c.mode === 'comm' ? `Commission: you keep ${+c.pct}%, ${PAY_EVERY.find(x => x[0] === c.every)?.[1].toLowerCase()}.` : `Chair rent: ${money(+c.rent)} per ${c.every === 'month' ? 'month' : c.every === '2week' ? '2 weeks' : 'week'}.`; })() : 'Off. Commission or chair rent, so Stats shows your take-home and pay days.'}</span></div>
         <div class="row" style="flex:none;gap:8px">${payOn() ? '<a class="btn small" href="#pay">Set up</a>' : ''}<label class="toggle" style="flex:none"><input type="checkbox" data-payon ${payOn() ? 'checked' : ''}><span></span></label></div></div>
@@ -3276,6 +3278,7 @@ const VIEWS = {
       $('#s-fb').addEventListener('change', save('artist_facebook'));
       $('#s-tt').addEventListener('change', save('artist_tiktok'));
       $('#s-gid').addEventListener('change', save('gcal_client_id'));
+      $('#s-ptr').onchange = (e) => { Ptr.set(!e.target.checked); toast(e.target.checked ? 'Pull down to refresh is on.' : 'Pull down to refresh is off: use the Refresh button at the top.', 2600); };
       document.querySelectorAll('[data-osset]').forEach(b => b.onclick = () => { DevOS.set(b.dataset.osset); document.querySelectorAll('[data-osset]').forEach(x => x.classList.toggle('on', x === b)); toast(`Set up for ${OS_LIST.find(x => x[0] === b.dataset.osset)[1]}.`); });
       homeSetMount();
       $('#s-gbusy').addEventListener('change', async (e) => { await Settings.set('gcal_busy', e.target.checked ? '1' : '0'); Gcal.soon(); });
@@ -7452,6 +7455,13 @@ const FS = {
   const fsSet = FS.set; FS.set = async (want) => { away = 0; back = false; return fsSet(want); };   /* the user's own choice */
   document.addEventListener('fullscreenchange', () => { const on = FS.on(); if (was && !on && away && Date.now() - away < 120000) back = true; if (on) back = false; was = on; });
   document.addEventListener('pointerdown', () => { if (!back || FS.on()) return; back = false; away = 0; fsSet(true); }, true); })();
+/* Pull down to refresh (Android's browsers): on by default. Off on this device, the page can't be pulled down to
+   reload (which drops whatever is open), and a Refresh button sits beside full screen instead. Kept on this device only. */
+const Ptr = { off: () => { try { return localStorage.getItem('ink_noptr') === '1'; } catch { return false; } },
+  set(off) { try { localStorage.setItem('ink_noptr', off ? '1' : ''); } catch {} Ptr.apply(); },
+  apply() { const off = Ptr.off(); document.documentElement.classList.toggle('no-ptr', off); const b = document.getElementById('rf-btn'); if (b) b.hidden = !off; } };
+Ptr.apply();
+document.getElementById('rf-btn')?.addEventListener('click', () => { if (typeof Dirty !== 'undefined' && !Dirty.ok()) return; location.reload(); });
 (() => {
   const b = document.getElementById('fs-btn'); if (!b) return;
   const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
@@ -12364,6 +12374,9 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 571, when: '2026-11-27T15:00', added: [
+    'Settings › Start: Pull down to refresh can be switched off on this device, so a pull down never reloads and drops what you’re doing. A Refresh button then sits beside full screen.'
+  ], test: ['On your Android phone, switch Pull down to refresh off, then pull the page down. It should no longer reload. Does the Refresh button at the top work?'] },
   { build: 570, when: '2026-11-27T14:00', added: [
     'Calendar: swipe left for the next day, week or month, and right for the one before.'
   ], test: ['On your phone, swipe the calendar left and right in month, week and day view. Does scrolling up and down still work normally?'] },
