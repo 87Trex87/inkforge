@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 571;
+const APP_BUILD = 572;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -3197,6 +3197,8 @@ const VIEWS = {
           ${WS.list.length > 1 ? '<button class="btn" id="b-mergews" data-tip="Copy sections from another workspace on this device into this one, e.g. to update every artist from a test workspace">Merge from workspace…</button>' : ''}
           <button class="btn danger" id="b-import" data-tip="Replace everything on this device with a backup">Replace with backup…</button>
         </div>
+        <div class="lbl" style="margin-top:14px">Settings only ${help('Just your set-up, with no clients, bookings or work: profile, your week, home screen, quote calibration, pay, loyalty and vouchers, receipts and printing, design tools, simulator and dev controls. Load it into another workspace to make it match, picking which parts to use.')}</div>
+        <div class="row"><button class="btn" id="b-setx" data-tip="Save your settings to a file, to set up another workspace the same way">Save settings file</button><button class="btn" id="b-seti" data-tip="Load settings from a file, choosing which parts to use">Load settings…</button></div>
         <input type="file" id="merge-file" accept=".inkforge,.sqlite,.db" hidden>
 
         <div class="lbl" style="margin-top:14px">Portfolio picture size ${help('The usual size new portfolio photos are saved at (long side). You can still pick another size when adding photos.')}</div>
@@ -3305,6 +3307,8 @@ const VIEWS = {
       $('#b-share').onclick = () => exportBackup(WS.cur, true).catch(err => toast('Could not share: ' + err.message, 5000));
       $('#b-import').onclick = () => $('#import-file').click();
       $('#b-merge').onclick = () => $('#merge-file').click();
+      $('#b-setx').onclick = () => setxExport().catch(err => toast('Could not save: ' + err.message, 5000));
+      $('#b-seti').onclick = () => setxImport(null).catch(err => toast('Could not load: ' + err.message, 5000));
       const mws = $('#b-mergews');
       if (mws) mws.onclick = () => {
         const others = WS.list.filter(x => x !== WS.cur);
@@ -3328,6 +3332,60 @@ const VIEWS = {
   }
 };
 
+
+/* ---------- Settings file (.inksettings) ----------
+   Just the set-up, no clients, bookings or work: to make a new workspace match another. Grouped so an import can
+   take some and skip others. A group is [key, name, what it holds, keys (exact) or /prefix/]. Left out on purpose:
+   stylus calibration (pressure, tilt, tune-in), lesson progress, Google sync, the password, backup dates, the quick
+   strips, sizes of panels and tables, and anything pointing at one client or design (those ids differ elsewhere). */
+const SETX_GROUPS = [
+  ['start', 'Workspace type', 'Full studio or design only.', ['ws_mode']],
+  ['profile', 'Profile', 'Artist and studio name, logo, currency, country code, contact number and socials.', ['artist_name', 'studio_name', 'studio_logo_ref', 'currency', 'country_code', 'artist_phone', 'artist_instagram', 'artist_facebook', 'artist_tiktok']],
+  ['week', 'Your week', 'Hours, most tattoos a day, time between bookings, days off, reminders and follow-ups, and how day ends are kept.', ['day_start', 'day_end', 'max_per_day', 'booking_gap', 'days_off', 'notify_lead', 'notify_day', 'followup_weeks', 'de_days', 'de_parts', 'de_note']],
+  ['home', 'Home screen', 'Its app shortcuts (not ones to a client or design), icon size, what it shows, and the reminders.', ['home_apps', 'home_show', 'home_ico', 'news_off', 'bd_days', 'de_remind', 'bk_remind']],
+  ['quote', 'Quote calibration', 'Your rates, speeds, pain, styles and everything else quotes use, and promotion length.', ['quote_v2', 'promo_months']],
+  ['pay', 'Your pay', 'Commission or chair rent, and how it\u2019s paid.', ['pay_cfg']],
+  ['loyalty', 'Loyalty program', 'On or off, the rewards and tiers, the messages, the guide and the card designs.', ['loy_on', 'loy_cfg', 'loy_msg', 'loy_guide', /^loy_design/]],
+  ['vouchers', 'Vouchers', 'On or off, the voucher settings, the message, the guide and the card designs.', ['vou_on', 'vou_cfg', 'vou_msg', 'vou_guide', /^vou_design/]],
+  ['docs', 'Receipts, briefs and printing', 'Receipt options, the tattoo brief\u2019s welcome, print layouts and portfolio picture sizes.', ['receipt_opts', 'brief_intro', 'pf_print', 'pb_print', 'bk_print', 'pf_size', 'ref_size']],
+  ['design', 'Design tools', 'Palettes and swatch panels, your fonts and templates, your dictionary, brushes, units and paper, stencil, reel and form settings.', ['dz_palettes', 'dz_fonts', 'dz_tpls', 'dz_words', 'dz_unit', 'dz_unit_post', 'dz_paper', 'sk_brush', 'sk_pals', 'st_params', 'st_cm', 'reel_style', 'reel_templates', 'reel_snap', 'reel_to_pf', 'ff_zoom']],
+  ['sim', 'Tattoo simulator', 'Feel and look sliders, skin, body area, challenge skin, ink palettes, the marker and panels. Not pressure, tilt or tune-in.', ['tt_feel', 'tt_thin', 'tt_tex', 'tt_skin', 'tt_area', 'tt_chskin', 'tt_pals', 'tt_mk', 'tt_magflip', 'tt_panels', 'tt_cheat_prefs']],
+  ['dev', 'Dev controls', 'Whether they\u2019re unlocked and on, and every dev slider.', ['tt_devseen', 'tt_devmode', 'tt_dev']]];
+const setxKeys = (g) => Object.keys(Settings.cache).filter(k => g[3].some(m => m instanceof RegExp ? m.test(k) : m === k));
+/* home shortcuts: only the ones to an app; one to a client, design or booking means nothing in another workspace */
+const setxVal = (k, v) => { if (k !== 'home_apps' || !v) return v; try { return JSON.stringify(JSON.parse(v).filter(a => a && !String(a.go).includes('/'))); } catch { return v; } };
+const setxB64 = (blob) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.readAsDataURL(blob); });
+async function setxExport() {
+  const groups = {}, names = new Set();
+  for (const g of SETX_GROUPS) { if (wsDesign() && ['week', 'quote', 'pay', 'loyalty', 'vouchers'].includes(g[0])) continue; const o = {};
+    for (const k of setxKeys(g)) { const v = setxVal(k, Settings.get(k)); if (v === '' || v == null) continue; o[k] = v; for (const n of String(v).match(DZ_MEDIA_RE) || []) names.add(n); }
+    if (Object.keys(o).length) groups[g[0]] = o; }
+  if (!Object.keys(groups).length) return toast('Nothing set up yet to save.');
+  toast('Preparing\u2026'); const media = {}, dir = await Media.dir();
+  for (const n of names) { try { media[n] = await setxB64(await (await dir.getFileHandle(n)).getFile()); } catch {} }   /* a picture that's gone is just left out */
+  const from = Settings.get('studio_name') || Settings.get('artist_name') || 'studio', nm = `settings-${from.replace(/[^\w-]+/g, '_')}-${ymd(new Date())}.inksettings`;
+  await xSave(new File([JSON.stringify({ app: 'InkForge', kind: 'settings', v: 1, at: new Date().toISOString(), from, build: APP_BUILD, groups, media })], nm, { type: 'application/json' }), 'Settings', 'Saved ' + nm); }
+async function setxImport(file) {   /* file: one already in hand, or pick one */
+  const f = file || await xPickFile('.inksettings,application/json'); if (!f) return; let P = null; try { P = JSON.parse(await f.text()); } catch {}
+  if (!P || P.kind !== 'settings' || !P.groups) return toast('That isn\u2019t an InkForge settings file.', 3000);
+  const have = SETX_GROUPS.filter(g => P.groups[g[0]] && Object.keys(P.groups[g[0]]).length);
+  if (!have.length) return toast('There are no settings in that file.');
+  const pick = await new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
+    o.innerHTML = `<div class="card"><h2>Load settings</h2><p class="muted" style="margin-top:0">From ${esc(P.from || 'another workspace')}${P.at ? ', saved ' + esc(new Date(P.at).toLocaleDateString()) : ''}. Tick what to use here: each replaces what this workspace has for it. Your clients, bookings and work aren\u2019t touched.</p>
+      <div class="setx-list">${have.map(g => `<label class="setx-row"><input type="checkbox" data-g="${g[0]}" checked><span><b>${esc(g[1])}</b><small class="muted">${esc(g[2])}</small></span></label>`).join('')}</div>
+      <div class="row" style="gap:8px;margin-top:12px"><button class="btn small" data-all="1">All</button><button class="btn small" data-all="0">None</button><span style="flex:1"></span><button class="btn" data-x>Cancel</button><button class="btn primary" data-ok>Use these</button></div></div>`;
+    o.onclick = (e) => { const a = e.target.closest('[data-all]'); if (a) { o.querySelectorAll('[data-g]').forEach(c => c.checked = a.dataset.all === '1'); return; }
+      if (e.target.closest('[data-x]') || e.target === o) { o.remove(); res(null); }
+      if (e.target.closest('[data-ok]')) { const g = [...o.querySelectorAll('[data-g]:checked')].map(c => c.dataset.g); o.remove(); res(g); } };
+    document.body.appendChild(o); });
+  if (!pick?.length) return;
+  const keys = pick.flatMap(g => Object.entries(P.groups[g])), need = new Set(keys.flatMap(([, v]) => String(v).match(DZ_MEDIA_RE) || []));
+  for (const n of need) { const b = P.media?.[n]; if (!b) continue; try { const bin = atob(b), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); await Media.save(new Blob([u]), n.split('.').pop()); } catch {} }   /* same picture, same name */
+  for (const [k, v] of keys) { if (k === 'home_apps') { let A = []; try { A = JSON.parse(v); } catch {} const mine = homeApps().filter(a => String(a.go).includes('/')); await Settings.set(k, JSON.stringify([...A, ...mine].slice(0, HOME_MAX))); continue; }   /* your own client or design shortcuts are kept */
+    await Settings.set(k, v); }
+  if (pick.includes('start') && WS.cur) { WS.cur.mode = Settings.get('ws_mode') || 'full'; await WS.save(); }
+  if (pick.includes('dev') && typeof ttDevLoad === 'function') ttDevLoad();
+  toast(`Settings loaded: ${pick.map(g => SETX_GROUPS.find(x => x[0] === g)[1]).join(', ')}.`, 4000); render(); }
 /* ---------- First-time setup ----------
    Runs once when a new workspace is created (and again from Settings). Four short steps with the
    settings most artists change on day one, pre-filled with the current values; everything is saved
@@ -12374,6 +12432,10 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 572, when: '2026-11-27T16:00', added: [
+    'Settings › Backup: Save settings file keeps just your set-up (profile, your week, home screen, quote calibration, pay, loyalty, vouchers, printing, design tools, simulator and dev controls), with no clients or work.',
+    'Load settings puts it into another workspace, and you tick which parts to use, so you can skip your profile or rates.'
+  ], test: ['Save a settings file, make a new workspace, then Load settings into it with one part unticked. Does it match your main one apart from that part?'] },
   { build: 571, when: '2026-11-27T15:00', added: [
     'Settings › Start: Pull down to refresh can be switched off on this device, so a pull down never reloads and drops what you’re doing. A Refresh button then sits beside full screen.'
   ], test: ['On your Android phone, switch Pull down to refresh off, then pull the page down. It should no longer reload. Does the Refresh button at the top work?'] },

@@ -2079,7 +2079,7 @@ form.pro > .fsec .btn { min-height: 0; height: 38px; padding: 0 14px; border-rad
 #view > .card.su-again .toggle { min-height: 36px; border-radius: 8px; }
 #view > .card.su-again .seg { border-radius: 9px; } #view > .card.su-again .seg button { min-height: 30px; border-radius: 7px; font-size: 13px; }
 @media (max-width: 520px) { #view > .card.su-again:has(> .seg:last-child, > .row:last-child:has(> :nth-child(2))) { flex-wrap: wrap; } #view > .card.su-again:has(> .seg:last-child, > .row:last-child:has(> :nth-child(2))) > :last-child { margin-left: auto; } }   /* phones: a wide set of buttons goes under its text instead of squeezing it */
-@media (max-width: 520px) { details[data-sec="backup"] > .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } details[data-sec="backup"] > .row .btn { width: 100%; } }   /* phones: the backup buttons in an even grid */
+@media (max-width: 520px) { details[data-sec="backup"] > .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } details[data-sec="backup"] > .row .btn { width: 100%; min-width: 0 !important; white-space: normal; line-height: 1.2; } }   /* phones: the backup buttons in an even grid */
 #view:has(> .set-tabs) > .card:not(.su-again) { padding: 20px 22px; border-radius: 12px; }
 #view:has(> .set-tabs) > .card h2 { font: 600 17px var(--ui); letter-spacing: 0; margin: 0 0 14px; }
 #view:has(> .set-tabs) .in { min-height: 40px; border-radius: 8px; font-size: 14px; }
@@ -3043,7 +3043,7 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 571; }
+:root { --app-build: 572; }
 
 /* ---------- Home screen: a slim header, the apps as a desktop, today, and one notices panel ----------
    On wide screens it keeps to a column on the left, so the rest is open for sticky notes. */
@@ -3114,3 +3114,8 @@ html.no-ptr, html.no-ptr body, html.no-ptr #main, html.no-ptr #app { overscroll-
 .tb-fs + .tb-fs { margin-left: 4px; } .tb-fs { flex: none; }
 @media (max-width: 420px) { .tb-fs { width: 32px; height: 32px; } .tb-draw + .tb-fs { margin-left: 4px; } html.no-ptr .tb-draw { gap: 2px; } }
 @media (max-width: 420px) { html.no-ptr .tb-ic, html.no-ptr .tb-fs { width: 30px; height: 30px; } html.no-ptr body #topbar #view-title { font-size: clamp(15px, 4.1vw, 24px); } }
+/* Load settings: one row per part, tick to use it */
+.setx-list { display: grid; gap: 6px; max-height: min(52vh, 460px); overflow-y: auto; overscroll-behavior: contain; }
+.setx-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.setx-row input { margin-top: 3px; accent-color: var(--teal); width: 18px; height: 18px; flex: none; }
+.setx-row span { display: grid; gap: 2px; } .setx-row small { font-size: 12px; }
