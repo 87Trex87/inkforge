@@ -7495,6 +7495,8 @@ BT.mount = () => {
       <i class="st-sep"></i>
       <button class="btn icon-btn" id="bt-png" data-tip="Save as PNG (see-through background)" aria-label="Save PNG">${btI('save')}</button>
       <button class="btn icon-btn" id="bt-share" data-tip="Share" aria-label="Share">${btI('share')}</button>
+      <button class="btn" id="bt-sz" data-tip="Print the bent band in a range of sizes, to try on the client">Size sheet</button>
+      <button class="btn" id="bt-sp" data-tip="Print the bent band at full size over several pages">Split</button>
       <button class="btn primary" id="bt-st" data-tip="Open the bent design in the stencil maker">${btI('st')}<span>Make a stencil</span></button>
     </div><div class="bt">
     <div class="bt-stage"><canvas id="bt-cv"></canvas><div id="bt-crop" hidden><i data-ch="m"></i><i data-ch="tl"></i><i data-ch="tr"></i><i data-ch="bl"></i><i data-ch="br"></i></div>
@@ -7573,6 +7575,10 @@ BT.mount = () => {
   $('#bt-share').onclick = async () => { const f = await result(), dl = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + f.name); };
     try { if (navigator.canShare?.({ files: [f] })) await navigator.share({ files: [f], title: f.name }); else dl(); }
     catch (err) { if (err.name !== 'AbortError') dl(); } };
+  /* the bent band straight to the size sheet or the page splitter */
+  const btBlob = async () => { const b = bentFull(2400), w = document.createElement('canvas'); w.width = b.width; w.height = b.height; const x = w.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w.width, w.height); x.drawImage(b, 0, 0); return new Promise(r => w.toBlob(r, 'image/png')); };
+  $('#bt-sz').onclick = async () => SZ.open(await btBlob(), (BT.name || 'band') + '-bent');
+  $('#bt-sp').onclick = async () => SP.open(await btBlob(), (BT.name || 'band') + '-bent');
   $('#bt-st').onclick = async () => {
     toast('Opening in the stencil maker…'); await new Promise(r => setTimeout(r, 30));
     const b = bentFull(2400), w = document.createElement('canvas'); w.width = b.width; w.height = b.height;
@@ -7588,7 +7594,12 @@ BT.mount = () => {
    page, printed at real size, then taped together. Cuts sit at positions in cm; dragging one is only
    allowed while every piece next to it still fits the page. An overlap repeats a strip of the design on
    both pieces, and each piece prints the exact cut as a dashed line: lay one dashed line over the other. */
-const SP_PAPER = { A4: [190, 277], A3: [277, 400], Letter: [196, 259] };   // printable area in mm (10 mm margins)
+const SP_PAPER = { A5: [128, 190], A4: [190, 277], A3: [277, 400], Letter: [196, 259] };   // printable area in mm (10 mm margins)
+/* Print on the paper chosen, at actual size: the app's general print rules say A4, so actual-size prints set their own
+   page (A3, A5 or Letter too), with room under each page for its caption. Returns what puts it back after printing. */
+function printPaper(paper) { let st = document.getElementById('pg-size'); if (!st) { st = document.createElement('style'); st.id = 'pg-size'; document.head.appendChild(st); }
+  st.textContent = `@media print { @page { size: ${({ A3: 'A3', A4: 'A4', A5: 'A5', Letter: 'letter' })[paper] || 'A4'} portrait; margin: 6mm 10mm; } }`;
+  return () => { st.textContent = ''; }; }
 const SP = { src: null, name: 'stencil', wcm: 40, paper: 'A4', land: false, ov: 1, xs: [], ys: [] };
 const spMax = () => { const [w, h] = SP_PAPER[SP.paper]; return SP.land ? [h / 10, w / 10] : [w / 10, h / 10]; };   // cm
 const spHcm = () => SP.src ? SP.wcm * SP.src.height / SP.src.width : 0;
@@ -7763,7 +7774,7 @@ SZ.mount = () => {
       if (SZ.land) { const r = document.createElement('canvas'); r.width = cv.height; r.height = cv.width; const x = r.getContext('2d'); x.translate(r.width, 0); x.rotate(Math.PI / 2); x.drawImage(cv, 0, 0); cv = r; [w, h] = [h, w]; }   /* landscape prints turned onto a portrait page */
       return `<div class="sp-page"><img src="${cv.toDataURL('image/png')}" style="width:${w}mm;height:${h}mm" alt=""><div class="sp-cap">${esc(SZ.name)} · size sheet${L.pages.length > 1 ? ` · page ${i + 1} of ${L.pages.length}` : ''} · print at 100% / actual size</div></div>`; }).join('');
     await Promise.all([...pa.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
-    document.body.classList.add('printing'); afterPrint(() => { document.body.classList.remove('printing'); pa.innerHTML = ''; }); window.print(); };
+    const unpage = printPaper(SZ.paper); document.body.classList.add('printing'); afterPrint(() => { document.body.classList.remove('printing'); pa.innerHTML = ''; unpage(); }); window.print(); };
   const szSave = async (share) => { const L = szLayout(), files = [];
     for (const [i, P] of L.pages.entries()) { const cv = szPage(P, 300 / 25.4); files.push(new File([await new Promise(r => cv.toBlob(r, 'image/png'))], `${SZ.name}-sizes${L.pages.length > 1 ? '-' + (i + 1) : ''}.png`, { type: 'image/png' })); }
     try { if (share && navigator.canShare?.({ files })) return await navigator.share({ files, title: SZ.name });
@@ -7900,8 +7911,9 @@ SP.mount = () => {
         <div class="sp-cap">${p.label} · ${esc(SP.name)} · ${w.toFixed(1)} × ${h.toFixed(1)} cm${SP.ov ? ` · overlap ${SP.ov} cm: lay the dashed lines over each other` : ''} · print at 100% / actual size</div></div>`;
     }).join('');
     await Promise.all([...pa.querySelectorAll('img')].map(i => i.decode().catch(() => {})));
+    const unpage = printPaper(SP.paper);
     document.body.classList.add('printing');
-    const done = () => { document.body.classList.remove('printing'); pa.innerHTML = ''; };
+    const done = () => { document.body.classList.remove('printing'); pa.innerHTML = ''; unpage(); };
     afterPrint(done);
     window.print();
   };

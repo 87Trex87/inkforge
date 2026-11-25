@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 558;
+const APP_BUILD = 559;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -12289,6 +12289,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 559, when: '2026-11-26T12:00', added: [
+    'Size sheet and Split for printing now print on the paper you chose (A3, A5 or Letter, not always A4), at actual size, with the caption fitting on the page.',
+    'Bend tool: send the bent band straight to the Size sheet or Split for printing. Split can use A5 paper too.',
+    'Every slider in the app is now the app\u2019s colour.'
+  ] },
   { build: 558, when: '2026-11-26T09:00', added: [
     'Inventory: deleting a product your loyalty program gives out says where it\u2019s used and takes it out of the program; the product\u2019s page shows it too.',
     'Phones: stock items and rules get the full width for their name, with their buttons underneath.',
