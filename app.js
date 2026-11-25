@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 569;
+const APP_BUILD = 570;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -1400,6 +1400,16 @@ const VIEWS = {
         gb.onclick = () => Gcal.sync({ interactive: true }).then(() => { toast('Synced.'); renderCal(); }).catch(e => toast('Google sync: ' + e.message, 6000));
       }
       Cal.back = null; $('#cal-add').onclick = () => newBookingNext(null, Cal.date < new Date() ? new Date() : Cal.date);
+      /* Swipe the calendar left for the next day, week or month, right for the one before. Only a clear sideways flick:
+         not a scroll, not from the screen's edge (the phone's own back gesture), not in something that scrolls sideways. */
+      const cal = $('#cal'); let sw = null;
+      cal.addEventListener('touchstart', (e) => { const t = e.touches[0]; sw = null; if (e.touches.length !== 1 || t.clientX < 24 || t.clientX > innerWidth - 24) return;
+        for (let n = e.target; n && n !== cal; n = n.parentElement) if (n.scrollWidth > n.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return;
+        sw = { x: t.clientX, y: t.clientY, at: Date.now() }; }, { passive: true });
+      cal.addEventListener('touchend', (e) => { if (!sw) return; const t = e.changedTouches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y, quick = Date.now() - sw.at < 700; sw = null;
+        if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+        const d = dx < 0 ? 1 : -1; Cal.shift(d); const c = $('#cal'); if (c) { c.classList.remove('cal-sw-l', 'cal-sw-r'); void c.offsetWidth; c.classList.add(d > 0 ? 'cal-sw-l' : 'cal-sw-r'); } }, { passive: true });
+      cal.addEventListener('touchcancel', () => { sw = null; }, { passive: true });
       renderCal();
     }
   },
@@ -12354,6 +12364,9 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 570, when: '2026-11-27T14:00', added: [
+    'Calendar: swipe left for the next day, week or month, and right for the one before.'
+  ], test: ['On your phone, swipe the calendar left and right in month, week and day view. Does scrolling up and down still work normally?'] },
   { build: 569, when: '2026-11-27T13:00', added: [
     'Bookings: a Walk-in switch for tattoos. Stats shows how many tattoos were walk-ins and what they earned, and the Stats table has a Walk-in column.',
     'Bookings: Cancel no longer asks you to fill in a form, and Cancelled lines up with Tattoo completed.',
