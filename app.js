@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 568;
+const APP_BUILD = 569;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -432,7 +432,9 @@ const MIGRATIONS = [
      used_booking INTEGER REFERENCES bookings(id) ON DELETE SET NULL, used_at TEXT, used_amount REAL, left_to TEXT, left_amount REAL,
      prog TEXT, deleted_at TEXT, del_reason TEXT, del_prev TEXT);
    CREATE INDEX idx_vouchers_client ON vouchers (client_id);
-   ALTER TABLE bookings ADD COLUMN vou_off REAL;`
+   ALTER TABLE bookings ADD COLUMN vou_off REAL;`,
+  /* Walk-ins: a tattoo booked on the spot, counted in Stats */
+  `ALTER TABLE bookings ADD COLUMN walkin INTEGER NOT NULL DEFAULT 0;`
 ];
 const RULE_CATS = ['Client rules', 'Staff rules'];
 const RULES = { cat: 'all' };
@@ -1101,14 +1103,14 @@ const VIEWS = {
   clients: {
     title: () => 'Clients',
     render: () => `
-      <div class="search-bar">
+      <div class="c-head"><div class="search-bar">
         <input class="in" id="c-search" type="search" placeholder="Search clients…" autocomplete="off" value="${esc(VIEWS.clients.q || '')}">
         <a class="btn icon-btn" href="#clients-table" data-tip="All contacts as a table: search, filter, edit, export and print" aria-label="Contacts table"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></svg></a>
         <button class="btn icon-btn" id="c-phone" data-tip="Bring in a contact from your phone" aria-label="From your phone"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 8v7M9 12l3 3 3-3"/></svg></button>
         <button class="btn primary icon-btn" id="c-add" data-tip="Add contact" aria-label="Add contact">
           <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
-      <div class="c-cats" id="c-cats"></div>
+      <div class="c-cats" id="c-cats"></div></div>   <!-- search and filters stay pinned together, nothing tucked under -->
       <div id="c-list"></div>`,
     mount() {
       const s = $('#c-search');
@@ -1447,7 +1449,8 @@ const VIEWS = {
       let kind = kindOf(b);
       f.innerHTML = `
         <section class="fsec"><h3>Type<small>What kind of appointment</small></h3>
-          <div class="seg kinds" id="b-kind">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button type="button" data-k="${k}" class="${k === kind ? 'on' : ''}">${v.label}</button>`).join('')}</div></section>
+          <div class="seg kinds" id="b-kind">${Object.entries(BOOKING_KINDS).map(([k, v]) => `<button type="button" data-k="${k}" class="${k === kind ? 'on' : ''}">${v.label}</button>`).join('')}</div>
+          <label class="toggle b-walk" data-tip="Someone who came in off the street, tattooed the same day. Counted in Stats." ${kind === 'tattoo' ? '' : 'hidden'}><input type="checkbox" name="walkin" ${b.walkin ? 'checked' : ''}><span>Walk-in</span></label></section>
         <section class="fsec"><h3>Who and when<small>Client, day and length</small></h3>
         <label class="field"><span>Client ${help('Search existing clients, or type a new name and pick "Add" to create one. Optional for meetings and leave.')}</span>
           <div class="picker">
@@ -1490,7 +1493,7 @@ const VIEWS = {
             <label class="toggle"><input type="checkbox" name="notify" ${b.notify_min != null ? 'checked' : ''}><span>Notify me</span></label>
             <label class="bkt-sel"><select name="notify_min" aria-label="How long before">${NOTIFY_LEADS.map(([v, l]) => `<option value="${v}" ${+(b.notify_min ?? Settings.get('notify_lead', '60')) === v ? 'selected' : ''}>${l} before</option>`).join('')}</select><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></label>
             ${b.completed ? '' : '<button type="button" class="btn small" id="b-brief" data-tip="Send the client the tattoo brief: eight quick questions for the design and the quote">Send tattoo brief</button>'}
-            <button type="button" class="btn small" id="b-form" data-tip="Saves the booking, then opens a form (consent, aftercare…) filled in for this client and booking">Fill in a form</button>
+            <button type="button" class="btn small" id="b-fill" data-tip="Saves the booking, then opens a form (consent, aftercare…) filled in for this client and booking">Fill in a form</button>
             <button type="button" class="btn small" id="b-ics" data-tip="Saves the booking, then adds it to your phone\u2019s calendar with this reminder">Add to phone calendar</button></div>
           <p class="muted" style="font-size:12px;margin:8px 0 0">InkForge\u2019s own notifications only work while the app is open or running in the background: closing the app turns them off. Add the booking to your phone\u2019s calendar for a reminder that always comes through. If you change or cancel the booking later, change it in your calendar too.</p>`,
           { fold: true, open: b.notify_min != null, hint: b.notify_min != null ? (NOTIFY_LEADS.find(x => x[0] === +b.notify_min)?.[1] || '') + ' before' : '' })}
@@ -1547,7 +1550,7 @@ const VIEWS = {
       const showKind = () => {
         const ink = BOOKING_KINDS[kind].ink;
         showDone(); offWarn();
-        f.querySelectorAll('.b-ink').forEach(x => x.hidden = !ink);
+        f.querySelectorAll('.b-ink').forEach(x => x.hidden = !ink); f.querySelector('.b-walk').hidden = kind !== 'tattoo';
         $('#b-desc-l').textContent = kind === 'tattoo' || kind === 'touchup' ? 'Tattoo description' : kind === 'consult' ? 'Idea / what to discuss' : kind === 'followup' ? 'What to check' : kind === 'hold' ? 'Held for (private)' : 'Details';
         f.description.placeholder = ink ? 'e.g. Fine-line peony with stem' : kind === 'leave' ? 'e.g. Holiday' : '';
       };
@@ -1713,8 +1716,8 @@ const VIEWS = {
         const vals = [clientId, d.date + 'T' + d.time, +d.duration_min, d.description.trim() || null, d.placement.trim() || null,
           d.size.trim() || null, num(d.quote), num(d.deposit), d.deposit_paid ? 1 : 0, d.notes.trim() || null, kind,
           done ? 1 : 0, done ? (b.completed_at || new Date().toISOString()) : null,
-          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null, gName, gPhone || null, d.notify ? +d.notify_min || 60 : null, can ? 1 : 0, can ? d.cancel_by || 'client' : null, can ? (d.cancel_reason || '').trim() || null : null, can ? (b.cancelled_at || new Date().toISOString()) : null];
-        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job, guest_name, guest_phone, notify_min, cancelled, cancel_by, cancel_reason, cancelled_at';
+          done ? num(d.paid) : null, done && d.time_h !== '' ? Math.round(+d.time_h * 60) : null, done ? payMethod : null, d.job && d.job !== 'new' ? d.job : null, gName, gPhone || null, d.notify ? +d.notify_min || 60 : null, can ? 1 : 0, can ? d.cancel_by || 'client' : null, can ? (d.cancel_reason || '').trim() || null : null, can ? (b.cancelled_at || new Date().toISOString()) : null, kind === 'tattoo' && d.walkin ? 1 : 0];
+        const cols = 'client_id, start_at, duration_min, description, placement, size, quote, deposit, deposit_paid, notes, kind, completed, completed_at, paid, time_min, pay_method, job, guest_name, guest_phone, notify_min, cancelled, cancel_by, cancel_reason, cancelled_at, walkin';
         const refs = [...keep];
         for (const a of added) refs.push(await Media.save(a.blob, 'jpg'));
         let bid = b.id;
@@ -1767,7 +1770,7 @@ const VIEWS = {
       };
       $('#b-receipt').onclick = async () => { const bid = await save(); if (bid) openReceipt(bid); };
       $('#b-brief')?.addEventListener('click', () => briefLink());
-      $('#b-form').onclick = async (e) => { const btn = e.currentTarget, tpls = await FF.all(); if (!tpls.length) return toast('No forms yet: make one in Forms.');
+      $('#b-fill').onclick = async (e) => { const btn = e.currentTarget, tpls = await FF.all(); if (!tpls.length) return toast('No forms yet: make one in Forms.');
         const pick = tpls.length === 1 ? String(tpls[0].id) : await stripMenu(btn, tpls.map(t => [String(t.id), t.name, 'Inter']), 'Fill in a form'); if (!pick) return;
         const bid = await save(); if (!bid) return; const r = await DB.one('SELECT client_id FROM bookings WHERE id = ?', [bid]); openForm(+pick, r?.client_id || null, bid); };
       $('#b-ics').onclick = async () => { const bid = await save(); if (bid) Notif.ics(bid); };
@@ -8169,10 +8172,13 @@ async function renderStats() {
   const cxN = (k) => cx.filter(r => (r.cancel_by || 'client') === k).length, cxLost = cx.reduce((t, r) => t + (+r.quote || 0), 0);
   const cxCard = cx.length ? `<div class="card"><h2>Cancellations</h2>${[['client', 'By the client'], ['noshow', 'No-shows'], ['me', 'By you']].filter(([k]) => cxN(k)).map(([k, l]) => `<div class="stat"><span>${l}</span><span>${cxN(k)}</span></div>`).join('')}
     ${cxLost ? `<div class="stat"><span>Quoted work lost</span><span>${money(Math.round(cxLost))}</span></div>` : ''}<a class="stat" href="#bookings"><span>${Math.round(cx.length / (cx.length + n) * 100)}% of tattoos booked</span><span>\u203a</span></a></div>` : '';
+  /* walk-ins among the tattoos done */
+  const wk = rows.filter(r => r.walkin), wkCard = wk.length ? `<div class="card"><h2>Walk-ins ${help('Tattoos marked Walk-in on the booking: people who came in and were tattooed the same day.')}</h2><div class="stat"><span>Walk-in tattoos</span><span>${wk.length}</span></div>
+    <div class="stat"><span>Share of tattoos</span><span>${Math.round(wk.length / Math.max(1, n) * 100)}%</span></div><div class="stat"><span>Earned from walk-ins</span><span>${money(Math.round(wk.reduce((t, r) => t + earned(r), 0)))}</span></div></div>` : '';
   /* deposits taken for bookings still to come: held, not yet earned */
   const dep = await DB.one(`SELECT count(*) AS n, coalesce(sum(deposit), 0) AS a FROM bookings WHERE deposit_paid = 1 AND deposit > 0 AND coalesce(completed, 0) = 0 AND coalesce(cancelled, 0) = 0 AND coalesce(ghost, 0) = 0 AND substr(start_at, 1, 10) >= ?`, [today]);
   const depCard = dep.n ? `<div class="card"><h2>Deposits held ${help('Deposits paid on bookings still to come. They come off the final price, so they\u2019re not earned until the tattoo is done.')}</h2><a class="stat" href="#bookings"><span>${dep.n} upcoming booking${dep.n === 1 ? '' : 's'}</span><span>${money(Math.round(dep.a))}</span></a></div>` : '';
-  $('#st-side').innerHTML = `${paySide}${depCard}${cxCard}
+  $('#st-side').innerHTML = `${paySide}${depCard}${cxCard}${wkCard}
     <div class="card"><h2>Follow-ups coming up</h2>${fus.map(f => `<a class="stat" href="#booking-edit/${f.id}"><span>${esc(bName(f))}</span><span>${esc(fmtDay(f.start_at))}</span></a>`).join('') || '<p class="muted" style="margin:0">None booked.</p>'}</div>
     ${loyCard}${promos.length ? `<div class="card"><h2>Open promotions</h2>${promos.map(p => `<a class="stat" href="#booking-edit/${p.id}"><span>${esc(bName(p))}: ${p.promo_kind === 'pct' ? +p.promo_value + '%' : money(p.promo_value)} off</span><span>until ${esc(p.promo_until)}</span></a>`).join('')}</div>` : ''}`;   /* old receipt promotions, while any are still open */
   el.querySelectorAll('[data-bk]').forEach(tr => tr.onclick = () => { location.hash = 'booking-edit/' + tr.dataset.bk; });
@@ -8188,13 +8194,13 @@ async function renderStats() {
 const SX = { q: '', kinds: null, pays: null, srcs: null, sort: { k: 'date', dir: -1 } };
 const SX_COLS = () => [['time', 'Start', false], ['kind', 'Type', true], ['description', 'Tattoo', true], ['placement', 'Placement', true], ['size', 'Size', false],
   ['quote', 'Quote', false], ['paid', 'Paid', true], ['vou', 'Voucher', false], ['pay_method', 'Paid by', true], ['hours', 'Hours', true], ['rate', 'Per hour', false], ['deposit', 'Deposit', false],
-  ['loy', 'Loyalty discount', false], ['src', 'Found you', false], ['tag', 'Artist tag', false],
+  ['loy', 'Loyalty discount', false], ['walkin', 'Walk-in', false], ['src', 'Found you', false], ['tag', 'Artist tag', false],
   ...(payOn() ? [['studio', payCfg().mode === 'comm' ? 'Studio share' : 'Supplies', true], ['mine', 'Yours', true], ['payday', 'Pay day', false]] : [])];
 const SX_NUM = ['quote', 'paid', 'vou', 'hours', 'rate', 'deposit', 'loy', 'studio', 'mine'], SX_MONEY = ['quote', 'paid', 'vou', 'rate', 'deposit', 'loy', 'studio', 'mine'];
 function sxVal(r, k, pc) { const sp = pc ? paySplit(pc, earned(r), +r.loy_off || 0) : null;
   switch (k) { case 'date': return r.start_at.slice(0, 10); case 'time': return r.start_at.slice(11, 16); case 'client': return bName(r); case 'kind': return kindLabel(r);
     case 'hours': return r.time_min != null ? Math.round(r.time_min / 6) / 10 : null; case 'rate': return r.time_min ? Math.round(earned(r) / (r.time_min / 60)) : null;
-    case 'vou': return r.vou_off ?? null;
+    case 'vou': return r.vou_off ?? null; case 'walkin': return r.walkin ? 'Yes' : '';
     case 'loy': return r.loy_off ?? null; case 'src': return r._src || ''; case 'tag': return r.tag || '';
     case 'studio': return sp ? Math.round((pc.mode === 'comm' ? sp.studio : sp.sup) * 100) / 100 : null; case 'mine': return sp ? Math.round(sp.mine * 100) / 100 : null;
     case 'payday': return pc ? payPeriod(pc, r.start_at).pay : ''; default: return r[k] ?? ''; } }
@@ -12348,6 +12354,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 569, when: '2026-11-27T13:00', added: [
+    'Bookings: a Walk-in switch for tattoos. Stats shows how many tattoos were walk-ins and what they earned, and the Stats table has a Walk-in column.',
+    'Bookings: Cancel no longer asks you to fill in a form, and Cancelled lines up with Tattoo completed.',
+    'Clients: the search and the filters stay pinned together, so the filters are never hidden under the search bar.'
+  ] },
   { build: 568, when: '2026-11-27T12:00', added: [
     'Settings › Home: choose up to 10 home screen shortcuts, even to a client, a design or an appointment. Rename, reorder, change or remove them, or reset.',
     'Also in Settings › Home: the icon size, what the home screen shows (greeting, What’s new, Today, Notices), and the birthday, day end and backup reminders.'
