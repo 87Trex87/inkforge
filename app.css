@@ -3042,7 +3042,7 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 564; }
+:root { --app-build: 565; }
 
 /* ---------- Home screen: a slim header, the apps as a desktop, today, and one notices panel ----------
    On wide screens it keeps to a column on the left, so the rest is open for sticky notes. */
@@ -3076,3 +3076,12 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .home-notes .card.list { border: 1px solid var(--line); border-radius: 10px; }
 .home-notes .de-note.warn { border: 0; }
 .home .practice-note { margin: 0; }
+
+/* Sticky note editor on phones: the note's bar runs along the top and the floating strips line up under it */
+@media (max-width: 600px) {
+  .dz-notebar { left: 10px; }
+  .dz-stage:has(> .dz-notebar) .dz-qstrip, .dz-stage:has(> .dz-notebar) .dz-mods, .dz-stage:has(> .dz-notebar) .dz-zoom { top: calc(var(--nbh, 70px) + 16px) !important; }
+  .dz-stage:has(> .dz-notebar) .dz-rail { top: calc(var(--nbh, 70px) + 62px) !important; max-height: calc(100% - var(--nbh, 70px) - 72px) !important; }
+  .dz-stage:has(> .dz-notebar) .dz-qs, .dz-stage:has(> .dz-notebar) .dz-faces { top: calc(var(--nbh, 70px) + 62px) !important; }
+  .dz-stage:has(> .dz-notebar) .dz-xf { top: calc(var(--nbh, 70px) + 108px) !important; }
+}

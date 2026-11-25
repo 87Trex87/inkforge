@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 564;
+const APP_BUILD = 565;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -12296,7 +12296,7 @@ async function bookingsCsv(cols) {
 /* ---------- Sticky notes on the menu screens ----------
    Pinned notes (designs of kind 'note') float over Home, Studio and More only, wherever they were dragged; a long
    one scrolls inside itself. The Notes button lists them all to pin, hide, edit or start a new one. */
-const NOTE_SCREENS = ['home', 'studio', 'more'], NOTE_SECTIONS = [['inventory', 'Shopping list'], ['book', 'Bookings'], ['clients', 'Clients'], ['portfolio', 'Portfolio'], ['quote', 'Quotes'], ['designs', 'Design studio'], ['tattoo', 'Tattoo simulator'], ['rules', 'Rule book']];
+const NOTE_SCREENS = ['home', 'studio', 'more'], NOTE_SECTIONS = [['inventory', 'Shopping list'], ['book', 'Bookings'], ['clients', 'Clients'], ['portfolio', 'Portfolio'], ['quote', 'Quotes'], ['quotes', 'Saved quotes'], ['designs', 'Design studio'], ['sketches', 'Sketchpad'], ['tattoo', 'Tattoo simulator'], ['stencil', 'Stencil maker'], ['sizes', 'Size sheet'], ['split', 'Split for printing'], ['forms', 'Forms'], ['vouchers', 'Vouchers'], ['loyalty', 'Loyalty'], ['day-end', 'Day end'], ['stats', 'Stats'], ['rules', 'Rule book']];
 const noteImg = new Map();   // design id -> { at, url }
 let noteRun = 0, noteTop = 1;   // noteTop: raises the note last touched (without moving it in the page, which would cancel the tap)
 const notePos = () => { try { return JSON.parse(Settings.get('note_pos', '{}')); } catch { return {}; } };
@@ -12312,6 +12312,11 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 565, when: '2026-11-27T09:00', added: [
+    'Sticky notes: Add a shortcut has every app now, including Size sheet, Split for printing, Bend, Sketchpad, Vouchers, Loyalty and Day end, with sketches, forms and completed forms to pick too.',
+    'Sticky note checklists can fill themselves: today’s sessions, rewards to send or vouchers to be paid, kept current on the pinned note.',
+    'A deleted sticky note can be undone, and on phones the note editor’s bar no longer covers the tools.'
+  ] },
   { build: 564, when: '2026-11-26T22:00', added: [
     'A new home screen: a slim header, your apps as a desktop of icons, Today, and one Notices panel for rewards, vouchers, birthdays, day end and backups. On a big screen the right side is free for sticky notes.',
     'What’s new now waits in the small pill in the top corner, closed until you tap it.',
@@ -12937,32 +12942,50 @@ async function notesShow() {
 function noteState(n, st) { n.classList.remove('min', 'max'); if (st) n.classList.add(st); const P = notePos(), id = n.dataset.note, b0 = n.getBoundingClientRect();
   P[id] = { x: b0.left, y: b0.top, ...P[id], st }; const b = n.getBoundingClientRect(); if (b.right > innerWidth - 4) n.style.left = Math.max(4, innerWidth - b.width - 4) + 'px'; if (b.bottom > innerHeight - 4) n.style.top = Math.max(4, innerHeight - b.height - 4) + 'px';
   P[id].x = parseFloat(n.style.left); P[id].y = parseFloat(n.style.top); Settings.set('note_pos', JSON.stringify(P)); }
-// What's low on stock, keeping any ticks already made.
-async function noteShopItems(old = []) { const was = new Map(old.map(i => [i.s, i.on])), rows = await DB.all('SELECT name FROM inventory_items WHERE active = 1 AND qty <= min_qty ORDER BY name COLLATE NOCASE'); return rows.map(r => ({ s: r.name, on: !!was.get(r.name) })); }
+/* Checklists that fill themselves from the studio's data and stay current on a pinned note: [key, name, what it holds, query
+   giving s]. Ticks already made are kept by wording. */
+const NOTE_LISTS = [
+  ['shop', 'Shopping list', 'Filled from Inventory: whatever is at or below its minimum.', `SELECT name AS s FROM inventory_items WHERE active = 1 AND qty <= min_qty ORDER BY name COLLATE NOCASE`],
+  ['today', 'Today\u2019s sessions', 'Today\u2019s bookings, by time.', `SELECT substr(b.start_at, 12, 5) || '  ' || coalesce(nullif(trim(coalesce(c.first_name, '') || ' ' || coalesce(c.last_name, '')), ''), 'No client') || coalesce(' \u00b7 ' || nullif(b.description, ''), '') AS s
+    FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE substr(b.start_at, 1, 10) = date('now', 'localtime') AND coalesce(b.cancelled, 0) = 0 ORDER BY b.start_at`],
+  ['rewards', 'Rewards to send', 'Loyalty rewards clients have earned and not been sent yet.', `SELECT trim(coalesce(h.first_name, '') || ' ' || coalesce(h.last_name, '')) AS s FROM loyalty_rewards r JOIN clients h ON h.id = r.client_id
+    WHERE r.sent_at IS NULL AND r.status = 'open' AND r.used_booking IS NULL AND (r.expires_at IS NULL OR r.expires_at >= date('now')) ORDER BY r.issued_at DESC LIMIT 30`],
+  ['vouchers', 'Vouchers to be paid', 'Vouchers waiting for their payment before they can be sent.', `SELECT code || coalesce(' \u00b7 from ' || nullif(from_name, ''), '') AS s FROM vouchers WHERE status = 'unpaid' ORDER BY id`]];
+async function noteListItems(src, old = []) { const L = NOTE_LISTS.find(x => x[0] === src); if (!L) return old; const was = new Map(old.map(i => [i.s, i.on]));
+  let rows = []; try { rows = await DB.all(L[3]); } catch {} return rows.filter(r => r.s).map(r => ({ s: r.s, on: !!was.get(r.s) })); }
+const noteShopItems = (old) => noteListItems('shop', old);
 // A note's shortcuts and checklists as real links and checkboxes, placed over its picture (sized with the note).
 async function noteLayers(r) { const D = r.doc, u = (v) => v / D.w * 100, out = [];
   for (const l of D.layers || []) { if (l.t !== 'shortcut' && l.t !== 'check') continue;
     const box = `left:${u(l.x)}%;top:${l.y / D.h * 100}%;width:${u(l.w)}%;transform:rotate(${l.rot || 0}deg);`;
     if (l.t === 'shortcut') { out.push(`<a class="ns" href="#${esc(l.go || 'home')}" style="${box}height:${l.h / D.h * 100}%;font-size:${u(Math.min(l.w, l.h) * 0.11)}cqw"><i style="width:${u(Math.min(l.w, l.h) * 0.56)}cqw;height:${u(Math.min(l.w, l.h) * 0.56)}cqw">${l.svg || ''}</i><b>${esc(l.label || '')}</b></a>`); continue; }
-    const items = l.src === 'shop' ? await noteShopItems(l.items) : l.items || [], s = u(l.size || 64);
+    const items = NOTE_LISTS.some(x => x[0] === l.src) ? await noteListItems(l.src, l.items) : l.items || [], s = u(l.size || 64);
     out.push(`<div class="nk" style="${box}font-size:${s}cqw">${l.title ? `<h4>${esc(l.title)}</h4>` : ''}${items.map(i => `<label class="${i.on ? 'done' : ''}"><input type="checkbox" data-tk="${esc(l.id)}" value="${esc(i.s)}" ${i.on ? 'checked' : ''}><span>${esc(i.s)}</span></label>`).join('') || '<em>Nothing on it</em>'}</div>`); }
   return out.join(''); }
 // Picks what a shortcut opens: an app, or something saved in one. Resolves { go, label, svg }, or null.
-const NOTE_APPS = [['clients', 'Clients', 'user'], ['book', 'Bookings', 'cal'], ['quote', 'Quick quote', 'quote'], ['quotes', 'Saved quotes', 'saved'], ['inventory', 'Inventory', 'stock'], ['rules', 'Rule book', 'rule'], ['stats', 'Stats', 'stats'], ['stencil', 'Stencil maker', 'stencil'], ['reels', 'Reel maker', 'reel'], ['tattoo', 'Tattoo simulator', 'needle'], ['designs', 'Design studio', 'design'], ['portfolio', 'Portfolio', 'portfolio'], ['forms', 'Forms', 'form'], ['settings', 'Settings', 'settings']];
+const NOTE_APPS = [['clients', 'Clients', 'user'], ['book', 'Bookings', 'cal'], ['quote', 'Quick quote', 'quote'], ['quotes', 'Saved quotes', 'saved'], ['inventory', 'Inventory', 'stock'], ['stocktake', 'Stocktake', 'stock'], ['rules', 'Rule book', 'rules'], ['stats', 'Stats', 'stats'], ['day-end', 'Day end', 'stats'],
+  ['vouchers', 'Vouchers', 'voucher'], ['loyalty', 'Loyalty', 'loyalty'], ['pay', 'Your pay', 'stats'], ['quote-cal', 'Quote calibration', 'quote'],
+  ['designs', 'Design studio', 'design'], ['tattoo', 'Tattoo simulator', 'needle'], ['sketches', 'Sketchpad', 'sketch'], ['stencil', 'Stencil maker', 'stencil'], ['sizes', 'Size sheet', 'sizes'], ['split', 'Split for printing', 'sizes'], ['bend', 'Bend', 'bend'], ['reels', 'Reel maker', 'reel'],
+  ['portfolio', 'Portfolio', 'portfolio'], ['forms', 'Forms', 'forms'], ['settings', 'Settings', 'settings']];
+/* In a design workspace the business pages aren't there, so their shortcuts aren't offered. */
+const noteApps = () => NOTE_APPS.filter(a => !(wsDesign() && WS_BIZ.has(a[0])));
 const NOTE_ICO = { user: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 4-7 8-7s7 2 8 7"/></svg>', cal: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>' };
 const noteIco = (k) => NOTE_ICO[k] || ICON[k] || ICON.design;
 async function noteShortcutPick() {
   const q = async (sql, f) => (await DB.all(sql)).map(f);
   const groups = [['Clients', 'user', await q('SELECT id, first_name, last_name FROM clients ORDER BY last_name COLLATE NOCASE LIMIT 300', c => ['client/' + c.id, fullName(c)])],
     ['Appointments', 'cal', await q(`SELECT b.id, b.start_at, c.first_name, c.last_name FROM bookings b LEFT JOIN clients c ON c.id = b.client_id WHERE b.start_at >= date('now') ORDER BY b.start_at LIMIT 100`, b => ['booking-edit/' + b.id, fmtDay(b.start_at) + (b.first_name ? ' · ' + fullName(b) : '')])],
-    ['Designs', 'design', await q(`SELECT id, name FROM designs WHERE kind <> 'note' ORDER BY updated_at DESC LIMIT 200`, r => ['design/' + r.id, r.name])],
+    ['Designs', 'design', await q(`SELECT id, name FROM designs WHERE kind NOT IN ('note', 'sketch', 'form') ORDER BY updated_at DESC LIMIT 200`, r => ['design/' + r.id, r.name])],
+    ['Sketches', 'sketch', await q(`SELECT id, name FROM designs WHERE kind = 'sketch' ORDER BY updated_at DESC LIMIT 200`, r => ['design/' + r.id, r.name || 'Sketch'])],
+    ['Forms', 'forms', await q(`SELECT id, name FROM designs WHERE kind = 'form' ORDER BY name COLLATE NOCASE LIMIT 100`, r => ['form-sign/' + r.id, 'Fill in: ' + r.name])],
+    ['Completed forms', 'forms', await q(`SELECT id, title, client_name FROM signed_forms ORDER BY signed_at DESC LIMIT 100`, r => ['signed/' + r.id, r.title + (r.client_name ? ' · ' + r.client_name : '')])],
     ['Tattoo pieces', 'needle', await q(`SELECT id, name FROM tattoo_pieces WHERE meta IS NULL OR meta NOT LIKE '%"mode":"ch"%' ORDER BY updated_at DESC LIMIT 200`, r => ['tattoo/' + r.id, r.name || 'Piece'])],
     ['Reels', 'reel', await q('SELECT id, name FROM reels ORDER BY updated_at DESC LIMIT 200', r => ['reel/' + r.id, r.name || 'Reel'])],
     ['Portfolio', 'portfolio', await q('SELECT id, title FROM portfolio_items ORDER BY id DESC LIMIT 200', r => ['pf/' + r.id, r.title || 'Untitled'])],
     ['Inventory items', 'stock', await q('SELECT id, name FROM inventory_items ORDER BY name COLLATE NOCASE LIMIT 300', r => ['inv-edit/' + r.id, r.name])],
-    ['Rules', 'rule', await q('SELECT id, title FROM rules ORDER BY id LIMIT 200', r => ['rule-edit/' + r.id, r.title])]].filter(g => g[2].length);
+    ['Rules', 'rules', await q('SELECT id, title FROM rules ORDER BY id LIMIT 200', r => ['rule-edit/' + r.id, r.title])]].filter(g => g[2].length);
   return new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg'; const done = (v) => { o.remove(); res(v); };
-    o.innerHTML = `<div class="card dz-pick"><h2>Add a shortcut</h2><div class="lbl">Apps</div><div class="ns-grid">${NOTE_APPS.map(([g, n, k]) => `<button data-sg="${g}" data-sn="${esc(n)}" data-si="${k}">${noteIco(k)}<span>${esc(n)}</span></button>`).join('')}</div>
+    o.innerHTML = `<div class="card dz-pick"><h2>Add a shortcut</h2><div class="lbl">Apps</div><div class="ns-grid">${noteApps().map(([g, n, k]) => `<button data-sg="${g}" data-sn="${esc(n)}" data-si="${k}">${noteIco(k)}<span>${esc(n)}</span></button>`).join('')}</div>
       ${groups.map(([n, k, it]) => `<div class="lbl" style="margin-top:10px">${esc(n)}</div><div class="ns-list">${it.map(([g, t]) => `<button data-sg="${esc(g)}" data-sn="${esc(t)}" data-si="${k}">${esc(t)}</button>`).join('')}</div>`).join('')}
       <button class="btn" data-x style="width:100%;margin-top:12px">Cancel</button></div>`;
     o.onclick = (e) => { const b = e.target.closest('[data-sg]'); if (b) return done({ go: b.dataset.sg, label: b.dataset.sn, svg: noteIco(b.dataset.si) }); if (e.target.closest('[data-x]')) done(null); };
@@ -12992,12 +13015,12 @@ async function notesPanel() {
     if (t.closest('[data-n]')) { o.remove(); return dzNoteNew(); }
     if (ed) { o.remove(); location.hash = 'design/' + ed; return; }
     const del = t.closest('[data-d]')?.dataset.d;
-    if (del) { const r = rows.find(x => x.id === +del); if (!await ask(`Delete "${r.name}"?
-
-This can't be undone.`)) return;
-      const refs = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [r.id])).map(x => x.ref); await DB.run('DELETE FROM designs WHERE id = ?', [r.id]);
-      for (const ref of [r.thumb_ref, ...refs]) await Media.release(ref);
-      const P = notePos(); delete P[r.id]; await Settings.set('note_pos', JSON.stringify(P)); const c = noteImg.get(r.id); if (c) { URL.revokeObjectURL(c.url); noteImg.delete(r.id); }
+    if (del) { const r = rows.find(x => x.id === +del); if (!await ask(`Delete "${r.name}"?`)) return;
+      /* Undo for a while, like a design: its pictures are freed once that has passed, and its place comes back with it */
+      const refs = (await DB.all('SELECT ref FROM design_assets WHERE design_id = ?', [r.id])).map(x => x.ref), P = notePos(), pos = P[r.id];
+      const snap = await Undel.snap([['designs', 'id = ?', [r.id]], ['design_assets', 'design_id = ?', [r.id]]]); await DB.run('DELETE FROM designs WHERE id = ?', [r.id]);
+      delete P[r.id]; await Settings.set('note_pos', JSON.stringify(P)); const c = noteImg.get(r.id); if (c) { URL.revokeObjectURL(c.url); noteImg.delete(r.id); }
+      Undel.offer('Note deleted.', snap, [r.thumb_ref, ...refs], notesShow, () => { if (pos) { const Q = notePos(); Q[r.id] = pos; Settings.set('note_pos', JSON.stringify(Q)); } });
       t.closest('.note-row').remove(); return notesShow(); }
     if (p) { const r = rows.find(x => x.id === +p), on = !r.doc.note?.pin; await notePin(+p, on); r.doc.note = { ...r.doc.note, pin: on }; t.textContent = on ? 'Pinned' : 'Hidden'; t.classList.toggle('primary', on); } };
   document.body.appendChild(o);
@@ -13009,7 +13032,7 @@ async function noteLinks(cur) {
   const lab = (l) => l.label || NOTE_SECTIONS.find(s => s[0] === l.go)?.[1] || l.go;
   return new Promise((res) => { const o = document.createElement('div'); o.id = 'merge-dlg';
     const draw = () => { o.innerHTML = `<div class="card"><h2>Quick links</h2><div class="note-chips">${list.map((l, i) => `<button class="btn small" data-rm="${i}">${esc(lab(l))} ×</button>`).join('') || '<span class="muted">None yet.</span>'}</div>
-      <div class="lbl">Section</div><select class="in" data-s><option value="">Add a section…</option>${NOTE_SECTIONS.map(([g, n]) => `<option value="${g}">${n}</option>`).join('')}</select>
+      <div class="lbl">Section</div><select class="in" data-s><option value="">Add a section…</option>${NOTE_SECTIONS.filter(x => !(wsDesign() && WS_BIZ.has(x[0]))).map(([g, n]) => `<option value="${g}">${n}</option>`).join('')}</select>
       <div class="lbl">Client</div><select class="in" data-c><option value="">Add a client…</option>${clients.map(c => `<option value="${c.id}">${esc(fullName(c))}</option>`).join('')}</select>
       <div class="lbl">Appointment</div><select class="in" data-b><option value="">Add an upcoming appointment…</option>${books.map(b => `<option value="${b.id}">${esc(fmtDay(b.start_at))}${b.first_name ? ' · ' + esc(fullName(b)) : ''}</option>`).join('')}</select>
       <div class="lbl">Website</div><div class="row" style="gap:6px;flex-wrap:wrap"><input class="in" id="nl-url" type="url" inputmode="url" placeholder="example.com" autocomplete="off" style="flex:2 1 150px"><input class="in" id="nl-name" placeholder="Name (optional)" autocomplete="off" style="flex:1 1 110px"><button class="btn small" data-web>Add</button></div>

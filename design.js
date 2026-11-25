@@ -2854,6 +2854,7 @@ DZ.edit = async (id) => {
   };
   /* Sticky note bar: colour, more or less room, quick links, pinned or hidden. */
   const noteBar = () => { const b = $('#dz-notebar'); if (!b) return; doc.note ||= { pin: false, links: [] };
+    requestAnimationFrame(() => b.parentElement?.style.setProperty('--nbh', b.offsetHeight + 'px'));   /* phones: the floating strips sit under the note's bar */
     b.innerHTML = DZ_NOTE_COLS.map(c => `<button class="nc ${doc.bg?.c === c ? 'on' : ''}" data-nc="${c}" style="background:${c}" aria-label="Note colour"></button>`).join('')
       + `<button data-na="short" class="add">+ Shortcut</button><button data-na="check" class="add">+ Checklist</button><button data-na="more">+ Room</button><button data-na="less">− Room</button><button data-na="links">Links${doc.note.links.length ? ' ' + doc.note.links.length : ''}</button><button data-na="pin" class="${doc.note.pin ? 'on' : ''}">${doc.note.pin ? 'Pinned' : 'Hidden'}</button>`
       + (doc.note.links.length ? `<div class="nb-links"><span>Links:</span>${doc.note.links.map(l => `<button data-na="links" data-tip="${esc(l.url || 'Change links')}">${esc(l.label || NOTE_SECTIONS.find(s => s[0] === l.go)?.[1] || l.go)}${l.url ? ' ↗' : ''}</button>`).join('')}</div>` : ''); requestAnimationFrame(() => fit(false)); };   /* next frame: on opening, the editor is still being set up */
@@ -2876,7 +2877,8 @@ DZ.edit = async (id) => {
       else l[f] = f === 'size' ? +e.target.value : e.target.value;
       if (l.t === 'check') l.h = dzCheckH(l); if (l.y + (l.h || 0) + 40 > doc.h) { doc.h = l.y + l.h + 40; fit(); } changed(); });
     side.addEventListener('click', async (e) => { const l = layer(); if (!l) return; const s = e.target.closest('[data-nls]')?.dataset.nls;
-      if (s) { l.src = s; if (s === 'shop') { l.items = await noteShopItems(l.items); l.title ||= 'Shopping list'; } l.h = dzCheckH(l); if (l.y + l.h + 40 > doc.h) { doc.h = l.y + l.h + 40; fit(); } changed(true); return drawSide(); }
+      if (s) { const was = NOTE_LISTS.find(x => x[0] === l.src)?.[1]; l.src = s; const L = NOTE_LISTS.find(x => x[0] === s);
+        if (L) { l.items = await noteListItems(s, l.items); if (!l.title || l.title === was || l.title === 'To do') l.title = L[1]; } else if (was && l.title === was) l.title = 'To do'; l.h = dzCheckH(l); if (l.y + l.h + 40 > doc.h) { doc.h = l.y + l.h + 40; fit(); } changed(true); return drawSide(); }
       if (e.target.closest('[data-nlgo]')) { const p = await noteShortcutPick(); if (p) { Object.assign(l, p); changed(true); drawSide(); } } }); }
   const undo = (d) => { if (histT) { clearTimeout(histT); push(); } const n = hi + d; if (n < 0 || n >= hist.length) return; hi = n; doc = JSON.parse(hist[hi]); setTimeout(noteBar); doc.vals ||= {}; endCut(); endNodes(); endCont(); pen = null; qsHide(); drawPen(); if (!layer()) sel = null;
     picks = new Set(picked().map(l => l.id)); redraw(); save(); drawSide(); };
@@ -3483,8 +3485,8 @@ DZ.edit = async (id) => {
     if (l.t === 'shortcut' || l.t === 'check') { const n = l.t === 'check';
       side.innerHTML = `<div class="dz-lh"><b>${n ? 'Checklist' : 'Shortcut'}</b>${dzIB('data-act="del"', 'del', 'Delete', 'danger')}</div>` + (n
         ? `<label class="field"><span>Title</span><input class="in" data-nl="title" value="${esc(l.title || '')}"></label>
-           <div class="seg" style="margin-bottom:8px"><button data-nls="custom" class="${l.src !== 'shop' ? 'on' : ''}" style="flex:1">Custom</button><button data-nls="shop" class="${l.src === 'shop' ? 'on' : ''}" style="flex:1">Shopping list</button></div>
-           ${l.src === 'shop' ? '<p class="muted dz-hint">Filled from Inventory: whatever is at or below its minimum, kept current on the pinned note.</p>' : `<label class="field"><span>Items, one per line</span><textarea class="in" rows="6" data-nl="items">${esc((l.items || []).map(i => i.s).join('\n'))}</textarea></label>`}
+           <div class="seg kinds" style="margin-bottom:8px">${[['custom', 'Custom'], ...NOTE_LISTS.filter(x => !(wsDesign() && x[0] !== 'shop')).map(x => [x[0], x[1]])].map(([k, n]) => `<button data-nls="${k}" class="${(NOTE_LISTS.some(x => x[0] === l.src) ? l.src : 'custom') === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+           ${NOTE_LISTS.some(x => x[0] === l.src) ? `<p class="muted dz-hint">${NOTE_LISTS.find(x => x[0] === l.src)[2]} Kept current on the pinned note.</p>` : `<label class="field"><span>Items, one per line</span><textarea class="in" rows="6" data-nl="items">${esc((l.items || []).map(i => i.s).join('\n'))}</textarea></label>`}
            <label class="dz-sl"><span>Text size<b>${l.size}</b></span><input type="range" min="40" max="130" step="2" value="${l.size}" data-nl="size"></label>`
         : `<label class="field"><span>Name</span><input class="in" data-nl="label" value="${esc(l.label || '')}"></label><button class="btn small" data-nlgo>Change what it opens</button>`);
       return; }
