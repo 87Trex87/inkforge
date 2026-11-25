@@ -1,6 +1,6 @@
 'use strict';
 /* InkForge app shell: data layer client, migrations, router, tooltips, backup. */
-const APP_BUILD = 573;
+const APP_BUILD = 574;
 const GOOGLE_ON = false;   // Google Drive workspaces and Calendar sync: switched off and hidden for now (the code stays; true brings them back)   // the build number shown around the app; bump it with sw.js
 
 /* ---------- Database (talks to lib/db-worker.js) ---------- */
@@ -12440,6 +12440,9 @@ function settingsTabs() { if (typeof Tour !== 'undefined' && Tour.on) setTab = '
    of NEWS with every push (plain English, short, for tattoo artists, not programmers; `when` is the deploy time). Only the
    newest 15 are kept. Each can be deleted, and all can be turned off in Settings. */
 const NEWS = [
+  { build: 574, when: '2026-11-27T18:00', added: [
+    'Tattoo simulator: new blowout defaults (safe pace at mid-green 0.025 mm, rise with depth 0.049 mm, how sudden 0.075 mm) and magnum skin wear 1.00.'
+  ], test: ['Pack with a magnum and go deep and slow. Do blowouts and skin wear feel right now?'] },
   { build: 573, when: '2026-11-27T17:00', added: [
     'New workspace: after naming it, choose Start from. Start fresh, settings from a settings file or backup, or settings and work from a backup, ticking the parts you want.',
     'Load settings (Settings › Backup) reads a whole backup too, taking just its settings.'
