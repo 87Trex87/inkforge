@@ -3043,7 +3043,7 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 .loy-t td { white-space: nowrap; }   /* rewards and vouchers tables: one line a row; the table scrolls sideways */
 .vou-unpaid { color: var(--amber, #e0a030); font-weight: 600; } .vou-open { color: var(--teal); }
 .loy-sum p { font-size: 14px; line-height: 1.45; }
-:root { --app-build: 567; }
+:root { --app-build: 568; }
 
 /* ---------- Home screen: a slim header, the apps as a desktop, today, and one notices panel ----------
    On wide screens it keeps to a column on the left, so the rest is open for sticky notes. */
@@ -3081,3 +3081,14 @@ a.stat { color: inherit; text-decoration: none; } a.stat:hover { background: var
 /* Studio and More as desktops, like Home */
 .home .mgrp { margin: 8px 2px -4px; } .home .mgrp:first-child { margin-top: 2px; }
 .home .app-credit { margin-top: 8px; }
+/* Settings › Home: the shortcut list, and the home screen's icon sizes */
+.hs-list { display: grid; gap: 6px; }
+.hs-row { display: flex; align-items: center; gap: 6px; } .hs-row .in { flex: 1; min-width: 0; height: 38px; }
+.hs-row .ha-i { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(145deg, rgba(31,181,168,.22), var(--bg2)); border: 1px solid rgba(31,181,168,.35); color: var(--teal); }
+.hs-row .ha-i svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.hs-row .icon-btn { width: 36px; padding: 0; justify-content: center; }
+.hs-show { display: flex; flex-wrap: wrap; gap: 8px; }
+.home.ico-s .home-apps .ha-i { width: 40px; height: 40px; border-radius: 11px; } .home.ico-s .home-apps .ha-i svg { width: 20px; height: 20px; } .home.ico-s .home-apps .ha-t { font-size: 11px; }
+.home.ico-l .home-apps .ha-i { width: 62px; height: 62px; border-radius: 17px; } .home.ico-l .home-apps .ha-i svg { width: 30px; height: 30px; } .home.ico-l .home-apps .ha-t { font-size: 13px; }
+@media (min-width: 560px) { .home.ico-l .home-apps { grid-template-columns: repeat(5, 1fr); } }
+.hs-row .icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
